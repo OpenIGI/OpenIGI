@@ -1039,8 +1039,12 @@ float4 fragmentMain(Varyings input) : SV_Target
         return float4(waterMask, (normal.xy * 0.5) + 0.5, 1.0);
     }
 
-    float3 sunIlluminance =
-        light.sunColourScale.rgb * scale * SunTransmittance(sunDirection, viewHeightKm);
+    // The sun as the host hands it, which is already what the air lets through to the ground at this hour
+    // (DayNightCycle: the path's transmittance relative to a sun thirty degrees up, where the authored
+    // colour is read). Taking the air's transmittance off a second time here dimmed and reddened every low
+    // sun twice over -- a dusk that read muddy instead of warm -- and set the lit walls apart from the fog,
+    // the cache and the traced light, which all take the host's colour as it is.
+    float3 sunIlluminance = light.sunColourScale.rgb * scale;
 
     float3 surfaceDiffuse;
     float3 surfaceSpecular;
@@ -1231,6 +1235,16 @@ float4 fragmentMain(Varyings input) : SV_Target
         * 0.3183098862
         * ((f0 * environmentBrdf.x) + float3(f90 * environmentBrdf.y, f90 * environmentBrdf.y, f90 * environmentBrdf.y))
         * SpecularOcclusion(noVSpecular, alpha, ambientVisibility);
+
+    // Where the reflection pass answers this pixel with the environment itself, it stands in place of
+    // this estimate rather than on top of it; faded over the same top quarter of its roughness range the
+    // reflection fades over, so the two hand over without a line. See WithReflectionCoverage.
+    float reflectionCeiling = gi.shelterMap2.z;
+    if (reflectionCeiling > 0.0)
+    {
+        float covered = clamp((reflectionCeiling - roughness) / max(reflectionCeiling * 0.25, 1e-3), 0.0, 1.0);
+        ambientSpecular *= 1.0 - covered;
+    }
 
     if (gathered)
     {

@@ -155,6 +155,7 @@ public sealed partial class GraphicsDevice
         {
             IRhiRayTracing world = TracedWorld!;
             reflect.Bind("uScene", world.TraceableScene);
+            reflect.Bind("uCutoutMasks", world.CutoutMasks, _reflectSampler!);
             reflect.Bind("uTracedAlbedo", world.TracedAlbedo, _tracedAlbedoSampler ??= _device.CreateSampler(
                 new RhiSamplerDescriptor(
                     MipFilter: RhiFilter.Nearest,

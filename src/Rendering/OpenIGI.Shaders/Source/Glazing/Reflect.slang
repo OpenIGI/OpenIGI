@@ -60,6 +60,9 @@
 [[vk::binding(19, 0)]] Texture2DArray<float4> uTracedAlbedo;
 [[vk::binding(20, 0)]] SamplerState uTracedAlbedoSampler;
 
+// The world's cut-out masks, so a reflected ray stops on a fence's wire and not between them.
+[[vk::binding(22, 0)]] Texture2DArray<float4> uCutoutMasks;
+
 #define OPENIGI_GLAZING_PARAMS_BINDING 21
 
 #else
@@ -199,6 +202,7 @@ struct Params
 // because the ray query is local to it, so ShadeHit has to be declared by the time it is called.
 #include "../Common/TracedMaterial.slang"
 #define kShadeHits 1
+#define kTraceCutoutMasks uCutoutMasks
 #include "../Common/TracedWorld.slang"
 
 #else

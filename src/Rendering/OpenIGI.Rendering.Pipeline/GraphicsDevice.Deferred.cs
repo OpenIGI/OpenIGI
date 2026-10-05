@@ -529,7 +529,8 @@ public sealed partial class GraphicsDevice
 
         DeferredLightingParameters.WriteGi(
             gi,
-            WithFlashlight(WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState())))))),
+            WithReflectionCoverage(
+                WithFlashlight(WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState()))))))),
             CascadeSplits,
             CascadeMatrices);
         DeferredLampBlock.Write(lamps, LampState(), LocalLights);
@@ -764,7 +765,7 @@ public sealed partial class GraphicsDevice
         }
 
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
-        WriteForward(push, modelView, blend, hasLightmap, _sceneExposure);
+        WriteForward(push, modelView, blend, hasLightmap, _sceneExposure, linearScene: true);
 
         // A draw reflects when the frame has named a cube.
         (bool reflective, IRhiBindGroup environment) = EnvironmentFor();

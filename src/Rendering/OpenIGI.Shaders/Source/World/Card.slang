@@ -90,13 +90,6 @@ Varyings vertexMain(VertexInput input)
     return output;
 }
 
-float3 SrgbToLinear(float3 c)
-{
-    float3 low = c / 12.92;
-    float3 high = pow((c + 0.055) / 1.055, float3(2.4, 2.4, 2.4));
-    return lerp(low, high, step(float3(0.04045, 0.04045, 0.04045), c));
-}
-
 /// The fragment stage: albedo, normal, material and depth, into four targets at once.
 [shader("fragment")]
 CardTargets fragmentMain(Varyings input)
@@ -110,10 +103,12 @@ CardTargets fragmentMain(Varyings input)
         discard;
     }
 
-    // Linear, as the lighting reads it. Decoded here only where the sampler has not already: on the RHI's
-    // sRGB images a second decode squared the curve and the whole surface cache lit a world a quarter as
-    // bright as the one on screen. Where the sampler has not decoded, the shader's own curve does.
-    float3 albedo = (cSamplerDecodes != 0 ? diffuse.rgb : SrgbToLinear(diffuse.rgb)) * input.color.rgb;
+    // Linear, as the lighting reads it, and exactly as the G-buffer builds its own: the texture decoded
+    // only where the sampler has not already (a second decode squared the curve and the cache lit a world a
+    // quarter as bright as the screen), and the vertex colour, which is display-encoded like every authored
+    // colour, decoded too. Taken raw, a vertex tint of half was half in the cache and a fifth on screen, and
+    // every tinted surface bounced more light than it showed.
+    float3 albedo = SampledLinear(diffuse.rgb) * DecodeSrgb(input.color.rgb);
 
     CardTargets output;
     output.albedo = float4(albedo, 1.0);

@@ -478,9 +478,11 @@ public static class LightmapBaker
         return colour;
     }
 
-    // Averages a decoded texture into a single albedo colour. Divided into [0,1]; I.G.I.'s textures carry
-    // some painted-in lighting so this over-reads the true reflectance a little, but it is the HUE that
-    // matters for a coloured bounce, and the bounce's own scale carries the magnitude.
+    // Averages a decoded texture into a single albedo colour, in linear light as the bounce uses it: each
+    // texel decoded before it is summed, since the mean of encoded bytes reads paler and greyer than the
+    // texture. I.G.I.'s textures carry some painted-in lighting so this over-reads the true reflectance a
+    // little, but it is the HUE that matters for a coloured bounce, and the bounce's own scale carries the
+    // magnitude.
     private static Vector3f MeanColour(TextureImage image)
     {
         ReadOnlySpan<Bgra32> pixels = image.Pixels;
@@ -499,15 +501,12 @@ public static class LightmapBaker
         for (int i = 0; i < count; i++)
         {
             Bgra32 pixel = pixels[i];
-            r += pixel.R;
-            g += pixel.G;
-            b += pixel.B;
+            r += SrgbCurve.ToLinear(pixel.R);
+            g += SrgbCurve.ToLinear(pixel.G);
+            b += SrgbCurve.ToLinear(pixel.B);
         }
 
-        return new Vector3f(
-            (float)(r / count / 255.0),
-            (float)(g / count / 255.0),
-            (float)(b / count / 255.0));
+        return new Vector3f((float)(r / count), (float)(g / count), (float)(b / count));
     }
 
     // Walks a record's triangle list and rasterises each one into the target's lightmap-UV space, filling

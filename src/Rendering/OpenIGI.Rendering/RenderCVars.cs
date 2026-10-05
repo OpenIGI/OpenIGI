@@ -1720,10 +1720,15 @@ public static class RenderCVars
             16f,
             CVarOptions.Archive,
             "Skylight brightness the GI fill sees; 1 is the level's own ambient. Lifts outdoor and window-lit surfaces."),
+
+        // One -- the sky as the atmosphere scatters it -- on every preset that gathers it. Three times that
+        // made the fill in every shadow three times what the sky above it gives, and the sun barely read
+        // against it: shaded ground a stop and a half too bright and blue, the walls the sun fell on flat.
+        // The exposure adapts to the darker fill, as an eye does. The vanilla preset keeps its own.
         vanilla: "3",
-        enhanced: "3",
-        high: "3",
-        ultra: "3");
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Scales the sun that generates the atmospheric sky, independently of direct light.</summary>
     /// <remarks>
@@ -2956,7 +2961,10 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.5",
         high: "0.75",
-        ultra: "1");
+
+        // Off: ultra grades to identity. The mission's table lifts black to a cool grey and pulls every
+        // shadow towards blue, which is the opposite of the deep, warm darks ultra is after.
+        ultra: "0");
 
     /// <summary>The colour table to use instead of the mission's own, or empty for the mission's own.</summary>
     /// <remarks>

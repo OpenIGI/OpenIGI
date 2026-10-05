@@ -182,8 +182,8 @@ fn ApplyNightShift_0( colour_4 : vec3<f32>) -> vec3<f32>
         return colour_4;
     }
     const photopic_0 : vec3<f32> = vec3<f32>(0.2125999927520752f, 0.71520000696182251f, 0.07220000028610229f);
-    const nightTint_0 : vec3<f32> = vec3<f32>(0.62000000476837158f, 0.77999997138977051f, 1.0f);
-    return mix(colour_4, vec3<f32>(dot(colour_4, vec3<f32>(0.02999999932944775f, 0.56000000238418579f, 0.40999999642372131f))) * nightTint_0 / vec3<f32>(dot(nightTint_0, photopic_0)), vec3<f32>((amount_1 * (1.0f - smoothstep(0.01999999955296516f, 0.44999998807907104f, dot(colour_4, photopic_0))) * 0.80000001192092896f)));
+    const nightTint_0 : vec3<f32> = vec3<f32>(0.86000001430511475f, 0.93000000715255737f, 1.0f);
+    return mix(colour_4, vec3<f32>(dot(colour_4, vec3<f32>(0.02999999932944775f, 0.56000000238418579f, 0.40999999642372131f))) * nightTint_0 / vec3<f32>(dot(nightTint_0, photopic_0)), vec3<f32>((amount_1 * (1.0f - smoothstep(0.01999999955296516f, 0.44999998807907104f, dot(colour_4, photopic_0))) * 0.34999999403953552f)));
 }
 
 fn FilmSaturation_0( c_2 : vec3<f32>) -> f32
@@ -394,7 +394,7 @@ fn ResolveDisplay_0( input_0 : FullscreenVaryings_0) -> vec4<f32>
         var colour_6 : vec3<f32>;
         if((resolve_0.vignette_0.z) > 0.5f)
         {
-            colour_6 = colour_5 + max((textureSample((uBloom_0), (uBloomSampler_0), (input_0.uv_0))).xyz, vec3<f32>(0.0f, 0.0f, 0.0f));
+            colour_6 = colour_5 + max((textureSample((uBloom_0), (uBloomSampler_0), (input_0.uv_0))).xyz, vec3<f32>(0.0f, 0.0f, 0.0f)) * vec3<f32>(resolve_0.params_0.x);
         }
         else
         {

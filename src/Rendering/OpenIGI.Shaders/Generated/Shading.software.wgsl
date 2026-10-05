@@ -1802,7 +1802,7 @@ fn fragmentMain( _S121 : pixelInput_0, @builtin(position) position_6 : vec4<f32>
         return _S150;
     }
     var _S151 : vec3<f32> = vec3<f32>(scale_1);
-    var sunIlluminance_1 : vec3<f32> = light_0.sunColourScale_0.xyz * _S151 * SunTransmittance_0(sunDirection_1, viewHeightKm_1);
+    var sunIlluminance_1 : vec3<f32> = light_0.sunColourScale_0.xyz * _S151;
     var surfaceDiffuse_0 : vec3<f32>;
     var surfaceSpecular_0 : vec3<f32>;
     EvaluateSurface_0(albedo_2, metallic_1, specularLevel_1, roughness_5, normal_9, worldView_0, sunDirection_1, &(surfaceDiffuse_0), &(surfaceSpecular_0));
@@ -2041,12 +2041,22 @@ fn fragmentMain( _S121 : pixelInput_0, @builtin(position) position_6 : vec4<f32>
     var _S170 : vec3<f32> = vec3<f32>(0.31830987334251404f);
     var _S171 : f32 = clamp(50.0f * f0_1.y, 0.0f, 1.0f) * environmentBrdf_0.y;
     var ambientSpecular_0 : vec3<f32> = indirect_0 * _S170 * (f0_1 * vec3<f32>(environmentBrdf_0.x) + vec3<f32>(_S171, _S171, _S171)) * vec3<f32>(SpecularOcclusion_0(noVSpecular_0, roughness_5 * roughness_5, ambientVisibility_0));
+    var reflectionCeiling_0 : f32 = gi_0.shelterMap2_0.z;
+    var ambientSpecular_1 : vec3<f32>;
+    if(reflectionCeiling_0 > 0.0f)
+    {
+        ambientSpecular_1 = ambientSpecular_0 * vec3<f32>((1.0f - clamp((reflectionCeiling_0 - roughness_5) / max(reflectionCeiling_0 * 0.25f, 0.00100000004749745f), 0.0f, 1.0f)));
+    }
+    else
+    {
+        ambientSpecular_1 = ambientSpecular_0;
+    }
     if(gathered_0)
     {
-        var _S172 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(diffuseColour_0 * _S170 * indirect_1 + ambientSpecular_0 + background_0, worldRayToPixel_0, sunDirection_1, sunIlluminance_1, _S153 * 0.00100000004749745f), _S121.uv_14, _S153), 1.0f) );
+        var _S172 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(diffuseColour_0 * _S170 * indirect_1 + ambientSpecular_1 + background_0, worldRayToPixel_0, sunDirection_1, sunIlluminance_1, _S153 * 0.00100000004749745f), _S121.uv_14, _S153), 1.0f) );
         return _S172;
     }
-    var _S173 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(albedo_2 * indirect_1 * _S151 + SkyDiffuseIrradiance_0(normal_9) * diffuseColour_0 + ambientSpecular_0 + background_0, worldRayToPixel_0, sunDirection_1, sunIlluminance_1, _S153 * 0.00100000004749745f), _S121.uv_14, _S153), 1.0f) );
+    var _S173 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(albedo_2 * indirect_1 * _S151 + SkyDiffuseIrradiance_0(normal_9) * diffuseColour_0 + ambientSpecular_1 + background_0, worldRayToPixel_0, sunDirection_1, sunIlluminance_1, _S153 * 0.00100000004749745f), _S121.uv_14, _S153), 1.0f) );
     return _S173;
 }
 

@@ -50,6 +50,10 @@ public readonly record struct FogSliceDistribution(float B, float O, float Scale
 /// <param name="Flashlight">The player's flashlight, or <see cref="FlashlightLight.Off"/>.</param>
 /// <param name="FlashlightShadowed">Whether this frame made the flashlight a shadow mask to be read through.</param>
 /// <param name="FrameIndex">Which frame this is, for anything that jitters.</param>
+/// <param name="ReflectionCeiling">
+/// The roughest surface the reflection pass answers for every pixel of, or nought where it does not: up to
+/// there the shading leaves its own estimate of the environment's specular to the reflection.
+/// </param>
 /// <remarks>
 /// One record rather than a method of twenty arguments, and in this project rather than in a backend,
 /// because both paths fill the same block for the same shader: a second copy of this layout is a second
@@ -85,7 +89,8 @@ public readonly record struct DeferredLightingState(
     FogSliceDistribution Fog = default,
     FlashlightLight Flashlight = default,
     bool FlashlightShadowed = false,
-    long FrameIndex = 0);
+    long FrameIndex = 0,
+    float ReflectionCeiling = 0f);
 
 /// <summary>The blocks the deferred shading reads, written from what a frame holds.</summary>
 /// <remarks>
@@ -231,6 +236,11 @@ public static class DeferredLightingParameters
 
         block[132] = shelter.Width;
         block[133] = shelter.Height;
+
+        // shelterMap2.z: the roughest surface the reflection pass answers for every pixel of, or nought
+        // where it answers only some (the screen march alone) or none. Up to there the reflection stands
+        // in place of the shading's own estimate of the environment's specular, rather than on top of it.
+        block[134] = Math.Clamp(state.ReflectionCeiling, 0f, 1f);
 
         // fog: the slice distribution the shading looks a pixel up with. A scale of nought says there is
         // no volume this frame, which is how the shader knows to leave the colour alone rather than

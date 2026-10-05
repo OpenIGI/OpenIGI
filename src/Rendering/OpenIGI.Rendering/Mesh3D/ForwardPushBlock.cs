@@ -15,6 +15,11 @@ namespace OpenIGI.Rendering.Mesh3D;
 /// <param name="Exposure">The exposure the resolve will apply, which the lit rig is divided by.</param>
 /// <param name="LampLight">What the level's lamps put on the rig, in the same units as the sun.</param>
 /// <param name="FirstPerson">Whether the draw is bracketed as first-person geometry.</param>
+/// <param name="LinearScene">
+/// Whether the draw lands in the scene's linear image rather than the frame: its shader then decodes what it
+/// composited and divides it by <see cref="Exposure"/>, which the block carries in place of the lightmap
+/// scale.
+/// </param>
 public readonly record struct ForwardDrawState(
     Matrix4f Projection,
     SceneLighting Lighting,
@@ -27,7 +32,8 @@ public readonly record struct ForwardDrawState(
     float PoseBlend,
     float Exposure,
     Vector3f LampLight,
-    bool FirstPerson);
+    bool FirstPerson,
+    bool LinearScene = false);
 
 /// <summary>The terrain's level-of-detail slide.</summary>
 /// <param name="Scale">How the ramp is scaled.</param>
@@ -105,7 +111,16 @@ public static class ForwardPushBlock
         // the arms into pure white. A world draw has no exposure to carry and puts the lightmap scale
         // there instead: the same scale the G-buffer path pushes in its material row, which this block
         // has no room for otherwise.
-        block[17] = litRig ? 1f / MathF.Max(state.Exposure, 1e-3f) : state.LightmapScale;
+        //
+        // Over the scene's linear image a world draw carries the inverse exposure as well, because its colour
+        // is decoded there before it lands: the lightmap scale goes with it through the curve's own power,
+        // which is what scaling the encoded colour comes to once decoded.
+        float inverseExposure = 1f / MathF.Max(state.Exposure, 1e-3f);
+        block[17] = litRig
+            ? inverseExposure
+            : state.LinearScene
+                ? MathF.Pow(MathF.Max(state.LightmapScale, 0f), 2.2f) * inverseExposure
+                : state.LightmapScale;
 
         block[18] = state.PoseBlend;
 

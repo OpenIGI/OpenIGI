@@ -58,6 +58,15 @@ public static class Mesh3DConstants
     /// <summary>Its blue channel.</summary>
     public const int SunColourBlue = 11;
 
+    /// <summary>Whether the target holds the scene in linear light, before exposure.</summary>
+    /// <remarks>
+    /// The lit image a capture's forward pass draws into. Each draw is still composited at the display
+    /// encoding its texels were authored in, and only then decoded and divided by the exposure the resolve
+    /// will apply: so an effect looks as the original drew it whatever the eye has adapted to, and the
+    /// resolve's one encode is the only one it gets.
+    /// </remarks>
+    public const int LinearScene = 12;
+
     /// <summary>Whether the target's clip space runs with Y downwards, as Vulkan's does.</summary>
     /// <remarks>
     /// Declared by every vertex stage that turns one of the engine's OpenGL projections into clip
@@ -125,6 +134,7 @@ public static class Mesh3DConstants
     /// <param name="sunAmbient">The flat light an unlightmapped vertex receives.</param>
     /// <param name="sunColour">The scene sun's diffuse colour.</param>
     /// <param name="targetEncodes">Whether the target it draws into applies the sRGB transfer as it stores.</param>
+    /// <param name="linearScene">Whether the target holds the scene in linear light (see <see cref="LinearScene"/>).</param>
     /// <returns>The constants, by identifier.</returns>
     /// <remarks>
     /// <para>
@@ -150,8 +160,10 @@ public static class Mesh3DConstants
         float fogDensity,
         Vector3f sunAmbient,
         Vector3f sunColour,
-        bool targetEncodes) => new Dictionary<int, RhiConstant>
+        bool targetEncodes,
+        bool linearScene = false) => new Dictionary<int, RhiConstant>
         {
+            [LinearScene] = RhiConstant.Of(linearScene ? 1 : 0),
             [ClipYDown] = RhiConstant.Of(0),
             [SamplerDecodes] = RhiConstant.Of(targetEncodes ? 0 : 1),
             [AlphaReference] = RhiConstant.Of(alphaReference / 255f),

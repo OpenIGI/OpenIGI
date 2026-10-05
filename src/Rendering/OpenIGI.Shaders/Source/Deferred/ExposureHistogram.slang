@@ -45,9 +45,11 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint slot : SV_GroupIndex)
         float4 lit = uScene.Load(int3(px, 0));
         if (lit.a >= 0.5)
         {
-            // A plain mean of the channels: the metering wants how much light there is, not how bright
-            // it looks, and a saturated lamp should not read darker than a white one of equal energy.
-            float raw = (lit.r + lit.g + lit.b) * (1.0 / 3.0);
+            // Luminance, as a light meter reads: the exposure puts the scene's middle at the middle of the
+            // display, and that is a matter of how bright the scene looks. A plain mean of the channels
+            // read a blue sky two or three times brighter than it is and every green or amber wall dimmer,
+            // so an open sky darkened the ground under it.
+            float raw = dot(lit.rgb, float3(0.2126, 0.7152, 0.0722));
             float floored = max(raw, p.range.z);
 
             // Where the pixel sits in the log range, split linearly between the two buckets either side

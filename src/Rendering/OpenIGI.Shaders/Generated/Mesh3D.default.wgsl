@@ -25,6 +25,8 @@ struct MeshPush_std140_0
 
 @binding(1) @group(1) var uEnvironmentSampler_0 : sampler;
 
+@id(12) override cLinearScene_0 : i32 = i32(0);
+
 @id(66) override cSamplerDecodes_0 : i32 = i32(0);
 
 @id(64) override cClipYDown_0 : i32 = i32(1);
@@ -256,6 +258,11 @@ fn SampledDisplay_0( sampled_0 : vec3<f32>) -> vec3<f32>
     return _S9;
 }
 
+fn DecodeSrgb_0( c_1 : vec3<f32>) -> vec3<f32>
+{
+    return mix(pow(max((c_1 + vec3<f32>(0.05499999970197678f)) / vec3<f32>(1.0549999475479126f), vec3<f32>(0.0f, 0.0f, 0.0f)), vec3<f32>(2.40000009536743164f, 2.40000009536743164f, 2.40000009536743164f)), c_1 / vec3<f32>(12.92000007629394531f), step(c_1, vec3<f32>(0.04044999927282333f, 0.04044999927282333f, 0.04044999927282333f)));
+}
+
 struct pixelOutput_0
 {
     @location(0) output_1 : vec4<f32>,
@@ -310,8 +317,16 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
         modelTint_0 = push_0.normalKey1_0.xyz;
     }
     var _S12 : bool = (abs(marker_0)) > 0.5f;
-    var lightmapGain_0 : f32;
     if(_S12)
+    {
+        _S11 = cLinearScene_0 == i32(0);
+    }
+    else
+    {
+        _S11 = false;
+    }
+    var lightmapGain_0 : f32;
+    if(_S11)
     {
         lightmapGain_0 = push_0.markerExposure_0.y;
     }
@@ -348,17 +363,27 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
     }
     if(_S12)
     {
-        var _S13 : pixelOutput_0 = pixelOutput_0( vec4<f32>(mix(push_0.normalKey2_0.xyz, base_1, vec3<f32>(_S10.fog_1)), alpha_0) );
-        return _S13;
+        var shown_0 : vec3<f32> = mix(push_0.normalKey2_0.xyz, base_1, vec3<f32>(_S10.fog_1));
+        if(cLinearScene_0 != i32(0))
+        {
+            var _S13 : pixelOutput_0 = pixelOutput_0( vec4<f32>(DecodeSrgb_0(max(shown_0, vec3<f32>(0.0f, 0.0f, 0.0f))) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
+            return _S13;
+        }
+        var _S14 : pixelOutput_0 = pixelOutput_0( vec4<f32>(shown_0, alpha_0) );
+        return _S14;
+    }
+    if(cLinearScene_0 != i32(0))
+    {
+        base_1 = DecodeSrgb_0(max(base_1, vec3<f32>(0.0f, 0.0f, 0.0f)));
     }
     var keyDirection_0 : vec3<f32> = normalize(vec3<f32>(-0.34999999403953552f, 0.44999998807907104f, -0.81999999284744263f));
     var normal_3 : vec3<f32> = normalize(_S10.normal_2);
     const toEye_1 : vec3<f32> = vec3<f32>(0.0f, 0.0f, -1.0f);
     var keyColour_0 : vec3<f32> = vec3<f32>(push_0.normalKey0_0.w, push_0.normalKey1_0.w, push_0.normalKey2_0.w);
-    var _S14 : vec3<f32> = vec3<f32>(max(dot(normal_3, keyDirection_0), 0.0f));
+    var _S15 : vec3<f32> = vec3<f32>(max(dot(normal_3, keyDirection_0), 0.0f));
     var gloss_0 : f32 = exp2(7.05000019073486328f);
-    var _S15 : vec3<f32> = mix(vec3<f32>(0.03999999910593033f, 0.03999999910593033f, 0.03999999910593033f), base_1, vec3<f32>(0.34999999403953552f)) * keyColour_0;
-    var _S16 : pixelOutput_0 = pixelOutput_0( vec4<f32>((base_1 * vec3<f32>(0.64999997615814209f) * (vec3<f32>(push_0.markerExposure_0.w, push_0.markerExposure_0.w, push_0.markerExposure_0.w) + keyColour_0 * _S14 + keyColour_0 * vec3<f32>(0.25f) * vec3<f32>(max(dot(normal_3, normalize(vec3<f32>(0.55000001192092896f, -0.20000000298023224f, -0.55000001192092896f))), 0.0f))) + _S15 * vec3<f32>((pow(max(dot(normal_3, normalize(keyDirection_0 + toEye_1)), 0.0f), gloss_0) * (gloss_0 + 8.0f) / 25.0f)) * _S14 + _S15 * vec3<f32>(pow(1.0f - max(dot(normal_3, toEye_1), 0.0f), 4.0f)) * vec3<f32>(0.34999999403953552f) * vec3<f32>(0.60000002384185791f)) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
-    return _S16;
+    var _S16 : vec3<f32> = mix(vec3<f32>(0.03999999910593033f, 0.03999999910593033f, 0.03999999910593033f), base_1, vec3<f32>(0.34999999403953552f)) * keyColour_0;
+    var _S17 : pixelOutput_0 = pixelOutput_0( vec4<f32>((base_1 * vec3<f32>(0.64999997615814209f) * (vec3<f32>(push_0.markerExposure_0.w, push_0.markerExposure_0.w, push_0.markerExposure_0.w) + keyColour_0 * _S15 + keyColour_0 * vec3<f32>(0.25f) * vec3<f32>(max(dot(normal_3, normalize(vec3<f32>(0.55000001192092896f, -0.20000000298023224f, -0.55000001192092896f))), 0.0f))) + _S16 * vec3<f32>((pow(max(dot(normal_3, normalize(keyDirection_0 + toEye_1)), 0.0f), gloss_0) * (gloss_0 + 8.0f) / 25.0f)) * _S15 + _S16 * vec3<f32>(pow(1.0f - max(dot(normal_3, toEye_1), 0.0f), 4.0f)) * vec3<f32>(0.34999999403953552f) * vec3<f32>(0.60000002384185791f)) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
+    return _S17;
 }
 

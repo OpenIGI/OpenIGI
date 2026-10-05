@@ -4011,7 +4011,9 @@ internal sealed partial class GameHost : IDisposable
                     FrameDeltaSeconds: frameDeltaSeconds,
 
                     // The eye's night vision, only as deep as the night: a day is untouched.
-                    NightShift: RenderCVars.NightShift.Value * RenderCVars.Nightfall.Value);
+                    // Only once the sun is some six degrees under (Nightfall past about 0.45): dusk keeps its
+                    // colour, and the eye's night vision takes over only as real night does.
+                    NightShift: RenderCVars.NightShift.Value * NightVisionWeight(RenderCVars.Nightfall.Value));
 
                 if (_giExposureWarmup > 0)
                 {

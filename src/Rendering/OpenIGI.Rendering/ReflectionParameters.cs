@@ -53,6 +53,7 @@ public readonly record struct ReflectionCacheLookup(
 /// <param name="RigLensX">The first-person lens's x scale, or nought where no rig was drawn.</param>
 /// <param name="RigLensY">Its y scale.</param>
 /// <param name="Field">The distance field a marched ray walks; nought levels for none.</param>
+/// <param name="HitRecords">The traced world's hit records' device address, for the cut-out test; nought for none.</param>
 public readonly record struct ReflectionFrame(
     int Width,
     int Height,
@@ -72,7 +73,8 @@ public readonly record struct ReflectionFrame(
     ReflectionCacheLookup Cache,
     float RigLensX,
     float RigLensY,
-    DistanceFieldBinding Field);
+    DistanceFieldBinding Field,
+    ulong HitRecords = 0UL);
 
 /// <summary>The reflection's parameter block (the Reflect module's Params), the same for every backend.</summary>
 /// <remarks>
@@ -184,6 +186,10 @@ public static class ReflectionParameters
 
         data[TraceOffset + 12] = cache.AtlasWidth;
         data[TraceOffset + 13] = cache.AtlasHeight;
+
+        // The hit records' device address, bit for bit, for the traced form's cut-out test.
+        data[TraceOffset + 14] = BitConverter.Int32BitsToSingle(unchecked((int)(uint)frame.HitRecords));
+        data[TraceOffset + 15] = BitConverter.Int32BitsToSingle(unchecked((int)(uint)(frame.HitRecords >> 32)));
 
         data[TraceOffset + 16] = Math.Clamp(frame.TracedMaxRoughness, 0f, 1f);
         data[TraceOffset + 17] = frame.RigLensX;

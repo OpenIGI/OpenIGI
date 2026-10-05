@@ -78,6 +78,9 @@
 [[vk::binding(23, 0)]] Texture2D<float4> uFinal;
 [[vk::binding(24, 0)]] SamplerState uFinalSampler;
 
+// The world's cut-out masks, so a reflected ray stops on a fence's wire and not between them.
+[[vk::binding(26, 0)]] Texture2DArray<float4> uCutoutMasks;
+
 #define OPENIGI_REFLECTION_PARAMS_BINDING 25
 
 #else
@@ -199,6 +202,10 @@ struct Params
 #include "../Common/TracedScreen.slang"
 
 #if OPENIGI_RAY_QUERY
+// The hit records' address, low word then high, carried bit for bit in the atlas row's spare pair.
+#define kRecords uint2(asuint(p.cacheAtlas.z), asuint(p.cacheAtlas.w))
+#define kTraceCutoutMasks uCutoutMasks
+#include "../Common/HitRecords.slang"
 #include "../Common/TracedWorld.slang"
 #else
 #include "../Common/DistanceField.slang"
@@ -208,6 +215,33 @@ struct Params
 static const float kUnknownAlbedo = 0.3;
 static const float3 kLuminance = float3(0.2126, 0.7152, 0.0722);
 #endif
+
+// The scene's view depth at a UV, read at the one texel under it rather than blended across the four round
+// it: at a silhouette a blend of foreground and background is a depth no surface has. Nought where the
+// texel is open sky.
+float SampleSceneViewZ(float2 uv)
+{
+    uint width;
+    uint height;
+    uSceneDepth.GetDimensions(width, height);
+    int2 texel = clamp(int2(uv * float2(width, height)), int2(0, 0), int2(int(width) - 1, int(height) - 1));
+    float d = uSceneDepth.Load(int3(texel, 0));
+    return d > 0.0 ? SceneViewZ(d) : 0.0;
+}
+
+// The specular lobe averaged over the hemisphere at a roughness and a viewing angle: what F0 and F90 are
+// scaled by to weigh an environment's reflection. The same analytic fit the shading weighs its own
+// estimate of that environment with (Shading.slang, SplitSumApprox), so the reflection that stands in for
+// it is weighed the same way.
+float2 EnvironmentBrdf(float roughness, float cosNV)
+{
+    float smoothness = 1.0 - roughness;
+    float grazing = min(smoothness * smoothness, exp2(-9.28 * cosNV));
+    float t = (grazing * smoothness) + 0.0425 - (0.0275 * roughness);
+    float scale = 1.04 - (0.572 * roughness) - (1.04 * t);
+    float bias = (0.022 * roughness) - 0.04 + (1.04 * t);
+    return float2(scale, bias);
+}
 
 // The weather, gathered out of this pass's own parameter block. The shading pass fills the same struct
 // from its uniform; that both do it by hand from different layouts is the whole reason the struct exists.
@@ -418,11 +452,20 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         // A dielectric's four per cent, and a metal's own colour, which is the whole of the difference
         // between the two in this model: a metal has no diffuse term, so the light it does not absorb it
         // reflects, tinted by what it is made of.
+        //
+        // Weighted exactly as the shading weighs its own estimate of the environment, which this replaces:
+        // the material's own specular level for a dielectric, a cavity's darkening of the grazing edge, and
+        // the split-sum average of the specular lobe over the hemisphere at this roughness. Plain Schlick
+        // with nothing for roughness went to full white at every grazing angle, so a rough-ish floor seen
+        // low came out near white.
+        float specularLevel = material.g;
         float3 f0 = lerp(
-            float3(0.04, 0.04, 0.04),
+            float3(0.08 * specularLevel, 0.08 * specularLevel, 0.08 * specularLevel),
             uBaseColour.SampleLevel(uBaseColourSampler, uv, 0.0).rgb,
             metallic);
-        float3 fresnel = f0 + ((1.0 - f0) * pow(1.0 - nDotV, 5.0));
+        float f90 = clamp(50.0 * f0.g, 0.0, 1.0);
+        float2 environmentBrdf = EnvironmentBrdf(roughness, nDotV);
+        float3 fresnel = (f0 * environmentBrdf.x) + float3(f90, f90, f90) * environmentBrdf.y;
 
         // Fade out as the surface approaches the ceiling, so the answer does not end on a visible line at
         // that roughness.
@@ -555,11 +598,20 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
                 hitUv = ViewToUv(b);
 
+                // A crossing is a hit only where the ray met the surface: landed within its thickness once
+                // the halvings have closed on it. At a silhouette -- a pole, a soldier -- the depth buffer
+                // jumps, and the ray that crosses that jump has only passed BEHIND the thing, whose drawn
+                // surface stands metres in front of it. Taken as a hit, every such ray read the pole's
+                // colour, and the pole smeared down the whole wet ground behind it. Hidden instead, the ray
+                // is left for the world beyond the screen to answer.
+                float landed = SampleSceneViewZ(hitUv);
+                bool met = landed > 0.0 && (b.z - landed) < thickness;
+
                 // The border vignette: full in the middle of the screen, fading to nothing across the
                 // outer fifth, so a reflection does not end on the hard line of the frame.
                 float2 sp = (hitUv * 2.0) - 1.0;
                 float2 vig = clamp((abs(sp) * 5.0) - 4.0, float2(0.0, 0.0), float2(1.0, 1.0));
-                hitEdge = clamp(1.0 - dot(vig, vig), 0.0, 1.0);
+                hitEdge = met ? clamp(1.0 - dot(vig, vig), 0.0, 1.0) : 0.0;
             }
 
             // Behind a surface either way -- a hit, or the ray began already hidden behind something
@@ -677,7 +729,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
         if (resolved)
         {
-            float3 scene = radiance * (water ? 1.0 : p.ssr.y);
+            // At its own strength: the intensity knob is for the screen march, whose single ray misses much
+            // of the world. A traced ray misses nothing, and scaled up it made every reflection of geometry
+            // brighter than the geometry, with a step where the reflection went over to sky.
+            float3 scene = radiance;
 
             // And the sky the shading laid in this pixel's water, which the traced hit now stands in place
             // of -- taken back out at exactly this ray's share of it, the same bookkeeping the screen hit
@@ -816,7 +871,8 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             radiance *= p.trace.z / brightest;
         }
 
-        float3 scene = radiance * (water ? 1.0 : p.ssr.y);
+        // At its own strength, as the traced half's: the knob is the screen march's.
+        float3 scene = radiance;
 
         // And the sky the shading already laid in this pixel's water, which this answer now stands in
         // place of -- taken back out at this ray's share of it, the same bookkeeping the screen hit does

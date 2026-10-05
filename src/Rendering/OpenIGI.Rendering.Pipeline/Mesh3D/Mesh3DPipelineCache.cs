@@ -339,7 +339,8 @@ public sealed class Mesh3DPipelineCache : IDisposable
                 _environment.FogDensity,
                 _environment.SunAmbient,
                 _environment.SunColour,
-                _targetFormat.IsSrgb()));
+                _targetFormat.IsSrgb(),
+                _targetFormat is RhiTextureFormat.Rgba16Float or RhiTextureFormat.Rgba32Float));
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
