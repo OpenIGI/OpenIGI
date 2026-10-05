@@ -367,10 +367,19 @@ float3 SkyLight(float3 world, float3 normal)
 
     float3 total = float3(0.0, 0.0, 0.0);
 
+    // The set turned by a hash of where the texel stands. The same eight directions at every texel shared
+    // the same eight blind spots: a ledge that one of them missed was missed by the whole wall, and the
+    // cache's sky came out in stripes and wedges that the bounce then carried. Turned per texel the misses
+    // fall differently on each, and the bounce, which reads many texels at once, averages them away. Fixed
+    // in the world, so a texel relit is relit the same.
+    float3 cell = floor(world * 8.0);
+    float rotation = frac(sin(dot(cell, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+    float stratum = frac(sin(dot(cell, float3(39.346, 11.135, 83.155))) * 24634.6345);
+
     for (int ray = 0; ray < kSkyRays; ray++)
     {
-        float u1 = (float(ray) + 0.5) / float(kSkyRays);
-        float u2 = RadicalInverse(ray);
+        float u1 = (float(ray) + stratum) / float(kSkyRays);
+        float u2 = frac(RadicalInverse(ray) + rotation);
 
         // Cosine-weighted by construction, so the integral needs no per-ray weight: the density already
         // carries the dot product a diffuse surface would have applied.

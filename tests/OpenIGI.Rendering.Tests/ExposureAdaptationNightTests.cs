@@ -9,9 +9,12 @@ namespace OpenIGI.Rendering.Tests;
 public sealed class ExposureAdaptationNightTests
 {
     [Fact]
-    public void A_dim_day_stops_the_eye_at_ten_times()
+    public void A_dim_day_stops_the_eye_at_ten_times_and_is_shown_darker()
     {
-        Assert.Equal(10f, new ExposureAdaptation().Adapt(DarkScene(), 1f / 60f), 3);
+        // The floor is still ten times; a view that dim by day is then held under middle grey rather
+        // than lifted to it -- three tenths of a stop for every stop it meters under -- so a shaded room reads
+        // darker than an open yard.
+        Assert.Equal(10f * MathF.Pow(2f, 0.3f * MathF.Log2(0.1f)), new ExposureAdaptation().Adapt(DarkScene(), 1f / 60f), 3);
     }
 
     [Fact]
