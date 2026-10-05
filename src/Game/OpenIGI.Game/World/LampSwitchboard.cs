@@ -986,7 +986,7 @@ public sealed class LampSwitchboard
         return roll < 0.42f ? 0
             : roll < 0.72f ? 1
             : roll < 0.88f ? 2
-            : 3 + (int)(NextFloat(ref rng) * 4f);
+            : 3 + (int)(NextFloat(ref rng) * 2f);
     }
 
     /// <summary>Decides what sort of lamp a fixture is, from its colour and a hash of where it is listed.</summary>

@@ -257,10 +257,13 @@ public sealed class LampPhotocells
     /// <summary>Wires a new circuit: its photocell's thresholds and its own generator.</summary>
     /// <remarks>
     /// <para>
-    /// A street-lighting photocell switches on at a few tens of lux, which is a sun a few degrees under the
-    /// horizon, and most of these trip between four degrees under and two over. About one in eight is an
-    /// early one -- shaded, or dirty enough to read dusk an hour soon -- and comes on with the sun still
-    /// several degrees up, which is the lamp somebody always notices burning in daylight.
+    /// A street-lighting photocell switches on at a few tens of lux, and most of these trip with the sun
+    /// between the horizon and four degrees over it. That is earlier than a real cell would, on purpose:
+    /// the picture is dark well before the sun is under -- by the time it touched the horizon the yard read
+    /// as night -- and circuits that waited for four degrees under left lamps dark in a dark yard for a
+    /// minute of the day's clock. About one in eight is an early one -- shaded, or dirty enough to read
+    /// dusk an hour soon -- and comes on with the sun still several degrees up, which is the lamp somebody
+    /// always notices burning in daylight.
     /// </para>
     /// <para>
     /// The dead band is a couple of times the switch-on light, as on real cells, so the morning trips at a
@@ -270,7 +273,7 @@ public sealed class LampPhotocells
     private static Circuit NewCircuit(ref uint rng)
     {
         uint own = (rng = (rng * 0x2C9277B5u) + 0xAC564B05u) | 1u;
-        float onSine = -0.07f + (NextFloat(ref own) * 0.11f);
+        float onSine = NextFloat(ref own) * 0.07f;
 
         if (NextFloat(ref own) < 0.12f)
         {
@@ -288,15 +291,16 @@ public sealed class LampPhotocells
     /// <summary>How long a circuit's photocell waits after it trips before its contactor closes or opens.</summary>
     /// <remarks>
     /// Real cells are built to wait, so a car's headlights do not put a street out. Mostly a second or two
-    /// here; about one trip in ten is a lazy one that takes far longer, which is the circuit still dark
-    /// well after its neighbours are lit.
+    /// here; about one trip in ten is a lazy one that takes a few seconds more, which is the circuit still
+    /// dark after its neighbours are lit. It took up to fourteen, which in a yard already dark read as a
+    /// lamp that was broken rather than late.
     /// </remarks>
     private static float ReactionDelay(ref uint rng, bool on)
     {
         float roll = NextFloat(ref rng);
         float delay = NextFloat(ref rng) < 0.1f
-            ? 5f + (roll * 9f)
-            : 0.3f + (roll * roll * 3.2f);
+            ? 2f + (roll * 3f)
+            : 0.3f + (roll * roll * 1.7f);
 
         // Going off at dawn the cell has the same delay, but nobody is waiting for it.
         return on ? delay : delay * 0.8f;
