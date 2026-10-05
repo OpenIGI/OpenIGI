@@ -42,9 +42,18 @@ struct Params
 // HDR-aware weights. How far the clip is relaxed, and how much of the new frame goes in, follow from
 // the rejection verdicts the earlier passes computed.
 
+// The exposure the resolve will apply. The weights below are judged on the colour as it will be seen,
+// not as it was lit: a night is exposed many times over, and on its raw values -- far below one -- the
+// tone weighting flattened into a plain average.
+float Exposure()
+{
+    return max(p.control3.x, 1e-4);
+}
+
 // The accumulation is tone-weighted so a bright sample cannot dominate the average.
 float HdrWeight(float3 c)
 {
+    c *= Exposure();
     return max(1e-4, 1.0 / (c.r + (2.0 * c.g) + c.b + 4.0));
 }
 
@@ -56,6 +65,7 @@ float Luma(float3 c)
 // The space the neighbourhood box is built in: compressive, so the box is not dominated by highlights.
 float3 ToBox(float3 x)
 {
+    x *= Exposure();
     float3 t = x / (x + 0.17);
     return t * t;
 }
@@ -63,7 +73,7 @@ float3 ToBox(float3 x)
 float3 FromBox(float3 s)
 {
     float3 g = sqrt(max(s, 0.0));
-    return (g * 0.17) / max(1.0 - g, 1e-4);
+    return ((g * 0.17) / max(1.0 - g, 1e-4)) / Exposure();
 }
 
 // The reconstruction kernel for an input sample at offset delta (input pixels) under kernel factor k:
