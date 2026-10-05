@@ -50,7 +50,4 @@ public sealed class ShaderArraySizeTests
             variant => Assert.Equal(
                 LocalFogVolume.MaxPerLevel.ToString(CultureInfo.InvariantCulture),
                 variant.Defines["OPENIGI_MAX_FOG_VOLUMES"]));
-
-    private static ShaderVariantEntry Variant(ShaderModuleId module) =>
-        Assert.Single(ShaderCatalog.Manifest.Module(module).Variants);
 }

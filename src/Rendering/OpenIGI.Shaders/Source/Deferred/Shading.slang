@@ -770,18 +770,85 @@ void ApplyWetness(
     albedo *= 1.0 - waterReflectance;
 }
 
-// What one lamp puts on this surface before anything stands in its way: the windowed inverse square, the
-// fitting's facing and the surface's own n.l. Shared by the pass that ranks the lamps and the one that
-// shades them, so the two agree about which lamps matter. Nought for a lamp out of reach or behind.
-float LampReaching(
+// The irradiance a uniform straight emitter puts on a surface, per unit of the emitter's whole intensity:
+// the integral along it of n.L / |L|^3, where L runs from the surface to each point of the emitter, from
+// L0 at one end to L0 + D at the other. Closed form, since |L|^2 is a quadratic in the parameter t:
+//
+//   integral dt / Q^(3/2)   = (a t + b) / (det sqrt(Q))
+//   integral t dt / Q^(3/2) = -(b t + c) / (det sqrt(Q))
+//
+// with Q = a t^2 + 2 b t + c, a = D.D, b = L0.D, c = L0.L0 and det = a c - b^2. The part of the emitter
+// below the surface's horizon gives it nothing, so the interval is first cut to where n.L is positive.
+// A surface the emitter lies along (det near nought) takes it as one point at the middle of what is left.
+float LineIrradiance(float3 n, float3 lineStart, float3 lineDelta)
+{
+    float startFacing = dot(n, lineStart);
+    float deltaFacing = dot(n, lineDelta);
+    float t0 = 0.0;
+    float t1 = 1.0;
+    if (abs(deltaFacing) > 1e-6)
+    {
+        float crossing = -startFacing / deltaFacing;
+        if (deltaFacing > 0.0)
+        {
+            t0 = max(t0, crossing);
+        }
+        else
+        {
+            t1 = min(t1, crossing);
+        }
+    }
+    else if (startFacing <= 0.0)
+    {
+        return 0.0;
+    }
+
+    if (t1 <= t0)
+    {
+        return 0.0;
+    }
+
+    float a = dot(lineDelta, lineDelta);
+    float b = dot(lineStart, lineDelta);
+    float c = dot(lineStart, lineStart);
+    float det = (a * c) - (b * b);
+    if (det <= 1e-5 * a * c)
+    {
+        float3 middle = lineStart + (lineDelta * (0.5 * (t0 + t1)));
+        float distanceSq = max(dot(middle, middle), 1e-4);
+        return saturate(dot(n, middle) * rsqrt(distanceSq)) / distanceSq * (t1 - t0);
+    }
+
+    float q0 = sqrt(max((a * t0 * t0) + (2.0 * b * t0) + c, 1e-8));
+    float q1 = sqrt(max((a * t1 * t1) + (2.0 * b * t1) + c, 1e-8));
+    float at1 = ((startFacing * ((a * t1) + b)) - (deltaFacing * ((b * t1) + c))) / (det * q1);
+    float at0 = ((startFacing * ((a * t0) + b)) - (deltaFacing * ((b * t0) + c))) / (det * q0);
+    return max(at1 - at0, 0.0);
+}
+
+// One lamp's light on this surface towards the eye, before anything stands in its way, and the surface's
+// diffuse share of it for the ranking. Nought for a lamp out of reach, behind its own glass, or below the
+// surface's horizon.
+//
+// A fitting with a measured face is lit as the tube it is: the irradiance integrated along its length (see
+// LineIrradiance), so a long batten throws a long pool rather than a round one and the wall beside it
+// takes the spread-out glow a tube gives; and the highlight is taken at the point along it nearest the
+// reflected view ray, with the lobe widened by the tube's own thickness at that distance, so a wet floor
+// shows a stretched streak rather than a pinpoint. A point lamp is a small sphere: the inverse square stops
+// rising inside its own radius, rather than being softened by a metre everywhere -- which flattened every
+// pool into a disc with a window-shaped edge and took the hot centre out of it.
+float3 LampShade(
     int i,
     float3 viewPos,
     float3 normal,
-    out float3 lightDir,
-    out float3 radiance)
+    float3 toEye,
+    float3 albedo,
+    float metallic,
+    float specularLevel,
+    float roughness,
+    out float diffuseWeight)
 {
-    lightDir = float3(0.0, 0.0, 1.0);
-    radiance = float3(0.0, 0.0, 0.0);
+    diffuseWeight = 0.0;
 
     float4 positionRadius = lamps.positionRadius[i];
     float3 toLightView = positionRadius.xyz - viewPos;
@@ -789,31 +856,92 @@ float LampReaching(
     float reach = positionRadius.w;
     if (distanceSq >= reach * reach)
     {
-        return 0.0;
+        return float3(0.0, 0.0, 0.0);
     }
 
-    float3 toLight = mul(gi.viewToWorld, float4(toLightView, 0.0)).xyz;
-    lightDir = toLight * rsqrt(max(distanceSq, 1e-8));
-    float nDotL = max(dot(normal, lightDir), 0.0);
-    if (nDotL <= 0.0)
-    {
-        return 0.0;
-    }
+    float3 toCentre = mul(gi.viewToWorld, float4(toLightView, 0.0)).xyz;
+    float3 centreDir = toCentre * rsqrt(max(distanceSq, 1e-8));
 
     float ratio = distanceSq / max(reach * reach, 1e-4);
     float window = clamp(1.0 - (ratio * ratio), 0.0, 1.0);
     window *= window;
-    float attenuation = window / (distanceSq + 1.0);
 
     float4 facing = lamps.direction[i];
     if (dot(facing.xyz, facing.xyz) > 0.25)
     {
         float3 axis = mul(gi.viewToWorld, float4(facing.xyz, 0.0)).xyz;
-        attenuation *= max(dot(normalize(axis), -lightDir), 0.0);
+        window *= max(dot(normalize(axis), -centreDir), 0.0);
     }
 
-    radiance = lamps.colourIntensity[i].rgb * lamps.colourIntensity[i].a * attenuation;
-    return dot(radiance, float3(0.2126, 0.7152, 0.0722)) * nDotL;
+    if (window <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float3 colour = lamps.colourIntensity[i].rgb * lamps.colourIntensity[i].a * window;
+    float source = clamp(facing.w, 0.05, 1.0);
+
+    float4 rect = lamps.rect[i];
+    float3 halfAxis = mul(gi.viewToWorld, float4(rect.xyz, 0.0)).xyz;
+    bool tube = dot(halfAxis, halfAxis) > 1e-4;
+
+    // The diffuse irradiance, per unit of the lamp's intensity.
+    float irradiance;
+    float3 toSpecular = toCentre;
+    float thickness = source;
+    if (tube)
+    {
+        float3 lineStart = toCentre - halfAxis;
+        float3 lineDelta = halfAxis * 2.0;
+        irradiance = LineIrradiance(normal, lineStart, lineDelta);
+
+        // Where along the tube the reflected view ray passes closest: the point whose light the highlight
+        // is made of.
+        float3 reflected = reflect(-toEye, normal);
+        float along = dot(reflected, lineDelta);
+        float denominator = dot(lineDelta, lineDelta) - (along * along);
+        float t = denominator > 1e-6
+            ? ((dot(reflected, lineStart) * along) - dot(lineStart, lineDelta)) / denominator
+            : 0.5;
+        toSpecular = lineStart + (lineDelta * saturate(t));
+        thickness = clamp(rect.w, 0.02, source);
+    }
+    else
+    {
+        irradiance = saturate(dot(normal, centreDir)) / max(distanceSq, source * source);
+    }
+
+    float specularDistanceSq = max(dot(toSpecular, toSpecular), 1e-6);
+    float3 specularDir = toSpecular * rsqrt(specularDistanceSq);
+
+    diffuseWeight = dot(colour, float3(0.2126, 0.7152, 0.0722)) * irradiance;
+    if (irradiance <= 0.0 && dot(normal, specularDir) <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    // The highlight: the lobe widened by the angle the source spans from here, and renormalised so the
+    // wider lobe carries the same energy rather than more.
+    float alpha = max(roughness, 0.02) * max(roughness, 0.02);
+    float widened = saturate(alpha + (thickness / (2.0 * sqrt(specularDistanceSq))));
+    float normalisation = (alpha / widened) * (alpha / widened);
+
+    float3 lobeDiffuse;
+    float3 lobeSpecular;
+    EvaluateSurface(
+        albedo,
+        metallic,
+        specularLevel,
+        sqrt(widened),
+        normal,
+        toEye,
+        specularDir,
+        lobeDiffuse,
+        lobeSpecular);
+
+    float3 diffuseColour = albedo * (1.0 - metallic);
+    float specularIrradiance = 1.0 / max(specularDistanceSq, thickness * thickness);
+    return colour * ((diffuseColour * irradiance) + (lobeSpecular * normalisation * specularIrradiance * kPi));
 }
 
 // How much of the flashlight gets past what stands in its way at this pixel: one where no mask was made.
@@ -1100,27 +1228,14 @@ float4 fragmentMain(Varyings input) : SV_Target
     float3 lampLight = float3(0.0, 0.0, 0.0);
     for (int i = 0; i < lampCount; i++)
     {
-        float3 lightDir;
-        float3 radiance;
-        if (LampReaching(i, viewPos, normal, lightDir, radiance) < 1e-5)
+        float lampWeight;
+        float3 lampTerm = LampShade(
+            i, viewPos, normal, worldView, albedo, metallic, specularLevel, roughness, lampWeight) * lampOcclusion;
+        if (all(lampTerm <= float3(0.0, 0.0, 0.0)))
         {
             continue;
         }
 
-        float3 lampDiffuse;
-        float3 lampSpecular;
-        EvaluateSurface(
-            albedo,
-            metallic,
-            specularLevel,
-            roughness,
-            normal,
-            worldView,
-            lightDir,
-            lampDiffuse,
-            lampSpecular);
-
-        float3 lampTerm = (lampDiffuse + lampSpecular) * radiance * kPi * lampOcclusion;
         sunLight += lampTerm;
         lampLight += lampTerm;
     }
