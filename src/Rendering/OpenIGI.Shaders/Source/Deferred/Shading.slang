@@ -439,8 +439,49 @@ float CascadeVisibility(int i, float3 base, float3 worldNormal, float radiusTexe
     float nearestTexel = (2.0 * gi.shadowConfig.w)
         / max(length(float3(nearest[0][0], nearest[1][0], nearest[2][0])), 1e-6);
     float filterTexels = max(radiusTexels * nearestTexel / max(texel, 1e-6), 1.0);
+    float2 uv = float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
 
-    return PcfShadow(i, float3((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5), depth), filterTexels, pixel);
+    // And wider where the occluder stands further off. The sun is a disc a little over half a degree
+    // across, so a shadow's edge blurs by the occluder's height above the receiver times the tangent of
+    // its half-angle: a fence post's foot is razor sharp, the tip of a long building's shadow soft. The
+    // occluders round the point are found in the map and their mean height taken, as the traced sun's
+    // denoiser takes it from its hit distance; a fixed filter made every edge the same, so near shadows
+    // read pasted on and far ones aliased.
+    uint mapWidth;
+    uint mapHeight;
+    uint mapLayers;
+    uShadowMap.GetDimensions(mapWidth, mapHeight, mapLayers);
+    int2 mapSize = int2(int(mapWidth), int(mapHeight));
+
+    // Searched as far as the penumbra of something thirty metres up would reach.
+    const float kSunHalfAngleTangent = 0.00468;
+    float searchTexels = clamp((30.0 * kSunHalfAngleTangent) / max(texel, 1e-6), 2.0, 16.0);
+    float angle = ShadowNoise(pixel + float2(7.0, 3.0)) * 6.2831853;
+    float s = sin(angle);
+    float c = cos(angle);
+    float blockerSum = 0.0;
+    float blockers = 0.0;
+    for (int k = 0; k < 12; k++)
+    {
+        float2 tap = kShadowDisc[k];
+        float2 offset = float2((tap.x * c) - (tap.y * s), (tap.x * s) + (tap.y * c)) * (searchTexels * gi.shadowConfig.w);
+        int2 texelAt = clamp(int2((uv + offset) * float2(mapSize)), int2(0, 0), mapSize - 1);
+        float stored = uShadowMap.Load(int4(texelAt, i, 0));
+        if (stored < depth)
+        {
+            blockerSum += depth - stored;
+            blockers += 1.0;
+        }
+    }
+
+    if (blockers > 0.0)
+    {
+        float heightMetres = (blockerSum / blockers) * depthRange;
+        float penumbraTexels = (heightMetres * kSunHalfAngleTangent) / max(texel, 1e-6);
+        filterTexels = clamp(max(filterTexels, penumbraTexels), 1.0, 24.0);
+    }
+
+    return PcfShadow(i, float3(uv, depth), filterTexels, pixel);
 }
 
 // Which cascade covers this pixel, and what it says. The last tenth of each slice is blended into the

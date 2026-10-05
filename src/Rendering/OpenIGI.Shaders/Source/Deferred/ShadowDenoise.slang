@@ -16,6 +16,10 @@
 
 [[vk::binding(6, 0)]] [[vk::image_format("r8")]] WTexture2D<float4> uShadow;
 
+// The G-buffer's world normals, so the spread stays on one surface: see the tap weight below.
+[[vk::binding(8, 0)]] Texture2D<float4> uNormal;
+[[vk::binding(9, 0)]] SamplerState uNormalSampler;
+
 struct Params
 {
     // width, height, 1/width, 1/height.
@@ -56,6 +60,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
     float2 centre = uRaw.Load(int3(px, 0)).xy;
     float centreDepth = uDepth.Load(int3(px, 0)).x;
+    float3 centreNormal = normalize((uNormal.Load(int3(px, 0)).xyz * 2.0) - 1.0);
 
     // Sky, or a surface facing away from the sun. Neither has a penumbra: the first is shadowed by
     // nothing and the second shadows itself completely, and the trace recorded no occluder distance for
@@ -144,6 +149,13 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         // distance instead of only near the camera.
         float tapViewZ = ViewDepthAt(tapDepth, p.unproject);
         float weight = (tapDepth > 0.0 && abs(tapViewZ - viewZ) < (viewZ * 0.02)) ? 1.0 : 0.0;
+
+        // And not across a crease. Where a wall meets the ground the two stand at the same depth, so the
+        // depth test let the lit wall and the shadowed ground average into each other and the line where
+        // they meet went soft; their normals are what tells them apart.
+        float3 tapNormal = normalize((uNormal.SampleLevel(uNormalSampler, tapUv, 0.0).xyz * 2.0) - 1.0);
+        float facing = saturate(dot(tapNormal, centreNormal));
+        weight *= facing * facing * facing * facing;
 
         visibility += tapVisibility * weight;
         weightSum += weight;
