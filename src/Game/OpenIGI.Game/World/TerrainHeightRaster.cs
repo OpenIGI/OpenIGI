@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 
 namespace OpenIGI.Game.World;
 
@@ -25,6 +26,7 @@ public static class TerrainHeightRaster
     private const double VerticalSlack = 200.0;
 
     /// <summary>Samples the terrain's height over a rectangle of the level.</summary>
+    /// <param name="work">Runs the rows side by side.</param>
     /// <param name="terrain">The level's terrain.</param>
     /// <param name="minX">The rectangle's low X, in metres.</param>
     /// <param name="minY">Its low Y, in metres.</param>
@@ -36,6 +38,7 @@ public static class TerrainHeightRaster
     /// <param name="cancellation">Stops the sampling, which runs to a few hundred thousand descents.</param>
     /// <returns>The raster, with open sky wherever no terrain lies under a cell.</returns>
     public static ShelterHeightField Build(
+        IWorkScheduler work,
         TerrainData terrain,
         double minX,
         double minY,
@@ -46,6 +49,7 @@ public static class TerrainHeightRaster
         double cellMetres = DefaultCellMetres,
         CancellationToken cancellation = default)
     {
+        ArgumentNullException.ThrowIfNull(work);
         ArgumentNullException.ThrowIfNull(terrain);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(cellMetres);
 
@@ -60,10 +64,10 @@ public static class TerrainHeightRaster
         double bottom = (lowZ - VerticalSlack) * WorldScene.UnitsPerMetre;
         float[] height = new float[width * depth];
 
-        Parallel.For(
+        work.ForRange(
             0,
             depth,
-            new ParallelOptions { CancellationToken = cancellation },
+            Math.Max(1, Environment.ProcessorCount - 1),
             row =>
             {
                 double y = (minY + ((row + 0.5) * cellMetres)) * WorldScene.UnitsPerMetre;
@@ -77,7 +81,8 @@ public static class TerrainHeightRaster
                         ? (float)(ground.Height / WorldScene.UnitsPerMetre)
                         : ShelterHeightField.OpenSky;
                 }
-            });
+            },
+            cancellation);
 
         return ShelterHeightField.FromHeights(height, width, depth, minX, minY, cellMetres);
     }
