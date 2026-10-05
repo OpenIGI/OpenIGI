@@ -70,6 +70,21 @@ public sealed class SkyAtmosphere : IDisposable
     // from one still holding an hour ago. See SkyViewBuilds.
     private readonly int[] _slotBuild;
 
+    // Whether a slot's copy has been submitted, which is when it may be mapped; and the next slot the copy
+    // goes into, round the whole ring rather than by frame in flight.
+    private readonly bool[] _slotSubmitted;
+    private int _nextReadback;
+
+    /// <summary>How many copies of the harmonics are kept in flight, more than the frames are.</summary>
+    /// <remarks>
+    /// With one slot a frame in flight -- two -- the reader had the copy recorded this frame, which it may
+    /// not touch, and last frame's, which had not arrived when the game asked mid-frame. While the sky
+    /// changed it therefore waited for last frame's GPU work to finish, every frame, and holding the time
+    /// scrub ran the frame at the CPU's and the GPU's time added together: forty-four per cent of the main
+    /// thread spent waiting. Four slots keep a copy two or three frames old always arrived.
+    /// </remarks>
+    private const int ReadbackSlots = 4;
+
     private bool _staticTablesBuilt;
     private bool _dynamicBuilt;
     private SkyConditions _last;
@@ -105,11 +120,14 @@ public sealed class SkyAtmosphere : IDisposable
         _skyViewBlock = new ComputeParameters(device, SkyParameters.Bytes, framesInFlight, "sky.view");
         _irradianceBlock = new ComputeParameters(device, SkyParameters.Bytes, framesInFlight, "sky.irradiance");
 
-        _readback = new IRhiBuffer[framesInFlight];
-        _pending = new IRhiReadback?[framesInFlight];
-        _slotBuild = new int[framesInFlight];
+        int slots = Math.Max(framesInFlight, ReadbackSlots);
+        _readback = new IRhiBuffer[slots];
+        _pending = new IRhiReadback?[slots];
+        _slotBuild = new int[slots];
+        _slotSubmitted = new bool[slots];
+        Array.Fill(_slotBuild, -1);
 
-        for (int i = 0; i < framesInFlight; i++)
+        for (int i = 0; i < slots; i++)
         {
             _readback[i] = device.CreateBuffer(new RhiBufferDescriptor(
                 (ulong)RhiBufferTextureCopy.AlignRow(IrradianceWidth * 16),
@@ -228,6 +246,74 @@ public sealed class SkyAtmosphere : IDisposable
         _slotBuild[slot] = SkyViewBuilds;
     }
 
+    /// <summary>Copies this frame's harmonics into the next slot of the ring, for <see cref="TryReadNewest"/>.</summary>
+    /// <param name="encoder">The encoder to record the copy into, outside any pass.</param>
+    /// <returns>The slot copied into, or -1 when the ring's next slot is still being mapped.</returns>
+    public int RecordNextReadback(IRhiCommandEncoder encoder)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int slot = _nextReadback % _readback.Length;
+        if (_pending[slot] is { IsComplete: false })
+        {
+            return -1;
+        }
+
+        encoder.CopyTextureToBuffer(
+            new RhiTextureRegion(_irradiance),
+            new RhiBufferTextureCopy(_readback[slot], 0, RhiBufferTextureCopy.AlignRow(IrradianceWidth * 16), 1),
+            new RhiExtent3D(IrradianceWidth, 1));
+
+        _pending[slot]?.Dispose();
+        _pending[slot] = null;
+        _slotBuild[slot] = SkyViewBuilds;
+        _slotSubmitted[slot] = false;
+        _nextReadback = (_nextReadback + 1) % _readback.Length;
+        return slot;
+    }
+
+    /// <summary>Reads the newest harmonics that have already arrived, if they are newer than a march.</summary>
+    /// <param name="afterBuild">The march the caller's harmonics were taken after; only newer ones are read.</param>
+    /// <param name="destination">Room for <see cref="IrradianceFloats"/> floats.</param>
+    /// <param name="build">Receives the march the harmonics read were taken after.</param>
+    /// <returns><see langword="true"/> when newer harmonics were read.</returns>
+    /// <remarks>Never waits: a copy that has not arrived is passed over for an older one that has.</remarks>
+    public bool TryReadNewest(int afterBuild, Span<float> destination, out int build)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        build = afterBuild;
+        if (destination.Length < IrradianceFloats)
+        {
+            return false;
+        }
+
+        int best = -1;
+        for (int slot = 0; slot < _readback.Length; slot++)
+        {
+            if (!_slotSubmitted[slot]
+                || _slotBuild[slot] <= build
+                || _pending[slot] is not { } readback
+                || !readback.Wait(TimeSpan.Zero) && !readback.IsComplete)
+            {
+                continue;
+            }
+
+            best = slot;
+            build = _slotBuild[slot];
+        }
+
+        if (best < 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<float> floats = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(
+            _pending[best]!.GetData());
+        floats[..IrradianceFloats].CopyTo(destination);
+        return true;
+    }
+
     /// <summary>Gets which march a slot's copied harmonics were taken after.</summary>
     /// <param name="frameInFlight">The slot.</param>
     /// <returns>The <see cref="SkyViewBuilds"/> count when its copy was recorded.</returns>
@@ -245,6 +331,7 @@ public sealed class SkyAtmosphere : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         int slot = frameInFlight % _readback.Length;
+        _slotSubmitted[slot] = true;
         _pending[slot] ??= _device.ReadBuffer(_readback[slot]);
     }
 

@@ -65,8 +65,6 @@ public sealed partial class GraphicsDevice
     // Which march of the sky the held harmonics were copied after; see TryGetSkyIrradiance.
     private int _skyIrradianceBuild;
 
-    /// <summary>The longest the game is held for harmonics the sky has just changed to.</summary>
-    private static readonly TimeSpan SkyIrradianceWait = TimeSpan.FromMilliseconds(50);
     private BloomPass? _bloom;
     private SunShaftPass? _sunShafts;
     private IRhiBindGroupLayout? _surfaceLayout;
@@ -656,39 +654,28 @@ public sealed partial class GraphicsDevice
             sky.Record(pass, FrameSlot, SkyConditions.ForScene(_lighting, _viewToWorld, altitudeMetres: 2f));
         }
 
-        sky.RecordReadback(encoder, FrameSlot);
-        _skyRecordedSlot = FrameSlot;
+        _skyRecordedSlot = sky.RecordNextReadback(encoder);
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Read from the harmonics the atmosphere copies down every frame — from the last frame SUBMITTED,
-    /// because the game asks mid-frame, after this frame's copy is recorded and before it is sent, and a
-    /// buffer mapped in that gap is one WebGPU will not let the frame copy into. Never the slot this frame
-    /// is copying into, either: a frame that drew no sky leaves the last copy's slot standing, and a later
-    /// frame can come round to that same slot. Nothing is waited for: while a slot's copy has not arrived,
-    /// the last harmonics that did are answered again -- which, for a sky that moves with the sun rather
-    /// than with the frame, is the same answer. No only before any have arrived.
+    /// Read from the harmonics the atmosphere copies down every frame, into a ring of its own deeper than
+    /// the frames in flight -- only from copies already SUBMITTED, because the game asks mid-frame, after
+    /// this frame's copy is recorded and before it is sent, and a buffer mapped in that gap is one WebGPU
+    /// will not let the frame copy into. Nothing is waited for: the newest copy that has arrived is read,
+    /// and while none newer has, the last harmonics that did are answered again. No only before any have
+    /// arrived.
     /// </remarks>
     public bool TryGetSkyIrradiance(Span<float> coefficients)
     {
         ThrowIfDisposed();
-        if (_sky is { } sky
-            && _skySubmittedSlot >= 0
-            && _skySubmittedSlot != _skyRecordedSlot)
+        // The newest copy that has already arrived, from any slot of the sky's ring: never a wait. The ring
+        // is deeper than the frames in flight, so while the sky changes a copy two or three frames old is
+        // always there, and the answer trails the sun by those frames rather than stalling every one.
+        if (_sky is { } sky && sky.TryReadNewest(_skyIrradianceBuild, _skyIrradiance, out int arrived))
         {
-            // Without waiting, which is every frame of a sky that is not changing. But where the answer held
-            // is from before the sky last changed and the slot sent since holds the change, it is waited for:
-            // the copy is a frame old and arrives in a moment. Not waiting, a sky being scrubbed through
-            // the day never let a copy arrive while it moved, and the GI was handed the noon sky for as long
-            // as the scrub lasted and long after -- the world stayed lit under a black sky at midnight.
-            int submittedBuild = sky.BuildOf(_skySubmittedSlot);
-            TimeSpan wait = _skyIrradianceBuild < submittedBuild ? SkyIrradianceWait : TimeSpan.Zero;
-            if (sky.TryReadIrradiance(_skySubmittedSlot, _skyIrradiance, wait))
-            {
-                _skyIrradianceKnown = true;
-                _skyIrradianceBuild = submittedBuild;
-            }
+            _skyIrradianceKnown = true;
+            _skyIrradianceBuild = arrived;
         }
 
         // Once any have arrived, always an answer: a sky moves with the sun, not from one frame to the

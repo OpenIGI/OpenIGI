@@ -57,7 +57,13 @@ internal sealed partial class GameHost
     private int _giRefreshLastFrame = -1;
 
     /// <summary>How many slices of the whole cache the far refresh relights a frame while the sun is moving.</summary>
-    private const int GiSunFollowSlices = 8;
+    /// <remarks>
+    /// Three rather than eight. Each slice is a relight and a bounce of a 128th of the whole level, about one
+    /// and a half milliseconds at ultra, and eight of them took the frame from a hundred frames a second to
+    /// thirty-three for as long as the scrub key was held. Three keep a whole pass inside a second at sixty,
+    /// still quicker than the scrub crosses dusk.
+    /// </remarks>
+    private const int GiSunFollowSlices = 3;
 
         /// <summary>How many whole sweeps the far refresh runs after its inputs last changed, before it idles.</summary>
     /// <remarks>
