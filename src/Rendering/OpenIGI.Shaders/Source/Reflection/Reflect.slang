@@ -219,6 +219,26 @@ static const float3 kLuminance = float3(0.2126, 0.7152, 0.0722);
 // The scene's view depth at a UV, read at the one texel under it rather than blended across the four round
 // it: at a silhouette a blend of foreground and background is a depth no surface has. Nought where the
 // texel is open sky.
+// How much of a sky the ray did not find in the way is still hidden by the surface's own crevices: the
+// shading's specular occlusion, from the material's occlusion, for the fallbacks alone -- a ray that struck
+// something already answers for what is in the way. Without it a crease, the underside of an eave, the
+// shade under a vehicle each glinted with the full sky.
+float FallbackOcclusion(float nDotV, float roughness, float2 uv)
+{
+    float visibility = saturate(uBaseColour.SampleLevel(uBaseColourSampler, uv, 0.0).a);
+    float alpha = roughness * roughness;
+    return clamp(pow(nDotV + visibility, alpha) - 1.0 + visibility, 0.0, 1.0);
+}
+
+float PointDepth(float2 uv)
+{
+    uint width;
+    uint height;
+    uSceneDepth.GetDimensions(width, height);
+    int2 texel = clamp(int2(uv * float2(width, height)), int2(0, 0), int2(int(width) - 1, int(height) - 1));
+    return uSceneDepth.Load(int3(texel, 0));
+}
+
 float SampleSceneViewZ(float2 uv)
 {
     uint width;
@@ -575,7 +595,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             break;
         }
 
-        float d = DepthBilinear(uSceneDepth, uSceneDepthSampler, huv);
+        // The texel under the step, not a blend of four: at a silhouette a blend of foreground and background
+        // is a depth no surface has, and the march found phantom surfaces there -- halos and streaks round
+        // every edge it reflected.
+        float d = PointDepth(huv);
         if (d <= 0.0)
         {
             // Open sky at this sample: the ray is in clear air, with no surface to cross. It may still
@@ -612,7 +635,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                 for (int k = 0; k < 5; k++)
                 {
                     float3 mid = (a + b) * 0.5;
-                    float md = DepthBilinear(uSceneDepth, uSceneDepthSampler, ViewToUv(mid));
+                    float md = PointDepth(ViewToUv(mid));
                     if (md > 0.0 && mid.z - SceneViewZ(md) > 0.0)
                     {
                         b = mid;
@@ -778,7 +801,8 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             // this term in its pixel -- adding it again is the double count that once made wet ground a
             // stop and a half too bright. A glossy or a metal surface gets no such term from the shading,
             // which is why one facing an empty street came out black rather than showing the sky over it.
-            reflection = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w) * reflectance;
+            reflection = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w) * reflectance
+                * FallbackOcclusion(nDotV, roughness, uv);
         }
     }
 
@@ -826,7 +850,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             // The roof raster is already here for the water; it answers this too.
             float3 sky = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w);
             float grey = dot(sky, kLuminance) * kUnknownAlbedo;
-            radiance = lostCeiling ? float3(grey, grey, grey) : sky;
+            radiance = (lostCeiling ? float3(grey, grey, grey) : sky) * FallbackOcclusion(nDotV, roughness, uv);
         }
         else
         {
@@ -885,7 +909,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                 // were the picture.
                 float3 sky = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w);
                 float grey = dot(sky, kLuminance) * kUnknownAlbedo;
-                radiance = lostCeiling ? float3(grey, grey, grey) : sky;
+                radiance = (lostCeiling ? float3(grey, grey, grey) : sky) * FallbackOcclusion(nDotV, roughness, uv);
             }
         }
 
