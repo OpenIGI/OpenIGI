@@ -512,6 +512,8 @@ public sealed partial class GraphicsDevice
                     sunUv,
                     shafts * SunShaftScale,
                     visible,
+                    Math.Min(shafts, 1f) * SunShaftOcclusion,
+                    (_unprojection.Near, _unprojection.Far),
                     FrameSlot);
                 return _sunShafts.Result;
             }
@@ -526,6 +528,13 @@ public sealed partial class GraphicsDevice
     /// doubled the sky's brightness there; a quarter left the rays too faint to find.
     /// </remarks>
     private const float SunShaftScale = 0.4f;
+
+    /// <summary>How deep the shadows the occluders cast into the haze round the sun are cut, at a strength of one.</summary>
+    /// <remarks>
+    /// The shafts are mostly these: the lit air either side of an occluder's shadow. Bright rays alone, added
+    /// to an already bright sky, read as a smear rather than as light.
+    /// </remarks>
+    private const float SunShaftOcclusion = 0.6f;
 
     /// <summary>Where the sun stands on screen, and how much of its shafts that leaves.</summary>
     /// <param name="uv">The sun's screen position, which may lie off the screen.</param>

@@ -19,7 +19,12 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 public sealed class SunShaftPass : IDisposable
 {
     private const RhiTextureFormat Format = RhiTextureFormat.Rgba16Float;
-    private const int BlockFloats = 16;
+    private const int BlockFloats = 20;
+
+    // The share of the sky round the disc the bright rays' mask ignores below, and the radius of the
+    // core they come from, in screen heights.
+    private const float CoreThreshold = 0.8f;
+    private const float CoreRadius = 0.35f;
 
     // The two blurs' steps, each as a share of the way to the sun per tap: the first reaches all the way in
     // its sixteen taps, the second fills the gap between two of them with its own sixteen. Half the way left
@@ -87,6 +92,8 @@ public sealed class SunShaftPass : IDisposable
     /// <param name="sunUv">Where the sun stands on screen.</param>
     /// <param name="strength">How strongly the shafts are added.</param>
     /// <param name="visible">How much of the sun's effect its place on screen leaves, 0 to 1.</param>
+    /// <param name="occlusion">How deep the shadowed shafts are cut into the haze, 0 to 1.</param>
+    /// <param name="depthRange">The near and far planes the depth was drawn with.</param>
     /// <param name="frameInFlight">Which parameter buffers this frame writes.</param>
     public void Record(
         IRhiComputePassEncoder pass,
@@ -102,6 +109,8 @@ public sealed class SunShaftPass : IDisposable
         (float X, float Y) sunUv,
         float strength,
         float visible,
+        float occlusion,
+        (float Near, float Far) depthRange,
         int frameInFlight)
     {
         ArgumentNullException.ThrowIfNull(pass);
@@ -114,16 +123,16 @@ public sealed class SunShaftPass : IDisposable
 
         Span<float> block = stackalloc float[BlockFloats];
 
-        Fill(block, width, height, sunUv, 0f, 0f, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight);
+        Fill(block, width, height, sunUv, 0f, 0f, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight, occlusion, depthRange);
         Run(pass, _mask, _maskBlock, frameInFlight, block, scene, depth, bloom, _a!, width, height);
 
-        Fill(block, width, height, sunUv, 1f, FirstStep, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight);
+        Fill(block, width, height, sunUv, 1f, FirstStep, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight, occlusion, depthRange);
         Run(pass, _first, _firstBlock, frameInFlight, block, _a!.View, depth, bloom, _b!, width, height);
 
-        Fill(block, width, height, sunUv, 2f, SecondStep, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight);
+        Fill(block, width, height, sunUv, 2f, SecondStep, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight, occlusion, depthRange);
         Run(pass, _second, _secondBlock, frameInFlight, block, _b!.View, depth, bloom, _a!, width, height);
 
-        Fill(block, width, height, sunUv, 3f, 0f, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight);
+        Fill(block, width, height, sunUv, 3f, 0f, strength, visible, sceneWidth, sceneHeight, depthWidth, depthHeight, occlusion, depthRange);
         _composite.Bind("uShafts", _a!.View, _sampler);
         Run(pass, _composite, _compositeBlock, frameInFlight, block, bloom, depth, null, _result!, width, height);
     }
@@ -163,7 +172,9 @@ public sealed class SunShaftPass : IDisposable
         int sceneWidth,
         int sceneHeight,
         int depthWidth,
-        int depthHeight)
+        int depthHeight,
+        float occlusion,
+        (float Near, float Far) depthRange)
     {
         block.Clear();
         block[0] = width;
@@ -179,14 +190,18 @@ public sealed class SunShaftPass : IDisposable
         // sun, which leaves an overcast sky's general brightness alone); how tightly it hugs the sun; and
         // how much the sun's place on screen leaves.
         block[8] = strength;
-        block[9] = 0f;
-        block[10] = 4f;
+        block[9] = CoreThreshold;
+        block[10] = CoreRadius;
         block[11] = visible;
 
         block[12] = sceneWidth;
         block[13] = sceneHeight;
         block[14] = depthWidth;
         block[15] = depthHeight;
+
+        block[16] = depthRange.Near;
+        block[17] = depthRange.Far;
+        block[18] = occlusion;
     }
 
     private ComputeParameters Block(int framesInFlight, string label) =>

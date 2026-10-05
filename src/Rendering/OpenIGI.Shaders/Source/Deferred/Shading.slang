@@ -824,6 +824,37 @@ void ApplyWetness(
     albedo *= 1.0 - waterReflectance;
 }
 
+// The sun's angular radius, in radians, and the most a pixel of its disc may carry: a half-float target
+// holds no more than some sixty-five thousand, and the bloom and the temporal resolve want headroom over it.
+static const float kSunAngularRadius = 0.00468;
+static const float kSunDiscCeiling = 4000.0;
+
+// The sun's disc where a view ray meets it: its illuminance over the solid angle it subtends, darkened
+// towards its limb as the real one is, its edge softened over a pixel so it does not crawl, and never less
+// than a pixel across.
+float3 SunDisc(float3 worldRay, float3 sunDirection, float3 illuminance, float pixelAngle)
+{
+    float cosine = dot(worldRay, sunDirection);
+    if (cosine <= 0.999 || sunDirection.z <= -0.02)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float angle = acos(saturate(cosine));
+    float radius = max(kSunAngularRadius, pixelAngle);
+    float cover = 1.0 - smoothstep(radius - (pixelAngle * 0.5), radius + (pixelAngle * 0.5), angle);
+    if (cover <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float r = saturate(angle / radius);
+    float limb = 0.4 + (0.6 * sqrt(max(1.0 - (r * r), 0.0)));
+    float solidAngle = 6.2831853 * (1.0 - cos(radius));
+    return min(illuminance / max(solidAngle, 1e-8), float3(kSunDiscCeiling, kSunDiscCeiling, kSunDiscCeiling))
+        * (limb * cover);
+}
+
 // The irradiance a uniform straight emitter puts on a surface, per unit of the emitter's whole intensity:
 // the integral along it of n.L / |L|^3, where L runs from the surface to each point of the emitter, from
 // L0 at one end to L0 + D at the other. Closed form, since |L|^2 is a quadratic in the parameter t:
@@ -1071,6 +1102,17 @@ float4 fragmentMain(Varyings input) : SV_Target
         float3 viewRay = normalize(float3(ndc.x / gi.unproject.x, -ndc.y / gi.unproject.y, 1.0));
         float3 worldRay = normalize(mul(gi.viewToWorld, float4(viewRay, 0.0)).xyz);
         float3 background = SampleSkyBackground(uSkyView, uSkyViewSampler, worldRay, viewHeightKm);
+
+        // The sun's own disc, which the sky's table is far too coarse to hold. Its radiance is the
+        // sunlight spread over the little solid angle the disc subtends -- some ten thousand times the
+        // sky round it -- so it is what glares, blooms, and throws rays through every gap in front of
+        // it; without it the sun was a soft patch of haze and nothing in front of it cast a ray.
+        float sunPixelAngle = (2.0 * uvPixelWidth) / max(gi.unproject.x, 1e-4);
+        background += SunDisc(
+            worldRay,
+            normalize(mul(gi.viewToWorld, float4(light.sunDirectionModel.xyz, 0.0)).xyz),
+            light.sunColourScale.rgb * light.sunColourScale.w,
+            sunPixelAngle);
 
         // The stars and the moon over the air, dimmed by as much of it as their light crosses. A pixel's
         // angular width at the centre of the view keeps every star at least a pixel across.

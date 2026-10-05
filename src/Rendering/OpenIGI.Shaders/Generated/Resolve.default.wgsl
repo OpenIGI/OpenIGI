@@ -394,7 +394,8 @@ fn ResolveDisplay_0( input_0 : FullscreenVaryings_0) -> vec4<f32>
         var colour_6 : vec3<f32>;
         if((resolve_0.vignette_0.z) > 0.5f)
         {
-            colour_6 = colour_5 + max((textureSample((uBloom_0), (uBloomSampler_0), (input_0.uv_0))).xyz, vec3<f32>(0.0f, 0.0f, 0.0f)) * vec3<f32>(resolve_0.params_0.x);
+            var bloom_0 : vec4<f32> = (textureSample((uBloom_0), (uBloomSampler_0), (input_0.uv_0)));
+            colour_6 = colour_5 * vec3<f32>(saturate(bloom_0.w)) + max(bloom_0.xyz, vec3<f32>(0.0f, 0.0f, 0.0f)) * vec3<f32>(resolve_0.params_0.x);
         }
         else
         {

@@ -259,7 +259,10 @@ float4 ResolveDisplay(Varyings input)
         // daylight-sized halo that all but vanished beside them, and a bright view's bloomed too strongly.
         if (resolve.vignette.z > 0.5)
         {
-            colour += max(uBloom.Sample(uBloomSampler, vUv).rgb, float3(0.0, 0.0, 0.0)) * resolve.params.x;
+            // Its alpha is what the scene is multiplied by: one, but where the sun's shafts cut an
+            // occluder's shadow into the haze round the sun.
+            float4 bloom = uBloom.Sample(uBloomSampler, vUv);
+            colour = (colour * saturate(bloom.a)) + (max(bloom.rgb, float3(0.0, 0.0, 0.0)) * resolve.params.x);
         }
 
         colour = ApplyNightShift(colour) * vignette;
