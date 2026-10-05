@@ -68,6 +68,7 @@ public sealed partial class GraphicsDevice
     /// <summary>The longest the game is held for harmonics the sky has just changed to.</summary>
     private static readonly TimeSpan SkyIrradianceWait = TimeSpan.FromMilliseconds(50);
     private BloomPass? _bloom;
+    private SunShaftPass? _sunShafts;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
     private IRhiBindGroup? _surfaceGroup;
@@ -491,9 +492,66 @@ public sealed partial class GraphicsDevice
                 post.BloomIntensity,
                 post.BloomThreshold,
                 FrameSlot);
+
+            // The sun's shafts, laid onto the bloom where the sun is on screen or near it.
+            float shafts = RenderCVars.SunShafts.Value;
+            if (shafts > 0f && bloom.Result is { } summed && SunOnScreen(out (float X, float Y) sunUv, out float visible))
+            {
+                _sunShafts ??= new SunShaftPass(_device, FramesInFlight, _retired);
+                _sunShafts.Record(
+                    pass,
+                    colour,
+                    width,
+                    height,
+                    scene.View(SceneTargetId.Depth),
+                    scene.Width,
+                    scene.Height,
+                    summed,
+                    Math.Max(1, width >> 1),
+                    Math.Max(1, height >> 1),
+                    sunUv,
+                    shafts * SunShaftScale,
+                    visible,
+                    FrameSlot);
+                return _sunShafts.Result;
+            }
         }
 
         return bloom.Result;
+    }
+
+    /// <summary>What the sky round the sun adds to the bloom as shafts, at a strength of one.</summary>
+    /// <remarks>
+    /// A quarter: the mask is the sky's own radiance, and laid on at full strength the glow round the sun
+    /// doubled the sky's brightness there.
+    /// </remarks>
+    private const float SunShaftScale = 0.25f;
+
+    /// <summary>Where the sun stands on screen, and how much of its shafts that leaves.</summary>
+    /// <param name="uv">The sun's screen position, which may lie off the screen.</param>
+    /// <param name="visible">One with the sun well on screen, fading to nought as it leaves it or turns behind.</param>
+    /// <returns>Whether there is anything to draw.</returns>
+    private bool SunOnScreen(out (float X, float Y) uv, out float visible)
+    {
+        Vector3f sun = _lighting.SunDirection;
+        uv = default;
+        visible = 0f;
+        if (sun.Z <= 0.05f)
+        {
+            return false;
+        }
+
+        uv = (
+            0.5f + (sun.X * _unprojection.XScale / (2f * sun.Z)),
+            0.5f - (sun.Y * _unprojection.YScale / (2f * sun.Z)));
+
+        // Off the screen by as much as a third of it the glow still reaches in; past that, nothing.
+        float outside = MathF.Max(
+            MathF.Max(-uv.X, uv.X - 1f),
+            MathF.Max(-uv.Y, uv.Y - 1f));
+        float edge = Math.Clamp(1f - (outside / 0.35f), 0f, 1f);
+        visible = edge * Math.Clamp((sun.Z - 0.05f) * 4f, 0f, 1f);
+        return visible > 0.001f;
     }
 
     /// <summary>Records the shading: the whole G-buffer read back as textures, over one triangle.</summary>
@@ -936,6 +994,7 @@ public sealed partial class GraphicsDevice
         _sky?.Dispose();
         _sky = null;
         _bloom?.Dispose();
+        _sunShafts?.Dispose();
         _bloom = null;
         _shading?.Dispose();
         _shading = null;

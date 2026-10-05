@@ -54,6 +54,11 @@ namespace OpenIGI.Rendering;
 /// </param>
 /// <param name="SunIntensity">A multiplier on the sun's contribution to in-scattering.</param>
 /// <param name="AmbientIntensity">A multiplier on the sky's contribution.</param>
+/// <param name="Dust">
+/// The density, per metre, of the fine dust out of doors near the eye: it scatters the sun and the lamps
+/// and nothing else, and is what a shaft of light or a floodlight's cone is seen in.
+/// </param>
+/// <param name="DustIndoor">The same dust's density indoors, where the medium itself is nought.</param>
 public readonly record struct VolumetricFogSettings(
     float Density = 0.014f,
     float HeightFalloff = 24f,
@@ -65,13 +70,15 @@ public readonly record struct VolumetricFogSettings(
     float MultipleScattering = 0.35f,
     float UniformFraction = 0.12f,
     float SunIntensity = 1f,
-    float AmbientIntensity = 1f)
+    float AmbientIntensity = 1f,
+    float Dust = 0f,
+    float DustIndoor = 0f)
 {
     /// <summary>Gets settings with no fog at all.</summary>
     public static VolumetricFogSettings Off { get; } = new(Density: 0f, Steps: 0);
 
     /// <summary>Gets a value indicating whether the pass would do anything.</summary>
-    public bool Enabled => Density > 0f && Steps > 0 && Distance > 0f;
+    public bool Enabled => (Density > 0f || Dust > 0f || DustIndoor > 0f) && Steps > 0 && Distance > 0f;
 
     /// <summary>Gets the scattering albedo, defaulting to the near-white of water droplets.</summary>
     /// <remarks>

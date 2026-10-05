@@ -14,7 +14,12 @@
     "level's coordinates sit tens of kilometres from the world origin, so a hand-guessed centre near",
     "zero lands nowhere near the level. Read real ones off with -freecam plus -camlog, which prints the",
     "camera position every frame: fly to the middle of the room and copy it down. Retail has no fog",
-    "entities of any kind, so every volume here is the port's own invention."
+    "entities of any kind, so every volume here is the port's own invention.",
+    "",
+    "dust and dustIndoor are the fine dust any air holds, per metre: it scatters the sun and the lamps",
+    "and nothing else, so it is what a shaft of light through a window or a floodlight's cone at night is",
+    "seen in. dust thins out over the first forty-five metres from the eye; dustIndoor fills rooms, where",
+    "the medium itself is nought."
   ],
 
   "default": {
@@ -25,7 +30,9 @@
     "uniformFraction": 0.12,
     "distance": 500.0,
     "sunIntensity": 1.0,
-    "ambientIntensity": 1.0
+    "ambientIntensity": 1.0,
+    "dust": 0.002,
+    "dustIndoor": 0.004
   },
 
   "missions": {
@@ -36,7 +43,9 @@
       "albedo": [0.94, 0.96, 1.0],
       "anisotropy": 0.55,
       "multipleScattering": 0.12,
-      "uniformFraction": 0.03
+      "uniformFraction": 0.03,
+      "dust": 0.003,
+      "dustIndoor": 0.005
     },
     "3": {
       "$comment": "Overcast. Thicker and flatter -- less forward scatter, more ambient.",

@@ -1,0 +1,133 @@
+{
+  "module": "FogScatter",
+  "variant": "traced",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        4,
+        4,
+        4
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uShadowMap",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true,
+      "sampleType": "Depth"
+    },
+    {
+      "name": "uSkyIrradiance",
+      "group": 0,
+      "binding": 2,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uHistory",
+      "group": 0,
+      "binding": 4,
+      "kind": "Texture",
+      "dimensions": 3,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uHistorySampler",
+      "group": 0,
+      "binding": 5,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uScattering",
+      "group": 0,
+      "binding": 6,
+      "kind": "StorageTexture",
+      "dimensions": 3,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uShelterMap",
+      "group": 0,
+      "binding": 7,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "p",
+      "group": 0,
+      "binding": 9,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmaps",
+      "group": 0,
+      "binding": 10,
+      "kind": "Texture",
+      "dimensions": 3,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmapsSampler",
+      "group": 0,
+      "binding": 11,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uScene",
+      "group": 0,
+      "binding": 12,
+      "kind": "AccelerationStructure",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uCutoutMasks",
+      "group": 0,
+      "binding": 13,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": null
+}

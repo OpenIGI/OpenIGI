@@ -26,6 +26,7 @@ public sealed class VolumetricFog : IDisposable
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
     private readonly ComputePass _scatter;
+    private ComputePass? _scatterTraced;
     private readonly ComputePass _integrate;
     private readonly ComputeParameters _parameters;
     private readonly IRhiSampler _sampler;
@@ -110,6 +111,9 @@ public sealed class VolumetricFog : IDisposable
     /// <param name="cascadeCount">How many cascades hold anything this frame.</param>
     /// <param name="shelterMap">The roofs seen from above, or null when the level has none.</param>
     /// <param name="shelter">How to read that map, or <see cref="ShelterMapTransform.None"/>.</param>
+    /// <param name="clipmaps">The level's distance field, or null for none.</param>
+    /// <param name="world">The traced world, where each froxel traces its sun, or null.</param>
+    /// <param name="cutoutMasks">The traced world's cut-out masks, with <paramref name="world"/>.</param>
     /// <remarks>
     /// Both dispatches go in one compute pass: WebGPU orders a dispatch's writes before the next one's
     /// reads within a pass, and the Vulkan backend places the barrier between them.
@@ -125,7 +129,10 @@ public sealed class VolumetricFog : IDisposable
         ReadOnlySpan<float> cascadeSplits,
         int cascadeCount,
         IRhiTextureView? shelterMap,
-        in ShelterMapTransform shelter)
+        in ShelterMapTransform shelter,
+        IRhiTextureView? clipmaps = null,
+        IRhiAccelerationStructure? world = null,
+        IRhiTextureView? cutoutMasks = null)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -160,13 +167,27 @@ public sealed class VolumetricFog : IDisposable
 
         IRhiBuffer parameters = _parameters.Write<float>(frameInFlight, block);
 
-        _scatter.Bind("uShadowMap", shadowMap ?? StandIn("uShadowMap"));
-        _scatter.Bind("uSkyIrradiance", skyIrradiance);
-        _scatter.Bind("uHistory", history.View, _sampler);
-        _scatter.Bind("uScattering", target.View);
-        _scatter.Bind("uShelterMap", shelterMap ?? StandIn("uShelterMap"));
-        _scatter.Bind("p", parameters);
-        _scatter.Dispatch(pass, _grid.X, _grid.Y, _grid.Z);
+        // The traced form wherever there is a world to trace and a mask set to test cut-outs with; the cascades
+        // and the field otherwise.
+        bool traced = world is not null && cutoutMasks is not null && fog.SunTraced;
+        ComputePass scatter = traced
+            ? _scatterTraced ??= new ComputePass(_device, ShaderModuleId.FogScatter, "fog.scatter.traced", new ShaderVariant("traced"))
+            : _scatter;
+
+        scatter.Bind("uShadowMap", shadowMap ?? StandIn(scatter, "uShadowMap"));
+        scatter.Bind("uSkyIrradiance", skyIrradiance);
+        scatter.Bind("uHistory", history.View, _sampler);
+        scatter.Bind("uScattering", target.View);
+        scatter.Bind("uShelterMap", shelterMap ?? StandIn(scatter, "uShelterMap"));
+        scatter.Bind("uClipmaps", clipmaps ?? StandIn(scatter, "uClipmaps"), _sampler);
+        if (traced)
+        {
+            scatter.Bind("uScene", world!);
+            scatter.Bind("uCutoutMasks", cutoutMasks!, _sampler);
+        }
+
+        scatter.Bind("p", parameters);
+        scatter.Dispatch(pass, _grid.X, _grid.Y, _grid.Z);
 
         _integrate.Bind("uScattering", target.View);
         _integrate.Bind("uIntegrated", integrated.View);
@@ -198,12 +219,13 @@ public sealed class VolumetricFog : IDisposable
         _sampler.Dispose();
         _parameters.Dispose();
         _integrate.Dispose();
+        _scatterTraced?.Dispose();
         _scatter.Dispose();
     }
 
     // A one-texel texture of the shape the scatter declares for a slot, for what this frame has none of.
-    private IRhiTextureView StandIn(string name) => _standIns.For(
-        _scatter.Program.Reflection.Bindings.First(binding => string.Equals(binding.Name, name, StringComparison.Ordinal)));
+    private IRhiTextureView StandIn(ComputePass pass, string name) => _standIns.For(
+        pass.Program.Reflection.Bindings.First(binding => string.Equals(binding.Name, name, StringComparison.Ordinal)));
 
     private IRhiTexture CreateVolume(string label) => _device.CreateTexture(new RhiTextureDescriptor(
         _grid.X,

@@ -66,6 +66,11 @@ public sealed partial class GraphicsDevice
         _volumetricFog.Ensure(scene.Width, scene.Height, _fogSettings.Steps);
 
         TemporalFrameState state = TemporalState(scene);
+
+        // The sun traced per froxel where the frame traces it at all: there are no cascades then, and the
+        // cascades were the fog's only shadow.
+        bool tracedSun = WillTraceSun() && TracedWorld is { IsWorldReady: true, WorldScene: not null };
+        LampOcclusionField? field = _lampField is { Levels: > 0 } f && _textures.Find(f.Clipmaps) is not null ? f : null;
         VolumetricFogFrame frame = new(
             _fogSettings,
             _fogVolumes.AsMemory(0, _fogVolumeCount),
@@ -76,7 +81,14 @@ public sealed partial class GraphicsDevice
             _lighting.AmbientColour,
             SkyValid: _lighting.Model != LightingModel.Baked,
             _fogSettings.BaseHeight - _cameraPosition.Z,
-            _flashlight);
+            _flashlight,
+            SunTraced: tracedSun,
+            HitRecords: tracedSun ? TracedWorld!.HitRecordAddress : 0UL,
+            Field: field,
+            Seconds: (float)(_frameCounter % 1_000_000UL) / 60f,
+            BackScatter: RenderCVars.FogBackScatter.Value,
+            BackScatterWeight: RenderCVars.FogBackScatterWeight.Value,
+            Noise: RenderCVars.FogNoise.Value);
 
         bool cascades = _cascadeCount > 0 && _shadowsDrawn;
 
@@ -101,7 +113,10 @@ public sealed partial class GraphicsDevice
                 CascadeSplits,
                 cascades ? _cascadeCount : 0,
                 _shelterTransform.IsPresent ? ViewOf(_shelterMap) : null,
-                _shelterTransform.IsPresent ? _shelterTransform : ShelterMapTransform.None);
+                _shelterTransform.IsPresent ? _shelterTransform : ShelterMapTransform.None,
+                field is { } present ? _textures.Resolve(present.Clipmaps).View : null,
+                tracedSun ? TracedWorld!.TraceableScene : null,
+                tracedSun ? TracedWorld!.CutoutMasks : null);
         }
 
         _fogRan = true;

@@ -122,7 +122,9 @@ public sealed class FogPresets
             entry.MultipleScattering ?? 0.35f,
             entry.UniformFraction ?? 0.12f,
             entry.SunIntensity ?? 1f,
-            entry.AmbientIntensity ?? 1f);
+            entry.AmbientIntensity ?? 1f,
+            entry.Dust ?? 0f,
+            entry.DustIndoor ?? 0f);
     }
 
     /// <summary>Gets the volumes a mission declares.</summary>

@@ -3484,6 +3484,72 @@ public static class RenderCVars
         high: "4",
         ultra: "4");
 
+    /// <summary>How strongly light shafts radiate from the sun when it is on screen.</summary>
+    /// <remarks>
+    /// The sky round the sun blurred outward in screen space, so a lattice, a fence or a roof edge between
+    /// the eye and the sun cuts rays into its glow. The volume's own shafts need air thick enough to show
+    /// them; a clear morning has none, and still shows these.
+    /// </remarks>
+    public static readonly NumericCVar<float> SunShafts = Presets.Define(
+        CVar.Float(
+            "r_sun_shafts",
+            0f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "How strongly light shafts radiate from the sun when it is on screen; 0 is off."),
+        vanilla: "0",
+        enhanced: "0.5",
+        high: "0.8",
+        ultra: "1");
+
+    /// <summary>The anisotropy of the fog's second, backward-scattering lobe.</summary>
+    /// <remarks>
+    /// Haze scatters mostly forward, but not only: with one forward lobe a shaft of light shows only looking
+    /// into the sun, and vanishes seen from the side. A weak backward lobe keeps it.
+    /// </remarks>
+    public static readonly NumericCVar<float> FogBackScatter = Presets.Define(
+        CVar.Float(
+            "r_fog_back_scatter",
+            -0.25f,
+            -0.95f,
+            0f,
+            CVarOptions.Archive,
+            "Anisotropy of the fog's backward lobe; what keeps a light shaft visible from the side."),
+        vanilla: "-0.25",
+        enhanced: "-0.25",
+        high: "-0.25",
+        ultra: "-0.25");
+
+    /// <summary>How much of the fog's phase the backward lobe carries.</summary>
+    public static readonly NumericCVar<float> FogBackScatterWeight = Presets.Define(
+        CVar.Float(
+            "r_fog_back_weight",
+            0.25f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of the fog's scattering goes into its backward lobe, 0 to 1."),
+        vanilla: "0.25",
+        enhanced: "0.25",
+        high: "0.25",
+        ultra: "0.25");
+
+    /// <summary>How much the fog's density varies through the air.</summary>
+    /// <remarks>An even medium lights an even shaft, which reads as a pane of light; the variation gives it body.</remarks>
+    public static readonly NumericCVar<float> FogNoise = Presets.Define(
+        CVar.Float(
+            "r_fog_noise",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much the fog's density varies, drifting with the wind; 0 is an even medium."),
+        vanilla: "0",
+        enhanced: "0.3",
+        high: "0.5",
+        ultra: "0.5");
+
     /// <summary>The diffuse colour boost the surface cache reflects light through.</summary>
     /// <remarks>
     /// The single lever for how bright the bounced light is. Each time light reflects off a card, the

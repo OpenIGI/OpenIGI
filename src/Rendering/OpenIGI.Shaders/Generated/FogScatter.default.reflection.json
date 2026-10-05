@@ -84,6 +84,26 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uClipmaps",
+      "group": 0,
+      "binding": 10,
+      "kind": "Texture",
+      "dimensions": 3,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmapsSampler",
+      "group": 0,
+      "binding": 11,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
     }
   ],
   "pushBlock": null,

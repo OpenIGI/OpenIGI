@@ -20,7 +20,9 @@ public readonly record struct FogPresetEntry(
     float? MultipleScattering,
     float? UniformFraction,
     float? SunIntensity,
-    float? AmbientIntensity)
+    float? AmbientIntensity,
+    float? Dust = null,
+    float? DustIndoor = null)
 {
     /// <summary>Gets an entry that changes nothing.</summary>
     public static FogPresetEntry Empty { get; }
@@ -37,7 +39,9 @@ public readonly record struct FogPresetEntry(
         MultipleScattering ?? fallback.MultipleScattering,
         UniformFraction ?? fallback.UniformFraction,
         SunIntensity ?? fallback.SunIntensity,
-        AmbientIntensity ?? fallback.AmbientIntensity);
+        AmbientIntensity ?? fallback.AmbientIntensity,
+        Dust ?? fallback.Dust,
+        DustIndoor ?? fallback.DustIndoor);
 
     /// <summary>Reads an entry from its JSON object.</summary>
     /// <param name="element">The object to read.</param>
@@ -58,7 +62,9 @@ public readonly record struct FogPresetEntry(
             Number(element, "multipleScattering"),
             Number(element, "uniformFraction"),
             Number(element, "sunIntensity"),
-            Number(element, "ambientIntensity"));
+            Number(element, "ambientIntensity"),
+            Number(element, "dust"),
+            Number(element, "dustIndoor"));
     }
 
     private static float? Number(JsonElement element, string name) =>
