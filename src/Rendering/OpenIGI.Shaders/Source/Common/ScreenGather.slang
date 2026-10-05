@@ -116,6 +116,29 @@ float TerrainHeightAt(ShelterMap m, float2 worldXY)
     return ShelterHolds(m, at) ? ShelterSurface(m, uTerrainHeights.Load(int3(at, 0))) : -1.0e30;
 }
 
+OPENIGI_COMPUTE_TEXTURE(15) Texture2D<float4> uRoofs;
+
+// Whether a roof stands over an absolute world point, by the level's roof raster.
+bool UnderRoof(float3 worldPoint)
+{
+    ShelterMap m;
+    m.origin = uShelterMap0.xy;
+    m.invCell = uShelterMap0.z;
+    m.present = uShelterMap0.w;
+    m.size = uShelterMap1.xy;
+    m.lowestZ = uShelterMap1.z;
+    m.scale = uShelterMap1.w;
+    m.headroom = uShelterMap2.x;
+    m.reach = uShelterMap2.y;
+    int2 at = ShelterTexel(m, worldPoint.xy);
+    if (!ShelterHolds(m, at))
+    {
+        return false;
+    }
+
+    return ShelterCovers(m, ShelterSurface(m, uRoofs.Load(int3(at, 0))), worldPoint.z);
+}
+
 // How far along a ray heading down it meets the terrain, within a reach; -1 for not at all. Stepped at
 // half a cell and the crossing then halved down four times, which puts the hit within a few centimetres
 // of the raster's own surface.
@@ -397,42 +420,31 @@ bool ScreenTraceRadiance(float3 viewOrigin, float3 viewNormal, float3 viewDir, o
 }
 
 #if !OPENIGI_RAY_QUERY
-// A marched hit moved onto the surface it touched: two steps down the field's gradient by the distance
-// the field gives there (a Newton step on a distance field), and the surface's normal as that gradient
-// gives it. Left where it is, with no normal, where the field is unknown or its gradient vanishes.
-float3 SettleOnSurface(float3 hit, out float3 surfaceNormal)
+// The surface's normal at a marched hit, as the field's gradient gives it; nought where the field is
+// unknown or flat. The hit is left where the march put it: slid down the gradient by the distance the
+// field gives there, a hit beside a thin wall in the coarse levels was carried through the wall onto
+// whatever stood behind it -- a lamp-lit room's floor -- and the yard outside took that room's light.
+float3 SurfaceNormalAt(float3 hit)
 {
-    surfaceNormal = float3(0.0, 0.0, 0.0);
-    for (int pass = 0; pass < 2; pass++)
+    bool known;
+    float raw;
+    float resolved;
+    DistanceAt(hit, known, raw, resolved);
+    if (!known)
     {
-        bool known;
-        float raw;
-        float resolved;
-        float distance = DistanceAt(hit, known, raw, resolved);
-        if (!known)
-        {
-            return hit;
-        }
-
-        float h = 0.5 * resolved;
-        bool k;
-        float r;
-        float v;
-        float3 gradient = float3(
-            DistanceAt(hit + float3(h, 0.0, 0.0), k, r, v) - DistanceAt(hit - float3(h, 0.0, 0.0), k, r, v),
-            DistanceAt(hit + float3(0.0, h, 0.0), k, r, v) - DistanceAt(hit - float3(0.0, h, 0.0), k, r, v),
-            DistanceAt(hit + float3(0.0, 0.0, h), k, r, v) - DistanceAt(hit - float3(0.0, 0.0, h), k, r, v));
-        float length2 = dot(gradient, gradient);
-        if (length2 < 1e-10)
-        {
-            return hit;
-        }
-
-        surfaceNormal = gradient * rsqrt(length2);
-        hit -= surfaceNormal * distance;
+        return float3(0.0, 0.0, 0.0);
     }
 
-    return hit;
+    float h = 0.5 * resolved;
+    bool k;
+    float r;
+    float v;
+    float3 gradient = float3(
+        DistanceAt(hit + float3(h, 0.0, 0.0), k, r, v) - DistanceAt(hit - float3(h, 0.0, 0.0), k, r, v),
+        DistanceAt(hit + float3(0.0, h, 0.0), k, r, v) - DistanceAt(hit - float3(0.0, h, 0.0), k, r, v),
+        DistanceAt(hit + float3(0.0, 0.0, h), k, r, v) - DistanceAt(hit - float3(0.0, 0.0, h), k, r, v));
+    float length2 = dot(gradient, gradient);
+    return length2 < 1e-10 ? float3(0.0, 0.0, 0.0) : gradient * rsqrt(length2);
 }
 #endif
 
@@ -561,13 +573,18 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
                 float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world))
                     * smoothstep(0.75 * finest, 1.5 * finest, dot(hit - world, normal));
 
-                // The march stops within half a voxel of the surface, and a voxel out there is a quarter
-                // of a metre or more: at night, when the light on the cache is a few small bright pools,
-                // which side of a pool's edge that half voxel falls on is the whole of what the ray
-                // brings back, and the gather's average churned from frame to frame as clouds. Slid onto
-                // the surface down the field's own gradient, the lookup reads the texel the ray struck.
-                float3 hitNormal;
-                hit = SettleOnSurface(hit, hitNormal);
+                float3 hitNormal = SurfaceNormalAt(hit);
+
+                // From out of doors to a surface with a roof over it: the ray went through a wall or a roof,
+                // which the field at that distance cannot hold -- a slab a hand thick in voxels of half a
+                // metre -- and it brought the room's lamps back out onto the wall outside, and the lit roof
+                // of the hall below onto its own roof. Counted as a surface found but not placed, the way a
+                // hit nothing can read is. An open doorway is the exception, and the rarer one.
+                if (!UnderRoof(world + uTraceOrigin) && UnderRoof(hit + uTraceOrigin))
+                {
+                    near = 0.0;
+                    unplaced += 1.0;
+                }
 
                 // And read through every card that faced the surface there, blended by how squarely each
                 // looked and filtered within it, rather than the one texel of the one card nearest a point
@@ -579,7 +596,11 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
                 }
 
                 float3 filtered;
-                if (dot(hitNormal, hitNormal) > 0.5 && SampleCardsWithin(hit, hitNormal, 0.5 * finest, filtered))
+                if (near <= 0.0)
+                {
+                    weight = 0.0;
+                }
+                else if (dot(hitNormal, hitNormal) > 0.5 && SampleCardsWithin(hit, hitNormal, 0.5 * finest, filtered))
                 {
                     radiance = filtered * uBounceScale;
                     weight = near;

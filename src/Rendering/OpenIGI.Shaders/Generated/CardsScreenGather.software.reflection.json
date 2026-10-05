@@ -135,6 +135,16 @@
       "storageAccess": "None"
     },
     {
+      "name": "uRoofs",
+      "group": 0,
+      "binding": 47,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
       "name": "Globals",
       "group": 0,
       "binding": 49,
@@ -221,7 +231,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 496,
+    "size": 544,
     "fields": [
       {
         "name": "uClipmapOrigin[0]",
@@ -426,6 +436,21 @@
       {
         "name": "uTerrainMap1",
         "offset": 480,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap0",
+        "offset": 496,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap1",
+        "offset": 512,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap2",
+        "offset": 528,
         "size": 16
       }
     ]

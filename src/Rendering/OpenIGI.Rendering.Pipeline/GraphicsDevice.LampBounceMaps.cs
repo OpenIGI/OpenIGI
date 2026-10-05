@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 
@@ -92,6 +93,92 @@ public sealed partial class GraphicsDevice
 
         OpenShadowLayer(_lampBounceMapLayers[slot], LampBounceMapSize, $"lampbounce{slot}", rotation, resume: false);
         return true;
+    }
+
+    // Which coarse cube each of the frame's lamps has: its first slot, or -1.
+    private readonly int[] _lampCoarseOf = CreateNone(DeferredLocalLight.Maximum);
+
+    private readonly float[] _lampCoarseBlock = new float[TracedLampShadow.CoarseFloats];
+
+    /// <summary>Writes this frame's coarse-map block and hands it back.</summary>
+    private float[] WriteLampCoarseBlock()
+    {
+        WriteLampCoarseMaps(_lampCoarseBlock);
+        return _lampCoarseBlock;
+    }
+
+    private static int[] CreateNone(int count)
+    {
+        int[] none = new int[count];
+        Array.Fill(none, -1);
+        return none;
+    }
+
+    /// <inheritdoc/>
+    public void SetLampCoarseMapSlots(ReadOnlySpan<int> firstSlotPerLight)
+    {
+        ThrowIfDisposed();
+        Array.Fill(_lampCoarseOf, -1);
+        int count = Math.Min(firstSlotPerLight.Length, _lampCoarseOf.Length);
+        for (int i = 0; i < count; i++)
+        {
+            int first = firstSlotPerLight[i];
+            _lampCoarseOf[i] = first >= 0 && first + 6 <= LampBounceLayers ? first : -1;
+        }
+    }
+
+    /// <summary>
+    /// The coarse cubes of this frame's lamps, six records a lamp in light order, camera-relative, for the
+    /// lamp shadow march to read where a lamp has no fine map.
+    /// </summary>
+    /// <param name="destination"><see cref="TracedLampShadow.CoarseFloats"/> floats.</param>
+    /// <remarks>
+    /// Each record is the face's world-to-clip matrix's first, second and fourth rows, then its projection's
+    /// two depth terms, one when the face is drawn, and the layer of the coarse map array it lives in.
+    /// </remarks>
+    private void WriteLampCoarseMaps(Span<float> destination)
+    {
+        destination.Clear();
+        if (_lampBounceMaps is null)
+        {
+            return;
+        }
+
+        const int floats = 16;
+        Vector3d camera = new(_cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z);
+        int lights = Math.Min(_localLightCount, DeferredLocalLight.Maximum);
+        for (int i = 0; i < lights; i++)
+        {
+            int first = _lampCoarseOf[i];
+            if (first < 0)
+            {
+                continue;
+            }
+
+            for (int face = 0; face < 6; face++)
+            {
+                int slot = first + face;
+                if (!_lampBounceDrawn[slot])
+                {
+                    continue;
+                }
+
+                Span<float> record = destination.Slice(((i * 6) + face) * floats, floats);
+                Matrix4f m = LampMapMatrix(
+                    _lampBouncePositions[slot], _lampBounceRotations[slot], _lampBounceProjections[slot], camera);
+                ReadOnlySpan<float> rows =
+                [
+                    m.M11, m.M12, m.M13, m.M14,
+                    m.M21, m.M22, m.M23, m.M24,
+                    m.M41, m.M42, m.M43, m.M44,
+                ];
+                rows.CopyTo(record);
+                record[12] = _lampBounceProjections[slot].M33;
+                record[13] = _lampBounceProjections[slot].M34;
+                record[14] = 1f;
+                record[15] = slot;
+            }
+        }
     }
 
     /// <inheritdoc/>

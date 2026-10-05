@@ -64,6 +64,13 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     // height its packing counts from and the metres one step stands for.
     float4 uTerrainMap0;
     float4 uTerrainMap1;
+
+    // The roof raster (ShelterHeightField), for telling a marched ray that went through a wall: its low
+    // corner's world XY, cells per metre, whether there is one; its size, the height its packing counts from
+    // and the metres a step stands for; the headroom and reach a roof is a roof within.
+    float4 uShelterMap0;
+    float4 uShelterMap1;
+    float4 uShelterMap2;
 };
 
 #include "../Common/ScreenGather.slang"
@@ -100,6 +107,12 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
     float3 storedNormal = (uSceneNormal.SampleLevel(uSceneNormalSampler, uv, 0.0).xyz * 2.0) - 1.0;
     float3 worldNormal = normalize(storedNormal);
+
+    // Turned to face the eye, as the live gather's probes are: see ScreenGatherTemporal's ProbeSurface.
+    if (dot(worldNormal, world - uCameraToCache) > 0.0)
+    {
+        worldNormal = -worldNormal;
+    }
 
     uIndirect.Store(
         probe,

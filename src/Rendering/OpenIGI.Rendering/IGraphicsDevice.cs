@@ -1574,6 +1574,16 @@ public interface IGraphicsDevice : IDisposable
         _ = slotPerLight;
     }
 
+    /// <summary>Says which coarse cube of maps each of this frame's lamps has, for the lamps the fine maps miss.</summary>
+    /// <param name="firstSlotPerLight">
+    /// One per lamp, in the order <see cref="SetLocalLights"/> was given them: the first of the six coarse
+    /// slots (<see cref="BeginLampBounceMap"/>) once all six are drawn, or -1 for none.
+    /// </param>
+    void SetLampCoarseMapSlots(ReadOnlySpan<int> firstSlotPerLight)
+    {
+        _ = firstSlotPerLight;
+    }
+
     /// <summary>Begins drawing the world into one lamp's shadow map, from the lamp.</summary>
     /// <param name="slot">The map, below <see cref="LampShadowMapSlots"/>.</param>
     /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>

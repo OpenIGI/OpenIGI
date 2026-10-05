@@ -44,7 +44,7 @@ struct FogLampMapParams
     int4 levels;
     float4x4 mapMatrix[240];
     float4 mapDepth[120];
-    int4 mapSlot[10];
+    int4 mapSlot[40];
 };
 
 [[vk::binding(14, 0)]] DepthTexture2DArray uFogLampMaps;
@@ -55,7 +55,7 @@ struct FogLampMapParams
 // receiver plane to, and the froxels' own jitter and history soften the edge.
 float FogLampMapVisibility(int lamp, float3 cameraRelative)
 {
-    if (lamp < 0 || lamp >= 40)
+    if (lamp < 0 || lamp >= OPENIGI_MAX_LAMPS)
     {
         return -1.0;
     }

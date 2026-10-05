@@ -150,6 +150,108 @@ struct FieldParams
 [[vk::binding(11, 0)]] DepthTexture2DArray uLampMaps;
 [[vk::binding(12, 0)]] SamplerComparisonState uLampMapSampler;
 
+// Every lamp's coarse cube of maps (the surface cache's), for the lamps the fine maps above do not reach:
+// six records a lamp in the frame's light order, each four rows: the face's camera-relative world-to-clip
+// first, second and fourth rows, then its two depth terms, one when drawn, and its layer of the array.
+// Four rather than five so all 160 lamps' fit the 64 KB a constant buffer may hold.
+[[vk::binding(13, 0)]] DepthTexture2DArray uCoarseMaps;
+
+struct CoarseParams
+{
+    float4 record[OPENIGI_MAX_LAMPS * 6 * 4];
+};
+
+[[vk::binding(14, 0)]] ConstantBuffer<CoarseParams> c;
+
+// How much of a lamp reaches a camera-relative point by its coarse cube, or -1 where it has none. A tent
+// over sixteen texels and a normal offset of a texel and a half: the maps are sixty-four texels a face, and
+// a surface the lamp sees edge-on crosses several of their depths within one.
+float CoarseLampVisibility(int lamp, float3 cameraRelative, float3 normal)
+{
+    if (lamp < 0 || lamp >= OPENIGI_MAX_LAMPS)
+    {
+        return -1.0;
+    }
+
+    int first = lamp * 6;
+    if (c.record[(first * 4) + 3].z <= 0.0)
+    {
+        return -1.0;
+    }
+
+    uint width;
+    uint height;
+    uint layers;
+    uCoarseMaps.GetDimensions(width, height, layers);
+
+    float pointZ = 0.25;
+    for (int face = 0; face < 6; face++)
+    {
+        float4 forward = c.record[((first + face) * 4) + 2];
+        pointZ = max(pointZ, dot(forward.xyz, cameraRelative) + forward.w);
+    }
+
+    float texelAtPoint = pointZ * 2.0 / float(max(width, 1u));
+    float3 at = cameraRelative + (normal * (0.05 + (1.5 * texelAtPoint)));
+
+    int slot = first;
+    float deepest = -1e30;
+    for (int face = 0; face < 6; face++)
+    {
+        float4 forward = c.record[((first + face) * 4) + 2];
+        float depth = dot(forward.xyz, at) + forward.w;
+        if (depth > deepest)
+        {
+            deepest = depth;
+            slot = first + face;
+        }
+    }
+
+    float4 terms = c.record[(slot * 4) + 3];
+    if (terms.z <= 0.0)
+    {
+        return -1.0;
+    }
+
+    float4 row0 = c.record[slot * 4];
+    float4 row1 = c.record[(slot * 4) + 1];
+    float viewZ = deepest;
+    float nearPlane = terms.y / (-1.0 - terms.x);
+    if (viewZ <= nearPlane)
+    {
+        return 1.0;
+    }
+
+    float2 ndc = float2(dot(row0.xyz, at) + row0.w, dot(row1.xyz, at) + row1.w) / viewZ;
+    float2 uv = float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
+    int2 size = int2(int(width), int(height));
+    float texelMetres = viewZ * (2.0 / max(length(row0.xyz), 1e-3)) / float(max(width, 1u));
+    float bias = 0.05 + (0.005 * viewZ) + (2.0 * texelMetres);
+    int layer = int(terms.w + 0.5);
+
+    float2 texelAt = (uv * float2(size)) - 0.5;
+    int2 corner = int2(floor(texelAt)) - 1;
+    float2 blend = texelAt - floor(texelAt);
+    float lit = 0.0;
+    float weightSum = 0.0;
+    for (int y = 0; y < 4; y++)
+    {
+        for (int x = 0; x < 4; x++)
+        {
+            int2 texel = clamp(corner + int2(x, y), int2(0, 0), size - 1);
+            float stored = uCoarseMaps.Load(int4(texel, layer, 0));
+            float storedZ = terms.y / min(((stored * 2.0) - 1.0) - terms.x, -1e-6);
+            float2 offset = abs(float2(float(x) - 1.0, float(y) - 1.0) - blend);
+            float2 tent = saturate(1.0 - (offset / 2.0));
+            float weight = tent.x * tent.y;
+            lit += storedZ >= viewZ - bias ? weight : 0.0;
+            weightSum += weight;
+        }
+    }
+
+    return lit / max(weightSum, 1e-4);
+}
+
 // How much of a lamp reaches a camera-relative point by the lamp's own shadow map, filtered over a texel
 // either way; or -1 where the lamp has no map or the point is outside it, for the field to answer instead.
 // The bias is taken in metres along the lamp's view -- a few centimetres and a hundredth of the distance --
@@ -908,6 +1010,13 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             origin - p.cameraFrame.xyz,
             normal,
             onRect ? (length(rect.xyz) + rect.w) : (2.0 * source));
+        // Past the fine maps' budget, the lamp's coarse cube: the field cannot hold a wall at a distance its
+        // voxels are a metre or two, and a far lamp lit straight through the building it stood behind.
+        if (mapped < 0.0)
+        {
+            mapped = CoarseLampVisibility(lamp, origin - p.cameraFrame.xyz, normal);
+        }
+
         if (mapped >= 0.0)
         {
             mappedLitSum += mapped;

@@ -75,7 +75,7 @@ struct FogLampMapParams_std140_0
     @align(16) levels_0 : vec4<i32>,
     @align(16) mapMatrix_0 : _Array_std140_matrixx3Cfloatx2C4x2C4x3E240_0,
     @align(16) mapDepth_0 : array<vec4<f32>, i32(120)>,
-    @align(16) mapSlot_0 : array<vec4<i32>, i32(10)>,
+    @align(16) mapSlot_0 : array<vec4<i32>, i32(40)>,
 };
 
 @binding(15) @group(0) var<uniform> uFogLampMapParams_0 : FogLampMapParams_std140_0;
@@ -536,7 +536,7 @@ fn FogLampMapVisibility_0( lamp_0 : i32,  cameraRelative_0 : vec3<f32>) -> f32
     }
     else
     {
-        found_0 = lamp_0 >= i32(40);
+        found_0 = lamp_0 >= i32(160);
     }
     if(found_0)
     {

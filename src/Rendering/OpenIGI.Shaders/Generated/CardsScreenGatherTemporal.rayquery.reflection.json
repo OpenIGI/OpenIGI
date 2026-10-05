@@ -322,7 +322,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 688,
+    "size": 736,
     "fields": [
       {
         "name": "uCutoutRecords",
@@ -580,28 +580,43 @@
         "size": 16
       },
       {
-        "name": "uHasHistory",
+        "name": "uShelterMap0",
         "offset": 656,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap1",
+        "offset": 672,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap2",
+        "offset": 688,
+        "size": 16
+      },
+      {
+        "name": "uHasHistory",
+        "offset": 704,
         "size": 4
       },
       {
         "name": "uFrameIndex",
-        "offset": 660,
+        "offset": 708,
         "size": 4
       },
       {
         "name": "uMaxAccumulated",
-        "offset": 664,
+        "offset": 712,
         "size": 4
       },
       {
         "name": "uHasVelocity",
-        "offset": 668,
+        "offset": 716,
         "size": 4
       },
       {
         "name": "uGatherPass",
-        "offset": 672,
+        "offset": 720,
         "size": 4
       }
     ]

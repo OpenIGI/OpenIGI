@@ -232,7 +232,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 512,
+    "size": 560,
     "fields": [
       {
         "name": "uCutoutRecords",
@@ -442,6 +442,21 @@
       {
         "name": "uTerrainMap1",
         "offset": 496,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap0",
+        "offset": 512,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap1",
+        "offset": 528,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap2",
+        "offset": 544,
         "size": 16
       }
     ]

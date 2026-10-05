@@ -26,6 +26,9 @@ internal sealed partial class GameHost
     private float _terrainHeightScale = 1f;
     private SurfaceCacheLighting? _terrainHeightsGivenTo;
 
+    // The roof raster as the GI is handed it, beside the terrain's (see SurfaceCacheLighting.SetRoofs).
+    private ShelterMapTransform _giRoofTransform = ShelterMapTransform.None;
+
     /// <summary>Starts sampling the terrain over the level's built-up area, off the frame loop.</summary>
     /// <remarks>Over the roof raster's rectangle and a margin: where the buildings are is where the bounce off the ground matters.</remarks>
     private void StartTerrainRaster()
@@ -84,6 +87,7 @@ internal sealed partial class GameHost
         if (_cardLighting is { } cards && !ReferenceEquals(cards, _terrainHeightsGivenTo))
         {
             cards.SetTerrainHeights(_terrainHeights, _terrainRaster, _terrainHeightScale);
+            cards.SetRoofs(_shelterMap, _giRoofTransform);
             _terrainHeightsGivenTo = cards;
         }
     }
@@ -97,6 +101,7 @@ internal sealed partial class GameHost
         _terrainRasterTask = null;
         _terrainRaster = null;
         _cardLighting?.SetTerrainHeights(TextureHandle.None, null, 1f);
+        _cardLighting?.SetRoofs(TextureHandle.None, ShelterMapTransform.None);
         _terrainHeightsGivenTo = null;
         if (_terrainHeights.IsValid)
         {

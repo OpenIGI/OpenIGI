@@ -21,6 +21,8 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="LampMaps">The nearest lamps' shadow maps, one per layer, or <see langword="null"/> for none yet.</param>
 /// <param name="LampMapSampler">The comparison sampler those maps are read through.</param>
 /// <param name="LightingChanged">Whether a lamp's output changed a moment ago, which holds the history short.</param>
+/// <param name="CoarseMaps">Every lamp's coarse cube of maps, for the lamps the fine maps miss, or <see langword="null"/>.</param>
+/// <param name="Coarse">This frame's lamps' coarse records (<see cref="TracedLampShadow.CoarseFloats"/> floats).</param>
 /// <param name="SunLuminance">The sun's luminance as the lighting pass applies it; nought with no traced sun.</param>
 /// <param name="MinimumVisible">
 /// The summed lamp light at a pixel below which its shadow could not show at this exposure; such a pixel is
@@ -42,7 +44,9 @@ public readonly record struct TracedLampFrame(
     float SunLuminance = 0f,
     IRhiTextureView? LampMaps = null,
     IRhiSampler? LampMapSampler = null,
-    bool LightingChanged = false);
+    bool LightingChanged = false,
+    IRhiTextureView? CoarseMaps = null,
+    ReadOnlyMemory<float> Coarse = default);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -67,6 +71,12 @@ public sealed class TracedLampShadow : IDisposable
     /// <summary>Floats in the software trace's field block: four corners with their voxel sizes, four ranges, and four integers.</summary>
     public const int FieldFloats = 24 + (240 * 16) + (240 * 2) + DeferredLocalLight.Maximum;
 
+    /// <summary>
+    /// The size of the coarse-map block: six faces of sixteen floats for each of the frame's lamps (see
+    /// <c>GraphicsDevice.WriteLampCoarseMaps</c>), which the march reads for a lamp with no fine map.
+    /// </summary>
+    public const int CoarseFloats = DeferredLocalLight.Maximum * 6 * 16;
+
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
     private readonly int _framesInFlight;
@@ -76,6 +86,8 @@ public sealed class TracedLampShadow : IDisposable
     private ComputePass? _trace;
     private ComputePass? _march;
     private ComputeParameters? _fieldParameters;
+    private ComputeParameters? _coarseParameters;
+    private readonly float[] _noCoarse = new float[CoarseFloats];
     private readonly ComputePass _temporal;
     private readonly ComputePass _spatial;
     private readonly ComputeParameters _traceParameters;
@@ -279,6 +291,19 @@ public sealed class TracedLampShadow : IDisposable
             {
                 _march.Bind("uLampMaps", maps);
                 _march.Bind("uLampMapSampler", comparison);
+
+                // And every lamp's coarse cube, for the lamps the fine maps did not reach: far ones, past the
+                // budget, which the field alone answered and lit through the walls it cannot hold at that
+                // distance. The fine array stands in where there are none, with a block that says so.
+                _coarseParameters ??= new ComputeParameters(
+                    _device, CoarseFloats * sizeof(float), _framesInFlight, "lampshadow.coarse");
+                bool coarse = frame.CoarseMaps is not null && frame.Coarse.Length == CoarseFloats;
+                _march.Bind("uCoarseMaps", coarse ? frame.CoarseMaps! : maps);
+                _march.Bind(
+                    "c",
+                    coarse
+                        ? _coarseParameters.Write<float>(frameInFlight, frame.Coarse.Span)
+                        : _coarseParameters.Write<float>(frameInFlight, _noCoarse));
             }
             _march.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
             _march.Bind("f", _fieldParameters.Write<float>(frameInFlight, frame.Field.Span));
@@ -364,6 +389,7 @@ public sealed class TracedLampShadow : IDisposable
         _temporalParameters.Dispose();
         _traceParameters.Dispose();
         _fieldParameters?.Dispose();
+        _coarseParameters?.Dispose();
         _spatial.Dispose();
         _temporal.Dispose();
         _trace?.Dispose();

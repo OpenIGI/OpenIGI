@@ -83,6 +83,27 @@ internal sealed partial class GameHost
         cards.SetLampMapEntries(_lampBounceEntries);
     }
 
+    // Each of the frame's lamps' coarse cube, in light order, for the device.
+    private readonly int[] _lampCoarsePerLight = new int[DeferredLocalLight.Maximum];
+
+    /// <summary>Tells the device which coarse cube each of this frame's lamps has.</summary>
+    /// <param name="lightCount">How many lamps the frame was given.</param>
+    /// <remarks>
+    /// For the lamp shadows of the lamps the fine maps do not reach: past the fine maps' budget a lamp was
+    /// answered by the distance field alone, which at a distance cannot hold the wall it stands behind.
+    /// </remarks>
+    private void AssignLampCoarseMaps(int lightCount)
+    {
+        int count = Math.Min(lightCount, _lampCoarsePerLight.Length);
+        for (int i = 0; i < count; i++)
+        {
+            int fixture = _localLightOrder[i];
+            _lampCoarsePerLight[i] = (uint)fixture < (uint)_lampBounceEntries.Length ? _lampBounceEntries[fixture] : -1;
+        }
+
+        _device.SetLampCoarseMapSlots(_lampCoarsePerLight.AsSpan(0, count));
+    }
+
     /// <summary>Forgets every coarse face and orders the lamps nearest the camera first.</summary>
     private void ResetLampBounceMaps()
     {

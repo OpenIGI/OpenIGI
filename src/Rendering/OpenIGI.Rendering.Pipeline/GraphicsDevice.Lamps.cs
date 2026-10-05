@@ -161,7 +161,9 @@ public sealed partial class GraphicsDevice
                     sunLuminance,
                     _lampMapArray,
                     _lampMapSampler,
-                    lightingChanged);
+                    lightingChanged,
+                    _lampBounceMapArray,
+                    WriteLampCoarseBlock());
         IRhiTextureView? lampVelocity = _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null;
 
         // Step by step while measuring, so the trace and the two filters are told apart in the breakdown.

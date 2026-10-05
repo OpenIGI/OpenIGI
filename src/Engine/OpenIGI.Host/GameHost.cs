@@ -5699,6 +5699,7 @@ if (retailFog)
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
                     AssignLampMaps(localCount, unjitteredProjection);
+                    AssignLampCoarseMaps(localCount);
                     _stormLampCount = localCount;
 
                     // And the distance field those lamps' shadows are marched through wherever the renderer

@@ -136,6 +136,28 @@
       "wgslStorageFormat": "None",
       "storageAccess": "None",
       "comparison": true
+    },
+    {
+      "name": "uCoarseMaps",
+      "group": 0,
+      "binding": 13,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true,
+      "sampleType": "Depth"
+    },
+    {
+      "name": "c",
+      "group": 0,
+      "binding": 14,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
     }
   ],
   "pushBlock": null,

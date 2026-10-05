@@ -229,6 +229,10 @@ public sealed class SurfaceCacheLighting : IDisposable
     private (float X, float Y, float Z, float W) _terrainMap0;
     private (float X, float Y, float Z, float W) _terrainMap1;
 
+    // The roof raster, which tells a marched ray that went through a wall (see SetRoofs).
+    private TextureHandle _roofs;
+    private ShelterMapTransform _roofTransform = ShelterMapTransform.None;
+
     private TextureHandle _cacheRed;
     private TextureHandle _cacheGreen;
     private TextureHandle _cacheBlue;
@@ -1410,6 +1414,20 @@ public sealed class SurfaceCacheLighting : IDisposable
         _terrainMap1 = (field.Width, field.Depth, field.LowestZ, scale);
     }
 
+    /// <summary>Hands the untraced gather the level's roof raster, or takes it away.</summary>
+    /// <param name="roofs">The packed raster, as the shading reads it, or none.</param>
+    /// <param name="transform">How to read it; <see cref="ShelterMapTransform.None"/> with none.</param>
+    /// <remarks>
+    /// A ray marched out of doors that lands on a surface with a roof over it went through a wall or a roof
+    /// the field could not hold at that distance; the gather counts it as a miss rather than carrying the
+    /// room's lamps out onto the wall outside.
+    /// </remarks>
+    public void SetRoofs(TextureHandle roofs, ShelterMapTransform transform)
+    {
+        _roofs = roofs.IsValid && transform.IsPresent ? roofs : TextureHandle.None;
+        _roofTransform = _roofs.IsValid ? transform : ShelterMapTransform.None;
+    }
+
     /// <summary>Binds the terrain's height raster to a gather, or a stand-in that says there is none.</summary>
     /// <param name="shader">The gather.</param>
     private void BindTerrainHeights(ComputeShaderHandle shader)
@@ -1417,6 +1435,14 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetTexture(14, _terrainHeights);
         _device.SetComputeUniform(shader, "uTerrainMap0", _terrainMap0.X, _terrainMap0.Y, _terrainMap0.Z, _terrainMap0.W);
         _device.SetComputeUniform(shader, "uTerrainMap1", _terrainMap1.X, _terrainMap1.Y, _terrainMap1.Z, _terrainMap1.W);
+
+        // And the roof raster beside it.
+        ShelterMapTransform r = _roofTransform;
+        _device.SetTexture(15, _roofs);
+        _device.SetComputeUniform(
+            shader, "uShelterMap0", r.OriginX, r.OriginY, r.IsPresent ? 1f / r.CellMetres : 0f, r.IsPresent ? 1f : 0f);
+        _device.SetComputeUniform(shader, "uShelterMap1", r.Width, r.Height, r.LowestZ, r.HeightScale);
+        _device.SetComputeUniform(shader, "uShelterMap2", r.HeadroomMetres, r.ReachMetres, 0f, 0f);
     }
 
     /// <summary>Re-sends the same lights at whatever output a switchboard says they are giving out.</summary>
