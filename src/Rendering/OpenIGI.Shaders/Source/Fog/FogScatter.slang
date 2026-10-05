@@ -34,6 +34,117 @@
 
 #include "../Common/SoftwareTrace.slang"
 
+#if !OPENIGI_RAY_QUERY
+// The nearest lamps' own shadow maps, which the lamp shadow pass draws where nothing is traced: the same
+// block it reads (Lamp/Shadow.slang's FieldParams), of which only the maps are used here.
+struct FogLampMapParams
+{
+    float4 origin[4];
+    float4 range;
+    int4 levels;
+    float4x4 mapMatrix[240];
+    float4 mapDepth[120];
+    int4 mapSlot[10];
+};
+
+[[vk::binding(14, 0)]] DepthTexture2DArray uFogLampMaps;
+[[vk::binding(15, 0)]] ConstantBuffer<FogLampMapParams> uFogLampMapParams;
+
+// How much of a lamp reaches a camera-relative point by its own shadow map, or -1 where it has none or
+// the point lies outside it. A texel's neighbourhood and a plain bias: the air has no surface to fit a
+// receiver plane to, and the froxels' own jitter and history soften the edge.
+float FogLampMapVisibility(int lamp, float3 cameraRelative)
+{
+    if (lamp < 0 || lamp >= 40)
+    {
+        return -1.0;
+    }
+
+    int entry = uFogLampMapParams.mapSlot[lamp >> 2][lamp & 3];
+    if (entry < 0)
+    {
+        return -1.0;
+    }
+
+    int slot = entry & 0xFF;
+    float4 clip = float4(0.0, 0.0, 0.0, 1.0);
+    float3 ndc = float3(0.0, 0.0, 0.0);
+    if ((entry & 0x100) != 0)
+    {
+        // A cube: the face whose view the point is in.
+        bool found = false;
+        for (int face = 0; face < 6 && !found; face++)
+        {
+            float4 faceClip = mul(uFogLampMapParams.mapMatrix[slot + face], float4(cameraRelative, 1.0));
+            if (faceClip.w > 1e-4)
+            {
+                float3 faceNdc = faceClip.xyz / faceClip.w;
+                if (all(abs(faceNdc.xy) <= float2(1.0, 1.0)))
+                {
+                    found = true;
+                    slot += face;
+                    clip = faceClip;
+                    ndc = faceNdc;
+                }
+            }
+        }
+
+        if (!found)
+        {
+            return -1.0;
+        }
+    }
+    else
+    {
+        clip = mul(uFogLampMapParams.mapMatrix[slot], float4(cameraRelative, 1.0));
+        if (clip.w <= 1e-4)
+        {
+            return -1.0;
+        }
+
+        ndc = clip.xyz / clip.w;
+        if (any(abs(ndc.xy) > float2(1.0, 1.0)))
+        {
+            return -1.0;
+        }
+    }
+
+    float4 pair = uFogLampMapParams.mapDepth[slot >> 1];
+    float2 terms = (slot & 1) != 0 ? pair.zw : pair.xy;
+    float nearPlane = terms.y / (-1.0 - terms.x);
+    float viewZ = clip.w;
+
+    // Inside the near plane is inside the fitting, which nothing is drawn nearer than.
+    if (viewZ <= nearPlane)
+    {
+        return 1.0;
+    }
+
+    float compareZ = max(viewZ - (0.05 + (0.01 * viewZ)), nearPlane + 0.005);
+    float limit = ((terms.x + (terms.y / max(compareZ, 1e-4))) * 0.5) + 0.5;
+
+    uint width;
+    uint height;
+    uint layers;
+    uFogLampMaps.GetDimensions(width, height, layers);
+    float2 uv = float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
+    int2 base = int2(floor((uv * float2(float(width), float(height))) - 0.5));
+    int2 top = int2(int(width) - 1, int(height) - 1);
+
+    float lit = 0.0;
+    for (int y = 0; y < 2; y++)
+    {
+        for (int x = 0; x < 2; x++)
+        {
+            int2 at = clamp(base + int2(x, y), int2(0, 0), top);
+            lit += uFogLampMaps.Load(int4(at, slot, 0)) >= limit ? 0.25 : 0.0;
+        }
+    }
+
+    return lit;
+}
+#endif
+
 // A depth image, and declared as one: WebGPU binds a depth image to nothing else, and it is only ever
 // fetched here, never filtered.
 [[vk::binding(0, 0)]] DepthTexture2DArray uShadowMap;
@@ -434,15 +545,21 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         // glass in a cone rather than every way at once. A lamp whose fitting is indoors lights no outdoor
         // air.
         //
-        // And the two that light this froxel most are shadowed: a lamp's cone through the air stops at the
-        // wall, the canopy, the soldier in front of it. Every lamp was unshadowed, so its light went straight
-        // through the building it hung on. The rest are the faint ones.
-        float3 strongest = float3(0.0, 0.0, 0.0);
-        float3 second = float3(0.0, 0.0, 0.0);
-        int strongestLamp = -1;
-        int secondLamp = -1;
-        float strongestLuminance = 0.0;
-        float secondLuminance = 0.0;
+        // And the ones that light this froxel most are shadowed: a lamp's cone through the air stops at
+        // the wall, the canopy, the soldier in front of it. Every lamp was unshadowed, so its light went
+        // straight through the building it hung on. Where nothing is traced, a lamp with a shadow map of its
+        // own is answered by it, whatever its rank -- the distance field cannot hold a wall a lamp hangs
+        // forty centimetres behind, and the room's lamp lit the air outside the wall; the strongest of the
+        // rest are marched. Traced, the four strongest are. The rest are the faint ones.
+#if OPENIGI_RAY_QUERY
+        const int kShadowedLamps = 4;
+#else
+        const int kShadowedLamps = 2;
+#endif
+        int rankedLamp[4] = { -1, -1, -1, -1 };
+        float3 rankedLight[4] = {
+            float3(0.0, 0.0, 0.0), float3(0.0, 0.0, 0.0), float3(0.0, 0.0, 0.0), float3(0.0, 0.0, 0.0) };
+        float rankedLuminance[4] = { 0.0, 0.0, 0.0, 0.0 };
 
         int lampCount = min(int(round(p.camera.w)), OPENIGI_MAX_LAMPS);
         for (int i = 0; i < lampCount; i++)
@@ -474,39 +591,58 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             }
 
             float3 lampLight = p.lampColour[i].rgb * p.lampColour[i].w * attenuation * Phase(dot(rayView, direction));
+
+#if !OPENIGI_RAY_QUERY
+            float mapped = FogLampMapVisibility(i, world);
+            if (mapped >= 0.0)
+            {
+                direct += lampLight * mapped;
+                continue;
+            }
+#endif
+
             direct += lampLight;
 
+            // Kept in order, brightest first, as many as are shadowed.
             float luminance = dot(lampLight, float3(0.2126, 0.7152, 0.0722));
-            if (luminance > strongestLuminance)
+            int place = kShadowedLamps;
+            for (int r = kShadowedLamps - 1; r >= 0; r--)
             {
-                second = strongest;
-                secondLamp = strongestLamp;
-                secondLuminance = strongestLuminance;
-                strongest = lampLight;
-                strongestLamp = i;
-                strongestLuminance = luminance;
+                if (luminance > rankedLuminance[r])
+                {
+                    place = r;
+                }
             }
-            else if (luminance > secondLuminance)
+
+            if (place < kShadowedLamps)
             {
-                second = lampLight;
-                secondLamp = i;
-                secondLuminance = luminance;
+                for (int r = kShadowedLamps - 1; r > place; r--)
+                {
+                    rankedLamp[r] = rankedLamp[r - 1];
+                    rankedLight[r] = rankedLight[r - 1];
+                    rankedLuminance[r] = rankedLuminance[r - 1];
+                }
+
+                rankedLamp[place] = i;
+                rankedLight[place] = lampLight;
+                rankedLuminance[place] = luminance;
             }
         }
 
-        float3 worldLampAt;
-        if (strongestLamp >= 0)
+        // Each ray stops as far short of its lamp as the surfaces' shadow rays do: half the fitting's size,
+        // five to twenty centimetres -- past that is the fitting itself. Stopped a whole fitting's size
+        // short, as it was, a lamp hung within forty centimetres of a wall never reached it: the lamp in
+        // the room behind lit the air on the outside of the wall in a broad glowing patch.
+        for (int r = 0; r < kShadowedLamps; r++)
         {
-            worldLampAt = mul(p.viewToWorld, float4(p.lampPosition[strongestLamp].xyz, 0.0)).xyz;
-            float source = clamp(p.lampDirection[strongestLamp].w, 0.05, 0.4);
-            direct -= strongest * (1.0 - SegmentVisibility(world, float3(0.0, 0.0, 0.0), worldLampAt, source));
-        }
-
-        if (secondLamp >= 0)
-        {
-            worldLampAt = mul(p.viewToWorld, float4(p.lampPosition[secondLamp].xyz, 0.0)).xyz;
-            float source = clamp(p.lampDirection[secondLamp].w, 0.05, 0.4);
-            direct -= second * (1.0 - SegmentVisibility(world, float3(0.0, 0.0, 0.0), worldLampAt, source));
+            int ranked = rankedLamp[r];
+            if (ranked >= 0)
+            {
+                float3 worldLampAt = mul(p.viewToWorld, float4(p.lampPosition[ranked].xyz, 0.0)).xyz;
+                float stopShort = clamp(p.lampDirection[ranked].w * 0.5, 0.05, 0.2);
+                direct -= rankedLight[r]
+                    * (1.0 - SegmentVisibility(world, float3(0.0, 0.0, 0.0), worldLampAt, stopShort));
+            }
         }
 
         // The sky's light, which the medium scatters and the dust does not: the harmonics read back along

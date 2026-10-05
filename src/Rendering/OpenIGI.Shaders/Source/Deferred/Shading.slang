@@ -1314,6 +1314,13 @@ float4 fragmentMain(Varyings input) : SV_Target
         return float4(saturate(lampShadow.x), lampShadow.y > 0.004 ? saturate(lampShadow.y) : 0.0, 0.0, 1.0);
     }
 
+    if (debugView == 30)
+    {
+        float mapLit = saturate(lampShadow.x);
+        float field = lampShadow.y > 0.0 ? saturate(lampShadow.y - 0.002) : 0.0;
+        return float4(saturate(1.0 - mapLit - field), mapLit, field, 1.0);
+    }
+
     if (debugView == 26)
     {
         return lampShadows && lampShadow.y <= 0.0

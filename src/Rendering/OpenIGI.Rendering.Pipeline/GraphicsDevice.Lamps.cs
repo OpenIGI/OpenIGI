@@ -226,7 +226,13 @@ public sealed partial class GraphicsDevice
 
         _lampFieldBlock[20] = BitConverter.Int32BitsToSingle(levels);
         _lampFieldBlock[21] = BitConverter.Int32BitsToSingle(field.Resolution);
-        _lampFieldBlock[22] = BitConverter.Int32BitsToSingle(_debugView == DebugView.LampMarch ? 1 : 0);
+        _lampFieldBlock[22] = BitConverter.Int32BitsToSingle(
+            _debugView switch
+            {
+                DebugView.LampMarch => 1,
+                DebugView.LampMaps => 2,
+                _ => 0,
+            });
         _lampFieldBlock[23] = 0f;
         WriteLampMaps(_lampFieldBlock);
         return _lampFieldBlock;

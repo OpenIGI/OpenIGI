@@ -116,7 +116,14 @@ public sealed partial class GraphicsDevice
                 _shelterTransform.IsPresent ? _shelterTransform : ShelterMapTransform.None,
                 field is { } present ? _textures.Resolve(present.Clipmaps).View : null,
                 tracedSun ? TracedWorld!.TraceableScene : null,
-                tracedSun ? TracedWorld!.CutoutMasks : null);
+                tracedSun ? TracedWorld!.CutoutMasks : null,
+
+                // Untraced, the lamps' own shadow maps answer for the lamps that have one: the field cannot
+                // hold a wall a lamp hangs a hand's breadth behind.
+                !tracedSun && field is not null ? _lampMapArray : null,
+                !tracedSun && field is { } blockField && _lampMapArray is not null
+                    ? WriteLampField(blockField)
+                    : default);
         }
 
         _fogRan = true;

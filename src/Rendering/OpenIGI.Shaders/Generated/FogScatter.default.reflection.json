@@ -104,6 +104,28 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uFogLampMaps",
+      "group": 0,
+      "binding": 14,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true,
+      "sampleType": "Depth"
+    },
+    {
+      "name": "uFogLampMapParams",
+      "group": 0,
+      "binding": 15,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
     }
   ],
   "pushBlock": null,

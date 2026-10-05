@@ -182,20 +182,26 @@ internal sealed partial class GameHost
     /// reads as lit, and the lamp's own aim gives it no light.
     /// </para>
     /// <para>
-    /// One that does not is drawn from its centre with a near plane of a few centimetres, as a point light's
-    /// cube is, and with its own housing in the maps (see ShadowCasterPass.RenderLampMap). A near plane a
-    /// quarter of a metre out cut away the door frame a recessed lamp sits in, and its light spilled round
-    /// the frame onto the wall either side.
+    /// One that does not is drawn from its centre, as a point light's cube is, with its near plane at three
+    /// quarters of the fitting's size (five to thirty centimetres; five against a measured face). Nearer is
+    /// the fitting's housing, which surrounds its centre: at three centimetres every face of the cube saw the
+    /// box the bulb sits in, and a wall lamp shadowed the whole wall and the yard in front of it where the
+    /// traced lamp lit them; at half its size the box's sides still stood inside the cube and cut a dark
+    /// bow-tie along the wall either side of every lamp. Further loses the wall a room's lamp hangs a hand's
+    /// breadth from: at the whole fitting's size, forty centimetres, a lamp thirty-five from the wall did not
+    /// see it, and lit the air and the ground on its far side.
     /// </para>
     /// </remarks>
     private static (Vector3d From, Matrix4f Projection) LampMapView(LightFixture lamp)
     {
         float reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f);
-        Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, 0.03f, reach);
         if (!lamp.IsDirectional)
         {
-            return (lamp.Position, projection);
+            float housing = lamp.HasRect ? 0.05f : Math.Clamp(MathF.Max(lamp.Extent, 0.05f) * 0.75f, 0.05f, 0.3f);
+            return (lamp.Position, Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, housing, reach));
         }
+
+        Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, 0.03f, reach);
 
         Vector3f facing = lamp.Direction.Normalized();
         Vector3d front = new(

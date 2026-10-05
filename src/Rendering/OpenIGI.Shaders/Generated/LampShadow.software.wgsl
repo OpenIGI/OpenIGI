@@ -861,8 +861,10 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     }
     k_0 = i32(0);
     var visibleSum_0 : f32 = 0.0f;
+    var mappedLitSum_0 : f32 = 0.0f;
     var blocked_0 : f32 = 0.0f;
     var penumbraSum_0 : f32 = 0.0f;
+    var fieldRays_0 : f32 = 0.0f;
     var nearMissSum_0 : f32 = 0.0f;
     for(;;)
     {
@@ -990,6 +992,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         var mapped_0 : f32 = LampMapVisibility_0(lamp_1, _S74, normal_0, weightSum_0);
         if(mapped_0 >= 0.0f)
         {
+            var mappedLitSum_1 : f32 = mappedLitSum_0 + mapped_0;
             var visibleSum_1 : f32 = visibleSum_0 + mapped_0;
             if(mapped_0 < 1.0f)
             {
@@ -1004,11 +1007,13 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                 penumbraSum_1 = penumbraSum_0;
             }
             visibleSum_0 = visibleSum_1;
+            mappedLitSum_0 = mappedLitSum_1;
             k_0 = k_0 + i32(1);
             blocked_0 = blocked_1;
             penumbraSum_0 = penumbraSum_1;
             continue;
         }
+        var fieldRays_1 : f32 = fieldRays_0 + 1.0f;
         var rayDirection_0 : vec3<f32> = toTarget_0 / vec3<f32>(distance_1);
         var _S76 : vec3<f32> = _S62 - p_0.cameraFrame_0.xyz;
         var _S77 : f32 = distance_1 - stopShort_0;
@@ -1047,6 +1052,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
             penumbraSum_1 = penumbraSum_3;
         }
         visibleSum_0 = visibleSum_2;
+        fieldRays_0 = fieldRays_1;
         nearMissSum_0 = nearMissSum_1;
         k_0 = k_0 + i32(1);
         blocked_0 = blocked_1;
@@ -1059,6 +1065,11 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     else
     {
         stopShort_0 = 0.0020000000949949f;
+    }
+    if((f_0.levels_0.z) == i32(2))
+    {
+        textureStore((uVisibility_0), (vec2<u32>(_S60)), (vec4<f32>(mappedLitSum_0 / 2.0f, 0.0020000000949949f + fieldRays_0 / 2.0f, 0.0f, 0.0f)));
+        return;
     }
     if((f_0.levels_0.z) != i32(0))
     {

@@ -822,6 +822,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     float blocked = 0.0;
     float nearMissSum = 0.0;
 
+    // For the lampmaps debug view: the rays a lamp's map held lit, and those left to the field.
+    float mappedLitSum = 0.0;
+    float fieldRays = 0.0;
+
     for (int k = 0; k < kSamples; k++)
     {
         int lamp = chosen[k];
@@ -906,6 +910,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             onRect ? (length(rect.xyz) + rect.w) : (2.0 * source));
         if (mapped >= 0.0)
         {
+            mappedLitSum += mapped;
             visibleSum += mapped;
             if (mapped < 1.0)
             {
@@ -917,6 +922,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         }
 
         // Camera-relative, which is the space the field's corners are handed over in.
+        fieldRays += 1.0;
         float3 rayDirection = toTarget / distance;
         hit = SoftwareBlocked(
             origin - p.cameraFrame.xyz,
@@ -969,6 +975,13 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // multiplies every lamp's unshadowed light by the result.
     float penumbra = blocked > 0.0 ? clamp(penumbraSum / blocked, 0.002, 1.0) : 0.002;
 #if OPENIGI_LAMP_FIELD
+    if (f.levels.z == 2)
+    {
+        // The lampmaps debug view: the share of rays a map held lit, and the share left to the field.
+        uVisibility.Store(px, float4(mappedLitSum / float(kSamples), 0.002 + (fieldRays / float(kSamples)), 0.0, 0.0));
+        return;
+    }
+
     if (f.levels.z != 0)
     {
         // The lampmarch debug view: the share of rays the march stopped, and the share it let through past
