@@ -30,6 +30,19 @@ internal sealed partial class GameHost
     /// <summary>How many already-drawn slots are redrawn each frame, in turn.</summary>
     private const int LampMapsRefreshedPerFrame = 2;
 
+    /// <summary>How many faces of lamps someone is near are redrawn each frame, before the rest.</summary>
+    /// <remarks>
+    /// One lamp's cube, taking the lamps in turn. The turn-taking refresh alone came round to any one face every couple of seconds,
+    /// so a soldier walking under a lamp left his shadow behind him, and a face drawn a second before its
+    /// neighbour cut the shadow in two along the cube's seam.
+    /// </remarks>
+    private const int LampMapsMovingFacesPerFrame = 6;
+
+    // Where the redraw of lamps with someone near resumes next frame, and the cube starts it walks.
+    private int _lampMapMovingCursor;
+    private readonly List<int> _lampMapOccupied = [];
+    private readonly List<Vector3d> _lampMapPeople = [];
+
     /// <summary>How far in front of a fitting's glass its cube is drawn from, in metres.</summary>
     private const double LampMapStandOff = 0.06;
 
@@ -192,6 +205,58 @@ internal sealed partial class GameHost
         return (front, projection);
     }
 
+    /// <summary>Finds the cubes whose lamp has a living soldier or the player within its reach.</summary>
+    /// <param name="slots">How many slots the device holds.</param>
+    private void CollectOccupiedLampMaps(int slots)
+    {
+        _lampMapOccupied.Clear();
+        _lampMapPeople.Clear();
+
+        if (_player is { } player)
+        {
+            _lampMapPeople.Add(WorldScene.ToMetres(player.Body.Position));
+        }
+
+        if (_soldiers is { } soldiers)
+        {
+            foreach (HumanOccupant occupant in soldiers.LiveOccupants())
+            {
+                if (!occupant.IsDead)
+                {
+                    _lampMapPeople.Add(WorldScene.ToMetres(occupant.Position));
+                }
+            }
+        }
+
+        if (_lampMapPeople.Count == 0)
+        {
+            return;
+        }
+
+        for (int start = 0; start + CubeFaceAxes.Length <= slots; start += CubeFaceAxes.Length)
+        {
+            int fixture = _lampMapFixture[start];
+            if (fixture < 0 || fixture >= _lightFixtures.Count)
+            {
+                continue;
+            }
+
+            LightFixture lamp = _lightFixtures[fixture];
+            double reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f) + 1.0;
+            foreach (Vector3d person in _lampMapPeople)
+            {
+                double dx = person.X - lamp.Position.X;
+                double dy = person.Y - lamp.Position.Y;
+                double dz = person.Z - lamp.Position.Z;
+                if ((dx * dx) + (dy * dy) + (dz * dz) < reach * reach)
+                {
+                    _lampMapOccupied.Add(start);
+                    break;
+                }
+            }
+        }
+    }
+
     /// <summary>Finds a run of free slots, or -1.</summary>
     private int FreeLampMapRun(int slots, int length)
     {
@@ -248,6 +313,26 @@ internal sealed partial class GameHost
                 _lampMapPending[slot] = false;
                 drawnNew++;
             }
+        }
+
+        // Lamps someone stands or walks near: their whole cube first, so the shadow moves with the body.
+        CollectOccupiedLampMaps(slots);
+        int movingDrawn = 0;
+        for (int k = 0; k < _lampMapOccupied.Count && movingDrawn < LampMapsMovingFacesPerFrame; k++)
+        {
+            int start = _lampMapOccupied[(_lampMapMovingCursor + k) % _lampMapOccupied.Count];
+            for (int face = 0; face < CubeFaceAxes.Length && movingDrawn < LampMapsMovingFacesPerFrame; face++)
+            {
+                if (!_lampMapPending[start + face] && DrawLampMap(start + face))
+                {
+                    movingDrawn++;
+                }
+            }
+        }
+
+        if (_lampMapOccupied.Count > 0)
+        {
+            _lampMapMovingCursor = (_lampMapMovingCursor + 1) % _lampMapOccupied.Count;
         }
 
         for (int refreshed = 0, tried = 0; refreshed < LampMapsRefreshedPerFrame && tried < slots; tried++)
