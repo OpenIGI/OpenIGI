@@ -183,12 +183,13 @@ public static class GraphicsMenu
                     "Ambient Occlusion",
                     "The soft darkening where surfaces meet — under crates, in corners, along the seam "
                         + "between a wall and the floor. The higher steps search more directions per pixel, "
-                        + "so the result is cleaner rather than deeper, and widen the reach from "
-                        + "contact-scale to room-scale. High is the top step because more directions than "
-                        + "this measure indistinguishable — the Ultra preset uses it too.",
+                        + "so the result is cleaner rather than deeper; the reach stays at contact scale, "
+                        + "because the indirect lighting already darkens a room's corners at room scale. "
+                        + "High is the top step because more directions than this measure "
+                        + "indistinguishable — the Ultra preset uses it too.",
                     new QualityLevel("Off", ("r_ao", "0"), ("r_ao_radius", "1.5"), ("r_ao_intensity", "1.2")),
-                    new QualityLevel("Enhanced", ("r_ao", "4"), ("r_ao_radius", "13.61"), ("r_ao_intensity", "1.2")),
-                    new QualityLevel("High", ("r_ao", "6"), ("r_ao_radius", "13.61"), ("r_ao_intensity", "1.2"))),
+                    new QualityLevel("Enhanced", ("r_ao", "4"), ("r_ao_radius", "1"), ("r_ao_intensity", "1.2")),
+                    new QualityLevel("High", ("r_ao", "6"), ("r_ao_radius", "1"), ("r_ao_intensity", "1.2"))),
 
                 new QualityGroup(
                     "Reflections",
@@ -349,7 +350,7 @@ public static class GraphicsMenu
                         ("r_saturation", "1"),
                         ("r_vignette", "0.4"),
                         ("r_chromatic", "0"),
-                        ("r_lut", "1"),
+                        ("r_lut", "0"),
                         ("r_sharpen", "0"),
                         ("r_bloom", "0.2"),
                         ("r_bloom_threshold", "0"))),
@@ -611,6 +612,14 @@ public static class GraphicsMenu
         // the same authored haze through the froxel volume instead. A player who could set this
         // separately could set both at once, which fogs the frame twice.
         "r_fog_retail",
+
+        // The shape of the fog's light rather than its cost: how much it throws back towards the sun and
+        // how much the haze breaks up. Tuned against reference captures and set by the Preset row (off on
+        // vanilla, on above it); a player moving one has re-lit the level, not chosen a quality level.
+        "r_fog_back_scatter",
+        "r_fog_back_weight",
+        "r_fog_noise",
+        "r_sun_shafts",
 
         // Diagnostics, A/B levers and paths on disk.
         "r_rt",

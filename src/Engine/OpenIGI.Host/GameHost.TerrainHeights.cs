@@ -50,8 +50,9 @@ internal sealed partial class GameHost
         CancellationTokenSource cancel = new();
         _terrainRasterCancel = cancel;
         _terrainRasterStarted = _loop.TimeSource.Milliseconds;
-        _terrainRasterTask = Task.Run(
+        _terrainRasterTask = _work.Run(
             () => TerrainHeightRaster.Build(
+                _work,
                 terrain, minX, minY, maxX, maxY, lowZ, highZ, TerrainHeightRaster.DefaultCellMetres, cancel.Token),
             cancel.Token);
     }
