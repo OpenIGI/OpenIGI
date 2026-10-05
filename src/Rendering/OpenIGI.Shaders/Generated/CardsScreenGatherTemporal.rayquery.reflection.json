@@ -322,7 +322,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 640,
+    "size": 688,
     "fields": [
       {
         "name": "uCutoutRecords",
@@ -570,28 +570,38 @@
         "size": 4
       },
       {
+        "name": "uTerrainMap0",
+        "offset": 624,
+        "size": 16
+      },
+      {
+        "name": "uTerrainMap1",
+        "offset": 640,
+        "size": 16
+      },
+      {
         "name": "uHasHistory",
-        "offset": 616,
+        "offset": 656,
         "size": 4
       },
       {
         "name": "uFrameIndex",
-        "offset": 620,
+        "offset": 660,
         "size": 4
       },
       {
         "name": "uMaxAccumulated",
-        "offset": 624,
+        "offset": 664,
         "size": 4
       },
       {
         "name": "uHasVelocity",
-        "offset": 628,
+        "offset": 668,
         "size": 4
       },
       {
         "name": "uGatherPass",
-        "offset": 632,
+        "offset": 672,
         "size": 4
       }
     ]

@@ -5273,6 +5273,7 @@ if (retailFog)
                 // light. It replaces the ambient inside the shade rather than compositing over the frame, so
                 // there is no ambient to zero and nothing runs after the lighting.
                 const int giStep = 8;
+                UpdateTerrainRaster();
                 // The probes' running average, capped at a temporal limit of ten frames. It was
                 // thirty-two, and a history that long outlives every turn of the view -- each frame of
                 // motion resamples it through the reprojection and clamps it into the window of one

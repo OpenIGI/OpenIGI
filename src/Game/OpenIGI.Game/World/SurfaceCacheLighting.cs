@@ -224,6 +224,11 @@ public sealed class SurfaceCacheLighting : IDisposable
     // surfaces still feed it live. Compiled and allocated on first configure, not at construction, so a
     // preset that never turns it on never pays for it.
     private ComputeShaderHandle _cacheUpdate;
+    // The terrain's height raster for the untraced gather (see TerrainHeightRaster), and how to read it.
+    private TextureHandle _terrainHeights;
+    private (float X, float Y, float Z, float W) _terrainMap0;
+    private (float X, float Y, float Z, float W) _terrainMap1;
+
     private TextureHandle _cacheRed;
     private TextureHandle _cacheGreen;
     private TextureHandle _cacheBlue;
@@ -1381,6 +1386,39 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetTexture(8, maps ? _device.LampBounceMapArray : TextureHandle.None);
     }
 
+    /// <summary>Hands the untraced gather the terrain's height raster, or takes it away.</summary>
+    /// <param name="heights">The packed raster (<see cref="ShelterHeightField.Encode"/>), or none.</param>
+    /// <param name="field">The raster it was packed from, which says where it lies.</param>
+    /// <param name="scale">The metres one packed step stands for, as the packing reported.</param>
+    /// <remarks>
+    /// The distance field the untraced gather marches holds the level's placements and not its terrain, so
+    /// a ray towards the ground went through it and came back with a guess at open ground. With this it
+    /// finds the ground, and reads the cache's light where it landed.
+    /// </remarks>
+    public void SetTerrainHeights(TextureHandle heights, ShelterHeightField? field, float scale)
+    {
+        if (!heights.IsValid || field is null || field.IsEmpty)
+        {
+            _terrainHeights = TextureHandle.None;
+            _terrainMap0 = default;
+            _terrainMap1 = default;
+            return;
+        }
+
+        _terrainHeights = heights;
+        _terrainMap0 = ((float)field.OriginX, (float)field.OriginY, (float)(1.0 / field.CellMetres), 1f);
+        _terrainMap1 = (field.Width, field.Depth, field.LowestZ, scale);
+    }
+
+    /// <summary>Binds the terrain's height raster to a gather, or a stand-in that says there is none.</summary>
+    /// <param name="shader">The gather.</param>
+    private void BindTerrainHeights(ComputeShaderHandle shader)
+    {
+        _device.SetTexture(14, _terrainHeights);
+        _device.SetComputeUniform(shader, "uTerrainMap0", _terrainMap0.X, _terrainMap0.Y, _terrainMap0.Z, _terrainMap0.W);
+        _device.SetComputeUniform(shader, "uTerrainMap1", _terrainMap1.X, _terrainMap1.Y, _terrainMap1.Z, _terrainMap1.W);
+    }
+
     /// <summary>Re-sends the same lights at whatever output a switchboard says they are giving out.</summary>
     /// <param name="board">The level's lamps, indexed as the fixtures were.</param>
     /// <remarks>
@@ -1719,6 +1757,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenGather, "uSkyShValid", 0);
         _device.SetComputeUniform(_screenGather, "uBounceScale", 1f);
         _device.SetComputeUniform(_screenGather, "uDebugSource", RenderCVars.GiSource.Value);
+        BindTerrainHeights(_screenGather);
 
         _device.SetComputeUniform(_screenGather, "uAtlasSize", new Vector3f(Width, Height, 0f));
         _device.SetComputeUniform(_screenGather, "uLookupBuckets", SurfaceCacheLookup.Buckets);
@@ -1861,6 +1900,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenGatherTemporal, "uGroundSun", GroundSun());
         _device.SetComputeUniform(_screenGatherTemporal, "uBounceScale", RenderCVars.GiBounce.Value);
         _device.SetComputeUniform(_screenGatherTemporal, "uDebugSource", RenderCVars.GiSource.Value);
+        BindTerrainHeights(_screenGatherTemporal);
         WriteSkyHarmonics(_screenGatherTemporal);
 
         _device.SetComputeUniform(_screenGatherTemporal, "uAtlasSize", new Vector3f(Width, Height, 0f));

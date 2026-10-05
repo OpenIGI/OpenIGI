@@ -88,6 +88,84 @@ static const float kGroundAlbedo = 0.25;
 #include "SurfaceCache.slang"
 #include "Hemisphere.slang"
 
+#if !OPENIGI_RAY_QUERY
+#include "Shelter.slang"
+
+// The terrain's height, a square of ground to a texel: the distance field holds the level's placements
+// and not its terrain, so a ray marched towards the ground passes through it.
+OPENIGI_COMPUTE_TEXTURE(14) Texture2D<float4> uTerrainHeights;
+
+ShelterMap TerrainMap()
+{
+    ShelterMap m;
+    m.origin = uTerrainMap0.xy;
+    m.invCell = uTerrainMap0.z;
+    m.present = uTerrainMap0.w;
+    m.size = uTerrainMap1.xy;
+    m.lowestZ = uTerrainMap1.z;
+    m.scale = uTerrainMap1.w;
+    m.headroom = 0.0;
+    m.reach = 0.0;
+    return m;
+}
+
+// The terrain's height under an absolute world point, or far below everything off the raster.
+float TerrainHeightAt(ShelterMap m, float2 worldXY)
+{
+    int2 at = ShelterTexel(m, worldXY);
+    return ShelterHolds(m, at) ? ShelterSurface(m, uTerrainHeights.Load(int3(at, 0))) : -1.0e30;
+}
+
+// How far along a ray heading down it meets the terrain, within a reach; -1 for not at all. Stepped at
+// half a cell and the crossing then halved down four times, which puts the hit within a few centimetres
+// of the raster's own surface.
+float TerrainHitDistance(float3 absoluteOrigin, float3 direction, float reach)
+{
+    ShelterMap m = TerrainMap();
+    if (m.present < 0.5 || direction.z > -0.01 || m.invCell <= 0.0)
+    {
+        return -1.0;
+    }
+
+    float stepLength = 0.5 / m.invCell;
+    float previous = 0.0;
+    for (int i = 1; i <= 64; i++)
+    {
+        float t = min(float(i) * stepLength, reach);
+        float3 at = absoluteOrigin + (direction * t);
+        if (at.z <= TerrainHeightAt(m, at.xy))
+        {
+            float low = previous;
+            float high = t;
+            for (int refine = 0; refine < 4; refine++)
+            {
+                float middle = (low + high) * 0.5;
+                float3 probe = absoluteOrigin + (direction * middle);
+                if (probe.z <= TerrainHeightAt(m, probe.xy))
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle;
+                }
+            }
+
+            return high;
+        }
+
+        if (t >= reach)
+        {
+            break;
+        }
+
+        previous = t;
+    }
+
+    return -1.0;
+}
+#endif
+
 // A vector into the view's own space, which is the transpose of the view-to-world rotation the host
 // hands over as three columns.
 float3 ToView(float3 world)
@@ -424,7 +502,44 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
         if (!resolved)
         {
             float3 hit;
-            if (VisibilityAt(world, normal, direction, hit) <= 0.5)
+            bool fieldHit = VisibilityAt(world, normal, direction, hit) <= 0.5;
+
+#if !OPENIGI_RAY_QUERY
+            // The terrain, which the field does not hold: a ray heading down that meets it before anything
+            // the field found reads the cache's light where it landed -- the pool a lamp throws on the
+            // ground, the sunlit apron in front of a wall -- where it was answered with an open-ground guess
+            // that knew nothing of either.
+            float3 terrainFrom = world + (normal * 0.1);
+            float terrainT = TerrainHitDistance(terrainFrom + uTraceOrigin, direction, 32.0);
+            if (terrainT >= 0.0 && (!fieldHit || length(hit - world) > terrainT))
+            {
+                float3 terrainLight;
+                if (SampleCardsWithin(
+                        terrainFrom + (direction * terrainT),
+                        float3(0.0, 0.0, 1.0),
+                        0.5 * uClipmapOrigin[0].w,
+                        terrainLight))
+                {
+                    radiance = terrainLight * uBounceScale;
+                    source = 2;
+                    surfaceSum += CapRayIntensity(radiance);
+                    surfaceCount += 1.0;
+                    fieldHit = false;
+                    resolved = true;
+                }
+                else
+                {
+                    // No card holds the ground there: it is still the ground, nearer than whatever the
+                    // field found beyond it, and the open-ground answer below is the one to give.
+                    fieldHit = false;
+                }
+            }
+#endif
+
+            if (resolved)
+            {
+            }
+            else if (fieldHit)
             {
                 float2 found;
                 float2 litFound;

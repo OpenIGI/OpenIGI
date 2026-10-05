@@ -58,6 +58,12 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     // Diagnostic (r_gi_source): keep only one source of the gather's light -- 0 all, 1 screen-traced
     // hits, 2 surface-cache hits, 3 sky; 4 shows the surface cache's own light at the surface instead.
     int uDebugSource;
+
+    // The terrain's height raster (TerrainHeightRaster), for the march that cannot trace the ground:
+    // its low corner's world XY in metres, cells per metre, whether there is one; its size in cells, the
+    // height its packing counts from and the metres one step stands for.
+    float4 uTerrainMap0;
+    float4 uTerrainMap1;
 };
 
 #include "../Common/ScreenGather.slang"

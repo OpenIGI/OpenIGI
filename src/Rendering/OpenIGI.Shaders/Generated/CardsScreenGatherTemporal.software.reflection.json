@@ -175,6 +175,16 @@
       "storageAccess": "None"
     },
     {
+      "name": "uTerrainHeights",
+      "group": 0,
+      "binding": 46,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
       "name": "Globals",
       "group": 0,
       "binding": 49,
@@ -301,7 +311,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 624,
+    "size": 672,
     "fields": [
       {
         "name": "uClipmapOrigin[0]",
@@ -544,28 +554,38 @@
         "size": 4
       },
       {
+        "name": "uTerrainMap0",
+        "offset": 608,
+        "size": 16
+      },
+      {
+        "name": "uTerrainMap1",
+        "offset": 624,
+        "size": 16
+      },
+      {
         "name": "uHasHistory",
-        "offset": 600,
+        "offset": 640,
         "size": 4
       },
       {
         "name": "uFrameIndex",
-        "offset": 604,
+        "offset": 644,
         "size": 4
       },
       {
         "name": "uMaxAccumulated",
-        "offset": 608,
+        "offset": 648,
         "size": 4
       },
       {
         "name": "uHasVelocity",
-        "offset": 612,
+        "offset": 652,
         "size": 4
       },
       {
         "name": "uGatherPass",
-        "offset": 616,
+        "offset": 656,
         "size": 4
       }
     ]
