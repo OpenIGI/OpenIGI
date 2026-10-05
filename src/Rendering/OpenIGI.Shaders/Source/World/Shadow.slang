@@ -77,7 +77,7 @@ Varyings vertexMain(VertexInput input)
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));
     clip.y = OpenIgiClipY(clip.y);
-    clip.z = (clip.z * 0.5) + 0.5;
+    clip.z = (clip.z + clip.w) * 0.5;
     output.position = clip;
     output.diffuseUv = diffuseUv;
 

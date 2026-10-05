@@ -121,7 +121,10 @@ public sealed class ShadowCasterPass
     /// <returns>Whether the map was drawn.</returns>
     /// <remarks>
     /// The same renderers as the cascades, from a camera in the lamp. Nothing is culled by size: a lamp's map
-    /// covers a room, and the bar of a window frame is what it is there to catch.
+    /// covers a room, and the bar of a window frame is what it is there to catch. The lamp's own fitting is
+    /// drawn too, as the traced rays meet it: its rim is what cuts the light off at a grazing angle to the
+    /// glass, and left out of the map, a floodlight lit the ledge and the foot of the wall far below it in
+    /// broad patches the traced shadow had dark.
     /// </remarks>
     public bool RenderLampMap(
         int slot,
@@ -142,7 +145,11 @@ public sealed class ShadowCasterPass
             Camera3D lampCamera = new(position, rotation);
             if (scene is not null && world is not null)
             {
-                world.Draw(scene, lampCamera, projection, new WorldDrawOptions(MinimumRadius: 0f));
+                world.Draw(
+                    scene,
+                    lampCamera,
+                    projection,
+                    new WorldDrawOptions(MinimumRadius: 0f));
             }
 
             characters?.Draw(lampCamera, projection);

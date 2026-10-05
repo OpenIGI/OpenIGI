@@ -267,6 +267,10 @@ public sealed class SurfaceCacheLighting : IDisposable
     private readonly HashSet<int> _movingInstances = [];
     private readonly List<int> _movingPages = [];
 
+    // The sun the cache was last relit under, for what the screen gather's escaped rays meet. See GroundSun.
+    private Vector3f _lastSunDirection;
+    private Vector3f _lastSunColour;
+
     // Each moving placement's run of _movingPages and its bounding sphere, as the lookup lists them; the
     // spheres follow the placements every frame one of them moves.
     private readonly List<SurfaceCacheLookup.MoverObject> _movers = [];
@@ -701,6 +705,10 @@ public sealed class SurfaceCacheLighting : IDisposable
         }
     }
 
+    /// <summary>The sun's light on open ground, as irradiance over pi, from the sun the cache was last lit by.</summary>
+    private Vector3f GroundSun() =>
+        _lastSunColour * (MathF.Max(_lastSunDirection.Z, 0f) / MathF.PI);
+
     /// <summary>Lights every page from the sun and the sky.</summary>
     /// <param name="sunDirection">The world-space direction towards the sun. Expected to be unit length.</param>
     /// <param name="sunColour">The sun's radiance.</param>
@@ -922,6 +930,8 @@ public sealed class SurfaceCacheLighting : IDisposable
         bool useActiveList,
         bool cull)
     {
+        _lastSunDirection = sunDirection;
+        _lastSunColour = sunColour;
         EnsureLightShader();
 
         _device.BindStorageBuffer(0, _pages);
@@ -1608,6 +1618,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenGather, "uScreenTraceDistance", 0f);
         _device.SetComputeUniform(_screenGather, "uScreenThickness", 0f);
         _device.SetComputeUniform(_screenGather, "uSkyColour", default(Vector3f));
+        _device.SetComputeUniform(_screenGather, "uGroundSun", default(Vector3f));
 
         // The dump shows traced bounce alone, so the harmonics are forced off along with the flat sky,
         // and the bounce is read at its physical strength whatever the live calibration says.
@@ -1753,6 +1764,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenGatherTemporal, "uScreenTraceDistance", MathF.Max(screenTraceDistance, 0f));
         _device.SetComputeUniform(_screenGatherTemporal, "uScreenThickness", MathF.Max(screenThickness, 0f));
         _device.SetComputeUniform(_screenGatherTemporal, "uSkyColour", skyColour);
+        _device.SetComputeUniform(_screenGatherTemporal, "uGroundSun", GroundSun());
         _device.SetComputeUniform(_screenGatherTemporal, "uBounceScale", RenderCVars.GiBounce.Value);
         _device.SetComputeUniform(_screenGatherTemporal, "uDebugSource", RenderCVars.GiSource.Value);
         WriteSkyHarmonics(_screenGatherTemporal);
@@ -1838,6 +1850,7 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// <param name="probeCameraToCache">That frame's camera, relative to this pass's origin.</param>
     /// <param name="probeStep">Pixels between probes.</param>
     /// <param name="sceneVelocity">The frame's motion field (<see cref="IGraphicsDevice.SceneVelocity"/>), or none.</param>
+    /// <param name="probeFrame">The gather frame the probes were traced in, which places them in their tiles.</param>
     /// <param name="previousUnproject">
     /// The projection the history was drawn through, or <see langword="null"/> for this frame's. A cinematic
     /// zoom changes it a little every frame, and reprojecting through this frame's instead misses.
@@ -1870,7 +1883,8 @@ public sealed class SurfaceCacheLighting : IDisposable
         Vector3f probeCameraToCache,
         int probeStep,
         TextureHandle sceneVelocity = default,
-        DepthUnprojection? previousUnproject = null)
+        DepthUnprojection? previousUnproject = null,
+        int probeFrame = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -1909,6 +1923,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenResolve, "uProbeWorldToView2", probeWorldToView.Column3);
         _device.SetComputeUniform(_screenResolve, "uProbeCameraToCache", probeCameraToCache);
         _device.SetComputeUniform(_screenResolve, "uProbeStep", Math.Max(probeStep, 1));
+        _device.SetComputeUniform(_screenResolve, "uProbeFrame", probeFrame);
 
         _device.SetComputeUniform(
             _screenResolve, "uUnproject", unproject.XScale, unproject.YScale, unproject.Near, unproject.Far);

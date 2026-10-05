@@ -16,6 +16,7 @@ struct SLANG_ParameterGroup_Globals_std140_0
     @align(16) uAtlasSize_0 : vec3<f32>,
     @align(16) uLookupMin_0 : vec3<f32>,
     @align(16) uSkyColour_0 : vec3<f32>,
+    @align(16) uGroundSun_0 : vec3<f32>,
     @align(16) uClipmapRange_0 : _Array_std140_float4_0,
     @align(16) uShadowLevels_0 : i32,
     @align(4) uShadowResolution_0 : i32,
@@ -668,6 +669,7 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
     const _S56 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
     var ray_0 : i32 = i32(0);
     var irradiance_0 : vec3<f32> = _S56;
+    var counted_0 : f32 = 0.0f;
     for(;;)
     {
         if(ray_0 < i32(16))
@@ -708,6 +710,7 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         }
         var source_1 : i32;
         var radiance_3 : vec3<f32>;
+        var weight_1 : f32;
         if(!resolved_3)
         {
             var hit_1 : vec3<f32>;
@@ -721,39 +724,50 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
                 if(_S59)
                 {
                     var finest_0 : f32 = Globals_0.uClipmapOrigin_0[i32(0)].w;
-                    var _S60 : vec3<f32> = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_2), (0.0f))).xyz * vec3<f32>((smoothstep(1.5f * finest_0, 2.0f * finest_0, length(hit_1 - world_7)) * Globals_0.uBounceScale_0));
+                    var near_1 : f32 = smoothstep(1.5f * finest_0, 2.0f * finest_0, length(hit_1 - world_7));
+                    var _S60 : vec3<f32> = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_2), (0.0f))).xyz * vec3<f32>(Globals_0.uBounceScale_0);
                     source_1 = i32(2);
                     radiance_3 = _S60;
+                    weight_1 = near_1;
                 }
                 else
                 {
                     source_1 = source_0;
                     radiance_3 = radiance_2;
+                    weight_1 = 0.0f;
                 }
             }
             else
             {
-                var _S61 : vec3<f32> = SkyRadiance_0(direction_3);
+                if((direction_3.z) >= 0.0f)
+                {
+                    radiance_3 = SkyRadiance_0(direction_3);
+                }
+                else
+                {
+                    radiance_3 = vec3<f32>(0.25f) * (SkyRadiance_0(vec3<f32>(0.0f, 0.0f, 1.0f)) + Globals_0.uGroundSun_0);
+                }
                 source_1 = i32(3);
-                radiance_3 = _S61;
+                weight_1 = 1.0f;
             }
         }
         else
         {
             source_1 = source_0;
             radiance_3 = radiance_2;
+            weight_1 = 1.0f;
         }
-        var _S62 : bool;
+        var _S61 : bool;
         if((Globals_0.uDebugSource_0) != i32(0))
         {
-            _S62 = source_1 != (Globals_0.uDebugSource_0);
+            _S61 = source_1 != (Globals_0.uDebugSource_0);
         }
         else
         {
-            _S62 = false;
+            _S61 = false;
         }
         var radiance_4 : vec3<f32>;
-        if(_S62)
+        if(_S61)
         {
             radiance_4 = _S56;
         }
@@ -761,41 +775,43 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         {
             radiance_4 = radiance_3;
         }
-        var irradiance_1 : vec3<f32> = irradiance_0 + CapRayIntensity_0(radiance_4);
+        var irradiance_1 : vec3<f32> = irradiance_0 + CapRayIntensity_0(radiance_4) * vec3<f32>(weight_1);
+        var counted_1 : f32 = counted_0 + weight_1;
         ray_0 = ray_0 + i32(1);
         irradiance_0 = irradiance_1;
+        counted_0 = counted_1;
     }
-    return max(irradiance_0 * vec3<f32>(0.19634954631328583f), _S56);
+    return max(irradiance_0 * vec3<f32>((3.14159274101257324f / max(counted_0, 4.0f))), _S56);
 }
 
 @compute
 @workgroup_size(8, 8, 1)
 fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
 {
-    var _S63 : vec2<i32> = vec2<i32>(id_0.xy);
+    var _S62 : vec2<i32> = vec2<i32>(id_0.xy);
     var grid_0 : vec2<i32> = (vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) + vec2<i32>((Globals_0.uProbeStep_0 - i32(1)))) / vec2<i32>(Globals_0.uProbeStep_0);
-    var _S64 : bool;
-    if((_S63.x) >= (grid_0.x))
+    var _S63 : bool;
+    if((_S62.x) >= (grid_0.x))
     {
-        _S64 = true;
+        _S63 = true;
     }
     else
     {
-        _S64 = (_S63.y) >= (grid_0.y);
+        _S63 = (_S62.y) >= (grid_0.y);
     }
-    if(_S64)
+    if(_S63)
     {
         return;
     }
-    var uv_5 : vec2<f32> = (vec2<f32>(min(_S63 * vec2<i32>(Globals_0.uProbeStep_0) + vec2<i32>((Globals_0.uProbeStep_0 / i32(2))), vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) - vec2<i32>(i32(1)))) + vec2<f32>(0.5f)) / vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0));
+    var uv_5 : vec2<f32> = (vec2<f32>(min(_S62 * vec2<i32>(Globals_0.uProbeStep_0) + vec2<i32>((Globals_0.uProbeStep_0 / i32(2))), vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) - vec2<i32>(i32(1)))) + vec2<f32>(0.5f)) / vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0));
     var depth_7 : f32 = DepthBilinear_0(uSceneDepth_0, uSceneDepthSampler_0, uv_5);
     if(IsSkyDepth_0(depth_7))
     {
-        textureStore((uIndirect_0), (vec2<u32>(_S63)), (vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f)));
+        textureStore((uIndirect_0), (vec2<u32>(_S62)), (vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f)));
         return;
     }
     var viewPosition_1 : vec3<f32> = ViewPositionAt_0(uv_5, depth_7);
-    textureStore((uIndirect_0), (vec2<u32>(_S63)), (vec4<f32>(GatherIndirect_0(Globals_0.uCameraToCache_0 + Globals_0.uViewToWorld0_0 * vec3<f32>(viewPosition_1.x) + Globals_0.uViewToWorld1_0 * vec3<f32>(viewPosition_1.y) + Globals_0.uViewToWorld2_0 * vec3<f32>(viewPosition_1.z), normalize((textureSampleLevel((uSceneNormal_0), (uSceneNormalSampler_0), (uv_5), (0.0f))).xyz * vec3<f32>(2.0f) - vec3<f32>(1.0f)), viewPosition_1, vec2<f32>(0.5f, 0.5f)), 1.0f)));
+    textureStore((uIndirect_0), (vec2<u32>(_S62)), (vec4<f32>(GatherIndirect_0(Globals_0.uCameraToCache_0 + Globals_0.uViewToWorld0_0 * vec3<f32>(viewPosition_1.x) + Globals_0.uViewToWorld1_0 * vec3<f32>(viewPosition_1.y) + Globals_0.uViewToWorld2_0 * vec3<f32>(viewPosition_1.z), normalize((textureSampleLevel((uSceneNormal_0), (uSceneNormalSampler_0), (uv_5), (0.0f))).xyz * vec3<f32>(2.0f) - vec3<f32>(1.0f)), viewPosition_1, vec2<f32>(0.5f, 0.5f)), 1.0f)));
     return;
 }
 

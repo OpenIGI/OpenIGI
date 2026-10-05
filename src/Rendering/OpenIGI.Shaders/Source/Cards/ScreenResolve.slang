@@ -87,6 +87,9 @@ struct Globals
     // pixels between probes.
     int uProbeStep;
 
+    // The frame the probe atlas was traced in, which decides where in each tile its probes stand.
+    int uProbeFrame;
+
     // Whether uVelocity holds this frame's motion field.
     int uHasVelocity;
 };
@@ -131,8 +134,8 @@ float2 ProjectToUv(float3 viewPosition)
 
 // How sharply a probe is rejected for standing off the pixel's plane, measured relative to the pixel's
 // view depth: the strict scale first, and a looser one used only when the strict one leaves nothing.
-static const float kPlaneSharpness = 10000.0;
-static const float kPlaneSharpnessLoose = 1000.0;
+static const float kPlaneSharpness = 200000.0;
+static const float kPlaneSharpnessLoose = 20000.0;
 
 // The four probes around the pixel, each weighted by its bilinear share and by how far ITS OWN traced
 // position lies off the pixel's plane. It weighted by this frame's depth resampled at each probe's tile
@@ -140,6 +143,20 @@ static const float kPlaneSharpnessLoose = 1000.0;
 // lit and swung the weights with every small move of the camera; and with the gather skipping frames it
 // laid the probes of the frame before over this frame's picture, four probes out of place during a turn.
 // The probes are found by projecting the pixel into the frame they were traced in.
+// Where in its tile a frame places each probe: one offset shared by the whole screen, walking eight positions
+// spread over the tile (a stratified pattern, the second axis bit-reversed). A probe fixed at its tile's
+// centre sampled the same surface points every frame, so the grid's own pattern -- a staircase of cells
+// along every thin edge, a fitting, a sill -- was printed into the light and no amount of accumulation could
+// average it out. Moved every frame, the pattern differs frame to frame and the per-pixel history averages
+// it away. Every pass that finds a probe from a pixel asks this for the frame the probe was traced in.
+int2 ProbeTileOffset(int frame, int step)
+{
+    uint i = uint(frame) & 7u;
+    uint reversed = ((i & 1u) << 2) | (i & 2u) | ((i >> 2) & 1u);
+    float2 at = (float2(float(i), float(reversed)) + 0.5) / 8.0;
+    return min(int2(floor(at * float(step))), int2(step - 1, step - 1));
+}
+
 float3 UpsampleProbe(float2 uv, float3 pixelWorld, float pixelViewZ, float3 pixelNormal)
 {
     uint width;
@@ -155,7 +172,8 @@ float3 UpsampleProbe(float2 uv, float3 pixelWorld, float pixelViewZ, float3 pixe
     // A probe sits at the centre of the pixel step/2 into its tile, as the gather placed it.
     float step = float(max(g.uProbeStep, 1));
     float2 pixelCoord = probeFrameUv * float2(float(g.uScreenWidth), float(g.uScreenHeight));
-    float2 probeCoord = (pixelCoord - (0.5 * step) - 0.5) / step;
+    float2 probeOffset = float2(ProbeTileOffset(g.uProbeFrame, max(g.uProbeStep, 1)));
+    float2 probeCoord = (pixelCoord - probeOffset - 0.5) / step;
     float2 base = floor(probeCoord);
     float2 fraction = probeCoord - base;
 
@@ -210,17 +228,81 @@ float3 UpsampleProbe(float2 uv, float3 pixelWorld, float pixelViewZ, float3 pixe
         }
     }
 
-    if (strictWeight > 1e-4)
+    // All four on this surface, or nearly: the plain bilinear answer.
+    float bilinearTotal = 0.0;
+    for (int b = 0; b < 4; b++)
+    {
+        bilinearTotal += ((b & 1) == 0 ? 1.0 - fraction.x : fraction.x) * ((b >> 1) == 0 ? 1.0 - fraction.y : fraction.y);
+    }
+
+    if (strictWeight > 0.6 * bilinearTotal)
     {
         return strictSum / strictWeight;
     }
 
-    if (looseWeight > 1e-4)
+    // Some of the four lie on something else -- the lip of a fitting, a window bar, a ledge thinner than
+    // the probe spacing. Renormalising what is left hands each pixel a single probe's light across a whole
+    // probe cell, and the light round every such edge was drawn as a staircase of cells. The wider search
+    // below blends the surface's probes over two cells with a tent instead, which has no cell edges in it.
+    // The nearest probe used to be taken outright where none of the four was on the surface, and which
+    // probe is nearest changes a whole cell at a time. The ring round the four is searched for the surface's
+    // own probes, strictly and then loosely; failing those, all sixteen are blended by how far each stands
+    // from the pixel.
+    float3 ringSum = float3(0.0, 0.0, 0.0);
+    float ringWeight = 0.0;
+    float3 ringLooseSum = float3(0.0, 0.0, 0.0);
+    float ringLooseWeight = 0.0;
+    float3 nearSum = float3(0.0, 0.0, 0.0);
+    float nearWeight = 0.0;
+    float scale = max(pixelViewZ, 0.001);
+    for (int y = -1; y <= 2; y++)
     {
-        return looseSum / looseWeight;
+        for (int x = -1; x <= 2; x++)
+        {
+            int2 coord = int2(base) + int2(x, y);
+            if (any(coord < int2(0, 0)) || any(coord >= grid))
+            {
+                continue;
+            }
+
+            float4 probePosition = uProbePosition.Load(int3(coord, 0));
+            if (probePosition.w <= 0.0)
+            {
+                continue;
+            }
+
+            float3 offset = (probePosition.xyz + g.uProbeCameraToCache) - pixelWorld;
+            float planeDistance = haveNormal ? abs(dot(offset, pixelNormal)) : length(offset);
+            float relative = planeDistance / scale;
+            float2 apartCells = abs(float2(float(x), float(y)) - fraction);
+            float tent = max(1.0 - (apartCells.x * 0.5), 0.0) * max(1.0 - (apartCells.y * 0.5), 0.0);
+            float3 value = uProbe.Load(int3(coord, 0)).rgb;
+
+            float onSurface = tent * exp2(-kPlaneSharpness * relative * relative);
+            ringSum += value * onSurface;
+            ringWeight += onSurface;
+            float looseOn = tent * exp2(-kPlaneSharpnessLoose * relative * relative);
+            ringLooseSum += value * looseOn;
+            ringLooseWeight += looseOn;
+
+            float distance = length(offset) / scale;
+            float near = tent / (1.0 + (distance * distance * 400.0));
+            nearSum += value * near;
+            nearWeight += near;
+        }
     }
 
-    return nearestValue;
+    if (ringWeight > 1e-4)
+    {
+        return ringSum / ringWeight;
+    }
+
+    if (ringLooseWeight > 1e-4)
+    {
+        return ringLooseSum / ringLooseWeight;
+    }
+
+    return nearWeight > 1e-6 ? nearSum / nearWeight : nearestValue;
 }
 
 [shader("compute")]

@@ -75,6 +75,9 @@ float3 SkyRadiance(float3 direction)
     return max(float3(0.0, 0.0, 0.0), linearPart + quadraticPart + lastBand);
 }
 
+// The albedo assumed for the open ground an escaped ray heading down would have met.
+static const float kGroundAlbedo = 0.25;
+
 #define kTraceOrigin uTraceOrigin
 
 #include "DepthFilter.slang"
@@ -325,6 +328,13 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
     float3 viewNormal = ToView(normal);
 
     float3 irradiance = float3(0.0, 0.0, 0.0);
+
+    // How many rays this probe's estimate stands on. A ray whose hit the cache cannot place, or that struck
+    // what is most likely this surface's own skin, says nothing about the light -- it used to be counted as
+    // black, and the march's misses cluster exactly where geometry is close and thin: room corners, under
+    // desks, round a ceiling fitting. Those came out as dark blotches the traced path does not have. Left
+    // out instead, the estimate is the mean of the rays that did find something.
+    float counted = 0.0;
     for (int ray = 0; ray < kTracesPerProbe; ray++)
     {
         // A stratified cosine hemisphere: the sixteen rays cover a four-by-four grid of the square the
@@ -340,6 +350,9 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
 
         float3 radiance = float3(0.0, 0.0, 0.0);
         bool resolved = false;
+
+        // This ray's share of the estimate: one, less whatever of it the trace could not vouch for.
+        float weight = 1.0;
 
         // Which source answered this ray, for the r_gi_source diagnostic: 1 screen, 2 surface cache, 3 sky.
         int source = 0;
@@ -366,17 +379,29 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
                 float agreement;
                 if (LookupCardHit(hit, direction, found, litFound, agreement))
                 {
-                    // Faded out over the first two voxels, where the hit is most likely this surface's
-                    // own skin and the cache would hand back the light being gathered for it.
+                    // Left out over the first two voxels, where the hit is most likely this surface's own
+                    // skin and the cache would hand back the light being gathered for it.
                     float finest = uClipmapOrigin[0].w;
                     float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
-                    radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * (near * uBounceScale);
+                    radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * uBounceScale;
+                    weight = near;
                     source = 2;
+                }
+                else
+                {
+                    weight = 0.0;
                 }
             }
             else
             {
-                radiance = SkyRadiance(direction);
+                // Escaped. Heading up it met the sky. Heading down it met the ground -- which is not in the
+                // field (the terrain is not one of its placements) and lies past its reach soon enough
+                // anyway -- so it is the ground it reports: open ground lit by the sun and the sky above
+                // it, at a dry earth's albedo. Taken as sky, every ray out of a window and down to a sunlit
+                // yard came back the colour of the sky overhead, and the walls facing the windows went blue.
+                radiance = direction.z >= 0.0
+                    ? SkyRadiance(direction)
+                    : kGroundAlbedo * (SkyRadiance(float3(0.0, 0.0, 1.0)) + uGroundSun);
                 source = 3;
             }
         }
@@ -387,10 +412,14 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
         }
 
         radiance = CapRayIntensity(radiance);
-        irradiance += radiance;
+        irradiance += radiance * weight;
+        counted += weight;
     }
 
-    return max(irradiance * (kPi / float(kTracesPerProbe)), float3(0.0, 0.0, 0.0));
+    // At least a quarter of the rays' worth, so a probe that found almost nothing is not one lucky ray
+    // scaled up to the whole hemisphere.
+    float norm = max(counted, 0.25 * float(kTracesPerProbe));
+    return max(irradiance * (kPi / norm), float3(0.0, 0.0, 0.0));
 }
 
 #endif

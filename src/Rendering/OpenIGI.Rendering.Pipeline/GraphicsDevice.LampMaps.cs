@@ -24,10 +24,15 @@ namespace OpenIGI.Rendering.Pipeline;
 public sealed partial class GraphicsDevice
 {
     /// <summary>How many lamps can hold a map at once.</summary>
-    public const int LampMapSlotCount = 16;
+    public const int LampMapSlotCount = 240;
 
-    /// <summary>Texels along each side of one lamp's map.</summary>
-    private const int LampMapSize = 512;
+    /// <summary>Texels along each side of one face of a lamp's cube.</summary>
+    /// <remarks>
+    /// A quarter of the sun's: a lamp lights a room, not a valley, and every lamp takes six faces. At this
+    /// size twenty lamps hold cubes in some thirty megabytes, where at 512 only eight did, and the ninth
+    /// fell back to the distance field and its leaks.
+    /// </remarks>
+    private const int LampMapSize = 256;
 
     private IRhiTexture? _lampMaps;
     private IRhiTextureView? _lampMapArray;
@@ -60,8 +65,11 @@ public sealed partial class GraphicsDevice
         int count = Math.Min(slotPerLight.Length, _lampMapSlotOf.Length);
         for (int i = 0; i < count; i++)
         {
-            int slot = slotPerLight[i];
-            _lampMapSlotOf[i] = slot is >= 0 and < LampMapSlotCount ? slot : -1;
+            // The slot, with the cube bit on the first of six for a lamp that faces nowhere.
+            int entry = slotPerLight[i];
+            int slot = entry & 0xFF;
+            int span = (entry & LampMapCubeBit) != 0 ? 6 : 1;
+            _lampMapSlotOf[i] = entry >= 0 && slot + span <= LampMapSlotCount ? entry : -1;
         }
     }
 
@@ -149,22 +157,32 @@ public sealed partial class GraphicsDevice
             }
 
             matrix.CopyColumnMajorTo(block.AsSpan(LampMapMatricesAt + (slot * 16), 16));
+
+            // The projection's own depth terms, which the matrix above has mixed with the rotation.
+            block[LampMapDepthAt + (slot * 2)] = _lampMapProjections[slot].M33;
+            block[LampMapDepthAt + (slot * 2) + 1] = _lampMapProjections[slot].M34;
         }
 
         bool any = _lampMaps is not null;
         for (int i = 0; i < DeferredLocalLight.Maximum; i++)
         {
-            int slot = _lampMapSlotOf[i];
-            bool usable = any && slot >= 0 && _lampMapDrawn[slot] && i < _localLightCount;
-            block[LampMapSlotsAt + i] = BitConverter.Int32BitsToSingle(usable ? slot : -1);
+            int entry = _lampMapSlotOf[i];
+            bool usable = any && entry >= 0 && _lampMapDrawn[entry & 0xFF] && i < _localLightCount;
+            block[LampMapSlotsAt + i] = BitConverter.Int32BitsToSingle(usable ? entry : -1);
         }
     }
+
+    /// <summary>The bit a lamp's slot carries when it is the first of a cube's six.</summary>
+    private const int LampMapCubeBit = 0x100;
 
     /// <summary>Where the maps' matrices start in the field block.</summary>
     private const int LampMapMatricesAt = 24;
 
+    /// <summary>Where the maps' projection depth terms start in the field block, two floats each.</summary>
+    private const int LampMapDepthAt = LampMapMatricesAt + (LampMapSlotCount * 16);
+
     /// <summary>Where the lamps' slots start in the field block, one int each.</summary>
-    private const int LampMapSlotsAt = LampMapMatricesAt + (LampMapSlotCount * 16);
+    private const int LampMapSlotsAt = LampMapDepthAt + (LampMapSlotCount * 2);
 
     private void DisposeLampMaps()
     {

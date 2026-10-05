@@ -33,6 +33,9 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     float3 uLookupMin;
     float3 uSkyColour;
 
+    // The sun's light on open ground, as irradiance over pi -- what an escaped ray heading down meets.
+    float3 uGroundSun;
+
     float uClipmapRange[4];
 
     int uShadowLevels;

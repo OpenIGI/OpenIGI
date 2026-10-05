@@ -63,7 +63,7 @@ public sealed class TracedLampShadow : IDisposable
     private static readonly RhiClearColor Unshadowed = new(1f, 0f, 0f, 0f);
 
     /// <summary>Floats in the software trace's field block: four corners with their voxel sizes, four ranges, and four integers.</summary>
-    public const int FieldFloats = 24 + (16 * 16) + DeferredLocalLight.Maximum;
+    public const int FieldFloats = 24 + (240 * 16) + (240 * 2) + DeferredLocalLight.Maximum;
 
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;

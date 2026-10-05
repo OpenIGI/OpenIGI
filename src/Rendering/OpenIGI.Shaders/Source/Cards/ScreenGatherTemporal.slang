@@ -69,6 +69,9 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     float3 uLookupMin;
     float3 uSkyColour;
 
+    // The sun's light on open ground, as irradiance over pi -- what an escaped ray heading down meets.
+    float3 uGroundSun;
+
     float uClipmapRange[4];
 
     int uShadowLevels;
@@ -142,6 +145,21 @@ float2 FrameJitter(int2 probeCoord, int frame)
 }
 
 // Where a probe stands and which way its surface faces, from this frame's depth and normals.
+
+// Where in its tile a frame places each probe: one offset shared by the whole screen, walking eight positions
+// spread over the tile (a stratified pattern, the second axis bit-reversed). A probe fixed at its tile's
+// centre sampled the same surface points every frame, so the grid's own pattern -- a staircase of cells
+// along every thin edge, a fitting, a sill -- was printed into the light and no amount of accumulation could
+// average it out. Moved every frame, the pattern differs frame to frame and the per-pixel history averages
+// it away. Every pass that finds a probe from a pixel asks this for the frame the probe was traced in.
+int2 ProbeTileOffset(int frame, int step)
+{
+    uint i = uint(frame) & 7u;
+    uint reversed = ((i & 1u) << 2) | (i & 2u) | ((i >> 2) & 1u);
+    float2 at = (float2(float(i), float(reversed)) + 0.5) / 8.0;
+    return min(int2(floor(at * float(step))), int2(step - 1, step - 1));
+}
+
 bool ProbeSurface(int2 probe, out float3 world, out float3 viewPosition, out float3 worldNormal)
 {
     world = float3(0.0, 0.0, 0.0);
@@ -149,7 +167,7 @@ bool ProbeSurface(int2 probe, out float3 world, out float3 viewPosition, out flo
     worldNormal = float3(0.0, 0.0, 1.0);
 
     int2 pixel = min(
-        (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
+        (probe * uProbeStep) + ProbeTileOffset(uFrameIndex, uProbeStep), int2(uScreenWidth, uScreenHeight) - 1);
     float2 uv = (float2(pixel) + 0.5) / float2(float(uScreenWidth), float(uScreenHeight));
     float depth = DepthBilinear(uSceneDepth, uSceneDepthSampler, uv);
     if (IsSkyDepth(depth))
@@ -285,7 +303,7 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
             if (uHasVelocity != 0)
             {
                 int2 probePixel = min(
-                    (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
+                    (probe * uProbeStep) + ProbeTileOffset(uFrameIndex, uProbeStep), int2(uScreenWidth, uScreenHeight) - 1);
                 float2 screen = float2(float(uScreenWidth), float(uScreenHeight));
                 float2 probeUv = (float2(probePixel) + 0.5) / screen;
                 float2 motion = uVelocity.SampleLevel(uVelocitySampler, probeUv, 0.0).xy;
@@ -303,8 +321,10 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
                 // Probe k sits at the centre of pixel k*step + step/2, as the gather places it; inverting
                 // that, not uv*grid - 0.5, which is a sixteenth of a probe off at 1080p and more whenever the
                 // frame is not a whole number of tiles -- an offset the resampling compounded every frame.
+                // The history's probes stood where the frame before placed them.
+                float2 prevOffset = float2(ProbeTileOffset(uFrameIndex - 1, uProbeStep));
                 float2 tc = ((prevUv * float2(float(uScreenWidth), float(uScreenHeight)))
-                    - (0.5 * float(uProbeStep)) - 0.5) / float(uProbeStep);
+                    - prevOffset - 0.5) / float(uProbeStep);
                 float2 tcBase = floor(tc);
                 float2 tcFrac = tc - tcBase;
 

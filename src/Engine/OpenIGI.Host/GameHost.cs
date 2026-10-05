@@ -5569,7 +5569,11 @@ if (retailFog)
                         giPrevCameraToCache,
                         giStep,
                         _device.SceneVelocity,
-                        giResolvePrevUnprojection);
+                        giResolvePrevUnprojection,
+
+                        // The frame the atlas being read was traced in -- the counter has moved past it --
+                        // which places its probes in their tiles.
+                        giFrame - 1);
                     giResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
@@ -5690,7 +5694,7 @@ if (retailFog)
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
-                    AssignLampMaps(localCount, localLightRange);
+                    AssignLampMaps(localCount, unjitteredProjection);
                     _stormLampCount = localCount;
 
                     // And the distance field those lamps' shadows are marched through wherever the renderer
