@@ -90,7 +90,9 @@ public sealed class FlashlightBlockTests
         float[] expected = new float[FlashlightBlock.Floats];
         FlashlightBlock.Write(expected, light, shadowMask: false);
 
-        Assert.Equal(expected, fog[^FlashlightBlock.Floats..]);
+        Assert.Equal(
+            expected,
+            fog.AsSpan(VolumetricFogParameters.FlashlightOffset, FlashlightBlock.Floats).ToArray());
     }
 
     /// <summary>The flashlight the remastered presets draw, straight ahead from the chest.</summary>

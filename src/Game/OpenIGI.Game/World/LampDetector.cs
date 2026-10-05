@@ -666,9 +666,12 @@ public static class LampDetector
             int low = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
 
             brightness += high / 255.0;
-            red += pixel.R;
-            green += pixel.G;
-            blue += pixel.B;
+
+            // The tint is summed in linear light, texel by texel: the mean of the encoded bytes is paler
+            // than the texture, and a warm fitting lit the room nearly white.
+            red += SrgbCurve.ToLinear(pixel.R);
+            green += SrgbCurve.ToLinear(pixel.G);
+            blue += SrgbCurve.ToLinear(pixel.B);
 
             if (high > 8)
             {

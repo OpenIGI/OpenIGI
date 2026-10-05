@@ -134,7 +134,7 @@ public static class TemporalParameters
     public const int UpdateHistoryFloats = 20;
 
     /// <summary>How many floats the resolve block holds.</summary>
-    public const int ResolveHistoryFloats = 12;
+    public const int ResolveHistoryFloats = 16;
 
     /// <summary>Fills a block that needs nothing but the size of what it is walking over.</summary>
     /// <param name="block">Room for four floats.</param>
@@ -251,7 +251,10 @@ public static class TemporalParameters
         block[14] = bound.HasFlag(TemporalHistoryInputs.SpatialAntiAliasing) ? 1f : 0f;
         block[15] = bound.HasFlag(TemporalHistoryInputs.ShadingRejection) ? 1f : 0f;
 
-        block[16] = 0f;
+        // The exposure the resolve will apply, so the history's brightness weights are judged on what will be
+        // seen: on raw values a night, exposed many times over, sat far below one and the weights flattened
+        // into a plain average that a single lamp texel dominated -- halos and trails round every lamp.
+        block[16] = MathF.Max(settings.Exposure, 1e-4f);
         block[17] = 0f;
         block[18] = 0f;
         block[19] = historyWidth / (float)Math.Max(1, outputWidth);
@@ -279,6 +282,12 @@ public static class TemporalParameters
         block[9] = historyHeight / (float)Math.Max(1, outputHeight);
         block[10] = settings.DebugView;
         block[11] = Math.Clamp(settings.Sharpen, 0f, 1f);
+
+        // The exposure, for the same reason the update has it.
+        block[12] = MathF.Max(settings.Exposure, 1e-4f);
+        block[13] = 0f;
+        block[14] = 0f;
+        block[15] = 0f;
     }
 
     /// <summary>Writes a rotation as four columns of four, which is how the shaders declare a matrix.</summary>

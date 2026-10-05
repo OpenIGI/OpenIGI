@@ -322,7 +322,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 624,
+    "size": 736,
     "fields": [
       {
         "name": "uCutoutRecords",
@@ -475,118 +475,148 @@
         "size": 12
       },
       {
-        "name": "uClipmapRange[0]",
+        "name": "uGroundSun",
         "offset": 480,
-        "size": 16
+        "size": 12
       },
       {
-        "name": "uClipmapRange[1]",
+        "name": "uClipmapRange[0]",
         "offset": 496,
         "size": 16
       },
       {
-        "name": "uClipmapRange[2]",
+        "name": "uClipmapRange[1]",
         "offset": 512,
         "size": 16
       },
       {
-        "name": "uClipmapRange[3]",
+        "name": "uClipmapRange[2]",
         "offset": 528,
         "size": 16
       },
       {
-        "name": "uShadowLevels",
+        "name": "uClipmapRange[3]",
         "offset": 544,
-        "size": 4
+        "size": 16
       },
       {
-        "name": "uShadowResolution",
-        "offset": 548,
-        "size": 4
-      },
-      {
-        "name": "uLookupBuckets",
-        "offset": 552,
-        "size": 4
-      },
-      {
-        "name": "uLookupCell",
-        "offset": 556,
-        "size": 4
-      },
-      {
-        "name": "uScreenWidth",
+        "name": "uShadowLevels",
         "offset": 560,
         "size": 4
       },
       {
-        "name": "uScreenHeight",
+        "name": "uShadowResolution",
         "offset": 564,
         "size": 4
       },
       {
-        "name": "uProbeStep",
+        "name": "uLookupBuckets",
         "offset": 568,
         "size": 4
       },
       {
-        "name": "uMaxRayIntensity",
+        "name": "uLookupCell",
         "offset": 572,
         "size": 4
       },
       {
-        "name": "uScreenTraceSteps",
+        "name": "uScreenWidth",
         "offset": 576,
         "size": 4
       },
       {
-        "name": "uScreenTraceDistance",
+        "name": "uScreenHeight",
         "offset": 580,
         "size": 4
       },
       {
-        "name": "uScreenThickness",
+        "name": "uProbeStep",
         "offset": 584,
         "size": 4
       },
       {
-        "name": "uSkyShValid",
+        "name": "uMaxRayIntensity",
         "offset": 588,
         "size": 4
       },
       {
-        "name": "uBounceScale",
+        "name": "uScreenTraceSteps",
         "offset": 592,
         "size": 4
       },
       {
-        "name": "uDebugSource",
+        "name": "uScreenTraceDistance",
         "offset": 596,
         "size": 4
       },
       {
-        "name": "uHasHistory",
+        "name": "uScreenThickness",
         "offset": 600,
         "size": 4
       },
       {
-        "name": "uFrameIndex",
+        "name": "uSkyShValid",
         "offset": 604,
         "size": 4
       },
       {
-        "name": "uMaxAccumulated",
+        "name": "uBounceScale",
         "offset": 608,
         "size": 4
       },
       {
-        "name": "uHasVelocity",
+        "name": "uDebugSource",
         "offset": 612,
         "size": 4
       },
       {
+        "name": "uTerrainMap0",
+        "offset": 624,
+        "size": 16
+      },
+      {
+        "name": "uTerrainMap1",
+        "offset": 640,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap0",
+        "offset": 656,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap1",
+        "offset": 672,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap2",
+        "offset": 688,
+        "size": 16
+      },
+      {
+        "name": "uHasHistory",
+        "offset": 704,
+        "size": 4
+      },
+      {
+        "name": "uFrameIndex",
+        "offset": 708,
+        "size": 4
+      },
+      {
+        "name": "uMaxAccumulated",
+        "offset": 712,
+        "size": 4
+      },
+      {
+        "name": "uHasVelocity",
+        "offset": 716,
+        "size": 4
+      },
+      {
         "name": "uGatherPass",
-        "offset": 616,
+        "offset": 720,
         "size": 4
       }
     ]

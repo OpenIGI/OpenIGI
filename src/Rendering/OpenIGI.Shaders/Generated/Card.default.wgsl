@@ -67,9 +67,23 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
     return output_0;
 }
 
-fn SrgbToLinear_0( c_0 : vec3<f32>) -> vec3<f32>
+fn DecodeSrgb_0( c_0 : vec3<f32>) -> vec3<f32>
 {
-    return mix(c_0 / vec3<f32>(12.92000007629394531f), pow((c_0 + vec3<f32>(0.05499999970197678f)) / vec3<f32>(1.0549999475479126f), vec3<f32>(2.40000009536743164f, 2.40000009536743164f, 2.40000009536743164f)), step(vec3<f32>(0.04044999927282333f, 0.04044999927282333f, 0.04044999927282333f), c_0));
+    return mix(pow(max((c_0 + vec3<f32>(0.05499999970197678f)) / vec3<f32>(1.0549999475479126f), vec3<f32>(0.0f, 0.0f, 0.0f)), vec3<f32>(2.40000009536743164f, 2.40000009536743164f, 2.40000009536743164f)), c_0 / vec3<f32>(12.92000007629394531f), step(c_0, vec3<f32>(0.04044999927282333f, 0.04044999927282333f, 0.04044999927282333f)));
+}
+
+fn SampledLinear_0( sampled_0 : vec3<f32>) -> vec3<f32>
+{
+    var _S4 : vec3<f32>;
+    if(cSamplerDecodes_0 != i32(0))
+    {
+        _S4 = sampled_0;
+    }
+    else
+    {
+        _S4 = DecodeSrgb_0(sampled_0);
+    }
+    return _S4;
 }
 
 struct CardTargets_0
@@ -88,26 +102,17 @@ struct pixelInput_0
 };
 
 @fragment
-fn fragmentMain( _S4 : pixelInput_0, @builtin(position) position_2 : vec4<f32>) -> CardTargets_0
+fn fragmentMain( _S5 : pixelInput_0, @builtin(position) position_2 : vec4<f32>) -> CardTargets_0
 {
-    var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S4.diffuseUv_2)));
+    var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S5.diffuseUv_2)));
     if((diffuse_0.w) < 0.5f)
     {
         discard;
     }
-    var _S5 : vec3<f32>;
-    if(cSamplerDecodes_0 != i32(0))
-    {
-        _S5 = diffuse_0.xyz;
-    }
-    else
-    {
-        _S5 = SrgbToLinear_0(diffuse_0.xyz);
-    }
     var output_1 : CardTargets_0;
-    output_1.albedo_0 = vec4<f32>(_S5 * _S4.color_1.xyz, 1.0f);
+    output_1.albedo_0 = vec4<f32>(SampledLinear_0(diffuse_0.xyz) * DecodeSrgb_0(_S5.color_1.xyz), 1.0f);
     var _S6 : vec3<f32> = vec3<f32>(0.5f);
-    output_1.normal_1 = vec4<f32>(normalize(_S4.modelNormal_1) * _S6 + _S6, 1.0f);
+    output_1.normal_1 = vec4<f32>(normalize(_S5.modelNormal_1) * _S6 + _S6, 1.0f);
     output_1.material_1 = vec4<f32>(push_0.material_0.x, push_0.material_0.y, push_0.material_0.z, 1.0f);
     output_1.depth_0 = vec4<f32>(position_2.z, 0.0f, 0.0f, 1.0f);
     return output_1;

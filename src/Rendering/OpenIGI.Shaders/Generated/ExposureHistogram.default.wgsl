@@ -33,7 +33,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
         var lit_0 : vec4<f32> = (textureLoad((uScene_0), ((_S3)).xy, ((_S3)).z));
         if((lit_0.w) >= 0.5f)
         {
-            var raw_0 : f32 = (lit_0.x + lit_0.y + lit_0.z) * 0.3333333432674408f;
+            var raw_0 : f32 = dot(lit_0.xyz, vec3<f32>(0.2125999927520752f, 0.71520000696182251f, 0.07220000028610229f));
             var position_0 : f32 = saturate(p_0.range_0.x * log2(max(raw_0, p_0.range_0.z)) + p_0.range_0.y) * 63.0f;
             var low_0 : u32 = u32(position_0);
             var _S4 : u32 = min(low_0 + u32(1), u32(63));

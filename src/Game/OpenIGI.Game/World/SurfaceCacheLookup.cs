@@ -89,15 +89,30 @@ public sealed class SurfaceCacheLookup : IDisposable
     /// <summary>How many pages of moving placements the lookup can list.</summary>
     /// <remarks>
     /// The movers' list is one more bucket after the hashed ones -- index <see cref="Buckets"/> -- which
-    /// every lookup walks as well as its own cell. A page that moves cannot be filed by where it is: the
+    /// every lookup consults as well as its own cell. A page that moves cannot be filed by where it is: the
     /// grid is built once. A truck is a few dozen pages; this is room for a level's worth of vehicles,
     /// doors and lifts, and the buffer is sized for it up front so its handle never changes.
     /// </remarks>
     public const int MaximumMoverPages = 4096;
 
+    /// <summary>How many moving placements the lookup can list.</summary>
+    /// <remarks>
+    /// The movers' bucket lists objects, each with a bounding sphere and the run of its pages, so a lookup
+    /// tests one sphere per object and walks only the pages of those it falls within. Walking every
+    /// mover's page from every lookup was half the cost of every traced bounce on level 3, whose
+    /// vehicles and doors come to two hundred and sixty pages.
+    /// </remarks>
+    public const int MaximumMoverObjects = 512;
+
+    /// <summary>How many ints one object's entry in the movers' list takes; matches the shader's <c>kMoverHeaderInts</c>.</summary>
+    /// <remarks>Its bounding sphere's centre and radius as float bits, then its pages' start and count.</remarks>
+    public const int MoverHeaderInts = 6;
+
     private readonly IGraphicsDevice _device;
     private readonly int[] _ranges;
     private readonly int[] _references;
+    private readonly int[] _moverHeaders = new int[MaximumMoverObjects * MoverHeaderInts];
+    private int _moverObjects;
     private bool _disposed;
 
     private SurfaceCacheLookup(
@@ -298,27 +313,94 @@ public sealed class SurfaceCacheLookup : IDisposable
         return null;
     }
 
-    /// <summary>Lists the pages of placements that move, for every lookup to walk beside its own cell.</summary>
-    /// <param name="pages">The moving pages; beyond <see cref="MaximumMoverPages"/> the rest are left out.</param>
+    /// <summary>Lists the placements that move, for every lookup to test beside its own cell.</summary>
+    /// <param name="pages">The moving pages, each object's a contiguous run.</param>
+    /// <param name="objects">
+    /// The moving objects: where each one's run starts in <paramref name="pages"/>, how long it is, and its
+    /// bounding sphere. Beyond <see cref="MaximumMoverObjects"/> objects or <see cref="MaximumMoverPages"/>
+    /// pages the rest are left out.
+    /// </param>
     /// <remarks>Rare -- once each time something starts moving for the first time -- so it re-uploads both.</remarks>
-    public void SetMovers(IReadOnlyList<int> pages)
+    public void SetMovers(IReadOnlyList<int> pages, IReadOnlyList<MoverObject> objects)
     {
         ArgumentNullException.ThrowIfNull(pages);
+        ArgumentNullException.ThrowIfNull(objects);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        int count = Math.Min(pages.Count, MaximumMoverPages);
-        int[] all = new int[_references.Length + MaximumMoverPages];
+        // The headers first, at a fixed size so a sphere update never moves the pages after them.
+        int headers = _references.Length;
+        int pagesAt = headers + _moverHeaders.Length;
+        int[] all = new int[pagesAt + MaximumMoverPages];
         _references.CopyTo(all, 0);
-        for (int i = 0; i < count; i++)
+
+        int written = 0;
+        _moverObjects = 0;
+        foreach (MoverObject mover in objects)
         {
-            all[_references.Length + i] = pages[i];
+            if (_moverObjects == MaximumMoverObjects || written + mover.PageCount > MaximumMoverPages)
+            {
+                break;
+            }
+
+            for (int i = 0; i < mover.PageCount; i++)
+            {
+                all[pagesAt + written + i] = pages[mover.FirstPage + i];
+            }
+
+            int at = _moverObjects * MoverHeaderInts;
+            _moverHeaders[at + 4] = pagesAt + written;
+            _moverHeaders[at + 5] = mover.PageCount;
+            WriteSphere(at, mover);
+
+            written += mover.PageCount;
+            _moverObjects++;
         }
 
-        _ranges[Buckets * 2] = _references.Length;
-        _ranges[(Buckets * 2) + 1] = count;
+        _moverHeaders.CopyTo(all, headers);
+
+        _ranges[Buckets * 2] = headers;
+        _ranges[(Buckets * 2) + 1] = _moverObjects;
 
         _device.UpdateStorageBuffer<int>(Pages, all);
         _device.UpdateStorageBuffer<int>(Cells, _ranges);
+    }
+
+    /// <summary>Moves the listed objects' bounding spheres to where they stand this frame.</summary>
+    /// <param name="objects">The same objects, in the same order, as the last <see cref="SetMovers"/> was given.</param>
+    /// <remarks>Every frame something moves, so only the headers go up.</remarks>
+    public void UpdateMoverBounds(IReadOnlyList<MoverObject> objects)
+    {
+        ArgumentNullException.ThrowIfNull(objects);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int count = Math.Min(_moverObjects, objects.Count);
+        if (count == 0)
+        {
+            return;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            WriteSphere(i * MoverHeaderInts, objects[i]);
+        }
+
+        _device.UpdateStorageBuffer<int>(
+            Pages, _references.Length, _moverHeaders.AsSpan(0, count * MoverHeaderInts));
+    }
+
+    /// <summary>One moving placement as the movers' list holds it.</summary>
+    /// <param name="FirstPage">Where its run starts in the moving pages.</param>
+    /// <param name="PageCount">How many pages the run holds.</param>
+    /// <param name="Centre">Its bounding sphere's centre, in the cache's space.</param>
+    /// <param name="Radius">The sphere's radius, enclosing every one of its pages' own spheres.</param>
+    public readonly record struct MoverObject(int FirstPage, int PageCount, Vector3f Centre, float Radius);
+
+    private void WriteSphere(int at, MoverObject mover)
+    {
+        _moverHeaders[at] = BitConverter.SingleToInt32Bits(mover.Centre.X);
+        _moverHeaders[at + 1] = BitConverter.SingleToInt32Bits(mover.Centre.Y);
+        _moverHeaders[at + 2] = BitConverter.SingleToInt32Bits(mover.Centre.Z);
+        _moverHeaders[at + 3] = BitConverter.SingleToInt32Bits(mover.Radius);
     }
 
     /// <inheritdoc/>
@@ -369,7 +451,8 @@ public sealed class SurfaceCacheLookup : IDisposable
             device.UpdateStorageBuffer<int>(cellBuffer, ranges);
 
             StorageBufferHandle pageBuffer = device.CreateStorageBuffer(
-                (references.Length + MaximumMoverPages) * sizeof(int), "cards.lookup.pages");
+                (references.Length + (MaximumMoverObjects * MoverHeaderInts) + MaximumMoverPages) * sizeof(int),
+                "cards.lookup.pages");
 
             if (references.Length > 0)
             {

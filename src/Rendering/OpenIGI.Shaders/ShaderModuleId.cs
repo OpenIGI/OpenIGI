@@ -64,6 +64,9 @@ public enum ShaderModuleId
     /// <summary>Bloom: sum the pyramid with per-stage tints.</summary>
     BloomCombine,
 
+    /// <summary>Light shafts radiating from the sun, blurred in screen space and laid onto the bloom.</summary>
+    SunShafts,
+
     /// <summary>Temporal resolve: spread the shading rejection to a rejecting pixel's neighbours.</summary>
     UpscaleRejectionDilate,
 

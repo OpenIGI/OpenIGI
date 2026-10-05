@@ -41,6 +41,38 @@ internal sealed partial class GameHost
     // Whole sweeps the refresh has completed, which is what advances its jitter from one sweep to the next.
     private int _giRefreshRounds;
 
+    // What the refresh last saw its inputs as, and how many whole sweeps it has finished since any of them
+    // changed. See StepGiRelight.
+    private Vector3f _giRefreshSunDirection;
+    private Vector3f _giRefreshSunColour;
+    private int _giRefreshLampRevision = -1;
+
+    // The coarse lamp maps as the far refresh last saw them: while they are being drawn the far cache has
+    // to be relit, or the cards lit through a wall before a lamp's maps existed would keep that light.
+    private int _giRefreshBounceMapVersion = -1;
+    private int _giRefreshQuietRounds;
+    private bool _giRefreshWorldSettled;
+
+    // The rendered frame the refresh last advanced on; see StepGiRelight.
+    private int _giRefreshLastFrame = -1;
+
+    /// <summary>How many slices of the whole cache the far refresh relights a frame while the sun is moving.</summary>
+    /// <remarks>
+    /// Three rather than eight. Each slice is a relight and a bounce of a 128th of the whole level, about one
+    /// and a half milliseconds at ultra, and eight of them took the frame from a hundred frames a second to
+    /// thirty-three for as long as the scrub key was held. Three keep a whole pass inside a second at sixty,
+    /// still quicker than the scrub crosses dusk.
+    /// </remarks>
+    private const int GiSunFollowSlices = 3;
+
+        /// <summary>How many whole sweeps the far refresh runs after its inputs last changed, before it idles.</summary>
+    /// <remarks>
+    /// One sweep relights every card under the new inputs; the rest fold more bounce in, at the steady
+    /// bounce's weight, so far rooms reach their multi-bounce answer rather than stopping at one. At the
+    /// ultra preset's 128 slices this is about eight seconds at sixty frames a second.
+    /// </remarks>
+    private const int FarRefreshQuietRounds = 4;
+
     // How many frames the load-time convergence has waited for the world's structure to settle. See
     // BeginGiConvergence.
     private int _giSettleWaitFrames;
@@ -236,6 +268,21 @@ internal sealed partial class GameHost
             + "once per mission.");
     }
 
+    /// <summary>The clipmaps' shape for the trace this device runs.</summary>
+    /// <remarks>
+    /// Twice the resolution where nothing is traced: a quarter-metre voxel near the eye and half a metre a
+    /// building away do not hold the slab over a doorway or a canopy's roof, and the software gathers'
+    /// rays slipped through it on some frames and not others -- which a night of small bright lamp pools
+    /// showed as clouds crawling over every wall, fifteen per cent of the bounce changing frame to frame
+    /// where the traced gather changed half of one. Eight megabytes, and about a millisecond of rebuilds
+    /// while the camera travels. Where rays are traced the field answers only far and coarse questions,
+    /// and keeps the cheaper shape.
+    /// </remarks>
+    private GlobalDistanceFieldSettings DistanceFieldSettings() =>
+        _device.Capabilities.SupportsRayQuery && RenderCVars.HardwareRayTracing.Value
+            ? GlobalDistanceFieldSettings.Default
+            : GlobalDistanceFieldSettings.Default with { Resolution = 128 };
+
     /// <summary>Takes a baked field into use, and writes it to the cache when it was freshly baked.</summary>
     /// <param name="scene">The level's field.</param>
     /// <param name="atlas">Every distinct model's field, packed for the GPU.</param>
@@ -254,8 +301,7 @@ internal sealed partial class GameHost
         _sdfScene = scene;
         _sdfValidated = false;
         _sdfClipmaps?.Dispose();
-        _sdfClipmaps = GlobalDistanceField.Create(
-            _device, scene, atlas, GlobalDistanceFieldSettings.Default, _logger);
+        _sdfClipmaps = GlobalDistanceField.Create(_device, scene, atlas, DistanceFieldSettings(), _logger);
 
         BeginGiConvergence();
 
@@ -409,6 +455,8 @@ internal sealed partial class GameHost
         // cache was converged in daylight. See CycleSun.
         DirectionalLightSettings sun = CycleSun();
         _giRefreshSlice = 0;
+        _giRefreshQuietRounds = 0;
+        _giRefreshWorldSettled = false;
 
         // Whole-cache bounces, so each one is worth a full pass -- and capped, because that is what makes
         // them affordable. The old one-shot convergence ran two whole-cache iterations and then seven
@@ -503,6 +551,17 @@ internal sealed partial class GameHost
     /// </remarks>
     private void StepGiRelight()
     {
+        // Once per RENDERED frame. This runs once per pass of the loop, and a pass that only ticks the
+        // simulation renders nothing: its slice landed in the next frame beside that frame's own, so one frame
+        // in every few carried two -- every fourth at a 30 Hz simulation under a 120 Hz picture, and on
+        // mission 3's large cache that was a 3.5 ms frame becoming a 7 ms one, over and over.
+        if (_loop.Clock.FrameCount == _giRefreshLastFrame)
+        {
+            return;
+        }
+
+        _giRefreshLastFrame = _loop.Clock.FrameCount;
+
         int slices = RenderCVars.GiFarRefresh.Value;
         if (slices <= 0
             || _cardLighting is not { } cards
@@ -512,16 +571,69 @@ internal sealed partial class GameHost
             return;
         }
 
+        // Idle once nothing it is lit by has changed for a few whole sweeps. It ran every frame for good,
+        // re-deriving the same far cache over and over: a slice of the WHOLE level, unculled, which at
+        // ultra was some two and a half milliseconds of every frame -- the largest single cost in the GI.
+        // What wakes it is exactly the list above: the sun (a scrub or a moving clock), a lamp switched,
+        // and a traced world still taking in walls after the load. Only until that world has first
+        // settled: past then it is view-dependent -- what leaves the view expires and comes back when the
+        // player turns -- so it "grows" on every turn of the head, and waking on that kept the sweep going
+        // for good while telling the far cards nothing new.
+        Vector3f sunColour = sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value);
+        Vector3f sunDirection = CacheSunDirection(sun);
+        bool worldSettled = _device.WorldTraceSettled;
+        _giRefreshWorldSettled |= worldSettled;
+        bool changed = (!_giRefreshWorldSettled && !worldSettled)
+            || _lampBounceRevision != _giRefreshLampRevision
+            || _device.LampBounceMapVersion != _giRefreshBounceMapVersion
+            || !NearlyEqual(sunDirection, _giRefreshSunDirection)
+            || !NearlyEqual(sunColour, _giRefreshSunColour);
+
+        if (changed)
+        {
+            _giRefreshQuietRounds = 0;
+            _giRefreshLampRevision = _lampBounceRevision;
+            _giRefreshBounceMapVersion = _device.LampBounceMapVersion;
+            _giRefreshSunDirection = sunDirection;
+            _giRefreshSunColour = sunColour;
+        }
+        else if (_giRefreshQuietRounds >= FarRefreshQuietRounds)
+        {
+            return;
+        }
+
+        // While the clock is being scrubbed the whole cache has to keep up with the sun, so the sweep runs
+        // several slices a frame: at one a frame a full pass took two seconds, and every distant surface --
+        // the hills, the far side of the yard -- went on returning the day's light to everything that
+        // gathered from it, so a scrub into the night left the world lit under a black sky. Only while the
+        // sun moves; at rest the sweep goes back to one slice a frame.
+        int steps = _giSunMovedFrames <= GiSunFollowFrames ? Math.Min(GiSunFollowSlices, slices) : 1;
+        for (int step = 0; step < steps; step++)
+        {
+            StepGiRelightSlice(cards, field, sun, sunDirection, sunColour, slices);
+        }
+    }
+
+    /// <summary>Relights and bounces one slice of the whole cache, and moves the sweep on.</summary>
+    private void StepGiRelightSlice(
+        SurfaceCacheLighting cards,
+        GlobalDistanceField field,
+        DirectionalLightSettings sun,
+        Vector3f sunDirection,
+        Vector3f sunColour,
+        int slices)
+    {
         int slice = _giRefreshSlice % slices;
         _giRefreshSlice = (slice + 1) % slices;
         if (_giRefreshSlice == 0)
         {
             _giRefreshRounds = (_giRefreshRounds + 1) & 0x3fff;
+            _giRefreshQuietRounds++;
         }
 
         cards.ConvergeLightSlice(
-            CacheSunDirection(sun),
-            sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+            sunDirection,
+            sunColour,
             SkyFillColour(sun),
             field,
             slice,
@@ -532,9 +644,16 @@ internal sealed partial class GameHost
         // ones by the player included, halfway to one fixed sixteen-ray estimate, and once the steady
         // bounce idled that estimate was all the cache held -- the per-probe blotches every ray read back.
         int steady = Math.Max(RenderCVars.GiTemporalFrames.Value, 1);
+        // Right after a change -- a scrub of the clock, a lamp switched -- the first sweeps take the new
+        // light at half weight, so the far cache follows the hour instead of easing towards it over the long
+        // steady blend; the sweeps after fold bounce in at that steady weight as before.
+        int pass = _giRefreshQuietRounds < 2 ? 1 : steady + 1 + _giRefreshRounds;
         cards.ConvergeBounceSlice(
-            field, RenderCVars.GlobalIlluminationBoost.Value, pass: steady + 1 + _giRefreshRounds, slice, slices);
+            field, RenderCVars.GlobalIlluminationBoost.Value, pass: pass, slice, slices);
     }
+
+    private static bool NearlyEqual(Vector3f a, Vector3f b) =>
+        MathF.Abs(a.X - b.X) <= 1e-4f && MathF.Abs(a.Y - b.Y) <= 1e-4f && MathF.Abs(a.Z - b.Z) <= 1e-4f;
 
     // A sun under the horizon lights nothing directly, and the cache is told so with no direction at all.
     private static Vector3f CacheSunDirection(DirectionalLightSettings sun) =>

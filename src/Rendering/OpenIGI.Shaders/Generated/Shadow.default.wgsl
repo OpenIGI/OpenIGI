@@ -71,7 +71,7 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
     var _S3 : vec4<f32> = (((vec4<f32>(localPosition_1, 1.0f)) * (mat4x4<f32>(push_0.modelViewProjection_0.data_0[i32(0)][i32(0)], push_0.modelViewProjection_0.data_0[i32(1)][i32(0)], push_0.modelViewProjection_0.data_0[i32(2)][i32(0)], push_0.modelViewProjection_0.data_0[i32(3)][i32(0)], push_0.modelViewProjection_0.data_0[i32(0)][i32(1)], push_0.modelViewProjection_0.data_0[i32(1)][i32(1)], push_0.modelViewProjection_0.data_0[i32(2)][i32(1)], push_0.modelViewProjection_0.data_0[i32(3)][i32(1)], push_0.modelViewProjection_0.data_0[i32(0)][i32(2)], push_0.modelViewProjection_0.data_0[i32(1)][i32(2)], push_0.modelViewProjection_0.data_0[i32(2)][i32(2)], push_0.modelViewProjection_0.data_0[i32(3)][i32(2)], push_0.modelViewProjection_0.data_0[i32(0)][i32(3)], push_0.modelViewProjection_0.data_0[i32(1)][i32(3)], push_0.modelViewProjection_0.data_0[i32(2)][i32(3)], push_0.modelViewProjection_0.data_0[i32(3)][i32(3)]))));
     var clip_0 : vec4<f32> = _S3;
     clip_0[i32(1)] = OpenIgiClipY_0(_S3.y);
-    clip_0[i32(2)] = clip_0.z * 0.5f + 0.5f;
+    clip_0[i32(2)] = (clip_0.z + clip_0.w) * 0.5f;
     output_0.position_0 = clip_0;
     output_0.diffuseUv_0 = diffuseUv_2;
     var _S4 : f32;

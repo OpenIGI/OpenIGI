@@ -72,6 +72,17 @@ public readonly record struct TemporalResolveSettings(
     /// <summary>How many history samples the guide's blend assumes the output ever holds.</summary>
     private const float MaxOutputHistorySamples = 16f;
 
+    /// <summary>The history scale a frame of this size keeps, from <c>r_upscale_history</c>.</summary>
+    /// <param name="renderWidth">The width the scene is rendered at.</param>
+    /// <param name="presentWidth">The width it is presented at.</param>
+    /// <returns>One or two history texels per rendered pixel on each axis.</returns>
+    public static int HistoryScaleFor(int renderWidth, int presentWidth) => RenderCVars.UpscaleHistory.Value switch
+    {
+        1 => 1,
+        2 => 2,
+        _ => presentWidth > renderWidth ? 2 : 1,
+    };
+
     /// <summary>The settings a frame asks for, from what the game handed over and the console's own.</summary>
     /// <param name="taa">What the game asked of the temporal filter this frame.</param>
     /// <param name="renderWidth">The width the scene is rendered at.</param>

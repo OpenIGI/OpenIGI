@@ -138,10 +138,11 @@ public sealed class GraphicsPresetRegistryTests
         // r_day_night_cycle joins them for the same reason the weather does: it is a choice about what
         // the world is doing while you play it, not about how well the world is drawn. A preset naming it
         // would mean picking Ultra silently started the clock, or picking Vanilla silently stopped it.
+        // r_lamp_daylight with it: whether the lamps follow that clock is the world's behaviour too.
         string[] preferences =
         [
             "r_weather_enabled", "r_weather_kind", "r_weather_speed",
-            "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length",
+            "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length", "r_lamp_daylight",
             "r_vsync", "r_world_briefing",
 
             // How worn the flashlight's switch is -- how often it chatters before it catches. A property of

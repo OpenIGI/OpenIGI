@@ -33,6 +33,9 @@ struct Params
 
     // history texels per output pixel, per axis; z debug view; w sharpen.
     float4 control;
+
+    // the exposure the resolve will apply; _, _, _.
+    float4 control2;
 };
 
 [[vk::binding(11, 0)]] ConstantBuffer<Params> p;
@@ -41,6 +44,8 @@ struct Params
 // and one hot texel does not dominate its footprint.
 float HdrWeight(float3 c)
 {
+    // On the colour as it will be seen: see UpdateHistory's Exposure.
+    c *= max(p.control2.x, 1e-4);
     return max(1e-4, 1.0 / (c.r + (2.0 * c.g) + c.b + 4.0));
 }
 

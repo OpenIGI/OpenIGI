@@ -126,7 +126,7 @@ fn FreshOcclusion_0( px_0 : vec2<i32>,  ao_0 : ptr<function, f32>,  position_1 :
     var tangent_0 : vec3<f32> = normalize(randomVec_0 - (*normal_0) * vec3<f32>(dot(randomVec_0, (*normal_0))));
     var _S16 : vec3<f32> = cross((*normal_0), tangent_0);
     var radius_0 : f32 = p_0.params_0.x;
-    var _S17 : f32 = p_0.params_0.z * radius_0;
+    var _S17 : f32 = 1.5f * ((*position_1).z * 2.0f / max(p_0.unproject_0.x * p_0.resolution_0.x, 0.00100000004749745f)) + p_0.params_0.z * 0.10000000149011612f * radius_0;
     var i_0 : i32 = i32(0);
     var occlusion_0 : f32 = 0.0f;
     for(;;)
@@ -143,7 +143,8 @@ fn FreshOcclusion_0( px_0 : vec2<i32>,  ao_0 : ptr<function, f32>,  position_1 :
         var r2_0 : f32 = Hash_0(vec2<f32>(_S18 * 1.70000004768371582f + 0.5f + frameIndex_0 * 0.38199999928474426f, f32(_S19 * i32(3) + _S11)));
         var theta_0 : f32 = 6.28318548202514648f * Hash_0(vec2<f32>(_S18 + 0.12999999523162842f + frameIndex_0 * 0.61799997091293335f, f32(_S11 * i32(3) + _S19)));
         var disk_0 : f32 = sqrt(r2_0);
-        var samplePos_0 : vec3<f32> = (*position_1) + (tangent_0 * vec3<f32>((disk_0 * cos(theta_0))) + _S16 * vec3<f32>((disk_0 * sin(theta_0))) + (*normal_0) * vec3<f32>(sqrt(max(1.0f - r2_0, 0.0f)))) * vec3<f32>(radius_0) * vec3<f32>(mix(0.10000000149011612f, 1.0f, _S18 / 16.0f));
+        var along_0 : f32 = (_S18 + 0.5f) / 16.0f;
+        var samplePos_0 : vec3<f32> = (*position_1) + (tangent_0 * vec3<f32>((disk_0 * cos(theta_0))) + _S16 * vec3<f32>((disk_0 * sin(theta_0))) + (*normal_0) * vec3<f32>(sqrt(max(1.0f - r2_0, 0.0f)))) * vec3<f32>(radius_0) * vec3<f32>(mix(0.01999999955296516f, 1.0f, along_0 * along_0));
         var sampleUv_0 : vec2<f32> = ViewToUv_0(samplePos_0);
         if((any((sampleUv_0 < vec2<f32>(0.0f, 0.0f)))))
         {

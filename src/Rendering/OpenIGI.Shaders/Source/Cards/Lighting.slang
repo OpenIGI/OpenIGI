@@ -79,6 +79,12 @@ OPENIGI_COMPUTE_SAMPLER(7) SamplerState uIndirectReadSampler;
 
 #if OPENIGI_RAY_QUERY
 OPENIGI_COMPUTE_SCENE RaytracingAccelerationStructure uScene;
+#else
+// The lamps' coarse maps, where the device draws them (see SetLampMapEntries): five vectors per map --
+// the four rows of its world to clip matrix, measured from this pass's origin, then its projection's two
+// depth terms (ndc depth = x + y / view depth) and whether it has been drawn -- and the maps themselves.
+OPENIGI_COMPUTE_BUFFER(7) StructuredBuffer<float4> uLampMapRecords;
+OPENIGI_COMPUTE_TEXTURE(8) DepthTexture2DArray uLampMaps;
 #endif
 
 #if OPENIGI_RAY_QUERY
@@ -137,6 +143,12 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     int uUseActiveList;
     int uActiveCount;
 
+    // How far apart in the tile array consecutive work groups stand. One (or an unset nought) is a
+    // contiguous range. The whole-cache sweeps take every Nth tile instead, so each of their slices is a
+    // sample of the whole level rather than one neighbourhood of it -- and costs what every other slice
+    // costs, where a contiguous slice over a dense interior cost five times one over open ground.
+    int uTileStride;
+
     // The steady state's reach. A radius of nought relights everything, which is what the seed and the
     // dump pass. See ActiveRadius.
     float uActiveRadius;
@@ -175,6 +187,111 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 #include "../Common/SoftwareTrace.slang"
 #include "../Common/SurfaceCache.slang"
 #include "../Common/Hemisphere.slang"
+
+#if !OPENIGI_RAY_QUERY
+// Whether a lamp reaches a point of the cache by the lamp's own cube of coarse maps; -1 where it has none,
+// for the distance field to answer instead. Far from the camera the field's voxels are a metre or two and a
+// wall is not in it, so a lamp lit the cache through the wall it stood behind and the bounce carried that
+// onto the far side. The maps hold the wall as drawn.
+float CardLampMapVisibility(int entry, float3 world, float3 normal)
+{
+    if (entry < 0)
+    {
+        return -1.0;
+    }
+
+    int first = entry;
+
+    // Off the surface along its normal by a texel and a half of the map where the point stands, and five
+    // centimetres more. These maps are coarse -- sixty-four texels a face, a hand's width each at a few
+    // metres -- and a wall the lamp sees at a grazing angle, as every wall lamp sees its own wall, crosses
+    // several of their depths within one texel: held only five centimetres off, the wall shadowed itself
+    // in patches, the cache took the patches, and the gather spread them over the wall as clouds. The
+    // offset that grows with the texel is the one that keeps a grazing receiver clear of its own depth.
+    uint mapWidth;
+    uint mapHeight;
+    uint mapLayers;
+    uLampMaps.GetDimensions(mapWidth, mapHeight, mapLayers);
+    float pointZ = 0.25;
+    for (int face = 0; face < 6; face++)
+    {
+        float4 forward = uLampMapRecords[((first + face) * 5) + 3];
+        pointZ = max(pointZ, dot(forward.xyz, world) + forward.w);
+    }
+
+    float texelAtPoint = pointZ * 2.0 / float(max(mapWidth, 1u));
+    float3 at = world + (normal * (0.05 + (1.5 * texelAtPoint)));
+
+    // The face the point lies furthest in front of is the one whose view holds it.
+    int slot = first;
+    float deepest = -1e30;
+    for (int face = 0; face < 6; face++)
+    {
+        float4 forward = uLampMapRecords[((first + face) * 5) + 3];
+        float depth = dot(forward.xyz, at) + forward.w;
+        if (depth > deepest)
+        {
+            deepest = depth;
+            slot = first + face;
+        }
+    }
+
+    float4 terms = uLampMapRecords[(slot * 5) + 4];
+    if (terms.z <= 0.0)
+    {
+        return -1.0;
+    }
+
+    float4 row0 = uLampMapRecords[slot * 5];
+    float4 row1 = uLampMapRecords[(slot * 5) + 1];
+    float viewZ = deepest;
+    float nearPlane = terms.y / (-1.0 - terms.x);
+
+    // Inside the near plane is inside the fitting, which casts nothing on what it lights.
+    if (viewZ <= nearPlane)
+    {
+        return 1.0;
+    }
+
+    float2 ndc = float2(dot(row0.xyz, at) + row0.w, dot(row1.xyz, at) + row1.w) / viewZ;
+    float2 uv = float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
+
+    uint width;
+    uint height;
+    uint layers;
+    uLampMaps.GetDimensions(width, height, layers);
+    int2 size = int2(int(width), int(height));
+
+    // A few centimetres, a little of the distance, and two of the map's texels where the point stands.
+    float texelMetres = viewZ * (2.0 / max(length(row0.xyz), 1e-3)) / float(max(width, 1u));
+    float bias = 0.05 + (0.005 * viewZ) + (2.0 * texelMetres);
+
+    // The sixteen texels round the point, each compared and the verdicts weighted by a tent over the
+    // point's own place among them: a filtered edge a texel and a half wide either way, where four taps
+    // left a cache texel near any edge flipping on whichever texel it fell closest to.
+    float2 texelAt = (uv * float2(size)) - 0.5;
+    int2 corner = int2(floor(texelAt)) - 1;
+    float2 blend = texelAt - floor(texelAt);
+    float lit = 0.0;
+    float weightSum = 0.0;
+    for (int y = 0; y < 4; y++)
+    {
+        for (int x = 0; x < 4; x++)
+        {
+            int2 texel = clamp(corner + int2(x, y), int2(0, 0), size - 1);
+            float stored = uLampMaps.Load(int4(texel, slot, 0));
+            float storedZ = terms.y / min(((stored * 2.0) - 1.0) - terms.x, -1e-6);
+            float2 offset = abs(float2(float(x) - 1.0, float(y) - 1.0) - blend);
+            float2 tent = saturate(1.0 - (offset / 2.0));
+            float weight = tent.x * tent.y;
+            lit += storedZ >= viewZ - bias ? weight : 0.0;
+            weightSum += weight;
+        }
+    }
+
+    return lit / max(weightSum, 1e-4);
+}
+#endif
 
 // How far a fixture is worth evaluating, as a multiple of the reach it carries, and the floor under that.
 // Both in metres, which this world is in -- see WorldScene.UnitsPerMetre.
@@ -271,10 +388,19 @@ float3 SkyLight(float3 world, float3 normal)
 
     float3 total = float3(0.0, 0.0, 0.0);
 
+    // The set turned by a hash of where the texel stands. The same eight directions at every texel shared
+    // the same eight blind spots: a ledge that one of them missed was missed by the whole wall, and the
+    // cache's sky came out in stripes and wedges that the bounce then carried. Turned per texel the misses
+    // fall differently on each, and the bounce, which reads many texels at once, averages them away. Fixed
+    // in the world, so a texel relit is relit the same.
+    float3 cell = floor(world * 8.0);
+    float rotation = frac(sin(dot(cell, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+    float stratum = frac(sin(dot(cell, float3(39.346, 11.135, 83.155))) * 24634.6345);
+
     for (int ray = 0; ray < kSkyRays; ray++)
     {
-        float u1 = (float(ray) + 0.5) / float(kSkyRays);
-        float u2 = RadicalInverse(ray);
+        float u1 = (float(ray) + stratum) / float(kSkyRays);
+        float u2 = frac(RadicalInverse(ray) + rotation);
 
         // Cosine-weighted by construction, so the integral needs no per-ray weight: the density already
         // carries the dot product a diffuse surface would have applied.
@@ -622,7 +748,7 @@ static const int2 kProbeCorner[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1
 [numthreads(8, 8, 1)]
 void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
 {
-    int slot = int(groupId.x) + uTileOffset;
+    int slot = (int(groupId.x) * max(uTileStride, 1)) + uTileOffset;
     int tile = slot;
     if (uUseActiveList != 0)
     {
@@ -907,12 +1033,21 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
         // took its interior's light into the cache, and from there the bounce carried it onto the ground
         // around it. One shadow ray per fixture that survived the cheap tests above, so the costs are
         // those of the few lamps near a texel, not of the level's hundreds.
-        if (SegmentVisibility(world, worldNormal, place.xyz, kLampStopShort) <= 0.0)
+        float reaches = -1.0;
+#if !OPENIGI_RAY_QUERY
+        reaches = CardLampMapVisibility(asint(facing.w), world, worldNormal);
+#endif
+        if (reaches < 0.0)
+        {
+            reaches = SegmentVisibility(world, worldNormal, place.xyz, kLampStopShort);
+        }
+
+        if (reaches <= 0.0)
         {
             continue;
         }
 
-        lit += emission.rgb * contribution;
+        lit += emission.rgb * (contribution * reaches);
     }
 
     OPENIGI_HISTORY_STORE(uDirect, texelAt, float4(lit, 1.0));

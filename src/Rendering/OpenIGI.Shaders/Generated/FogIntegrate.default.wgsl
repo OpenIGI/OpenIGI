@@ -45,6 +45,13 @@ struct FogParams_std140_0
     @align(16) lampPosition_0 : array<vec4<f32>, i32(160)>,
     @align(16) lampColour_0 : array<vec4<f32>, i32(160)>,
     @align(16) flashlight_0 : FlashlightParams_std140_0,
+    @align(16) phase_0 : vec4<f32>,
+    @align(16) dust_0 : vec4<f32>,
+    @align(16) records_0 : vec4<f32>,
+    @align(16) fieldMisc_0 : vec4<f32>,
+    @align(16) fieldOrigin_0 : array<vec4<f32>, i32(4)>,
+    @align(16) fieldRange_0 : vec4<f32>,
+    @align(16) lampDirection_0 : array<vec4<f32>, i32(160)>,
 };
 
 @binding(3) @group(0) var<uniform> p_0 : FogParams_std140_0;
@@ -157,9 +164,9 @@ fn FlashlightIrradiance_0( f_2 : ptr<function, FlashlightParams_std140_0>,  view
     return (*f_2).colour_0.xyz * vec3<f32>((_S7 * window_1 * carry_0 / max(distanceSq_0, (*f_2).colour_0.w)));
 }
 
-fn FlashlightInScatter_0( here_0 : vec3<f32>,  mediumExtinction_0 : f32,  dust_0 : ptr<function, f32>) -> vec3<f32>
+fn FlashlightInScatter_0( here_0 : vec3<f32>,  mediumExtinction_0 : f32,  dust_1 : ptr<function, f32>) -> vec3<f32>
 {
-    (*dust_0) = 0.0f;
+    (*dust_1) = 0.0f;
     var _S8 : FlashlightParams_std140_0 = p_0.flashlight_0;
     var _S9 : bool = FlashlightOn_0(&(_S8));
     var _S10 : bool;
@@ -187,7 +194,7 @@ fn FlashlightInScatter_0( here_0 : vec3<f32>,  mediumExtinction_0 : f32,  dust_0
     var fadeIn_0 : f32 = smoothstep(0.75f, 4.0f, distance_1);
     const _S13 : vec3<f32> = vec3<f32>(0.2125999927520752f, 0.71520000696182251f, 0.07220000028610229f);
     var _S14 : f32 = _S8.control_0.w * saturate(dot(irradiance_0, _S13) * max(distance_1 * distance_1, 1.0f) / max(dot(_S8.colour_0.xyz, _S13), 0.00000999999974738f)) * fadeIn_0 * (1.0f - smoothstep(5.0f, 12.0f, distance_1));
-    (*dust_0) = _S14;
+    (*dust_1) = _S14;
     var g_0 : f32 = p_0.medium_0.w;
     var _S15 : f32 = g_0 * g_0;
     var _S16 : f32 = max(1.0f + _S15 - 2.0f * g_0 * dot((vec3<f32>(0) - toLight_1), normalize((vec3<f32>(0) - here_0))), 0.00009999999747379f);
@@ -225,13 +232,13 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         var here_1 : vec3<f32> = ViewPositionAt_0(uv_1, SliceViewDepth_0(f32(z_0) + 0.5f));
         var stepLength_0 : f32 = length(here_1 - previous_0);
         var _S22 : vec3<f32> = _S21.xyz;
-        var dust_1 : f32;
-        var _S23 : vec3<f32> = FlashlightInScatter_0(here_1, _S21.w, &(dust_1));
+        var dust_2 : f32;
+        var _S23 : vec3<f32> = FlashlightInScatter_0(here_1, _S21.w, &(dust_2));
         var _S24 : vec3<f32> = _S22 + _S23;
         medium_1.x = _S24.x;
         medium_1.y = _S24.y;
         medium_1.z = _S24.z;
-        medium_1[i32(3)] = medium_1[i32(3)] + dust_1;
+        medium_1[i32(3)] = medium_1[i32(3)] + dust_2;
         var slabTransmittance_0 : f32 = exp(- medium_1.w * stepLength_0);
         var accumulated_1 : vec3<f32> = accumulated_0 + (medium_1.xyz - medium_1.xyz * vec3<f32>(slabTransmittance_0)) / vec3<f32>(max(medium_1.w, 0.00000999999974738f)) * vec3<f32>(transmittance_0);
         var transmittance_1 : f32 = transmittance_0 * slabTransmittance_0;

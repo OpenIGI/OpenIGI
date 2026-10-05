@@ -234,6 +234,17 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uCutoutMasks",
+      "group": 0,
+      "binding": 22,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true
     }
   ],
   "pushBlock": null,

@@ -14,6 +14,13 @@ namespace OpenIGI.Rendering;
 /// <param name="SkyValid">Whether the sky's harmonics are worth reading.</param>
 /// <param name="BaseHeight">The medium's base height as an offset from the camera, in metres.</param>
 /// <param name="Flashlight">The player's flashlight, whose beam the integration lights; off by default.</param>
+/// <param name="SunTraced">Whether each froxel traces its own ray at the sun (the frame keeps no cascades then).</param>
+/// <param name="HitRecords">The traced world's hit records' device address, for the cut-out test.</param>
+/// <param name="Field">The level's distance field, for the software form; null for none.</param>
+/// <param name="Seconds">The clock the density's drift runs on.</param>
+/// <param name="BackScatter">The second, backward lobe's anisotropy.</param>
+/// <param name="BackScatterWeight">How much of the phase that lobe carries, 0 to 1.</param>
+/// <param name="Noise">How much the medium's density varies, 0 for none.</param>
 public readonly record struct VolumetricFogFrame(
     VolumetricFogSettings Settings,
     ReadOnlyMemory<LocalFogVolume> Volumes,
@@ -24,7 +31,14 @@ public readonly record struct VolumetricFogFrame(
     Vector3f Ambient,
     bool SkyValid,
     float BaseHeight,
-    FlashlightLight Flashlight = default);
+    FlashlightLight Flashlight = default,
+    bool SunTraced = false,
+    ulong HitRecords = 0UL,
+    LampOcclusionField? Field = null,
+    float Seconds = 0f,
+    float BackScatter = -0.25f,
+    float BackScatterWeight = 0.25f,
+    float Noise = 0f);
 
 /// <summary>Where the camera is this frame and was the last, as the fog's history reprojection needs it.</summary>
 /// <param name="ViewToWorld">This frame's view rotation.</param>
@@ -100,7 +114,20 @@ public static class VolumetricFogParameters
     /// </remarks>
     public const int Floats =
         (16 * (2 + 4)) + (17 * 4) + (LocalFogVolume.MaxPerLevel * 4 * 2) + (DeferredLocalLight.Maximum * 4 * 2)
-        + FlashlightBlock.Floats;
+        + FlashlightBlock.Floats + ExtensionFloats + (DeferredLocalLight.Maximum * 4);
+
+    /// <summary>Where in the block the flashlight starts, in floats.</summary>
+    public const int FlashlightOffset =
+        (16 * (2 + 4)) + (17 * 4) + (LocalFogVolume.MaxPerLevel * 4 * 2) + (DeferredLocalLight.Maximum * 4 * 2);
+
+    /// <summary>The vectors appended after the flashlight: phase, dust, records, the field's misc, origins and ranges.</summary>
+    private const int ExtensionFloats = (4 * 4) + (4 * 4) + 4;
+
+    /// <summary>The sine of the sun's angular radius, which a traced froxel aims across.</summary>
+    private const float SunAngularRadiusSine = 0.00467f;
+
+    /// <summary>How far from the eye the outdoor dust thins out over, in metres.</summary>
+    private const float DustReachMetres = 45f;
 
     /// <summary>How quickly the depth slices grow with distance.</summary>
     /// <remarks>
@@ -292,12 +319,68 @@ public static class VolumetricFogParameters
             Vector4(data, colours + (i * 4), lamp.Colour.X, lamp.Colour.Y, lamp.Colour.Z, lamp.Intensity);
         }
 
-        // Last, so nothing before it moved when it arrived. The integration lights the beam; the mask slot
-        // is the shading's, and the air has no shadow to read.
+        // The integration lights the beam; the mask slot is the shading's, and the air has no shadow to read.
+        int flashlight = FlashlightOffset;
         FlashlightBlock.Write(
-            data.Slice(colours + (DeferredLocalLight.Maximum * 4), FlashlightBlock.Floats),
+            data.Slice(flashlight, FlashlightBlock.Floats),
             fog.Flashlight,
             shadowMask: false);
+
+        // And after it, so nothing before them moved: the phase's second lobe, the dust, the traced sun, the
+        // distance field and each lamp's facing.
+        int extension = flashlight + FlashlightBlock.Floats;
+        Vector4(
+            data,
+            extension,
+            Math.Clamp(fog.BackScatter, -0.95f, 0.95f),
+            Math.Clamp(fog.BackScatterWeight, 0f, 1f),
+            fog.Seconds,
+            fog.SunTraced ? 1f : 0f);
+        Vector4(
+            data,
+            extension + 4,
+            MathF.Max(settings.Dust, 0f),
+            DustReachMetres,
+            MathF.Max(settings.DustIndoor, 0f),
+            Math.Clamp(fog.Noise, 0f, 1f));
+        Vector4(
+            data,
+            extension + 8,
+            BitConverter.Int32BitsToSingle(unchecked((int)(uint)fog.HitRecords)),
+            BitConverter.Int32BitsToSingle(unchecked((int)(uint)(fog.HitRecords >> 32))),
+            SunAngularRadiusSine,
+            0f);
+
+        if (fog.Field is { Levels: > 0 } field)
+        {
+            int levels = Math.Min(field.Levels, 4);
+            Vector4(data, extension + 12, levels, field.Resolution, 0f, 0f);
+            for (int level = 0; level < 4; level++)
+            {
+                Vector3d corner = field.CornerOf(level);
+                Vector4(
+                    data,
+                    extension + 16 + (level * 4),
+                    (float)(corner.X - camera.CameraWorld.X),
+                    (float)(corner.Y - camera.CameraWorld.Y),
+                    (float)(corner.Z - camera.CameraWorld.Z),
+                    level < field.VoxelSizes.Count ? field.VoxelSizes[level] : 1f);
+                data[extension + 32 + level] = level < field.Ranges.Count ? field.Ranges[level] : 1f;
+            }
+        }
+
+        int directions = extension + ExtensionFloats;
+        for (int i = 0; i < lampCount; i++)
+        {
+            DeferredLocalLight lamp = lamps[i];
+            Vector4(
+                data,
+                directions + (i * 4),
+                lamp.ViewDirection.X,
+                lamp.ViewDirection.Y,
+                lamp.ViewDirection.Z,
+                lamp.SourceRadius);
+        }
 
         return z;
     }

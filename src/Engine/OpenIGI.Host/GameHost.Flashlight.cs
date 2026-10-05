@@ -62,6 +62,28 @@ internal sealed partial class GameHost
     /// </remarks>
     private void RegisterFlashlightCommands(ConsoleSystem console)
     {
+        // The clock, set the way the [ and ] scrub sets it: mid-mission, with nothing else reset. What a
+        // capture needs to reproduce a scrub into the night without a key held down.
+        console.Commands.Add(
+            "settime",
+            "Moves the time of day to an hour, 0 to 24, as the [ and ] scrub does; a second number sweeps there over that many seconds. Not in the original.",
+            context =>
+            {
+                if (context.Count < 1
+                    || !float.TryParse(context[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float hours))
+                {
+                    context.Print($"The time is {_dayNight.TimeHours:0.00}.");
+                    return;
+                }
+
+                float seconds = context.Count > 1
+                    && float.TryParse(context[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float over)
+                    ? over
+                    : 0f;
+                _dayNight.SweepToHour(hours, seconds);
+                context.Print(seconds > 0f ? $"Sweeping to {hours:0.00} over {seconds:0.#} s." : $"Time set to {_dayNight.TimeHours:0.00}.");
+            });
+
         console.Commands.Add(
             "flashlight",
             "Switches the player's flashlight: 1 on, 0 off, nothing to toggle. Not in the original.",

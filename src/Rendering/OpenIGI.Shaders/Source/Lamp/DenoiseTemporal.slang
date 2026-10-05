@@ -48,7 +48,8 @@ struct Params
     // xy this frame's jitter, zw last frame's, in lamp pixels.
     float4 jitter;
 
-    // x above a half to accumulate at all, y above a half when the motion field is valid.
+    // x above a half to accumulate at all, y above a half when the motion field is valid, z above a half
+    // when a lamp's output changed a moment ago.
     float4 control;
 };
 
@@ -285,7 +286,11 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
                         float2 softHistory = float2(lerp(clipped, historyVis, confidence), historyShare);
 
-                        float cap = lerp(kDistrustedFrames, kTrustedFrames, confidence);
+                        // Held short while a lamp has just switched: the ratio this history averaged
+                        // stood for lamps that are no longer giving out what they were.
+                        float cap = p.control.z > 0.5
+                            ? kDistrustedFrames
+                            : lerp(kDistrustedFrames, kTrustedFrames, confidence);
                         frames = min(historyFrames + 1.0, cap);
                         result = lerp(softHistory, current, 1.0 / frames);
                     }

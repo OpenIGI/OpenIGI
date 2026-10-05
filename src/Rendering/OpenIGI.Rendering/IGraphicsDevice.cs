@@ -1297,6 +1297,34 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets the rolling distribution of total timed GPU work per completed frame.</summary>
     GpuFrameTiming GpuTiming();
 
+    /// <summary>Gets every labelled pass timed since timing began, the most expensive first.</summary>
+    /// <returns>The breakdown within the stages; empty where nothing labels its passes.</returns>
+    IReadOnlyList<RenderPassTiming> PassTimings() => [];
+
+    /// <summary>Names the compute work recorded from here on in the timings, or stops naming it.</summary>
+    /// <param name="label">The name, or <see langword="null"/> to go back to each kernel's own.</param>
+    /// <remarks>
+    /// One kernel can serve several callers -- the surface cache's relight, bounce and far refresh are one
+    /// program -- and timed under the kernel's name they are one figure that cannot say which of them
+    /// spiked. Costs nothing when nothing is being timed.
+    /// </remarks>
+    void SetComputeTimingLabel(string? label)
+    {
+        _ = label;
+    }
+
+    /// <summary>Gets what each labelled pass cost in the slowest share of the frames timed.</summary>
+    /// <param name="fraction">The share: 0.01 is the frames behind the 1% low.</param>
+    /// <param name="frames">How many frames that was.</param>
+    /// <param name="averageMilliseconds">Their average summed GPU time.</param>
+    /// <returns>The breakdown, the most expensive first; empty where nothing labels its passes.</returns>
+    IReadOnlyList<RenderPassTiming> WorstFramePassTimings(double fraction, out int frames, out double averageMilliseconds)
+    {
+        frames = 0;
+        averageMilliseconds = 0.0;
+        return [];
+    }
+
     /// <summary>Gets the whole GPU frame measured end to end, rather than summed from its stages.</summary>
     /// <remarks>
     /// <para>
@@ -1526,6 +1554,110 @@ public interface IGraphicsDevice : IDisposable
 
     /// <summary>Ends the current cascade.</summary>
     void EndShadowCascade();
+
+    /// <summary>Gets whether this frame's lamp shadows are marched without ray tracing and would read lamp maps.</summary>
+    /// <remarks>
+    /// Where it is <see langword="false"/> -- the lamps are traced, or not shadowed at all -- nothing need be
+    /// drawn into the maps.
+    /// </remarks>
+    bool WantsLampShadowMaps => false;
+
+    /// <summary>Gets how many lamps can hold a shadow map at once.</summary>
+    int LampShadowMapSlots => 0;
+
+    /// <summary>Says which lamp map each of this frame's lamps reads.</summary>
+    /// <param name="slotPerLight">
+    /// One per lamp, in the order <see cref="SetLocalLights"/> was given them: the slot, or -1 for none.
+    /// </param>
+    void SetLampShadowMapSlots(ReadOnlySpan<int> slotPerLight)
+    {
+        _ = slotPerLight;
+    }
+
+    /// <summary>Says which coarse cube of maps each of this frame's lamps has, for the lamps the fine maps miss.</summary>
+    /// <param name="firstSlotPerLight">
+    /// One per lamp, in the order <see cref="SetLocalLights"/> was given them: the first of the six coarse
+    /// slots (<see cref="BeginLampBounceMap"/>) once all six are drawn, or -1 for none.
+    /// </param>
+    void SetLampCoarseMapSlots(ReadOnlySpan<int> firstSlotPerLight)
+    {
+        _ = firstSlotPerLight;
+    }
+
+    /// <summary>Begins drawing the world into one lamp's shadow map, from the lamp.</summary>
+    /// <param name="slot">The map, below <see cref="LampShadowMapSlots"/>.</param>
+    /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>
+    /// <param name="rotation">The light's rotation: its rows the right, up and forward axes.</param>
+    /// <param name="projection">The perspective it looks through.</param>
+    /// <returns><see langword="true"/> when the pass is open; end it with <see cref="EndShadowCascade"/>.</returns>
+    /// <remarks>Like a cascade: depth only, outside a scene capture, before the frame is drawn.</remarks>
+    bool BeginLampShadowMap(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection)
+    {
+        _ = slot;
+        _ = position;
+        _ = rotation;
+        _ = projection;
+        return false;
+    }
+
+    /// <summary>Says that some lamp's output has just changed: switched, flickered, faded.</summary>
+    /// <remarks>
+    /// The lamp shadows are a ratio averaged over frames, and a switch changes which lamps that ratio stands
+    /// for; the history is held short for a moment after, rather than carrying the old answer.
+    /// </remarks>
+    void NoteLampLevelsChanged()
+    {
+    }
+
+    /// <summary>Gets how many coarse lamp maps the surface cache's relight can hold: six to a lamp.</summary>
+    /// <remarks>
+    /// A second, small bank beside the lamp shadow maps, for every lamp in the level rather than the frame's
+    /// nearest: what the relight asks of a lamp is whether its light reaches a patch of wall at all, which a
+    /// coarse map answers, and it asks it of lamps far from the camera that the shadow maps never cover.
+    /// </remarks>
+    int LampBounceMapSlots => 0;
+
+    /// <summary>Begins drawing the world into one coarse lamp map, from the lamp.</summary>
+    /// <param name="slot">The map, below <see cref="LampBounceMapSlots"/>.</param>
+    /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>
+    /// <param name="rotation">The light's rotation: its rows the right, up and forward axes.</param>
+    /// <param name="projection">The perspective it looks through.</param>
+    /// <returns><see langword="true"/> when the pass is open; end it with <see cref="EndShadowCascade"/>.</returns>
+    bool BeginLampBounceMap(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection)
+    {
+        _ = slot;
+        _ = position;
+        _ = rotation;
+        _ = projection;
+        return false;
+    }
+
+    /// <summary>Gets the coarse lamp maps as one array, for a compute pass to read through <see cref="SetTexture"/>.</summary>
+    /// <remarks><see cref="TextureHandle.None"/> on a device that draws none.</remarks>
+    TextureHandle LampBounceMapArray => TextureHandle.None;
+
+    /// <summary>Gets a number that changes whenever a coarse lamp map is drawn or the maps are released.</summary>
+    /// <remarks>So a reader of <see cref="WriteLampBounceMaps"/> knows when what it holds is out of date.</remarks>
+    int LampBounceMapVersion => 0;
+
+    /// <summary>Writes every coarse lamp map's projection, measured from an origin of the caller's choosing.</summary>
+    /// <param name="origin">The absolute world position the caller's coordinates are relative to.</param>
+    /// <param name="destination">
+    /// <see cref="LampMapRecordFloats"/> floats per slot: the four rows of the map's origin-relative world to
+    /// clip matrix, then its projection's two depth terms (ndc depth = first + second / view depth), whether
+    /// the map has been drawn (1 or 0), and a spare nought.
+    /// </param>
+    void WriteLampBounceMaps(Vector3d origin, Span<float> destination)
+    {
+        _ = origin;
+        destination.Clear();
+    }
+
+    /// <summary>The floats <see cref="WriteLampBounceMaps"/> writes for each slot.</summary>
+    const int LampMapRecordFloats = 20;
+
+    /// <summary>The most coarse lamp maps a device holds: six faces each for a hundred and seventy lamps.</summary>
+    const int LampBounceMapCapacity = 1020;
 
     /// <summary>Sets the light the scene is lit by for this frame.</summary>
     /// <param name="lighting">The lighting model, sun and ambient.</param>

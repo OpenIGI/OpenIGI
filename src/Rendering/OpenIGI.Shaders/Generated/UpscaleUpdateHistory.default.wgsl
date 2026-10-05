@@ -135,69 +135,76 @@ fn KernelWeight_0( k_0 : f32,  delta_0 : vec2<f32>) -> f32
     return saturate(1.0f - 1.89999997615814209f * s_0 + 0.89999997615814209f * s_0 * s_0 + 0.00499999988824129f);
 }
 
+fn Exposure_0() -> f32
+{
+    return max(p_0.control3_0.x, 0.00009999999747379f);
+}
+
 fn HdrWeight_0( c_0 : vec3<f32>) -> f32
 {
-    return max(0.00009999999747379f, 1.0f / (c_0.x + 2.0f * c_0.y + c_0.z + 4.0f));
+    var _S13 : vec3<f32> = c_0 * vec3<f32>(Exposure_0());
+    return max(0.00009999999747379f, 1.0f / (_S13.x + 2.0f * _S13.y + _S13.z + 4.0f));
 }
 
 fn ToBox_0( x_4 : vec3<f32>) -> vec3<f32>
 {
-    var t_0 : vec3<f32> = x_4 / (x_4 + vec3<f32>(0.17000000178813934f));
+    var _S14 : vec3<f32> = x_4 * vec3<f32>(Exposure_0());
+    var t_0 : vec3<f32> = _S14 / (_S14 + vec3<f32>(0.17000000178813934f));
     return t_0 * t_0;
 }
 
 fn SampleHistoryCatmullRom_0( uv_1 : vec2<f32>) -> vec4<f32>
 {
     var samplePos_0 : vec2<f32> = uv_1 * p_0.history_0.xy;
-    var _S13 : vec2<f32> = vec2<f32>(0.5f);
-    var t1_0 : vec2<f32> = floor(samplePos_0 - _S13) + _S13;
+    var _S15 : vec2<f32> = vec2<f32>(0.5f);
+    var t1_0 : vec2<f32> = floor(samplePos_0 - _S15) + _S15;
     var f_0 : vec2<f32> = samplePos_0 - t1_0;
-    var _S14 : vec2<f32> = _S13 * f_0;
-    var _S15 : vec2<f32> = vec2<f32>(1.0f);
-    var _S16 : vec2<f32> = vec2<f32>(-0.5f);
-    var w0_0 : vec2<f32> = f_0 * (_S16 + f_0 * (_S15 - _S14));
-    var _S17 : vec2<f32> = f_0 * f_0;
-    var _S18 : vec2<f32> = vec2<f32>(1.5f) * f_0;
-    var _S19 : vec2<f32> = vec2<f32>(2.0f);
-    var w2_0 : vec2<f32> = f_0 * (_S13 + f_0 * (_S19 - _S18));
-    var w3_0 : vec2<f32> = _S17 * (_S16 + _S14);
-    var w12_0 : vec2<f32> = _S15 + _S17 * (vec2<f32>(-2.5f) + _S18) + w2_0;
-    var uv0_0 : vec2<f32> = (t1_0 - _S15) * p_0.history_0.zw;
+    var _S16 : vec2<f32> = _S15 * f_0;
+    var _S17 : vec2<f32> = vec2<f32>(1.0f);
+    var _S18 : vec2<f32> = vec2<f32>(-0.5f);
+    var w0_0 : vec2<f32> = f_0 * (_S18 + f_0 * (_S17 - _S16));
+    var _S19 : vec2<f32> = f_0 * f_0;
+    var _S20 : vec2<f32> = vec2<f32>(1.5f) * f_0;
+    var _S21 : vec2<f32> = vec2<f32>(2.0f);
+    var w2_0 : vec2<f32> = f_0 * (_S15 + f_0 * (_S21 - _S20));
+    var w3_0 : vec2<f32> = _S19 * (_S18 + _S16);
+    var w12_0 : vec2<f32> = _S17 + _S19 * (vec2<f32>(-2.5f) + _S20) + w2_0;
+    var uv0_0 : vec2<f32> = (t1_0 - _S17) * p_0.history_0.zw;
     var uv12_0 : vec2<f32> = (t1_0 + w2_0 / max(w12_0, vec2<f32>(0.00000999999974738f))) * p_0.history_0.zw;
-    var uv3_0 : vec2<f32> = (t1_0 + _S19) * p_0.history_0.zw;
-    var _S20 : f32 = uv0_0.x;
-    var _S21 : f32 = uv12_0.x;
-    var _S22 : f32 = uv3_0.x;
-    var _S23 : f32 = uv0_0.y;
-    var _S24 : f32 = uv12_0.y;
-    var _S25 : f32 = uv3_0.y;
-    var _S26 : f32 = w0_0.x;
-    var _S27 : f32 = w12_0.x;
-    var _S28 : f32 = w3_0.x;
-    var _S29 : f32 = w0_0.y;
-    var _S30 : f32 = w12_0.y;
-    var _S31 : f32 = w3_0.y;
-    return (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S20, _S23)), (0.0f))) * vec4<f32>((_S26 * _S29)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S21, _S23)), (0.0f))) * vec4<f32>((_S27 * _S29)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S22, _S23)), (0.0f))) * vec4<f32>((_S28 * _S29)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S20, _S24)), (0.0f))) * vec4<f32>((_S26 * _S30)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S21, _S24)), (0.0f))) * vec4<f32>((_S27 * _S30)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S22, _S24)), (0.0f))) * vec4<f32>((_S28 * _S30)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S20, _S25)), (0.0f))) * vec4<f32>((_S26 * _S31)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S21, _S25)), (0.0f))) * vec4<f32>((_S27 * _S31)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S22, _S25)), (0.0f))) * vec4<f32>((_S28 * _S31));
+    var uv3_0 : vec2<f32> = (t1_0 + _S21) * p_0.history_0.zw;
+    var _S22 : f32 = uv0_0.x;
+    var _S23 : f32 = uv12_0.x;
+    var _S24 : f32 = uv3_0.x;
+    var _S25 : f32 = uv0_0.y;
+    var _S26 : f32 = uv12_0.y;
+    var _S27 : f32 = uv3_0.y;
+    var _S28 : f32 = w0_0.x;
+    var _S29 : f32 = w12_0.x;
+    var _S30 : f32 = w3_0.x;
+    var _S31 : f32 = w0_0.y;
+    var _S32 : f32 = w12_0.y;
+    var _S33 : f32 = w3_0.y;
+    return (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S22, _S25)), (0.0f))) * vec4<f32>((_S28 * _S31)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S23, _S25)), (0.0f))) * vec4<f32>((_S29 * _S31)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S24, _S25)), (0.0f))) * vec4<f32>((_S30 * _S31)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S22, _S26)), (0.0f))) * vec4<f32>((_S28 * _S32)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S23, _S26)), (0.0f))) * vec4<f32>((_S29 * _S32)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S24, _S26)), (0.0f))) * vec4<f32>((_S30 * _S32)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S22, _S27)), (0.0f))) * vec4<f32>((_S28 * _S33)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S23, _S27)), (0.0f))) * vec4<f32>((_S29 * _S33)) + (textureSampleLevel((uPrevHistoryColour_0), (uPrevHistoryColourSampler_0), (vec2<f32>(_S24, _S27)), (0.0f))) * vec4<f32>((_S30 * _S33));
 }
 
 fn IsFiniteColour_0( c_1 : vec3<f32>) -> bool
 {
-    var _S32 : bool;
+    var _S34 : bool;
     if((any((isnan_1(c_1)))))
     {
-        _S32 = true;
+        _S34 = true;
     }
     else
     {
-        _S32 = (any((isinf_1(c_1))));
+        _S34 = (any((isinf_1(c_1))));
     }
-    return !_S32;
+    return !_S34;
 }
 
 fn FromBox_0( s_1 : vec3<f32>) -> vec3<f32>
 {
     var g_0 : vec3<f32> = sqrt(max(s_1, vec3<f32>(0.0f)));
-    return g_0 * vec3<f32>(0.17000000178813934f) / max(vec3<f32>(1.0f) - g_0, vec3<f32>(0.00009999999747379f));
+    return g_0 * vec3<f32>(0.17000000178813934f) / max(vec3<f32>(1.0f) - g_0, vec3<f32>(0.00009999999747379f)) / vec3<f32>(Exposure_0());
 }
 
 fn Luma_0( c_2 : vec3<f32>) -> f32
@@ -211,31 +218,31 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
 {
     var cov_0 : f32;
     var sumColour_0 : vec3<f32>;
-    var _S33 : vec2<i32> = vec2<i32>(id_0.xy);
-    var _S34 : vec2<i32> = vec2<i32>(p_0.history_0.xy);
+    var _S35 : vec2<i32> = vec2<i32>(id_0.xy);
+    var _S36 : vec2<i32> = vec2<i32>(p_0.history_0.xy);
     var offScreen_0 : bool;
-    if((_S33.x) >= (_S34.x))
+    if((_S35.x) >= (_S36.x))
     {
         offScreen_0 = true;
     }
     else
     {
-        offScreen_0 = (_S33.y) >= (_S34.y);
+        offScreen_0 = (_S35.y) >= (_S36.y);
     }
     if(offScreen_0)
     {
         return;
     }
-    var _S35 : f32 = max(1.0f, p_0.control_0.y);
-    var _S36 : f32 = max(p_0.control_0.z, 1.0f);
+    var _S37 : f32 = max(1.0f, p_0.control_0.y);
+    var _S38 : f32 = max(p_0.control_0.z, 1.0f);
     var jitter_0 : vec2<f32> = vec2<f32>(p_0.control_0.w, p_0.control2_0.x);
     var inputSize_0 : vec2<f32> = p_0.input_0.xy;
-    var _S37 : vec2<i32> = vec2<i32>(inputSize_0);
-    var _S38 : vec2<f32> = vec2<f32>(0.5f);
-    var inputPos_0 : vec2<f32> = (vec2<f32>(_S33) + _S38) * inputSize_0 / p_0.history_0.xy;
+    var _S39 : vec2<i32> = vec2<i32>(inputSize_0);
+    var _S40 : vec2<f32> = vec2<f32>(0.5f);
+    var inputPos_0 : vec2<f32> = (vec2<f32>(_S35) + _S40) * inputSize_0 / p_0.history_0.xy;
     var uv_2 : vec2<f32> = inputPos_0 / inputSize_0;
-    var _S39 : vec3<f32> = vec3<f32>(0.0f);
-    var bilin_0 : vec3<f32> = max((textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uv_2), (0.0f))).xyz, _S39);
+    var _S41 : vec3<f32> = vec3<f32>(0.0f);
+    var bilin_0 : vec3<f32> = max((textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uv_2), (0.0f))).xyz, _S41);
     var depths_0 : vec4<f32> = DepthGatherLoaded_0(uDepth_0, uv_2);
     var foreground_0 : bool = (max(max(depths_0.x, depths_0.y), max(depths_0.z, depths_0.w))) >= 0.89999997615814209f;
     var sj_0 : vec2<f32>;
@@ -248,12 +255,12 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         sj_0 = jitter_0;
     }
     var uvJ_0 : vec2<f32> = uv_2 + sj_0 / inputSize_0;
-    var bilinJ_0 : vec3<f32> = max((textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0), (0.0f))).xyz, _S39);
+    var bilinJ_0 : vec3<f32> = max((textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0), (0.0f))).xyz, _S41);
     if((p_0.control_0.x) < 0.5f)
     {
-        var _S40 : vec2<u32> = vec2<u32>(_S33);
-        textureStore((uHistoryColour_0), (_S40), (vec4<f32>(bilin_0, 1.0f)));
-        textureStore((uHistoryMetadata_0), (_S40), (vec4<f32>(1.0f, 0.0f, 0.0f, 0.0f)));
+        var _S42 : vec2<u32> = vec2<u32>(_S35);
+        textureStore((uHistoryColour_0), (_S42), (vec4<f32>(bilin_0, 1.0f)));
+        textureStore((uHistoryMetadata_0), (_S42), (vec4<f32>(1.0f, 0.0f, 0.0f, 0.0f)));
         return;
     }
     var v_0 : vec2<f32> = (textureSampleLevel((uVelocity_0), (uVelocitySampler_0), (uvJ_0), (0.0f))).xy;
@@ -303,30 +310,30 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     {
         relaxClamp_0 = 1.0f;
     }
-    var _S41 : bool;
+    var _S43 : bool;
     if(offScreen_0)
     {
-        _S41 = true;
+        _S43 = true;
     }
     else
     {
-        _S41 = believable_0 < 0.5f;
+        _S43 = believable_0 < 0.5f;
     }
-    if(_S41)
+    if(_S43)
     {
         relaxClamp_0 = 0.0f;
     }
     var relaxClamp_1 : f32 = relaxClamp_0 * believable_0;
     if(offScreen_0)
     {
-        _S41 = true;
+        _S43 = true;
     }
     else
     {
-        _S41 = foreground_0;
+        _S43 = foreground_0;
     }
     var refine_0 : f32;
-    if(_S41)
+    if(_S43)
     {
         refine_0 = 0.0f;
     }
@@ -334,29 +341,29 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     {
         refine_0 = saturate(16.0f * believable_0 * shading_0 - 13.0f);
     }
-    var _S42 : f32 = mix(1.0f, _S36, refine_0);
+    var _S44 : f32 = mix(1.0f, _S38, refine_0);
     var inputPos_1 : vec2<f32>;
     var sumWeight_0 : f32;
     if((p_0.control2_0.z) > 0.5f)
     {
-        var _S43 : vec3<i32> = vec3<i32>(clamp(vec2<i32>(inputPos_0 + sj_0), vec2<i32>(i32(0), i32(0)), _S37 - vec2<i32>(i32(1))), i32(0));
-        var o_0 : vec2<f32> = (textureLoad((uSpatialAa_0), ((_S43)).xy, ((_S43)).z)).xy;
-        var _S44 : f32 = min(shading_0, relaxClamp_1);
+        var _S45 : vec3<i32> = vec3<i32>(clamp(vec2<i32>(inputPos_0 + sj_0), vec2<i32>(i32(0), i32(0)), _S39 - vec2<i32>(i32(1))), i32(0));
+        var o_0 : vec2<f32> = (textureLoad((uSpatialAa_0), ((_S45)).xy, ((_S45)).z)).xy;
+        var _S46 : f32 = min(shading_0, relaxClamp_1);
         if(offScreen_0)
         {
-            _S41 = true;
+            _S43 = true;
         }
         else
         {
-            _S41 = believable_0 < 0.5f;
+            _S43 = believable_0 < 0.5f;
         }
-        if(_S41)
+        if(_S43)
         {
             sumWeight_0 = 1.0f;
         }
         else
         {
-            sumWeight_0 = saturate(1.0f - 4.0f * _S44);
+            sumWeight_0 = saturate(1.0f - 4.0f * _S46);
         }
         inputPos_1 = inputPos_0 + o_0 * vec2<f32>(sumWeight_0);
     }
@@ -364,8 +371,8 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     {
         inputPos_1 = inputPos_0;
     }
-    var _S45 : vec2<i32> = vec2<i32>(floor(inputPos_1 - vec2<f32>(1.0f)));
-    const _S46 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
+    var _S47 : vec2<i32> = vec2<i32>(floor(inputPos_1 - vec2<f32>(1.0f)));
+    const _S48 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
     for(;;)
     {
         for(;;)
@@ -378,41 +385,41 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var _S47 : i32 = _S45.x;
-                            if(_S47 < i32(0))
+                            var _S49 : i32 = _S47.x;
+                            if(_S49 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (_S45.y) < i32(0);
+                                _S43 = (_S47.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
-                            }
-                            else
-                            {
-                                _S41 = _S47 >= (_S37.x);
-                            }
-                            if(_S41)
-                            {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (_S45.y) >= (_S37.y);
+                                _S43 = _S49 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                sumColour_0 = _S46;
+                                _S43 = true;
+                            }
+                            else
+                            {
+                                _S43 = (_S47.y) >= (_S39.y);
+                            }
+                            if(_S43)
+                            {
+                                sumColour_0 = _S48;
                                 sumWeight_0 = 0.0f;
                                 cov_0 = 0.0f;
                                 break;
                             }
-                            var w_0 : f32 = KernelWeight_0(_S42, vec2<f32>(_S45) + _S38 - sj_0 - inputPos_1);
-                            var _S48 : vec3<i32> = vec3<i32>(_S45, i32(0));
-                            var c_3 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S48)).xy, ((_S48)).z)).xyz, _S39);
+                            var w_0 : f32 = KernelWeight_0(_S44, vec2<f32>(_S47) + _S40 - sj_0 - inputPos_1);
+                            var _S50 : vec3<i32> = vec3<i32>(_S47, i32(0));
+                            var c_3 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S50)).xy, ((_S50)).z)).xyz, _S41);
                             var hw_0 : f32 = w_0 * HdrWeight_0(c_3);
                             sumColour_0 = c_3 * vec3<f32>(hw_0);
                             sumWeight_0 = hw_0;
@@ -425,39 +432,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_0 : vec2<i32> = _S45 + vec2<i32>(i32(1), i32(0));
-                            var _S49 : i32 = kk_0.x;
-                            if(_S49 < i32(0))
+                            var kk_0 : vec2<i32> = _S47 + vec2<i32>(i32(1), i32(0));
+                            var _S51 : i32 = kk_0.x;
+                            if(_S51 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_0.y) < i32(0);
+                                _S43 = (kk_0.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S49 >= (_S37.x);
+                                _S43 = _S51 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_0.y) >= (_S37.y);
+                                _S43 = (kk_0.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_1 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_0) + _S38 - sj_0 - inputPos_1);
-                            var _S50 : vec3<i32> = vec3<i32>(kk_0, i32(0));
-                            var c_4 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S50)).xy, ((_S50)).z)).xyz, _S39);
+                            var w_1 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_0) + _S40 - sj_0 - inputPos_1);
+                            var _S52 : vec3<i32> = vec3<i32>(kk_0, i32(0));
+                            var c_4 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S52)).xy, ((_S52)).z)).xyz, _S41);
                             var hw_1 : f32 = w_1 * HdrWeight_0(c_4);
                             var sumWeight_1 : f32 = sumWeight_0 + hw_1;
                             var cov_1 : f32 = cov_0 + w_1;
@@ -472,39 +479,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_1 : vec2<i32> = _S45 + vec2<i32>(i32(2), i32(0));
-                            var _S51 : i32 = kk_1.x;
-                            if(_S51 < i32(0))
+                            var kk_1 : vec2<i32> = _S47 + vec2<i32>(i32(2), i32(0));
+                            var _S53 : i32 = kk_1.x;
+                            if(_S53 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_1.y) < i32(0);
+                                _S43 = (kk_1.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S51 >= (_S37.x);
+                                _S43 = _S53 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_1.y) >= (_S37.y);
+                                _S43 = (kk_1.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_2 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_1) + _S38 - sj_0 - inputPos_1);
-                            var _S52 : vec3<i32> = vec3<i32>(kk_1, i32(0));
-                            var c_5 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S52)).xy, ((_S52)).z)).xyz, _S39);
+                            var w_2 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_1) + _S40 - sj_0 - inputPos_1);
+                            var _S54 : vec3<i32> = vec3<i32>(kk_1, i32(0));
+                            var c_5 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S54)).xy, ((_S54)).z)).xyz, _S41);
                             var hw_2 : f32 = w_2 * HdrWeight_0(c_5);
                             var sumWeight_2 : f32 = sumWeight_0 + hw_2;
                             var cov_2 : f32 = cov_0 + w_2;
@@ -531,39 +538,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_2 : vec2<i32> = _S45 + vec2<i32>(i32(0), i32(1));
-                            var _S53 : i32 = kk_2.x;
-                            if(_S53 < i32(0))
+                            var kk_2 : vec2<i32> = _S47 + vec2<i32>(i32(0), i32(1));
+                            var _S55 : i32 = kk_2.x;
+                            if(_S55 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_2.y) < i32(0);
+                                _S43 = (kk_2.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S53 >= (_S37.x);
+                                _S43 = _S55 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_2.y) >= (_S37.y);
+                                _S43 = (kk_2.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_3 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_2) + _S38 - sj_0 - inputPos_1);
-                            var _S54 : vec3<i32> = vec3<i32>(kk_2, i32(0));
-                            var c_6 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S54)).xy, ((_S54)).z)).xyz, _S39);
+                            var w_3 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_2) + _S40 - sj_0 - inputPos_1);
+                            var _S56 : vec3<i32> = vec3<i32>(kk_2, i32(0));
+                            var c_6 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S56)).xy, ((_S56)).z)).xyz, _S41);
                             var hw_3 : f32 = w_3 * HdrWeight_0(c_6);
                             var sumWeight_3 : f32 = sumWeight_0 + hw_3;
                             var cov_3 : f32 = cov_0 + w_3;
@@ -578,39 +585,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_3 : vec2<i32> = _S45 + vec2<i32>(i32(1), i32(1));
-                            var _S55 : i32 = kk_3.x;
-                            if(_S55 < i32(0))
+                            var kk_3 : vec2<i32> = _S47 + vec2<i32>(i32(1), i32(1));
+                            var _S57 : i32 = kk_3.x;
+                            if(_S57 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_3.y) < i32(0);
+                                _S43 = (kk_3.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S55 >= (_S37.x);
+                                _S43 = _S57 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_3.y) >= (_S37.y);
+                                _S43 = (kk_3.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_4 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_3) + _S38 - sj_0 - inputPos_1);
-                            var _S56 : vec3<i32> = vec3<i32>(kk_3, i32(0));
-                            var c_7 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S56)).xy, ((_S56)).z)).xyz, _S39);
+                            var w_4 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_3) + _S40 - sj_0 - inputPos_1);
+                            var _S58 : vec3<i32> = vec3<i32>(kk_3, i32(0));
+                            var c_7 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S58)).xy, ((_S58)).z)).xyz, _S41);
                             var hw_4 : f32 = w_4 * HdrWeight_0(c_7);
                             var sumWeight_4 : f32 = sumWeight_0 + hw_4;
                             var cov_4 : f32 = cov_0 + w_4;
@@ -625,39 +632,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_4 : vec2<i32> = _S45 + vec2<i32>(i32(2), i32(1));
-                            var _S57 : i32 = kk_4.x;
-                            if(_S57 < i32(0))
+                            var kk_4 : vec2<i32> = _S47 + vec2<i32>(i32(2), i32(1));
+                            var _S59 : i32 = kk_4.x;
+                            if(_S59 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_4.y) < i32(0);
+                                _S43 = (kk_4.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S57 >= (_S37.x);
+                                _S43 = _S59 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_4.y) >= (_S37.y);
+                                _S43 = (kk_4.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_5 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_4) + _S38 - sj_0 - inputPos_1);
-                            var _S58 : vec3<i32> = vec3<i32>(kk_4, i32(0));
-                            var c_8 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S58)).xy, ((_S58)).z)).xyz, _S39);
+                            var w_5 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_4) + _S40 - sj_0 - inputPos_1);
+                            var _S60 : vec3<i32> = vec3<i32>(kk_4, i32(0));
+                            var c_8 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S60)).xy, ((_S60)).z)).xyz, _S41);
                             var hw_5 : f32 = w_5 * HdrWeight_0(c_8);
                             var sumWeight_5 : f32 = sumWeight_0 + hw_5;
                             var cov_5 : f32 = cov_0 + w_5;
@@ -684,39 +691,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_5 : vec2<i32> = _S45 + vec2<i32>(i32(0), i32(2));
-                            var _S59 : i32 = kk_5.x;
-                            if(_S59 < i32(0))
+                            var kk_5 : vec2<i32> = _S47 + vec2<i32>(i32(0), i32(2));
+                            var _S61 : i32 = kk_5.x;
+                            if(_S61 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_5.y) < i32(0);
+                                _S43 = (kk_5.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S59 >= (_S37.x);
+                                _S43 = _S61 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_5.y) >= (_S37.y);
+                                _S43 = (kk_5.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_6 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_5) + _S38 - sj_0 - inputPos_1);
-                            var _S60 : vec3<i32> = vec3<i32>(kk_5, i32(0));
-                            var c_9 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S60)).xy, ((_S60)).z)).xyz, _S39);
+                            var w_6 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_5) + _S40 - sj_0 - inputPos_1);
+                            var _S62 : vec3<i32> = vec3<i32>(kk_5, i32(0));
+                            var c_9 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S62)).xy, ((_S62)).z)).xyz, _S41);
                             var hw_6 : f32 = w_6 * HdrWeight_0(c_9);
                             var sumWeight_6 : f32 = sumWeight_0 + hw_6;
                             var cov_6 : f32 = cov_0 + w_6;
@@ -731,39 +738,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_6 : vec2<i32> = _S45 + vec2<i32>(i32(1), i32(2));
-                            var _S61 : i32 = kk_6.x;
-                            if(_S61 < i32(0))
+                            var kk_6 : vec2<i32> = _S47 + vec2<i32>(i32(1), i32(2));
+                            var _S63 : i32 = kk_6.x;
+                            if(_S63 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_6.y) < i32(0);
+                                _S43 = (kk_6.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S61 >= (_S37.x);
+                                _S43 = _S63 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_6.y) >= (_S37.y);
+                                _S43 = (kk_6.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_7 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_6) + _S38 - sj_0 - inputPos_1);
-                            var _S62 : vec3<i32> = vec3<i32>(kk_6, i32(0));
-                            var c_10 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S62)).xy, ((_S62)).z)).xyz, _S39);
+                            var w_7 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_6) + _S40 - sj_0 - inputPos_1);
+                            var _S64 : vec3<i32> = vec3<i32>(kk_6, i32(0));
+                            var c_10 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S64)).xy, ((_S64)).z)).xyz, _S41);
                             var hw_7 : f32 = w_7 * HdrWeight_0(c_10);
                             var sumWeight_7 : f32 = sumWeight_0 + hw_7;
                             var cov_7 : f32 = cov_0 + w_7;
@@ -778,39 +785,39 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         for(;;)
                         {
-                            var kk_7 : vec2<i32> = _S45 + vec2<i32>(i32(2), i32(2));
-                            var _S63 : i32 = kk_7.x;
-                            if(_S63 < i32(0))
+                            var kk_7 : vec2<i32> = _S47 + vec2<i32>(i32(2), i32(2));
+                            var _S65 : i32 = kk_7.x;
+                            if(_S65 < i32(0))
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_7.y) < i32(0);
+                                _S43 = (kk_7.y) < i32(0);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = _S63 >= (_S37.x);
+                                _S43 = _S65 >= (_S39.x);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
-                                _S41 = true;
+                                _S43 = true;
                             }
                             else
                             {
-                                _S41 = (kk_7.y) >= (_S37.y);
+                                _S43 = (kk_7.y) >= (_S39.y);
                             }
-                            if(_S41)
+                            if(_S43)
                             {
                                 break;
                             }
-                            var w_8 : f32 = KernelWeight_0(_S42, vec2<f32>(kk_7) + _S38 - sj_0 - inputPos_1);
-                            var _S64 : vec3<i32> = vec3<i32>(kk_7, i32(0));
-                            var c_11 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S64)).xy, ((_S64)).z)).xyz, _S39);
+                            var w_8 : f32 = KernelWeight_0(_S44, vec2<f32>(kk_7) + _S40 - sj_0 - inputPos_1);
+                            var _S66 : vec3<i32> = vec3<i32>(kk_7, i32(0));
+                            var c_11 : vec3<f32> = max((textureLoad((uCurrent_0), ((_S66)).xy, ((_S66)).z)).xyz, _S41);
                             var hw_8 : f32 = w_8 * HdrWeight_0(c_11);
                             var sumColour_1 : vec3<f32> = sumColour_0 + c_11 * vec3<f32>(hw_8);
                             var cov_8 : f32 = cov_0 + w_8;
@@ -841,54 +848,54 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     var cov_9 : f32 = saturate(cov_0);
     if(foreground_0)
     {
-        var _S65 : vec2<u32> = vec2<u32>(_S33);
-        textureStore((uHistoryColour_0), (_S65), (vec4<f32>(current_0, 1.0f)));
-        textureStore((uHistoryMetadata_0), (_S65), (vec4<f32>(cov_9 / _S35, 0.0f, 0.0f, 0.0f)));
+        var _S67 : vec2<u32> = vec2<u32>(_S35);
+        textureStore((uHistoryColour_0), (_S67), (vec4<f32>(current_0, 1.0f)));
+        textureStore((uHistoryMetadata_0), (_S67), (vec4<f32>(cov_9 / _S37, 0.0f, 0.0f, 0.0f)));
         return;
     }
-    const _S66 : vec3<f32> = vec3<f32>(1.00000001504746622e+30f, 1.00000001504746622e+30f, 1.00000001504746622e+30f);
-    const _S67 : vec3<f32> = vec3<f32>(-1.00000001504746622e+30f, -1.00000001504746622e+30f, -1.00000001504746622e+30f);
+    const _S68 : vec3<f32> = vec3<f32>(1.00000001504746622e+30f, 1.00000001504746622e+30f, 1.00000001504746622e+30f);
+    const _S69 : vec3<f32> = vec3<f32>(-1.00000001504746622e+30f, -1.00000001504746622e+30f, -1.00000001504746622e+30f);
     var tap_0 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(-1.0f, -1.0f) / inputSize_0), (0.0f)));
-    var s_2 : vec3<f32> = ToBox_0(max(tap_0.xyz, _S39));
+    var s_2 : vec3<f32> = ToBox_0(max(tap_0.xyz, _S41));
     var tap_1 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(0.0f, -1.0f) / inputSize_0), (0.0f)));
-    var s_3 : vec3<f32> = ToBox_0(max(tap_1.xyz, _S39));
+    var s_3 : vec3<f32> = ToBox_0(max(tap_1.xyz, _S41));
     var tap_2 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(1.0f, -1.0f) / inputSize_0), (0.0f)));
-    var s_4 : vec3<f32> = ToBox_0(max(tap_2.xyz, _S39));
+    var s_4 : vec3<f32> = ToBox_0(max(tap_2.xyz, _S41));
     var tap_3 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(-1.0f, 0.0f) / inputSize_0), (0.0f)));
-    var s_5 : vec3<f32> = ToBox_0(max(tap_3.xyz, _S39));
+    var s_5 : vec3<f32> = ToBox_0(max(tap_3.xyz, _S41));
     var tap_4 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(0.0f, 0.0f) / inputSize_0), (0.0f)));
-    var s_6 : vec3<f32> = ToBox_0(max(tap_4.xyz, _S39));
+    var s_6 : vec3<f32> = ToBox_0(max(tap_4.xyz, _S41));
     var tap_5 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(1.0f, 0.0f) / inputSize_0), (0.0f)));
-    var s_7 : vec3<f32> = ToBox_0(max(tap_5.xyz, _S39));
+    var s_7 : vec3<f32> = ToBox_0(max(tap_5.xyz, _S41));
     var tap_6 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(-1.0f, 1.0f) / inputSize_0), (0.0f)));
-    var s_8 : vec3<f32> = ToBox_0(max(tap_6.xyz, _S39));
+    var s_8 : vec3<f32> = ToBox_0(max(tap_6.xyz, _S41));
     var tap_7 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(0.0f, 1.0f) / inputSize_0), (0.0f)));
-    var s_9 : vec3<f32> = ToBox_0(max(tap_7.xyz, _S39));
+    var s_9 : vec3<f32> = ToBox_0(max(tap_7.xyz, _S41));
     var tap_8 : vec4<f32> = (textureSampleLevel((uCurrent_0), (uCurrentSampler_0), (uvJ_0 + vec2<f32>(1.0f, 1.0f) / inputSize_0), (0.0f)));
-    var s_10 : vec3<f32> = ToBox_0(max(tap_8.xyz, _S39));
+    var s_10 : vec3<f32> = ToBox_0(max(tap_8.xyz, _S41));
     var reactive_0 : f32 = saturate(4.0f * max(0.0f, max(max(max(max(max(max(max(max(max(0.0f, tap_0.w - 1.0f), tap_1.w - 1.0f), tap_2.w - 1.0f), tap_3.w - 1.0f), tap_4.w - 1.0f), tap_5.w - 1.0f), tap_6.w - 1.0f), tap_7.w - 1.0f), tap_8.w - 1.0f)));
-    var _S68 : vec3<f32> = vec3<f32>(9.0f);
-    var mu_0 : vec3<f32> = (s_2 + s_3 + s_4 + s_5 + s_6 + s_7 + s_8 + s_9 + s_10) / _S68;
-    var sigma_0 : vec3<f32> = sqrt(max((s_2 * s_2 + s_3 * s_3 + s_4 * s_4 + s_5 * s_5 + s_6 * s_6 + s_7 * s_7 + s_8 * s_8 + s_9 * s_9 + s_10 * s_10) / _S68 - mu_0 * mu_0, _S39));
-    var boxLo_0 : vec3<f32> = max(min(min(min(min(min(min(min(min(min(_S66, s_2), s_3), s_4), s_5), s_6), s_7), s_8), s_9), s_10), mu_0 - sigma_0);
-    var boxHi_0 : vec3<f32> = min(max(max(max(max(max(max(max(max(max(_S67, s_2), s_3), s_4), s_5), s_6), s_7), s_8), s_9), s_10), mu_0 + sigma_0);
+    var _S70 : vec3<f32> = vec3<f32>(9.0f);
+    var mu_0 : vec3<f32> = (s_2 + s_3 + s_4 + s_5 + s_6 + s_7 + s_8 + s_9 + s_10) / _S70;
+    var sigma_0 : vec3<f32> = sqrt(max((s_2 * s_2 + s_3 * s_3 + s_4 * s_4 + s_5 * s_5 + s_6 * s_6 + s_7 * s_7 + s_8 * s_8 + s_9 * s_9 + s_10 * s_10) / _S70 - mu_0 * mu_0, _S41));
+    var boxLo_0 : vec3<f32> = max(min(min(min(min(min(min(min(min(min(_S68, s_2), s_3), s_4), s_5), s_6), s_7), s_8), s_9), s_10), mu_0 - sigma_0);
+    var boxHi_0 : vec3<f32> = min(max(max(max(max(max(max(max(max(max(_S69, s_2), s_3), s_4), s_5), s_6), s_7), s_8), s_9), s_10), mu_0 + sigma_0);
     if(offScreen_0)
     {
-        var _S69 : vec2<u32> = vec2<u32>(_S33);
-        textureStore((uHistoryColour_0), (_S69), (vec4<f32>(current_0, 1.0f - reactive_0)));
-        textureStore((uHistoryMetadata_0), (_S69), (vec4<f32>(1.0f / _S35, 0.0f, 0.0f, 0.0f)));
+        var _S71 : vec2<u32> = vec2<u32>(_S35);
+        textureStore((uHistoryColour_0), (_S71), (vec4<f32>(current_0, 1.0f - reactive_0)));
+        textureStore((uHistoryMetadata_0), (_S71), (vec4<f32>(1.0f / _S37, 0.0f, 0.0f, 0.0f)));
         return;
     }
     if(believable_0 < 0.5f)
     {
-        var _S70 : vec2<u32> = vec2<u32>(_S33);
-        textureStore((uHistoryColour_0), (_S70), (vec4<f32>(current_0, 1.0f - reactive_0)));
-        textureStore((uHistoryMetadata_0), (_S70), (vec4<f32>(cov_9 / _S35, 0.0f, 0.0f, 0.0f)));
+        var _S72 : vec2<u32> = vec2<u32>(_S35);
+        textureStore((uHistoryColour_0), (_S72), (vec4<f32>(current_0, 1.0f - reactive_0)));
+        textureStore((uHistoryMetadata_0), (_S72), (vec4<f32>(cov_9 / _S37, 0.0f, 0.0f, 0.0f)));
         return;
     }
     var hist4_0 : vec4<f32> = SampleHistoryCatmullRom_0(prevUv_0);
-    var hLin_0 : vec3<f32> = max(hist4_0.xyz, _S39);
-    var count_0 : f32 = _S35 * (textureSampleLevel((uPrevHistoryMetadata_0), (uPrevHistoryMetadataSampler_0), (prevUv_0), (0.0f))).x;
+    var hLin_0 : vec3<f32> = max(hist4_0.xyz, _S41);
+    var count_0 : f32 = _S37 * (textureSampleLevel((uPrevHistoryMetadata_0), (uPrevHistoryMetadataSampler_0), (prevUv_0), (0.0f))).x;
     if(!IsFiniteColour_0(hLin_0))
     {
         offScreen_0 = true;
@@ -899,21 +906,21 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     }
     if(offScreen_0)
     {
-        var _S71 : vec2<u32> = vec2<u32>(_S33);
-        textureStore((uHistoryColour_0), (_S71), (vec4<f32>(current_0, 1.0f - reactive_0)));
-        textureStore((uHistoryMetadata_0), (_S71), (vec4<f32>(cov_9 / _S35, 0.0f, 0.0f, 0.0f)));
+        var _S73 : vec2<u32> = vec2<u32>(_S35);
+        textureStore((uHistoryColour_0), (_S73), (vec4<f32>(current_0, 1.0f - reactive_0)));
+        textureStore((uHistoryMetadata_0), (_S73), (vec4<f32>(cov_9 / _S37, 0.0f, 0.0f, 0.0f)));
         return;
     }
     var h_0 : vec3<f32> = ToBox_0(hLin_0);
-    var _S72 : vec3<f32> = vec3<f32>(0.5f);
-    var centre_0 : vec3<f32> = (boxLo_0 + boxHi_0) * _S72;
+    var _S74 : vec3<f32> = vec3<f32>(0.5f);
+    var centre_0 : vec3<f32> = (boxLo_0 + boxHi_0) * _S74;
     var e_0 : vec3<f32> = h_0 - centre_0;
-    var ratio_0 : vec3<f32> = abs(e_0) / max((boxHi_0 - boxLo_0) * _S72, vec3<f32>(0.00000999999974738f));
-    var _S73 : f32 = max(ratio_0.x, max(ratio_0.y, ratio_0.z));
+    var ratio_0 : vec3<f32> = abs(e_0) / max((boxHi_0 - boxLo_0) * _S74, vec3<f32>(0.00000999999974738f));
+    var _S75 : f32 = max(ratio_0.x, max(ratio_0.y, ratio_0.z));
     var h_1 : vec3<f32>;
-    if(_S73 > 1.0f)
+    if(_S75 > 1.0f)
     {
-        h_1 = centre_0 + e_0 / vec3<f32>(_S73);
+        h_1 = centre_0 + e_0 / vec3<f32>(_S75);
     }
     else
     {
@@ -921,15 +928,15 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     }
     var hClip_0 : vec3<f32> = FromBox_0(h_1);
     var remembered_0 : f32 = saturate(1.0f - hist4_0.w);
-    var _S74 : f32 = min(relaxClamp_1, 1.0f - remembered_0);
-    var wClip_0 : f32 = (1.0f - _S74) * HdrWeight_0(hClip_0);
-    var wLin_0 : f32 = _S74 * HdrWeight_0(hLin_0);
+    var _S76 : f32 = min(relaxClamp_1, 1.0f - remembered_0);
+    var wClip_0 : f32 = (1.0f - _S76) * HdrWeight_0(hClip_0);
+    var wLin_0 : f32 = _S76 * HdrWeight_0(hLin_0);
     var hist_0 : vec3<f32> = (hClip_0 * vec3<f32>(wClip_0) + hLin_0 * vec3<f32>(wLin_0)) / vec3<f32>(max(wClip_0 + wLin_0, 9.99999997475242708e-07f));
-    var _S75 : f32 = min(min(count_0 + cov_9, _S35), mix(_S35, 3.0f, saturate(speed_0 / 8.0f)));
+    var _S77 : f32 = min(min(count_0 + cov_9, _S37), mix(_S37, 3.0f, saturate(speed_0 / 8.0f)));
     var blend_0 : f32;
-    if(_S75 > 9.99999997475242708e-07f)
+    if(_S77 > 9.99999997475242708e-07f)
     {
-        blend_0 = saturate(cov_9 / _S75);
+        blend_0 = saturate(cov_9 / _S77);
     }
     else
     {
@@ -937,13 +944,13 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     }
     var lc_0 : f32 = Luma_0(current_0);
     var lh_0 : f32 = Luma_0(hist_0);
-    var _S76 : f32 = max(max(max(blend_0, 1.0f - max(1.0f - saturate(1.0f - 4.0f / _S35) * saturate(speed_0), saturate(abs(lc_0 - lh_0) / max(max(lc_0, lh_0), 0.00009999999747379f)))), saturate(2.0f * (0.5f - min(shading_0, _S74)))), 0.85000002384185791f * reactive_0);
-    var _S77 : f32 = min(_S75, max(cov_9, 0.25f) / max(_S76, 0.00100000004749745f));
-    var wc_0 : f32 = _S76 * HdrWeight_0(current_0);
-    var wh_0 : f32 = (1.0f - _S76) * HdrWeight_0(hist_0);
-    var _S78 : vec2<u32> = vec2<u32>(_S33);
-    textureStore((uHistoryColour_0), (_S78), (vec4<f32>(max((current_0 * vec3<f32>(wc_0) + hist_0 * vec3<f32>(wh_0)) / vec3<f32>(max(wc_0 + wh_0, 9.99999997475242708e-07f)), _S39), 1.0f - max(reactive_0, 0.5f * remembered_0))));
-    textureStore((uHistoryMetadata_0), (_S78), (vec4<f32>(_S77 / _S35, 0.0f, 0.0f, 0.0f)));
+    var _S78 : f32 = max(max(max(blend_0, 1.0f - max(1.0f - saturate(1.0f - 4.0f / _S37) * saturate(speed_0), saturate(abs(lc_0 - lh_0) / max(max(lc_0, lh_0), 0.00009999999747379f)))), saturate(2.0f * (0.5f - min(shading_0, _S76)))), 0.85000002384185791f * reactive_0);
+    var _S79 : f32 = min(_S77, max(cov_9, 0.25f) / max(_S78, 0.00100000004749745f));
+    var wc_0 : f32 = _S78 * HdrWeight_0(current_0);
+    var wh_0 : f32 = (1.0f - _S78) * HdrWeight_0(hist_0);
+    var _S80 : vec2<u32> = vec2<u32>(_S35);
+    textureStore((uHistoryColour_0), (_S80), (vec4<f32>(max((current_0 * vec3<f32>(wc_0) + hist_0 * vec3<f32>(wh_0)) / vec3<f32>(max(wc_0 + wh_0, 9.99999997475242708e-07f)), _S41), 1.0f - max(reactive_0, 0.5f * remembered_0))));
+    textureStore((uHistoryMetadata_0), (_S80), (vec4<f32>(_S79 / _S37, 0.0f, 0.0f, 0.0f)));
     return;
 }
 

@@ -33,11 +33,11 @@ public sealed class StageProfiler : IDisposable
 {
     /// <summary>How many timestamps one frame in flight may write.</summary>
     /// <remarks>
-    /// Two per timed pass. A frame times well under thirty passes — roughly twenty stages, a few of
-    /// them more than once — so this is comfortable headroom, and a frame that exceeds it stops timing
-    /// rather than overwriting its neighbour's block.
+    /// Two per timed pass. Every global-illumination dispatch is a pass of its own, so an ultra frame
+    /// times well over sixty; a frame that exceeds this stops timing rather than overwriting its
+    /// neighbour's block, and what it stopped on would be missing from every total.
     /// </remarks>
-    public const int SlotCapacity = 128;
+    public const int SlotCapacity = 512;
 
     private readonly IRhiDevice _device;
     private readonly IRhiQuerySet? _queries;
@@ -156,11 +156,12 @@ public sealed class StageProfiler : IDisposable
 
     /// <summary>Claims a pair of slots for one pass, to put on its descriptor.</summary>
     /// <param name="stage">Which stage the pass belongs to.</param>
+    /// <param name="label">The pass's own name, for the breakdown within a stage, or <see langword="null"/>.</param>
     /// <returns>
     /// Where the pass should write its times, or <see langword="null"/> when nothing is being timed —
     /// which is what a pass descriptor takes for a pass that is not measured.
     /// </returns>
-    public RhiTimestampWrites? Time(RenderStage stage)
+    public RhiTimestampWrites? Time(RenderStage stage, string? label = null)
     {
         if (_disposed || !Enabled || _queries is null)
         {
@@ -178,7 +179,7 @@ public sealed class StageProfiler : IDisposable
 
         int first = (_slot * SlotCapacity) + next;
         _slotNext[_slot] = next + 2;
-        _slotPasses[_slot].Add(new TimedPass(stage, next, next + 1));
+        _slotPasses[_slot].Add(new TimedPass(stage, next, next + 1, label));
 
         return new RhiTimestampWrites(_queries, first, first + 1);
     }
@@ -208,6 +209,14 @@ public sealed class StageProfiler : IDisposable
         if (_pending[_slot] is { IsComplete: false })
         {
             return;
+        }
+
+        // A map that HAS come back but was not read yet is folded now, before this frame's copy replaces it.
+        // The read at the end of the frame looks at the previous frame, which a GPU-bound frame has not
+        // finished by then; throwing it away here as well meant a GPU-bound game reported no GPU time at all.
+        if (_pending[_slot] is not null)
+        {
+            ReadCompletedFrame(_slot);
         }
 
         _pending[_slot]?.Dispose();
@@ -288,7 +297,13 @@ public sealed class StageProfiler : IDisposable
         {
             // Unsigned, so a tick counter that wrapped between the two reads still subtracts correctly.
             ulong elapsed = _results[pass.End] - _results[pass.Start];
-            Ledger.Observe(pass.Stage, elapsed * _periodMilliseconds);
+            double milliseconds = elapsed * _periodMilliseconds;
+            Ledger.Observe(pass.Stage, milliseconds);
+
+            if (pass.Label is { } label)
+            {
+                Ledger.ObservePass(label, pass.Stage, milliseconds);
+            }
         }
 
         Ledger.CompleteFrame();
@@ -328,5 +343,6 @@ public sealed class StageProfiler : IDisposable
     /// <param name="Stage">The stage it belongs to.</param>
     /// <param name="Start">Where in the block the time it began went.</param>
     /// <param name="End">Where the time it ended went.</param>
-    private readonly record struct TimedPass(RenderStage Stage, int Start, int End);
+    /// <param name="Label">Its own name, when it was given one.</param>
+    private readonly record struct TimedPass(RenderStage Stage, int Start, int End, string? Label);
 }

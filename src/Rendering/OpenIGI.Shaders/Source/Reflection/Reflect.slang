@@ -78,6 +78,9 @@
 [[vk::binding(23, 0)]] Texture2D<float4> uFinal;
 [[vk::binding(24, 0)]] SamplerState uFinalSampler;
 
+// The world's cut-out masks, so a reflected ray stops on a fence's wire and not between them.
+[[vk::binding(26, 0)]] Texture2DArray<float4> uCutoutMasks;
+
 #define OPENIGI_REFLECTION_PARAMS_BINDING 25
 
 #else
@@ -199,6 +202,10 @@ struct Params
 #include "../Common/TracedScreen.slang"
 
 #if OPENIGI_RAY_QUERY
+// The hit records' address, low word then high, carried bit for bit in the atlas row's spare pair.
+#define kRecords uint2(asuint(p.cacheAtlas.z), asuint(p.cacheAtlas.w))
+#define kTraceCutoutMasks uCutoutMasks
+#include "../Common/HitRecords.slang"
 #include "../Common/TracedWorld.slang"
 #else
 #include "../Common/DistanceField.slang"
@@ -208,6 +215,53 @@ struct Params
 static const float kUnknownAlbedo = 0.3;
 static const float3 kLuminance = float3(0.2126, 0.7152, 0.0722);
 #endif
+
+// The scene's view depth at a UV, read at the one texel under it rather than blended across the four round
+// it: at a silhouette a blend of foreground and background is a depth no surface has. Nought where the
+// texel is open sky.
+// How much of a sky the ray did not find in the way is still hidden by the surface's own crevices: the
+// shading's specular occlusion, from the material's occlusion, for the fallbacks alone -- a ray that struck
+// something already answers for what is in the way. Without it a crease, the underside of an eave, the
+// shade under a vehicle each glinted with the full sky.
+float FallbackOcclusion(float nDotV, float roughness, float2 uv)
+{
+    float visibility = saturate(uBaseColour.SampleLevel(uBaseColourSampler, uv, 0.0).a);
+    float alpha = roughness * roughness;
+    return clamp(pow(nDotV + visibility, alpha) - 1.0 + visibility, 0.0, 1.0);
+}
+
+float PointDepth(float2 uv)
+{
+    uint width;
+    uint height;
+    uSceneDepth.GetDimensions(width, height);
+    int2 texel = clamp(int2(uv * float2(width, height)), int2(0, 0), int2(int(width) - 1, int(height) - 1));
+    return uSceneDepth.Load(int3(texel, 0));
+}
+
+float SampleSceneViewZ(float2 uv)
+{
+    uint width;
+    uint height;
+    uSceneDepth.GetDimensions(width, height);
+    int2 texel = clamp(int2(uv * float2(width, height)), int2(0, 0), int2(int(width) - 1, int(height) - 1));
+    float d = uSceneDepth.Load(int3(texel, 0));
+    return d > 0.0 ? SceneViewZ(d) : 0.0;
+}
+
+// The specular lobe averaged over the hemisphere at a roughness and a viewing angle: what F0 and F90 are
+// scaled by to weigh an environment's reflection. The same analytic fit the shading weighs its own
+// estimate of that environment with (Shading.slang, SplitSumApprox), so the reflection that stands in for
+// it is weighed the same way.
+float2 EnvironmentBrdf(float roughness, float cosNV)
+{
+    float smoothness = 1.0 - roughness;
+    float grazing = min(smoothness * smoothness, exp2(-9.28 * cosNV));
+    float t = (grazing * smoothness) + 0.0425 - (0.0275 * roughness);
+    float scale = 1.04 - (0.572 * roughness) - (1.04 * t);
+    float bias = (0.022 * roughness) - 0.04 + (1.04 * t);
+    return float2(scale, bias);
+}
 
 // The weather, gathered out of this pass's own parameter block. The shading pass fills the same struct
 // from its uniform; that both do it by hand from different layouts is the whole reason the struct exists.
@@ -418,11 +472,20 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         // A dielectric's four per cent, and a metal's own colour, which is the whole of the difference
         // between the two in this model: a metal has no diffuse term, so the light it does not absorb it
         // reflects, tinted by what it is made of.
+        //
+        // Weighted exactly as the shading weighs its own estimate of the environment, which this replaces:
+        // the material's own specular level for a dielectric, a cavity's darkening of the grazing edge, and
+        // the split-sum average of the specular lobe over the hemisphere at this roughness. Plain Schlick
+        // with nothing for roughness went to full white at every grazing angle, so a rough-ish floor seen
+        // low came out near white.
+        float specularLevel = material.g;
         float3 f0 = lerp(
-            float3(0.04, 0.04, 0.04),
+            float3(0.08 * specularLevel, 0.08 * specularLevel, 0.08 * specularLevel),
             uBaseColour.SampleLevel(uBaseColourSampler, uv, 0.0).rgb,
             metallic);
-        float3 fresnel = f0 + ((1.0 - f0) * pow(1.0 - nDotV, 5.0));
+        float f90 = clamp(50.0 * f0.g, 0.0, 1.0);
+        float2 environmentBrdf = EnvironmentBrdf(roughness, nDotV);
+        float3 fresnel = (f0 * environmentBrdf.x) + float3(f90, f90, f90) * environmentBrdf.y;
 
         // Fade out as the surface approaches the ceiling, so the answer does not end on a visible line at
         // that roughness.
@@ -444,6 +507,33 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             : clamp((ceiling - roughness) / max(ceiling, 1e-3), 0.0, 1.0);
 
         reflectance = fresnel * fade;
+
+        // A rough surface does not reflect along one line. The ray is aimed along a microfacet normal drawn
+        // from the surface's own distribution, a different one every frame, so the frames the temporal
+        // resolve averages together cover the lobe; the composite spreads each frame's answer over the
+        // footprint the roughness implies. Fired along the mirror direction alone, metal at a roughness of
+        // a half reflected the yard as sharply as a mirror -- chrome, where the material asks for brushed.
+        if (roughness > 0.05)
+        {
+            float alpha = roughness * roughness;
+            float u1 = FrameNoise(float2(px), p.misc.y);
+            float u2 = FrameNoise(float2(px) + float2(31.0, 17.0), p.misc.y);
+            float cosTheta = sqrt((1.0 - u1) / max(1.0 + (((alpha * alpha) - 1.0) * u1), 1e-6));
+            float sinTheta = sqrt(max(1.0 - (cosTheta * cosTheta), 0.0));
+            float phi = 6.2831853 * u2;
+            float3 up = abs(groundNormal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+            float3 tangent = normalize(cross(up, groundNormal));
+            float3 bitangent = cross(groundNormal, tangent);
+            float3 facet = normalize(
+                (tangent * (sinTheta * cos(phi))) + (bitangent * (sinTheta * sin(phi))) + (groundNormal * cosTheta));
+
+            // Only a facet that still reflects the view above the surface: one tilted past the horizon
+            // sends the ray into the ground, and the surface's own normal answers instead.
+            if (dot(reflect(worldRayToPixel, facet), groundNormal) > 0.02)
+            {
+                normalW = facet;
+            }
+        }
     }
 
     if (max(reflectance.r, max(reflectance.g, reflectance.b)) <= 0.003)
@@ -505,7 +595,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             break;
         }
 
-        float d = DepthBilinear(uSceneDepth, uSceneDepthSampler, huv);
+        // The texel under the step, not a blend of four: at a silhouette a blend of foreground and background
+        // is a depth no surface has, and the march found phantom surfaces there -- halos and streaks round
+        // every edge it reflected.
+        float d = PointDepth(huv);
         if (d <= 0.0)
         {
             // Open sky at this sample: the ray is in clear air, with no surface to cross. It may still
@@ -542,7 +635,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                 for (int k = 0; k < 5; k++)
                 {
                     float3 mid = (a + b) * 0.5;
-                    float md = DepthBilinear(uSceneDepth, uSceneDepthSampler, ViewToUv(mid));
+                    float md = PointDepth(ViewToUv(mid));
                     if (md > 0.0 && mid.z - SceneViewZ(md) > 0.0)
                     {
                         b = mid;
@@ -555,11 +648,20 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
                 hitUv = ViewToUv(b);
 
+                // A crossing is a hit only where the ray met the surface: landed within its thickness once
+                // the halvings have closed on it. At a silhouette -- a pole, a soldier -- the depth buffer
+                // jumps, and the ray that crosses that jump has only passed BEHIND the thing, whose drawn
+                // surface stands metres in front of it. Taken as a hit, every such ray read the pole's
+                // colour, and the pole smeared down the whole wet ground behind it. Hidden instead, the ray
+                // is left for the world beyond the screen to answer.
+                float landed = SampleSceneViewZ(hitUv);
+                bool met = landed > 0.0 && (b.z - landed) < thickness;
+
                 // The border vignette: full in the middle of the screen, fading to nothing across the
                 // outer fifth, so a reflection does not end on the hard line of the frame.
                 float2 sp = (hitUv * 2.0) - 1.0;
                 float2 vig = clamp((abs(sp) * 5.0) - 4.0, float2(0.0, 0.0), float2(1.0, 1.0));
-                hitEdge = clamp(1.0 - dot(vig, vig), 0.0, 1.0);
+                hitEdge = met ? clamp(1.0 - dot(vig, vig), 0.0, 1.0) : 0.0;
             }
 
             // Behind a surface either way -- a hit, or the ray began already hidden behind something
@@ -677,7 +779,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
         if (resolved)
         {
-            float3 scene = radiance * (water ? 1.0 : p.ssr.y);
+            // At its own strength: the intensity knob is for the screen march, whose single ray misses much
+            // of the world. A traced ray misses nothing, and scaled up it made every reflection of geometry
+            // brighter than the geometry, with a step where the reflection went over to sky.
+            float3 scene = radiance;
 
             // And the sky the shading laid in this pixel's water, which the traced hit now stands in place
             // of -- taken back out at exactly this ray's share of it, the same bookkeeping the screen hit
@@ -696,7 +801,8 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             // this term in its pixel -- adding it again is the double count that once made wet ground a
             // stop and a half too bright. A glossy or a metal surface gets no such term from the shading,
             // which is why one facing an empty street came out black rather than showing the sky over it.
-            reflection = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w) * reflectance;
+            reflection = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w) * reflectance
+                * FallbackOcclusion(nDotV, roughness, uv);
         }
     }
 
@@ -744,7 +850,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             // The roof raster is already here for the water; it answers this too.
             float3 sky = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w);
             float grey = dot(sky, kLuminance) * kUnknownAlbedo;
-            radiance = lostCeiling ? float3(grey, grey, grey) : sky;
+            radiance = (lostCeiling ? float3(grey, grey, grey) : sky) * FallbackOcclusion(nDotV, roughness, uv);
         }
         else
         {
@@ -803,7 +909,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                 // were the picture.
                 float3 sky = SampleSkyView(uSkyView, uSkyViewSampler, rayW, p.misc.w);
                 float grey = dot(sky, kLuminance) * kUnknownAlbedo;
-                radiance = lostCeiling ? float3(grey, grey, grey) : sky;
+                radiance = (lostCeiling ? float3(grey, grey, grey) : sky) * FallbackOcclusion(nDotV, roughness, uv);
             }
         }
 
@@ -816,7 +922,8 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             radiance *= p.trace.z / brightest;
         }
 
-        float3 scene = radiance * (water ? 1.0 : p.ssr.y);
+        // At its own strength, as the traced half's: the knob is the screen march's.
+        float3 scene = radiance;
 
         // And the sky the shading already laid in this pixel's water, which this answer now stands in
         // place of -- taken back out at this ray's share of it, the same bookkeeping the screen hit does
@@ -833,5 +940,9 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
 #endif
 
-    uReflection.Store(px, float4(reflection, (traces || marches) ? 1.0 : screenWeight));
+    // The alpha tells the composite what to do with it: two and over is a rough surface's reflection, its
+    // roughness the excess, to be spread over the footprint that implies; below is a sharp answer to lay
+    // down as it is -- water, glass, a mirror.
+    float spread = (!water && roughness > 0.05) ? 2.0 + roughness : (traces || marches) ? 1.0 : screenWeight;
+    uReflection.Store(px, float4(reflection, spread));
 }

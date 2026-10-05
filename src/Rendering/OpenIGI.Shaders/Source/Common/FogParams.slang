@@ -100,8 +100,32 @@ struct FogParams
     // rgb colour, w intensity.
     float4 lampColour[OPENIGI_MAX_LAMPS];
 
-    // the player's flashlight (FlashlightBlock), last so nothing before it moves; a range of nought is off.
+    // the player's flashlight (FlashlightBlock); a range of nought is off.
     FlashlightParams flashlight;
+
+    // Appended after the flashlight, so nothing before them moved.
+
+    // the second, backward lobe's anisotropy, its weight, the clock in seconds, whether the sun is traced.
+    float4 phase;
+
+    // dust: its density near the eye out of doors, the distance that thins out over, its density indoors,
+    // how much the medium's density varies with the noise.
+    float4 dust;
+
+    // the hit records' address as two bit patterns (low, high), the sine of the sun's angular radius, _.
+    float4 records;
+
+    // the distance field: level count, voxels per side, _, _.
+    float4 fieldMisc;
+
+    // each level's camera-relative low corner, voxel size in w.
+    float4 fieldOrigin[4];
+
+    // each level's encoded range.
+    float4 fieldRange;
+
+    // xyz each lamp's view-space facing (nought for one that faces nowhere), w its source size.
+    float4 lampDirection[OPENIGI_MAX_LAMPS];
 };
 
 [[vk::binding(OPENIGI_FOG_PARAMS_BINDING, 0)]] ConstantBuffer<FogParams> p;

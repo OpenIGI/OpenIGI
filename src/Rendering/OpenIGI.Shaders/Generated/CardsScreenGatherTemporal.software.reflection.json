@@ -175,6 +175,26 @@
       "storageAccess": "None"
     },
     {
+      "name": "uTerrainHeights",
+      "group": 0,
+      "binding": 46,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uRoofs",
+      "group": 0,
+      "binding": 47,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
       "name": "Globals",
       "group": 0,
       "binding": 49,
@@ -301,7 +321,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 608,
+    "size": 720,
     "fields": [
       {
         "name": "uClipmapOrigin[0]",
@@ -449,118 +469,148 @@
         "size": 12
       },
       {
-        "name": "uClipmapRange[0]",
+        "name": "uGroundSun",
         "offset": 464,
-        "size": 16
+        "size": 12
       },
       {
-        "name": "uClipmapRange[1]",
+        "name": "uClipmapRange[0]",
         "offset": 480,
         "size": 16
       },
       {
-        "name": "uClipmapRange[2]",
+        "name": "uClipmapRange[1]",
         "offset": 496,
         "size": 16
       },
       {
-        "name": "uClipmapRange[3]",
+        "name": "uClipmapRange[2]",
         "offset": 512,
         "size": 16
       },
       {
-        "name": "uShadowLevels",
+        "name": "uClipmapRange[3]",
         "offset": 528,
-        "size": 4
+        "size": 16
       },
       {
-        "name": "uShadowResolution",
-        "offset": 532,
-        "size": 4
-      },
-      {
-        "name": "uLookupBuckets",
-        "offset": 536,
-        "size": 4
-      },
-      {
-        "name": "uLookupCell",
-        "offset": 540,
-        "size": 4
-      },
-      {
-        "name": "uScreenWidth",
+        "name": "uShadowLevels",
         "offset": 544,
         "size": 4
       },
       {
-        "name": "uScreenHeight",
+        "name": "uShadowResolution",
         "offset": 548,
         "size": 4
       },
       {
-        "name": "uProbeStep",
+        "name": "uLookupBuckets",
         "offset": 552,
         "size": 4
       },
       {
-        "name": "uMaxRayIntensity",
+        "name": "uLookupCell",
         "offset": 556,
         "size": 4
       },
       {
-        "name": "uScreenTraceSteps",
+        "name": "uScreenWidth",
         "offset": 560,
         "size": 4
       },
       {
-        "name": "uScreenTraceDistance",
+        "name": "uScreenHeight",
         "offset": 564,
         "size": 4
       },
       {
-        "name": "uScreenThickness",
+        "name": "uProbeStep",
         "offset": 568,
         "size": 4
       },
       {
-        "name": "uSkyShValid",
+        "name": "uMaxRayIntensity",
         "offset": 572,
         "size": 4
       },
       {
-        "name": "uBounceScale",
+        "name": "uScreenTraceSteps",
         "offset": 576,
         "size": 4
       },
       {
-        "name": "uDebugSource",
+        "name": "uScreenTraceDistance",
         "offset": 580,
         "size": 4
       },
       {
-        "name": "uHasHistory",
+        "name": "uScreenThickness",
         "offset": 584,
         "size": 4
       },
       {
-        "name": "uFrameIndex",
+        "name": "uSkyShValid",
         "offset": 588,
         "size": 4
       },
       {
-        "name": "uMaxAccumulated",
+        "name": "uBounceScale",
         "offset": 592,
         "size": 4
       },
       {
-        "name": "uHasVelocity",
+        "name": "uDebugSource",
         "offset": 596,
         "size": 4
       },
       {
+        "name": "uTerrainMap0",
+        "offset": 608,
+        "size": 16
+      },
+      {
+        "name": "uTerrainMap1",
+        "offset": 624,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap0",
+        "offset": 640,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap1",
+        "offset": 656,
+        "size": 16
+      },
+      {
+        "name": "uShelterMap2",
+        "offset": 672,
+        "size": 16
+      },
+      {
+        "name": "uHasHistory",
+        "offset": 688,
+        "size": 4
+      },
+      {
+        "name": "uFrameIndex",
+        "offset": 692,
+        "size": 4
+      },
+      {
+        "name": "uMaxAccumulated",
+        "offset": 696,
+        "size": 4
+      },
+      {
+        "name": "uHasVelocity",
+        "offset": 700,
+        "size": 4
+      },
+      {
         "name": "uGatherPass",
-        "offset": 600,
+        "offset": 704,
         "size": 4
       }
     ]

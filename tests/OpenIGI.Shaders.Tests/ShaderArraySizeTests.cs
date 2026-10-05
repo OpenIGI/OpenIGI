@@ -45,10 +45,9 @@ public sealed class ShaderArraySizeTests
     [Theory]
     [MemberData(nameof(FogVolumeModules))]
     public void The_volume_array_is_sized_by_the_constant_the_host_fills_it_by(ShaderModuleId module) =>
-        Assert.Equal(
-            LocalFogVolume.MaxPerLevel.ToString(CultureInfo.InvariantCulture),
-            Variant(module).Defines["OPENIGI_MAX_FOG_VOLUMES"]);
-
-    private static ShaderVariantEntry Variant(ShaderModuleId module) =>
-        Assert.Single(ShaderCatalog.Manifest.Module(module).Variants);
+        Assert.All(
+            ShaderCatalog.Manifest.Module(module).Variants,
+            variant => Assert.Equal(
+                LocalFogVolume.MaxPerLevel.ToString(CultureInfo.InvariantCulture),
+                variant.Defines["OPENIGI_MAX_FOG_VOLUMES"]));
 }

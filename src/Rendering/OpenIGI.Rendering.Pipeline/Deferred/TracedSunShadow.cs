@@ -219,6 +219,7 @@ public sealed class TracedSunShadow : IDisposable
 
         _denoise.Bind("uRaw", raw.View, _sampler);
         _denoise.Bind("uDepth", depth, _sampler);
+        _denoise.Bind("uNormal", normal, _sampler);
         _denoise.Bind("uHistory", previous.View, _sampler);
         _denoise.Bind("uShadow", mask.View);
         _denoise.Bind("p", _denoiseParameters.Write<float>(frameInFlight, denoise));

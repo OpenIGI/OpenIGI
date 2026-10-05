@@ -41,6 +41,8 @@ public readonly record struct FogSliceDistribution(float B, float O, float Scale
 /// <param name="DepthBias">The cascades' depth bias.</param>
 /// <param name="NormalBias">Their normal bias.</param>
 /// <param name="ShadowTexelSize">One over the shadow map's resolution.</param>
+/// <param name="ShadowFilterRadius">The cascades' filter radius, in texels.</param>
+/// <param name="ContactShadowReach">How far the cascades' contact shadow marches, in metres; nought for none.</param>
 /// <param name="Wetness">How wet the world is and how its water moves.</param>
 /// <param name="HasShelterMap">Whether the level has a top-down roof raster.</param>
 /// <param name="Shelter">Where that raster sits in the world and how a texel decodes.</param>
@@ -48,6 +50,10 @@ public readonly record struct FogSliceDistribution(float B, float O, float Scale
 /// <param name="Flashlight">The player's flashlight, or <see cref="FlashlightLight.Off"/>.</param>
 /// <param name="FlashlightShadowed">Whether this frame made the flashlight a shadow mask to be read through.</param>
 /// <param name="FrameIndex">Which frame this is, for anything that jitters.</param>
+/// <param name="ReflectionCeiling">
+/// The roughest surface the reflection pass answers for every pixel of, or nought where it does not: up to
+/// there the shading leaves its own estimate of the environment's specular to the reflection.
+/// </param>
 /// <remarks>
 /// One record rather than a method of twenty arguments, and in this project rather than in a backend,
 /// because both paths fill the same block for the same shader: a second copy of this layout is a second
@@ -75,13 +81,16 @@ public readonly record struct DeferredLightingState(
     float DepthBias = 0f,
     float NormalBias = 0f,
     float ShadowTexelSize = 0f,
+    float ShadowFilterRadius = 1f,
+    float ContactShadowReach = 0f,
     WetnessSettings Wetness = default,
     bool HasShelterMap = false,
     ShelterMapTransform Shelter = default,
     FogSliceDistribution Fog = default,
     FlashlightLight Flashlight = default,
     bool FlashlightShadowed = false,
-    long FrameIndex = 0);
+    long FrameIndex = 0,
+    float ReflectionCeiling = 0f);
 
 /// <summary>The blocks the deferred shading reads, written from what a frame holds.</summary>
 /// <remarks>
@@ -150,10 +159,16 @@ public static class DeferredLightingParameters
         block[17] = state.SkyColour.Y * intensity;
         block[18] = state.SkyColour.Z * intensity;
 
+        // probeSky.w: the cascades' filter radius in texels.
+        block[19] = MathF.Max(state.ShadowFilterRadius, 1f);
+
         // camera: the camera's world position, added to the rotated view position.
         block[20] = state.CameraPosition.X;
         block[21] = state.CameraPosition.Y;
         block[22] = state.CameraPosition.Z;
+
+        // camera.w: how far the cascades' contact shadow marches towards the sun, in metres.
+        block[23] = MathF.Max(state.ContactShadowReach, 0f);
 
         // giParams: the screen-GI strength (nought disables it), whether its atlas is full resolution,
         // whether ambient occlusion is on, and the height the sky tables were built for.
@@ -221,6 +236,11 @@ public static class DeferredLightingParameters
 
         block[132] = shelter.Width;
         block[133] = shelter.Height;
+
+        // shelterMap2.z: the roughest surface the reflection pass answers for every pixel of, or nought
+        // where it answers only some (the screen march alone) or none. Up to there the reflection stands
+        // in place of the shading's own estimate of the environment's specular, rather than on top of it.
+        block[134] = Math.Clamp(state.ReflectionCeiling, 0f, 1f);
 
         // fog: the slice distribution the shading looks a pixel up with. A scale of nought says there is
         // no volume this frame, which is how the shader knows to leave the colour alone rather than

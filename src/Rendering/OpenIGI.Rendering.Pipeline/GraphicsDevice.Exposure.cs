@@ -34,7 +34,7 @@ public sealed partial class GraphicsDevice
             scene.View(SceneTargetId.Lit),
             scene.Width,
             scene.Height,
-            _profiler.Time(RenderStage.Exposure));
+            _profiler.Time(RenderStage.Exposure, "exposure"));
 
         return adapted;
     }

@@ -75,12 +75,119 @@ float3 SkyRadiance(float3 direction)
     return max(float3(0.0, 0.0, 0.0), linearPart + quadraticPart + lastBand);
 }
 
+// The albedo assumed for the open ground an escaped ray heading down would have met.
+static const float kGroundAlbedo = 0.25;
+
 #define kTraceOrigin uTraceOrigin
 
 #include "DepthFilter.slang"
 #include "SoftwareTrace.slang"
+// The cache's lighting, for the filtered lookup a marched hit reads (SampleCardsWithin).
+#define kCardLighting uFinal
+#define kCardLightingSampler uFinalSampler
 #include "SurfaceCache.slang"
 #include "Hemisphere.slang"
+
+#if !OPENIGI_RAY_QUERY
+#include "Shelter.slang"
+
+// The terrain's height, a square of ground to a texel: the distance field holds the level's placements
+// and not its terrain, so a ray marched towards the ground passes through it.
+OPENIGI_COMPUTE_TEXTURE(14) Texture2D<float4> uTerrainHeights;
+
+ShelterMap TerrainMap()
+{
+    ShelterMap m;
+    m.origin = uTerrainMap0.xy;
+    m.invCell = uTerrainMap0.z;
+    m.present = uTerrainMap0.w;
+    m.size = uTerrainMap1.xy;
+    m.lowestZ = uTerrainMap1.z;
+    m.scale = uTerrainMap1.w;
+    m.headroom = 0.0;
+    m.reach = 0.0;
+    return m;
+}
+
+// The terrain's height under an absolute world point, or far below everything off the raster.
+float TerrainHeightAt(ShelterMap m, float2 worldXY)
+{
+    int2 at = ShelterTexel(m, worldXY);
+    return ShelterHolds(m, at) ? ShelterSurface(m, uTerrainHeights.Load(int3(at, 0))) : -1.0e30;
+}
+
+OPENIGI_COMPUTE_TEXTURE(15) Texture2D<float4> uRoofs;
+
+// Whether a roof stands over an absolute world point, by the level's roof raster.
+bool UnderRoof(float3 worldPoint)
+{
+    ShelterMap m;
+    m.origin = uShelterMap0.xy;
+    m.invCell = uShelterMap0.z;
+    m.present = uShelterMap0.w;
+    m.size = uShelterMap1.xy;
+    m.lowestZ = uShelterMap1.z;
+    m.scale = uShelterMap1.w;
+    m.headroom = uShelterMap2.x;
+    m.reach = uShelterMap2.y;
+    int2 at = ShelterTexel(m, worldPoint.xy);
+    if (!ShelterHolds(m, at))
+    {
+        return false;
+    }
+
+    return ShelterCovers(m, ShelterSurface(m, uRoofs.Load(int3(at, 0))), worldPoint.z);
+}
+
+// How far along a ray heading down it meets the terrain, within a reach; -1 for not at all. Stepped at
+// half a cell and the crossing then halved down four times, which puts the hit within a few centimetres
+// of the raster's own surface.
+float TerrainHitDistance(float3 absoluteOrigin, float3 direction, float reach)
+{
+    ShelterMap m = TerrainMap();
+    if (m.present < 0.5 || direction.z > -0.01 || m.invCell <= 0.0)
+    {
+        return -1.0;
+    }
+
+    float stepLength = 0.5 / m.invCell;
+    float previous = 0.0;
+    for (int i = 1; i <= 64; i++)
+    {
+        float t = min(float(i) * stepLength, reach);
+        float3 at = absoluteOrigin + (direction * t);
+        if (at.z <= TerrainHeightAt(m, at.xy))
+        {
+            float low = previous;
+            float high = t;
+            for (int refine = 0; refine < 4; refine++)
+            {
+                float middle = (low + high) * 0.5;
+                float3 probe = absoluteOrigin + (direction * middle);
+                if (probe.z <= TerrainHeightAt(m, probe.xy))
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle;
+                }
+            }
+
+            return high;
+        }
+
+        if (t >= reach)
+        {
+            break;
+        }
+
+        previous = t;
+    }
+
+    return -1.0;
+}
+#endif
 
 // A vector into the view's own space, which is the transpose of the view-to-world rotation the host
 // hands over as three columns.
@@ -312,6 +419,35 @@ bool ScreenTraceRadiance(float3 viewOrigin, float3 viewNormal, float3 viewDir, o
     return true;
 }
 
+#if !OPENIGI_RAY_QUERY
+// The surface's normal at a marched hit, as the field's gradient gives it; nought where the field is
+// unknown or flat. The hit is left where the march put it: slid down the gradient by the distance the
+// field gives there, a hit beside a thin wall in the coarse levels was carried through the wall onto
+// whatever stood behind it -- a lamp-lit room's floor -- and the yard outside took that room's light.
+float3 SurfaceNormalAt(float3 hit)
+{
+    bool known;
+    float raw;
+    float resolved;
+    DistanceAt(hit, known, raw, resolved);
+    if (!known)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float h = 0.5 * resolved;
+    bool k;
+    float r;
+    float v;
+    float3 gradient = float3(
+        DistanceAt(hit + float3(h, 0.0, 0.0), k, r, v) - DistanceAt(hit - float3(h, 0.0, 0.0), k, r, v),
+        DistanceAt(hit + float3(0.0, h, 0.0), k, r, v) - DistanceAt(hit - float3(0.0, h, 0.0), k, r, v),
+        DistanceAt(hit + float3(0.0, 0.0, h), k, r, v) - DistanceAt(hit - float3(0.0, 0.0, h), k, r, v));
+    float length2 = dot(gradient, gradient);
+    return length2 < 1e-10 ? float3(0.0, 0.0, 0.0) : gradient * rsqrt(length2);
+}
+#endif
+
 // The light arriving over the hemisphere a surface faces: the screen first, then a ray or a march
 // against the world, then the sky on a miss.
 float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jitter)
@@ -325,6 +461,22 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
     float3 viewNormal = ToView(normal);
 
     float3 irradiance = float3(0.0, 0.0, 0.0);
+
+    // How many rays this probe's estimate stands on.
+    //
+    // A ray that struck something the cache cannot place still struck something: it did not reach the sky,
+    // and the light it would have brought is the light of a nearby surface, not nothing and not the open
+    // sky. Counted black it printed dark blotches into room corners and under desks, where such misses
+    // cluster; left out, the estimate became the mean of the rays that DID escape, and a probe beside a
+    // wall took almost the open sky's value -- no darkening where a wall meets the ground, every shadow
+    // filled. So each such ray takes the mean light of the surfaces the probe's other rays found (or, if
+    // none, a dim estimate from the sky), and counts.
+    float counted = 0.0;
+    float3 surfaceSum = float3(0.0, 0.0, 0.0);
+    float surfaceCount = 0.0;
+    float3 openSum = float3(0.0, 0.0, 0.0);
+    float openCount = 0.0;
+    float unplaced = 0.0;
     for (int ray = 0; ray < kTracesPerProbe; ray++)
     {
         // A stratified cosine hemisphere: the sixteen rays cover a four-by-four grid of the square the
@@ -340,6 +492,9 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
 
         float3 radiance = float3(0.0, 0.0, 0.0);
         bool resolved = false;
+
+        // This ray's share of the estimate: one, less whatever of it the trace could not vouch for.
+        float weight = 1.0;
 
         // Which source answered this ray, for the r_gi_source diagnostic: 1 screen, 2 surface cache, 3 sky.
         int source = 0;
@@ -359,25 +514,130 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
         if (!resolved)
         {
             float3 hit;
-            if (VisibilityAt(world, normal, direction, hit) <= 0.5)
+            bool fieldHit = VisibilityAt(world, normal, direction, hit) <= 0.5;
+
+#if !OPENIGI_RAY_QUERY
+            // The terrain, which the field does not hold: a ray heading down that meets it before anything
+            // the field found reads the cache's light where it landed -- the pool a lamp throws on the
+            // ground, the sunlit apron in front of a wall -- where it was answered with an open-ground guess
+            // that knew nothing of either.
+            float3 terrainFrom = world + (normal * 0.1);
+            float terrainT = TerrainHitDistance(terrainFrom + uTraceOrigin, direction, 32.0);
+            if (terrainT >= 0.0 && (!fieldHit || length(hit - world) > terrainT))
+            {
+                float3 terrainLight;
+                if (SampleCardsWithin(
+                        terrainFrom + (direction * terrainT),
+                        float3(0.0, 0.0, 1.0),
+                        0.5 * uClipmapOrigin[0].w,
+                        terrainLight))
+                {
+                    radiance = terrainLight * uBounceScale;
+                    source = 2;
+                    surfaceSum += CapRayIntensity(radiance);
+                    surfaceCount += 1.0;
+                    fieldHit = false;
+                    resolved = true;
+                }
+                else
+                {
+                    // No card holds the ground there: it is still the ground, nearer than whatever the
+                    // field found beyond it, and the open-ground answer below is the one to give.
+                    fieldHit = false;
+                }
+            }
+#endif
+
+            if (resolved)
+            {
+            }
+            else if (fieldHit)
             {
                 float2 found;
                 float2 litFound;
                 float agreement;
+                // Whether the hit is most likely this surface's own skin: only for the march, which starts a
+                // voxel and a half out and finds the surface it left within the next two. A traced ray
+                // knows exactly what it struck, and a near hit there is a real occluder -- the foot of the
+                // wall, the underside of the desk -- which is the contact darkening the gather is for.
+#if OPENIGI_RAY_QUERY
+                float near = 1.0;
+#else
+                // And by its height off the surface's own plane, not only its distance: a ray leaving a
+                // wall at a grazing angle runs along it and the march finds the same wall again metres on,
+                // well past two voxels, and reads the wall's own cached light back -- its stains and seams
+                // and all. Every surface took a blurred copy of its own texture as its bounce, which was the
+                // cloud over every wall in the gather. A ray leaving a flat surface cannot strike that
+                // surface; whatever it finds within a voxel of the plane is the plane.
+                float finest = uClipmapOrigin[0].w;
+                float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world))
+                    * smoothstep(0.75 * finest, 1.5 * finest, dot(hit - world, normal));
+
+                float3 hitNormal = SurfaceNormalAt(hit);
+
+                // From out of doors to a surface with a roof over it: the ray went through a wall or a roof,
+                // which the field at that distance cannot hold -- a slab a hand thick in voxels of half a
+                // metre -- and it brought the room's lamps back out onto the wall outside, and the lit roof
+                // of the hall below onto its own roof. Counted as a surface found but not placed, the way a
+                // hit nothing can read is. An open doorway is the exception, and the rarer one.
+                if (!UnderRoof(world + uTraceOrigin) && UnderRoof(hit + uTraceOrigin))
+                {
+                    near = 0.0;
+                    unplaced += 1.0;
+                }
+
+                // And read through every card that faced the surface there, blended by how squarely each
+                // looked and filtered within it, rather than the one texel of the one card nearest a point
+                // the march only placed to a voxel. A traced hit knows its surface exactly and keeps the
+                // single lookup.
+                if (dot(hitNormal, direction) > 0.0)
+                {
+                    hitNormal = -hitNormal;
+                }
+
+                float3 filtered;
+                if (near <= 0.0)
+                {
+                    weight = 0.0;
+                }
+                else if (dot(hitNormal, hitNormal) > 0.5 && SampleCardsWithin(hit, hitNormal, 0.5 * finest, filtered))
+                {
+                    radiance = filtered * uBounceScale;
+                    weight = near;
+                    source = 2;
+                    surfaceSum += CapRayIntensity(radiance) * near;
+                    surfaceCount += near;
+                }
+                else
+#endif
                 if (LookupCardHit(hit, direction, found, litFound, agreement))
                 {
-                    // Faded out over the first two voxels, where the hit is most likely this surface's
-                    // own skin and the cache would hand back the light being gathered for it.
-                    float finest = uClipmapOrigin[0].w;
-                    float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
-                    radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * (near * uBounceScale);
+                    radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * uBounceScale;
+                    weight = near;
                     source = 2;
+                    surfaceSum += CapRayIntensity(radiance) * near;
+                    surfaceCount += near;
+                }
+                else
+                {
+                    // Placed at the end, once the probe knows what its surfaces look like.
+                    unplaced += near;
+                    weight = 0.0;
                 }
             }
             else
             {
-                radiance = SkyRadiance(direction);
+                // Escaped. Heading up it met the sky. Heading down it met the ground -- which is not in the
+                // field (the terrain is not one of its placements) and lies past its reach soon enough
+                // anyway -- so it is the ground it reports: open ground lit by the sun and the sky above
+                // it, at a dry earth's albedo. Taken as sky, every ray out of a window and down to a sunlit
+                // yard came back the colour of the sky overhead, and the walls facing the windows went blue.
+                radiance = direction.z >= 0.0
+                    ? SkyRadiance(direction)
+                    : kGroundAlbedo * (SkyRadiance(float3(0.0, 0.0, 1.0)) + uGroundSun);
                 source = 3;
+                openSum += CapRayIntensity(radiance);
+                openCount += 1.0;
             }
         }
 
@@ -387,10 +647,25 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
         }
 
         radiance = CapRayIntensity(radiance);
-        irradiance += radiance;
+        irradiance += radiance * weight;
+        counted += weight;
     }
 
-    return max(irradiance * (kPi / float(kTracesPerProbe)), float3(0.0, 0.0, 0.0));
+    // The hits nothing could place: a surface's light, as the probe's own surfaces show it, or -- where
+    // every ray that found anything was unplaced -- what open ground under this sky would send back.
+    if (unplaced > 0.0 && (uDebugSource == 0 || uDebugSource == 2))
+    {
+        float3 fill = surfaceCount > 0.0
+            ? surfaceSum / surfaceCount
+            : (openCount > 0.0 ? (openSum / openCount) : SkyRadiance(float3(0.0, 0.0, 1.0))) * kGroundAlbedo;
+        irradiance += fill * unplaced;
+        counted += unplaced;
+    }
+
+    // At least a quarter of the rays' worth, so a probe that found almost nothing is not one lucky ray
+    // scaled up to the whole hemisphere.
+    float norm = max(counted, 0.25 * float(kTracesPerProbe));
+    return max(irradiance * (kPi / norm), float3(0.0, 0.0, 0.0));
 }
 
 #endif

@@ -875,6 +875,7 @@ internal sealed partial class GameHost
         _storm?.Dispose();
         _storm = new StormRenderer(_device, _logger);
         BuildShelterField(scene, loaded);
+        StartTerrainRaster();
 
         // The storm falls where the level says rain falls -- it is the same weather, drawn better -- so
         // it inherits the vanilla renderer's reading of the RainEffect task rather than parsing it a
@@ -2718,6 +2719,17 @@ internal sealed partial class GameHost
                 TextureAddressMode.Clamp) { HoldsData = true },
             texels);
 
+        _giRoofTransform = new ShelterMapTransform(
+                (float)_shelterField.OriginX,
+                (float)_shelterField.OriginY,
+                (float)_shelterField.CellMetres,
+                _shelterField.Width,
+                _shelterField.Depth,
+                _shelterField.LowestZ,
+                scale,
+                (float)ShelterHeightField.SurfaceHeadroomMetres,
+                (float)ShelterHeightField.MaxOverheadMetres);
+        _terrainHeightsGivenTo = null;
         _device.SetShelterMap(
             _shelterMap,
             new ShelterMapTransform(
@@ -2740,6 +2752,8 @@ internal sealed partial class GameHost
     /// <summary>Drops the level's shelter map, and tells the device there is none.</summary>
     private void ReleaseShelterField()
     {
+        _giRoofTransform = ShelterMapTransform.None;
+        ReleaseTerrainRaster();
         _shelterField = ShelterHeightField.Empty;
         _device.SetShelterMap(TextureHandle.None, ShelterMapTransform.None);
         if (_shelterMap.IsValid)

@@ -12,10 +12,16 @@
 // which is why both hosts name the two separately and a test pins them apart.
 //
 // The host must declare before including: RaytracingAccelerationStructure uScene, and the macro
-// kWorldOrigin. A host that also defines kShadeHits must include TracedMaterial.slang first.
+// kWorldOrigin. A host that also defines kShadeHits must include TracedMaterial.slang first. A host that
+// defines kTraceCutoutMasks (a Texture2DArray<float4>) and kRecords (the hit records' address, a uint2)
+// has its rays test cut-out surfaces against their masks, as the sun's and the lamps' do.
 
 #ifndef OPENIGI_TRACED_WORLD_INCLUDED
 #define OPENIGI_TRACED_WORLD_INCLUDED
+
+#ifdef kTraceCutoutMasks
+#include "CutoutHit.slang"
+#endif
 
 // Where a reflected ray stops, or false if it reached its reach without striking anything.
 //
@@ -45,11 +51,11 @@ bool TraceWorld(
     ray.Direction = rayW;
     ray.TMax = max(reach, 1.0);
 
-    // NOT forced opaque, and nothing below confirms a candidate. Traversal commits solid geometry on its
-    // own; a cut-out surface -- a wire fence, a canopy -- is reported as a candidate instead and goes
-    // unconfirmed, so it is invisible to a reflection. That is the choice the indirect gather makes and
-    // for the same reason: forcing opacity would put a solid board in the mirror where a fence stands,
-    // which is worse than putting nothing there.
+    // NOT forced opaque. Traversal commits solid geometry on its own; a cut-out surface -- a wire fence, a
+    // canopy -- is reported as a candidate, and where the host has the masks it is tested against its own
+    // alpha: the wire stops the ray and the gap between wires lets it through, so a fence stands in the
+    // puddle as it stands in the yard. Forcing opacity would put a solid board there instead. A host
+    // without the masks leaves candidates unconfirmed, and the fence is absent from its reflections.
     RayQuery<RAY_FLAG_NONE> query;
 
     // Everything EXCEPT the first-person rig. The world is admitted as 0xFF and the rig alone as 0x80, so
@@ -66,9 +72,13 @@ bool TraceWorld(
     // animation everyone else sees, and it is the whole character rather than two arms. So the rig loses.
     query.TraceRayInline(uScene, RAY_FLAG_NONE, 0x7F, ray);
 
+#ifdef kTraceCutoutMasks
+    ProceedWithCutouts(query, kRecords, kTraceCutoutMasks);
+#else
     while (query.Proceed())
     {
     }
+#endif
 
     if (query.CommittedStatus() == COMMITTED_NOTHING)
     {

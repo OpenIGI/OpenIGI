@@ -95,6 +95,16 @@
       "storageAccess": "ReadOnly"
     },
     {
+      "name": "uLampMapRecords",
+      "group": 0,
+      "binding": 23,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly"
+    },
+    {
       "name": "uAlbedo",
       "group": 0,
       "binding": 33,
@@ -153,6 +163,18 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uLampMaps",
+      "group": 0,
+      "binding": 40,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true,
+      "sampleType": "Depth"
     },
     {
       "name": "uDirectHistory",
@@ -399,68 +421,73 @@
         "size": 4
       },
       {
-        "name": "uActiveRadius",
+        "name": "uTileStride",
         "offset": 400,
         "size": 4
       },
       {
-        "name": "uLightCount",
+        "name": "uActiveRadius",
         "offset": 404,
         "size": 4
       },
       {
-        "name": "uLocalScale",
+        "name": "uLightCount",
         "offset": 408,
         "size": 4
       },
       {
-        "name": "uProbeWidth",
+        "name": "uLocalScale",
         "offset": 412,
         "size": 4
       },
       {
-        "name": "uProbeHeight",
+        "name": "uProbeWidth",
         "offset": 416,
         "size": 4
       },
       {
-        "name": "uTemporalIndex",
+        "name": "uProbeHeight",
         "offset": 420,
         "size": 4
       },
       {
-        "name": "uMaxFrames",
+        "name": "uTemporalIndex",
         "offset": 424,
         "size": 4
       },
       {
-        "name": "uJitterStride",
+        "name": "uMaxFrames",
         "offset": 428,
         "size": 4
       },
       {
-        "name": "uMode",
+        "name": "uJitterStride",
         "offset": 432,
         "size": 4
       },
       {
-        "name": "uBoost",
+        "name": "uMode",
         "offset": 436,
         "size": 4
       },
       {
-        "name": "uSkyShValid",
+        "name": "uBoost",
         "offset": 440,
         "size": 4
       },
       {
-        "name": "uProbe",
+        "name": "uSkyShValid",
         "offset": 444,
         "size": 4
       },
       {
-        "name": "uProbeInvExtent",
+        "name": "uProbe",
         "offset": 448,
+        "size": 4
+      },
+      {
+        "name": "uProbeInvExtent",
+        "offset": 452,
         "size": 4
       }
     ]

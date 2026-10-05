@@ -155,6 +155,7 @@ public sealed partial class GraphicsDevice
         {
             IRhiRayTracing world = TracedWorld!;
             reflect.Bind("uScene", world.TraceableScene);
+            reflect.Bind("uCutoutMasks", world.CutoutMasks, _reflectSampler!);
             reflect.Bind("uTracedAlbedo", world.TracedAlbedo, _tracedAlbedoSampler ??= _device.CreateSampler(
                 new RhiSamplerDescriptor(
                     MipFilter: RhiFilter.Nearest,
@@ -181,7 +182,7 @@ public sealed partial class GraphicsDevice
         reflect.Bind("p", _glassReflectBlock!.Write<float>(FrameSlot, block));
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Reflections),
+            _profiler.Time(RenderStage.Reflections, "reflections"),
             "glazing.reflect")))
         {
             reflect.Dispatch(pass, scene.Width, scene.Height);
@@ -349,6 +350,8 @@ public sealed partial class GraphicsDevice
     {
         ShaderBindings bindings = _compositeBindings!;
         bindings.Bind("uReflection", scene.View(SceneTargetId.Reflection));
+        bindings.Bind("uDepth", scene.View(SceneTargetId.Depth));
+        bindings.Bind("uNormal", scene.View(SceneTargetId.Normal));
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],

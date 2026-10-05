@@ -229,70 +229,20 @@ internal sealed partial class GameHost
                 $"{what}: the worst single frame cost {_worstPassMilliseconds:F1} ms."));
     }
 
-    /// <summary>The shell's framing: a close focal plane with no defocus, so the level behind the menu stays sharp.</summary>
-    /// <remarks>
-    /// <para>
-    /// Imposed through overrides, which only the renderer reads. These are archived, preset-managed
-    /// variables, and the menu used to WRITE them: the preset then read as Custom for as long as the menu
-    /// was up, and the restore handed back whatever the variables held at boot, so a depth-of-field change
-    /// made in the settings screen was undone by the next Play. An override has nothing to stash and
-    /// nothing to put back -- clearing it is the player's own value again, whatever they chose meanwhile.
-    /// </para>
-    /// </remarks>
-    private static void ApplyMenuDepthOfField()
-    {
-        RenderCVars.FocalDistance.Override(MenuFocalDistance);
-        RenderCVars.FocalRange.Override(MenuFocalRange);
-        RenderCVars.FocalBlur.Override(MenuFocalBlur);
-    }
-
-    /// <summary>Gives the camera effects back to the player's settings: the menu's framing and the entry shot's.</summary>
+    /// <summary>Gives the motion blur back to the player's setting once the entry shot hands over.</summary>
     /// <remarks>
     /// Called twice on the way into a mission -- once when the menu leaves and again when the entry shot
     /// hands over -- which is harmless: clearing an override that is not there does nothing.
     /// </remarks>
-    private static void ApplyGameplayDepthOfField()
-    {
-        RenderCVars.FocalDistance.ClearOverride();
-        RenderCVars.FocalRange.ClearOverride();
-        RenderCVars.FocalBlur.ClearOverride();
-        RenderCVars.MotionBlur.ClearOverride();
-    }
+    private static void ApplyGameplayMotionBlur() => RenderCVars.MotionBlur.ClearOverride();
 
-    /// <summary>Applies the shot's own framing: what it is focused on, and how much its movement smears.</summary>
+    /// <summary>Applies the shot's own smear, from how far it is moving.</summary>
     /// <remarks>
-    /// The menu's framing cannot simply be faded out here. It focuses at a fixed forty metres, which from
-    /// the vantage puts the whole world past the focal plane and blurs all of it evenly; what the shot
-    /// wants instead is to be focused on the thing it is looking at, so the level stays sharp and the
-    /// distance falls away behind it. The motion blur is the shot's own and is nothing the menu had. All of
-    /// it is overridden rather than written, for the reason <see cref="ApplyMenuDepthOfField"/> gives, so
-    /// the player's own values are read straight off the variables underneath.
+    /// Overridden rather than written: the variable is archived and preset-managed, so writing it would read
+    /// the preset as Custom for the length of the shot and could be saved as the player's own setting.
     /// </remarks>
-    private void ApplyEntryFraming()
-    {
-        float focus = _entry.FocalDistanceMetres;
-        if (focus > 0f)
-        {
-            RenderCVars.FocalDistance.Override(Math.Clamp(focus, 1f, 500f));
-
-            // A range proportional to the distance: the same few metres of sharpness that frames a face
-            // at arm's length would leave nothing but a pinprick of the level in focus from altitude.
-            RenderCVars.FocalRange.Override(Math.Clamp(focus * 0.9f, 12f, 200f));
-            RenderCVars.FocalBlur.Override(
-                Lerp(RenderCVars.FocalBlur.StoredValue, MenuFocalBlur, _entry.MenuDepthOfField));
-        }
-        else
-        {
-            RenderCVars.FocalDistance.ClearOverride();
-            RenderCVars.FocalRange.ClearOverride();
-            RenderCVars.FocalBlur.ClearOverride();
-        }
-
+    private void ApplyEntryMotionBlur() =>
         RenderCVars.MotionBlur.Override(Math.Max(RenderCVars.MotionBlur.StoredValue, _entry.MotionBlur));
-    }
-
-    /// <summary>Interpolates between two settings, for easing the menu's framing off across a shot.</summary>
-    private static float Lerp(float from, float to, float t) => from + ((to - from) * Math.Clamp(t, 0f, 1f));
 
     /// <summary>How much of the frame's height each cinematic bar takes when fully closed.</summary>
     /// <remarks>
@@ -327,13 +277,4 @@ internal sealed partial class GameHost
             painter.FillRect(new UiRect(0f, height - bars, width, bars), black);
         }
     }
-
-    /// <summary>The focal distance the menu frames its backdrop at, in metres.</summary>
-    private const float MenuFocalDistance = 40f;
-
-    /// <summary>The focal range the menu frames its backdrop with, in metres.</summary>
-    private const float MenuFocalRange = 18f;
-
-    /// <summary>The defocus the menu frames its backdrop with, in pixels; zero keeps the level sharp behind the menu.</summary>
-    private const float MenuFocalBlur = 0f;
 }

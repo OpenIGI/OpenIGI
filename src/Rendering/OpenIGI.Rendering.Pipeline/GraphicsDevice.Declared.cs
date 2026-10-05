@@ -26,24 +26,6 @@ public sealed partial class GraphicsDevice
     // The stage a host bracket has named for the frame's own passes, or none outside a bracket.
     private RenderStage? _stageBracket;
 
-    /// <summary>The settings this device records and does not act on, whatever it draws through.</summary>
-    /// <remarks>
-    /// Console-variable names, so a reader can match them against what the settings file holds, and so
-    /// the options screen can say which settings do nothing on this device.
-    /// </remarks>
-    private static readonly string[] UnimplementedSettingNames =
-    [
-        // Depth of field, a pass this renderer does not have: every preset leaves it off.
-        "r_dof", "r_dof_range", "r_dof_blur",
-
-        // Every texture arrives with its whole chain already built, so there is no generation to turn
-        // off.
-        "r_generate_mipmaps",
-
-        // Superseded: the motion gather takes its sample count from the blur length.
-        "r_camera_taps",
-    ];
-
     /// <summary>The settings this device does not act on over the backend it was given.</summary>
     /// <param name="temporal">Whether the backend can run the temporal resolve.</param>
     /// <param name="gi">Whether it can run the game's GI stack.</param>
@@ -52,7 +34,6 @@ public sealed partial class GraphicsDevice
     /// <returns>The names.</returns>
     private static string[] UnimplementedOn(bool temporal, bool gi, bool traced, bool metered) =>
     [
-        .. UnimplementedSettingNames,
         .. temporal ? Array.Empty<string>() : ["r_taa"],
         .. gi ? Array.Empty<string>() : ["r_screen_gi", "r_surface_cache"],
         .. traced ? Array.Empty<string>() : ["r_rt_shadows", "r_rt_lights", "r_rt_reflections"],
@@ -79,6 +60,16 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public GpuFrameTiming GpuTiming() => _profiler.Ledger.TotalTiming();
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RenderPassTiming> PassTimings() => _profiler.Ledger.PassTimings();
+
+    /// <inheritdoc/>
+    public void SetComputeTimingLabel(string? label) => _computeTimingLabel = label;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RenderPassTiming> WorstFramePassTimings(double fraction, out int frames, out double averageMilliseconds) =>
+        _profiler.Ledger.WorstFramePassTimings(fraction, out frames, out averageMilliseconds);
 
     /// <inheritdoc/>
     public GpuFrameTiming GpuMeasuredTiming() => _profiler.Ledger.MeasuredTiming();

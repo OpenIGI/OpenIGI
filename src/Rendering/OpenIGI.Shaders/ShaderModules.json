@@ -62,6 +62,10 @@
       "source": "Post/BloomCombine.slang"
     },
     {
+      "id": "SunShafts",
+      "source": "Post/SunShafts.slang"
+    },
+    {
       "id": "UpscaleRejectionDilate",
       "source": "TemporalUpscale/RejectionDilate.slang"
     },
@@ -110,8 +114,21 @@
           "defines": {
             "OPENIGI_MAX_FOG_VOLUMES": "8",
             "OPENIGI_MAX_LAMPS": "160",
-            "OPENIGI_FOG_PARAMS_BINDING": "9"
+            "OPENIGI_FOG_PARAMS_BINDING": "9",
+            "OPENIGI_RAY_QUERY": "0"
           }
+        },
+        {
+          "name": "traced",
+          "defines": {
+            "OPENIGI_MAX_FOG_VOLUMES": "8",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_FOG_PARAMS_BINDING": "9",
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },

@@ -145,8 +145,25 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// in the first few frames at full occupancy and the remaining frames dispatch nothing at all,
     /// rather than every frame paying the latency of an underfilled machine. Refresh cadence is
     /// unchanged either way: one full pass over the active set per <see cref="BounceFrameSpread"/>.
+    /// <para>
+    /// 1024 rather than the 4096 it was: at 4096 a round's bounce landed on a handful of frames at up to
+    /// 6.5 ms each at 1440p ultra and idled the rest, which was the largest single cause of the 1% low.
+    /// At 1024 the peak is about 2 ms for some 0.2 ms more on average; at 512 the latency cost began to
+    /// show in the average (the bounce doubled). The image is the same at any value.
+    /// </para>
     /// </remarks>
-    private const int MinSliceGroups = 4096;
+    private const int MinSliceGroups = 1024;
+
+    // How far apart the tiles of the dispatch being recorded stand; see uTileStride. One except inside a
+    // whole-cache slice.
+    private int _tileStride = 1;
+
+    /// <summary>Gets or sets whether the whole-cache slices recorded now belong to the load-time convergence.</summary>
+    /// <remarks>Only how they are named in the timings; the convergence and the far refresh share the slices.</remarks>
+    public bool Converging { get; set; }
+
+    /// <summary>Gets or sets the fewest tiles a steady-state slice dispatches; see <see cref="MinSliceGroups"/>.</summary>
+    public int MinSliceTiles { get; set; } = MinSliceGroups;
 
 
     /// <summary>How many texels lie between probes each way.</summary>
@@ -207,6 +224,15 @@ public sealed class SurfaceCacheLighting : IDisposable
     // surfaces still feed it live. Compiled and allocated on first configure, not at construction, so a
     // preset that never turns it on never pays for it.
     private ComputeShaderHandle _cacheUpdate;
+    // The terrain's height raster for the untraced gather (see TerrainHeightRaster), and how to read it.
+    private TextureHandle _terrainHeights;
+    private (float X, float Y, float Z, float W) _terrainMap0;
+    private (float X, float Y, float Z, float W) _terrainMap1;
+
+    // The roof raster, which tells a marched ray that went through a wall (see SetRoofs).
+    private TextureHandle _roofs;
+    private ShelterMapTransform _roofTransform = ShelterMapTransform.None;
+
     private TextureHandle _cacheRed;
     private TextureHandle _cacheGreen;
     private TextureHandle _cacheBlue;
@@ -232,6 +258,12 @@ public sealed class SurfaceCacheLighting : IDisposable
     private SurfaceCacheLookup? _lookup;
     private int _lightCount;
 
+    // The lamps' coarse maps, where the device draws them: every map's projection from this pass's origin,
+    // and the device's count of map changes they were written at. See SetLampMapEntries.
+    private StorageBufferHandle _lampMapRecords;
+    private float[]? _lampMapFloats;
+    private int _lampMapVersion = -1;
+
     // The fixtures as they were handed over, and the buffer contents built from them, kept so that a lamp
     // being switched can rewrite one float per light rather than rebuild the whole buffer.
     private IReadOnlyList<LightFixture>? _fixtures;
@@ -249,6 +281,15 @@ public sealed class SurfaceCacheLighting : IDisposable
     private readonly Dictionary<WorldPlacement, int> _instanceOf = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<int> _movingInstances = [];
     private readonly List<int> _movingPages = [];
+
+    // The sun the cache was last relit under, for what the screen gather's escaped rays meet. See GroundSun.
+    private Vector3f _lastSunDirection;
+    private Vector3f _lastSunColour;
+
+    // Each moving placement's run of _movingPages and its bounding sphere, as the lookup lists them; the
+    // spheres follow the placements every frame one of them moves.
+    private readonly List<SurfaceCacheLookup.MoverObject> _movers = [];
+    private bool _moversMoved;
     private int _dirtyLow = int.MaxValue;
     private int _dirtyHigh = -1;
     private bool _moversChanged;
@@ -569,6 +610,7 @@ public sealed class SurfaceCacheLighting : IDisposable
             _moversChanged = true;
         }
 
+        int firstMoving = _movingPages.Count;
         for (int slot = 0; slot < placed.PageCount; slot++)
         {
             int page = placed.FirstPage + slot;
@@ -593,6 +635,13 @@ public sealed class SurfaceCacheLighting : IDisposable
             _dirtyLow = Math.Min(_dirtyLow, page);
             _dirtyHigh = Math.Max(_dirtyHigh, page);
         }
+
+        if (!moving && _movingPages.Count > firstMoving)
+        {
+            _movers.Add(new SurfaceCacheLookup.MoverObject(firstMoving, _movingPages.Count - firstMoving, default, 0f));
+        }
+
+        _moversMoved = true;
     }
 
     /// <summary>Uploads the pages moved this frame, and the movers' list if it grew.</summary>
@@ -604,11 +653,22 @@ public sealed class SurfaceCacheLighting : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (_moversMoved || _moversChanged)
+        {
+            BoundMovers();
+        }
+
         if (_moversChanged)
         {
-            _lookup?.SetMovers(_movingPages);
+            _lookup?.SetMovers(_movingPages, _movers);
             _moversChanged = false;
         }
+        else if (_moversMoved)
+        {
+            _lookup?.UpdateMoverBounds(_movers);
+        }
+
+        _moversMoved = false;
 
         if (_dirtyHigh >= _dirtyLow)
         {
@@ -619,6 +679,50 @@ public sealed class SurfaceCacheLighting : IDisposable
             _dirtyHigh = -1;
         }
     }
+
+    /// <summary>Encloses each mover's pages, where their records stand now, in one sphere for the lookup to test.</summary>
+    private void BoundMovers()
+    {
+        for (int m = 0; m < _movers.Count; m++)
+        {
+            SurfaceCacheLookup.MoverObject mover = _movers[m];
+
+            // The centre of the box around the pages' spheres, then the radius that reaches the far side of
+            // every one of them from it.
+            Vector3f low = new(float.MaxValue, float.MaxValue, float.MaxValue);
+            Vector3f high = new(float.MinValue, float.MinValue, float.MinValue);
+            for (int i = 0; i < mover.PageCount; i++)
+            {
+                int at = (_movingPages[mover.FirstPage + i] * FloatsPerPage) + 36;
+                float r = _pageRecords[at + 3];
+                low = new Vector3f(
+                    MathF.Min(low.X, _pageRecords[at] - r),
+                    MathF.Min(low.Y, _pageRecords[at + 1] - r),
+                    MathF.Min(low.Z, _pageRecords[at + 2] - r));
+                high = new Vector3f(
+                    MathF.Max(high.X, _pageRecords[at] + r),
+                    MathF.Max(high.Y, _pageRecords[at + 1] + r),
+                    MathF.Max(high.Z, _pageRecords[at + 2] + r));
+            }
+
+            Vector3f centre = new((low.X + high.X) * 0.5f, (low.Y + high.Y) * 0.5f, (low.Z + high.Z) * 0.5f);
+            float radius = 0f;
+            for (int i = 0; i < mover.PageCount; i++)
+            {
+                int at = (_movingPages[mover.FirstPage + i] * FloatsPerPage) + 36;
+                float dx = _pageRecords[at] - centre.X;
+                float dy = _pageRecords[at + 1] - centre.Y;
+                float dz = _pageRecords[at + 2] - centre.Z;
+                radius = MathF.Max(radius, MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) + _pageRecords[at + 3]);
+            }
+
+            _movers[m] = mover with { Centre = centre, Radius = radius };
+        }
+    }
+
+    /// <summary>The sun's light on open ground, as irradiance over pi, from the sun the cache was last lit by.</summary>
+    private Vector3f GroundSun() =>
+        _lastSunColour * (MathF.Max(_lastSunDirection.Z, 0f) / MathF.PI);
 
     /// <summary>Lights every page from the sun and the sky.</summary>
     /// <param name="sunDirection">The world-space direction towards the sun. Expected to be unit length.</param>
@@ -681,7 +785,7 @@ public sealed class SurfaceCacheLighting : IDisposable
             int slice = Math.Max(1, (domain + spread - 1) / spread);
             if (lightList)
             {
-                slice = Math.Max(slice, MinSliceGroups);
+                slice = Math.Max(slice, Math.Max(1, MinSliceTiles));
             }
 
             int phase = _lightCursor % spread;
@@ -697,9 +801,11 @@ public sealed class SurfaceCacheLighting : IDisposable
             lightTiles = Math.Min(slice, domain - lightOffset);
         }
 
+        _device.SetComputeTimingLabel("cards.near.relight");
         LightTiles(
             sunDirection, sunColour, skyColour, shadows, probe, localScale,
             lightOffset, lightTiles, lightList, cull: amortize);
+        _device.SetComputeTimingLabel(null);
     }
 
     /// <summary>
@@ -734,9 +840,13 @@ public sealed class SurfaceCacheLighting : IDisposable
             return;
         }
 
+        _tileStride = Math.Max(1, sliceCount);
+        _device.SetComputeTimingLabel(Converging ? "cards.converge.relight" : "cards.far.relight");
         LightTiles(
             sunDirection, sunColour, skyColour, shadows, probe: 0, localScale,
             offset, tiles, useActiveList: false, cull: false);
+        _device.SetComputeTimingLabel(null);
+        _tileStride = 1;
     }
 
     /// <summary>Seeds one slice of the final atlas from the direct term, the first step of a spread convergence.</summary>
@@ -754,12 +864,14 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         float radius = ActiveRadius;
         ActiveRadius = 0f;
+        _tileStride = Math.Max(1, sliceCount);
         try
         {
             Dispatch(3, DirectLighting, FinalLighting, shadows, boost, 0, offset, tiles, useActiveList: false);
         }
         finally
         {
+            _tileStride = 1;
             ActiveRadius = radius;
         }
     }
@@ -788,25 +900,35 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         float radius = ActiveRadius;
         ActiveRadius = 0f;
+        _tileStride = Math.Max(1, sliceCount);
         try
         {
+            _device.SetComputeTimingLabel(Converging ? "cards.converge.bounce" : "cards.far.bounce");
             Dispatch(1, FinalLighting, IndirectLighting, shadows, boost, Math.Max(pass, 0), offset, tiles, useActiveList: false);
             Dispatch(2, DirectLighting, FinalLighting, shadows, boost, 0, offset, tiles, useActiveList: false);
         }
         finally
         {
+            _device.SetComputeTimingLabel(null);
+            _tileStride = 1;
             ActiveRadius = radius;
         }
     }
 
-    /// <summary>Gets the tile range one slice of an evenly divided cache covers.</summary>
+    /// <summary>Gets the tiles one slice of an evenly divided cache covers: every <paramref name="sliceCount"/>th.</summary>
     /// <returns><see langword="false"/> when the slice is past the end and there is nothing to dispatch.</returns>
+    /// <remarks>
+    /// Interleaved rather than contiguous, with <see cref="_tileStride"/> set to the slice count by the caller:
+    /// tiles are laid out page by page, so a contiguous slice is one part of the level, and its cost was that
+    /// part's -- a slice over a dense interior took several times the frame time of one over open ground,
+    /// which is a spike once every sweep. Interleaved, every slice samples the whole level alike. The union
+    /// over all the slices is still every tile exactly once.
+    /// </remarks>
     private bool SliceRange(int slice, int sliceCount, out int offset, out int tiles)
     {
         int count = Math.Max(1, sliceCount);
-        int size = Math.Max(1, (_tileCount + count - 1) / count);
-        offset = Math.Clamp(slice, 0, count - 1) * size;
-        tiles = Math.Min(size, _tileCount - offset);
+        offset = Math.Clamp(slice, 0, count - 1);
+        tiles = offset < _tileCount ? ((_tileCount - offset) + count - 1) / count : 0;
         return tiles > 0;
     }
 
@@ -823,11 +945,14 @@ public sealed class SurfaceCacheLighting : IDisposable
         bool useActiveList,
         bool cull)
     {
+        _lastSunDirection = sunDirection;
+        _lastSunColour = sunColour;
         EnsureLightShader();
 
         _device.BindStorageBuffer(0, _pages);
         _device.BindStorageBuffer(1, _tiles);
         _device.BindStorageBuffer(2, _lights);
+        BindLampMaps();
         _device.BindImage(0, DirectLighting, ImageAccess.Write);
 
         _device.SetTexture(1, _device.CardAlbedo);
@@ -892,9 +1017,12 @@ public sealed class SurfaceCacheLighting : IDisposable
     {
         int most = Math.Max(_device.Capabilities.MaxComputeGroupsX, 1);
 
+        int stride = Math.Max(1, _tileStride);
+        _device.SetComputeUniform(_shader, "uTileStride", stride);
+
         for (int done = 0; done < count; done += most)
         {
-            _device.SetComputeUniform(_shader, "uTileOffset", offset + done);
+            _device.SetComputeUniform(_shader, "uTileOffset", offset + (done * stride));
             _device.Dispatch(_shader, Math.Min(most, count - done));
         }
     }
@@ -985,7 +1113,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         int slice = Math.Max(1, (domain + spread - 1) / spread);
         if (useList)
         {
-            slice = Math.Max(slice, MinSliceGroups);
+            slice = Math.Max(slice, Math.Max(1, MinSliceTiles));
         }
 
         // Staggered half a round from the direct relight. Both amortised passes cover their active slices
@@ -1006,8 +1134,10 @@ public sealed class SurfaceCacheLighting : IDisposable
         }
 
         int groups = Math.Min(slice, domain - offset);
+        _device.SetComputeTimingLabel("cards.near.bounce");
         Dispatch(1, FinalLighting, IndirectLighting, shadows, boost, temporalIndex, offset, groups, useList, spread);
         Dispatch(2, DirectLighting, FinalLighting, shadows, boost, 0, offset, groups, useList);
+        _device.SetComputeTimingLabel(null);
     }
 
     private void Dispatch(
@@ -1029,6 +1159,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.BindStorageBuffer(0, _pages);
         _device.BindStorageBuffer(1, _tiles);
         _device.BindStorageBuffer(2, _lights);
+        BindLampMaps();
         _device.BindStorageBuffer(3, _lookup?.Cells ?? _pages);
         _device.BindStorageBuffer(4, _lookup?.Pages ?? _tiles);
         _device.BindStorageBuffer(5, _probePositions);
@@ -1164,6 +1295,9 @@ public sealed class SurfaceCacheLighting : IDisposable
                 packed[at + 9] = fixture.Direction.Y;
                 packed[at + 10] = fixture.Direction.Z;
             }
+
+            // No shadow map until SetLampMapEntries says otherwise.
+            packed[at + 11] = BitConverter.Int32BitsToSingle(-1);
         }
 
         _packed = packed;
@@ -1171,6 +1305,144 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.UpdateStorageBuffer<float>(_lights, packed);
 
         _logger.Information(LogCategory, $"Card lighting: {fixtures.Count} local light(s).");
+    }
+
+    /// <summary>Says which lamps hold coarse maps the relight can read, by fixture.</summary>
+    /// <param name="entryPerFixture">
+    /// One per fixture, indexed as <see cref="SetLocalLights"/> was given them: the first of the lamp's six
+    /// faces in <see cref="IGraphicsDevice.LampBounceMapArray"/>, or -1 for a lamp the relight must march the
+    /// field for.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Without ray tracing, whether a lamp reaches a texel of the cache was asked of the distance field
+    /// alone. Far from the camera its voxels are a metre or two and a wall is not in it: a row of lamps lit
+    /// the near side of the wall they are fixed to the far side of, and the screen gather bounced that onto
+    /// the wall in a bright patch the traced frame had dark. A lamp with coarse maps answers from them.
+    /// </para>
+    /// <para>
+    /// Only what changed is re-sent, so a frame whose maps are as they were costs a comparison per lamp.
+    /// </para>
+    /// </remarks>
+    public void SetLampMapEntries(ReadOnlySpan<int> entryPerFixture)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_packed is not { } packed || !_lights.IsValid)
+        {
+            return;
+        }
+
+        bool changed = false;
+        for (int i = 0; i < _lightCount; i++)
+        {
+            int entry = i < entryPerFixture.Length ? entryPerFixture[i] : -1;
+            float bits = BitConverter.Int32BitsToSingle(entry);
+            int at = (i * FloatsPerLight) + 11;
+            if (BitConverter.SingleToInt32Bits(packed[at]) != entry)
+            {
+                packed[at] = bits;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            _device.UpdateStorageBuffer<float>(_lights, packed);
+        }
+    }
+
+    /// <summary>Binds the lamps' coarse maps and their projections, refreshed when the maps have changed.</summary>
+    /// <remarks>
+    /// Every dispatch of the program binds them, whatever its mode: the modes share one set of bindings and
+    /// an unwritten one is a fault. Where the device draws no maps, the buffer holds no drawn map and the
+    /// texture slot is left to the device's stand-in.
+    /// </remarks>
+    private void BindLampMaps()
+    {
+        int floats = IGraphicsDevice.LampBounceMapCapacity * IGraphicsDevice.LampMapRecordFloats;
+        if (!_lampMapRecords.IsValid)
+        {
+            _lampMapFloats = new float[floats];
+            _lampMapRecords = _device.CreateStorageBuffer(floats * sizeof(float), "cards.lampmaps");
+            _device.UpdateStorageBuffer<float>(_lampMapRecords, _lampMapFloats);
+            _lampMapVersion = -1;
+        }
+
+        bool maps = _device.LampBounceMapSlots > 0;
+        int version = maps ? _device.LampBounceMapVersion : -2;
+        if (version != _lampMapVersion && _lampMapFloats is { } records)
+        {
+            if (maps)
+            {
+                _device.WriteLampBounceMaps(_origin, records);
+            }
+            else
+            {
+                Array.Clear(records);
+            }
+
+            _device.UpdateStorageBuffer<float>(_lampMapRecords, records);
+            _lampMapVersion = version;
+        }
+
+        _device.BindStorageBuffer(7, _lampMapRecords);
+        _device.SetTexture(8, maps ? _device.LampBounceMapArray : TextureHandle.None);
+    }
+
+    /// <summary>Hands the untraced gather the terrain's height raster, or takes it away.</summary>
+    /// <param name="heights">The packed raster (<see cref="ShelterHeightField.Encode"/>), or none.</param>
+    /// <param name="field">The raster it was packed from, which says where it lies.</param>
+    /// <param name="scale">The metres one packed step stands for, as the packing reported.</param>
+    /// <remarks>
+    /// The distance field the untraced gather marches holds the level's placements and not its terrain, so
+    /// a ray towards the ground went through it and came back with a guess at open ground. With this it
+    /// finds the ground, and reads the cache's light where it landed.
+    /// </remarks>
+    public void SetTerrainHeights(TextureHandle heights, ShelterHeightField? field, float scale)
+    {
+        if (!heights.IsValid || field is null || field.IsEmpty)
+        {
+            _terrainHeights = TextureHandle.None;
+            _terrainMap0 = default;
+            _terrainMap1 = default;
+            return;
+        }
+
+        _terrainHeights = heights;
+        _terrainMap0 = ((float)field.OriginX, (float)field.OriginY, (float)(1.0 / field.CellMetres), 1f);
+        _terrainMap1 = (field.Width, field.Depth, field.LowestZ, scale);
+    }
+
+    /// <summary>Hands the untraced gather the level's roof raster, or takes it away.</summary>
+    /// <param name="roofs">The packed raster, as the shading reads it, or none.</param>
+    /// <param name="transform">How to read it; <see cref="ShelterMapTransform.None"/> with none.</param>
+    /// <remarks>
+    /// A ray marched out of doors that lands on a surface with a roof over it went through a wall or a roof
+    /// the field could not hold at that distance; the gather counts it as a miss rather than carrying the
+    /// room's lamps out onto the wall outside.
+    /// </remarks>
+    public void SetRoofs(TextureHandle roofs, ShelterMapTransform transform)
+    {
+        _roofs = roofs.IsValid && transform.IsPresent ? roofs : TextureHandle.None;
+        _roofTransform = _roofs.IsValid ? transform : ShelterMapTransform.None;
+    }
+
+    /// <summary>Binds the terrain's height raster to a gather, or a stand-in that says there is none.</summary>
+    /// <param name="shader">The gather.</param>
+    private void BindTerrainHeights(ComputeShaderHandle shader)
+    {
+        _device.SetTexture(14, _terrainHeights);
+        _device.SetComputeUniform(shader, "uTerrainMap0", _terrainMap0.X, _terrainMap0.Y, _terrainMap0.Z, _terrainMap0.W);
+        _device.SetComputeUniform(shader, "uTerrainMap1", _terrainMap1.X, _terrainMap1.Y, _terrainMap1.Z, _terrainMap1.W);
+
+        // And the roof raster beside it.
+        ShelterMapTransform r = _roofTransform;
+        _device.SetTexture(15, _roofs);
+        _device.SetComputeUniform(
+            shader, "uShelterMap0", r.OriginX, r.OriginY, r.IsPresent ? 1f / r.CellMetres : 0f, r.IsPresent ? 1f : 0f);
+        _device.SetComputeUniform(shader, "uShelterMap1", r.Width, r.Height, r.LowestZ, r.HeightScale);
+        _device.SetComputeUniform(shader, "uShelterMap2", r.HeadroomMetres, r.ReachMetres, 0f, 0f);
     }
 
     /// <summary>Re-sends the same lights at whatever output a switchboard says they are giving out.</summary>
@@ -1504,12 +1776,14 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenGather, "uScreenTraceDistance", 0f);
         _device.SetComputeUniform(_screenGather, "uScreenThickness", 0f);
         _device.SetComputeUniform(_screenGather, "uSkyColour", default(Vector3f));
+        _device.SetComputeUniform(_screenGather, "uGroundSun", default(Vector3f));
 
         // The dump shows traced bounce alone, so the harmonics are forced off along with the flat sky,
         // and the bounce is read at its physical strength whatever the live calibration says.
         _device.SetComputeUniform(_screenGather, "uSkyShValid", 0);
         _device.SetComputeUniform(_screenGather, "uBounceScale", 1f);
         _device.SetComputeUniform(_screenGather, "uDebugSource", RenderCVars.GiSource.Value);
+        BindTerrainHeights(_screenGather);
 
         _device.SetComputeUniform(_screenGather, "uAtlasSize", new Vector3f(Width, Height, 0f));
         _device.SetComputeUniform(_screenGather, "uLookupBuckets", SurfaceCacheLookup.Buckets);
@@ -1649,8 +1923,10 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenGatherTemporal, "uScreenTraceDistance", MathF.Max(screenTraceDistance, 0f));
         _device.SetComputeUniform(_screenGatherTemporal, "uScreenThickness", MathF.Max(screenThickness, 0f));
         _device.SetComputeUniform(_screenGatherTemporal, "uSkyColour", skyColour);
+        _device.SetComputeUniform(_screenGatherTemporal, "uGroundSun", GroundSun());
         _device.SetComputeUniform(_screenGatherTemporal, "uBounceScale", RenderCVars.GiBounce.Value);
         _device.SetComputeUniform(_screenGatherTemporal, "uDebugSource", RenderCVars.GiSource.Value);
+        BindTerrainHeights(_screenGatherTemporal);
         WriteSkyHarmonics(_screenGatherTemporal);
 
         _device.SetComputeUniform(_screenGatherTemporal, "uAtlasSize", new Vector3f(Width, Height, 0f));
@@ -1698,13 +1974,17 @@ public sealed class SurfaceCacheLighting : IDisposable
         // uGatherPass for why the pool cannot share the trace's dispatch.
         _device.BindImage(0, raw, ImageAccess.Write);
         _device.SetComputeUniform(_screenGatherTemporal, "uGatherPass", 0);
+        _device.SetComputeTimingLabel("cards.screen.trace");
         _device.Dispatch(_screenGatherTemporal, (gridX + 7) / 8, (gridY + 7) / 8);
+        _device.SetComputeTimingLabel(null);
         _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
 
         _device.BindImage(0, accumulated, ImageAccess.Write);
         _device.SetTexture(12, raw);
         _device.SetComputeUniform(_screenGatherTemporal, "uGatherPass", 1);
+        _device.SetComputeTimingLabel("cards.screen.pool");
         _device.Dispatch(_screenGatherTemporal, (gridX + 7) / 8, (gridY + 7) / 8);
+        _device.SetComputeTimingLabel(null);
         _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
     }
 
@@ -1730,6 +2010,7 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// <param name="probeCameraToCache">That frame's camera, relative to this pass's origin.</param>
     /// <param name="probeStep">Pixels between probes.</param>
     /// <param name="sceneVelocity">The frame's motion field (<see cref="IGraphicsDevice.SceneVelocity"/>), or none.</param>
+    /// <param name="probeFrame">The gather frame the probes were traced in, which places them in their tiles.</param>
     /// <param name="previousUnproject">
     /// The projection the history was drawn through, or <see langword="null"/> for this frame's. A cinematic
     /// zoom changes it a little every frame, and reprojecting through this frame's instead misses.
@@ -1762,7 +2043,8 @@ public sealed class SurfaceCacheLighting : IDisposable
         Vector3f probeCameraToCache,
         int probeStep,
         TextureHandle sceneVelocity = default,
-        DepthUnprojection? previousUnproject = null)
+        DepthUnprojection? previousUnproject = null,
+        int probeFrame = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -1801,6 +2083,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.SetComputeUniform(_screenResolve, "uProbeWorldToView2", probeWorldToView.Column3);
         _device.SetComputeUniform(_screenResolve, "uProbeCameraToCache", probeCameraToCache);
         _device.SetComputeUniform(_screenResolve, "uProbeStep", Math.Max(probeStep, 1));
+        _device.SetComputeUniform(_screenResolve, "uProbeFrame", probeFrame);
 
         _device.SetComputeUniform(
             _screenResolve, "uUnproject", unproject.XScale, unproject.YScale, unproject.Near, unproject.Far);
@@ -2126,6 +2409,7 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         _device.DestroyStorageBuffer(_tiles);
         _device.DestroyStorageBuffer(_lights);
+        _device.DestroyStorageBuffer(_lampMapRecords);
         _device.DestroyStorageBuffer(_pages);
         _device.DestroyStorageBuffer(_probePositions);
         _device.DestroyStorageBuffer(_activeTiles);

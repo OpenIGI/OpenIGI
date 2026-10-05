@@ -26,8 +26,14 @@ public sealed class VolumetricFog : IDisposable
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
     private readonly ComputePass _scatter;
+    private ComputePass? _scatterTraced;
     private readonly ComputePass _integrate;
     private readonly ComputeParameters _parameters;
+
+    // The lamp shadow maps' block, for the form that reads them (see FogScatter.slang), and the block bound
+    // when there are none: every lamp's slot -1, since a slot of nought is a map.
+    private readonly ComputeParameters _lampMapParameters;
+    private readonly float[] _noLampMaps = NoLampMaps();
     private readonly IRhiSampler _sampler;
     private readonly StandInTextures _standIns;
 
@@ -53,6 +59,8 @@ public sealed class VolumetricFog : IDisposable
         _scatter = new ComputePass(device, ShaderModuleId.FogScatter, "fog.scatter");
         _integrate = new ComputePass(device, ShaderModuleId.FogIntegrate, "fog.integrate");
         _parameters = new ComputeParameters(device, VolumetricFogParameters.Floats * sizeof(float), framesInFlight, "fog");
+        _lampMapParameters = new ComputeParameters(
+            device, TracedLampShadow.FieldFloats * sizeof(float), framesInFlight, "fog.lampmaps");
         _sampler = device.CreateSampler(new RhiSamplerDescriptor(Label: "fog"));
         _standIns = new StandInTextures(device, "fog.standin");
     }
@@ -110,6 +118,11 @@ public sealed class VolumetricFog : IDisposable
     /// <param name="cascadeCount">How many cascades hold anything this frame.</param>
     /// <param name="shelterMap">The roofs seen from above, or null when the level has none.</param>
     /// <param name="shelter">How to read that map, or <see cref="ShelterMapTransform.None"/>.</param>
+    /// <param name="clipmaps">The level's distance field, or null for none.</param>
+    /// <param name="world">The traced world, where each froxel traces its sun, or null.</param>
+    /// <param name="cutoutMasks">The traced world's cut-out masks, with <paramref name="world"/>.</param>
+    /// <param name="lampMaps">The nearest lamps' shadow maps, where nothing is traced, or null.</param>
+    /// <param name="lampMapBlock">The lamp shadow pass's field block that says which map each lamp reads.</param>
     /// <remarks>
     /// Both dispatches go in one compute pass: WebGPU orders a dispatch's writes before the next one's
     /// reads within a pass, and the Vulkan backend places the barrier between them.
@@ -125,7 +138,12 @@ public sealed class VolumetricFog : IDisposable
         ReadOnlySpan<float> cascadeSplits,
         int cascadeCount,
         IRhiTextureView? shelterMap,
-        in ShelterMapTransform shelter)
+        in ShelterMapTransform shelter,
+        IRhiTextureView? clipmaps = null,
+        IRhiAccelerationStructure? world = null,
+        IRhiTextureView? cutoutMasks = null,
+        IRhiTextureView? lampMaps = null,
+        ReadOnlyMemory<float> lampMapBlock = default)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -160,13 +178,35 @@ public sealed class VolumetricFog : IDisposable
 
         IRhiBuffer parameters = _parameters.Write<float>(frameInFlight, block);
 
-        _scatter.Bind("uShadowMap", shadowMap ?? StandIn("uShadowMap"));
-        _scatter.Bind("uSkyIrradiance", skyIrradiance);
-        _scatter.Bind("uHistory", history.View, _sampler);
-        _scatter.Bind("uScattering", target.View);
-        _scatter.Bind("uShelterMap", shelterMap ?? StandIn("uShelterMap"));
-        _scatter.Bind("p", parameters);
-        _scatter.Dispatch(pass, _grid.X, _grid.Y, _grid.Z);
+        // The traced form wherever there is a world to trace and a mask set to test cut-outs with; the cascades
+        // and the field otherwise.
+        bool traced = world is not null && cutoutMasks is not null && fog.SunTraced;
+        ComputePass scatter = traced
+            ? _scatterTraced ??= new ComputePass(_device, ShaderModuleId.FogScatter, "fog.scatter.traced", new ShaderVariant("traced"))
+            : _scatter;
+
+        scatter.Bind("uShadowMap", shadowMap ?? StandIn(scatter, "uShadowMap"));
+        scatter.Bind("uSkyIrradiance", skyIrradiance);
+        scatter.Bind("uHistory", history.View, _sampler);
+        scatter.Bind("uScattering", target.View);
+        scatter.Bind("uShelterMap", shelterMap ?? StandIn(scatter, "uShelterMap"));
+        scatter.Bind("uClipmaps", clipmaps ?? StandIn(scatter, "uClipmaps"), _sampler);
+        if (traced)
+        {
+            scatter.Bind("uScene", world!);
+            scatter.Bind("uCutoutMasks", cutoutMasks!, _sampler);
+        }
+        else
+        {
+            bool mapped = lampMaps is not null && lampMapBlock.Length == TracedLampShadow.FieldFloats;
+            scatter.Bind("uFogLampMaps", mapped ? lampMaps! : StandIn(scatter, "uFogLampMaps"));
+            scatter.Bind(
+                "uFogLampMapParams",
+                _lampMapParameters.Write<float>(frameInFlight, mapped ? lampMapBlock.Span : _noLampMaps));
+        }
+
+        scatter.Bind("p", parameters);
+        scatter.Dispatch(pass, _grid.X, _grid.Y, _grid.Z);
 
         _integrate.Bind("uScattering", target.View);
         _integrate.Bind("uIntegrated", integrated.View);
@@ -197,13 +237,28 @@ public sealed class VolumetricFog : IDisposable
         _standIns.Dispose();
         _sampler.Dispose();
         _parameters.Dispose();
+        _lampMapParameters.Dispose();
         _integrate.Dispose();
+        _scatterTraced?.Dispose();
         _scatter.Dispose();
     }
 
     // A one-texel texture of the shape the scatter declares for a slot, for what this frame has none of.
-    private IRhiTextureView StandIn(string name) => _standIns.For(
-        _scatter.Program.Reflection.Bindings.First(binding => string.Equals(binding.Name, name, StringComparison.Ordinal)));
+    /// <summary>A lamp shadow field block in which no lamp has a map.</summary>
+    private static float[] NoLampMaps()
+    {
+        float[] block = new float[TracedLampShadow.FieldFloats];
+        float none = BitConverter.Int32BitsToSingle(-1);
+        for (int i = TracedLampShadow.FieldFloats - DeferredLocalLight.Maximum; i < TracedLampShadow.FieldFloats; i++)
+        {
+            block[i] = none;
+        }
+
+        return block;
+    }
+
+    private IRhiTextureView StandIn(ComputePass pass, string name) => _standIns.For(
+        pass.Program.Reflection.Bindings.First(binding => string.Equals(binding.Name, name, StringComparison.Ordinal)));
 
     private IRhiTexture CreateVolume(string label) => _device.CreateTexture(new RhiTextureDescriptor(
         _grid.X,

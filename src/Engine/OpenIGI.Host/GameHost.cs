@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -314,6 +314,26 @@ internal sealed partial class GameHost : IDisposable
     // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
     // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
     private int _giStaticFrames;
+
+    // Frames since the sun last moved, for the fast follow a clock scrub needs. See GiSunFollowFrames.
+    private int _giSunMovedFrames = GiSunFollowFrames + 1;
+
+    /// <summary>How long after the sun last moved the GI keeps following it closely, in frames.</summary>
+    /// <remarks>
+    /// Long enough for the near cache to be relit a few times over at <see cref="GiSunFollowSpread"/>, so a
+    /// scrub that stops lands on the new hour's light and the slow blend takes over from there.
+    /// </remarks>
+    private const int GiSunFollowFrames = 24;
+
+    /// <summary>How many frames the near relight is spread over while following a moving sun.</summary>
+    private const int GiSunFollowSpread = 4;
+
+    /// <summary>How many frames a card's estimate averages over while following a moving sun.</summary>
+    /// <remarks>
+    /// Short enough to keep up with a scrub, long enough that a card's single noisy bounce does not show:
+    /// at one, every relight replaced the last outright and the walls clouded over while the key was held.
+    /// </remarks>
+    private const int GiSunFollowTemporalFrames = 4;
     private bool _giSunValid;
     private Vector3f _lastGiSunDirection;
     private Vector3f _lastGiSunColour;
@@ -482,6 +502,9 @@ internal sealed partial class GameHost : IDisposable
 
     // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
     private long _backdropCycleRow = -1;
+
+    // Which step -presetcycle is on, latched the same way.
+    private long _presetCycleStep = -1;
 
     /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
     private const int MaxTicksPerStep = 8;
@@ -1513,7 +1536,7 @@ internal sealed partial class GameHost : IDisposable
                         shell?.ClosePauseMenu();
                         menuMode = false;
                         pauseMenu = false;
-                        ApplyGameplayDepthOfField();
+                        ApplyGameplayMotionBlur();
                     }
 
                     // The menu has been drawing this very level for as long as the player has been
@@ -1619,7 +1642,7 @@ internal sealed partial class GameHost : IDisposable
                             shell?.ClosePauseMenu();
                             menuMode = false;
                             pauseMenu = false;
-                            ApplyGameplayDepthOfField();
+                            ApplyGameplayMotionBlur();
                             StartMission(mission.Id);
                             _window.CursorVisible = false;
                         }
@@ -1649,7 +1672,6 @@ internal sealed partial class GameHost : IDisposable
                     // backdrop again rather than as something being played through.
                     pauseMenu = false;
                     showcasePending = true;
-                    ApplyMenuDepthOfField();
                     _window.CursorVisible = true;
                 },
                 quit: () => running = false,
@@ -1741,12 +1763,6 @@ internal sealed partial class GameHost : IDisposable
                     showcasePending = true;
                 }
 
-                // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
-                // Through a helper because what it displaces has to be given back: these are Archive
-                // variables, so leaving the menu's framing in place meant the first save wrote it out as
-                // the player's own setting.
-                ApplyMenuDepthOfField();
-
                 // -entrycam: open on the campaign and remember that Play is to be pressed as soon as this
                 // mission's backdrop is up. The backdrop itself is requested through the ordinary showcase
                 // path below, so what gets measured is the real thing rather than a special case.
@@ -1769,7 +1785,7 @@ internal sealed partial class GameHost : IDisposable
         _logger.Information(
             "Render",
             FormattableString.Invariant(
-                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}/{RenderCVars.FocalRange.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
+                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
@@ -1910,7 +1926,6 @@ internal sealed partial class GameHost : IDisposable
                 menuMode = true;
                 pauseMenu = false;
                 showcasePending = true;
-                ApplyMenuDepthOfField();
             }
 
             // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
@@ -2244,15 +2259,14 @@ internal sealed partial class GameHost : IDisposable
                     }
                 }
 
-                // The shot's own framing: focused on what it is looking at rather than on the menu's fixed
-                // forty metres, and smeared by its own movement. Both hand back to the player's settings.
-                ApplyEntryFraming();
+                // The shot's own smear, from its own movement; handed back to the player's setting after.
+                ApplyEntryMotionBlur();
 
                 if (_entry.Phase == MissionEntryPhase.Done)
                 {
                     _entry.Reset();
                     _soldiers?.HidePlayerBody();
-                    ApplyGameplayDepthOfField();
+                    ApplyGameplayMotionBlur();
                     ReportWatchedFramePassesIn(1);
 
                     // The eye is drawn between its last two ticks, and it has just been somewhere else
@@ -2296,7 +2310,6 @@ internal sealed partial class GameHost : IDisposable
                         menuMode = true;
                         pauseMenu = false;
                         showcasePending = true;
-                        ApplyMenuDepthOfField();
                     }
                     else if (_missionCycleMission > 0)
                     {
@@ -2304,7 +2317,7 @@ internal sealed partial class GameHost : IDisposable
                         shell.ClosePauseMenu();
                         menuMode = false;
                         pauseMenu = false;
-                        ApplyGameplayDepthOfField();
+                        ApplyGameplayMotionBlur();
                         StartMission(_missionCycleMission);
                     }
                 }
@@ -2576,6 +2589,23 @@ internal sealed partial class GameHost : IDisposable
                 }
             }
 
+            // -presetcycle applies the next graphics preset on a fixed cadence, the way the settings page does.
+            if (_options.PresetCycleFrames > 0)
+            {
+                long step = _loop.Clock.FrameCount / _options.PresetCycleFrames;
+                if (step != _presetCycleStep)
+                {
+                    _presetCycleStep = step;
+                    GraphicsPreset[] presets = [GraphicsPreset.Ultra, GraphicsPreset.Vanilla, GraphicsPreset.High, GraphicsPreset.Enhanced];
+                    GraphicsPreset preset = presets[(int)(step % presets.Length)];
+                    if (GraphicsPresetRegistry.Default.IsAllowed(preset))
+                    {
+                        _logger.Information("Menu", $"-presetcycle: applying {preset}.");
+                        GraphicsPresetRegistry.Default.Apply(preset);
+                    }
+                }
+            }
+
             // The build request, once the campaign selection has held still for a moment. The debounce is
             // only there to stop a run down the list queueing fourteen builds; it costs the render thread
             // nothing either way, because the build happens on a worker.
@@ -2762,8 +2792,9 @@ internal sealed partial class GameHost : IDisposable
             // above is: a fitting takes a couple of hundred milliseconds to go out and about a second to
             // come back, and a fade advanced once per rendered frame would be a different fade on every
             // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
-            // steady lamps and returns.
-            UpdateLamps(_loop.TimeSource.Milliseconds);
+            // steady lamps and returns. The daylight's photocells ride on the same pass, reading the sun
+            // the sweep above has just moved.
+            UpdateLamps(_loop.TimeSource.Milliseconds, audible: !menuMode && _activeMission is not null);
 
             // G shows the sun gizmo, but only while flying: it takes the cursor to drag its rings, which the
             // walking player needs for looking. Leaving the free camera puts it away.
@@ -3802,6 +3833,10 @@ internal sealed partial class GameHost : IDisposable
                     float endPitch = _options.CameraPitchEnd ?? flightStartPitch;
 
                     (float shakeYaw, float shakePitch) = HandheldShake(flightFrame, _options.CameraShake);
+                    if ((flightFrame & 1) == 1)
+                    {
+                        shakeYaw += _options.CameraSwing * (MathF.PI / 180f);
+                    }
 
                     _camera.MoveTo(
                         new Vector3d(
@@ -3955,11 +3990,7 @@ internal sealed partial class GameHost : IDisposable
                     Grain: RenderCVars.Grain.Value,
                     ChromaticAberration: MathF.Max(RenderCVars.ChromaticAberration.Value, binocularAberration),
                     Sharpen: RenderCVars.Sharpen.Value,
-                    FocalDistance: RenderCVars.FocalDistance.Value,
-                    FocalRange: RenderCVars.FocalRange.Value,
-                    FocalBlur: RenderCVars.FocalBlur.Value,
                     MotionBlur: MathF.Max(RenderCVars.MotionBlur.Value, computerFlightBlur),
-                    CameraTaps: RenderCVars.CameraTaps.Value,
                     SpatialAa: RenderCVars.SpatialAa.Value,
                     SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
                     ColourLookup: RenderCVars.ColourLookup.Value,
@@ -3980,7 +4011,9 @@ internal sealed partial class GameHost : IDisposable
                     FrameDeltaSeconds: frameDeltaSeconds,
 
                     // The eye's night vision, only as deep as the night: a day is untouched.
-                    NightShift: RenderCVars.NightShift.Value * RenderCVars.Nightfall.Value);
+                    // Only once the sun is some six degrees under (Nightfall past about 0.45): dusk keeps its
+                    // colour, and the eye's night vision takes over only as real night does.
+                    NightShift: RenderCVars.NightShift.Value * NightVisionWeight(RenderCVars.Nightfall.Value));
 
                 if (_giExposureWarmup > 0)
                 {
@@ -4556,18 +4589,32 @@ internal sealed partial class GameHost : IDisposable
                         GiSettleFrames,
                         2 * Math.Max(RenderCVars.GiAmortize.Value, 1) * (1 + Math.Max(RenderCVars.GiTemporalFrames.Value, 1)));
                     _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, giSettle + 1);
+
+                    // A scrub of the clock, and the moments after it: the cache follows the sun at once instead
+                    // of over the long blend tuned for a sun that does not move. Held to that long blend, a scrub
+                    // into the night left every surface lit by the day's bounce for twenty seconds -- the world
+                    // stayed bright under a black sky. The screen gather's own history is left alone: it is ten
+                    // frames already, and throwing it away every frame of a scrub showed its raw single-frame
+                    // noise as clouds on every wall.
+                    _giSunMovedFrames = giSunMoved ? 0 : Math.Min(_giSunMovedFrames + 1, GiSunFollowFrames + 1);
+                    bool followingSun = _giSunMovedFrames <= GiSunFollowFrames;
                     bool retraceGi = _giStaticFrames <= giSettle;
 
                     if (_cardLighting is { } litCards)
                     {
                         // How many frames the relight and the bounce spread their tiles across, from the cvar
                         // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
-                        litCards.BounceFrameSpread = RenderCVars.GiAmortize.Value;
+                        litCards.BounceFrameSpread = followingSun
+                            ? Math.Min(RenderCVars.GiAmortize.Value, GiSunFollowSpread)
+                            : RenderCVars.GiAmortize.Value;
+                        litCards.MinSliceTiles = RenderCVars.GiMinSlice.Value;
 
                         // How many frames a tile's estimate accumulates over, the pair to the spread above:
                         // the two together set how much of one retrace is admitted and how often, which is
                         // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
-                        litCards.TemporalFrames = RenderCVars.GiTemporalFrames.Value;
+                        litCards.TemporalFrames = followingSun
+                            ? Math.Min(RenderCVars.GiTemporalFrames.Value, GiSunFollowTemporalFrames)
+                            : RenderCVars.GiTemporalFrames.Value;
 
                         // Where the steady-state refresh is centred and how far it reaches. The cache spans
                         // the whole level and the cursor used to walk all of it every round, so a fixed
@@ -4804,7 +4851,16 @@ internal sealed partial class GameHost : IDisposable
                     // draws whichever game supplied them. The title becomes injected in phase 1.
                     Igi1Presentation casters = new(_world, shadowCasters);
                     _shadowPass.Render(
-                        cascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters);
+                        cascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters, _terrain);
+                }
+
+                // The nearest lamps' own shadow maps, where the device marches lamp shadows rather than
+                // tracing them. Whatever the sun is doing: these are the night's shadows.
+                if (_shadowPass is not null && _device.WantsLampShadowMaps)
+                {
+                    Igi1Presentation lampCasters = new(_world, shadowCasters);
+                    RenderLampMaps(_shadowPass, _scene, lampCasters.World, lampCasters.Characters);
+                    RenderLampBounceMaps(_shadowPass, _scene, lampCasters.World);
                 }
                 EndStageIfSlow("the shadow cascades");
 
@@ -5032,7 +5088,11 @@ internal sealed partial class GameHost : IDisposable
                     // meaning what it did; otherwise the setting decides.
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
-                    RenderCVars.TerrainOcclusion.Value));
+                    RenderCVars.TerrainOcclusion.Value,
+
+                    // The ground casts into the cascades through the same caster the traced sun reads,
+                    // built here for the next frame's cascades.
+                    CastsIntoCascades: cascadesRead && cascadeCount > 0));
                 EndStageIfSlow("the terrain");
 
 if (retailFog)
@@ -5213,6 +5273,7 @@ if (retailFog)
                 // light. It replaces the ambient inside the shade rather than compositing over the frame, so
                 // there is no ambient to zero and nothing runs after the lighting.
                 const int giStep = 8;
+                UpdateTerrainRaster();
                 // The probes' running average, capped at a temporal limit of ten frames. It was
                 // thirty-two, and a history that long outlives every turn of the view -- each frame of
                 // motion resamples it through the reprojection and clamps it into the window of one
@@ -5512,7 +5573,11 @@ if (retailFog)
                         giPrevCameraToCache,
                         giStep,
                         _device.SceneVelocity,
-                        giResolvePrevUnprojection);
+                        giResolvePrevUnprojection,
+
+                        // The frame the atlas being read was traced in -- the counter has moved past it --
+                        // which places its probes in their tiles.
+                        giFrame - 1);
                     giResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
@@ -5633,6 +5698,8 @@ if (retailFog)
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    AssignLampMaps(localCount, unjitteredProjection);
+                    AssignLampCoarseMaps(localCount);
                     _stormLampCount = localCount;
 
                     // And the distance field those lamps' shadows are marched through wherever the renderer
@@ -6683,6 +6750,16 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                         : "measuring...");
 
+                    if (RenderCVars.PerformanceLogPasses.Value is > 0 and int shown)
+                    {
+                        IReadOnlyList<RenderPassTiming> passes = _device.PassTimings();
+                        for (int p = 0; p < passes.Count && p < shown; p++)
+                        {
+                            RenderPassTiming pass = passes[p];
+                            perf.Add(I($"  {pass.Label,-22} {pass.Milliseconds,5:0.00}        {pass.PeakMilliseconds,6:0.00}"));
+                        }
+                    }
+
                     // The CPU side the GPU timers cannot see. cpu is how much longer the frame's wall time
                     // is than the GPU's -- submission, game logic and GC that did not overlap the GPU. alloc
                     // is the managed allocation rate, eased so it is readable; a high figure is what feeds the
@@ -6861,14 +6938,21 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 && _options.ScreenshotPath is { } flightPath
                 && _scene is not null)
             {
-                Bgra32[] frame = new Bgra32[_window.Width * _window.Height];
-                _device.CaptureFrame(_window.Width, _window.Height, frame);
+                // Not while a flight still waits out its -flightdelay: those frames are the opening still, the
+                // same picture hundreds of times over, eight megabytes each at 1080p -- a capture that held the
+                // view for six hundred frames before moving filled the disk with them.
+                if (!_options.HasFlight || flightFrame >= _options.FlightDelay)
+                {
+                    Bgra32[] frame = new Bgra32[_window.Width * _window.Height];
+                    _device.CaptureFrame(_window.Width, _window.Height, frame);
 
-                string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
-                string stem = Path.GetFileNameWithoutExtension(flightPath);
-                string extension = Path.GetExtension(flightPath);
-                string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{flightFrame:0000}{extension}"));
-                BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
+                    string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
+                    string stem = Path.GetFileNameWithoutExtension(flightPath);
+                    string extension = Path.GetExtension(flightPath);
+                    string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{flightFrame:0000}{extension}"));
+                    BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
+                }
+
                 flightFrame++;
             }
 
@@ -7015,6 +7099,38 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         "Perf",
                         FormattableString.Invariant(
                             $"{timing.Stage,-28} avg {timing.Milliseconds,6:0.000} ms  p95 {timing.P95Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
+                }
+
+                foreach (RenderPassTiming pass in _device.PassTimings())
+                {
+                    _logger.Information(
+                        "Perf",
+                        FormattableString.Invariant(
+                            $"  pass {pass.Label,-32} avg {pass.Milliseconds,6:0.000} ms  peak {pass.PeakMilliseconds,7:0.000} ms  ran {pass.FramesRun} frame(s)  [{pass.Stage}]"));
+                }
+
+                // The 1% low, taken apart: what each pass cost in the slowest frames, beside its overall average.
+                IReadOnlyList<RenderPassTiming> worst = _device.WorstFramePassTimings(0.01, out int worstFrames, out double worstAverage);
+                if (worstFrames > 0)
+                {
+                    Dictionary<string, double> overall = [];
+                    foreach (RenderPassTiming pass in _device.PassTimings())
+                    {
+                        overall[pass.Label] = pass.Milliseconds;
+                    }
+
+                    _logger.Information(
+                        "Perf",
+                        FormattableString.Invariant($"Slowest 1% ({worstFrames} frame(s)): summed GPU avg {worstAverage:0.000} ms."));
+
+                    foreach (RenderPassTiming pass in worst)
+                    {
+                        double usual = overall.GetValueOrDefault(pass.Label);
+                        _logger.Information(
+                            "Perf",
+                            FormattableString.Invariant(
+                                $"  worst {pass.Label,-32} {pass.Milliseconds,7:0.000} ms  (usually {usual,6:0.000}, {pass.Milliseconds - usual,+7:0.000})  ran in {pass.FramesRun}/{worstFrames}"));
+                    }
                 }
 
                 GpuFrameTiming gpu = _device.GpuTiming();

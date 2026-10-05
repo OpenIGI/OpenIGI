@@ -88,6 +88,7 @@ public sealed class SceneTargetSet : IDisposable
         RhiTextureUsage.Storage | RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination;
 
     private readonly IRhiDevice _device;
+    private readonly RetiredResources? _retired;
     private readonly Dictionary<SceneTargetId, IRhiTexture[]> _targets = [];
     private IRhiBuffer? _closestOccluder;
     private bool _disposed;
@@ -98,12 +99,25 @@ public sealed class SceneTargetSet : IDisposable
     /// <param name="height">Its height.</param>
     /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
     /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
-    public SceneTargetSet(IRhiDevice device, int width, int height, int outputWidth = 0, int outputHeight = 0)
+    /// <param name="retired">
+    /// Where a resize sends the targets it replaces, so they outlive the frames still in flight that read
+    /// them; <see langword="null"/> frees them at once, which only a caller with nothing in flight may ask.
+    /// </param>
+    /// <param name="historyScale">How many history texels each rendered pixel has on each axis: one or two.</param>
+    public SceneTargetSet(
+        IRhiDevice device,
+        int width,
+        int height,
+        int outputWidth = 0,
+        int outputHeight = 0,
+        RetiredResources? retired = null,
+        int historyScale = 2)
     {
         ArgumentNullException.ThrowIfNull(device);
 
         _device = device;
-        Allocate(width, height, outputWidth, outputHeight);
+        _retired = retired;
+        Allocate(width, height, outputWidth, outputHeight, historyScale);
     }
 
     /// <summary>What one texel of a target holds, whatever size the frame happens to be.</summary>
@@ -187,12 +201,16 @@ public sealed class SceneTargetSet : IDisposable
     /// </remarks>
     public void AdvanceFrame() => Frame++;
 
+    /// <summary>Gets how many history texels each rendered pixel has on each axis: one or two.</summary>
+    public int HistoryScale { get; private set; } = 2;
+
     /// <summary>The size one target has, for a frame of a given size.</summary>
     /// <param name="scale">How the target's size follows the frame's.</param>
     /// <param name="width">The frame's width.</param>
     /// <param name="height">Its height.</param>
     /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
     /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
+    /// <param name="historyScale">What <see cref="SceneTargetScale.Double"/> multiplies by: one or two.</param>
     /// <returns>The target's size, never smaller than one texel.</returns>
     /// <remarks>
     /// Half rounds <b>up</b>, so an odd frame's half-size target still covers every pixel of it. Rounding
@@ -204,10 +222,13 @@ public sealed class SceneTargetSet : IDisposable
         int width,
         int height,
         int outputWidth = 0,
-        int outputHeight = 0) => scale switch
+        int outputHeight = 0,
+        int historyScale = 2) => scale switch
     {
         SceneTargetScale.Half => (Math.Max(1, (width + 1) / 2), Math.Max(1, (height + 1) / 2)),
-        SceneTargetScale.Double => (Math.Max(1, width * 2), Math.Max(1, height * 2)),
+        SceneTargetScale.Double => (
+            Math.Max(1, width * Math.Clamp(historyScale, 1, 2)),
+            Math.Max(1, height * Math.Clamp(historyScale, 1, 2))),
         SceneTargetScale.Output => (
             Math.Max(1, outputWidth > 0 ? outputWidth : width),
             Math.Max(1, outputHeight > 0 ? outputHeight : height)),
@@ -219,21 +240,24 @@ public sealed class SceneTargetSet : IDisposable
     /// <param name="height">The new height.</param>
     /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
     /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
+    /// <param name="historyScale">How many history texels each rendered pixel has on each axis.</param>
     /// <remarks>
     /// Everything goes and is remade rather than only what changed size, because every target's size
     /// follows the frame's: there is no such thing here as one that survives a resize.
     /// </remarks>
-    public void Resize(int width, int height, int outputWidth = 0, int outputHeight = 0)
+    public void Resize(int width, int height, int outputWidth = 0, int outputHeight = 0, int historyScale = 2)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (Matches(width, height, outputWidth, outputHeight))
+        if (Matches(width, height, outputWidth, outputHeight, historyScale))
         {
             return;
         }
 
-        Release();
-        Allocate(width, height, outputWidth, outputHeight);
+        // Retired rather than freed: the frame before this one may still be running on the GPU, reading
+        // every one of them. Freed here, a change of render scale lost the device on the next dispatch.
+        Release(_retired);
+        Allocate(width, height, outputWidth, outputHeight, historyScale);
     }
 
     /// <summary>Whether the set is already built for a frame and output of these sizes.</summary>
@@ -241,9 +265,11 @@ public sealed class SceneTargetSet : IDisposable
     /// <param name="height">Its height.</param>
     /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
     /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
+    /// <param name="historyScale">How many history texels each rendered pixel has on each axis.</param>
     /// <returns><see langword="true"/> when nothing would change.</returns>
-    public bool Matches(int width, int height, int outputWidth = 0, int outputHeight = 0) =>
-        width == Width
+    public bool Matches(int width, int height, int outputWidth = 0, int outputHeight = 0, int historyScale = 2) =>
+        Math.Clamp(historyScale, 1, 2) == HistoryScale
+        && width == Width
         && height == Height
         && (outputWidth > 0 ? outputWidth : width) == OutputWidth
         && (outputHeight > 0 ? outputHeight : height) == OutputHeight;
@@ -260,13 +286,15 @@ public sealed class SceneTargetSet : IDisposable
         }
 
         _disposed = true;
-        Release();
+        Release(null);
     }
 
-    private void Allocate(int width, int height, int outputWidth, int outputHeight)
+    private void Allocate(int width, int height, int outputWidth, int outputHeight, int historyScale)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
+
+        HistoryScale = Math.Clamp(historyScale, 1, 2);
 
         Width = width;
         Height = height;
@@ -275,7 +303,7 @@ public sealed class SceneTargetSet : IDisposable
 
         foreach (SceneTargetSpec spec in Layout)
         {
-            (int targetWidth, int targetHeight) = SizeOf(spec.Scale, width, height, OutputWidth, OutputHeight);
+            (int targetWidth, int targetHeight) = SizeOf(spec.Scale, width, height, OutputWidth, OutputHeight, HistoryScale);
             int count = spec.History is SceneTargetHistory.PingPong ? 2 : 1;
 
             IRhiTexture[] pair = new IRhiTexture[count];
@@ -299,18 +327,35 @@ public sealed class SceneTargetSet : IDisposable
             "ClosestOccluder"));
     }
 
-    private void Release()
+    private void Release(RetiredResources? retired)
     {
         foreach (IRhiTexture[] pair in _targets.Values)
         {
             foreach (IRhiTexture target in pair)
             {
-                target.Dispose();
+                Free(target);
             }
         }
 
         _targets.Clear();
-        _closestOccluder?.Dispose();
+
+        if (_closestOccluder is { } occluder)
+        {
+            Free(occluder);
+        }
+
         _closestOccluder = null;
+
+        void Free(IDisposable resource)
+        {
+            if (retired is not null)
+            {
+                retired.Retire(resource);
+            }
+            else
+            {
+                resource.Dispose();
+            }
+        }
     }
 }

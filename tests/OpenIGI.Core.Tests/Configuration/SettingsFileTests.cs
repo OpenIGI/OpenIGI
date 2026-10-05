@@ -104,6 +104,45 @@ public sealed class SettingsFileTests
     }
 
     [Fact]
+    public void ASettingSinceRemovedIsSkippedWithoutAnError()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "openigi-settings-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, SettingsPaths.SettingsFileName);
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllLines(path, ["r_dof_range 18", "r_fog_quality 1"]);
+
+            CVarRegistry variables = new();
+            ConsoleSystem console = new(variables);
+            NumericCVar<int> quality = CVar.Int("r_fog_quality", 3, 0, 4, CVarOptions.Archive, registry: variables);
+
+            List<ConsoleLine> errors = [];
+            console.LineWritten += (_, line) =>
+            {
+                if (line.Severity == ConsoleSeverity.Error)
+                {
+                    errors.Add(line);
+                }
+            };
+
+            Assert.True(SettingsFile.Load(console, path));
+
+            // The line after it still applies, and the retired name said nothing.
+            Assert.Equal(1, quality.Value);
+            Assert.Empty(errors);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void LoadingAMissingFileIsNotAnError()
     {
         ConsoleSystem console = new(new CVarRegistry());

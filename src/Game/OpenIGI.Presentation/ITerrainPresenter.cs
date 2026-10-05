@@ -20,6 +20,10 @@ namespace OpenIGI.Presentation;
 /// </param>
 /// <param name="Batching">Whether compatible draws may be merged.</param>
 /// <param name="OcclusionCulling">Whether prior visibility results may reject geometry.</param>
+/// <param name="CastsIntoCascades">
+/// Whether the sun's shadow cascades will be filled, so the ground is gathered for them to draw through
+/// <see cref="ITerrainPresenter.DrawShadowCaster"/>.
+/// </param>
 /// <remarks>
 /// Grouped into one value rather than passed as seven arguments because it is one thing — the frame —
 /// and because a title that ignores half of it should be able to say so by ignoring fields rather than
@@ -32,7 +36,8 @@ public readonly record struct TerrainFrame(
     float AspectRatio,
     int ViewDistance,
     bool Batching,
-    bool OcclusionCulling);
+    bool OcclusionCulling,
+    bool CastsIntoCascades = false);
 
 /// <summary>Draws a title's ground.</summary>
 /// <remarks>
@@ -58,6 +63,17 @@ public interface ITerrainPresenter : IDisposable
     /// <summary>Draws the ground.</summary>
     /// <param name="frame">The frame to draw for.</param>
     void Draw(in TerrainFrame frame);
+
+    /// <summary>Draws the ground into the sun's shadow cascade being filled.</summary>
+    /// <param name="lightCamera">The light's camera: the eye's position, looking along the sun.</param>
+    /// <remarks>
+    /// What the last <see cref="Draw"/> built for casting, when its frame asked for
+    /// <see cref="TerrainFrame.CastsIntoCascades"/>. Defaulted to nothing, for a ground that casts no shadow.
+    /// </remarks>
+    void DrawShadowCaster(in Camera3D lightCamera)
+    {
+        _ = lightCamera;
+    }
 
     /// <summary>Re-reads the tile atlas, after the override folder has changed.</summary>
     /// <param name="tiles">The replacement atlas, or null to fall back to the installation's own.</param>

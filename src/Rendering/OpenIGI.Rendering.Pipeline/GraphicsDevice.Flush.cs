@@ -29,7 +29,7 @@ public sealed partial class GraphicsDevice
             throw new InvalidOperationException("There is no frame being recorded to flush.");
         }
 
-        int cascade = _shadowPass is not null ? _shadowCascade : -1;
+        IRhiTextureView? shadowLayer = _shadowPass is not null ? _shadowLayer : null;
         ScenePass? scenePass = _scenePass is not null ? CurrentPass : null;
 
         CloseShadowPass();
@@ -46,9 +46,9 @@ public sealed partial class GraphicsDevice
 
         // Picked up again where it broke off. The frame's own pass opens by itself at the next draw into
         // it, loading what is there, so only a scene pass or a cascade has to be reopened here.
-        if (cascade >= 0 && _shadowMap is { } map)
+        if (shadowLayer is not null)
         {
-            OpenShadowCascade(cascade, map, resume: true);
+            OpenShadowLayer(shadowLayer, _shadowLayerSize, _shadowLayerLabel, _shadowRotation, resume: true);
         }
         else if (scenePass is { } pass && _scene is { } scene)
         {

@@ -193,7 +193,11 @@ float3 ApplyNightShift(float3 colour)
     }
 
     const float3 photopic = float3(0.2126, 0.7152, 0.0722);
-    const float3 nightTint = float3(0.62, 0.78, 1.0);
+
+    // Only a breath of cool: the dim parts lose most of their colour, not all of it, and keep their own
+    // hue under it. Taken to a strong blue at four-fifths, every dusk shadow went the same cold grey, where
+    // a night photograph keeps warm darks warm.
+    const float3 nightTint = float3(0.86, 0.93, 1.0);
 
     float luminance = dot(colour, photopic);
 
@@ -202,7 +206,7 @@ float3 ApplyNightShift(float3 colour)
     float3 rodColour = scotopic * nightTint / dot(nightTint, photopic);
 
     float rods = amount * (1.0 - smoothstep(0.02, 0.45, luminance));
-    return lerp(colour, rodColour, rods * 0.8);
+    return lerp(colour, rodColour, rods * 0.35);
 }
 
 float3 Reinhard(float3 c, float white)
@@ -250,9 +254,15 @@ float4 ResolveDisplay(Varyings input)
     if (op >= 2)
     {
         float vignette = VignetteMask(vUv);
+        // The bloom is built from the scene before exposure, so it is exposed with it. Added raw, its glow
+        // swung against the eye's adaptation: a night's lamps and moon, exposed many times over, kept a
+        // daylight-sized halo that all but vanished beside them, and a bright view's bloomed too strongly.
         if (resolve.vignette.z > 0.5)
         {
-            colour += max(uBloom.Sample(uBloomSampler, vUv).rgb, float3(0.0, 0.0, 0.0));
+            // Its alpha is what the scene is multiplied by: one, but where the sun's shafts cut an
+            // occluder's shadow into the haze round the sun.
+            float4 bloom = uBloom.Sample(uBloomSampler, vUv);
+            colour = (colour * saturate(bloom.a)) + (max(bloom.rgb, float3(0.0, 0.0, 0.0)) * resolve.params.x);
         }
 
         colour = ApplyNightShift(colour) * vignette;

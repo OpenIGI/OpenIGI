@@ -41,12 +41,6 @@ public sealed class GraphicsDeviceTests
         Assert.DoesNotContain("r_motion_blur", device.Capabilities.UnimplementedSettings);
         Assert.DoesNotContain("r_fog_quality", device.Capabilities.UnimplementedSettings);
 
-        // What this renderer never acts on is named whatever the adapter, so the options screen says so:
-        // depth of field above all, which it does not draw.
-        Assert.Contains("r_dof", device.Capabilities.UnimplementedSettings);
-        Assert.Contains("r_generate_mipmaps", device.Capabilities.UnimplementedSettings);
-        Assert.Contains("r_camera_taps", device.Capabilities.UnimplementedSettings);
-
         // The baked probe field and the material detail maps are carried, so neither is named.
         Assert.DoesNotContain("r_gi", device.Capabilities.UnimplementedSettings);
         Assert.DoesNotContain("r_material_detail", device.Capabilities.UnimplementedSettings);

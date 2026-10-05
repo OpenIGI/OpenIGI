@@ -60,6 +60,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     private IRhiRenderPassEncoder? _pass;
     private RhiFrame _frame;
     private bool _inFrame;
+
+    // A present-mode change asked for while a frame was open; see VSyncEnabled.
+    private bool _surfaceStale;
     private ulong _frameCounter;
     private bool _disposed;
 
@@ -182,6 +185,17 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             }
 
             field = value;
+
+            // Not under an open frame: reconfiguring rebuilds the swapchain, which frees the image the
+            // frame is drawing into, and the frame's end still copies it for the capture -- toggling vsync
+            // from the settings menu was an access violation in that copy. Applied once the frame is
+            // presented instead.
+            if (_inFrame)
+            {
+                _surfaceStale = true;
+                return;
+            }
+
             _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, value);
         }
     } = true;
@@ -298,6 +312,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _device.EndFrame(_frame);
         _inFrame = false;
+
+        if (_surfaceStale)
+        {
+            _surfaceStale = false;
+            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, VSyncEnabled);
+        }
         _frameCounter++;
         ArmRecordedWorkMarkers();
 

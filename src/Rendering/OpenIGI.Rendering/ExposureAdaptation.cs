@@ -62,6 +62,13 @@ public sealed class ExposureAdaptation
     // bright. Still well above the histogram's own bottom (2^-8), under which nothing can be metered.
     private const float NightFloorStops = 0.4f;
 
+    // How much darker than middle grey a dim view by day is allowed to stay, per stop it meters below middle
+    // grey, and the most it may: a shaded yard or an unlit room is SEEN as darker than an open one, not lifted
+    // to the same grey, which is what flattened every shadowed view into a lit one. Not at night, whose
+    // exposure was set by its own floor and approved as it is.
+    private const float DimCompensationPerStop = 0.3f;
+    private const float DimCompensationMaxStops = 1f;
+
     // How fast the eye follows, in stops per second, opening and closing alike.
     private const float BrightenStopsPerSecond = 3f;
     private const float DarkenStopsPerSecond = 3f;
@@ -177,7 +184,11 @@ public sealed class ExposureAdaptation
         float averageLuminance = kept > 0
             ? (float)Math.Pow(2.0, weightedLog / kept)
             : minAverage / MiddleGrey;
-        float target = Math.Clamp(averageLuminance, minAverage, maxAverage) / MiddleGrey;
+        float metered = Math.Clamp(averageLuminance, minAverage, maxAverage);
+        float dimStops = MathF.Min(MathF.Log2(metered / MiddleGrey), 0f);
+        float compensation = Math.Clamp(dimStops * DimCompensationPerStop, -DimCompensationMaxStops, 0f)
+            * (1f - Math.Clamp(darkAdaptation, 0f, 1f));
+        float target = metered / (MiddleGrey * MathF.Pow(2f, compensation));
 
         // How the frame was counted, for tuning the floor: how much of it landed in the bottom bucket and
         // the bottom eighth, which is where a night's dark sky and unlit surfaces go.

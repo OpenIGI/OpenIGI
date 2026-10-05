@@ -64,13 +64,6 @@
 /// The luminance contrast below which a pixel is left untouched. Most of a frame is below it, which is
 /// what makes the pass nearly free and what stops it softening texture detail that is not an edge.
 /// </param>
-/// <param name="FocalDistance">
-/// How far, in metres, the camera is focused. Zero switches depth of field off entirely, which is the
-/// right default for a shooter: the player's eye picks what to look at, and a renderer that decides for
-/// them fights that. It earns its place on the menu camera and down a scope.
-/// </param>
-/// <param name="FocalRange">Over how many metres a surface goes from sharp to fully defocused.</param>
-/// <param name="FocalBlur">The widest the defocus gets, in pixels.</param>
 /// <param name="FrameDeltaSeconds">
 /// How long the frame being resolved took. Motion blur needs it because the velocity buffer holds one
 /// frame's travel: without rescaling to a fixed shutter, the same movement would smear half as far at
@@ -79,10 +72,6 @@
 /// <param name="MotionBlur">
 /// How much of a frame's movement is smeared, where 1 is the whole of it. A real shutter is open for
 /// part of a frame rather than all of it, so values below 1 are the physical range.
-/// </param>
-/// <param name="CameraTaps">
-/// How many samples the defocus and motion gather takes. The cost of both effects together, and their
-/// only quality dial.
 /// </param>
 /// <param name="Sharpen">
 /// How much local contrast is restored after the temporal accumulation and any upsampling have
@@ -143,11 +132,7 @@ public readonly record struct PostProcessSettings(
     float Grain = 0f,
     float ChromaticAberration = 0f,
     float Sharpen = 0f,
-    float FocalDistance = 0f,
-    float FocalRange = 12f,
-    float FocalBlur = 8f,
     float MotionBlur = 0f,
-    int CameraTaps = 6,
     float SpatialAa = 0f,
     float SpatialAaThreshold = 0.05f,
     float ColourLookup = 0f,
@@ -189,8 +174,7 @@ public readonly record struct PostProcessSettings(
     public bool WantsSpatialAa => SpatialAa > 0f;
 
     /// <summary>Gets a value indicating whether the camera gather would do anything.</summary>
-    public bool WantsCameraEffects =>
-        CameraTaps > 0 && ((FocalDistance > 0f && FocalBlur > 0f) || MotionBlur > 0f);
+    public bool WantsCameraEffects => MotionBlur > 0f;
 
     /// <summary>Gets a value indicating whether the authored colour table is applied.</summary>
     /// <remarks>

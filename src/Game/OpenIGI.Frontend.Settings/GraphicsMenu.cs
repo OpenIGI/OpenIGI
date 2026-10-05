@@ -126,7 +126,7 @@ public static class GraphicsMenu
                         ("r_sdf_resolution", "46"),
                         ("r_gi_amortize", "24"),
                         ("r_gi_temporal_frames", "32"),
-                        ("r_screen_gi_cadence", "1"),
+                        ("r_screen_gi_cadence", "2"),
                         ("r_screen_gi_filter", "2"))),
 
                 new QualityGroup(
@@ -284,23 +284,19 @@ public static class GraphicsMenu
                     new QualityLevel(
                         "Original",
                         ("r_material_detail", "0"),
-                        ("r_anisotropy", "1"),
-                        ("r_generate_mipmaps", "0")),
+                        ("r_anisotropy", "1")),
                     new QualityLevel(
                         "Enhanced",
                         ("r_material_detail", "0"),
-                        ("r_anisotropy", "4"),
-                        ("r_generate_mipmaps", "1")),
+                        ("r_anisotropy", "4")),
                     new QualityLevel(
                         "High",
                         ("r_material_detail", "0.25"),
-                        ("r_anisotropy", "8"),
-                        ("r_generate_mipmaps", "1")),
+                        ("r_anisotropy", "8")),
                     new QualityLevel(
                         "Ultra",
                         ("r_material_detail", "0"),
-                        ("r_anisotropy", "16"),
-                        ("r_generate_mipmaps", "1"))),
+                        ("r_anisotropy", "16"))),
 
                 new QualityGroup(
                     "World Detail",
@@ -406,6 +402,12 @@ public static class GraphicsMenu
             "Day Length",
             "How long a whole day takes, in minutes, once the cycle above is on. Forty is a sun you "
                 + "notice having moved; a minute or two is a sunrise you can stand and watch."),
+        new GraphicsSetting(
+            "r_lamp_daylight",
+            "Lamps Follow Daylight",
+            "Puts the level's lamps on photocells: they go out by day and strike one by one as dusk "
+                + "falls, each on its own delay. Outdoors leaves lamps under a roof lit, as a building's "
+                + "are; Everywhere includes them; Off keeps every lamp burning, as in the original."),
         new GraphicsSetting(
             "r_remastered_hud",
             "Remastered HUD",
@@ -585,6 +587,7 @@ public static class GraphicsMenu
         "r_screen_gi_max",
         "r_screen_gi_trace",
         "r_upscale_samples",
+        "r_upscale_history", // the upscaler's history resolution, a cost the preset already weighs
         "r_alpha_hash",
         "r_world_cull",
         "r_world_occlusion",
@@ -608,14 +611,6 @@ public static class GraphicsMenu
         // the same authored haze through the froxel volume instead. A player who could set this
         // separately could set both at once, which fogs the frame twice.
         "r_fog_retail",
-
-        "r_camera_taps",
-
-        // Off at every preset by design: a first-person camera has no business deciding what the player
-        // is looking at, so the focus is never pulled.
-        "r_dof",
-        "r_dof_range",
-        "r_dof_blur",
 
         // Diagnostics, A/B levers and paths on disk.
         "r_rt",

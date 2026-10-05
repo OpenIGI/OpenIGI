@@ -68,10 +68,10 @@ struct Gi
     // halfSpacing, blend, lightScale, _.
     float4 probeMisc;
 
-    // rgb sky tint, _.
+    // rgb sky tint, w the cascades' filter radius in texels.
     float4 probeSky;
 
-    // xyz camera, _.
+    // xyz camera, w the reach of the cascades' contact shadow in metres (nought: none).
     float4 camera;
 
     // screen-GI strength, full-resolution, _, _.
@@ -351,25 +351,145 @@ float3 AoMultiBounce(float3 albedo, float visibility)
     return max(float3(visibility, visibility, visibility), ((((visibility * a) + b) * visibility) + c) * visibility);
 }
 
-float PcfShadow(int cascade, float3 uv)
+// Twelve points spread over the unit disc, for the wide filter below.
+static const float2 kShadowDisc[12] =
+{
+    float2(-0.326, -0.406), float2(-0.840, -0.074), float2(-0.696, 0.457), float2(-0.203, 0.621),
+    float2(0.962, -0.195), float2(0.473, -0.480), float2(0.519, 0.767), float2(0.185, -0.893),
+    float2(0.507, 0.064), float2(0.896, 0.412), float2(-0.322, -0.933), float2(-0.792, -0.598),
+};
+
+// A per-pixel rotation, so the disc's twelve taps make a different pattern on every pixel and the
+// temporal filter averages them into a smooth penumbra rather than twelve stamped copies of an edge.
+float ShadowNoise(float2 pixel)
+{
+    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
+}
+
+// The cascade's comparison at uv, filtered over radius texels. One texel and below is the plain 3x3; wider
+// is the rotated disc, so the softness setting actually widens the penumbra -- it was read by nothing, and
+// every preset got the same one-texel edge, stair-stepped across the far cascades.
+float PcfShadow(int cascade, float3 uv, float radiusTexels, float2 pixel)
 {
     float texel = gi.shadowConfig.w;
     float sum = 0.0;
-    for (int y = -1; y <= 1; y++)
+
+    if (radiusTexels <= 1.5)
     {
-        for (int x = -1; x <= 1; x++)
+        for (int y = -1; y <= 1; y++)
         {
-            sum += uShadowMap.SampleCmpLevelZero(uShadowMapSampler, 
-                float3(uv.xy + (float2(float(x), float(y)) * texel), float(cascade)), uv.z);
+            for (int x = -1; x <= 1; x++)
+            {
+                sum += uShadowMap.SampleCmpLevelZero(uShadowMapSampler,
+                    float3(uv.xy + (float2(float(x), float(y)) * texel), float(cascade)), uv.z);
+            }
+        }
+
+        return sum / 9.0;
+    }
+
+    float angle = ShadowNoise(pixel) * 6.2831853;
+    float s = sin(angle);
+    float c = cos(angle);
+    float reach = radiusTexels * texel;
+
+    for (int i = 0; i < 12; i++)
+    {
+        float2 tap = kShadowDisc[i];
+        float2 offset = float2((tap.x * c) - (tap.y * s), (tap.x * s) + (tap.y * c)) * reach;
+        sum += uShadowMap.SampleCmpLevelZero(uShadowMapSampler, float3(uv.xy + offset, float(cascade)), uv.z);
+    }
+
+    return sum / 12.0;
+}
+
+// One cascade's answer for a point, or inside false where the point falls outside its box. The biases
+// are scaled by the cascade's own texel size in world units, so one setting holds across every cascade
+// instead of being tuned for the nearest; and the depth bias by the filter's width too, since a wider
+// filter reaches further across a slope that faces the sun.
+float CascadeVisibility(int i, float3 base, float3 worldNormal, float radiusTexels, float2 pixel, out bool inside)
+{
+    float4x4 m = gi.cascadeMatrix[i];
+
+    // The scales are read out of the matrix's COLUMNS, which is what they were in the GLSL: m[0][0]
+    // there indexes column zero, row zero. Slang indexes m[row][column], so the same three elements
+    // are the first entry of each row.
+    float xScale = length(float3(m[0][0], m[1][0], m[2][0]));
+    float zScale = length(float3(m[0][2], m[1][2], m[2][2]));
+    float texel = (2.0 * gi.shadowConfig.w) / max(xScale, 1e-6);
+    float depthRange = 2.0 / max(zScale, 1e-6);
+
+    float3 world = base + (worldNormal * (gi.shadowConfig.z * texel));
+    float4 clip = mul(m, float4(world, 1.0));
+    float3 ndc = clip.xyz / clip.w;
+    inside = all(abs(ndc.xy) <= float2(1.0, 1.0));
+    if (!inside)
+    {
+        return 1.0;
+    }
+
+    float bias = gi.shadowConfig.y * texel;
+    float depth = (ndc.z * 0.5) + 0.5 - (bias / depthRange);
+
+    // The filter's width is the nearest cascade's, held in metres: a penumbra is a size in the world, not
+    // in a map's texels. Counted in each cascade's own texels it grew with the cascade, and three texels
+    // of a far one is a third of a metre -- wide enough to dissolve a ledge's shadow on the wall below it
+    // altogether, past the first cascade boundary.
+    float4x4 nearest = gi.cascadeMatrix[0];
+    float nearestTexel = (2.0 * gi.shadowConfig.w)
+        / max(length(float3(nearest[0][0], nearest[1][0], nearest[2][0])), 1e-6);
+    float filterTexels = max(radiusTexels * nearestTexel / max(texel, 1e-6), 1.0);
+    float2 uv = float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
+
+    // And wider where the occluder stands further off. The sun is a disc a little over half a degree
+    // across, so a shadow's edge blurs by the occluder's height above the receiver times the tangent of
+    // its half-angle: a fence post's foot is razor sharp, the tip of a long building's shadow soft. The
+    // occluders round the point are found in the map and their mean height taken, as the traced sun's
+    // denoiser takes it from its hit distance; a fixed filter made every edge the same, so near shadows
+    // read pasted on and far ones aliased.
+    uint mapWidth;
+    uint mapHeight;
+    uint mapLayers;
+    uShadowMap.GetDimensions(mapWidth, mapHeight, mapLayers);
+    int2 mapSize = int2(int(mapWidth), int(mapHeight));
+
+    // Searched as far as the penumbra of something thirty metres up would reach.
+    const float kSunHalfAngleTangent = 0.00468;
+    float searchTexels = clamp((30.0 * kSunHalfAngleTangent) / max(texel, 1e-6), 2.0, 16.0);
+    float angle = ShadowNoise(pixel + float2(7.0, 3.0)) * 6.2831853;
+    float s = sin(angle);
+    float c = cos(angle);
+    float blockerSum = 0.0;
+    float blockers = 0.0;
+    for (int k = 0; k < 12; k++)
+    {
+        float2 tap = kShadowDisc[k];
+        float2 offset = float2((tap.x * c) - (tap.y * s), (tap.x * s) + (tap.y * c)) * (searchTexels * gi.shadowConfig.w);
+        int2 texelAt = clamp(int2((uv + offset) * float2(mapSize)), int2(0, 0), mapSize - 1);
+        float stored = uShadowMap.Load(int4(texelAt, i, 0));
+        if (stored < depth)
+        {
+            blockerSum += depth - stored;
+            blockers += 1.0;
         }
     }
 
-    return sum / 9.0;
+    if (blockers > 0.0)
+    {
+        float heightMetres = (blockerSum / blockers) * depthRange;
+        float penumbraTexels = (heightMetres * kSunHalfAngleTangent) / max(texel, 1e-6);
+        filterTexels = clamp(max(filterTexels, penumbraTexels), 1.0, 24.0);
+    }
+
+    return PcfShadow(i, float3(uv, depth), filterTexels, pixel);
 }
 
-// Which cascade covers this pixel, and what it says. The biases are scaled by the cascade's own texel
-// size in world units, so one setting holds across every cascade instead of being tuned for the nearest.
-float SunVisibility(float3 viewPos, float3 worldNormal)
+// Which cascade covers this pixel, and what it says. The last tenth of each slice is blended into the
+// next cascade, and the last cascade's into full light, so neither a cascade boundary nor the shadow
+// distance draws a line across the ground: the line used to be hard and to sit at a view DEPTH, so it
+// swept across walls as the camera turned and walked, a shadow drawn half-way and growing as the player
+// approached.
+float SunVisibility(float3 viewPos, float3 worldNormal, float2 pixel)
 {
     int count = int(gi.shadowConfig.x + 0.5);
     if (count <= 0)
@@ -377,6 +497,7 @@ float SunVisibility(float3 viewPos, float3 worldNormal)
         return 1.0;
     }
 
+    float radiusTexels = max(gi.probeSky.w, 1.0);
     float3 base = mul(gi.viewToWorld, float4(viewPos, 1.0)).xyz;
     for (int i = 0; i < 4; i++)
     {
@@ -390,23 +511,98 @@ float SunVisibility(float3 viewPos, float3 worldNormal)
             continue;
         }
 
-        float4x4 m = gi.cascadeMatrix[i];
-
-        // The scales are read out of the matrix's COLUMNS, which is what they were in the GLSL: m[0][0]
-        // there indexes column zero, row zero. Slang indexes m[row][column], so the same three elements
-        // are the first entry of each row.
-        float xScale = length(float3(m[0][0], m[1][0], m[2][0]));
-        float zScale = length(float3(m[0][2], m[1][2], m[2][2]));
-        float texel = (2.0 * gi.shadowConfig.w) / max(xScale, 1e-6);
-        float depthRange = 2.0 / max(zScale, 1e-6);
-
-        float3 world = base + (worldNormal * (gi.shadowConfig.z * texel));
-        float4 clip = mul(m, float4(world, 1.0));
-        float3 ndc = clip.xyz / clip.w;
-        if (all(abs(ndc.xy) <= float2(1.0, 1.0)))
+        bool inside;
+        float visibility = CascadeVisibility(i, base, worldNormal, radiusTexels, pixel, inside);
+        if (!inside)
         {
-            float depth = (ndc.z * 0.5) + 0.5 - ((gi.shadowConfig.y * texel) / depthRange);
-            return PcfShadow(i, float3((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5), depth));
+            continue;
+        }
+
+        float sliceStart = i == 0 ? 0.0 : gi.cascadeSplits[i - 1];
+        float band = max((gi.cascadeSplits[i] - sliceStart) * 0.1, 1e-3);
+        float toNext = saturate((viewPos.z - (gi.cascadeSplits[i] - band)) / band);
+        if (toNext > 0.0)
+        {
+            float next = 1.0;
+            if (i + 1 < count)
+            {
+                bool nextInside;
+                float further = CascadeVisibility(i + 1, base, worldNormal, radiusTexels, pixel, nextInside);
+                next = nextInside ? further : 1.0;
+            }
+
+            visibility = lerp(visibility, next, toNext);
+        }
+
+        return visibility;
+    }
+
+    return 1.0;
+}
+
+// The view depth a stored depth stands for; the same reconstruction ViewPositionOf makes.
+float ViewDepthOf(float depth)
+{
+    float ndcZ = 1.0 - (2.0 * depth);
+    float near = gi.unproject.z;
+    float far = gi.unproject.w;
+    return (2.0 * near * far) / ((far + near) - (ndcZ * (far - near)));
+}
+
+// A short march towards the sun through the depth buffer, for the contact a shadow map cannot resolve:
+// the foot of a wall, a crate on the ground, a window ledge. A cascade's texel is centimetres near and
+// decimetres far, and its biases lift every shadow off the thing casting it by about that much; the
+// traced sun starts at the surface itself and has none of that gap. Only what is on screen can occlude
+// here, which is why the reach is a fraction of a metre -- it finishes the shadow the cascade began, it
+// does not replace it.
+float ContactShadow(float3 viewPos, float3 viewSun, float reach, float2 pixel)
+{
+    if (reach <= 0.0 || viewSun.z <= -0.999)
+    {
+        return 1.0;
+    }
+
+    uint width;
+    uint height;
+    uDepth.GetDimensions(width, height);
+    float2 size = float2(float(width), float(height));
+
+    const int kSteps = 12;
+    float3 stride = viewSun * (reach / float(kSteps));
+    float3 at = viewPos + (stride * ShadowNoise(pixel + float2(17.0, 31.0)));
+
+    // How far behind a depth sample a point may sit and still count as hidden by it: beyond this the ray
+    // has gone behind a surface's edge rather than into it, and calling that occluded draws a halo.
+    float thickness = max(0.3, 0.02 * viewPos.z);
+    float startBias = 0.01 + (0.002 * viewPos.z);
+
+    for (int step = 0; step < kSteps; step++)
+    {
+        at += stride;
+        if (at.z <= gi.unproject.z)
+        {
+            break;
+        }
+
+        float2 uv = float2(
+            0.5 + (0.5 * at.x * gi.unproject.x / at.z),
+            0.5 - (0.5 * at.y * gi.unproject.y / at.z));
+        if (any(uv < float2(0.0, 0.0)) || any(uv > float2(1.0, 1.0)))
+        {
+            break;
+        }
+
+        float sample = uDepth.Load(int3(int2(uv * size), 0));
+        if (sample <= 0.0)
+        {
+            continue;
+        }
+
+        float behind = at.z - ViewDepthOf(sample);
+        if (behind > startBias && behind < thickness)
+        {
+            // Faded over the reach, so the contact darkens most where the occluder touches.
+            return float(step) / float(kSteps);
         }
     }
 
@@ -432,7 +628,11 @@ float3 ApplyFog(float3 colour, float2 uv, float viewZ)
         return colour;
     }
 
-    float slice = log2(max((viewZ * gi.fog.x) + gi.fog.y, 1e-6)) * gi.fog.z * gi.fog.w;
+    // Read a slice short of the surface. The cell a surface stands in reaches past it -- a slice is a
+    // metre or more deep a building away -- and its samples behind the surface are lit by whatever is
+    // there: the lamp in the room on the far side of a wall lit the air on the near side in a glowing
+    // cloud. The air a surface is seen through is the air in front of it.
+    float slice = (log2(max((viewZ * gi.fog.x) + gi.fog.y, 1e-6)) * gi.fog.z - 1.0) * gi.fog.w;
     float4 fog = uFogVolume.SampleLevel(uFogVolumeSampler, float3(uv, clamp(slice, 0.0, 1.0)), 0.0);
     return (colour * fog.a) + fog.rgb;
 }
@@ -445,8 +645,17 @@ float3 ApplyFog(float3 colour, float2 uv, float viewZ)
 // z is how much of the bilinear footprint agreed with this pixel's depth: one where the taps are all on
 // this surface, near nought where every tap landed on something else -- a fence wire in front of it, say --
 // and the answer is a neighbour's rather than this pixel's.
-float3 UpsampleLampVisibility(float2 uv, float viewZ)
+//
+// And by normal: where a wall meets the floor the two stand at the same depth, so a tap on the wall passed
+// the depth test and its lamp shadow bled half a texel onto the floor. Each tap's normal is read off the
+// G-buffer at the full-resolution pixel the half-resolution texel stands over.
+float3 UpsampleLampVisibility(float2 uv, float viewZ, float3 normal)
 {
+    uint fullWidth;
+    uint fullHeight;
+    uNormal.GetDimensions(fullWidth, fullHeight);
+    int2 fullLast = int2(int(fullWidth) - 1, int(fullHeight) - 1);
+
     uint width;
     uint height;
     uLampVisibility.GetDimensions(width, height);
@@ -484,7 +693,11 @@ float3 UpsampleLampVisibility(float2 uv, float viewZ)
             nearest = tap.xy;
         }
 
-        float weight = bilinear[i] * exp2(-gap / max(0.03 * viewZ, 1e-3));
+        int2 fullAt = clamp(int2((float2(at) + 0.5) * (float2(float(fullWidth), float(fullHeight)) / size)), int2(0, 0), fullLast);
+        float3 tapNormal = DecodeGBufferNormal(uNormal.Load(int3(fullAt, 0)));
+        float facing = saturate(dot(tapNormal, normal));
+
+        float weight = bilinear[i] * exp2(-gap / max(0.03 * viewZ, 1e-3)) * facing * facing * facing * facing;
         total += tap.xy * weight;
         totalWeight += weight;
     }
@@ -615,18 +828,116 @@ void ApplyWetness(
     albedo *= 1.0 - waterReflectance;
 }
 
-// What one lamp puts on this surface before anything stands in its way: the windowed inverse square, the
-// fitting's facing and the surface's own n.l. Shared by the pass that ranks the lamps and the one that
-// shades them, so the two agree about which lamps matter. Nought for a lamp out of reach or behind.
-float LampReaching(
+// The sun's angular radius, in radians, and the most a pixel of its disc may carry: a half-float target
+// holds no more than some sixty-five thousand, and the bloom and the temporal resolve want headroom over it.
+static const float kSunAngularRadius = 0.00468;
+static const float kSunDiscCeiling = 4000.0;
+
+// The sun's disc where a view ray meets it: its illuminance over the solid angle it subtends, darkened
+// towards its limb as the real one is, its edge softened over a pixel so it does not crawl, and never less
+// than a pixel across.
+float3 SunDisc(float3 worldRay, float3 sunDirection, float3 illuminance, float pixelAngle)
+{
+    float cosine = dot(worldRay, sunDirection);
+    if (cosine <= 0.999 || sunDirection.z <= -0.02)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float angle = acos(saturate(cosine));
+    float radius = max(kSunAngularRadius, pixelAngle);
+    float cover = 1.0 - smoothstep(radius - (pixelAngle * 0.5), radius + (pixelAngle * 0.5), angle);
+    if (cover <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float r = saturate(angle / radius);
+    float limb = 0.4 + (0.6 * sqrt(max(1.0 - (r * r), 0.0)));
+    float solidAngle = 6.2831853 * (1.0 - cos(radius));
+    return min(illuminance / max(solidAngle, 1e-8), float3(kSunDiscCeiling, kSunDiscCeiling, kSunDiscCeiling))
+        * (limb * cover);
+}
+
+// The irradiance a uniform straight emitter puts on a surface, per unit of the emitter's whole intensity:
+// the integral along it of n.L / |L|^3, where L runs from the surface to each point of the emitter, from
+// L0 at one end to L0 + D at the other. Closed form, since |L|^2 is a quadratic in the parameter t:
+//
+//   integral dt / Q^(3/2)   = (a t + b) / (det sqrt(Q))
+//   integral t dt / Q^(3/2) = -(b t + c) / (det sqrt(Q))
+//
+// with Q = a t^2 + 2 b t + c, a = D.D, b = L0.D, c = L0.L0 and det = a c - b^2. The part of the emitter
+// below the surface's horizon gives it nothing, so the interval is first cut to where n.L is positive.
+// A surface the emitter lies along (det near nought) takes it as one point at the middle of what is left.
+float LineIrradiance(float3 n, float3 lineStart, float3 lineDelta)
+{
+    float startFacing = dot(n, lineStart);
+    float deltaFacing = dot(n, lineDelta);
+    float t0 = 0.0;
+    float t1 = 1.0;
+    if (abs(deltaFacing) > 1e-6)
+    {
+        float crossing = -startFacing / deltaFacing;
+        if (deltaFacing > 0.0)
+        {
+            t0 = max(t0, crossing);
+        }
+        else
+        {
+            t1 = min(t1, crossing);
+        }
+    }
+    else if (startFacing <= 0.0)
+    {
+        return 0.0;
+    }
+
+    if (t1 <= t0)
+    {
+        return 0.0;
+    }
+
+    float a = dot(lineDelta, lineDelta);
+    float b = dot(lineStart, lineDelta);
+    float c = dot(lineStart, lineStart);
+    float det = (a * c) - (b * b);
+    if (det <= 1e-5 * a * c)
+    {
+        float3 middle = lineStart + (lineDelta * (0.5 * (t0 + t1)));
+        float distanceSq = max(dot(middle, middle), 1e-4);
+        return saturate(dot(n, middle) * rsqrt(distanceSq)) / distanceSq * (t1 - t0);
+    }
+
+    float q0 = sqrt(max((a * t0 * t0) + (2.0 * b * t0) + c, 1e-8));
+    float q1 = sqrt(max((a * t1 * t1) + (2.0 * b * t1) + c, 1e-8));
+    float at1 = ((startFacing * ((a * t1) + b)) - (deltaFacing * ((b * t1) + c))) / (det * q1);
+    float at0 = ((startFacing * ((a * t0) + b)) - (deltaFacing * ((b * t0) + c))) / (det * q0);
+    return max(at1 - at0, 0.0);
+}
+
+// One lamp's light on this surface towards the eye, before anything stands in its way, and the surface's
+// diffuse share of it for the ranking. Nought for a lamp out of reach, behind its own glass, or below the
+// surface's horizon.
+//
+// A fitting with a measured face is lit as the tube it is: the irradiance integrated along its length (see
+// LineIrradiance), so a long batten throws a long pool rather than a round one and the wall beside it
+// takes the spread-out glow a tube gives; and the highlight is taken at the point along it nearest the
+// reflected view ray, with the lobe widened by the tube's own thickness at that distance, so a wet floor
+// shows a stretched streak rather than a pinpoint. A point lamp is a small sphere: the inverse square stops
+// rising inside its own radius, rather than being softened by a metre everywhere -- which flattened every
+// pool into a disc with a window-shaped edge and took the hot centre out of it.
+float3 LampShade(
     int i,
     float3 viewPos,
     float3 normal,
-    out float3 lightDir,
-    out float3 radiance)
+    float3 toEye,
+    float3 albedo,
+    float metallic,
+    float specularLevel,
+    float roughness,
+    out float diffuseWeight)
 {
-    lightDir = float3(0.0, 0.0, 1.0);
-    radiance = float3(0.0, 0.0, 0.0);
+    diffuseWeight = 0.0;
 
     float4 positionRadius = lamps.positionRadius[i];
     float3 toLightView = positionRadius.xyz - viewPos;
@@ -634,31 +945,92 @@ float LampReaching(
     float reach = positionRadius.w;
     if (distanceSq >= reach * reach)
     {
-        return 0.0;
+        return float3(0.0, 0.0, 0.0);
     }
 
-    float3 toLight = mul(gi.viewToWorld, float4(toLightView, 0.0)).xyz;
-    lightDir = toLight * rsqrt(max(distanceSq, 1e-8));
-    float nDotL = max(dot(normal, lightDir), 0.0);
-    if (nDotL <= 0.0)
-    {
-        return 0.0;
-    }
+    float3 toCentre = mul(gi.viewToWorld, float4(toLightView, 0.0)).xyz;
+    float3 centreDir = toCentre * rsqrt(max(distanceSq, 1e-8));
 
     float ratio = distanceSq / max(reach * reach, 1e-4);
     float window = clamp(1.0 - (ratio * ratio), 0.0, 1.0);
     window *= window;
-    float attenuation = window / (distanceSq + 1.0);
 
     float4 facing = lamps.direction[i];
     if (dot(facing.xyz, facing.xyz) > 0.25)
     {
         float3 axis = mul(gi.viewToWorld, float4(facing.xyz, 0.0)).xyz;
-        attenuation *= max(dot(normalize(axis), -lightDir), 0.0);
+        window *= max(dot(normalize(axis), -centreDir), 0.0);
     }
 
-    radiance = lamps.colourIntensity[i].rgb * lamps.colourIntensity[i].a * attenuation;
-    return dot(radiance, float3(0.2126, 0.7152, 0.0722)) * nDotL;
+    if (window <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float3 colour = lamps.colourIntensity[i].rgb * lamps.colourIntensity[i].a * window;
+    float source = clamp(facing.w, 0.05, 1.0);
+
+    float4 rect = lamps.rect[i];
+    float3 halfAxis = mul(gi.viewToWorld, float4(rect.xyz, 0.0)).xyz;
+    bool tube = dot(halfAxis, halfAxis) > 1e-4;
+
+    // The diffuse irradiance, per unit of the lamp's intensity.
+    float irradiance;
+    float3 toSpecular = toCentre;
+    float thickness = source;
+    if (tube)
+    {
+        float3 lineStart = toCentre - halfAxis;
+        float3 lineDelta = halfAxis * 2.0;
+        irradiance = LineIrradiance(normal, lineStart, lineDelta);
+
+        // Where along the tube the reflected view ray passes closest: the point whose light the highlight
+        // is made of.
+        float3 reflected = reflect(-toEye, normal);
+        float along = dot(reflected, lineDelta);
+        float denominator = dot(lineDelta, lineDelta) - (along * along);
+        float t = denominator > 1e-6
+            ? ((dot(reflected, lineStart) * along) - dot(lineStart, lineDelta)) / denominator
+            : 0.5;
+        toSpecular = lineStart + (lineDelta * saturate(t));
+        thickness = clamp(rect.w, 0.02, source);
+    }
+    else
+    {
+        irradiance = saturate(dot(normal, centreDir)) / max(distanceSq, source * source);
+    }
+
+    float specularDistanceSq = max(dot(toSpecular, toSpecular), 1e-6);
+    float3 specularDir = toSpecular * rsqrt(specularDistanceSq);
+
+    diffuseWeight = dot(colour, float3(0.2126, 0.7152, 0.0722)) * irradiance;
+    if (irradiance <= 0.0 && dot(normal, specularDir) <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    // The highlight: the lobe widened by the angle the source spans from here, and renormalised so the
+    // wider lobe carries the same energy rather than more.
+    float alpha = max(roughness, 0.02) * max(roughness, 0.02);
+    float widened = saturate(alpha + (thickness / (2.0 * sqrt(specularDistanceSq))));
+    float normalisation = (alpha / widened) * (alpha / widened);
+
+    float3 lobeDiffuse;
+    float3 lobeSpecular;
+    EvaluateSurface(
+        albedo,
+        metallic,
+        specularLevel,
+        sqrt(widened),
+        normal,
+        toEye,
+        specularDir,
+        lobeDiffuse,
+        lobeSpecular);
+
+    float3 diffuseColour = albedo * (1.0 - metallic);
+    float specularIrradiance = 1.0 / max(specularDistanceSq, thickness * thickness);
+    return colour * ((diffuseColour * irradiance) + (lobeSpecular * normalisation * specularIrradiance * kPi));
 }
 
 // How much of the flashlight gets past what stands in its way at this pixel: one where no mask was made.
@@ -734,6 +1106,17 @@ float4 fragmentMain(Varyings input) : SV_Target
         float3 viewRay = normalize(float3(ndc.x / gi.unproject.x, -ndc.y / gi.unproject.y, 1.0));
         float3 worldRay = normalize(mul(gi.viewToWorld, float4(viewRay, 0.0)).xyz);
         float3 background = SampleSkyBackground(uSkyView, uSkyViewSampler, worldRay, viewHeightKm);
+
+        // The sun's own disc, which the sky's table is far too coarse to hold. Its radiance is the
+        // sunlight spread over the little solid angle the disc subtends -- some ten thousand times the
+        // sky round it -- so it is what glares, blooms, and throws rays through every gap in front of
+        // it; without it the sun was a soft patch of haze and nothing in front of it cast a ray.
+        float sunPixelAngle = (2.0 * uvPixelWidth) / max(gi.unproject.x, 1e-4);
+        background += SunDisc(
+            worldRay,
+            normalize(mul(gi.viewToWorld, float4(light.sunDirectionModel.xyz, 0.0)).xyz),
+            light.sunColourScale.rgb * light.sunColourScale.w,
+            sunPixelAngle);
 
         // The stars and the moon over the air, dimmed by as much of it as their light crosses. A pixel's
         // angular width at the centre of the view keeps every star at least a pixel across.
@@ -819,9 +1202,19 @@ float4 fragmentMain(Varyings input) : SV_Target
     float visibility = 1.0;
     if (ndotl > 0.0 || debugView == 12)
     {
-        visibility = gi.probeMisc.w > 0.5
-            ? uSunShadow.SampleLevel(uSunShadowSampler, vUv, 0.0).r
-            : SunVisibility(viewPos, normal);
+        if (gi.probeMisc.w > 0.5)
+        {
+            visibility = uSunShadow.SampleLevel(uSunShadowSampler, vUv, 0.0).r;
+        }
+        else
+        {
+            visibility = SunVisibility(viewPos, normal, input.position.xy);
+            if (visibility > 0.0 && gi.shadowConfig.x > 0.5)
+            {
+                float3 viewSun = mul(float4(sunDirection, 0.0), gi.viewToWorld).xyz;
+                visibility *= ContactShadow(viewPos, viewSun, gi.camera.w, input.position.xy);
+            }
+        }
     }
 
     if (debugView == 12) { return float4(visibility, visibility, visibility, 1.0); }
@@ -874,8 +1267,12 @@ float4 fragmentMain(Varyings input) : SV_Target
         return float4(waterMask, (normal.xy * 0.5) + 0.5, 1.0);
     }
 
-    float3 sunIlluminance =
-        light.sunColourScale.rgb * scale * SunTransmittance(sunDirection, viewHeightKm);
+    // The sun as the host hands it, which is already what the air lets through to the ground at this hour
+    // (DayNightCycle: the path's transmittance relative to a sun thirty degrees up, where the authored
+    // colour is read). Taking the air's transmittance off a second time here dimmed and reddened every low
+    // sun twice over -- a dusk that read muddy instead of warm -- and set the lit walls apart from the fog,
+    // the cache and the traced light, which all take the host's colour as it is.
+    float3 sunIlluminance = light.sunColourScale.rgb * scale;
 
     float3 surfaceDiffuse;
     float3 surfaceSpecular;
@@ -901,7 +1298,7 @@ float4 fragmentMain(Varyings input) : SV_Target
 
     int lampCount = int(lamps.control.x + 0.5);
 
-    float3 lampShadow = UpsampleLampVisibility(vUv, viewPos.z);
+    float3 lampShadow = UpsampleLampVisibility(vUv, viewPos.z, normal);
 
     // What stands between this pixel and its lamps: the traced ratio of its shadowed lamp light to its
     // unshadowed lamp light, estimated by the lamp trace from a few rays drawn in proportion to what each
@@ -916,6 +1313,18 @@ float4 fragmentMain(Varyings input) : SV_Target
     bool lampShadows = lamps.control.y > 0.5;
     float lampOcclusion = lampShadows ? clamp(lampShadow.x, 0.0, 1.0) : 1.0;
 
+    if (debugView == 29)
+    {
+        return float4(saturate(lampShadow.x), lampShadow.y > 0.004 ? saturate(lampShadow.y) : 0.0, 0.0, 1.0);
+    }
+
+    if (debugView == 30)
+    {
+        float mapLit = saturate(lampShadow.x);
+        float field = lampShadow.y > 0.0 ? saturate(lampShadow.y - 0.002) : 0.0;
+        return float4(saturate(1.0 - mapLit - field), mapLit, field, 1.0);
+    }
+
     if (debugView == 26)
     {
         return lampShadows && lampShadow.y <= 0.0
@@ -926,27 +1335,14 @@ float4 fragmentMain(Varyings input) : SV_Target
     float3 lampLight = float3(0.0, 0.0, 0.0);
     for (int i = 0; i < lampCount; i++)
     {
-        float3 lightDir;
-        float3 radiance;
-        if (LampReaching(i, viewPos, normal, lightDir, radiance) < 1e-5)
+        float lampWeight;
+        float3 lampTerm = LampShade(
+            i, viewPos, normal, worldView, albedo, metallic, specularLevel, roughness, lampWeight) * lampOcclusion;
+        if (all(lampTerm <= float3(0.0, 0.0, 0.0)))
         {
             continue;
         }
 
-        float3 lampDiffuse;
-        float3 lampSpecular;
-        EvaluateSurface(
-            albedo,
-            metallic,
-            specularLevel,
-            roughness,
-            normal,
-            worldView,
-            lightDir,
-            lampDiffuse,
-            lampSpecular);
-
-        float3 lampTerm = (lampDiffuse + lampSpecular) * radiance * kPi * lampOcclusion;
         sunLight += lampTerm;
         lampLight += lampTerm;
     }
@@ -1061,6 +1457,16 @@ float4 fragmentMain(Varyings input) : SV_Target
         * 0.3183098862
         * ((f0 * environmentBrdf.x) + float3(f90 * environmentBrdf.y, f90 * environmentBrdf.y, f90 * environmentBrdf.y))
         * SpecularOcclusion(noVSpecular, alpha, ambientVisibility);
+
+    // Where the reflection pass answers this pixel with the environment itself, it stands in place of
+    // this estimate rather than on top of it; faded over the same top quarter of its roughness range the
+    // reflection fades over, so the two hand over without a line. See WithReflectionCoverage.
+    float reflectionCeiling = gi.shelterMap2.z;
+    if (reflectionCeiling > 0.0)
+    {
+        float covered = clamp((reflectionCeiling - roughness) / max(reflectionCeiling * 0.25, 1e-3), 0.0, 1.0);
+        ambientSpecular *= 1.0 - covered;
+    }
 
     if (gathered)
     {

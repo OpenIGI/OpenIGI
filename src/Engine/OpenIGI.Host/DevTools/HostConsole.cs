@@ -171,8 +171,6 @@ public sealed class HostConsole : IDisposable
                 + $"r_deferred={Rendering.RenderCVars.Deferred.Value}, "
                 + $"r_taa={Rendering.RenderCVars.TemporalFeedback.Value:0.###}, "
                 + $"r_scale={Rendering.RenderCVars.RenderScale.Value:0.###}, "
-                + $"r_dof={Rendering.RenderCVars.FocalDistance.Value:0.#}/{Rendering.RenderCVars.FocalRange.Value:0.#}/"
-                + $"{Rendering.RenderCVars.FocalBlur.Value:0.#}, "
                 + $"r_motion_blur={Rendering.RenderCVars.MotionBlur.Value:0.###}.");
 
         System.Variables.AnyChanged += OnVariableChanged;

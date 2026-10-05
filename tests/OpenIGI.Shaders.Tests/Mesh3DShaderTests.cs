@@ -99,7 +99,7 @@ public sealed class Mesh3DShaderTests
     public void The_fragment_stage_applies_the_lightmap_gain()
     {
         Assert.Contains(
-            "float lightmapGain = abs(marker) > 0.5 ? push.markerExposure.y : 1.0;",
+            "float lightmapGain = (abs(marker) > 0.5 && cLinearScene == 0) ? push.markerExposure.y : 1.0;",
             Source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -118,7 +118,7 @@ public sealed class Mesh3DShaderTests
     public void The_fragment_stage_fogs_towards_the_frames_air()
     {
         Assert.Contains(
-            "return float4(lerp(push.normalKey2.xyz, base, input.fog), alpha);",
+            "float3 shown = lerp(push.normalKey2.xyz, base, input.fog);",
             Source,
             StringComparison.Ordinal);
 

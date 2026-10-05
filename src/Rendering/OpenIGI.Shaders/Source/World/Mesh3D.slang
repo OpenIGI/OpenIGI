@@ -77,6 +77,12 @@ OPENIGI_PUSH_CONSTANT(MeshPush, push);
 [vk::constant_id(10)] const float cSunGreen = 0.0;
 [vk::constant_id(11)] const float cSunBlue = 0.0;
 
+// Whether the target holds the scene in linear light before exposure (Mesh3DConstants.LinearScene): the
+// draw composites at the display encoding as the original did, then decodes once and is divided by the
+// exposure the resolve will apply. Written straight into that image instead, an effect was encoded a second
+// time on the way out -- washed out and too bright -- and swung with the eye's adaptation.
+[vk::constant_id(12)] const int cLinearScene = 0;
+
 struct VertexInput
 {
     [[vk::location(0)]] float3 position;
@@ -240,7 +246,7 @@ float4 fragmentMain(Varyings input) : SV_Target
     // What the sampled lightmap is multiplied by before it modulates the texture: the device's
     // lightmap scale, which a WORLD draw carries in the exposure slot it has no other use for.
     // The rig reads that same slot as its exposure, which is why this is gated on the marker.
-    float lightmapGain = abs(marker) > 0.5 ? push.markerExposure.y : 1.0;
+    float lightmapGain = (abs(marker) > 0.5 && cLinearScene == 0) ? push.markerExposure.y : 1.0;
 
     float3 base = SampledDisplay(diffuse.rgb) * lightmap * lightmapGain * input.color.rgb * input.fade * modelTint;
 
@@ -267,7 +273,21 @@ float4 fragmentMain(Varyings input) : SV_Target
         // What the hardware fog did for the original: the surface faded into the air's own
         // colour, which an additive pass is handed as black so that a ground drawn as several
         // passes fogs once rather than once per pass.
-        return float4(lerp(push.normalKey2.xyz, base, input.fog), alpha);
+        float3 shown = lerp(push.normalKey2.xyz, base, input.fog);
+        if (cLinearScene != 0)
+        {
+            // The lightmap scale and the inverse exposure, together: see ForwardPushBlock.
+            return float4(DecodeSrgb(max(shown, float3(0.0, 0.0, 0.0))) * push.markerExposure.y, alpha);
+        }
+
+        return float4(shown, alpha);
+    }
+
+    // The rig is lit, and light falls on albedo, which is linear: over the scene's linear image the
+    // composited colour is decoded first, as the G-buffer's is.
+    if (cLinearScene != 0)
+    {
+        base = DecodeSrgb(max(base, float3(0.0, 0.0, 0.0)));
     }
 
     // Camera-relative key and fill, the same directions the OpenGL backend uses. View space here

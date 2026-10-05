@@ -7,6 +7,7 @@ using OpenIGI.Rendering.Pipeline.Sky;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Sky;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Temporal;
 
 namespace OpenIGI.Rendering.Pipeline;
 
@@ -60,7 +61,12 @@ public sealed partial class GraphicsDevice
     // The last harmonics that arrived, answered again while a newer copy is still in flight.
     private readonly float[] _skyIrradiance = new float[SkyAtmosphere.IrradianceFloats];
     private bool _skyIrradianceKnown;
+
+    // Which march of the sky the held harmonics were copied after; see TryGetSkyIrradiance.
+    private int _skyIrradianceBuild;
+
     private BloomPass? _bloom;
+    private SunShaftPass? _sunShafts;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
     private IRhiBindGroup? _surfaceGroup;
@@ -238,7 +244,7 @@ public sealed partial class GraphicsDevice
                 load,
                 RhiStoreOp.Store,
                 DepthClearValue: 0f),
-            _profiler.Time(RenderStage.Geometry),
+            _profiler.Time(RenderStage.Geometry, "geometry"),
 
             // Where the world's visibility probes land; see IssueOcclusionQuery.
             OcclusionQuerySet: _occlusion.CurrentSet,
@@ -259,7 +265,7 @@ public sealed partial class GraphicsDevice
         _scenePass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],
             new RhiDepthAttachment(scene.View(SceneTargetId.Depth), RhiLoadOp.Load, RhiStoreOp.Store, DepthClearValue: 0f),
-            _profiler.Time(RenderStage.Forward),
+            _profiler.Time(RenderStage.Forward, "forward"),
             Label: "forward"));
 
         ApplySceneViewport(_scenePass);
@@ -438,7 +444,7 @@ public sealed partial class GraphicsDevice
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(_frame.Target, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
-            Timestamps: _profiler.Time(RenderStage.ToneMapGrade),
+            Timestamps: _profiler.Time(RenderStage.ToneMapGrade, "tonemap"),
             Label: "resolve")))
         {
             pass.SetViewport(0, 0, CurrentMode.Width, CurrentMode.Height, 0f, 1f);
@@ -472,7 +478,7 @@ public sealed partial class GraphicsDevice
         }
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Bloom),
+            _profiler.Time(RenderStage.Bloom, "bloom"),
             "bloom")))
         {
             (int width, int height) = PostSize(scene);
@@ -484,9 +490,75 @@ public sealed partial class GraphicsDevice
                 post.BloomIntensity,
                 post.BloomThreshold,
                 FrameSlot);
+
+            // The sun's shafts, laid onto the bloom where the sun is on screen or near it.
+            float shafts = RenderCVars.SunShafts.Value;
+            if (shafts > 0f && bloom.Result is { } summed && SunOnScreen(out (float X, float Y) sunUv, out float visible))
+            {
+                _sunShafts ??= new SunShaftPass(_device, FramesInFlight, _retired);
+                _sunShafts.Record(
+                    pass,
+                    colour,
+                    width,
+                    height,
+                    scene.View(SceneTargetId.Depth),
+                    scene.Width,
+                    scene.Height,
+                    summed,
+                    Math.Max(1, width >> 1),
+                    Math.Max(1, height >> 1),
+                    sunUv,
+                    shafts * SunShaftScale,
+                    visible,
+                    Math.Min(shafts, 1f) * SunShaftOcclusion,
+                    (_unprojection.Near, _unprojection.Far),
+                    FrameSlot);
+                return _sunShafts.Result;
+            }
         }
 
         return bloom.Result;
+    }
+
+    /// <summary>What the sky round the sun adds to the bloom as shafts, at a strength of one.</summary>
+    /// <remarks>
+    /// Under a half: the mask is the sky's own radiance, and laid on at full strength the glow round the sun
+    /// doubled the sky's brightness there; a quarter left the rays too faint to find.
+    /// </remarks>
+    private const float SunShaftScale = 0.4f;
+
+    /// <summary>How deep the shadows the occluders cast into the haze round the sun are cut, at a strength of one.</summary>
+    /// <remarks>
+    /// The shafts are mostly these: the lit air either side of an occluder's shadow. Bright rays alone, added
+    /// to an already bright sky, read as a smear rather than as light.
+    /// </remarks>
+    private const float SunShaftOcclusion = 0.6f;
+
+    /// <summary>Where the sun stands on screen, and how much of its shafts that leaves.</summary>
+    /// <param name="uv">The sun's screen position, which may lie off the screen.</param>
+    /// <param name="visible">One with the sun well on screen, fading to nought as it leaves it or turns behind.</param>
+    /// <returns>Whether there is anything to draw.</returns>
+    private bool SunOnScreen(out (float X, float Y) uv, out float visible)
+    {
+        Vector3f sun = _lighting.SunDirection;
+        uv = default;
+        visible = 0f;
+        if (sun.Z <= 0.05f)
+        {
+            return false;
+        }
+
+        uv = (
+            0.5f + (sun.X * _unprojection.XScale / (2f * sun.Z)),
+            0.5f - (sun.Y * _unprojection.YScale / (2f * sun.Z)));
+
+        // Off the screen by as much as a third of it the glow still reaches in; past that, nothing.
+        float outside = MathF.Max(
+            MathF.Max(-uv.X, uv.X - 1f),
+            MathF.Max(-uv.Y, uv.Y - 1f));
+        float edge = Math.Clamp(1f - (outside / 0.35f), 0f, 1f);
+        visible = edge * Math.Clamp((sun.Z - 0.05f) * 4f, 0f, 1f);
+        return visible > 0.001f;
     }
 
     /// <summary>Records the shading: the whole G-buffer read back as textures, over one triangle.</summary>
@@ -522,7 +594,8 @@ public sealed partial class GraphicsDevice
 
         DeferredLightingParameters.WriteGi(
             gi,
-            WithFlashlight(WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState())))))),
+            WithReflectionCoverage(
+                WithFlashlight(WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState()))))))),
             CascadeSplits,
             CascadeMatrices);
         DeferredLampBlock.Write(lamps, LampState(), LocalLights);
@@ -549,7 +622,7 @@ public sealed partial class GraphicsDevice
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
-            Timestamps: _profiler.Time(RenderStage.Lighting),
+            Timestamps: _profiler.Time(RenderStage.Lighting, "lighting"),
             Label: "shading"));
 
         pass.SetViewport(0, 0, scene.Width, scene.Height, 0f, 1f);
@@ -575,35 +648,34 @@ public sealed partial class GraphicsDevice
         IRhiCommandEncoder encoder = Encoder();
 
         using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Setup),
+            _profiler.Time(RenderStage.Setup, "setup"),
             "sky")))
         {
             sky.Record(pass, FrameSlot, SkyConditions.ForScene(_lighting, _viewToWorld, altitudeMetres: 2f));
         }
 
-        sky.RecordReadback(encoder, FrameSlot);
-        _skyRecordedSlot = FrameSlot;
+        _skyRecordedSlot = sky.RecordNextReadback(encoder);
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Read from the harmonics the atmosphere copies down every frame — from the last frame SUBMITTED,
-    /// because the game asks mid-frame, after this frame's copy is recorded and before it is sent, and a
-    /// buffer mapped in that gap is one WebGPU will not let the frame copy into. Never the slot this frame
-    /// is copying into, either: a frame that drew no sky leaves the last copy's slot standing, and a later
-    /// frame can come round to that same slot. Nothing is waited for: while a slot's copy has not arrived,
-    /// the last harmonics that did are answered again -- which, for a sky that moves with the sun rather
-    /// than with the frame, is the same answer. No only before any have arrived.
+    /// Read from the harmonics the atmosphere copies down every frame, into a ring of its own deeper than
+    /// the frames in flight -- only from copies already SUBMITTED, because the game asks mid-frame, after
+    /// this frame's copy is recorded and before it is sent, and a buffer mapped in that gap is one WebGPU
+    /// will not let the frame copy into. Nothing is waited for: the newest copy that has arrived is read,
+    /// and while none newer has, the last harmonics that did are answered again. No only before any have
+    /// arrived.
     /// </remarks>
     public bool TryGetSkyIrradiance(Span<float> coefficients)
     {
         ThrowIfDisposed();
-        if (_sky is { } sky
-            && _skySubmittedSlot >= 0
-            && _skySubmittedSlot != _skyRecordedSlot
-            && sky.TryReadIrradiance(_skySubmittedSlot, _skyIrradiance))
+        // The newest copy that has already arrived, from any slot of the sky's ring: never a wait. The ring
+        // is deeper than the frames in flight, so while the sky changes a copy two or three frames old is
+        // always there, and the answer trails the sun by those frames rather than stalling every one.
+        if (_sky is { } sky && sky.TryReadNewest(_skyIrradianceBuild, _skyIrradiance, out int arrived))
         {
             _skyIrradianceKnown = true;
+            _skyIrradianceBuild = arrived;
         }
 
         // Once any have arrived, always an answer: a sky moves with the sun, not from one frame to the
@@ -747,7 +819,7 @@ public sealed partial class GraphicsDevice
         }
 
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
-        WriteForward(push, modelView, blend, hasLightmap, _sceneExposure);
+        WriteForward(push, modelView, blend, hasLightmap, _sceneExposure, linearScene: true);
 
         // A draw reflects when the frame has named a cube.
         (bool reflective, IRhiBindGroup environment) = EnvironmentFor();
@@ -779,18 +851,20 @@ public sealed partial class GraphicsDevice
     /// <summary>Builds everything the deferred frame needs, at the size it is asked for.</summary>
     private void EnsureDeferred(int width, int height, int outputWidth, int outputHeight)
     {
-        if (_scene is { } existing && existing.Matches(width, height, outputWidth, outputHeight))
+        int historyScale = TemporalResolveSettings.HistoryScaleFor(width, outputWidth > 0 ? outputWidth : width);
+
+        if (_scene is { } existing && existing.Matches(width, height, outputWidth, outputHeight, historyScale))
         {
             return;
         }
 
         if (_scene is { } resized)
         {
-            resized.Resize(width, height, outputWidth, outputHeight);
+            resized.Resize(width, height, outputWidth, outputHeight, historyScale);
             return;
         }
 
-        _scene = new SceneTargetSet(_device, width, height, outputWidth, outputHeight);
+        _scene = new SceneTargetSet(_device, width, height, outputWidth, outputHeight, _retired, historyScale);
 
         _surfaceLayout = _device.CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
             [new RhiBindGroupLayoutEntry(0, RhiBindingType.UniformBuffer, RhiShaderStages.Graphics)],
@@ -916,6 +990,7 @@ public sealed partial class GraphicsDevice
         _sky?.Dispose();
         _sky = null;
         _bloom?.Dispose();
+        _sunShafts?.Dispose();
         _bloom = null;
         _shading?.Dispose();
         _shading = null;

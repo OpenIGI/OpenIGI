@@ -329,4 +329,13 @@ internal sealed partial class GameHost
             }
         }
     }
+
+    /// <summary>How much of the night-vision shift a night this deep takes, nought to one.</summary>
+    /// <param name="nightfall">How far into night the sky is (<see cref="RenderCVars.Nightfall"/>).</param>
+    /// <returns>Nought through dusk, rising once the sun is some six degrees under, one at full night.</returns>
+    private static float NightVisionWeight(float nightfall)
+    {
+        float t = Math.Clamp((nightfall - 0.45f) / 0.55f, 0f, 1f);
+        return t * t * (3f - (2f * t));
+    }
 }

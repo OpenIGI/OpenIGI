@@ -119,7 +119,14 @@ bool FreshOcclusion(int2 px, out float ao, out float3 position, out float3 norma
     // and the perspective divide shrinks it on screen as the surface recedes -- the correct
     // screen-space AO behaviour.
     float radius = p.params.x;
-    float bias = p.params.z * radius;
+
+    // The bias is what one surface must stand in front of a sample by to count, and the depth buffer is
+    // only as good as a pixel: a couple of pixels' width at this distance, plus a fraction of the radius
+    // for the reconstruction's own error. Taken as a share of the radius alone it grew with the radius --
+    // a quarter of a metre at the old fourteen -- and nothing nearer than that ever occluded anything, which
+    // is exactly the contact darkening this pass is for.
+    float pixelMetres = position.z * 2.0 / max(p.unproject.x * p.resolution.x, 1e-3);
+    float bias = (1.5 * pixelMetres) + (p.params.z * 0.1 * radius);
     const int kCount = 16;
     float occlusion = 0.0;
 
@@ -132,7 +139,12 @@ bool FreshOcclusion(int2 px, out float ao, out float3 position, out float3 norma
         float theta = 6.2831853 * r1;
         float disk = sqrt(r2);
         float3 hemi = float3(disk * cos(theta), disk * sin(theta), sqrt(max(1.0 - r2, 0.0)));
-        float scale = lerp(0.1, 1.0, float(i) / float(kCount));
+        // Crowded towards the surface: a quadratic spread from a fiftieth of the radius, so half the
+        // samples fall in the nearest quarter -- where a wall meets the floor, where a kerb meets the road.
+        // Spread evenly from a tenth, the nearest sample stood a tenth of the radius out and the crease
+        // itself was never sampled.
+        float along = (float(i) + 0.5) / float(kCount);
+        float scale = lerp(0.02, 1.0, along * along);
 
         // The tangent frame applied by hand rather than as a matrix. GLSL builds a mat3 from three
         // COLUMNS and Slang from three rows, so writing out the combination says what is meant in

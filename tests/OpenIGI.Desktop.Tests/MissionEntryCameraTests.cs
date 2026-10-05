@@ -315,60 +315,6 @@ public sealed class MissionEntryCameraTests
     }
 
     [Fact]
-    public void TheShotFocusesOnWhatItIsLookingAt()
-    {
-        // The menu focuses at a fixed forty metres, which once the camera has climbed is far short of the
-        // ground and blurs the whole world evenly. While the shot is still letting go of that framing its
-        // focus has to follow the distance to its actual subject instead.
-        MissionEntryCamera entry = Begin(out CameraPose showcase, out CameraPose landing);
-
-        float whileClimbing = 0f;
-        float onceClear = -1f;
-        RunToEnd(entry, showcase, landing, _ =>
-        {
-            if (entry.Phase == MissionEntryPhase.Ascend)
-            {
-                whileClimbing = MathF.Max(whileClimbing, entry.FocalDistanceMetres);
-            }
-            else if (entry.Phase == MissionEntryPhase.Travel)
-            {
-                onceClear = MathF.Max(onceClear, entry.FocalDistanceMetres);
-            }
-        });
-
-        // Climbing away from the menu's forty metres, the plane follows the subject out.
-        Assert.True(whileClimbing > 80f, $"focused at only {whileClimbing:F0} m during the climb");
-
-        // And once the menu's framing has fully eased off, no focal plane at all — the defocus gather is
-        // turned off outright rather than left running against a plane nothing is behind.
-        Assert.Equal(0f, onceClear);
-        Assert.Equal(0f, entry.FocalDistanceMetres);
-    }
-
-    [Fact]
-    public void TheMenusDepthOfFieldIsFullyOffBeforeTheDescentStarts()
-    {
-        MissionEntryCamera entry = Begin(out CameraPose showcase, out CameraPose landing);
-
-        while (entry.Phase != MissionEntryPhase.Descend)
-        {
-            if (entry.WantsPromotion)
-            {
-                entry.NotifyPromoted();
-            }
-
-            if (entry.Phase == MissionEntryPhase.Hold)
-            {
-                entry.NotifyReady();
-            }
-
-            entry.Update(Frame, showcase, landing);
-        }
-
-        Assert.Equal(0f, entry.MenuDepthOfField);
-    }
-
-    [Fact]
     public void AShotThatOpensAtAltitudeHoldsOverTheStartAndLandsInTheEyes()
     {
         // A cold start or a restart has no orbit to rise out of: the shot begins at its hold, with the

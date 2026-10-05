@@ -87,6 +87,7 @@ public sealed partial class GraphicsDevice
         if (traces)
         {
             reflect.Bind("uScene", TracedWorld!.TraceableScene);
+            reflect.Bind("uCutoutMasks", TracedWorld.CutoutMasks, _reflectSampler!);
         }
 
         bool roofs = HasShelterMap();
@@ -110,7 +111,8 @@ public sealed partial class GraphicsDevice
             complete ? ReflectionCacheLookup.Of(_surfaceCacheBinding) : default,
             _viewModelLensX,
             _viewModelLensY,
-            marchesField ? _distanceFieldBinding : DistanceFieldBinding.None));
+            marchesField ? _distanceFieldBinding : DistanceFieldBinding.None,
+            traces ? TracedWorld!.HitRecordAddress : 0UL));
 
         reflect.Bind("uLit", scene.View(SceneTargetId.Lit), _reflectSampler!);
         reflect.Bind("uSceneDepth", scene.View(SceneTargetId.Depth), _reflectSampler!);
@@ -122,13 +124,33 @@ public sealed partial class GraphicsDevice
         reflect.Bind("p", _sceneReflectBlock.Write<float>(FrameSlot, block));
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Reflections),
+            _profiler.Time(RenderStage.Reflections, "scene-reflection"),
             "reflect")))
         {
             reflect.Dispatch(pass, scene.Width, scene.Height);
         }
 
         RecordReflectionComposite(scene, isolate);
+    }
+
+    /// <summary>Tells the shading how far this frame's reflection answers for every pixel it reaches.</summary>
+    /// <remarks>
+    /// Where the reflection traces, or marches the distance field past the screen, it answers every pixel up
+    /// to its roughness ceiling, and the shading leaves out its own estimate of the environment's specular
+    /// there -- the irradiance it gathered, weighted as a reflection -- so the light is counted once. Both
+    /// used to be added: glossy floors and metal came out washed out and too bright, near white at a
+    /// grazing angle. A screen march alone answers only where its ray lands, and the estimate stays.
+    /// </remarks>
+    private DeferredLightingState WithReflectionCoverage(in DeferredLightingState state)
+    {
+        bool covers = _reflectionSettings.Enabled
+            && _debugView is DebugView.None or DebugView.Ssr
+            && _surfaceCacheBinding.IsPresent
+            && (WillTraceReflections() || _distanceFieldBinding.IsPresent);
+        return state with
+        {
+            ReflectionCeiling = covers ? Math.Clamp(RenderCVars.TracedReflectionMaxRoughness.Value, 0f, 1f) : 0f,
+        };
     }
 
     private void DisposeSceneReflection()

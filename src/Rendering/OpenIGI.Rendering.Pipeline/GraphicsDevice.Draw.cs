@@ -512,7 +512,9 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     /// What the frame will be exposed by, which the lit rig divides itself by so that it leaves the tone
     /// map as it was lit. One on the direct path, which is never tone mapped.
     /// </param>
-    private void WriteForward(Span<float> push, in Matrix4f modelView, BlendMode blend, bool hasLightmap, float exposure)
+    /// <param name="linearScene">Whether the draw lands in the scene's linear image (see ForwardDrawState).</param>
+    private void WriteForward(
+        Span<float> push, in Matrix4f modelView, BlendMode blend, bool hasLightmap, float exposure, bool linearScene = false)
     {
         ForwardDrawState state = new(
             _projection,
@@ -533,7 +535,8 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             LampLight: ForwardDrawMarker.IsStudioRig(ForwardDrawMarker.For(blend, _firstPerson, _lighting.Model))
                 ? LampFill.AtEye(LocalLights) + (_flashlight.IsOn ? _flashlight.RigFill : Vector3f.Zero)
                 : Vector3f.Zero,
-            _firstPerson);
+            _firstPerson,
+            linearScene);
 
         ForwardPushBlock.Write(push, state, modelView, blend, hasLightmap);
     }

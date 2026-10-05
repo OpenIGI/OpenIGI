@@ -16,6 +16,18 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="RecordAddress">Where the hit records live, which name each hit's mask.</param>
 /// <param name="FieldClipmaps">The distance field's clipmaps, when <paramref name="World"/> is null.</param>
 /// <param name="Field">The field's block (<see cref="TracedLampShadow.FieldFloats"/> floats), likewise.</param>
+/// <param name="SunVisibility">The sun's traced visibility this frame, or <see langword="null"/> where it was not traced.</param>
+/// <param name="SunDirection">The world direction towards the sun.</param>
+/// <param name="LampMaps">The nearest lamps' shadow maps, one per layer, or <see langword="null"/> for none yet.</param>
+/// <param name="LampMapSampler">The comparison sampler those maps are read through.</param>
+/// <param name="LightingChanged">Whether a lamp's output changed a moment ago, which holds the history short.</param>
+/// <param name="CoarseMaps">Every lamp's coarse cube of maps, for the lamps the fine maps miss, or <see langword="null"/>.</param>
+/// <param name="Coarse">This frame's lamps' coarse records (<see cref="TracedLampShadow.CoarseFloats"/> floats).</param>
+/// <param name="SunLuminance">The sun's luminance as the lighting pass applies it; nought with no traced sun.</param>
+/// <param name="MinimumVisible">
+/// The summed lamp light at a pixel below which its shadow could not show at this exposure; such a pixel is
+/// left lit without a ray. Nought traces every pixel any lamp reaches.
+/// </param>
 public readonly record struct TracedLampFrame(
     IRhiAccelerationStructure? World,
     Vector3f CameraPosition,
@@ -25,7 +37,16 @@ public readonly record struct TracedLampFrame(
     IRhiTextureView? CutoutMasks,
     ulong RecordAddress,
     IRhiTextureView? FieldClipmaps = null,
-    ReadOnlyMemory<float> Field = default);
+    ReadOnlyMemory<float> Field = default,
+    float MinimumVisible = 0f,
+    IRhiTextureView? SunVisibility = null,
+    Vector3f SunDirection = default,
+    float SunLuminance = 0f,
+    IRhiTextureView? LampMaps = null,
+    IRhiSampler? LampMapSampler = null,
+    bool LightingChanged = false,
+    IRhiTextureView? CoarseMaps = null,
+    ReadOnlyMemory<float> Coarse = default);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -48,7 +69,13 @@ public sealed class TracedLampShadow : IDisposable
     private static readonly RhiClearColor Unshadowed = new(1f, 0f, 0f, 0f);
 
     /// <summary>Floats in the software trace's field block: four corners with their voxel sizes, four ranges, and four integers.</summary>
-    public const int FieldFloats = 24;
+    public const int FieldFloats = 24 + (240 * 16) + (240 * 2) + DeferredLocalLight.Maximum;
+
+    /// <summary>
+    /// The size of the coarse-map block: six faces of sixteen floats for each of the frame's lamps (see
+    /// <c>GraphicsDevice.WriteLampCoarseMaps</c>), which the march reads for a lamp with no fine map.
+    /// </summary>
+    public const int CoarseFloats = DeferredLocalLight.Maximum * 6 * 16;
 
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
@@ -59,6 +86,8 @@ public sealed class TracedLampShadow : IDisposable
     private ComputePass? _trace;
     private ComputePass? _march;
     private ComputeParameters? _fieldParameters;
+    private ComputeParameters? _coarseParameters;
+    private readonly float[] _noCoarse = new float[CoarseFloats];
     private readonly ComputePass _temporal;
     private readonly ComputePass _spatial;
     private readonly ComputeParameters _traceParameters;
@@ -177,16 +206,25 @@ public sealed class TracedLampShadow : IDisposable
     /// <param name="frame">What to trace against, and the lamps.</param>
     /// <param name="state">This frame and the last at FULL resolution; halved here, jitter included.</param>
     /// <param name="velocity">The frame's motion field, or <see langword="null"/> when none was made before the shading.</param>
+    /// <param name="nextPass">
+    /// When given, each step -- the trace, the temporal and the spatial filter -- asks it for a pass of its
+    /// own under the step's name, so a profile can tell them apart; <paramref name="pass"/> is then unused.
+    /// </param>
     public void Record(
-        IRhiComputePassEncoder pass,
+        IRhiComputePassEncoder? pass,
         int frameInFlight,
         IRhiTextureView depth,
         IRhiTextureView normal,
         in TracedLampFrame frame,
         in TemporalFrameState state,
-        IRhiTextureView? velocity = null)
+        IRhiTextureView? velocity = null,
+        Func<string, IRhiComputePassEncoder>? nextPass = null)
     {
-        ArgumentNullException.ThrowIfNull(pass);
+        if (pass is null && nextPass is null)
+        {
+            throw new ArgumentNullException(nameof(pass));
+        }
+
         ArgumentNullException.ThrowIfNull(depth);
         ArgumentNullException.ThrowIfNull(normal);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -214,7 +252,10 @@ public sealed class TracedLampShadow : IDisposable
             state.Unprojection,
             frame.FrameIndex,
             frame.Lamps.Span,
-            frame.RecordAddress);
+            frame.RecordAddress,
+            frame.MinimumVisible,
+            frame.SunDirection,
+            frame.SunVisibility is null ? 0f : frame.SunLuminance);
 
         if (frame.World is { } world)
         {
@@ -224,8 +265,12 @@ public sealed class TracedLampShadow : IDisposable
             _trace.Bind("uNormal", normal, _sampler);
             _trace.Bind("uScene", world);
             _trace.Bind("uVisibility", raw.View);
+
+            // The normals stand in where no sun was traced: the slot is declared either way, and the
+            // luminance of nought keeps the shader from reading it.
+            _trace.Bind("uSunVisibility", frame.SunVisibility ?? normal);
             _trace.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
-            _trace.Dispatch(pass, _width, _height);
+            _trace.Dispatch(nextPass?.Invoke("lamp.shadow.trace") ?? pass!, _width, _height);
         }
         else if (frame.FieldClipmaps is { } clipmaps)
         {
@@ -238,9 +283,31 @@ public sealed class TracedLampShadow : IDisposable
             _march.Bind("uNormal", normal, _sampler);
             _march.Bind("uClipmaps", clipmaps, _sampler);
             _march.Bind("uVisibility", raw.View);
+            _march.Bind("uSunVisibility", frame.SunVisibility ?? normal);
+
+            // The nearest lamps' own maps. Made whenever the march runs, so the slots are always bound; a
+            // lamp is handed out as having none until a map has been drawn for it.
+            if (frame.LampMaps is { } maps && frame.LampMapSampler is { } comparison)
+            {
+                _march.Bind("uLampMaps", maps);
+                _march.Bind("uLampMapSampler", comparison);
+
+                // And every lamp's coarse cube, for the lamps the fine maps did not reach: far ones, past the
+                // budget, which the field alone answered and lit through the walls it cannot hold at that
+                // distance. The fine array stands in where there are none, with a block that says so.
+                _coarseParameters ??= new ComputeParameters(
+                    _device, CoarseFloats * sizeof(float), _framesInFlight, "lampshadow.coarse");
+                bool coarse = frame.CoarseMaps is not null && frame.Coarse.Length == CoarseFloats;
+                _march.Bind("uCoarseMaps", coarse ? frame.CoarseMaps! : maps);
+                _march.Bind(
+                    "c",
+                    coarse
+                        ? _coarseParameters.Write<float>(frameInFlight, frame.Coarse.Span)
+                        : _coarseParameters.Write<float>(frameInFlight, _noCoarse));
+            }
             _march.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
             _march.Bind("f", _fieldParameters.Write<float>(frameInFlight, frame.Field.Span));
-            _march.Dispatch(pass, _width, _height);
+            _march.Dispatch(nextPass?.Invoke("lamp.shadow.march") ?? pass!, _width, _height);
         }
         else
         {
@@ -262,7 +329,8 @@ public sealed class TracedLampShadow : IDisposable
         // Both halves run with the filter off -- the accumulation carries the frame count and the filter the
         // depth the shading's upsample reads -- and only the filtering itself stops.
         Span<float> temporal = stackalloc float[LampShadowParameters.TemporalFloats];
-        LampShadowParameters.WriteTemporal(temporal, half, _hasHistory, frame.Filter, velocityValid: velocity is not null);
+        LampShadowParameters.WriteTemporal(
+            temporal, half, _hasHistory, frame.Filter, velocityValid: velocity is not null, lightingChanged: frame.LightingChanged);
 
         _temporal.Bind("uRaw", raw.View, _sampler);
 
@@ -273,7 +341,7 @@ public sealed class TracedLampShadow : IDisposable
         _temporal.Bind("uHistory", history.View, _sampler);
         _temporal.Bind("uOutput", current.View);
         _temporal.Bind("p", _temporalParameters.Write<float>(frameInFlight, temporal));
-        _temporal.Dispatch(pass, _width, _height);
+        _temporal.Dispatch(nextPass?.Invoke("lamp.shadow.temporal") ?? pass!, _width, _height);
 
         Span<float> spatial = stackalloc float[LampShadowParameters.SpatialFloats];
         LampShadowParameters.WriteSpatial(
@@ -292,7 +360,7 @@ public sealed class TracedLampShadow : IDisposable
         _spatial.Bind("uNormal", normal, _sampler);
         _spatial.Bind("uOutput", filtered.View);
         _spatial.Bind("p", _spatialParameters.Write<float>(frameInFlight, spatial));
-        _spatial.Dispatch(pass, _width, _height);
+        _spatial.Dispatch(nextPass?.Invoke("lamp.shadow.spatial") ?? pass!, _width, _height);
 
         _current ^= 1;
         _hasHistory = true;
@@ -321,6 +389,7 @@ public sealed class TracedLampShadow : IDisposable
         _temporalParameters.Dispose();
         _traceParameters.Dispose();
         _fieldParameters?.Dispose();
+        _coarseParameters?.Dispose();
         _spatial.Dispose();
         _temporal.Dispose();
         _trace?.Dispose();
