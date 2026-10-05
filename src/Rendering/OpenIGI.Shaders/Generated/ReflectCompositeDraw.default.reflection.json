@@ -23,6 +23,27 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uDepth",
+      "group": 0,
+      "binding": 1,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "sampleType": "Depth"
+    },
+    {
+      "name": "uNormal",
+      "group": 0,
+      "binding": 2,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
     }
   ],
   "pushBlock": null,

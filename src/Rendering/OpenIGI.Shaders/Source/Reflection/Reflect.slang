@@ -487,6 +487,33 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             : clamp((ceiling - roughness) / max(ceiling, 1e-3), 0.0, 1.0);
 
         reflectance = fresnel * fade;
+
+        // A rough surface does not reflect along one line. The ray is aimed along a microfacet normal drawn
+        // from the surface's own distribution, a different one every frame, so the frames the temporal
+        // resolve averages together cover the lobe; the composite spreads each frame's answer over the
+        // footprint the roughness implies. Fired along the mirror direction alone, metal at a roughness of
+        // a half reflected the yard as sharply as a mirror -- chrome, where the material asks for brushed.
+        if (roughness > 0.05)
+        {
+            float alpha = roughness * roughness;
+            float u1 = FrameNoise(float2(px), p.misc.y);
+            float u2 = FrameNoise(float2(px) + float2(31.0, 17.0), p.misc.y);
+            float cosTheta = sqrt((1.0 - u1) / max(1.0 + (((alpha * alpha) - 1.0) * u1), 1e-6));
+            float sinTheta = sqrt(max(1.0 - (cosTheta * cosTheta), 0.0));
+            float phi = 6.2831853 * u2;
+            float3 up = abs(groundNormal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+            float3 tangent = normalize(cross(up, groundNormal));
+            float3 bitangent = cross(groundNormal, tangent);
+            float3 facet = normalize(
+                (tangent * (sinTheta * cos(phi))) + (bitangent * (sinTheta * sin(phi))) + (groundNormal * cosTheta));
+
+            // Only a facet that still reflects the view above the surface: one tilted past the horizon
+            // sends the ray into the ground, and the surface's own normal answers instead.
+            if (dot(reflect(worldRayToPixel, facet), groundNormal) > 0.02)
+            {
+                normalW = facet;
+            }
+        }
     }
 
     if (max(reflectance.r, max(reflectance.g, reflectance.b)) <= 0.003)
@@ -889,5 +916,9 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
 #endif
 
-    uReflection.Store(px, float4(reflection, (traces || marches) ? 1.0 : screenWeight));
+    // The alpha tells the composite what to do with it: two and over is a rough surface's reflection, its
+    // roughness the excess, to be spread over the footprint that implies; below is a sharp answer to lay
+    // down as it is -- water, glass, a mirror.
+    float spread = (!water && roughness > 0.05) ? 2.0 + roughness : (traces || marches) ? 1.0 : screenWeight;
+    uReflection.Store(px, float4(reflection, spread));
 }

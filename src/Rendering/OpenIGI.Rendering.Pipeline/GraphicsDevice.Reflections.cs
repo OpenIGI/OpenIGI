@@ -350,6 +350,8 @@ public sealed partial class GraphicsDevice
     {
         ShaderBindings bindings = _compositeBindings!;
         bindings.Bind("uReflection", scene.View(SceneTargetId.Reflection));
+        bindings.Bind("uDepth", scene.View(SceneTargetId.Depth));
+        bindings.Bind("uNormal", scene.View(SceneTargetId.Normal));
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],

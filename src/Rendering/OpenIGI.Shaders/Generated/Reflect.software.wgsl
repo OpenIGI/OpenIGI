@@ -1195,8 +1195,38 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         {
             t_1 = clamp((previousDiff_0 - roughness_2) / max(previousDiff_0, 0.00100000004749745f), 0.0f, 1.0f);
         }
-        reflectance_0 = fresnel_0 * vec3<f32>(t_1);
-        normalW_0 = groundNormal_0;
+        var _S86 : vec3<f32> = fresnel_0 * vec3<f32>(t_1);
+        if(roughness_2 > 0.05000000074505806f)
+        {
+            var alpha_0 : f32 = roughness_2 * roughness_2;
+            var u1_0 : f32 = FrameNoise_0(_S78, p_0.misc_0.y);
+            var cosTheta_0 : f32 = sqrt((1.0f - u1_0) / max(1.0f + (alpha_0 * alpha_0 - 1.0f) * u1_0, 9.99999997475242708e-07f));
+            var sinTheta_0 : f32 = sqrt(max(1.0f - cosTheta_0 * cosTheta_0, 0.0f));
+            var phi_0 : f32 = 6.28318548202514648f * FrameNoise_0(_S78 + vec2<f32>(31.0f, 17.0f), p_0.misc_0.y);
+            if((abs(groundNormal_0.z)) < 0.99900001287460327f)
+            {
+                reflectance_0 = vec3<f32>(0.0f, 0.0f, 1.0f);
+            }
+            else
+            {
+                reflectance_0 = vec3<f32>(1.0f, 0.0f, 0.0f);
+            }
+            var tangent_0 : vec3<f32> = normalize(cross(reflectance_0, groundNormal_0));
+            var facet_0 : vec3<f32> = normalize(tangent_0 * vec3<f32>((sinTheta_0 * cos(phi_0))) + cross(groundNormal_0, tangent_0) * vec3<f32>((sinTheta_0 * sin(phi_0))) + groundNormal_0 * vec3<f32>(cosTheta_0));
+            if((dot(reflect(worldRayToPixel_0, facet_0), groundNormal_0)) > 0.01999999955296516f)
+            {
+                normalW_0 = facet_0;
+            }
+            else
+            {
+                normalW_0 = groundNormal_0;
+            }
+        }
+        else
+        {
+            normalW_0 = groundNormal_0;
+        }
+        reflectance_0 = _S86;
         screenAllowed_0 = _S84;
     }
     if((max(reflectance_0.x, max(reflectance_0.y, reflectance_0.z))) <= 0.00300000002607703f)
@@ -1204,8 +1234,8 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         textureStore((uReflection_0), (vec2<u32>(_S77)), (vec4<f32>(reflection_1, 0.0f)));
         return;
     }
-    var _S86 : mat4x4<f32> = mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)]);
-    var rayView_0 : vec3<f32> = reflect(normalize(viewPos_0), normalize((((normalW_0) * (transpose(mat3x3<f32>(_S86[i32(0)].xyz, _S86[i32(1)].xyz, _S86[i32(2)].xyz)))))));
+    var _S87 : mat4x4<f32> = mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)]);
+    var rayView_0 : vec3<f32> = reflect(normalize(viewPos_0), normalize((((normalW_0) * (transpose(mat3x3<f32>(_S87[i32(0)].xyz, _S87[i32(1)].xyz, _S87[i32(2)].xyz)))))));
     var have_0 : bool;
     if(_S79)
     {
@@ -1222,20 +1252,20 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     {
         screenAllowed_0 = false;
     }
-    var _S87 : i32 = max(i32(p_0.ssr_0.x + 0.5f), i32(1));
-    var _S88 : f32 = p_0.misc_0.z;
-    var _S89 : f32 = 0.20000000298023224f * (0.5f + Dither_0(_S78, p_0.misc_0.y));
-    const _S90 : vec2<f32> = vec2<f32>(0.0f, 0.0f);
+    var _S88 : i32 = max(i32(p_0.ssr_0.x + 0.5f), i32(1));
+    var _S89 : f32 = p_0.misc_0.z;
+    var _S90 : f32 = 0.20000000298023224f * (0.5f + Dither_0(_S78, p_0.misc_0.y));
+    const _S91 : vec2<f32> = vec2<f32>(0.0f, 0.0f);
     have_0 = false;
     previousDiff_0 = -1.0f;
     var previous_1 : vec3<f32> = viewPos_0;
     var i_1 : i32 = i32(0);
-    t_1 = _S89;
+    t_1 = _S90;
     for(;;)
     {
         if(screenAllowed_0)
         {
-            resolved_3 = i_1 < _S87;
+            resolved_3 = i_1 < _S88;
         }
         else
         {
@@ -1247,58 +1277,58 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         else
         {
             hitEdge_0 = 0.0f;
-            hitUv_0 = _S90;
+            hitUv_0 = _S91;
             break;
         }
         var pv_0 : vec3<f32> = viewPos_0 + rayView_0 * vec3<f32>(t_1);
-        var _S91 : f32 = pv_0.z;
+        var _S92 : f32 = pv_0.z;
         var met_0 : bool;
-        if(_S91 <= (p_0.unproject_0.z))
+        if(_S92 <= (p_0.unproject_0.z))
         {
             met_0 = true;
         }
         else
         {
-            met_0 = t_1 > _S88;
+            met_0 = t_1 > _S89;
         }
         if(met_0)
         {
             hitEdge_0 = 0.0f;
-            hitUv_0 = _S90;
+            hitUv_0 = _S91;
             break;
         }
         var t_2 : f32 = t_1 + max(0.20000000298023224f, t_1 * 0.07999999821186066f);
         var huv_0 : vec2<f32> = ViewToUv_0(pv_0);
-        var _S92 : bool;
-        if((any((huv_0 < _S90))))
+        var _S93 : bool;
+        if((any((huv_0 < _S91))))
         {
-            _S92 = true;
+            _S93 = true;
         }
         else
         {
-            _S92 = (any((huv_0 > vec2<f32>(1.0f, 1.0f))));
+            _S93 = (any((huv_0 > vec2<f32>(1.0f, 1.0f))));
         }
-        if(_S92)
+        if(_S93)
         {
             hitEdge_0 = 0.0f;
-            hitUv_0 = _S90;
+            hitUv_0 = _S91;
             break;
         }
         var d_1 : f32 = DepthBilinear_0(uSceneDepth_0, uSceneDepthSampler_0, huv_0);
         if(d_1 <= 0.0f)
         {
             previousDiff_0 = -1.0f;
-            var _S93 : i32 = i_1 + i32(1);
+            var _S94 : i32 = i_1 + i32(1);
             have_0 = true;
             previous_1 = pv_0;
-            i_1 = _S93;
+            i_1 = _S94;
             t_1 = t_2;
             continue;
         }
-        var diff_0 : f32 = _S91 - SceneViewZ_0(d_1);
+        var diff_0 : f32 = _S92 - SceneViewZ_0(d_1);
         if(diff_0 > 0.0f)
         {
-            var _S94 : f32 = max(p_0.ssr_0.w, _S91 * 0.05000000074505806f);
+            var _S95 : f32 = max(p_0.ssr_0.w, _S92 * 0.05000000074505806f);
             if(have_0)
             {
                 resolved_3 = previousDiff_0 < 0.0f;
@@ -1313,7 +1343,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
             }
             else
             {
-                screenAllowed_0 = diff_0 < _S94;
+                screenAllowed_0 = diff_0 < _S95;
             }
             if(screenAllowed_0)
             {
@@ -1353,13 +1383,13 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                 var landed_0 : f32 = SampleSceneViewZ_0(hitUv_1);
                 if(landed_0 > 0.0f)
                 {
-                    met_0 = (replaced_0.z - landed_0) < _S94;
+                    met_0 = (replaced_0.z - landed_0) < _S95;
                 }
                 else
                 {
                     met_0 = false;
                 }
-                var vig_0 : vec2<f32> = clamp(abs(hitUv_1 * vec2<f32>(2.0f) - vec2<f32>(1.0f)) * vec2<f32>(5.0f) - vec2<f32>(4.0f), _S90, vec2<f32>(1.0f, 1.0f));
+                var vig_0 : vec2<f32> = clamp(abs(hitUv_1 * vec2<f32>(2.0f) - vec2<f32>(1.0f)) * vec2<f32>(5.0f) - vec2<f32>(4.0f), _S91, vec2<f32>(1.0f, 1.0f));
                 if(met_0)
                 {
                     puddle_0 = clamp(1.0f - dot(vig_0, vig_0), 0.0f, 1.0f);
@@ -1374,15 +1404,15 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
             else
             {
                 hitEdge_0 = 0.0f;
-                hitUv_0 = _S90;
+                hitUv_0 = _S91;
             }
             break;
         }
         previousDiff_0 = diff_0;
-        var _S93 : i32 = i_1 + i32(1);
+        var _S94 : i32 = i_1 + i32(1);
         have_0 = true;
         previous_1 = pv_0;
-        i_1 = _S93;
+        i_1 = _S94;
         t_1 = t_2;
     }
     var screenWeight_0 : f32;
@@ -1390,7 +1420,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     {
         var hit_1 : vec4<f32> = (textureSampleLevel((uLit_0), (uLitSampler_0), (hitUv_0), (0.0f)));
         var world_5 : f32 = step(0.5f, hit_1.w);
-        var _S95 : vec3<f32> = max(hit_1.xyz, reflection_1);
+        var _S96 : vec3<f32> = max(hit_1.xyz, reflection_1);
         if(water_0)
         {
             puddle_0 = 1.0f;
@@ -1399,7 +1429,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         {
             puddle_0 = p_0.ssr_0.y;
         }
-        var scene_0 : vec3<f32> = _S95 * vec3<f32>(puddle_0);
+        var scene_0 : vec3<f32> = _S96 * vec3<f32>(puddle_0);
         if(water_0)
         {
             var reflected_1 : vec3<f32> = normalize(reflect(worldRayToPixel_0, normalW_0));
@@ -1410,9 +1440,9 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
             reflection_0 = reflection_1;
         }
         var screenWeight_1 : f32 = hitEdge_0 * world_5;
-        var _S96 : vec3<f32> = (scene_0 - reflection_0) * reflectance_0 * vec3<f32>(screenWeight_1);
+        var _S97 : vec3<f32> = (scene_0 - reflection_0) * reflectance_0 * vec3<f32>(screenWeight_1);
         screenWeight_0 = screenWeight_1;
-        reflection_0 = _S96;
+        reflection_0 = _S97;
     }
     else
     {
@@ -1459,8 +1489,8 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                 var litFound_1 : vec2<f32>;
                 var agreement_1 : f32;
                 var cardDepth_1 : f32;
-                var _S97 : bool = LookupCardWithin_0(hitRelative_1 + p_0.cacheOrigin_0.xyz, reflection_1, tolerance_0, &(found_1), &(litFound_1), &(agreement_1), &(cardDepth_1));
-                if(_S97)
+                var _S98 : bool = LookupCardWithin_0(hitRelative_1 + p_0.cacheOrigin_0.xyz, reflection_1, tolerance_0, &(found_1), &(litFound_1), &(agreement_1), &(cardDepth_1));
+                if(_S98)
                 {
                     screenAllowed_0 = agreement_1 <= (tolerance_0 + cardDepth_1 * 0.5f);
                 }
@@ -1497,10 +1527,10 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                 radiance_1 = normalW_0;
             }
         }
-        var _S98 : f32 = max(radiance_1.x, max(radiance_1.y, radiance_1.z));
-        if(_S98 > (p_0.trace_0.z))
+        var _S99 : f32 = max(radiance_1.x, max(radiance_1.y, radiance_1.z));
+        if(_S99 > (p_0.trace_0.z))
         {
-            radiance_1 = radiance_1 * vec3<f32>((p_0.trace_0.z / _S98));
+            radiance_1 = radiance_1 * vec3<f32>((p_0.trace_0.z / _S99));
         }
         var scene_1 : vec3<f32> = radiance_1;
         if(water_0)
@@ -1515,20 +1545,36 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         screenWeight_0 = 1.0f;
         reflection_0 = reflection_2;
     }
-    var _S99 : vec2<u32> = vec2<u32>(_S77);
-    if(traces_0)
+    if(!water_0)
     {
-        marches_0 = true;
-    }
-    if(marches_0)
-    {
-        puddle_0 = 1.0f;
+        screenAllowed_0 = roughness_2 > 0.05000000074505806f;
     }
     else
     {
-        puddle_0 = screenWeight_0;
+        screenAllowed_0 = false;
     }
-    textureStore((uReflection_0), (_S99), (vec4<f32>(reflection_0, puddle_0)));
+    var spread_0 : f32;
+    if(screenAllowed_0)
+    {
+        spread_0 = 2.0f + roughness_2;
+    }
+    else
+    {
+        if(traces_0)
+        {
+            marches_0 = true;
+        }
+        if(marches_0)
+        {
+            puddle_0 = 1.0f;
+        }
+        else
+        {
+            puddle_0 = screenWeight_0;
+        }
+        spread_0 = puddle_0;
+    }
+    textureStore((uReflection_0), (vec2<u32>(_S77)), (vec4<f32>(reflection_0, spread_0)));
     return;
 }
 
