@@ -203,7 +203,7 @@ fn ApplyFog_0( colour_1 : vec3<f32>,  uv_1 : vec2<f32>,  viewZ_0 : f32) -> vec3<
     {
         return colour_1;
     }
-    var fog_1 : vec4<f32> = (textureSampleLevel((uFogVolume_0), (uFogVolumeSampler_0), (vec3<f32>(uv_1, clamp(log2(max(viewZ_0 * gi_0.fog_0.x + gi_0.fog_0.y, 9.99999997475242708e-07f)) * gi_0.fog_0.z * gi_0.fog_0.w, 0.0f, 1.0f))), (0.0f)));
+    var fog_1 : vec4<f32> = (textureSampleLevel((uFogVolume_0), (uFogVolumeSampler_0), (vec3<f32>(uv_1, clamp((log2(max(viewZ_0 * gi_0.fog_0.x + gi_0.fog_0.y, 9.99999997475242708e-07f)) * gi_0.fog_0.z - 1.0f) * gi_0.fog_0.w, 0.0f, 1.0f))), (0.0f)));
     return colour_1 * vec3<f32>(fog_1.w) + fog_1.xyz;
 }
 

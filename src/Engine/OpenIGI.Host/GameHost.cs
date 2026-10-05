@@ -6936,14 +6936,21 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 && _options.ScreenshotPath is { } flightPath
                 && _scene is not null)
             {
-                Bgra32[] frame = new Bgra32[_window.Width * _window.Height];
-                _device.CaptureFrame(_window.Width, _window.Height, frame);
+                // Not while a flight still waits out its -flightdelay: those frames are the opening still, the
+                // same picture hundreds of times over, eight megabytes each at 1080p -- a capture that held the
+                // view for six hundred frames before moving filled the disk with them.
+                if (!_options.HasFlight || flightFrame >= _options.FlightDelay)
+                {
+                    Bgra32[] frame = new Bgra32[_window.Width * _window.Height];
+                    _device.CaptureFrame(_window.Width, _window.Height, frame);
 
-                string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
-                string stem = Path.GetFileNameWithoutExtension(flightPath);
-                string extension = Path.GetExtension(flightPath);
-                string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{flightFrame:0000}{extension}"));
-                BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
+                    string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
+                    string stem = Path.GetFileNameWithoutExtension(flightPath);
+                    string extension = Path.GetExtension(flightPath);
+                    string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{flightFrame:0000}{extension}"));
+                    BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
+                }
+
                 flightFrame++;
             }
 

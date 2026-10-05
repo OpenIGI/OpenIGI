@@ -628,7 +628,11 @@ float3 ApplyFog(float3 colour, float2 uv, float viewZ)
         return colour;
     }
 
-    float slice = log2(max((viewZ * gi.fog.x) + gi.fog.y, 1e-6)) * gi.fog.z * gi.fog.w;
+    // Read a slice short of the surface. The cell a surface stands in reaches past it -- a slice is a
+    // metre or more deep a building away -- and its samples behind the surface are lit by whatever is
+    // there: the lamp in the room on the far side of a wall lit the air on the near side in a glowing
+    // cloud. The air a surface is seen through is the air in front of it.
+    float slice = (log2(max((viewZ * gi.fog.x) + gi.fog.y, 1e-6)) * gi.fog.z - 1.0) * gi.fog.w;
     float4 fog = uFogVolume.SampleLevel(uFogVolumeSampler, float3(uv, clamp(slice, 0.0, 1.0)), 0.0);
     return (colour * fog.a) + fog.rgb;
 }

@@ -262,6 +262,21 @@ internal sealed partial class GameHost
             + "once per mission.");
     }
 
+    /// <summary>The clipmaps' shape for the trace this device runs.</summary>
+    /// <remarks>
+    /// Twice the resolution where nothing is traced: a quarter-metre voxel near the eye and half a metre a
+    /// building away do not hold the slab over a doorway or a canopy's roof, and the software gathers'
+    /// rays slipped through it on some frames and not others -- which a night of small bright lamp pools
+    /// showed as clouds crawling over every wall, fifteen per cent of the bounce changing frame to frame
+    /// where the traced gather changed half of one. Eight megabytes, and about a millisecond of rebuilds
+    /// while the camera travels. Where rays are traced the field answers only far and coarse questions,
+    /// and keeps the cheaper shape.
+    /// </remarks>
+    private GlobalDistanceFieldSettings DistanceFieldSettings() =>
+        _device.Capabilities.SupportsRayQuery && RenderCVars.HardwareRayTracing.Value
+            ? GlobalDistanceFieldSettings.Default
+            : GlobalDistanceFieldSettings.Default with { Resolution = 128 };
+
     /// <summary>Takes a baked field into use, and writes it to the cache when it was freshly baked.</summary>
     /// <param name="scene">The level's field.</param>
     /// <param name="atlas">Every distinct model's field, packed for the GPU.</param>
@@ -280,8 +295,7 @@ internal sealed partial class GameHost
         _sdfScene = scene;
         _sdfValidated = false;
         _sdfClipmaps?.Dispose();
-        _sdfClipmaps = GlobalDistanceField.Create(
-            _device, scene, atlas, GlobalDistanceFieldSettings.Default, _logger);
+        _sdfClipmaps = GlobalDistanceField.Create(_device, scene, atlas, DistanceFieldSettings(), _logger);
 
         BeginGiConvergence();
 

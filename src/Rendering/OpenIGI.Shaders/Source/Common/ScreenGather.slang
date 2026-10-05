@@ -82,6 +82,9 @@ static const float kGroundAlbedo = 0.25;
 
 #include "DepthFilter.slang"
 #include "SoftwareTrace.slang"
+// The cache's lighting, for the filtered lookup a marched hit reads (SampleCardsWithin).
+#define kCardLighting uFinal
+#define kCardLightingSampler uFinalSampler
 #include "SurfaceCache.slang"
 #include "Hemisphere.slang"
 
@@ -315,6 +318,46 @@ bool ScreenTraceRadiance(float3 viewOrigin, float3 viewNormal, float3 viewDir, o
     return true;
 }
 
+#if !OPENIGI_RAY_QUERY
+// A marched hit moved onto the surface it touched: two steps down the field's gradient by the distance
+// the field gives there (a Newton step on a distance field), and the surface's normal as that gradient
+// gives it. Left where it is, with no normal, where the field is unknown or its gradient vanishes.
+float3 SettleOnSurface(float3 hit, out float3 surfaceNormal)
+{
+    surfaceNormal = float3(0.0, 0.0, 0.0);
+    for (int pass = 0; pass < 2; pass++)
+    {
+        bool known;
+        float raw;
+        float resolved;
+        float distance = DistanceAt(hit, known, raw, resolved);
+        if (!known)
+        {
+            return hit;
+        }
+
+        float h = 0.5 * resolved;
+        bool k;
+        float r;
+        float v;
+        float3 gradient = float3(
+            DistanceAt(hit + float3(h, 0.0, 0.0), k, r, v) - DistanceAt(hit - float3(h, 0.0, 0.0), k, r, v),
+            DistanceAt(hit + float3(0.0, h, 0.0), k, r, v) - DistanceAt(hit - float3(0.0, h, 0.0), k, r, v),
+            DistanceAt(hit + float3(0.0, 0.0, h), k, r, v) - DistanceAt(hit - float3(0.0, 0.0, h), k, r, v));
+        float length2 = dot(gradient, gradient);
+        if (length2 < 1e-10)
+        {
+            return hit;
+        }
+
+        surfaceNormal = gradient * rsqrt(length2);
+        hit -= surfaceNormal * distance;
+    }
+
+    return hit;
+}
+#endif
+
 // The light arriving over the hemisphere a surface faces: the screen first, then a ray or a march
 // against the world, then the sky on a miss.
 float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jitter)
@@ -393,8 +436,43 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
 #if OPENIGI_RAY_QUERY
                 float near = 1.0;
 #else
+                // And by its height off the surface's own plane, not only its distance: a ray leaving a
+                // wall at a grazing angle runs along it and the march finds the same wall again metres on,
+                // well past two voxels, and reads the wall's own cached light back -- its stains and seams
+                // and all. Every surface took a blurred copy of its own texture as its bounce, which was the
+                // cloud over every wall in the gather. A ray leaving a flat surface cannot strike that
+                // surface; whatever it finds within a voxel of the plane is the plane.
                 float finest = uClipmapOrigin[0].w;
-                float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
+                float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world))
+                    * smoothstep(0.75 * finest, 1.5 * finest, dot(hit - world, normal));
+
+                // The march stops within half a voxel of the surface, and a voxel out there is a quarter
+                // of a metre or more: at night, when the light on the cache is a few small bright pools,
+                // which side of a pool's edge that half voxel falls on is the whole of what the ray
+                // brings back, and the gather's average churned from frame to frame as clouds. Slid onto
+                // the surface down the field's own gradient, the lookup reads the texel the ray struck.
+                float3 hitNormal;
+                hit = SettleOnSurface(hit, hitNormal);
+
+                // And read through every card that faced the surface there, blended by how squarely each
+                // looked and filtered within it, rather than the one texel of the one card nearest a point
+                // the march only placed to a voxel. A traced hit knows its surface exactly and keeps the
+                // single lookup.
+                if (dot(hitNormal, direction) > 0.0)
+                {
+                    hitNormal = -hitNormal;
+                }
+
+                float3 filtered;
+                if (dot(hitNormal, hitNormal) > 0.5 && SampleCardsWithin(hit, hitNormal, 0.5 * finest, filtered))
+                {
+                    radiance = filtered * uBounceScale;
+                    weight = near;
+                    source = 2;
+                    surfaceSum += CapRayIntensity(radiance) * near;
+                    surfaceCount += near;
+                }
+                else
 #endif
                 if (LookupCardHit(hit, direction, found, litFound, agreement))
                 {

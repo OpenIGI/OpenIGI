@@ -83,9 +83,9 @@ struct SLANG_ParameterGroup_Globals_std140_0
 
 @binding(18) @group(0) var<storage, read> uLights_0 : array<vec4<f32>>;
 
-@binding(23) @group(0) var<storage, read> uLampMapRecords_0 : array<vec4<f32>>;
-
 @binding(40) @group(0) var uLampMaps_0 : texture_depth_2d_array;
+
+@binding(23) @group(0) var<storage, read> uLampMapRecords_0 : array<vec4<f32>>;
 
 fn rsqrt_0( x_0 : f32) -> f32
 {
@@ -1062,9 +1062,11 @@ fn CardLampMapVisibility_0( entry_0 : i32,  world_16 : vec3<f32>,  normal_11 : v
     {
         return -1.0f;
     }
-    var at_1 : vec3<f32> = world_16 + normal_11 * vec3<f32>(0.05000000074505806f);
-    var deepest_0 : f32 = -1.00000001504746622e+30f;
-    var slot_1 : i32 = entry_0;
+    var mapWidth_0 : u32;
+    var mapHeight_0 : u32;
+    var mapLayers_0 : u32;
+    {var dim = textureDimensions((uLampMaps_0));((mapWidth_0)) = dim.x;((mapHeight_0)) = dim.y;((mapLayers_0)) = textureNumLayers((uLampMaps_0));};
+    var pointZ_0 : f32 = 0.25f;
     var face_0 : i32 = i32(0);
     for(;;)
     {
@@ -1075,47 +1077,69 @@ fn CardLampMapVisibility_0( entry_0 : i32,  world_16 : vec3<f32>,  normal_11 : v
         {
             break;
         }
-        var _S73 : i32 = entry_0 + face_0;
-        var forward_0 : vec4<f32> = uLampMapRecords_0[_S73 * i32(5) + i32(3)];
-        var depth_4 : f32 = dot(forward_0.xyz, at_1) + forward_0.w;
+        var forward_0 : vec4<f32> = uLampMapRecords_0[(entry_0 + face_0) * i32(5) + i32(3)];
+        var _S73 : f32 = max(pointZ_0, dot(forward_0.xyz, world_16) + forward_0.w);
+        var _S74 : i32 = face_0 + i32(1);
+        pointZ_0 = _S73;
+        face_0 = _S74;
+    }
+    var at_1 : vec3<f32> = world_16 + normal_11 * vec3<f32>((0.05000000074505806f + 1.5f * (pointZ_0 * 2.0f / f32(max(mapWidth_0, u32(1))))));
+    var deepest_0 : f32 = -1.00000001504746622e+30f;
+    var slot_1 : i32 = entry_0;
+    face_0 = i32(0);
+    for(;;)
+    {
+        if(face_0 < i32(6))
+        {
+        }
+        else
+        {
+            break;
+        }
+        var _S75 : i32 = entry_0 + face_0;
+        var forward_1 : vec4<f32> = uLampMapRecords_0[_S75 * i32(5) + i32(3)];
+        var depth_4 : f32 = dot(forward_1.xyz, at_1) + forward_1.w;
         if(depth_4 > deepest_0)
         {
             deepest_0 = depth_4;
-            slot_1 = _S73;
+            slot_1 = _S75;
         }
         face_0 = face_0 + i32(1);
     }
-    var _S74 : i32 = slot_1 * i32(5);
-    var terms_0 : vec4<f32> = uLampMapRecords_0[_S74 + i32(4)];
+    var _S76 : i32 = slot_1 * i32(5);
+    var terms_0 : vec4<f32> = uLampMapRecords_0[_S76 + i32(4)];
     if((terms_0.z) <= 0.0f)
     {
         return -1.0f;
     }
-    var row0_1 : vec4<f32> = uLampMapRecords_0[_S74];
-    var row1_1 : vec4<f32> = uLampMapRecords_0[_S74 + i32(1)];
-    var _S75 : f32 = terms_0.y;
-    var _S76 : f32 = terms_0.x;
-    if(deepest_0 <= (_S75 / (-1.0f - _S76)))
+    var row0_1 : vec4<f32> = uLampMapRecords_0[_S76];
+    var row1_1 : vec4<f32> = uLampMapRecords_0[_S76 + i32(1)];
+    var _S77 : f32 = terms_0.y;
+    var _S78 : f32 = terms_0.x;
+    if(deepest_0 <= (_S77 / (-1.0f - _S78)))
     {
         return 1.0f;
     }
-    var _S77 : vec3<f32> = row0_1.xyz;
-    var ndc_0 : vec2<f32> = vec2<f32>(dot(_S77, at_1) + row0_1.w, dot(row1_1.xyz, at_1) + row1_1.w) / vec2<f32>(deepest_0);
+    var _S79 : vec3<f32> = row0_1.xyz;
+    var ndc_0 : vec2<f32> = vec2<f32>(dot(_S79, at_1) + row0_1.w, dot(row1_1.xyz, at_1) + row1_1.w) / vec2<f32>(deepest_0);
     var uv_1 : vec2<f32> = vec2<f32>(ndc_0.x * 0.5f + 0.5f, 0.5f - ndc_0.y * 0.5f);
     var width_0 : u32;
     var height_0 : u32;
     var layers_0 : u32;
     {var dim = textureDimensions((uLampMaps_0));((width_0)) = dim.x;((height_0)) = dim.y;((layers_0)) = textureNumLayers((uLampMaps_0));};
     var size_0 : vec2<i32> = vec2<i32>(i32(width_0), i32(height_0));
-    var _S78 : f32 = 0.05000000074505806f + 0.00499999988824129f * deepest_0 + 2.0f * (deepest_0 * (2.0f / max(length(_S77), 0.00100000004749745f)) / f32(max(width_0, u32(1))));
+    var _S80 : f32 = 0.05000000074505806f + 0.00499999988824129f * deepest_0 + 2.0f * (deepest_0 * (2.0f / max(length(_S79), 0.00100000004749745f)) / f32(max(width_0, u32(1))));
     var texelAt_0 : vec2<f32> = uv_1 * vec2<f32>(size_0) - vec2<f32>(0.5f);
-    var _S79 : vec2<i32> = vec2<i32>(floor(texelAt_0));
-    var _S80 : vec2<f32> = texelAt_0 - vec2<f32>(_S79);
+    var _S81 : vec2<f32> = floor(texelAt_0);
+    var _S82 : vec2<i32> = vec2<i32>(i32(1));
+    var _S83 : vec2<i32> = vec2<i32>(_S81) - _S82;
+    var _S84 : vec2<f32> = texelAt_0 - _S81;
     var y_0 : i32 = i32(0);
     var lit_0 : f32 = 0.0f;
+    var weightSum_0 : f32 = 0.0f;
     for(;;)
     {
-        if(y_0 < i32(2))
+        if(y_0 < i32(4))
         {
         }
         else
@@ -1125,50 +1149,33 @@ fn CardLampMapVisibility_0( entry_0 : i32,  world_16 : vec3<f32>,  normal_11 : v
         var x_1 : i32 = i32(0);
         for(;;)
         {
-            if(x_1 < i32(2))
+            if(x_1 < i32(4))
             {
             }
             else
             {
                 break;
             }
-            var _S81 : vec4<i32> = vec4<i32>(clamp(_S79 + vec2<i32>(x_1, y_0), vec2<i32>(i32(0), i32(0)), size_0 - vec2<i32>(i32(1))), slot_1, i32(0));
-            var storedZ_0 : f32 = _S75 / min((textureLoad((uLampMaps_0), ((_S81)).xy, i32(((_S81)).z), ((_S81)).w)) * 2.0f - 1.0f - _S76, -9.99999997475242708e-07f);
-            var _S82 : f32;
-            if(x_1 == i32(0))
+            var _S85 : vec4<i32> = vec4<i32>(clamp(_S83 + vec2<i32>(x_1, y_0), vec2<i32>(i32(0), i32(0)), size_0 - _S82), slot_1, i32(0));
+            var tent_0 : vec2<f32> = saturate(vec2<f32>(1.0f) - abs(vec2<f32>(f32(x_1) - 1.0f, f32(y_0) - 1.0f) - _S84) / vec2<f32>(2.0f));
+            var weight_2 : f32 = tent_0.x * tent_0.y;
+            if((_S77 / min((textureLoad((uLampMaps_0), ((_S85)).xy, i32(((_S85)).z), ((_S85)).w)) * 2.0f - 1.0f - _S78, -9.99999997475242708e-07f)) >= (deepest_0 - _S80))
             {
-                _S82 = 1.0f - _S80.x;
+                pointZ_0 = weight_2;
             }
             else
             {
-                _S82 = _S80.x;
+                pointZ_0 = 0.0f;
             }
-            var _S83 : f32;
-            if(y_0 == i32(0))
-            {
-                _S83 = 1.0f - _S80.y;
-            }
-            else
-            {
-                _S83 = _S80.y;
-            }
-            var weight_2 : f32 = _S82 * _S83;
-            var _S84 : f32;
-            if(storedZ_0 >= (deepest_0 - _S78))
-            {
-                _S84 = weight_2;
-            }
-            else
-            {
-                _S84 = 0.0f;
-            }
-            var lit_1 : f32 = lit_0 + _S84;
+            var lit_1 : f32 = lit_0 + pointZ_0;
+            var weightSum_1 : f32 = weightSum_0 + weight_2;
             x_1 = x_1 + i32(1);
             lit_0 = lit_1;
+            weightSum_0 = weightSum_1;
         }
         y_0 = y_0 + i32(1);
     }
-    return lit_0;
+    return lit_0 / max(weightSum_0, 0.00009999999747379f);
 }
 
 fn SegmentVisibility_0( world_17 : vec3<f32>,  normal_12 : vec3<f32>,  target_0 : vec3<f32>,  stopShort_0 : f32) -> f32
@@ -1186,21 +1193,21 @@ fn SegmentVisibility_0( world_17 : vec3<f32>,  normal_12 : vec3<f32>,  target_0 
     {
         return 1.0f;
     }
-    var _S85 : vec3<f32> = toTarget_0 / vec3<f32>(distance_3);
+    var _S86 : vec3<f32> = toTarget_0 / vec3<f32>(distance_3);
     var step_3 : i32 = i32(0);
     var travelled_9 : f32 = 0.0f;
     for(;;)
     {
-        var _S86 : bool;
+        var _S87 : bool;
         if(step_3 < i32(48))
         {
-            _S86 = travelled_9 < limit_0;
+            _S87 = travelled_9 < limit_0;
         }
         else
         {
-            _S86 = false;
+            _S87 = false;
         }
-        if(_S86)
+        if(_S87)
         {
         }
         else
@@ -1210,7 +1217,7 @@ fn SegmentVisibility_0( world_17 : vec3<f32>,  normal_12 : vec3<f32>,  target_0 
         var known_7 : bool;
         var raw_7 : f32;
         var resolved_10 : f32;
-        var field_3 : f32 = DistanceAt_1(at_2 + _S85 * vec3<f32>(travelled_9), &(known_7), &(raw_7), &(resolved_10));
+        var field_3 : f32 = DistanceAt_1(at_2 + _S86 * vec3<f32>(travelled_9), &(known_7), &(raw_7), &(resolved_10));
         if(!known_7)
         {
             return 1.0f;
@@ -1252,8 +1259,8 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
     var entry_1 : vec4<i32> = uTiles_0[tile_0];
     var within_0 : vec2<i32> = entry_1.yz * vec2<i32>(i32(8)) + vec2<i32>(localId_0.xy);
     var at_3 : i32 = entry_1.x * i32(10);
-    var _S87 : i32 = at_3 + i32(5);
-    if((uPages_0[_S87].w) > 0.5f)
+    var _S88 : i32 = at_3 + i32(5);
+    if((uPages_0[_S88].w) > 0.5f)
     {
         return;
     }
@@ -1269,30 +1276,30 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
     }
     var lightPage_0 : vec4<f32> = uPages_0[at_3];
     var cardPage_2 : vec4<f32> = uPages_0[at_3 + i32(1)];
-    var _S88 : f32 = lightPage_0.z;
-    var _S89 : i32 = i32(_S88);
-    var _S90 : bool;
-    if((within_0.x) >= _S89)
+    var _S89 : f32 = lightPage_0.z;
+    var _S90 : i32 = i32(_S89);
+    var _S91 : bool;
+    if((within_0.x) >= _S90)
     {
-        _S90 = true;
+        _S91 = true;
     }
     else
     {
-        _S90 = (within_0.y) >= i32(lightPage_0.w);
+        _S91 = (within_0.y) >= i32(lightPage_0.w);
     }
-    if(_S90)
+    if(_S91)
     {
         return;
     }
     var centreAndHalfWidth_1 : vec4<f32> = uPages_0[at_3 + i32(2)];
     var rightAndHalfHeight_1 : vec4<f32> = uPages_0[at_3 + i32(3)];
     var upAndDepth_1 : vec4<f32> = uPages_0[at_3 + i32(4)];
-    var direction_7 : vec4<f32> = uPages_0[_S87];
+    var direction_7 : vec4<f32> = uPages_0[_S88];
     var row0_2 : vec4<f32> = uPages_0[at_3 + i32(6)];
     var row1_2 : vec4<f32> = uPages_0[at_3 + i32(7)];
     var row2_1 : vec4<f32> = uPages_0[at_3 + i32(8)];
-    var _S91 : f32 = lightPage_0.w;
-    var uv_2 : vec2<f32> = (vec2<f32>(within_0) + vec2<f32>(0.5f)) / vec2<f32>(_S88, _S91);
+    var _S92 : f32 = lightPage_0.w;
+    var uv_2 : vec2<f32> = (vec2<f32>(within_0) + vec2<f32>(0.5f)) / vec2<f32>(_S89, _S92);
     var albedoWidth_2 : u32;
     var albedoHeight_2 : u32;
     {var dim = textureDimensions((uAlbedo_0));((albedoWidth_2)) = dim.x;((albedoHeight_2)) = dim.y;};
@@ -1306,11 +1313,11 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
     }
     var normal_13 : vec3<f32> = normalize((textureSampleLevel((uNormal_0), (uNormalSampler_0), (cardUv_1), (0.0f))).xyz * vec3<f32>(2.0f) - vec3<f32>(1.0f));
     var local_2 : vec3<f32> = centreAndHalfWidth_1.xyz + rightAndHalfHeight_1.xyz * vec3<f32>((uv_2.x * 2.0f - 1.0f)) * vec3<f32>(centreAndHalfWidth_1.w) + upAndDepth_1.xyz * vec3<f32>((uv_2.y * 2.0f - 1.0f)) * vec3<f32>(rightAndHalfHeight_1.w) - direction_7.xyz * vec3<f32>(((textureSampleLevel((uDepth_0), (uDepthSampler_0), (cardUv_1), (0.0f))).x * upAndDepth_1.w));
-    var _S92 : vec3<f32> = vec3<f32>(row0_2.x, row1_2.x, row2_1.x);
-    var _S93 : vec3<f32> = vec3<f32>(row0_2.y, row1_2.y, row2_1.y);
-    var _S94 : vec3<f32> = vec3<f32>(row0_2.z, row1_2.z, row2_1.z);
-    var world_18 : vec3<f32> = vec3<f32>(dot(_S92, local_2), dot(_S93, local_2), dot(_S94, local_2)) + vec3<f32>(row0_2.w, row1_2.w, row2_1.w);
-    var worldNormal_0 : vec3<f32> = normalize(vec3<f32>(dot(_S92, normal_13), dot(_S93, normal_13), dot(_S94, normal_13)));
+    var _S93 : vec3<f32> = vec3<f32>(row0_2.x, row1_2.x, row2_1.x);
+    var _S94 : vec3<f32> = vec3<f32>(row0_2.y, row1_2.y, row2_1.y);
+    var _S95 : vec3<f32> = vec3<f32>(row0_2.z, row1_2.z, row2_1.z);
+    var world_18 : vec3<f32> = vec3<f32>(dot(_S93, local_2), dot(_S94, local_2), dot(_S95, local_2)) + vec3<f32>(row0_2.w, row1_2.w, row2_1.w);
+    var worldNormal_0 : vec3<f32> = normalize(vec3<f32>(dot(_S93, normal_13), dot(_S94, normal_13), dot(_S95, normal_13)));
     var texelAt_1 : vec2<i32> = pageAt_0 + within_0;
     var traced_0 : f32;
     if((Globals_0.uMode_0) == i32(1))
@@ -1322,10 +1329,10 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
         }
         var probeCoord_5 : vec2<i32> = (texelAt_1 >> (vec2<u32>(u32(2))));
         uProbePos_0[probeCoord_5.y * Globals_0.uProbeWidth_0 + probeCoord_5.x] = vec4<f32>(world_18, 1.0f);
-        var _S95 : vec2<f32> = ProbeCenter_0(probeCoord_5, Globals_0.uTemporalIndex_0);
-        var gathered_0 : vec3<f32> = Gather_0(world_18, worldNormal_0, _S95);
-        var _S96 : vec3<i32> = vec3<i32>(texelAt_1, i32(0));
-        var previous_0 : vec4<f32> = (textureLoad((uDirectHistory_0), ((_S96)).xy, ((_S96)).z));
+        var _S96 : vec2<f32> = ProbeCenter_0(probeCoord_5, Globals_0.uTemporalIndex_0);
+        var gathered_0 : vec3<f32> = Gather_0(world_18, worldNormal_0, _S96);
+        var _S97 : vec3<i32> = vec3<i32>(texelAt_1, i32(0));
+        var previous_0 : vec4<f32> = (textureLoad((uDirectHistory_0), ((_S97)).xy, ((_S97)).z));
         if((Globals_0.uTemporalIndex_0) > i32(0))
         {
             traced_0 = previous_0.w;
@@ -1342,15 +1349,15 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
     var indirectSum_0 : vec3<f32>;
     if((Globals_0.uMode_0) == i32(2))
     {
-        var _S97 : vec3<i32> = vec3<i32>(texelAt_1, i32(0));
-        var direct_0 : vec3<f32> = (textureLoad((uPrevious_0), ((_S97)).xy, ((_S97)).z)).xyz;
-        var _S98 : vec2<i32> = pageAt_0 + vec2<i32>(_S89, i32(_S91));
+        var _S98 : vec3<i32> = vec3<i32>(texelAt_1, i32(0));
+        var direct_0 : vec3<f32> = (textureLoad((uPrevious_0), ((_S98)).xy, ((_S98)).z)).xyz;
+        var _S99 : vec2<i32> = pageAt_0 + vec2<i32>(_S90, i32(_S92));
         var probe00_0 : vec2<i32> = (texelAt_1 >> (vec2<u32>(u32(2))));
-        var _S99 : vec2<f32> = vec2<f32>(1.0f);
-        var _S100 : vec2<f32> = (vec2<f32>(texelAt_1 - probe00_0 * vec2<i32>(i32(4))) + _S99) / vec2<f32>(6.0f);
-        const _S101 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
+        var _S100 : vec2<f32> = vec2<f32>(1.0f);
+        var _S101 : vec2<f32> = (vec2<f32>(texelAt_1 - probe00_0 * vec2<i32>(i32(4))) + _S100) / vec2<f32>(6.0f);
+        const _S102 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
         corner_0 = i32(0);
-        indirectSum_0 = _S101;
+        indirectSum_0 = _S102;
         traced_0 = 0.0f;
         for(;;)
         {
@@ -1361,11 +1368,11 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
             {
                 break;
             }
-            var _S102 : i32 = corner_0;
+            var _S103 : i32 = corner_0;
             var probeCoord_6 : vec2<i32> = probe00_0 + kProbeCorner_0[corner_0];
             var position_3 : vec3<f32>;
-            var _S103 : bool = ProbeUsable_1(probeCoord_6, pageAt_0, _S98, &(position_3));
-            if(!_S103)
+            var _S104 : bool = ProbeUsable_1(probeCoord_6, pageAt_0, _S99, &(position_3));
+            if(!_S104)
             {
                 corner_0 = corner_0 + i32(1);
                 continue;
@@ -1375,10 +1382,10 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
                 corner_0 = corner_0 + i32(1);
                 continue;
             }
-            var share_0 : vec2<f32> = mix(_S99 - _S100, _S100, vec2<f32>(kProbeCorner_0[_S102]));
+            var share_0 : vec2<f32> = mix(_S100 - _S101, _S101, vec2<f32>(kProbeCorner_0[_S103]));
             var w_0 : f32 = share_0.x * share_0.y;
             var indirectWeight_0 : f32 = traced_0 + w_0;
-            indirectSum_0 = indirectSum_0 + FilteredProbe_0(probeCoord_6, pageAt_0, _S98, world_18, worldNormal_0) * vec3<f32>(w_0);
+            indirectSum_0 = indirectSum_0 + FilteredProbe_0(probeCoord_6, pageAt_0, _S99, world_18, worldNormal_0) * vec3<f32>(w_0);
             traced_0 = indirectWeight_0;
             corner_0 = corner_0 + i32(1);
         }
@@ -1396,8 +1403,8 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
     }
     if((Globals_0.uMode_0) == i32(3))
     {
-        var _S104 : vec3<i32> = vec3<i32>(texelAt_1, i32(0));
-        textureStore((uDirect_0), (vec2<u32>(texelAt_1)), (vec4<f32>((textureLoad((uPrevious_0), ((_S104)).xy, ((_S104)).z)).xyz * (BoostAlbedo_0(albedo_1.xyz, Globals_0.uBoost_0) / vec3<f32>(3.14159274101257324f)), 1.0f)));
+        var _S105 : vec3<i32> = vec3<i32>(texelAt_1, i32(0));
+        textureStore((uDirect_0), (vec2<u32>(texelAt_1)), (vec4<f32>((textureLoad((uPrevious_0), ((_S105)).xy, ((_S105)).z)).xyz * (BoostAlbedo_0(albedo_1.xyz, Globals_0.uBoost_0) / vec3<f32>(3.14159274101257324f)), 1.0f)));
         return;
     }
     if((Globals_0.uProbe_0) != i32(0))
@@ -1405,8 +1412,8 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
         textureStore((uDirect_0), (vec2<u32>(texelAt_1)), (Probed_0(world_18, worldNormal_0, cardUv_1, texelAt_1)));
         return;
     }
-    var _S105 : f32 = max(dot(worldNormal_0, Globals_0.uSunDirection_0), 0.0f);
-    if(_S105 > 0.0f)
+    var _S106 : f32 = max(dot(worldNormal_0, Globals_0.uSunDirection_0), 0.0f);
+    if(_S106 > 0.0f)
     {
         traced_0 = SunVisibility_0(world_18, worldNormal_0);
     }
@@ -1414,9 +1421,9 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
     {
         traced_0 = 1.0f;
     }
-    var _S106 : vec3<f32> = Globals_0.uSunColour_0 * vec3<f32>(_S105) * vec3<f32>(traced_0) + SkyLight_0(world_18, worldNormal_0);
+    var _S107 : vec3<f32> = Globals_0.uSunColour_0 * vec3<f32>(_S106) * vec3<f32>(traced_0) + SkyLight_0(world_18, worldNormal_0);
     corner_0 = i32(0);
-    indirectSum_0 = _S106;
+    indirectSum_0 = _S107;
     for(;;)
     {
         if(corner_0 < (Globals_0.uLightCount_0))
@@ -1426,42 +1433,42 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
         {
             break;
         }
-        var _S107 : i32 = corner_0 * i32(3);
-        var place_0 : vec4<f32> = uLights_0[_S107];
-        var emission_0 : vec4<f32> = uLights_0[_S107 + i32(1)];
-        var facing_2 : vec4<f32> = uLights_0[_S107 + i32(2)];
-        var _S108 : vec3<f32> = place_0.xyz;
-        var delta_1 : vec3<f32> = _S108 - world_18;
+        var _S108 : i32 = corner_0 * i32(3);
+        var place_0 : vec4<f32> = uLights_0[_S108];
+        var emission_0 : vec4<f32> = uLights_0[_S108 + i32(1)];
+        var facing_2 : vec4<f32> = uLights_0[_S108 + i32(2)];
+        var _S109 : vec3<f32> = place_0.xyz;
+        var delta_1 : vec3<f32> = _S109 - world_18;
         var squared_0 : f32 = dot(delta_1, delta_1);
-        var _S109 : f32 = max(place_0.w * 3.0f, 2.0f);
-        var reachSquared_0 : f32 = _S109 * _S109;
+        var _S110 : f32 = max(place_0.w * 3.0f, 2.0f);
+        var reachSquared_0 : f32 = _S110 * _S110;
         if(squared_0 >= reachSquared_0)
         {
             corner_0 = corner_0 + i32(1);
             continue;
         }
         var toLight_0 : vec3<f32> = delta_1 * vec3<f32>(rsqrt_0(max(squared_0, 9.99999997475242708e-07f)));
-        var _S110 : f32 = max(dot(worldNormal_0, toLight_0), 0.0f);
-        if(_S110 <= 0.0f)
+        var _S111 : f32 = max(dot(worldNormal_0, toLight_0), 0.0f);
+        if(_S111 <= 0.0f)
         {
             corner_0 = corner_0 + i32(1);
             continue;
         }
         var falloff_0 : f32 = 1.0f / (squared_0 + 1.0f);
         var window_0 : f32 = clamp(1.0f - squared_0 * squared_0 / (reachSquared_0 * reachSquared_0), 0.0f, 1.0f);
-        var _S111 : vec3<f32> = facing_2.xyz;
+        var _S112 : vec3<f32> = facing_2.xyz;
         var aim_0 : f32;
-        if((dot(_S111, _S111)) > 0.25f)
+        if((dot(_S112, _S112)) > 0.25f)
         {
-            aim_0 = max(dot(normalize(_S111), (vec3<f32>(0) - toLight_0)), 0.0f);
+            aim_0 = max(dot(normalize(_S112), (vec3<f32>(0) - toLight_0)), 0.0f);
         }
         else
         {
             aim_0 = 1.0f;
         }
-        var contribution_0 : f32 = emission_0.w * Globals_0.uLocalScale_0 * _S110 * falloff_0 * window_0 * window_0 * aim_0;
-        var _S112 : vec3<f32> = emission_0.xyz;
-        if((contribution_0 * dot(_S112, vec3<f32>(0.2125999927520752f, 0.71520000696182251f, 0.07220000028610229f))) < 0.00000999999974738f)
+        var contribution_0 : f32 = emission_0.w * Globals_0.uLocalScale_0 * _S111 * falloff_0 * window_0 * window_0 * aim_0;
+        var _S113 : vec3<f32> = emission_0.xyz;
+        if((contribution_0 * dot(_S113, vec3<f32>(0.2125999927520752f, 0.71520000696182251f, 0.07220000028610229f))) < 0.00000999999974738f)
         {
             corner_0 = corner_0 + i32(1);
             continue;
@@ -1470,7 +1477,7 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
         var reaches_1 : f32;
         if(reaches_0 < 0.0f)
         {
-            reaches_1 = SegmentVisibility_0(world_18, worldNormal_0, _S108, 0.11999999731779099f);
+            reaches_1 = SegmentVisibility_0(world_18, worldNormal_0, _S109, 0.11999999731779099f);
         }
         else
         {
@@ -1481,7 +1488,7 @@ fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invo
             corner_0 = corner_0 + i32(1);
             continue;
         }
-        indirectSum_0 = indirectSum_0 + _S112 * vec3<f32>((contribution_0 * reaches_1));
+        indirectSum_0 = indirectSum_0 + _S113 * vec3<f32>((contribution_0 * reaches_1));
         corner_0 = corner_0 + i32(1);
     }
     textureStore((uDirect_0), (vec2<u32>(texelAt_1)), (vec4<f32>(indirectSum_0, 1.0f)));

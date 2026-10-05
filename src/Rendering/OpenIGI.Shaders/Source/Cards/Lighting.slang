@@ -202,9 +202,25 @@ float CardLampMapVisibility(int entry, float3 world, float3 normal)
 
     int first = entry;
 
-    // Off the surface a little, as the traced ray leaves it: a texel of the cache stands for a patch of
-    // surface several centimetres across, and its own map texel is no finer.
-    float3 at = world + (normal * 0.05);
+    // Off the surface along its normal by a texel and a half of the map where the point stands, and five
+    // centimetres more. These maps are coarse -- sixty-four texels a face, a hand's width each at a few
+    // metres -- and a wall the lamp sees at a grazing angle, as every wall lamp sees its own wall, crosses
+    // several of their depths within one texel: held only five centimetres off, the wall shadowed itself
+    // in patches, the cache took the patches, and the gather spread them over the wall as clouds. The
+    // offset that grows with the texel is the one that keeps a grazing receiver clear of its own depth.
+    uint mapWidth;
+    uint mapHeight;
+    uint mapLayers;
+    uLampMaps.GetDimensions(mapWidth, mapHeight, mapLayers);
+    float pointZ = 0.25;
+    for (int face = 0; face < 6; face++)
+    {
+        float4 forward = uLampMapRecords[((first + face) * 5) + 3];
+        pointZ = max(pointZ, dot(forward.xyz, world) + forward.w);
+    }
+
+    float texelAtPoint = pointZ * 2.0 / float(max(mapWidth, 1u));
+    float3 at = world + (normal * (0.05 + (1.5 * texelAtPoint)));
 
     // The face the point lies furthest in front of is the one whose view holds it.
     int slot = first;
@@ -250,25 +266,30 @@ float CardLampMapVisibility(int entry, float3 world, float3 normal)
     float texelMetres = viewZ * (2.0 / max(length(row0.xyz), 1e-3)) / float(max(width, 1u));
     float bias = 0.05 + (0.005 * viewZ) + (2.0 * texelMetres);
 
-    // The four texels round the point, each compared and the verdicts blended by where it falls among
-    // them, so a cache texel near a shadow's edge takes a share rather than a hard either-or.
+    // The sixteen texels round the point, each compared and the verdicts weighted by a tent over the
+    // point's own place among them: a filtered edge a texel and a half wide either way, where four taps
+    // left a cache texel near any edge flipping on whichever texel it fell closest to.
     float2 texelAt = (uv * float2(size)) - 0.5;
-    int2 corner = int2(floor(texelAt));
-    float2 blend = texelAt - float2(corner);
+    int2 corner = int2(floor(texelAt)) - 1;
+    float2 blend = texelAt - floor(texelAt);
     float lit = 0.0;
-    for (int y = 0; y < 2; y++)
+    float weightSum = 0.0;
+    for (int y = 0; y < 4; y++)
     {
-        for (int x = 0; x < 2; x++)
+        for (int x = 0; x < 4; x++)
         {
             int2 texel = clamp(corner + int2(x, y), int2(0, 0), size - 1);
             float stored = uLampMaps.Load(int4(texel, slot, 0));
             float storedZ = terms.y / min(((stored * 2.0) - 1.0) - terms.x, -1e-6);
-            float weight = (x == 0 ? 1.0 - blend.x : blend.x) * (y == 0 ? 1.0 - blend.y : blend.y);
+            float2 offset = abs(float2(float(x) - 1.0, float(y) - 1.0) - blend);
+            float2 tent = saturate(1.0 - (offset / 2.0));
+            float weight = tent.x * tent.y;
             lit += storedZ >= viewZ - bias ? weight : 0.0;
+            weightSum += weight;
         }
     }
 
-    return lit;
+    return lit / max(weightSum, 1e-4);
 }
 #endif
 
