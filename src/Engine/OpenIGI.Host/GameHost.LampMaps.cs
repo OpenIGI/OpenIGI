@@ -129,49 +129,11 @@ internal sealed partial class GameHost
                 continue;
             }
 
-            float reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f);
-            if (lamp.IsDirectional)
+            (Vector3d from, Matrix4f projection) = LampMapView(lamp);
+            for (int face = 0; face < CubeFaceAxes.Length; face++)
             {
-                // A fitting that faces a way is drawn as a cube too, from a few centimetres in front of its
-                // glass. A single wide view out of the glass left everything beyond seventy-five degrees off
-                // its axis to the distance field, and that field cannot hold the slab a wall lamp is mounted
-                // just above: the wall and the ground under every such canopy lit in broad wedges, where the
-                // traced shadow had them dark. A cube sees the whole of the lamp's front, out to its own
-                // plane; what lies behind the glass is behind every face's near plane and reads as lit, and
-                // the lamp's own aim gives it no light.
-                Vector3f facing = lamp.Direction.Normalized();
-                Vector3d front = new(
-                    lamp.Position.X + (facing.X * LampMapStandOff),
-                    lamp.Position.Y + (facing.Y * LampMapStandOff),
-                    lamp.Position.Z + (facing.Z * LampMapStandOff));
-                Matrix4f faceProjection = Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, 0.03f, reach);
-                for (int face = 0; face < CubeFaceAxes.Length; face++)
-                {
-                    PlaceLampMap(
-                        start + face,
-                        fixture,
-                        front,
-                        ShadowCascades.LightRotationFor(-CubeFaceAxes[face]),
-                        faceProjection);
-                }
-            }
-            else
-            {
-                // From the lamp's centre with a near plane of a few centimetres, as a point light's cube is
-                // drawn, and with its own housing in the maps (see ShadowCasterPass.RenderLampMap). A near
-                // plane a quarter of a metre out cut away the door frame a recessed lamp sits in, and its
-                // light spilled round the frame onto the wall either side.
-                const float near = 0.03f;
-                Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, near, reach);
-                for (int face = 0; face < CubeFaceAxes.Length; face++)
-                {
-                    PlaceLampMap(
-                        start + face,
-                        fixture,
-                        lamp.Position,
-                        ShadowCascades.LightRotationFor(-CubeFaceAxes[face]),
-                        projection);
-                }
+                PlaceLampMap(
+                    start + face, fixture, from, ShadowCascades.LightRotationFor(-CubeFaceAxes[face]), projection);
             }
         }
 
@@ -192,6 +154,42 @@ internal sealed partial class GameHost
         }
 
         _device.SetLampShadowMapSlots(_lampMapSlotPerLight.AsSpan(0, lightCount));
+    }
+
+    /// <summary>Where a lamp's cube of maps is drawn from, and the projection each of its faces looks through.</summary>
+    /// <param name="lamp">The fixture.</param>
+    /// <returns>The camera's absolute position and the faces' shared projection.</returns>
+    /// <remarks>
+    /// <para>
+    /// A fitting that faces a way is drawn from a few centimetres in front of its glass. A single wide view
+    /// out of the glass left everything beyond seventy-five degrees off its axis to the distance field, and
+    /// that field cannot hold the slab a wall lamp is mounted just above: the wall and the ground under every
+    /// such canopy lit in broad wedges, where the traced shadow had them dark. A cube sees the whole of the
+    /// lamp's front, out to its own plane; what lies behind the glass is behind every face's near plane and
+    /// reads as lit, and the lamp's own aim gives it no light.
+    /// </para>
+    /// <para>
+    /// One that does not is drawn from its centre with a near plane of a few centimetres, as a point light's
+    /// cube is, and with its own housing in the maps (see ShadowCasterPass.RenderLampMap). A near plane a
+    /// quarter of a metre out cut away the door frame a recessed lamp sits in, and its light spilled round
+    /// the frame onto the wall either side.
+    /// </para>
+    /// </remarks>
+    private static (Vector3d From, Matrix4f Projection) LampMapView(LightFixture lamp)
+    {
+        float reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f);
+        Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, 0.03f, reach);
+        if (!lamp.IsDirectional)
+        {
+            return (lamp.Position, projection);
+        }
+
+        Vector3f facing = lamp.Direction.Normalized();
+        Vector3d front = new(
+            lamp.Position.X + (facing.X * LampMapStandOff),
+            lamp.Position.Y + (facing.Y * LampMapStandOff),
+            lamp.Position.Z + (facing.Z * LampMapStandOff));
+        return (front, projection);
     }
 
     /// <summary>Finds a run of free slots, or -1.</summary>

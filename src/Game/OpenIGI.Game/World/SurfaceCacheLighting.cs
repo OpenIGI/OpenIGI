@@ -249,6 +249,12 @@ public sealed class SurfaceCacheLighting : IDisposable
     private SurfaceCacheLookup? _lookup;
     private int _lightCount;
 
+    // The lamps' coarse maps, where the device draws them: every map's projection from this pass's origin,
+    // and the device's count of map changes they were written at. See SetLampMapEntries.
+    private StorageBufferHandle _lampMapRecords;
+    private float[]? _lampMapFloats;
+    private int _lampMapVersion = -1;
+
     // The fixtures as they were handed over, and the buffer contents built from them, kept so that a lamp
     // being switched can rewrite one float per light rather than rebuild the whole buffer.
     private IReadOnlyList<LightFixture>? _fixtures;
@@ -937,6 +943,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.BindStorageBuffer(0, _pages);
         _device.BindStorageBuffer(1, _tiles);
         _device.BindStorageBuffer(2, _lights);
+        BindLampMaps();
         _device.BindImage(0, DirectLighting, ImageAccess.Write);
 
         _device.SetTexture(1, _device.CardAlbedo);
@@ -1143,6 +1150,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.BindStorageBuffer(0, _pages);
         _device.BindStorageBuffer(1, _tiles);
         _device.BindStorageBuffer(2, _lights);
+        BindLampMaps();
         _device.BindStorageBuffer(3, _lookup?.Cells ?? _pages);
         _device.BindStorageBuffer(4, _lookup?.Pages ?? _tiles);
         _device.BindStorageBuffer(5, _probePositions);
@@ -1278,6 +1286,9 @@ public sealed class SurfaceCacheLighting : IDisposable
                 packed[at + 9] = fixture.Direction.Y;
                 packed[at + 10] = fixture.Direction.Z;
             }
+
+            // No shadow map until SetLampMapEntries says otherwise.
+            packed[at + 11] = BitConverter.Int32BitsToSingle(-1);
         }
 
         _packed = packed;
@@ -1285,6 +1296,89 @@ public sealed class SurfaceCacheLighting : IDisposable
         _device.UpdateStorageBuffer<float>(_lights, packed);
 
         _logger.Information(LogCategory, $"Card lighting: {fixtures.Count} local light(s).");
+    }
+
+    /// <summary>Says which lamps hold coarse maps the relight can read, by fixture.</summary>
+    /// <param name="entryPerFixture">
+    /// One per fixture, indexed as <see cref="SetLocalLights"/> was given them: the first of the lamp's six
+    /// faces in <see cref="IGraphicsDevice.LampBounceMapArray"/>, or -1 for a lamp the relight must march the
+    /// field for.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Without ray tracing, whether a lamp reaches a texel of the cache was asked of the distance field
+    /// alone. Far from the camera its voxels are a metre or two and a wall is not in it: a row of lamps lit
+    /// the near side of the wall they are fixed to the far side of, and the screen gather bounced that onto
+    /// the wall in a bright patch the traced frame had dark. A lamp with coarse maps answers from them.
+    /// </para>
+    /// <para>
+    /// Only what changed is re-sent, so a frame whose maps are as they were costs a comparison per lamp.
+    /// </para>
+    /// </remarks>
+    public void SetLampMapEntries(ReadOnlySpan<int> entryPerFixture)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_packed is not { } packed || !_lights.IsValid)
+        {
+            return;
+        }
+
+        bool changed = false;
+        for (int i = 0; i < _lightCount; i++)
+        {
+            int entry = i < entryPerFixture.Length ? entryPerFixture[i] : -1;
+            float bits = BitConverter.Int32BitsToSingle(entry);
+            int at = (i * FloatsPerLight) + 11;
+            if (BitConverter.SingleToInt32Bits(packed[at]) != entry)
+            {
+                packed[at] = bits;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            _device.UpdateStorageBuffer<float>(_lights, packed);
+        }
+    }
+
+    /// <summary>Binds the lamps' coarse maps and their projections, refreshed when the maps have changed.</summary>
+    /// <remarks>
+    /// Every dispatch of the program binds them, whatever its mode: the modes share one set of bindings and
+    /// an unwritten one is a fault. Where the device draws no maps, the buffer holds no drawn map and the
+    /// texture slot is left to the device's stand-in.
+    /// </remarks>
+    private void BindLampMaps()
+    {
+        int floats = IGraphicsDevice.LampBounceMapCapacity * IGraphicsDevice.LampMapRecordFloats;
+        if (!_lampMapRecords.IsValid)
+        {
+            _lampMapFloats = new float[floats];
+            _lampMapRecords = _device.CreateStorageBuffer(floats * sizeof(float), "cards.lampmaps");
+            _device.UpdateStorageBuffer<float>(_lampMapRecords, _lampMapFloats);
+            _lampMapVersion = -1;
+        }
+
+        bool maps = _device.LampBounceMapSlots > 0;
+        int version = maps ? _device.LampBounceMapVersion : -2;
+        if (version != _lampMapVersion && _lampMapFloats is { } records)
+        {
+            if (maps)
+            {
+                _device.WriteLampBounceMaps(_origin, records);
+            }
+            else
+            {
+                Array.Clear(records);
+            }
+
+            _device.UpdateStorageBuffer<float>(_lampMapRecords, records);
+            _lampMapVersion = version;
+        }
+
+        _device.BindStorageBuffer(7, _lampMapRecords);
+        _device.SetTexture(8, maps ? _device.LampBounceMapArray : TextureHandle.None);
     }
 
     /// <summary>Re-sends the same lights at whatever output a switchboard says they are giving out.</summary>
@@ -2249,6 +2343,7 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         _device.DestroyStorageBuffer(_tiles);
         _device.DestroyStorageBuffer(_lights);
+        _device.DestroyStorageBuffer(_lampMapRecords);
         _device.DestroyStorageBuffer(_pages);
         _device.DestroyStorageBuffer(_probePositions);
         _device.DestroyStorageBuffer(_activeTiles);

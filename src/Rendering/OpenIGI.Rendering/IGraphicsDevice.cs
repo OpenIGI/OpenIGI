@@ -1590,6 +1590,56 @@ public interface IGraphicsDevice : IDisposable
         return false;
     }
 
+    /// <summary>Gets how many coarse lamp maps the surface cache's relight can hold: six to a lamp.</summary>
+    /// <remarks>
+    /// A second, small bank beside the lamp shadow maps, for every lamp in the level rather than the frame's
+    /// nearest: what the relight asks of a lamp is whether its light reaches a patch of wall at all, which a
+    /// coarse map answers, and it asks it of lamps far from the camera that the shadow maps never cover.
+    /// </remarks>
+    int LampBounceMapSlots => 0;
+
+    /// <summary>Begins drawing the world into one coarse lamp map, from the lamp.</summary>
+    /// <param name="slot">The map, below <see cref="LampBounceMapSlots"/>.</param>
+    /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>
+    /// <param name="rotation">The light's rotation: its rows the right, up and forward axes.</param>
+    /// <param name="projection">The perspective it looks through.</param>
+    /// <returns><see langword="true"/> when the pass is open; end it with <see cref="EndShadowCascade"/>.</returns>
+    bool BeginLampBounceMap(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection)
+    {
+        _ = slot;
+        _ = position;
+        _ = rotation;
+        _ = projection;
+        return false;
+    }
+
+    /// <summary>Gets the coarse lamp maps as one array, for a compute pass to read through <see cref="SetTexture"/>.</summary>
+    /// <remarks><see cref="TextureHandle.None"/> on a device that draws none.</remarks>
+    TextureHandle LampBounceMapArray => TextureHandle.None;
+
+    /// <summary>Gets a number that changes whenever a coarse lamp map is drawn or the maps are released.</summary>
+    /// <remarks>So a reader of <see cref="WriteLampBounceMaps"/> knows when what it holds is out of date.</remarks>
+    int LampBounceMapVersion => 0;
+
+    /// <summary>Writes every coarse lamp map's projection, measured from an origin of the caller's choosing.</summary>
+    /// <param name="origin">The absolute world position the caller's coordinates are relative to.</param>
+    /// <param name="destination">
+    /// <see cref="LampMapRecordFloats"/> floats per slot: the four rows of the map's origin-relative world to
+    /// clip matrix, then its projection's two depth terms (ndc depth = first + second / view depth), whether
+    /// the map has been drawn (1 or 0), and a spare nought.
+    /// </param>
+    void WriteLampBounceMaps(Vector3d origin, Span<float> destination)
+    {
+        _ = origin;
+        destination.Clear();
+    }
+
+    /// <summary>The floats <see cref="WriteLampBounceMaps"/> writes for each slot.</summary>
+    const int LampMapRecordFloats = 20;
+
+    /// <summary>The most coarse lamp maps a device holds: six faces each for a hundred and seventy lamps.</summary>
+    const int LampBounceMapCapacity = 1020;
+
     /// <summary>Sets the light the scene is lit by for this frame.</summary>
     /// <param name="lighting">The lighting model, sun and ambient.</param>
     void SetLighting(in SceneLighting lighting);

@@ -193,7 +193,7 @@ public sealed class ComputeSeamTests
         device.SetTexture(7, atlas);
 
         StorageBufferHandle buffer = device.CreateStorageBuffer(256, "buffer");
-        for (int slot = 0; slot < 7; slot++)
+        for (int slot = 0; slot < 8; slot++)
         {
             device.BindStorageBuffer(slot, buffer);
         }

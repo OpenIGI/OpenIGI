@@ -567,6 +567,15 @@ public sealed partial class GraphicsDevice
     /// </remarks>
     private IRhiTextureView SampledOrStandIn(ComputeKernel kernel, ShaderBinding binding, HashSet<IRhiTexture> written)
     {
+        // A layered or depth slot nothing is bound to reads a stand-in of its own shape: the default a flat
+        // slot falls back to is neither, and a view of the wrong dimension is not a thing to bind.
+        if ((binding.Arrayed || binding.SampleType == ShaderSampleType.Depth)
+            && binding.Dimensions != 3
+            && !_boundTextures.ContainsKey(kernel.UnitOf(binding)))
+        {
+            return StandInFor(binding);
+        }
+
         IRhiTextureView view = SampledAt(kernel, binding).View;
         bool depthSlot = binding.SampleType == ShaderSampleType.Depth;
         bool wrongKind = _device.ShaderTarget == ShaderTarget.Wgsl && depthSlot != view.Format.IsDepth();

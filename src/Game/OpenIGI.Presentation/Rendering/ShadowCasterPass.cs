@@ -118,6 +118,11 @@ public sealed class ShadowCasterPass
     /// <param name="scene">The world's placed objects, or <see langword="null"/> for none.</param>
     /// <param name="world">The presenter that draws them, or <see langword="null"/> for none.</param>
     /// <param name="characters">The character presenter, or <see langword="null"/> for none.</param>
+    /// <param name="coarse">
+    /// Whether this is one of the surface cache's coarse maps (see
+    /// <see cref="IGraphicsDevice.LampBounceMapSlots"/>) rather than a lamp shadow map. Those are drawn once and
+    /// kept, so they hold the static world alone: a soldier drawn into one would stand there for good.
+    /// </param>
     /// <returns>Whether the map was drawn.</returns>
     /// <remarks>
     /// The same renderers as the cascades, from a camera in the lamp. Nothing is culled by size: a lamp's map
@@ -133,9 +138,13 @@ public sealed class ShadowCasterPass
         in Matrix4f projection,
         WorldScene? scene,
         IWorldPresenter? world,
-        ICharacterPresenter? characters)
+        ICharacterPresenter? characters,
+        bool coarse = false)
     {
-        if (!_device.BeginLampShadowMap(slot, position, rotation, projection))
+        bool begun = coarse
+            ? _device.BeginLampBounceMap(slot, position, rotation, projection)
+            : _device.BeginLampShadowMap(slot, position, rotation, projection);
+        if (!begun)
         {
             return false;
         }
@@ -152,8 +161,11 @@ public sealed class ShadowCasterPass
                     new WorldDrawOptions(MinimumRadius: 0f));
             }
 
-            characters?.Draw(lampCamera, projection);
-            characters?.DrawPlayerBody(lampCamera, projection);
+            if (!coarse)
+            {
+                characters?.Draw(lampCamera, projection);
+                characters?.DrawPlayerBody(lampCamera, projection);
+            }
         }
         finally
         {

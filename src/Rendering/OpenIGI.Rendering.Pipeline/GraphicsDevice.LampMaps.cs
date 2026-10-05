@@ -50,6 +50,23 @@ public sealed partial class GraphicsDevice
     // Which slot each of this frame's lamps reads, in the order the lamps were handed over; -1 for none.
     private readonly int[] _lampMapSlotOf = new int[DeferredLocalLight.Maximum];
 
+    /// <summary>A map's world to clip matrix, for world positions measured from <paramref name="origin"/>.</summary>
+    /// <param name="position">Where the map was drawn from, in absolute world metres.</param>
+    /// <param name="rotation">The light's rotation it was drawn with.</param>
+    /// <param name="projection">The projection it was drawn with.</param>
+    /// <param name="origin">The absolute position the coordinates the matrix takes are relative to.</param>
+    private static Matrix4f LampMapMatrix(Vector3d position, Matrix3f rotation, in Matrix4f projection, Vector3d origin)
+    {
+        Vector3f lampFromOrigin = new(
+            (float)(position.X - origin.X),
+            (float)(position.Y - origin.Y),
+            (float)(position.Z - origin.Z));
+
+        // Into the light's frame the way the cascades go there: a Matrix3f transforms by its transpose.
+        Vector3f translation = -rotation.Transposed().Transform(lampFromOrigin);
+        return projection * Matrix4f.CreateRigid(rotation, translation);
+    }
+
     /// <inheritdoc/>
     public bool WantsLampShadowMaps => WillMarchLamps();
 
@@ -142,20 +159,13 @@ public sealed partial class GraphicsDevice
     {
         for (int slot = 0; slot < LampMapSlotCount; slot++)
         {
-            Matrix4f matrix = Matrix4f.Identity;
-            if (_lampMapDrawn[slot])
-            {
-                Vector3d position = _lampMapPositions[slot];
-                Vector3f lampFromCamera = new(
-                    (float)(position.X - _cameraPosition.X),
-                    (float)(position.Y - _cameraPosition.Y),
-                    (float)(position.Z - _cameraPosition.Z));
-                Matrix3f rotation = _lampMapRotations[slot];
-                // Into the light's frame the way the cascades go there: a Matrix3f transforms by its transpose.
-                Vector3f translation = -rotation.Transposed().Transform(lampFromCamera);
-                matrix = _lampMapProjections[slot] * Matrix4f.CreateRigid(rotation, translation);
-            }
-
+            Matrix4f matrix = _lampMapDrawn[slot]
+                ? LampMapMatrix(
+                    _lampMapPositions[slot],
+                    _lampMapRotations[slot],
+                    _lampMapProjections[slot],
+                    new Vector3d(_cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z))
+                : Matrix4f.Identity;
             matrix.CopyColumnMajorTo(block.AsSpan(LampMapMatricesAt + (slot * 16), 16));
 
             // The projection's own depth terms, which the matrix above has mixed with the rotation.
@@ -196,5 +206,6 @@ public sealed partial class GraphicsDevice
         _lampMaps = null;
         _lampMapSampler = null;
         Array.Clear(_lampMapDrawn);
+        DisposeLampBounceMaps();
     }
 }

@@ -46,6 +46,10 @@ internal sealed partial class GameHost
     private Vector3f _giRefreshSunDirection;
     private Vector3f _giRefreshSunColour;
     private int _giRefreshLampRevision = -1;
+
+    // The coarse lamp maps as the far refresh last saw them: while they are being drawn the far cache has
+    // to be relit, or the cards lit through a wall before a lamp's maps existed would keep that light.
+    private int _giRefreshBounceMapVersion = -1;
     private int _giRefreshQuietRounds;
     private bool _giRefreshWorldSettled;
 
@@ -561,6 +565,7 @@ internal sealed partial class GameHost
         _giRefreshWorldSettled |= worldSettled;
         bool changed = (!_giRefreshWorldSettled && !worldSettled)
             || _lampBounceRevision != _giRefreshLampRevision
+            || _device.LampBounceMapVersion != _giRefreshBounceMapVersion
             || !NearlyEqual(sunDirection, _giRefreshSunDirection)
             || !NearlyEqual(sunColour, _giRefreshSunColour);
 
@@ -568,6 +573,7 @@ internal sealed partial class GameHost
         {
             _giRefreshQuietRounds = 0;
             _giRefreshLampRevision = _lampBounceRevision;
+            _giRefreshBounceMapVersion = _device.LampBounceMapVersion;
             _giRefreshSunDirection = sunDirection;
             _giRefreshSunColour = sunColour;
         }

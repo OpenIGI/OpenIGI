@@ -4858,6 +4858,7 @@ internal sealed partial class GameHost : IDisposable
                 {
                     Igi1Presentation lampCasters = new(_world, shadowCasters);
                     RenderLampMaps(_shadowPass, _scene, lampCasters.World, lampCasters.Characters);
+                    RenderLampBounceMaps(_shadowPass, _scene, lampCasters.World);
                 }
                 EndStageIfSlow("the shadow cascades");
 
