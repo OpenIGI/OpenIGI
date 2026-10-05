@@ -43,7 +43,10 @@ internal sealed partial class GameHost
     private readonly List<int> _lampMapOccupied = [];
     private readonly List<Vector3d> _lampMapPeople = [];
 
-    /// <summary>How far in front of a fitting's glass its cube is drawn from, in metres.</summary>
+    /// <summary>The least distance in front of a fitting's centre its cube is drawn from, in metres.</summary>
+    /// <remarks>
+    /// The most is a quarter of the fitting's size, up to twenty centimetres (see <see cref="LampMapView"/>).
+    /// </remarks>
     private const double LampMapStandOff = 0.06;
 
     /// <summary>The most slots this side keeps track of; the device says how many it actually has.</summary>
@@ -203,11 +206,16 @@ internal sealed partial class GameHost
 
         Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI * 0.5f, 1f, 0.03f, reach);
 
+        // Out past the fitting's own dome: six centimetres is in front of a flat batten's glass, but a round
+        // canopy light seventy centimetres across hangs its diffuser well below its centre, and a cube drawn
+        // from inside that saw the diffuser on every face -- the canopy floor under four such lamps read as
+        // wholly shadowed where the traced lamps lit it.
         Vector3f facing = lamp.Direction.Normalized();
+        double standOff = Math.Clamp(lamp.Extent * 0.25, LampMapStandOff, 0.2);
         Vector3d front = new(
-            lamp.Position.X + (facing.X * LampMapStandOff),
-            lamp.Position.Y + (facing.Y * LampMapStandOff),
-            lamp.Position.Z + (facing.Z * LampMapStandOff));
+            lamp.Position.X + (facing.X * standOff),
+            lamp.Position.Y + (facing.Y * standOff),
+            lamp.Position.Z + (facing.Z * standOff));
         return (front, projection);
     }
 
