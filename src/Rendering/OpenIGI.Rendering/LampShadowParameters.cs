@@ -137,8 +137,14 @@ public static class LampShadowParameters
     /// <param name="hasHistory">Whether the history holds the previous frame at this size.</param>
     /// <param name="accumulate">Whether to blend onto that history at all; off is for measurement.</param>
     /// <param name="velocityValid">Whether this frame's motion field, moving objects included, is ready to read.</param>
+    /// <param name="lightingChanged">Whether a lamp's output changed a moment ago, which holds the history short.</param>
     public static void WriteTemporal(
-        Span<float> data, in TemporalFrameState state, bool hasHistory, bool accumulate, bool velocityValid = false)
+        Span<float> data,
+        in TemporalFrameState state,
+        bool hasHistory,
+        bool accumulate,
+        bool velocityValid = false,
+        bool lightingChanged = false)
     {
         Require(data, TemporalFloats);
         data.Clear();
@@ -172,6 +178,7 @@ public static class LampShadowParameters
 
         data[52] = accumulate ? 1f : 0f;
         data[53] = velocityValid ? 1f : 0f;
+        data[54] = lightingChanged ? 1f : 0f;
     }
 
     /// <summary>Fills the spatial half's block.</summary>

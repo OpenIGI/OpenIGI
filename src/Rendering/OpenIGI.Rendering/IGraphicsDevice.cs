@@ -1590,6 +1590,15 @@ public interface IGraphicsDevice : IDisposable
         return false;
     }
 
+    /// <summary>Says that some lamp's output has just changed: switched, flickered, faded.</summary>
+    /// <remarks>
+    /// The lamp shadows are a ratio averaged over frames, and a switch changes which lamps that ratio stands
+    /// for; the history is held short for a moment after, rather than carrying the old answer.
+    /// </remarks>
+    void NoteLampLevelsChanged()
+    {
+    }
+
     /// <summary>Gets how many coarse lamp maps the surface cache's relight can hold: six to a lamp.</summary>
     /// <remarks>
     /// A second, small bank beside the lamp shadow maps, for every lamp in the level rather than the frame's

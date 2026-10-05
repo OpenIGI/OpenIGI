@@ -20,6 +20,7 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="SunDirection">The world direction towards the sun.</param>
 /// <param name="LampMaps">The nearest lamps' shadow maps, one per layer, or <see langword="null"/> for none yet.</param>
 /// <param name="LampMapSampler">The comparison sampler those maps are read through.</param>
+/// <param name="LightingChanged">Whether a lamp's output changed a moment ago, which holds the history short.</param>
 /// <param name="SunLuminance">The sun's luminance as the lighting pass applies it; nought with no traced sun.</param>
 /// <param name="MinimumVisible">
 /// The summed lamp light at a pixel below which its shadow could not show at this exposure; such a pixel is
@@ -40,7 +41,8 @@ public readonly record struct TracedLampFrame(
     Vector3f SunDirection = default,
     float SunLuminance = 0f,
     IRhiTextureView? LampMaps = null,
-    IRhiSampler? LampMapSampler = null);
+    IRhiSampler? LampMapSampler = null,
+    bool LightingChanged = false);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -302,7 +304,8 @@ public sealed class TracedLampShadow : IDisposable
         // Both halves run with the filter off -- the accumulation carries the frame count and the filter the
         // depth the shading's upsample reads -- and only the filtering itself stops.
         Span<float> temporal = stackalloc float[LampShadowParameters.TemporalFloats];
-        LampShadowParameters.WriteTemporal(temporal, half, _hasHistory, frame.Filter, velocityValid: velocity is not null);
+        LampShadowParameters.WriteTemporal(
+            temporal, half, _hasHistory, frame.Filter, velocityValid: velocity is not null, lightingChanged: frame.LightingChanged);
 
         _temporal.Bind("uRaw", raw.View, _sampler);
 

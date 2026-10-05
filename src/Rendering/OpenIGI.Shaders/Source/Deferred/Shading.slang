@@ -641,8 +641,17 @@ float3 ApplyFog(float3 colour, float2 uv, float viewZ)
 // z is how much of the bilinear footprint agreed with this pixel's depth: one where the taps are all on
 // this surface, near nought where every tap landed on something else -- a fence wire in front of it, say --
 // and the answer is a neighbour's rather than this pixel's.
-float3 UpsampleLampVisibility(float2 uv, float viewZ)
+//
+// And by normal: where a wall meets the floor the two stand at the same depth, so a tap on the wall passed
+// the depth test and its lamp shadow bled half a texel onto the floor. Each tap's normal is read off the
+// G-buffer at the full-resolution pixel the half-resolution texel stands over.
+float3 UpsampleLampVisibility(float2 uv, float viewZ, float3 normal)
 {
+    uint fullWidth;
+    uint fullHeight;
+    uNormal.GetDimensions(fullWidth, fullHeight);
+    int2 fullLast = int2(int(fullWidth) - 1, int(fullHeight) - 1);
+
     uint width;
     uint height;
     uLampVisibility.GetDimensions(width, height);
@@ -680,7 +689,11 @@ float3 UpsampleLampVisibility(float2 uv, float viewZ)
             nearest = tap.xy;
         }
 
-        float weight = bilinear[i] * exp2(-gap / max(0.03 * viewZ, 1e-3));
+        int2 fullAt = clamp(int2((float2(at) + 0.5) * (float2(float(fullWidth), float(fullHeight)) / size)), int2(0, 0), fullLast);
+        float3 tapNormal = DecodeGBufferNormal(uNormal.Load(int3(fullAt, 0)));
+        float facing = saturate(dot(tapNormal, normal));
+
+        float weight = bilinear[i] * exp2(-gap / max(0.03 * viewZ, 1e-3)) * facing * facing * facing * facing;
         total += tap.xy * weight;
         totalWeight += weight;
     }
@@ -1239,7 +1252,7 @@ float4 fragmentMain(Varyings input) : SV_Target
 
     int lampCount = int(lamps.control.x + 0.5);
 
-    float3 lampShadow = UpsampleLampVisibility(vUv, viewPos.z);
+    float3 lampShadow = UpsampleLampVisibility(vUv, viewPos.z, normal);
 
     // What stands between this pixel and its lamps: the traced ratio of its shadowed lamp light to its
     // unshadowed lamp light, estimated by the lamp trace from a few rays drawn in proportion to what each

@@ -208,10 +208,14 @@ internal sealed partial class GameHost
         board.Update(elapsed);
         PlayLampSounds(board, elapsed, audible);
 
-        if (_cardLighting is { } bounce && board.Revision != _lampBounceRevision)
+        if (board.Revision != _lampBounceRevision)
         {
             _lampBounceRevision = board.Revision;
-            bounce.SetLocalLightLevels(board);
+            _cardLighting?.SetLocalLightLevels(board);
+
+            // And the lamp shadows' history, which would otherwise hold the old lamps' verdict for half a
+            // second after one switched.
+            _device.NoteLampLevelsChanged();
         }
     }
 

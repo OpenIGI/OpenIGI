@@ -58,6 +58,15 @@ public sealed partial class GraphicsDevice
     /// <inheritdoc/>
     public int LampBounceMapVersion => _lampBounceMapVersion;
 
+    // How many more frames the lamp shadows' history is held short, after a lamp's output changed.
+    private int _lampLevelChangeFrames;
+
+    /// <inheritdoc/>
+    public void NoteLampLevelsChanged() => _lampLevelChangeFrames = LampLevelChangeHoldFrames;
+
+    /// <summary>How long the lamp shadows' history stays short after a lamp switches, in frames.</summary>
+    private const int LampLevelChangeHoldFrames = 6;
+
     /// <inheritdoc/>
     public bool BeginLampBounceMap(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection)
     {

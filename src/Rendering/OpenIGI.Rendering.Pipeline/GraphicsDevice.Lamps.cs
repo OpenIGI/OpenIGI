@@ -123,6 +123,13 @@ public sealed partial class GraphicsDevice
         Vector3f sunColour = _lighting.SunColour * _lighting.Scale;
         float sunLuminance = (0.2126f * sunColour.X) + (0.7152f * sunColour.Y) + (0.0722f * sunColour.Z);
 
+        // Held short a few frames after a lamp switched (see NoteLampLevelsChanged).
+        bool lightingChanged = _lampLevelChangeFrames > 0;
+        if (lightingChanged)
+        {
+            _lampLevelChangeFrames--;
+        }
+
         TracedLampFrame lampFrame =
             traced
                 ? new TracedLampFrame(
@@ -136,7 +143,8 @@ public sealed partial class GraphicsDevice
                     MinimumVisible: minimumVisibleLamp,
                     SunVisibility: sunMask,
                     SunDirection: sunDirection,
-                    SunLuminance: sunLuminance)
+                    SunLuminance: sunLuminance,
+                    LightingChanged: lightingChanged)
                 : new TracedLampFrame(
                     null,
                     _cameraPosition,
@@ -152,7 +160,8 @@ public sealed partial class GraphicsDevice
                     sunDirection,
                     sunLuminance,
                     _lampMapArray,
-                    _lampMapSampler);
+                    _lampMapSampler,
+                    lightingChanged);
         IRhiTextureView? lampVelocity = _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null;
 
         // Step by step while measuring, so the trace and the two filters are told apart in the breakdown.

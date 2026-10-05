@@ -1187,8 +1187,17 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
                     {
                         var clipped_0 : f32 = clamp(historyVis_0, low_1.x, high_1.x);
                         var confidence_0 : f32 = saturate(1.0f - abs(clipped_0 - historyVis_0) / max(extent_0.x, 0.00999999977648258f));
-                        var _S45 : f32 = min(historyFrames_0 + 1.0f, mix(4.0f, 32.0f, confidence_0));
-                        result_0 = mix(vec2<f32>(mix(clipped_0, historyVis_0, confidence_0), historyShare_0), current_0, vec2<f32>((1.0f / _S45)));
+                        var softHistory_0 : vec2<f32> = vec2<f32>(mix(clipped_0, historyVis_0, confidence_0), historyShare_0);
+                        if((p_0.control_0.z) > 0.5f)
+                        {
+                            frames_0 = 4.0f;
+                        }
+                        else
+                        {
+                            frames_0 = mix(4.0f, 32.0f, confidence_0);
+                        }
+                        var _S45 : f32 = min(historyFrames_0 + 1.0f, frames_0);
+                        result_0 = mix(softHistory_0, current_0, vec2<f32>((1.0f / _S45)));
                         frames_0 = _S45;
                     }
                     else
