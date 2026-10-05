@@ -21,10 +21,11 @@ public sealed class SunShaftPass : IDisposable
     private const RhiTextureFormat Format = RhiTextureFormat.Rgba16Float;
     private const int BlockFloats = 16;
 
-    // The two blurs' steps, each as a share of the way to the sun per tap: the first reaches half the way in
-    // its sixteen taps, the second refines between them.
-    private const float FirstStep = 0.5f / 16f;
-    private const float SecondStep = 0.5f / 64f;
+    // The two blurs' steps, each as a share of the way to the sun per tap: the first reaches all the way in
+    // its sixteen taps, the second fills the gap between two of them with its own sixteen. Half the way left
+    // a ray no longer than the glow it came from.
+    private const float FirstStep = 1f / 16f;
+    private const float SecondStep = 1f / 256f;
 
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
@@ -179,7 +180,7 @@ public sealed class SunShaftPass : IDisposable
         // how much the sun's place on screen leaves.
         block[8] = strength;
         block[9] = 0f;
-        block[10] = 3f;
+        block[10] = 4f;
         block[11] = visible;
 
         block[12] = sceneWidth;

@@ -71,7 +71,8 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
             }
             k_0 = k_0 + i32(1);
         }
-        textureStore((uTarget_0), (vec2<u32>(_S2)), (vec4<f32>(sum_0 * vec3<f32>(0.25f) * vec3<f32>(pow(saturate(1.0f - length((p_0.sun_0.xy - uv_1) * vec2<f32>(p_0.size_0.x / p_0.size_0.y, 1.0f)) * 1.60000002384185791f), p_0.control_0.z)), 1.0f)));
+        var distance_0 : f32 = length((p_0.sun_0.xy - uv_1) * vec2<f32>(p_0.size_0.x / p_0.size_0.y, 1.0f));
+        textureStore((uTarget_0), (vec2<u32>(_S2)), (vec4<f32>(sum_0 * vec3<f32>(0.25f) * vec3<f32>((pow(saturate(1.0f - distance_0 * 1.20000004768371582f), p_0.control_0.z) + 3.0f * pow(saturate(1.0f - distance_0 * 4.0f), 2.0f))), 1.0f)));
         return;
     }
     if(mode_0 == i32(1))

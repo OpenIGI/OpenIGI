@@ -522,10 +522,10 @@ public sealed partial class GraphicsDevice
 
     /// <summary>What the sky round the sun adds to the bloom as shafts, at a strength of one.</summary>
     /// <remarks>
-    /// A quarter: the mask is the sky's own radiance, and laid on at full strength the glow round the sun
-    /// doubled the sky's brightness there.
+    /// Under a half: the mask is the sky's own radiance, and laid on at full strength the glow round the sun
+    /// doubled the sky's brightness there; a quarter left the rays too faint to find.
     /// </remarks>
-    private const float SunShaftScale = 0.25f;
+    private const float SunShaftScale = 0.4f;
 
     /// <summary>Where the sun stands on screen, and how much of its shafts that leaves.</summary>
     /// <param name="uv">The sun's screen position, which may lie off the screen.</param>

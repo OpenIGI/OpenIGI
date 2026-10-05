@@ -3493,7 +3493,7 @@ public static class RenderCVars
     public static readonly NumericCVar<float> SunShafts = Presets.Define(
         CVar.Float(
             "r_sun_shafts",
-            0f,
+            1f,
             0f,
             2f,
             CVarOptions.Archive,
@@ -3540,7 +3540,7 @@ public static class RenderCVars
     public static readonly NumericCVar<float> FogNoise = Presets.Define(
         CVar.Float(
             "r_fog_noise",
-            0f,
+            0.5f,
             0f,
             1f,
             CVarOptions.Archive,

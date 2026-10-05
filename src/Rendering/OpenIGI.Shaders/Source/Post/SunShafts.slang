@@ -79,9 +79,13 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         }
 
         // Fades with the distance from the sun's disc, measured with the screen's own aspect so the
-        // glow is round rather than stretched across a wide frame.
+        // glow is round rather than stretched across a wide frame; with a bright core round the disc
+        // itself on a wide, faint skirt. The core is what the blur streaks into rays: a mask as smooth as
+        // the sky round it gave the blur nothing to cut, and a lattice in front of the sun no shadow.
         float2 toSun = (p.sun.xy - uv) * float2(p.size.x / p.size.y, 1.0);
-        float near = pow(saturate(1.0 - (length(toSun) * 1.6)), p.control.z);
+        float distance = length(toSun);
+        float near = pow(saturate(1.0 - (distance * 1.2)), p.control.z)
+            + (3.0 * pow(saturate(1.0 - (distance * 4.0)), 2.0));
         uTarget.Store(px, float4((sum * 0.25) * near, 1.0));
         return;
     }
