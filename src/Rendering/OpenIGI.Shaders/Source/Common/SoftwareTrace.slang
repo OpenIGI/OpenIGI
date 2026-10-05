@@ -29,6 +29,10 @@
 // centimetres; a door that comes back black from every gather ray loses all of it.
 static const float kTraceNearSkip = 0.08;
 
+// How far off its surface a traced ray starts. TMin skips the second skin some surfaces carry in front of
+// the drawn one; this only has to clear the rounding.
+static const float kTraceSurfaceOffset = 0.03;
+
 // The march's own form is left out, so that this one takes the name.
 #define OPENIGI_TRACED_VISIBILITY 1
 #include "DistanceField.slang"
@@ -39,11 +43,13 @@ float VisibilityAt(float3 world, float3 normal, float3 direction, out float3 hit
 {
     hit = world;
 
-    // Off the surface along its own normal, as the march does, so a ray does not strike the surface it
-    // left; and over the reach the field would have described, so the two forms agree about how far a
-    // gather looks. A level with no field falls back to a reach no level is larger than.
-    float finest = uClipmapOrigin[0].w;
-    float3 at = world + (normal * finest * 1.5);
+    // Off the surface by a few centimetres, enough for the rounding at this distance from the origin, and
+    // over the reach the field would have described, so the two forms agree about how far a gather looks.
+    // Not the voxel and a half the march needs to leave its own field: a ray has no field to leave, and
+    // started that far out -- some forty centimetres -- it began above every kerb, sill and desk it should
+    // have found, and nothing low against a wall darkened the light round it. A level with no field falls
+    // back to a reach no level is larger than.
+    float3 at = world + (normal * kTraceSurfaceOffset);
     float reach = uClipmapOrigin[0].w * float(uShadowResolution)
         * float(1 << max(uShadowLevels - 1, 0));
     if (reach <= 0.0)
@@ -92,8 +98,7 @@ float VisibilityAt(float3 world, float3 normal, float3 direction, out float3 hit
 // itself is not its own occluder.
 float SegmentVisibility(float3 world, float3 normal, float3 target, float stopShort)
 {
-    float finest = uClipmapOrigin[0].w;
-    float3 at = world + (normal * max(finest * 1.5, 0.03));
+    float3 at = world + (normal * kTraceSurfaceOffset);
     float3 toTarget = target - at;
     float distance = length(toTarget);
     if (distance <= stopShort + kTraceNearSkip + 0.01)
@@ -176,7 +181,7 @@ float SegmentVisibility(float3 world, float3 normal, float3 target, float stopSh
 float Visibility(float3 world, float3 normal, float3 direction)
 {
 #if OPENIGI_RAY_QUERY
-    float3 at = world + (normal * uClipmapOrigin[0].w * 1.5);
+    float3 at = world + (normal * kTraceSurfaceOffset);
     float reach = uClipmapOrigin[0].w * float(uShadowResolution)
         * float(1 << max(uShadowLevels - 1, 0));
 

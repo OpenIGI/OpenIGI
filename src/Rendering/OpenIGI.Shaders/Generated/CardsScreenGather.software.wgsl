@@ -651,6 +651,7 @@ fn SkyRadiance_0( direction_2 : vec3<f32>) -> vec3<f32>
 
 fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 : vec3<f32>,  jitter_0 : vec2<f32>) -> vec3<f32>
 {
+    var radiance_2 : vec3<f32>;
     var resolved_3 : bool;
     if((Globals_0.uShadowLevels_0) <= i32(0))
     {
@@ -668,6 +669,11 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
     var _S55 : vec3<f32> = ToView_0(normal_3);
     const _S56 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
     var ray_0 : i32 = i32(0);
+    var surfaceSum_0 : vec3<f32> = _S56;
+    var surfaceCount_0 : f32 = 0.0f;
+    var unplaced_0 : f32 = 0.0f;
+    var openSum_0 : vec3<f32> = _S56;
+    var openCount_0 : f32 = 0.0f;
     var irradiance_0 : vec3<f32> = _S56;
     var counted_0 : f32 = 0.0f;
     for(;;)
@@ -685,7 +691,6 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         var sinTheta_0 : f32 = sqrt(max(0.0f, 1.0f - cosTheta_0 * cosTheta_0));
         var direction_3 : vec3<f32> = Orient_0(_S54, vec3<f32>(sinTheta_0 * cos(phi_0), sinTheta_0 * sin(phi_0), cosTheta_0));
         var source_0 : i32;
-        var radiance_2 : vec3<f32>;
         if((Globals_0.uScreenTraceSteps_0) > i32(0))
         {
             var screenRadiance_0 : vec3<f32>;
@@ -710,32 +715,48 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         }
         var source_1 : i32;
         var radiance_3 : vec3<f32>;
+        var surfaceSum_1 : vec3<f32>;
+        var radiance_4 : vec3<f32>;
         var weight_1 : f32;
+        var surfaceCount_1 : f32;
+        var unplaced_1 : f32;
         if(!resolved_3)
         {
             var hit_1 : vec3<f32>;
             var _S58 : f32 = VisibilityAt_0(world_7, normal_3, direction_3, &(hit_1));
+            var openCount_1 : f32;
             if(_S58 <= 0.5f)
             {
+                var finest_0 : f32 = Globals_0.uClipmapOrigin_0[i32(0)].w;
+                var near_1 : f32 = smoothstep(1.5f * finest_0, 2.0f * finest_0, length(hit_1 - world_7));
                 var found_2 : vec2<f32>;
                 var litFound_2 : vec2<f32>;
                 var agreement_2 : f32;
                 var _S59 : bool = LookupCardHit_0(hit_1, direction_3, &(found_2), &(litFound_2), &(agreement_2));
                 if(_S59)
                 {
-                    var finest_0 : f32 = Globals_0.uClipmapOrigin_0[i32(0)].w;
-                    var near_1 : f32 = smoothstep(1.5f * finest_0, 2.0f * finest_0, length(hit_1 - world_7));
-                    var _S60 : vec3<f32> = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_2), (0.0f))).xyz * vec3<f32>(Globals_0.uBounceScale_0);
+                    var radiance_5 : vec3<f32> = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_2), (0.0f))).xyz * vec3<f32>(Globals_0.uBounceScale_0);
+                    var surfaceSum_2 : vec3<f32> = surfaceSum_0 + CapRayIntensity_0(radiance_5) * vec3<f32>(near_1);
+                    var surfaceCount_2 : f32 = surfaceCount_0 + near_1;
                     source_1 = i32(2);
-                    radiance_3 = _S60;
+                    radiance_3 = radiance_5;
                     weight_1 = near_1;
+                    surfaceSum_1 = surfaceSum_2;
+                    surfaceCount_1 = surfaceCount_2;
+                    unplaced_1 = unplaced_0;
                 }
                 else
                 {
+                    var unplaced_2 : f32 = unplaced_0 + near_1;
                     source_1 = source_0;
                     radiance_3 = radiance_2;
                     weight_1 = 0.0f;
+                    surfaceSum_1 = surfaceSum_0;
+                    surfaceCount_1 = surfaceCount_0;
+                    unplaced_1 = unplaced_2;
                 }
+                radiance_4 = openSum_0;
+                openCount_1 = openCount_0;
             }
             else
             {
@@ -747,27 +768,38 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
                 {
                     radiance_3 = vec3<f32>(0.25f) * (SkyRadiance_0(vec3<f32>(0.0f, 0.0f, 1.0f)) + Globals_0.uGroundSun_0);
                 }
+                var openSum_1 : vec3<f32> = openSum_0 + CapRayIntensity_0(radiance_3);
+                var openCount_2 : f32 = openCount_0 + 1.0f;
                 source_1 = i32(3);
                 weight_1 = 1.0f;
+                surfaceSum_1 = surfaceSum_0;
+                surfaceCount_1 = surfaceCount_0;
+                unplaced_1 = unplaced_0;
+                radiance_4 = openSum_1;
+                openCount_1 = openCount_2;
             }
+            openSum_0 = radiance_4;
+            openCount_0 = openCount_1;
         }
         else
         {
             source_1 = source_0;
             radiance_3 = radiance_2;
             weight_1 = 1.0f;
+            surfaceSum_1 = surfaceSum_0;
+            surfaceCount_1 = surfaceCount_0;
+            unplaced_1 = unplaced_0;
         }
-        var _S61 : bool;
+        var _S60 : bool;
         if((Globals_0.uDebugSource_0) != i32(0))
         {
-            _S61 = source_1 != (Globals_0.uDebugSource_0);
+            _S60 = source_1 != (Globals_0.uDebugSource_0);
         }
         else
         {
-            _S61 = false;
+            _S60 = false;
         }
-        var radiance_4 : vec3<f32>;
-        if(_S61)
+        if(_S60)
         {
             radiance_4 = _S56;
         }
@@ -778,8 +810,48 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         var irradiance_1 : vec3<f32> = irradiance_0 + CapRayIntensity_0(radiance_4) * vec3<f32>(weight_1);
         var counted_1 : f32 = counted_0 + weight_1;
         ray_0 = ray_0 + i32(1);
+        surfaceSum_0 = surfaceSum_1;
+        surfaceCount_0 = surfaceCount_1;
+        unplaced_0 = unplaced_1;
         irradiance_0 = irradiance_1;
         counted_0 = counted_1;
+    }
+    if(unplaced_0 > 0.0f)
+    {
+        if((Globals_0.uDebugSource_0) == i32(0))
+        {
+            resolved_3 = true;
+        }
+        else
+        {
+            resolved_3 = (Globals_0.uDebugSource_0) == i32(2);
+        }
+    }
+    else
+    {
+        resolved_3 = false;
+    }
+    if(resolved_3)
+    {
+        if(surfaceCount_0 > 0.0f)
+        {
+            radiance_2 = surfaceSum_0 / vec3<f32>(surfaceCount_0);
+        }
+        else
+        {
+            if(openCount_0 > 0.0f)
+            {
+                surfaceSum_0 = openSum_0 / vec3<f32>(openCount_0);
+            }
+            else
+            {
+                surfaceSum_0 = SkyRadiance_0(vec3<f32>(0.0f, 0.0f, 1.0f));
+            }
+            radiance_2 = surfaceSum_0 * vec3<f32>(0.25f);
+        }
+        var irradiance_2 : vec3<f32> = irradiance_0 + radiance_2 * vec3<f32>(unplaced_0);
+        counted_0 = counted_0 + unplaced_0;
+        irradiance_0 = irradiance_2;
     }
     return max(irradiance_0 * vec3<f32>((3.14159274101257324f / max(counted_0, 4.0f))), _S56);
 }
@@ -788,30 +860,30 @@ fn GatherIndirect_0( world_7 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
 @workgroup_size(8, 8, 1)
 fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
 {
-    var _S62 : vec2<i32> = vec2<i32>(id_0.xy);
+    var _S61 : vec2<i32> = vec2<i32>(id_0.xy);
     var grid_0 : vec2<i32> = (vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) + vec2<i32>((Globals_0.uProbeStep_0 - i32(1)))) / vec2<i32>(Globals_0.uProbeStep_0);
-    var _S63 : bool;
-    if((_S62.x) >= (grid_0.x))
+    var _S62 : bool;
+    if((_S61.x) >= (grid_0.x))
     {
-        _S63 = true;
+        _S62 = true;
     }
     else
     {
-        _S63 = (_S62.y) >= (grid_0.y);
+        _S62 = (_S61.y) >= (grid_0.y);
     }
-    if(_S63)
+    if(_S62)
     {
         return;
     }
-    var uv_5 : vec2<f32> = (vec2<f32>(min(_S62 * vec2<i32>(Globals_0.uProbeStep_0) + vec2<i32>((Globals_0.uProbeStep_0 / i32(2))), vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) - vec2<i32>(i32(1)))) + vec2<f32>(0.5f)) / vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0));
+    var uv_5 : vec2<f32> = (vec2<f32>(min(_S61 * vec2<i32>(Globals_0.uProbeStep_0) + vec2<i32>((Globals_0.uProbeStep_0 / i32(2))), vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) - vec2<i32>(i32(1)))) + vec2<f32>(0.5f)) / vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0));
     var depth_7 : f32 = DepthBilinear_0(uSceneDepth_0, uSceneDepthSampler_0, uv_5);
     if(IsSkyDepth_0(depth_7))
     {
-        textureStore((uIndirect_0), (vec2<u32>(_S62)), (vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f)));
+        textureStore((uIndirect_0), (vec2<u32>(_S61)), (vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f)));
         return;
     }
     var viewPosition_1 : vec3<f32> = ViewPositionAt_0(uv_5, depth_7);
-    textureStore((uIndirect_0), (vec2<u32>(_S62)), (vec4<f32>(GatherIndirect_0(Globals_0.uCameraToCache_0 + Globals_0.uViewToWorld0_0 * vec3<f32>(viewPosition_1.x) + Globals_0.uViewToWorld1_0 * vec3<f32>(viewPosition_1.y) + Globals_0.uViewToWorld2_0 * vec3<f32>(viewPosition_1.z), normalize((textureSampleLevel((uSceneNormal_0), (uSceneNormalSampler_0), (uv_5), (0.0f))).xyz * vec3<f32>(2.0f) - vec3<f32>(1.0f)), viewPosition_1, vec2<f32>(0.5f, 0.5f)), 1.0f)));
+    textureStore((uIndirect_0), (vec2<u32>(_S61)), (vec4<f32>(GatherIndirect_0(Globals_0.uCameraToCache_0 + Globals_0.uViewToWorld0_0 * vec3<f32>(viewPosition_1.x) + Globals_0.uViewToWorld1_0 * vec3<f32>(viewPosition_1.y) + Globals_0.uViewToWorld2_0 * vec3<f32>(viewPosition_1.z), normalize((textureSampleLevel((uSceneNormal_0), (uSceneNormalSampler_0), (uv_5), (0.0f))).xyz * vec3<f32>(2.0f) - vec3<f32>(1.0f)), viewPosition_1, vec2<f32>(0.5f, 0.5f)), 1.0f)));
     return;
 }
 

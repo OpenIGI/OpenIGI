@@ -787,6 +787,7 @@ fn SkyRadiance_0( direction_2 : vec3<f32>) -> vec3<f32>
 
 fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 : vec3<f32>,  jitter_0 : vec2<f32>) -> vec3<f32>
 {
+    var radiance_2 : vec3<f32>;
     var resolved_3 : bool;
     if((Globals_0.uShadowLevels_0) <= i32(0))
     {
@@ -804,6 +805,11 @@ fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
     var _S69 : vec3<f32> = ToView_0(normal_3);
     const _S70 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
     var ray_0 : i32 = i32(0);
+    var surfaceSum_0 : vec3<f32> = _S70;
+    var surfaceCount_0 : f32 = 0.0f;
+    var unplaced_0 : f32 = 0.0f;
+    var openSum_0 : vec3<f32> = _S70;
+    var openCount_0 : f32 = 0.0f;
     var irradiance_0 : vec3<f32> = _S70;
     var counted_0 : f32 = 0.0f;
     for(;;)
@@ -821,7 +827,6 @@ fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         var sinTheta_0 : f32 = sqrt(max(0.0f, 1.0f - cosTheta_0 * cosTheta_0));
         var direction_3 : vec3<f32> = Orient_0(_S68, vec3<f32>(sinTheta_0 * cos(phi_0), sinTheta_0 * sin(phi_0), cosTheta_0));
         var source_0 : i32;
-        var radiance_2 : vec3<f32>;
         if((Globals_0.uScreenTraceSteps_0) > i32(0))
         {
             var screenRadiance_0 : vec3<f32>;
@@ -846,32 +851,48 @@ fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         }
         var source_1 : i32;
         var radiance_3 : vec3<f32>;
+        var surfaceSum_1 : vec3<f32>;
+        var radiance_4 : vec3<f32>;
         var weight_1 : f32;
+        var surfaceCount_1 : f32;
+        var unplaced_1 : f32;
         if(!resolved_3)
         {
             var hit_1 : vec3<f32>;
             var _S72 : f32 = VisibilityAt_0(world_9, normal_3, direction_3, &(hit_1));
+            var openCount_1 : f32;
             if(_S72 <= 0.5f)
             {
+                var finest_0 : f32 = Globals_0.uClipmapOrigin_0[i32(0)].w;
+                var near_1 : f32 = smoothstep(1.5f * finest_0, 2.0f * finest_0, length(hit_1 - world_9));
                 var found_3 : vec2<f32>;
                 var litFound_3 : vec2<f32>;
                 var agreement_3 : f32;
                 var _S73 : bool = LookupCardHit_0(hit_1, direction_3, &(found_3), &(litFound_3), &(agreement_3));
                 if(_S73)
                 {
-                    var finest_0 : f32 = Globals_0.uClipmapOrigin_0[i32(0)].w;
-                    var near_1 : f32 = smoothstep(1.5f * finest_0, 2.0f * finest_0, length(hit_1 - world_9));
-                    var _S74 : vec3<f32> = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_3), (0.0f))).xyz * vec3<f32>(Globals_0.uBounceScale_0);
+                    var radiance_5 : vec3<f32> = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_3), (0.0f))).xyz * vec3<f32>(Globals_0.uBounceScale_0);
+                    var surfaceSum_2 : vec3<f32> = surfaceSum_0 + CapRayIntensity_0(radiance_5) * vec3<f32>(near_1);
+                    var surfaceCount_2 : f32 = surfaceCount_0 + near_1;
                     source_1 = i32(2);
-                    radiance_3 = _S74;
+                    radiance_3 = radiance_5;
                     weight_1 = near_1;
+                    surfaceSum_1 = surfaceSum_2;
+                    surfaceCount_1 = surfaceCount_2;
+                    unplaced_1 = unplaced_0;
                 }
                 else
                 {
+                    var unplaced_2 : f32 = unplaced_0 + near_1;
                     source_1 = source_0;
                     radiance_3 = radiance_2;
                     weight_1 = 0.0f;
+                    surfaceSum_1 = surfaceSum_0;
+                    surfaceCount_1 = surfaceCount_0;
+                    unplaced_1 = unplaced_2;
                 }
+                radiance_4 = openSum_0;
+                openCount_1 = openCount_0;
             }
             else
             {
@@ -883,27 +904,38 @@ fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
                 {
                     radiance_3 = vec3<f32>(0.25f) * (SkyRadiance_0(vec3<f32>(0.0f, 0.0f, 1.0f)) + Globals_0.uGroundSun_0);
                 }
+                var openSum_1 : vec3<f32> = openSum_0 + CapRayIntensity_0(radiance_3);
+                var openCount_2 : f32 = openCount_0 + 1.0f;
                 source_1 = i32(3);
                 weight_1 = 1.0f;
+                surfaceSum_1 = surfaceSum_0;
+                surfaceCount_1 = surfaceCount_0;
+                unplaced_1 = unplaced_0;
+                radiance_4 = openSum_1;
+                openCount_1 = openCount_2;
             }
+            openSum_0 = radiance_4;
+            openCount_0 = openCount_1;
         }
         else
         {
             source_1 = source_0;
             radiance_3 = radiance_2;
             weight_1 = 1.0f;
+            surfaceSum_1 = surfaceSum_0;
+            surfaceCount_1 = surfaceCount_0;
+            unplaced_1 = unplaced_0;
         }
-        var _S75 : bool;
+        var _S74 : bool;
         if((Globals_0.uDebugSource_0) != i32(0))
         {
-            _S75 = source_1 != (Globals_0.uDebugSource_0);
+            _S74 = source_1 != (Globals_0.uDebugSource_0);
         }
         else
         {
-            _S75 = false;
+            _S74 = false;
         }
-        var radiance_4 : vec3<f32>;
-        if(_S75)
+        if(_S74)
         {
             radiance_4 = _S70;
         }
@@ -914,8 +946,48 @@ fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
         var irradiance_1 : vec3<f32> = irradiance_0 + CapRayIntensity_0(radiance_4) * vec3<f32>(weight_1);
         var counted_1 : f32 = counted_0 + weight_1;
         ray_0 = ray_0 + i32(1);
+        surfaceSum_0 = surfaceSum_1;
+        surfaceCount_0 = surfaceCount_1;
+        unplaced_0 = unplaced_1;
         irradiance_0 = irradiance_1;
         counted_0 = counted_1;
+    }
+    if(unplaced_0 > 0.0f)
+    {
+        if((Globals_0.uDebugSource_0) == i32(0))
+        {
+            resolved_3 = true;
+        }
+        else
+        {
+            resolved_3 = (Globals_0.uDebugSource_0) == i32(2);
+        }
+    }
+    else
+    {
+        resolved_3 = false;
+    }
+    if(resolved_3)
+    {
+        if(surfaceCount_0 > 0.0f)
+        {
+            radiance_2 = surfaceSum_0 / vec3<f32>(surfaceCount_0);
+        }
+        else
+        {
+            if(openCount_0 > 0.0f)
+            {
+                surfaceSum_0 = openSum_0 / vec3<f32>(openCount_0);
+            }
+            else
+            {
+                surfaceSum_0 = SkyRadiance_0(vec3<f32>(0.0f, 0.0f, 1.0f));
+            }
+            radiance_2 = surfaceSum_0 * vec3<f32>(0.25f);
+        }
+        var irradiance_2 : vec3<f32> = irradiance_0 + radiance_2 * vec3<f32>(unplaced_0);
+        counted_0 = counted_0 + unplaced_0;
+        irradiance_0 = irradiance_2;
     }
     return max(irradiance_0 * vec3<f32>((3.14159274101257324f / max(counted_0, 4.0f))), _S70);
 }
@@ -924,23 +996,23 @@ fn GatherIndirect_0( world_9 : vec3<f32>,  normal_3 : vec3<f32>,  viewOrigin_1 :
 @workgroup_size(8, 8, 1)
 fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_invocation_id) localId_0 : vec3<u32>)
 {
+    var _S75 : bool;
     var _S76 : bool;
-    var _S77 : bool;
     var nMin_0 : vec3<f32>;
     var nMax_0 : vec3<f32>;
     var dx_0 : i32;
     var nCount_0 : f32;
     var nCount_1 : f32;
-    var _S78 : vec2<i32> = vec2<i32>(id_0.xy);
+    var _S77 : vec2<i32> = vec2<i32>(id_0.xy);
     var grid_0 : vec2<i32> = (vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) + vec2<i32>((Globals_0.uProbeStep_0 - i32(1)))) / vec2<i32>(Globals_0.uProbeStep_0);
     var ownMotion_0 : bool;
-    if((_S78.x) >= (grid_0.x))
+    if((_S77.x) >= (grid_0.x))
     {
         ownMotion_0 = true;
     }
     else
     {
-        ownMotion_0 = (_S78.y) >= (grid_0.y);
+        ownMotion_0 = (_S77.y) >= (grid_0.y);
     }
     if(ownMotion_0)
     {
@@ -949,40 +1021,40 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
     var world_10 : vec3<f32>;
     var viewPosition_2 : vec3<f32>;
     var worldNormal_1 : vec3<f32>;
-    var onSurface_0 : bool = ProbeSurface_0(_S78, &(world_10), &(viewPosition_2), &(worldNormal_1));
+    var onSurface_0 : bool = ProbeSurface_0(_S77, &(world_10), &(viewPosition_2), &(worldNormal_1));
     var traced_0 : vec3<f32>;
     var nCount_2 : f32;
     if((Globals_0.uGatherPass_0) == i32(0))
     {
-        const _S79 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
+        const _S78 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
         if(onSurface_0)
         {
-            var _S80 : vec3<f32> = GatherIndirect_0(world_10, worldNormal_1, viewPosition_2, FrameJitter_0(_S78, Globals_0.uFrameIndex_0));
+            var _S79 : vec3<f32> = GatherIndirect_0(world_10, worldNormal_1, viewPosition_2, FrameJitter_0(_S77, Globals_0.uFrameIndex_0));
             if((Globals_0.uDebugSource_0) == i32(4))
             {
                 var found_4 : vec2<f32>;
                 var litFound_4 : vec2<f32>;
                 var agreement_4 : f32;
-                var _S81 : bool = LookupCardHit_1(world_10, (vec3<f32>(0) - worldNormal_1), &(found_4), &(litFound_4), &(agreement_4));
-                if(_S81)
+                var _S80 : bool = LookupCardHit_1(world_10, (vec3<f32>(0) - worldNormal_1), &(found_4), &(litFound_4), &(agreement_4));
+                if(_S80)
                 {
                     traced_0 = (textureSampleLevel((uFinal_0), (uFinalSampler_0), (litFound_4), (0.0f))).xyz;
                 }
                 else
                 {
-                    traced_0 = _S79;
+                    traced_0 = _S78;
                 }
             }
             else
             {
-                traced_0 = _S80;
+                traced_0 = _S79;
             }
         }
         else
         {
-            traced_0 = _S79;
+            traced_0 = _S78;
         }
-        var _S82 : vec2<u32> = vec2<u32>(_S78);
+        var _S81 : vec2<u32> = vec2<u32>(_S77);
         if(onSurface_0)
         {
             nCount_2 = 1.0f;
@@ -991,30 +1063,30 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
         {
             nCount_2 = 0.0f;
         }
-        textureStore((uIndirect_0), (_S82), (vec4<f32>(traced_0, nCount_2)));
-        var _S83 : vec4<f32>;
+        textureStore((uIndirect_0), (_S81), (vec4<f32>(traced_0, nCount_2)));
+        var _S82 : vec4<f32>;
         if(onSurface_0)
         {
-            _S83 = vec4<f32>(world_10 - Globals_0.uCameraToCache_0, 1.0f);
+            _S82 = vec4<f32>(world_10 - Globals_0.uCameraToCache_0, 1.0f);
         }
         else
         {
-            _S83 = vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f);
+            _S82 = vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f);
         }
-        textureStore((uPosition_0), (_S82), (_S83));
+        textureStore((uPosition_0), (_S81), (_S82));
         return;
     }
     if(!onSurface_0)
     {
-        var _S84 : vec2<u32> = vec2<u32>(_S78);
-        const _S85 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f);
-        textureStore((uIndirect_0), (_S84), (_S85));
-        textureStore((uPosition_0), (_S84), (_S85));
+        var _S83 : vec2<u32> = vec2<u32>(_S77);
+        const _S84 : vec4<f32> = vec4<f32>(0.0f, 0.0f, 0.0f, 0.0f);
+        textureStore((uIndirect_0), (_S83), (_S84));
+        textureStore((uPosition_0), (_S83), (_S84));
         return;
     }
-    var _S86 : vec3<i32> = vec3<i32>(_S78, i32(0));
-    var current_0 : vec3<f32> = (textureLoad((uRaw_0), ((_S86)).xy, ((_S86)).z)).xyz;
-    var _S87 : f32 = max(0.34999999403953552f, 0.05999999865889549f * length(viewPosition_2));
+    var _S85 : vec3<i32> = vec3<i32>(_S77, i32(0));
+    var current_0 : vec3<f32> = (textureLoad((uRaw_0), ((_S85)).xy, ((_S85)).z)).xyz;
+    var _S86 : f32 = max(0.34999999403953552f, 0.05999999865889549f * length(viewPosition_2));
     traced_0 = current_0;
     var nMax_1 : vec3<f32> = current_0;
     var dy_0 : i32 = i32(-1);
@@ -1056,63 +1128,63 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
                 dx_0 = dx_0 + i32(1);
                 continue;
             }
-            var n_2 : vec2<i32> = _S78 + vec2<i32>(dx_0, dy_0);
+            var n_2 : vec2<i32> = _S77 + vec2<i32>(dx_0, dy_0);
             if((any((n_2 < vec2<i32>(i32(0), i32(0))))))
             {
-                _S76 = true;
+                _S75 = true;
             }
             else
             {
-                _S76 = (any((n_2 >= grid_0)));
+                _S75 = (any((n_2 >= grid_0)));
             }
-            if(_S76)
+            if(_S75)
             {
                 dx_0 = dx_0 + i32(1);
                 continue;
             }
-            var _S88 : vec3<i32> = vec3<i32>(n_2, i32(0));
-            var raw_2 : vec4<f32> = (textureLoad((uRaw_0), ((_S88)).xy, ((_S88)).z));
+            var _S87 : vec3<i32> = vec3<i32>(n_2, i32(0));
+            var raw_2 : vec4<f32> = (textureLoad((uRaw_0), ((_S87)).xy, ((_S87)).z));
             var nWorld_0 : vec3<f32>;
             var nView_0 : vec3<f32>;
             var nNormal_0 : vec3<f32>;
             if((raw_2.w) > 0.5f)
             {
-                var _S89 : bool = ProbeSurface_0(n_2, &(nWorld_0), &(nView_0), &(nNormal_0));
-                _S77 = _S89;
+                var _S88 : bool = ProbeSurface_0(n_2, &(nWorld_0), &(nView_0), &(nNormal_0));
+                _S76 = _S88;
             }
             else
             {
-                _S77 = false;
+                _S76 = false;
+            }
+            var _S89 : bool;
+            if(_S76)
+            {
+                _S89 = (distance(nWorld_0, world_10)) < _S86;
+            }
+            else
+            {
+                _S89 = false;
             }
             var _S90 : bool;
-            if(_S77)
+            if(_S89)
             {
-                _S90 = (distance(nWorld_0, world_10)) < _S87;
+                _S90 = (dot(nNormal_0, worldNormal_1)) > 0.80000001192092896f;
             }
             else
             {
                 _S90 = false;
             }
-            var _S91 : bool;
-            if(_S90)
-            {
-                _S91 = (dot(nNormal_0, worldNormal_1)) > 0.80000001192092896f;
-            }
-            else
-            {
-                _S91 = false;
-            }
             var nMin_1 : vec3<f32>;
             var nMax_2 : vec3<f32>;
             var nSum_2 : vec3<f32>;
-            if(_S91)
+            if(_S90)
             {
-                var _S92 : vec3<f32> = raw_2.xyz;
-                var _S93 : vec3<f32> = max(nMax_0, _S92);
-                var nSum_3 : vec3<f32> = nSum_1 + _S92;
+                var _S91 : vec3<f32> = raw_2.xyz;
+                var _S92 : vec3<f32> = max(nMax_0, _S91);
+                var nSum_3 : vec3<f32> = nSum_1 + _S91;
                 var nCount_3 : f32 = nCount_0 + 1.0f;
-                nMin_1 = min(nMin_0, _S92);
-                nMax_2 = _S93;
+                nMin_1 = min(nMin_0, _S91);
+                nMax_2 = _S92;
                 nSum_2 = nSum_3;
                 nCount_1 = nCount_3;
             }
@@ -1129,10 +1201,10 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
             nCount_0 = nCount_1;
             dx_0 = dx_0 + i32(1);
         }
-        var _S94 : i32 = dy_0 + i32(1);
+        var _S93 : i32 = dy_0 + i32(1);
         traced_0 = nMin_0;
         nMax_1 = nMax_0;
-        dy_0 = _S94;
+        dy_0 = _S93;
         nSum_0 = nSum_1;
         nCount_2 = nCount_0;
     }
@@ -1141,20 +1213,20 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
     if((Globals_0.uHasHistory_0) != i32(0))
     {
         var prevView_1 : vec3<f32> = Globals_0.uPrevWorldToView0_0 * vec3<f32>((world_10.x - Globals_0.uPrevCameraToCache_0.x)) + Globals_0.uPrevWorldToView1_0 * vec3<f32>((world_10.y - Globals_0.uPrevCameraToCache_0.y)) + Globals_0.uPrevWorldToView2_0 * vec3<f32>((world_10.z - Globals_0.uPrevCameraToCache_0.z));
-        var _S95 : f32 = prevView_1.z;
-        if(_S95 > 0.0f)
+        var _S94 : f32 = prevView_1.z;
+        if(_S94 > 0.0f)
         {
-            var _S96 : vec2<f32> = vec2<f32>(0.5f);
-            var prevUv_0 : vec2<f32> = vec2<f32>(prevView_1.x * Globals_0.uPrevUnproject_0.x / _S95, -1.0f * (prevView_1.y * Globals_0.uPrevUnproject_0.y) / _S95) * _S96 + _S96;
+            var _S95 : vec2<f32> = vec2<f32>(0.5f);
+            var prevUv_0 : vec2<f32> = vec2<f32>(prevView_1.x * Globals_0.uPrevUnproject_0.x / _S94, -1.0f * (prevView_1.y * Globals_0.uPrevUnproject_0.y) / _S94) * _S95 + _S95;
             var prevUv_1 : vec2<f32>;
             if((Globals_0.uHasVelocity_0) != i32(0))
             {
                 var screen_0 : vec2<f32> = vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0));
-                var probeUv_1 : vec2<f32> = (vec2<f32>(min(_S78 * vec2<i32>(Globals_0.uProbeStep_0) + ProbeTileOffset_0(Globals_0.uFrameIndex_0, Globals_0.uProbeStep_0), vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) - vec2<i32>(i32(1)))) + _S96) / screen_0;
+                var probeUv_1 : vec2<f32> = (vec2<f32>(min(_S77 * vec2<i32>(Globals_0.uProbeStep_0) + ProbeTileOffset_0(Globals_0.uFrameIndex_0, Globals_0.uProbeStep_0), vec2<i32>(Globals_0.uScreenWidth_0, Globals_0.uScreenHeight_0) - vec2<i32>(i32(1)))) + _S95) / screen_0;
                 var motion_0 : vec2<f32> = (textureSampleLevel((uVelocity_0), (uVelocitySampler_0), (probeUv_1), (0.0f))).xy;
                 var apart_0 : vec2<f32> = (motion_0 - (probeUv_1 - prevUv_0)) * screen_0;
-                var _S97 : bool = (dot(apart_0, apart_0)) > 2.25f;
-                if(_S97)
+                var _S96 : bool = (dot(apart_0, apart_0)) > 2.25f;
+                if(_S96)
                 {
                     prevUv_1 = probeUv_1 - motion_0;
                 }
@@ -1162,7 +1234,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
                 {
                     prevUv_1 = prevUv_0;
                 }
-                ownMotion_0 = _S97;
+                ownMotion_0 = _S96;
             }
             else
             {
@@ -1171,21 +1243,21 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
             }
             if((all((prevUv_1 >= vec2<f32>(0.0f, 0.0f)))))
             {
-                _S76 = (all((prevUv_1 <= vec2<f32>(1.0f, 1.0f))));
+                _S75 = (all((prevUv_1 <= vec2<f32>(1.0f, 1.0f))));
             }
             else
             {
-                _S76 = false;
+                _S75 = false;
             }
-            if(_S76)
+            if(_S75)
             {
-                var tc_0 : vec2<f32> = (prevUv_1 * vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0)) - vec2<f32>(ProbeTileOffset_0(Globals_0.uFrameIndex_0 - i32(1), Globals_0.uProbeStep_0)) - _S96) / vec2<f32>(f32(Globals_0.uProbeStep_0));
+                var tc_0 : vec2<f32> = (prevUv_1 * vec2<f32>(f32(Globals_0.uScreenWidth_0), f32(Globals_0.uScreenHeight_0)) - vec2<f32>(ProbeTileOffset_0(Globals_0.uFrameIndex_0 - i32(1), Globals_0.uProbeStep_0)) - _S95) / vec2<f32>(f32(Globals_0.uProbeStep_0));
                 var tcBase_0 : vec2<f32> = floor(tc_0);
-                var _S98 : vec2<f32> = tc_0 - tcBase_0;
-                var _S99 : f32 = 2.0f * viewPosition_2.z * f32(Globals_0.uProbeStep_0) / (Globals_0.uUnproject_0.y * f32(Globals_0.uScreenHeight_0));
-                const _S100 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
+                var _S97 : vec2<f32> = tc_0 - tcBase_0;
+                var _S98 : f32 = 2.0f * viewPosition_2.z * f32(Globals_0.uProbeStep_0) / (Globals_0.uUnproject_0.y * f32(Globals_0.uScreenHeight_0));
+                const _S99 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
                 dx_0 = i32(0);
-                nMin_0 = _S100;
+                nMin_0 = _S99;
                 nCount_0 = 0.0f;
                 nCount_1 = 0.0f;
                 for(;;)
@@ -1197,24 +1269,24 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
                     {
                         break;
                     }
-                    var _S101 : i32 = (dx_0 & (i32(1)));
-                    var _S102 : i32 = (dx_0 >> (u32(1)));
-                    var tap_0 : vec2<i32> = vec2<i32>(tcBase_0) + vec2<i32>(_S101, _S102);
+                    var _S100 : i32 = (dx_0 & (i32(1)));
+                    var _S101 : i32 = (dx_0 >> (u32(1)));
+                    var tap_0 : vec2<i32> = vec2<i32>(tcBase_0) + vec2<i32>(_S100, _S101);
                     if((any((tap_0 < vec2<i32>(i32(0), i32(0))))))
                     {
-                        _S76 = true;
+                        _S75 = true;
                     }
                     else
                     {
-                        _S76 = (any((tap_0 >= grid_0)));
+                        _S75 = (any((tap_0 >= grid_0)));
                     }
-                    if(_S76)
+                    if(_S75)
                     {
                         dx_0 = dx_0 + i32(1);
                         continue;
                     }
-                    var _S103 : vec3<i32> = vec3<i32>(tap_0, i32(0));
-                    var tapPos_0 : vec4<f32> = (textureLoad((uPositionHistory_0), ((_S103)).xy, ((_S103)).z));
+                    var _S102 : vec3<i32> = vec3<i32>(tap_0, i32(0));
+                    var tapPos_0 : vec4<f32> = (textureLoad((uPositionHistory_0), ((_S102)).xy, ((_S102)).z));
                     if((tapPos_0.w) <= 0.0f)
                     {
                         dx_0 = dx_0 + i32(1);
@@ -1223,35 +1295,35 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
                     var planeDistance_0 : f32 = abs(dot(tapPos_0.xyz + Globals_0.uPrevCameraToCache_0 - world_10, worldNormal_1));
                     if(!ownMotion_0)
                     {
-                        _S77 = planeDistance_0 > (max(0.05000000074505806f, 0.5f * _S99));
+                        _S76 = planeDistance_0 > (max(0.05000000074505806f, 0.5f * _S98));
                     }
                     else
                     {
-                        _S77 = false;
+                        _S76 = false;
                     }
-                    if(_S77)
+                    if(_S76)
                     {
                         dx_0 = dx_0 + i32(1);
                         continue;
                     }
+                    if(_S100 == i32(0))
+                    {
+                        nCount_2 = 1.0f - _S97.x;
+                    }
+                    else
+                    {
+                        nCount_2 = _S97.x;
+                    }
                     if(_S101 == i32(0))
                     {
-                        nCount_2 = 1.0f - _S98.x;
+                        frames_0 = 1.0f - _S97.y;
                     }
                     else
                     {
-                        nCount_2 = _S98.x;
-                    }
-                    if(_S102 == i32(0))
-                    {
-                        frames_0 = 1.0f - _S98.y;
-                    }
-                    else
-                    {
-                        frames_0 = _S98.y;
+                        frames_0 = _S97.y;
                     }
                     var w_0 : f32 = nCount_2 * frames_0;
-                    var tapHistory_0 : vec4<f32> = (textureLoad((uHistory_0), ((_S103)).xy, ((_S103)).z));
+                    var tapHistory_0 : vec4<f32> = (textureLoad((uHistory_0), ((_S102)).xy, ((_S102)).z));
                     var frameSum_0 : f32 = nCount_0 + tapHistory_0.w * w_0;
                     var weightSum_0 : f32 = nCount_1 + w_0;
                     nMin_0 = nMin_0 + tapHistory_0.xyz * vec3<f32>(w_0);
@@ -1261,12 +1333,12 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
                 }
                 if(nCount_1 > 0.00999999977648258f)
                 {
-                    var _S104 : vec3<f32> = vec3<f32>(0.5f);
-                    var windowCentre_0 : vec3<f32> = _S104 * (traced_0 + nMax_1);
-                    var _S105 : vec3<f32> = vec3<f32>(2.0f) * (_S104 * (nMax_1 - traced_0) + vec3<f32>(0.25f) * windowCentre_0 + vec3<f32>(0.00100000004749745f));
-                    var _S106 : f32 = min(nCount_0 / nCount_1 + 1.0f, f32(Globals_0.uMaxAccumulated_0));
-                    nMax_0 = mix(clamp(nMin_0 / vec3<f32>(nCount_1), windowCentre_0 - _S105, windowCentre_0 + _S105), est_0, vec3<f32>((1.0f / (1.0f + _S106))));
-                    frames_0 = _S106;
+                    var _S103 : vec3<f32> = vec3<f32>(0.5f);
+                    var windowCentre_0 : vec3<f32> = _S103 * (traced_0 + nMax_1);
+                    var _S104 : vec3<f32> = vec3<f32>(2.0f) * (_S103 * (nMax_1 - traced_0) + vec3<f32>(0.25f) * windowCentre_0 + vec3<f32>(0.00100000004749745f));
+                    var _S105 : f32 = min(nCount_0 / nCount_1 + 1.0f, f32(Globals_0.uMaxAccumulated_0));
+                    nMax_0 = mix(clamp(nMin_0 / vec3<f32>(nCount_1), windowCentre_0 - _S104, windowCentre_0 + _S104), est_0, vec3<f32>((1.0f / (1.0f + _S105))));
+                    frames_0 = _S105;
                 }
                 else
                 {
@@ -1296,9 +1368,9 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>, @builtin(local_i
         nMax_0 = current_0;
         frames_0 = 1.0f;
     }
-    var _S107 : vec2<u32> = vec2<u32>(_S78);
-    textureStore((uIndirect_0), (_S107), (vec4<f32>(nMax_0, frames_0)));
-    textureStore((uPosition_0), (_S107), (vec4<f32>(world_10 - Globals_0.uCameraToCache_0, 1.0f)));
+    var _S106 : vec2<u32> = vec2<u32>(_S77);
+    textureStore((uIndirect_0), (_S106), (vec4<f32>(nMax_0, frames_0)));
+    textureStore((uPosition_0), (_S106), (vec4<f32>(world_10 - Globals_0.uCameraToCache_0, 1.0f)));
     return;
 }
 

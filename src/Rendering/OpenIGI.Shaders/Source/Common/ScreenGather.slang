@@ -329,12 +329,21 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
 
     float3 irradiance = float3(0.0, 0.0, 0.0);
 
-    // How many rays this probe's estimate stands on. A ray whose hit the cache cannot place, or that struck
-    // what is most likely this surface's own skin, says nothing about the light -- it used to be counted as
-    // black, and the march's misses cluster exactly where geometry is close and thin: room corners, under
-    // desks, round a ceiling fitting. Those came out as dark blotches the traced path does not have. Left
-    // out instead, the estimate is the mean of the rays that did find something.
+    // How many rays this probe's estimate stands on.
+    //
+    // A ray that struck something the cache cannot place still struck something: it did not reach the sky,
+    // and the light it would have brought is the light of a nearby surface, not nothing and not the open
+    // sky. Counted black it printed dark blotches into room corners and under desks, where such misses
+    // cluster; left out, the estimate became the mean of the rays that DID escape, and a probe beside a
+    // wall took almost the open sky's value -- no darkening where a wall meets the ground, every shadow
+    // filled. So each such ray takes the mean light of the surfaces the probe's other rays found (or, if
+    // none, a dim estimate from the sky), and counts.
     float counted = 0.0;
+    float3 surfaceSum = float3(0.0, 0.0, 0.0);
+    float surfaceCount = 0.0;
+    float3 openSum = float3(0.0, 0.0, 0.0);
+    float openCount = 0.0;
+    float unplaced = 0.0;
     for (int ray = 0; ray < kTracesPerProbe; ray++)
     {
         // A stratified cosine hemisphere: the sixteen rays cover a four-by-four grid of the square the
@@ -377,18 +386,28 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
                 float2 found;
                 float2 litFound;
                 float agreement;
+                // Whether the hit is most likely this surface's own skin: only for the march, which starts a
+                // voxel and a half out and finds the surface it left within the next two. A traced ray
+                // knows exactly what it struck, and a near hit there is a real occluder -- the foot of the
+                // wall, the underside of the desk -- which is the contact darkening the gather is for.
+#if OPENIGI_RAY_QUERY
+                float near = 1.0;
+#else
+                float finest = uClipmapOrigin[0].w;
+                float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
+#endif
                 if (LookupCardHit(hit, direction, found, litFound, agreement))
                 {
-                    // Left out over the first two voxels, where the hit is most likely this surface's own
-                    // skin and the cache would hand back the light being gathered for it.
-                    float finest = uClipmapOrigin[0].w;
-                    float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
                     radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * uBounceScale;
                     weight = near;
                     source = 2;
+                    surfaceSum += CapRayIntensity(radiance) * near;
+                    surfaceCount += near;
                 }
                 else
                 {
+                    // Placed at the end, once the probe knows what its surfaces look like.
+                    unplaced += near;
                     weight = 0.0;
                 }
             }
@@ -403,6 +422,8 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
                     ? SkyRadiance(direction)
                     : kGroundAlbedo * (SkyRadiance(float3(0.0, 0.0, 1.0)) + uGroundSun);
                 source = 3;
+                openSum += CapRayIntensity(radiance);
+                openCount += 1.0;
             }
         }
 
@@ -414,6 +435,17 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
         radiance = CapRayIntensity(radiance);
         irradiance += radiance * weight;
         counted += weight;
+    }
+
+    // The hits nothing could place: a surface's light, as the probe's own surfaces show it, or -- where
+    // every ray that found anything was unplaced -- what open ground under this sky would send back.
+    if (unplaced > 0.0 && (uDebugSource == 0 || uDebugSource == 2))
+    {
+        float3 fill = surfaceCount > 0.0
+            ? surfaceSum / surfaceCount
+            : (openCount > 0.0 ? (openSum / openCount) : SkyRadiance(float3(0.0, 0.0, 1.0))) * kGroundAlbedo;
+        irradiance += fill * unplaced;
+        counted += unplaced;
     }
 
     // At least a quarter of the rays' worth, so a probe that found almost nothing is not one lucky ray

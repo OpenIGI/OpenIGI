@@ -2312,9 +2312,13 @@ public static class RenderCVars
             CVarOptions.Archive,
             "How far, in metres, one surface can shade another."),
         vanilla: "1.5",
-        enhanced: "13.61",
-        high: "13.61",
-        ultra: "13.61");
+
+        // About a metre on the presets that gather indirect light: the gather owns the room-sized
+        // occlusion -- a probe beside a wall already sees the wall -- and this owns the creases it is too
+        // coarse to see. At fourteen metres it darkened whole facades in halos and found nothing small.
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How strongly the occlusion is applied, where 1 is the physical amount.</summary>
     /// <remarks>
@@ -3499,9 +3503,14 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Diffuse colour boost for bounced light: LOWER lifts dark surfaces so interiors carry more indirect. 1 is off."),
         vanilla: "0.8",
-        enhanced: "0.6",
-        high: "0.6",
-        ultra: "0.6");
+
+        // Physical on the presets that gather. The lift was set while the cache took vertex colour raw --
+        // brighter than the screen -- and while the sky filled every shadow three times over; with both
+        // put right it only flattened the bounce: dark surfaces passing light along like pale ones, the
+        // corners of a room no darker than its middle.
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether each stage of the frame is timed on the GPU and shown in an overlay.</summary>
     /// <remarks>
