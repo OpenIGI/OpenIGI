@@ -30,7 +30,15 @@ internal static class ContentPublish
     /// <param name="Summary">What it changes.</param>
     /// <param name="Game">The game it is for, by title id.</param>
     /// <param name="MinGameVersion">The oldest game build that can read it, if any.</param>
-    internal sealed record Details(string Id, string Version, string Title, string Summary, string Game, string? MinGameVersion);
+    /// <param name="Kind">What the pack is: an overlay of game files, or a runtime the engine loads.</param>
+    internal sealed record Details(
+        string Id,
+        string Version,
+        string Title,
+        string Summary,
+        string Game,
+        string? MinGameVersion,
+        ContentKind Kind = ContentKind.Overlay);
 
     /// <summary>A chunked pack folder: the manifest, and where each chunk's stored object was written.</summary>
     /// <param name="Manifest">The version's manifest.</param>
@@ -89,6 +97,11 @@ internal static class ContentPublish
             throw new InvalidDataException($"{root} has no files.");
         }
 
+        if (details.Kind == ContentKind.Runtime)
+        {
+            RequireRuntime(details, paths);
+        }
+
         List<ContentFile> files = new(paths.Count);
         foreach (string path in paths)
         {
@@ -106,9 +119,52 @@ internal static class ContentPublish
             details.MinGameVersion,
             published,
             files.Sum(static file => file.Size),
-            files);
+            files,
+            details.Kind);
 
         return new Chunked(manifest, cache);
+    }
+
+    /// <summary>Refuses a runtime pack that holds anything but what the engine loads and the licences beside it.</summary>
+    /// <param name="details">What describes the version.</param>
+    /// <param name="paths">The pack's files, relative to its root.</param>
+    /// <remarks>
+    /// <para>
+    /// Streamline reads a JSON file beside each of its libraries where one is present, and lets it change what the
+    /// library does: which plugins load, what they log, what they draw on the screen. A pack that carried one would
+    /// configure every player's runtime from the store, so none is published; neither are the logs a development
+    /// run leaves, nor the development build of the runtime, which draws its own overlays.
+    /// </para>
+    /// <para>
+    /// What is loaded is checked again where it is loaded: the game refuses a folder holding any library not signed
+    /// by NVIDIA (or by Microsoft, for the C++ runtime it carries).
+    /// </para>
+    /// </remarks>
+    private static void RequireRuntime(Details details, IReadOnlyList<string> paths)
+    {
+        if (details.Game != RuntimePacks.Game)
+        {
+            throw new ArgumentException(
+                $"A runtime pack is the engine's and is published for '{RuntimePacks.Game}', not '{details.Game}'.");
+        }
+
+        foreach (string path in paths)
+        {
+            string name = path.ToLowerInvariant();
+            if (name.EndsWith(".json", StringComparison.Ordinal)
+                || name.EndsWith(".log", StringComparison.Ordinal)
+                || name.StartsWith("development/", StringComparison.Ordinal)
+                || name.Contains("/development/", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"'{path}' cannot be published in a runtime pack: no configuration, logs or development build go to players.");
+            }
+        }
+
+        if (!paths.Any(static path => path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidDataException("A runtime pack holds the libraries the engine loads, and this one has none.");
+        }
     }
 
     /// <summary>Publishes a chunked pack to a store.</summary>

@@ -46,11 +46,23 @@
 .PARAMETER Force
     Re-fetch even when the destination already holds the requested versions.
 
+.PARAMETER PackDir
+    Also lay out the "nvidia-streamline" runtime pack in this folder, emptied first: the production
+    DLLs and the licences beside them, and nothing else -- no development build, no configuration, no
+    logs, which the release tool refuses in a runtime pack anyway. Works from what is already fetched.
+    Publish it with:
+        dotnet run --project tools/OpenIGI.Tools.Release -- content publish <PackDir>
+            --kind runtime --pack nvidia-streamline --version <v> --title "NVIDIA DLSS"
+            --summary "..." --min-game <first build that reads OPENIGI_STREAMLINE_PATH>
+
 .EXAMPLE
     ./tools/fetch-streamline.ps1
 
 .EXAMPLE
     ./tools/fetch-streamline.ps1 -DlssVersion v310.9.1 -Force
+
+.EXAMPLE
+    ./tools/fetch-streamline.ps1 -PackDir ../pack/nvidia-streamline
 #>
 [CmdletBinding()]
 param(
@@ -58,7 +70,8 @@ param(
     [string]$DlssVersion = 'v310.9.1',
     [string]$Destination,
     [string]$SdkZip,
-    [switch]$Force
+    [switch]$Force,
+    [string]$PackDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,11 +86,43 @@ if (-not $Destination) {
 # re-download a quarter of a gigabyte of signed binaries to discover nothing had changed.
 $stampPath = Join-Path $Destination 'fetched.json'
 
+# The runtime pack as players get it: the production DLLs and their licences, copied from the
+# destination. Every DLL must be validly signed, or the engine would refuse the whole folder on every
+# player's machine; the pack is not laid out at all rather than laid out wrong.
+function Write-RuntimePack([string]$from, [string]$to) {
+    $unsigned = @(Get-ChildItem -Path $from -Filter '*.dll' -File |
+        Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' })
+    if ($unsigned.Count -gt 0) {
+        throw "Not laying out the pack: unsigned DLLs in ${from}: $($unsigned.Name -join ', ')"
+    }
+
+    if (Test-Path $to) {
+        Remove-Item -Path (Join-Path $to '*') -Recurse -Force
+    }
+    else {
+        New-Item -ItemType Directory -Path $to -Force | Out-Null
+    }
+
+    Get-ChildItem -Path $from -Filter '*.dll' -File |
+        ForEach-Object { Copy-Item -Path $_.FullName -Destination $to -Force }
+    $licenceSource = Join-Path $from 'licenses'
+    if (Test-Path $licenceSource) {
+        Copy-Item -Path $licenceSource -Destination (Join-Path $to 'licenses') -Recurse -Force
+    }
+
+    $count = @(Get-ChildItem -Path $to -Recurse -File).Count
+    $bytes = (Get-ChildItem -Path $to -Recurse -File | Measure-Object -Property Length -Sum).Sum
+    Write-Host ("Runtime pack laid out in {0}: {1} file(s), {2:N0} bytes" -f $to, $count, $bytes)
+}
+
 if (-not $Force -and (Test-Path $stampPath)) {
     $have = Get-Content $stampPath -Raw | ConvertFrom-Json
     if ($have.streamline -eq $StreamlineVersion -and $have.dlss -eq $DlssVersion) {
         Write-Host "Streamline $StreamlineVersion + DLSS $DlssVersion already present in $Destination."
         Write-Host 'Pass -Force to re-fetch.'
+        if ($PackDir) {
+            Write-RuntimePack $Destination $PackDir
+        }
         return
     }
 }
@@ -284,6 +329,10 @@ try {
     if ($unsigned) {
         Write-Warning 'These DLLs do not carry a valid signature and the engine will refuse the whole folder:'
         $unsigned | ForEach-Object { Write-Warning "  $($_.Name)" }
+    }
+
+    if ($PackDir) {
+        Write-RuntimePack $Destination $PackDir
     }
 }
 finally {

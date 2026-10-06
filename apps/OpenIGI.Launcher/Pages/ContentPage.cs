@@ -1,5 +1,6 @@
 using System.Globalization;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Releases;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Drawing;
@@ -31,8 +32,10 @@ internal sealed class ContentPage
     private readonly StackPanel _list;
     private readonly ReorderList _ordered;
     private readonly StackPanel _available;
+    private readonly StackPanel _runtime;
     private readonly SectionCaption _orderCaption;
     private readonly SectionCaption _availableCaption;
+    private readonly SectionCaption _runtimeCaption;
     private readonly Text _empty;
     private readonly SectionTitle _title;
     private readonly DiskMeter _disk;
@@ -49,6 +52,11 @@ internal sealed class ContentPage
         _ordered.Moved += (from, to) => _model.MoveContent(from, to);
         _availableCaption = new SectionCaption(theme, "AVAILABLE", string.Empty) { Margin = new Thickness(0f, 20f, 0f, 0f) };
         _available = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
+
+        // The engine's own downloads, apart from the game's content: native libraries the engine loads, in no
+        // load order and the same whichever game is selected.
+        _runtimeCaption = new SectionCaption(theme, "RUNTIME COMPONENTS", "FOR EVERY GAME") { Margin = new Thickness(0f, 20f, 0f, 0f) };
+        _runtime = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
         _empty = new Text(theme.Mono, "No optional content is published yet", 15f, theme.TextDim, 0.2f, uppercase: true)
         {
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -60,6 +68,8 @@ internal sealed class ContentPage
         _list.AddChild(_ordered);
         _list.AddChild(_availableCaption);
         _list.AddChild(_available);
+        _list.AddChild(_runtimeCaption);
+        _list.AddChild(_runtime);
         _list.AddChild(_empty);
 
         _title = new SectionTitle(theme, model.Current.Title.ToUpperInvariant(), "Content")
@@ -127,6 +137,19 @@ internal sealed class ContentPage
             }
         }
 
+        if (!_runtime.Children.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(_model.RuntimeContent.Select(static p => p.Pack.Id)))
+        {
+            _runtime.ClearChildren();
+            foreach (ContentEntry entry in _model.RuntimeContent)
+            {
+                var row = new ContentRow(_theme, _model, entry.Pack.Id, ordered: false, _pictures);
+                _runtime.AddChild(row);
+                arrived.AddRange(row.Descendants().OfType<Control>());
+            }
+        }
+
+        _runtimeCaption.Visibility = _model.RuntimeContent.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
         bool hasGame = _model.Current.Retail is not null;
         _orderCaption.Visibility = hasGame ? Visibility.Visible : Visibility.Collapsed;
         _ordered.Visibility = hasGame ? Visibility.Visible : Visibility.Collapsed;
@@ -162,7 +185,9 @@ internal sealed class ContentPage
         }
     }
 
-    private IEnumerable<ContentRow> Rows => _ordered.Items.OfType<ContentRow>().Concat(_available.Children.OfType<ContentRow>());
+    private IEnumerable<ContentRow> Rows => _ordered.Items.OfType<ContentRow>()
+        .Concat(_available.Children.OfType<ContentRow>())
+        .Concat(_runtime.Children.OfType<ContentRow>());
 
     // A caption over a group of rows, with a hint on the right: the design's mono captions.
     private sealed class SectionCaption(UiTheme theme, string caption, string hint) : UiElement
@@ -380,7 +405,9 @@ internal sealed class ContentPage
 
             _busy.Visibility = Visibility.Collapsed;
             _main.Visibility = Visibility.Visible;
-            bool enabled = item?.Enabled ?? false;
+
+            // A runtime stands in no load order; installed, it is in use.
+            bool enabled = item?.Enabled ?? (entry.Pack.Kind == ContentKind.Runtime && entry.Enabled);
             string update = entry.DownloadBytes < 0 ? string.Empty : $" · {LauncherModel.FormatSize(entry.DownloadBytes / 1e6)}";
             switch (entry.State)
             {

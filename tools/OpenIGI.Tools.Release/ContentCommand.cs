@@ -14,7 +14,7 @@ internal static class ContentCommand
     private const string Store = "[--ssh <host> [--remote <cmd>] [--service <url>] | --to-dir <dir> | --upload-file <tar.gz>]";
 
     internal const string Usage =
-        "usage: content publish <pack folder> --pack <id> --version <v> --title <name> --summary <text> --game <id> [--min-game <v>] [--cache <dir>] [--dry-run] " + Store + "\n"
+        "usage: content publish <pack folder> --pack <id> --version <v> --title <name> --summary <text> (--game <id> | --kind runtime) [--min-game <v>] [--cache <dir>] [--dry-run] " + Store + "\n"
         + "       content list " + Store + "\n"
         + "       content edit <id> [--title <name>] [--summary <text>] [--thumbnail <png|jpg|webp> | --no-thumbnail] " + Store + "\n"
         + "       content delete <id> [--version <v>] --yes " + Store;
@@ -80,13 +80,27 @@ internal static class ContentCommand
 
     private static int Publish(ToolContext context, string folder, Dictionary<string, string> options, HashSet<string> flags, IContentStore store)
     {
+        ContentKind kind = options.GetValueOrDefault("--kind") switch
+        {
+            null or "overlay" => ContentKind.Overlay,
+            "runtime" => ContentKind.Runtime,
+            { } other => throw new ArgumentException($"'{other}' is not a pack kind: overlay or runtime."),
+        };
+
+        // A runtime pack is the engine's, not a game's: published for the one id no game has, so that no
+        // launcher from before kinds ever offers it.
+        string game = kind == ContentKind.Runtime
+            ? options.GetValueOrDefault("--game") ?? RuntimePacks.Game
+            : Require(options, "--game");
+
         ContentPublish.Details details = new(
             Require(options, "--pack"),
             Require(options, "--version"),
             Require(options, "--title"),
             Require(options, "--summary"),
-            Require(options, "--game"),
-            options.GetValueOrDefault("--min-game"));
+            game,
+            options.GetValueOrDefault("--min-game"),
+            kind);
 
         // The cache keeps every chunk's compressed object between runs, so publishing the next version of a
         // pack compresses only the chunks that changed.

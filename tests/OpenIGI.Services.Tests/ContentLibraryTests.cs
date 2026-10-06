@@ -104,6 +104,18 @@ public sealed class ContentLibraryTests : IDisposable
     }
 
     [Fact]
+    public void A_runtime_pack_is_listed_with_its_kind_for_the_engine_rather_than_a_game()
+    {
+        ContentManifest runtime = Manifest(RuntimePacks.Streamline, "1.0.0") with { Game = RuntimePacks.Game, Kind = ContentKind.Runtime };
+        ContentLibrary library = new([(runtime, ReleaseJson.Write(runtime)), (Manifest("hd-textures", "1.0.0"), ReleaseJson.Write(Manifest("hd-textures", "1.0.0")))], ChunkUrl);
+
+        ContentPack listed = library.Index.Packs.Single(static p => p.Id == RuntimePacks.Streamline);
+        Assert.Equal(ContentKind.Runtime, listed.Kind);
+        Assert.Equal(RuntimePacks.Game, listed.Game);
+        Assert.Equal(ContentKind.Overlay, library.Index.Packs.Single(static p => p.Id == "hd-textures").Kind);
+    }
+
+    [Fact]
     public void An_empty_store_still_says_where_chunks_come_from()
     {
         ContentStore store = Store();
