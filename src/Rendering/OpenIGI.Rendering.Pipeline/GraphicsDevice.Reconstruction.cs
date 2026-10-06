@@ -158,7 +158,7 @@ public sealed partial class GraphicsDevice
         ];
         streamline.Tag(ReconstructionViewport, tags, encoder);
 
-        if (!streamline.Evaluate(RhiStreamlineFeature.SuperResolution, ReconstructionViewport, encoder, out string? failure))
+        if (!EvaluateTimed(streamline, RhiStreamlineFeature.SuperResolution, encoder, RenderStage.TemporalResolve, "dlss", out string? failure))
         {
             ReportOnChange("Reconstruction evaluate", $"DLSS did not run ({failure}); the engine resolved the frame");
             return false;
@@ -166,6 +166,43 @@ public sealed partial class GraphicsDevice
 
         ReportOnChange("Reconstruction evaluate", "ok");
         return true;
+    }
+
+    /// <summary>Runs an NVIDIA evaluation between two empty passes that carry the profiler's timestamps.</summary>
+    /// <param name="streamline">The NVIDIA features.</param>
+    /// <param name="feature">What to evaluate.</param>
+    /// <param name="encoder">The frame's encoder, with no pass open.</param>
+    /// <param name="stage">The stage the work is counted under.</param>
+    /// <param name="label">Its label in the breakdown.</param>
+    /// <param name="failure">Why it did not run, when it did not.</param>
+    /// <returns><see langword="true"/> when the work was recorded.</returns>
+    /// <remarks>
+    /// A timestamp is written only at a pass's edges, and an evaluation is no pass of ours: it records NVIDIA's
+    /// own work into the command buffer. Measured by nothing, ray reconstruction's ten-odd milliseconds at
+    /// 1440p were missing from the GPU total, and the overlay put them down to the processor.
+    /// </remarks>
+    private bool EvaluateTimed(
+        IRhiStreamline streamline,
+        RhiStreamlineFeature feature,
+        IRhiCommandEncoder encoder,
+        RenderStage stage,
+        string label,
+        out string? failure)
+    {
+        RhiTimestampWrites? times = _profiler.Time(stage, label);
+        if (times is { } opening)
+        {
+            encoder.BeginComputePass(new RhiComputePassDescriptor(opening with { EndIndex = -1 }, label)).Dispose();
+        }
+
+        bool ran = streamline.Evaluate(feature, ReconstructionViewport, encoder, out failure);
+
+        if (times is { } closing)
+        {
+            encoder.BeginComputePass(new RhiComputePassDescriptor(closing with { BeginIndex = -1 }, label)).Dispose();
+        }
+
+        return ran;
     }
 
     /// <summary>Writes the exposure texel and the reactive mask every reconstruction reads beside the colour.</summary>

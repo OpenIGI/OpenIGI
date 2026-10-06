@@ -119,7 +119,7 @@ public sealed partial class GraphicsDevice
 
         streamline.Tag(ReconstructionViewport, _specularHitDistanceWritten ? tags : tags[..^1], encoder);
 
-        if (!streamline.Evaluate(RhiStreamlineFeature.RayReconstruction, ReconstructionViewport, encoder, out string? failure))
+        if (!EvaluateTimed(streamline, RhiStreamlineFeature.RayReconstruction, encoder, RenderStage.TemporalResolve, "dlss-rr", out string? failure))
         {
             _rayReconstructionFault = $"ray reconstruction did not run ({failure})";
             ResetHistory(HistoryResetReason.ReconstructionChanged);

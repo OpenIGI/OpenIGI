@@ -70,7 +70,7 @@ public sealed partial class GraphicsDevice
 
         ReportOnChange(
             "Dynamic Vibrance evaluate",
-            streamline.Evaluate(RhiStreamlineFeature.Vibrance, ReconstructionViewport, encoder, out string? failure)
+            EvaluateTimed(streamline, RhiStreamlineFeature.Vibrance, encoder, RenderStage.CameraEffects, "dvc", out string? failure)
                 ? "ok"
                 : $"did not run ({failure})");
     }
