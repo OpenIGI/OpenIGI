@@ -77,6 +77,10 @@ public class Button : Control
     /// <summary>Gets or sets which of the design's styles the button is drawn in.</summary>
     public ButtonAccent Accent { get; set; } = ButtonAccent.Bar;
 
+    /// <summary>Gets a value indicating whether an <see cref="ButtonAccent.Underline"/> button draws its own underline when selected.</summary>
+    /// <remarks>Off where the bar it sits in draws one underline that moves between its tabs.</remarks>
+    protected virtual bool DrawsSelectedUnderline => true;
+
     /// <summary>Gets or sets a value indicating whether the caption is shown in capitals.</summary>
     public bool Uppercase { get; set; } = true;
 
@@ -174,7 +178,7 @@ public class Button : Control
             {
                 float lit = MathF.Max(hot, Selected ? 1f : 0f);
                 caption = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Theme.TextMuted, Theme.TextBright, lit);
-                if (Selected)
+                if (Selected && DrawsSelectedUnderline)
                 {
                     float inset = context.Px(Padding.Left);
                     float thickness = context.Px(2f);
