@@ -28,8 +28,14 @@ split_commits = false
 protect_breaking_commits = true
 filter_commits = false
 sort_commits = "oldest"
+# Subjects that were wrong once pushed, said right in the notes. Vibrance shipped in no release: it came in
+# and went out within 0.4.0's betas, so its removal is no news to anyone either.
+commit_preprocessors = [
+  { pattern = '^(feat\(render\): NVIDIA Streamline on the RHI renderer: DLSS, ray reconstruction, Reflex), vibrance', replace = "${1}" },
+]
 commit_parsers = [
   { message = "^Merge", skip = true },
+  { message = '^revert\(render\): RTX Dynamic Vibrance is gone', skip = true },
   { message = "^feat", group = "<!-- 0 -->New" },
   { message = "^fix", group = "<!-- 1 -->Fixes" },
   { message = "^perf", group = "<!-- 2 -->Performance" },
