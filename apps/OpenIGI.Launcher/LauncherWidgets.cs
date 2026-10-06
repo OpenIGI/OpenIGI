@@ -111,3 +111,31 @@ internal sealed class Text : UiElement
         painter.DrawLabel(_font, _shown, new UiVec2(x, UiRowStyle.CenterY(_font, size, Bounds)), size, Color, Tracking);
     }
 }
+
+/// <summary>Prose that wraps to the width it is given, at spaces.</summary>
+internal sealed class Paragraph(UI.Text.UiFont font, string text, float size, Bgra32 color) : UiElement
+{
+    private string[] _lines = [];
+
+    public string Value { get; set; } = text;
+
+    public Bgra32 Color { get; set; } = color;
+
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
+    {
+        float sizePx = context.Px(size);
+        _lines = font.WrapText(Value, sizePx, available.X).Split('\n');
+        float widest = _lines.Length == 0 ? 0f : _lines.Max(line => font.MeasureWidth(line, sizePx));
+        return new UiVec2(MathF.Min(widest, available.X), _lines.Length * font.LineHeight(sizePx));
+    }
+
+    protected override void OnDraw(UiPainter painter)
+    {
+        float sizePx = painter.Context.Px(size);
+        float line = font.LineHeight(sizePx);
+        for (int i = 0; i < _lines.Length; i++)
+        {
+            painter.DrawText(font, _lines[i], new UiVec2(Bounds.X, Bounds.Y + (i * line)), sizePx, Color);
+        }
+    }
+}

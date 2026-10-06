@@ -29,6 +29,9 @@ internal sealed class LauncherSettings
     /// <summary>Gets or sets what the close button does: ask, go to the tray, or exit.</summary>
     public CloseAction CloseButton { get; set; } = CloseAction.Ask;
 
+    /// <summary>Gets or sets whether the first-run guide has been finished or skipped, so it is never shown again.</summary>
+    public bool Onboarded { get; set; }
+
     /// <summary>Reads the setting <see cref="MinimizeOnLaunch"/> replaced, from a file an earlier launcher wrote.</summary>
     /// <remarks>Closing on launch now means going to the tray, so a player who chose it keeps the choice.</remarks>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
