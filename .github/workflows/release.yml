@@ -7,7 +7,8 @@ name: Publish release
 #     launcher offers the release within a minute;
 #   - the web build on openigi.com (stable) or beta.openigi.com (beta).
 #
-# Run by the Release button (release-cut.yml), or by pushing a vX.Y.Z / vX.Y.Z-beta.N tag by hand. One job,
+# Run by the Release button (release-cut.yml), by pushing a vX.Y.Z / vX.Y.Z-beta.N tag by hand, or, for a tag
+# already pushed, by Run workflow with its name (a tag push does not always start a run). One job,
 # because everything happens on one machine and the archives would otherwise be stored as workflow
 # artefacts in between, which a private repository's storage cannot hold.
 on:
@@ -19,6 +20,12 @@ on:
   workflow_call:
     inputs:
       tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to publish, already pushed (v0.4.0, v0.5.0-beta.1, launcher-v0.4.1)
         type: string
         required: true
 
