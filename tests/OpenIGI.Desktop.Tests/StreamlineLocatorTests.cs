@@ -49,13 +49,15 @@ public sealed class StreamlineLocatorTests
     [Fact]
     public void Development_checkout_is_found_above_the_build_output()
     {
-        string checkout = Path.Combine(@"C:\repo", StreamlineLocator.DevelopmentRelativeDirectory);
+        // Built from this platform's root and separators: the walk goes up through real parent folders.
+        string repo = Path.Combine(Path.GetPathRoot(Path.GetTempPath())!, "repo");
+        string checkout = Path.Combine(repo, StreamlineLocator.DevelopmentRelativeDirectory);
 
         StreamlineOptions? found = Locate(
             HostOptions.Parse([]),
             env: null,
             existing: [checkout],
-            baseDirectory: @"C:\repo\apps\OpenIGI.Desktop\bin\Release\net10.0");
+            baseDirectory: Path.Combine(repo, "apps", "OpenIGI.Desktop", "bin", "Release", "net10.0"));
 
         Assert.Equal(Path.GetFullPath(checkout), found?.Directory);
     }
