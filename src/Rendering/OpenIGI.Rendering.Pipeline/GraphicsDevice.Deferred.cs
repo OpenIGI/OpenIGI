@@ -444,7 +444,7 @@ public sealed partial class GraphicsDevice
         _sceneExposure = MathF.Max(post.Exposure * adapted, 1e-3f);
 
         // Into the back buffer, or into the picture's own image when the interface is to be drawn apart from
-        // it this frame (frame generation, Dynamic Vibrance). See GraphicsDevice.Layer.
+        // it this frame (frame generation). See GraphicsDevice.Layer.
         IRhiTextureView resolveTarget = _frame.Target;
         if (BeginLayeredResolve() is { } layered)
         {
@@ -470,9 +470,6 @@ public sealed partial class GraphicsDevice
         // done. Left armed, it is honoured by whatever opens the frame's pass next — the letterbox, the
         // HUD — which clears away the whole picture a moment after it was drawn.
         _clearPending = false;
-
-        // Dynamic Vibrance over the tone-mapped picture, before any interface is drawn on it.
-        RecordVibrance();
 
         scene.AdvanceFrame();
 

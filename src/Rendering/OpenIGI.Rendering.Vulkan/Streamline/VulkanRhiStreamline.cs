@@ -35,7 +35,6 @@ internal sealed unsafe class VulkanRhiStreamline : IRhiStreamline, IDisposable
     // Options already sent, so a frame that asks for the same again sends nothing. Streamline warns for
     // every redundant set, and frame generation in particular is documented as not a per-frame call.
     private readonly Dictionary<int, (RhiDlssMode Mode, int Width, int Height)> _superResolution = [];
-    private readonly Dictionary<int, (bool On, float Intensity, float Saturation)> _vibrance = [];
     private readonly Dictionary<int, RhiFrameGenerationOptions> _frameGeneration = [];
     private (RhiLowLatencyMode Mode, int Limit)? _latency;
 
@@ -410,29 +409,6 @@ internal sealed unsafe class VulkanRhiStreamline : IRhiStreamline, IDisposable
     }
 
     /// <inheritdoc/>
-    public void SetVibranceOptions(int viewport, bool enabled, float intensity, float saturationBoost)
-    {
-        float i = Math.Clamp(intensity, 0f, 1f);
-        float s = Math.Clamp(saturationBoost, 0f, 1f);
-        if (_api.DeepDvcSetOptions == null
-            || (_vibrance.TryGetValue(viewport, out var sent) && sent == (enabled, i, s)))
-        {
-            return;
-        }
-
-        SlDeepDvcOptions options = SlDeepDvcOptions.Create();
-        options.Mode = enabled ? SlDeepDvcMode.On : SlDeepDvcMode.Off;
-        options.Intensity = i;
-        options.SaturationBoost = s;
-
-        SlViewportHandle handle = SlViewportHandle.For((uint)viewport);
-        if (Report(_api.DeepDvcSetOptions(&handle, &options), "slDeepDVCSetOptions"))
-        {
-            _vibrance[viewport] = (enabled, i, s);
-        }
-    }
-
-    /// <inheritdoc/>
     public bool SetFrameGenerationLoaded(bool loaded)
     {
         if (FrameGenerationLoaded == loaded)
@@ -572,7 +548,6 @@ internal sealed unsafe class VulkanRhiStreamline : IRhiStreamline, IDisposable
         SlViewportHandle handle = SlViewportHandle.For((uint)viewport);
         _ = _runtime.Api.FreeResources(Feature(feature), &handle);
         _superResolution.Remove(viewport);
-        _vibrance.Remove(viewport);
         _frameGeneration.Remove(viewport);
     }
 
@@ -710,7 +685,6 @@ internal sealed unsafe class VulkanRhiStreamline : IRhiStreamline, IDisposable
         RhiStreamlineFeature.FrameGeneration => SlFeature.DlssG,
         RhiStreamlineFeature.LowLatency => SlFeature.Reflex,
         RhiStreamlineFeature.LatencyMarkers => SlFeature.Pcl,
-        RhiStreamlineFeature.Vibrance => SlFeature.DeepDvc,
         _ => throw new ArgumentOutOfRangeException(nameof(feature), feature, null),
     };
 

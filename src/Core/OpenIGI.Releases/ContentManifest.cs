@@ -164,7 +164,7 @@ public static class RuntimePacks
     /// <summary>The game id every runtime pack is published for: the engine, not a game it runs.</summary>
     public const string Game = "engine";
 
-    /// <summary>The NVIDIA Streamline runtime: DLSS, ray reconstruction, frame generation, Reflex, vibrance.</summary>
+    /// <summary>The NVIDIA Streamline runtime: DLSS, ray reconstruction, frame generation, Reflex.</summary>
     public const string Streamline = "nvidia-streamline";
 
     /// <summary>The variable the game reads the Streamline runtime's folder from.</summary>

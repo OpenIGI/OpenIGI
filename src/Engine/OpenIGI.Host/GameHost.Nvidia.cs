@@ -32,7 +32,6 @@ internal sealed partial class GameHost
             "r_reconstruction" or "r_dlss_quality" => nvidia,
             "r_frame_generation" => _device.FrameGenerationUnavailable,
             "r_low_latency" or "r_frame_limit" => _device.LowLatencyUnavailable,
-            "r_dvc" or "r_dvc_intensity" or "r_dvc_saturation" => _device.VibranceUnavailable,
             "r_scale" when _reconstructionActive != ReconstructionKind.Engine =>
                 "DLSS chooses the render size while it runs; set it with DLSS Quality",
             _ => string.Empty,

@@ -92,7 +92,7 @@ components, the third kind of download, are neither.
   - A mod is never loaded through `ResourceOverrides`.
   - Content never runs code.
 - **Runtime components** are vendor-signed native libraries the engine loads, the first being NVIDIA's
-  Streamline runtime (DLSS, ray reconstruction, frame generation, Reflex, RTX Dynamic Vibrance).
+  Streamline runtime (DLSS, ray reconstruction, frame generation, Reflex).
   - They are published as content packs of kind `Runtime` (`ContentKind`, `src/Core/OpenIGI.Releases`) for the
     game id `engine`, which no game has, so a launcher from before kinds never offers one.
   - They install to `<Library>/runtime/<id>/files`, stand in no load order, and reach the game through a

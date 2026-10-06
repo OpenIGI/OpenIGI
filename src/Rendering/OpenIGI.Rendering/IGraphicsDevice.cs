@@ -1593,19 +1593,6 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     bool PresentsOnRecord { get; }
 
-    /// <summary>Sets RTX Dynamic Vibrance, which raises the finished picture's vibrance and saturation.</summary>
-    /// <param name="enabled">Whether it runs.</param>
-    /// <param name="intensity">How strongly, from nought to one.</param>
-    /// <param name="saturationBoost">How much extra saturation, from nought to one.</param>
-    /// <remarks>
-    /// Runs on the tone-mapped picture before any interface is drawn over it, so menus and readouts keep
-    /// their colours. Does nothing where NVIDIA's runtime or an RTX adapter is missing.
-    /// </remarks>
-    void SetVibrance(bool enabled, float intensity, float saturationBoost);
-
-    /// <summary>Gets why Dynamic Vibrance cannot run here, or an empty string where it can.</summary>
-    string VibranceUnavailable { get; }
-
     /// <summary>Asks for DLSS frame generation this frame, and says what it is actually doing.</summary>
     /// <param name="mode">The multiplier the settings ask for.</param>
     /// <param name="gameplay">

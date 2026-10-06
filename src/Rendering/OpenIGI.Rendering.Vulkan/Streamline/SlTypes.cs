@@ -349,9 +349,6 @@ internal static class SlFeature
     /// <summary>The PC latency markers Reflex is driven by.</summary>
     public const uint Pcl = 4;
 
-    /// <summary>RTX Dynamic Vibrance.</summary>
-    public const uint DeepDvc = 5;
-
     /// <summary>DLSS frame generation, including multi-frame generation.</summary>
     public const uint DlssG = 1000;
 

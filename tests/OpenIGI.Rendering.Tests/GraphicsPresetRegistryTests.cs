@@ -155,7 +155,7 @@ public sealed class GraphicsPresetRegistryTests
             // cap keeps it whatever tier they pick. Each falls back to the engine's own path, and says why,
             // where it cannot run.
             "r_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
-            "r_dvc", "r_dvc_intensity", "r_dvc_saturation", "r_dlssg_ui_recomposition",
+            "r_dlssg_ui_recomposition",
         ];
 
         _ = RenderCVars.Lighting;

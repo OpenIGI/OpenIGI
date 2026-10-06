@@ -3,7 +3,7 @@
     Fetches the NVIDIA Streamline runtime and the DLSS model DLLs into an ignored directory.
 
 .DESCRIPTION
-    DLSS, ray reconstruction, frame generation, Reflex and RTX Dynamic Vibrance reach the engine as a
+    DLSS, ray reconstruction, frame generation and Reflex reach the engine as a
     set of NVIDIA-signed DLLs that this GPL-3.0 repository does not carry. Players get them as the
     optional "nvidia-streamline" runtime pack from the launcher; a development checkout gets them from
     this script, into third-party/streamline (which .gitignore excludes), where the engine finds them
@@ -17,8 +17,8 @@
     source:
 
       NVIDIA-RTX/Streamline release zip   sl.interposer.dll and the plugins (sl.common, sl.dlss,
-                                          sl.dlss_d, sl.dlss_g, sl.reflex, sl.pcl, sl.deepdvc),
-                                          NvLowLatencyVk.dll, nvngx_deepdvc.dll
+                                          sl.dlss_d, sl.dlss_g, sl.reflex, sl.pcl),
+                                          NvLowLatencyVk.dll
       NVIDIA/DLSS tag                     nvngx_dlss.dll, nvngx_dlssd.dll, nvngx_dlssg.dll
 
     The second is the actual neural network. Its version moves independently of Streamline's and is
@@ -209,7 +209,7 @@ try {
     # (NIS, DirectSR, the profiler, the overlay) and Microsoft's PIX runtime are therefore left behind.
     $modules = @(
         'sl.interposer.dll', 'sl.common.dll', 'sl.dlss.dll', 'sl.dlss_d.dll', 'sl.dlss_g.dll',
-        'sl.reflex.dll', 'sl.pcl.dll', 'sl.deepdvc.dll', 'NvLowLatencyVk.dll', 'nvngx_deepdvc.dll'
+        'sl.reflex.dll', 'sl.pcl.dll', 'NvLowLatencyVk.dll'
     )
 
     function Copy-Modules([string]$from, [string]$to) {

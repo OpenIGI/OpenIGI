@@ -3,8 +3,8 @@ namespace OpenIGI.Rendering.Vulkan;
 /// <summary>Where the NVIDIA Streamline runtime is, and how to start it.</summary>
 /// <remarks>
 /// <para>
-/// Streamline is the NVIDIA layer DLSS, ray reconstruction, frame generation, Reflex and Dynamic
-/// Vibrance are reached through. It ships as signed proprietary DLLs this GPL repository does not carry:
+/// Streamline is the NVIDIA layer DLSS, ray reconstruction, frame generation and Reflex are reached
+/// through. It ships as signed proprietary DLLs this GPL repository does not carry:
 /// players get them as the optional <c>nvidia-streamline</c> runtime pack from the launcher, and a
 /// development checkout gets them from <c>tools/fetch-streamline.ps1</c>. Which folder is used is the
 /// application's decision; the backend only ever loads from the one it is handed here.

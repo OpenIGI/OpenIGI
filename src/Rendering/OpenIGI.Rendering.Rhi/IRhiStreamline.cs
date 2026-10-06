@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace OpenIGI.Rendering.Rhi;
 
-/// <summary>NVIDIA's Streamline features, where the device runs them: DLSS, ray reconstruction, frame generation, Reflex, Dynamic Vibrance.</summary>
+/// <summary>NVIDIA's Streamline features, where the device runs them: DLSS, ray reconstruction, frame generation, Reflex.</summary>
 /// <remarks>
 /// <para>
 /// A capability interface, like <see cref="IRhiRayTracing"/>: only a Vulkan device that started the
@@ -94,13 +94,6 @@ public interface IRhiStreamline
         int outputHeight,
         in Matrix4x4 worldToCameraView,
         in Matrix4x4 cameraViewToWorld);
-
-    /// <summary>Sets RTX Dynamic Vibrance for a viewport. Sent on change only.</summary>
-    /// <param name="viewport">The viewport.</param>
-    /// <param name="enabled">Whether it runs.</param>
-    /// <param name="intensity">How strongly, from zero to one.</param>
-    /// <param name="saturationBoost">How much extra saturation, from zero to one.</param>
-    void SetVibranceOptions(int viewport, bool enabled, float intensity, float saturationBoost);
 
     /// <summary>Gets a value indicating whether the frame-generation plugin is loaded.</summary>
     bool FrameGenerationLoaded { get; }

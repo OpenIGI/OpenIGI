@@ -164,10 +164,4 @@ internal sealed unsafe class SlFeatureApi
 
     /// <summary>Gets <c>slPCLGetState</c>.</summary>
     public delegate* unmanaged[Cdecl]<SlPclState*, SlResult> PclGetState { get; init; }
-
-    /// <summary>Gets <c>slDeepDVCSetOptions</c>.</summary>
-    public delegate* unmanaged[Cdecl]<SlViewportHandle*, SlDeepDvcOptions*, SlResult> DeepDvcSetOptions { get; init; }
-
-    /// <summary>Gets <c>slDeepDVCGetState</c>.</summary>
-    public delegate* unmanaged[Cdecl]<SlViewportHandle*, SlDeepDvcState*, SlResult> DeepDvcGetState { get; init; }
 }

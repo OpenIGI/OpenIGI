@@ -389,19 +389,6 @@ public static class GraphicsMenu
                     "Frame Rate Cap",
                     "Caps the frame rate through NVIDIA Reflex, which keeps the latency low while it does. "
                         + "0 is no cap."),
-                new GraphicsSetting(
-                    "r_dvc",
-                    "RTX Dynamic Vibrance",
-                    "An AI filter over the finished picture that raises vibrance and saturation. Changes the "
-                        + "game's look; off is the picture as graded."),
-                new GraphicsSetting(
-                    "r_dvc_intensity",
-                    "Vibrance Intensity",
-                    "How strongly RTX Dynamic Vibrance raises vibrance."),
-                new GraphicsSetting(
-                    "r_dvc_saturation",
-                    "Vibrance Saturation",
-                    "How much extra saturation RTX Dynamic Vibrance adds."),
             ]),
 
         new GraphicsSection(

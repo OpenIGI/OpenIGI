@@ -10,27 +10,21 @@ namespace OpenIGI.Rendering.Pipeline;
 /// <remarks>
 /// <para>
 /// Ordinarily the resolve writes the finished picture straight into the back buffer and the interface is
-/// drawn over it there. Two of NVIDIA's features need the two apart. Frame generation interpolates the
-/// picture without the interface (the "HUD-less" colour) and moves the interface separately, or every
-/// menu and readout smears between frames; Dynamic Vibrance changes the picture's colour and must leave
-/// the interface's alone.
+/// drawn over it there. Frame generation needs the two apart: it interpolates the picture without the
+/// interface (the "HUD-less" colour) and moves the interface separately, or every menu and readout smears
+/// between frames.
 /// </para>
 /// <para>
-/// So when either wants it the resolve writes an image of its own — <see cref="_display"/> — and
+/// So when it is wanted the resolve writes an image of its own — <see cref="_display"/> — and
 /// everything drawn after it lands in a transparent layer. The sprites blend into that layer over
 /// transparent black, which accumulates premultiplied colour and coverage, and laying it over the picture
 /// as <c>ui.rgb + (1 − ui.a)·picture</c> gives the pixel the direct path would have drawn. Only additive
 /// sprites differ, and they are built to leave coverage alone (see <c>SpritePipelineSet.LayerBlendFor</c>).
 /// </para>
-/// <para>
-/// Film grain and the quantisation dither stay in the resolve, ahead of Dynamic Vibrance rather than after
-/// it as NVIDIA suggests: they share a function there with the dither the eight-bit picture needs, and both
-/// are a single code value or off at every preset.
-/// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    /// <summary>The picture's own format: plain eight-bit RGBA, which Dynamic Vibrance can write in place.</summary>
+    /// <summary>The picture's own format: plain eight-bit RGBA.</summary>
     private const RhiTextureFormat DisplayFormat = RhiTextureFormat.Rgba8Unorm;
 
     private IRhiTexture? _display;
@@ -56,7 +50,7 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Gets a value indicating whether this frame should resolve into the picture of its own.</summary>
     private bool WantsLayer =>
-        RenderCVars.InterfaceLayer.Value || _vibranceRequested || FrameGenerationWantsLayer;
+        RenderCVars.InterfaceLayer.Value || FrameGenerationWantsLayer;
 
     /// <summary>Gets the picture without the interface, where this frame drew one: what frame generation interpolates.</summary>
     internal IRhiTexture? HudlessColour => _layered ? _display : null;
@@ -84,13 +78,13 @@ public sealed partial class GraphicsDevice
                 _retired.Retire(_display);
             }
 
-            // Storage, for Dynamic Vibrance writing in place; a copy source, for the frame copies that read
-            // the picture (the frosted-glass backdrop, a held frame).
+            // A copy source, for the frame copies that read the picture (the frosted-glass backdrop, a held
+            // frame).
             _display = _device.CreateTexture(new RhiTextureDescriptor(
                 width,
                 height,
                 DisplayFormat,
-                RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled | RhiTextureUsage.Storage | RhiTextureUsage.CopySource,
+                RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled | RhiTextureUsage.CopySource,
                 Label: "frame.display"));
         }
 

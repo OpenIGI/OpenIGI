@@ -41,7 +41,6 @@ public sealed class VulkanRhi : IDisposable
         SlFeature.DlssG,
         SlFeature.Reflex,
         SlFeature.Pcl,
-        SlFeature.DeepDvc,
     ];
 
     private VulkanRhi(

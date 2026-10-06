@@ -19,9 +19,6 @@ public enum RhiStreamlineFeature
 
     /// <summary>The PC latency markers, which measure latency whether or not Reflex paces anything.</summary>
     LatencyMarkers,
-
-    /// <summary>RTX Dynamic Vibrance.</summary>
-    Vibrance,
 }
 
 /// <summary>The role a tagged texture plays for a feature.</summary>

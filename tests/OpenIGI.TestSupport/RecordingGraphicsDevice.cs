@@ -657,16 +657,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public bool PresentsOnRecord { get; set; }
 
-    /// <summary>Every Dynamic Vibrance setting applied, in order.</summary>
-    public List<(bool Enabled, float Intensity, float Saturation)> VibranceSettings { get; } = [];
-
-    /// <inheritdoc/>
-    public void SetVibrance(bool enabled, float intensity, float saturationBoost) =>
-        VibranceSettings.Add((enabled, intensity, saturationBoost));
-
-    /// <inheritdoc/>
-    public string VibranceUnavailable { get; set; } = "not a real device";
-
     /// <summary>Every frame generation request, in order.</summary>
     public List<(FrameGenerationMode Mode, bool Gameplay)> FrameGenerationRequests { get; } = [];
 

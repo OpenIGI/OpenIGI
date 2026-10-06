@@ -62,6 +62,11 @@ public sealed partial class GraphicsDevice
         });
     }
 
+    /// <summary>Gets why NVIDIA's features are absent altogether: the API, or the missing runtime.</summary>
+    private string NvidiaUnavailable => _device.ShaderTarget == Shaders.ShaderTarget.Wgsl
+        ? "NVIDIA's features run on Vulkan only"
+        : "the NVIDIA DLSS runtime is not installed";
+
     /// <inheritdoc/>
     public void SetLowLatency(LowLatencyMode mode, int frameLimitFramesPerSecond)
     {

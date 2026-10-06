@@ -307,10 +307,6 @@ internal sealed unsafe class StreamlineRuntime : IDisposable
             PclSetMarker = (delegate* unmanaged[Cdecl]<SlPclMarker, nint, SlResult>)Function(SlFeature.Pcl, "slPCLSetMarker"),
             PclSetOptions = (delegate* unmanaged[Cdecl]<SlPclOptions*, SlResult>)Function(SlFeature.Pcl, "slPCLSetOptions"),
             PclGetState = (delegate* unmanaged[Cdecl]<SlPclState*, SlResult>)Function(SlFeature.Pcl, "slPCLGetState"),
-            DeepDvcSetOptions =
-                (delegate* unmanaged[Cdecl]<SlViewportHandle*, SlDeepDvcOptions*, SlResult>)Function(SlFeature.DeepDvc, "slDeepDVCSetOptions"),
-            DeepDvcGetState =
-                (delegate* unmanaged[Cdecl]<SlViewportHandle*, SlDeepDvcState*, SlResult>)Function(SlFeature.DeepDvc, "slDeepDVCGetState"),
         };
 
         return _featureApi;
@@ -403,7 +399,6 @@ internal sealed unsafe class StreamlineRuntime : IDisposable
         SlFeature.Dlss => "DLSS",
         SlFeature.Reflex => "Reflex",
         SlFeature.Pcl => "PC latency markers",
-        SlFeature.DeepDvc => "RTX Dynamic Vibrance",
         SlFeature.DlssG => "DLSS frame generation",
         SlFeature.DlssRr => "DLSS ray reconstruction",
         _ => $"feature {feature}",

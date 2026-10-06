@@ -345,17 +345,6 @@ public sealed unsafe class StreamlineLayoutTests
     }
 
     [Fact]
-    public void Dynamic_vibrance_structures_match_the_sdk()
-    {
-        Assert.Equal(48, sizeof(SlDeepDvcOptions));
-        AssertOffsets<SlDeepDvcOptions>(
-            (nameof(SlDeepDvcOptions.Mode), 32),
-            (nameof(SlDeepDvcOptions.Intensity), 36),
-            (nameof(SlDeepDvcOptions.SaturationBoost), 40));
-        Assert.Equal(40, sizeof(SlDeepDvcState));
-    }
-
-    [Fact]
     public void Identifiers_match_the_sdk()
     {
         Assert.Equal(2u, (uint)SlResult.ErrorDriverOutOfDate);
@@ -367,7 +356,6 @@ public sealed unsafe class StreamlineLayoutTests
         Assert.Equal(6u, (uint)SlDlssMode.Dlaa);
         Assert.Equal(13u, (uint)SlDlssPreset.PresetM);
 
-        Assert.Equal(5u, SlFeature.DeepDvc);
         Assert.Equal(1000u, SlFeature.DlssG);
         Assert.Equal(1001u, SlFeature.DlssRr);
 

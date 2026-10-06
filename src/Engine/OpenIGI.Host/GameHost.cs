@@ -1970,10 +1970,6 @@ internal sealed partial class GameHost : IDisposable
             // it begins BEFORE the input below is read -- sleeping first is how the frame's input comes fresher.
             // Frame generation needs Reflex on and turns it on whatever the setting says.
             _device.SetLowLatency(EffectiveLowLatency(), RenderCVars.FrameLimit.Value);
-            _device.SetVibrance(
-                RenderCVars.DynamicVibrance.Value,
-                RenderCVars.DynamicVibranceIntensity.Value,
-                RenderCVars.DynamicVibranceSaturation.Value);
 
             // Frame generation interpolates along the motion of play; a menu, a pause, the warm-up hold or a
             // cutscene has none to follow, so it stands down for those and resumes with play. Asked here, at

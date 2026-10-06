@@ -3758,31 +3758,6 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Cap the frame rate through NVIDIA Reflex, in frames per second. 0 for no cap. Needs the NVIDIA runtime.");
 
-    /// <summary>RTX Dynamic Vibrance: an AI saturation and vibrance filter over the finished picture.</summary>
-    public static readonly BoolCVar DynamicVibrance = CVar.Bool(
-        "r_dvc",
-        false,
-        CVarOptions.Archive,
-        "RTX Dynamic Vibrance: raise vibrance and saturation over the finished frame (NVIDIA RTX only).");
-
-    /// <summary>How strongly RTX Dynamic Vibrance raises vibrance.</summary>
-    public static readonly NumericCVar<float> DynamicVibranceIntensity = CVar.Float(
-        "r_dvc_intensity",
-        0.5f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "RTX Dynamic Vibrance intensity, 0 to 1.");
-
-    /// <summary>How much extra saturation RTX Dynamic Vibrance adds.</summary>
-    public static readonly NumericCVar<float> DynamicVibranceSaturation = CVar.Float(
-        "r_dvc_saturation",
-        0.25f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "RTX Dynamic Vibrance saturation boost, 0 to 1.");
-
     /// <summary>Whether frame generation interpolates the picture and the interface separately.</summary>
     public static readonly BoolCVar FrameGenerationUiRecomposition = CVar.Bool(
         "r_dlssg_ui_recomposition",
