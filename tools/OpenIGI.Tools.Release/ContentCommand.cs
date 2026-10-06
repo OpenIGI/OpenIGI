@@ -14,7 +14,7 @@ internal static class ContentCommand
     private const string Store = "[--ssh <host> [--remote <cmd>] [--service <url>] | --to-dir <dir> | --upload-file <tar.gz>]";
 
     internal const string Usage =
-        "usage: content publish <pack folder> --pack <id> --version <v> --title <name> --summary <text> (--game <id> | --kind runtime) [--min-game <v>] [--cache <dir>] [--dry-run] " + Store + "\n"
+        "usage: content publish <pack folder> --pack <id> --version <v> --title <name> --summary <text> (--game <id> | --kind runtime --platform <rid>[,<rid>...]) [--min-game <v>] [--cache <dir>] [--dry-run] " + Store + "\n"
         + "       content list " + Store + "\n"
         + "       content edit <id> [--title <name>] [--summary <text>] [--thumbnail <png|jpg|webp> | --no-thumbnail] " + Store + "\n"
         + "       content delete <id> [--version <v>] --yes " + Store;
@@ -100,7 +100,8 @@ internal static class ContentCommand
             Require(options, "--summary"),
             game,
             options.GetValueOrDefault("--min-game"),
-            kind);
+            kind,
+            options.GetValueOrDefault("--platform")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         // The cache keeps every chunk's compressed object between runs, so publishing the next version of a
         // pack compresses only the chunks that changed.

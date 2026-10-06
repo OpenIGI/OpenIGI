@@ -259,9 +259,37 @@ internal sealed class HomePage
         protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
         {
             _more.Measure(context, available);
-            int lines = Notes?.Items.Count ?? 0;
-            float body = (lines * (_theme.Body.LineHeight(context.Px(16f)) + context.Px(12f))) + context.Px(4f) + _more.DesiredSize.Y;
+            float textSize = context.Px(16f);
+            float line = _theme.Body.LineHeight(textSize);
+            float body = context.Px(4f) + _more.DesiredSize.Y;
+            foreach (PatchNote note in Notes?.Items ?? [])
+            {
+                body += (NoteLines(note.Text, textSize, NoteWidth(context, available.X)).Length * line) + context.Px(12f);
+            }
+
             return new UiVec2(available.X, context.Px(BannerHeight) + context.Px(16f + 20f) + body);
+        }
+
+        /// <summary>How wide a note's text may run: the card less its margins and the bullet's indent.</summary>
+        private static float NoteWidth(LayoutContext context, float cardWidth) => cardWidth - context.Px(24f + 21f + 24f);
+
+        /// <summary>A note broken onto the card's width: at most two lines, the second cut short with an ellipsis.</summary>
+        private string[] NoteLines(string text, float sizePx, float width)
+        {
+            const int MaxLines = 2;
+            string[] lines = _theme.Body.WrapText(text, sizePx, width).Split('\n');
+            if (lines.Length <= MaxLines)
+            {
+                return lines;
+            }
+
+            string last = lines[MaxLines - 1];
+            while (last.Length > 0 && _theme.Body.MeasureWidth(last + "…", sizePx) > width)
+            {
+                last = last[..^1];
+            }
+
+            return [.. lines[..(MaxLines - 1)], last.TrimEnd() + "…"];
         }
 
         protected override void ArrangeContent(LayoutContext context, UiRect contentRect) =>
@@ -293,12 +321,18 @@ internal sealed class HomePage
 
             float titleSize = context.Px(36f);
             var titleBox = new UiRect(banner.X + context.Px(24f), banner.Bottom - context.Px(14f) - titleSize, banner.Width, titleSize);
-            painter.DrawLabel(_theme.Display, notes.Title, new UiVec2(titleBox.X, UiRowStyle.CapsCenterY(_theme.Display, titleSize, titleBox)), titleSize, _theme.Text, 0.04f);
+            float titleTop = UiRowStyle.CapsCenterY(_theme.Display, titleSize, titleBox);
+            painter.DrawLabel(_theme.Display, notes.Title, new UiVec2(titleBox.X, titleTop), titleSize, _theme.Text, 0.04f);
+
+            // The date stands on the title's baseline, not at the foot of the title's box.
+            float baseline = titleTop + _theme.Display.Ascent(titleSize);
             float dateSize = context.Px(13f);
             float dateWidth = UiPainter.MeasureLabel(_theme.Mono, notes.Date, dateSize, 0.16f);
-            painter.DrawLabel(_theme.Mono, notes.Date, new UiVec2(banner.Right - context.Px(24f) - dateWidth, titleBox.Bottom - _theme.Mono.LineHeight(dateSize)), dateSize, _theme.TextSecondary, 0.16f);
+            painter.DrawLabel(_theme.Mono, notes.Date, new UiVec2(banner.Right - context.Px(24f) - dateWidth, baseline - _theme.Mono.Ascent(dateSize)), dateSize, _theme.TextSecondary, 0.16f);
 
             float textSize = context.Px(16f);
+            float line = _theme.Body.LineHeight(textSize);
+            float width = NoteWidth(context, Bounds.Width);
             float y = banner.Bottom + context.Px(16f);
             float x = Bounds.X + context.Px(24f);
             foreach (PatchNote note in notes.Items)
@@ -309,10 +343,16 @@ internal sealed class HomePage
                     PatchNoteKind.Fix => _theme.Success,
                     _ => _theme.Accent,
                 };
-                float line = _theme.Body.LineHeight(textSize);
+
+                // The bullet stays on the note's first line however many it wraps onto.
                 painter.FillDiamond(new UiVec2(x + context.Px(3.5f), y + (line * 0.5f)), context.Px(7f), color);
-                painter.DrawText(_theme.Body, note.Text, new UiVec2(x + context.Px(21f), y), textSize, _theme.TextLabel);
-                y += line + context.Px(12f);
+                foreach (string text in NoteLines(note.Text, textSize, width))
+                {
+                    painter.DrawText(_theme.Body, text, new UiVec2(x + context.Px(21f), y), textSize, _theme.TextLabel);
+                    y += line;
+                }
+
+                y += context.Px(12f);
             }
         }
     }

@@ -333,6 +333,36 @@ internal sealed partial class LauncherModel : IDisposable
     /// <returns>Whether the launcher should now exit.</returns>
     public bool RestartIntoUpdate() => _selfUpdater.ApplyAndRestart();
 
+    /// <summary>Gets whether the first-run guide is shown: to a player who has not been through it and whose game was not found.</summary>
+    /// <remarks>A player whose game is where the launcher already looks has nothing to be guided through.</remarks>
+    public bool NeedsOnboarding =>
+        !Settings.Onboarded
+        && GameStarter.Locate(GameTitle.Igi1, Settings.GameFolders.GetValueOrDefault(GameTitle.Igi1.Id)) is null;
+
+    /// <summary>Finishes the first-run guide: keeps the folder and channel chosen, and starts the install if asked.</summary>
+    /// <param name="gameFolder">The original game's folder, or <see langword="null"/> when the player skipped it.</param>
+    /// <param name="channel">The update channel chosen.</param>
+    /// <param name="install">Whether to start downloading the build now.</param>
+    public void CompleteOnboarding(string? gameFolder, ReleaseChannel channel, bool install)
+    {
+        ChangeSettings(s =>
+        {
+            s.Onboarded = true;
+            s.Channel = channel;
+            if (!string.IsNullOrWhiteSpace(gameFolder))
+            {
+                s.GameFolders[GameTitle.Igi1.Id] = gameFolder;
+            }
+        });
+
+        Selected = Games.ToList().FindIndex(static g => g.Retail == GameTitle.Igi1);
+        Recompute();
+        if (install && Current.State is GameState.NotInstalled or GameState.UpdateAvailable or GameState.Damaged)
+        {
+            StartDownload();
+        }
+    }
+
     /// <summary>Records a settings change, saves it, and re-reads what depends on it.</summary>
     /// <param name="change">The change.</param>
     public void ChangeSettings(Action<LauncherSettings> change)

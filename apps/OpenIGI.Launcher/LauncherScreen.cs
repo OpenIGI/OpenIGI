@@ -62,7 +62,9 @@ internal sealed class LauncherScreen : Screen
     private readonly ILauncherWindow _window;
     private readonly BackdropPicture? _picture;
     private readonly List<HeaderTab> _tabs = [];
-    private readonly List<UiElement> _pages = [];
+
+    private SectionDeck? _deck;
+    private SectionTabs? _strip;
 
     private LauncherBackdrop? _backdrop;
     private HomePage? _home;
@@ -95,7 +97,6 @@ internal sealed class LauncherScreen : Screen
     protected override UiElement BuildRoot(LayoutContext context)
     {
         _tabs.Clear();
-        _pages.Clear();
 
         var root = new Canvas();
         _backdrop = new LauncherBackdrop(_picture) { Focus = BackdropFocus() };
@@ -109,7 +110,8 @@ internal sealed class LauncherScreen : Screen
         layout.RowDefinitions.Add(GridLength.Absolute(FooterHeight));
 
         // The main area first in tree order, so focus starts on the page rather than on the chrome.
-        var main = new Panel();
+        var main = new SectionDeck();
+        _deck = main;
         _home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(4), () => ShowSection(1));
         AddPage(main, _home.Root);
         _content = new ContentPage(_rowTheme, _model, _window.Picture);
@@ -220,10 +222,9 @@ internal sealed class LauncherScreen : Screen
         }
     }
 
-    private void AddPage(Panel host, UiElement page)
+    private static void AddPage(Panel host, UiElement page)
     {
         page.Visibility = Visibility.Collapsed;
-        _pages.Add(page);
         host.AddChild(page);
     }
 
@@ -233,15 +234,10 @@ internal sealed class LauncherScreen : Screen
     internal void ShowSection(int index, bool refocus = true)
     {
         _section = Math.Clamp(index, 0, Sections.Length - 1);
-        for (int i = 0; i < _pages.Count; i++)
-        {
-            _pages[i].Visibility = i == _section ? Visibility.Visible : Visibility.Collapsed;
-        }
 
-        for (int i = 0; i < _tabs.Count; i++)
-        {
-            _tabs[i].Selected = i == _section;
-        }
+        // The page slides in and the tab underline glides to it (SectionTransitions).
+        _deck?.Show(_section);
+        _strip?.Select(_section);
 
         // The page just shown was hidden when this frame was laid out; lay it out before it is drawn.
         RequestLayout();
@@ -314,7 +310,8 @@ internal sealed class LauncherScreen : Screen
         };
         row.Add(_switcher);
 
-        var nav = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 4f };
+        var nav = new SectionTabs(_theme);
+        _strip = nav;
         for (int i = 0; i < Sections.Length; i++)
         {
             int index = i;
@@ -326,7 +323,7 @@ internal sealed class LauncherScreen : Screen
 
             tab.Activated += _ => ShowSection(index);
             _tabs.Add(tab);
-            nav.Add(tab);
+            nav.AddTab(tab);
         }
 
         row.Add(nav);

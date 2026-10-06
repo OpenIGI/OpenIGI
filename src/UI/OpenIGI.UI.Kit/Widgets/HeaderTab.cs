@@ -27,6 +27,13 @@ public class HeaderTab : Button
     /// <summary>Gets or sets the badge's colour, or <see langword="null"/> for the accent.</summary>
     public Bgra32? BadgeColor { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the tab draws its own underline when it is the current section.</summary>
+    /// <remarks>Turned off by a bar that draws a single underline gliding from tab to tab.</remarks>
+    public bool ShowsUnderline { get; set; } = true;
+
+    /// <inheritdoc/>
+    protected override bool DrawsSelectedUnderline => ShowsUnderline;
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
@@ -48,7 +55,7 @@ public class HeaderTab : Button
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
         float lit = MathF.Max(Highlight, Selected ? 1f : 0f);
-        if (Selected)
+        if (Selected && ShowsUnderline)
         {
             float inset = context.Px(Padding.Left);
             float thickness = context.Px(2f);

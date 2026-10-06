@@ -178,7 +178,7 @@ internal static class GameStarter
     }
 
     // Where retail installs of the two games land by default, and the folders people commonly use.
-    private static IEnumerable<string> Candidates(GameTitle title)
+    internal static IEnumerable<string> Candidates(GameTitle title)
     {
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string[] names = title == GameTitle.Igi2

@@ -34,6 +34,11 @@ namespace OpenIGI.Releases;
 /// every pack before kinds existed), or native code the engine loads (<see cref="ContentKind.Runtime"/>).
 /// Left out of the JSON for an overlay, so overlay manifests read and write exactly as they always have.
 /// </param>
+/// <param name="Platforms">
+/// The platforms it is for, by runtime identifier (<c>win-x64</c>), or <see langword="null"/> for every one. Game
+/// files are the same everywhere; native libraries are built for one platform, and a launcher on another neither
+/// offers nor downloads them. Left out of the JSON when null, like <paramref name="Kind"/>.
+/// </param>
 public sealed record ContentManifest(
     int Schema,
     string Id,
@@ -45,7 +50,8 @@ public sealed record ContentManifest(
     DateTimeOffset Published,
     long Size,
     IReadOnlyList<ContentFile> Files,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Platforms = null)
 {
     /// <summary>The manifest format this library writes.</summary>
     public const int CurrentSchema = 1;
@@ -60,7 +66,8 @@ public sealed record ContentManifest(
 
     /// <summary>Gets the listing entry that stands for this version in the content index.</summary>
     [JsonIgnore]
-    public ContentPack Listing => new(Id, Version, Title, Summary, Game, MinGameVersion, Published, Size, DownloadSize, Kind: Kind);
+    public ContentPack Listing =>
+        new(Id, Version, Title, Summary, Game, MinGameVersion, Published, Size, DownloadSize, Kind: Kind, Platforms: Platforms);
 
     /// <summary>The largest picture a pack may have, in bytes.</summary>
     public const int MaxThumbnailBytes = 2 * 1024 * 1024;
@@ -80,6 +87,13 @@ public sealed record ContentManifest(
         && id[0] != '-'
         && id[^1] != '-'
         && id.All(static c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
+
+    /// <summary>Whether a name is a platform a pack may be for.</summary>
+    /// <param name="platform">The runtime identifier.</param>
+    /// <returns><see langword="true"/> for <c>win</c>, <c>linux</c> or <c>osx</c> with <c>x64</c>, <c>x86</c> or <c>arm64</c>.</returns>
+    public static bool IsValidPlatform(string? platform) =>
+        platform is { Length: > 0 }
+        && System.Text.RegularExpressions.Regex.IsMatch(platform, "^(win|linux|osx)-(x64|x86|arm64)$");
 }
 
 /// <summary>One file of a content pack.</summary>
@@ -107,6 +121,7 @@ public sealed record ContentChunk(string Hash, int Size, int StoredSize);
 /// <param name="Download">What installing it from nothing downloads.</param>
 /// <param name="Thumbnail">The address of the pack's picture, or <see langword="null"/> when it has none.</param>
 /// <param name="Kind">What the pack is; left out of the JSON for an overlay (see <see cref="ContentManifest.Kind"/>).</param>
+/// <param name="Platforms">The platforms it is for, or <see langword="null"/> for every one (see <see cref="ContentManifest.Platforms"/>).</param>
 public sealed record ContentPack(
     string Id,
     string Version,
@@ -118,7 +133,8 @@ public sealed record ContentPack(
     long Size,
     long Download,
     string? Thumbnail = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Platforms = null)
 {
     /// <summary>Gets the parsed <see cref="Version"/>.</summary>
     /// <exception cref="FormatException">The version is not a semantic version.</exception>
@@ -142,6 +158,12 @@ public sealed record ContentPack(
             && ReleaseVersion.TryParse(MinGameVersion, out ReleaseVersion minimum)
             && installed.CompareTo(minimum) >= 0;
     }
+
+    /// <summary>Whether the pack is for a platform.</summary>
+    /// <param name="platform">The platform, by runtime identifier, such as <c>linux-x64</c>.</param>
+    /// <returns><see langword="true"/> when the pack names no platforms, or names this one.</returns>
+    public bool SupportsPlatform(string platform) =>
+        Platforms is not { Count: > 0 } || Platforms.Contains(platform, StringComparer.Ordinal);
 }
 
 /// <summary>What a content pack is, which decides where it is installed and how the game is given it.</summary>

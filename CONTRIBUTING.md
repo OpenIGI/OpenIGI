@@ -95,6 +95,8 @@ components, the third kind of download, are neither.
   Streamline runtime (DLSS, ray reconstruction, frame generation, Reflex).
   - They are published as content packs of kind `Runtime` (`ContentKind`, `src/Core/OpenIGI.Releases`) for the
     game id `engine`, which no game has, so a launcher from before kinds never offers one.
+  - They name the platforms their libraries are built for (`--platform win-x64`); a launcher on any other
+    neither lists nor downloads them. The tool refuses a runtime pack that names none.
   - They install to `<Library>/runtime/<id>/files`, stand in no load order, and reach the game through a
     variable naming their folder (`RuntimePacks.VariableFor`; `OPENIGI_STREAMLINE_PATH` for Streamline).
   - The engine loads a runtime's libraries by absolute path and only after checking the signature of every

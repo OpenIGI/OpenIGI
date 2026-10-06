@@ -410,6 +410,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _screen = new LauncherScreen(theme, rows, _model, this, picture);
         _stack.Push(_screen, animate: true);
 
+        // A first run whose game was not found is guided through finding it and installing, over the launcher.
+        if (_model.NeedsOnboarding)
+        {
+            _stack.Push(new OnboardingScreen(theme, rows, _model, this), animate: true);
+        }
+
         _inputContext = _window.CreateInput();
         foreach (IKeyboard keyboard in _inputContext.Keyboards)
         {
