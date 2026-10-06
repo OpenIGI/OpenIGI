@@ -81,6 +81,11 @@
 // The world's cut-out masks, so a reflected ray stops on a fence's wire and not between them.
 [[vk::binding(26, 0)]] Texture2DArray<float4> uCutoutMasks;
 
+// How far each pixel's reflected ray went before it struck something, in metres: the specular hit distance
+// DLSS ray reconstruction reads to tell how far a reflection should move with the camera and how widely it
+// may be blurred. Nought where no ray was fired; the ray's whole reach where it struck nothing.
+[[vk::binding(27, 0)]] [[vk::image_format("r32f")]] WTexture2D<float4> uHitDistance;
+
 #define OPENIGI_REFLECTION_PARAMS_BINDING 25
 
 #else
@@ -132,7 +137,7 @@ struct Params
     // ripple size (m), wind ripple strength, camera X, camera Y.
     float4 wet1;
 
-    // shelter map present, camera Z, _, _.
+    // shelter map present, camera Z, above a half when the reflection feeds ray reconstruction raw, _.
     float4 wet2;
 
     // the map's world origin XY, texels per metre, the height it counts from.
@@ -311,6 +316,7 @@ bool UnderShelter(float3 relative)
 }
 
 #include "../Common/FrameNoise.slang"
+#include "../Common/PixelNoise.slang"
 
 // Where along the first step a ray starts marching, moving from frame to frame.
 float Dither(float2 pos, float frame)
@@ -329,6 +335,14 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     }
 
     float2 uv = (float2(px) + 0.5) * p.resolution.zw;
+
+    // Raw, for ray reconstruction: a rough surface's one ray is drawn from white noise and goes out unspread.
+    bool raw = p.wet2.z > 0.5;
+
+#if OPENIGI_RAY_QUERY
+    // No ray until one is fired below.
+    uHitDistance.Store(px, float4(0.0, 0.0, 0.0, 0.0));
+#endif
 
     float3 reflection = float3(0.0, 0.0, 0.0);
 
@@ -516,8 +530,11 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         if (roughness > 0.05)
         {
             float alpha = roughness * roughness;
-            float u1 = FrameNoise(float2(px), p.misc.y);
-            float u2 = FrameNoise(float2(px) + float2(31.0, 17.0), p.misc.y);
+            float2 facetNoise = raw
+                ? WhiteNoise3(px, uint(p.misc.y), 0x5Eu).xy
+                : float2(FrameNoise(float2(px), p.misc.y), FrameNoise(float2(px) + float2(31.0, 17.0), p.misc.y));
+            float u1 = facetNoise.x;
+            float u2 = facetNoise.y;
             float cosTheta = sqrt((1.0 - u1) / max(1.0 + (((alpha * alpha) - 1.0) * u1), 1e-6));
             float sinTheta = sqrt(max(1.0 - (cosTheta * cosTheta), 0.0));
             float phi = 6.2831853 * u2;
@@ -733,6 +750,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         float3 shadedRadiance;
         bool struck = TraceWorld(
             originRelative, rayW, p.trace.y, hitRelative, shaded, shadedRadiance);
+        uHitDistance.Store(px, float4(struck ? length(hitRelative - originRelative) : p.trace.y, 0.0, 0.0, 0.0));
 
         float3 radiance = float3(0.0, 0.0, 0.0);
         bool resolved = false;
@@ -943,6 +961,6 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // The alpha tells the composite what to do with it: two and over is a rough surface's reflection, its
     // roughness the excess, to be spread over the footprint that implies; below is a sharp answer to lay
     // down as it is -- water, glass, a mirror.
-    float spread = (!water && roughness > 0.05) ? 2.0 + roughness : (traces || marches) ? 1.0 : screenWeight;
+    float spread = (!raw && !water && roughness > 0.05) ? 2.0 + roughness : (traces || marches) ? 1.0 : screenWeight;
     uReflection.Store(px, float4(reflection, spread));
 }

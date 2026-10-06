@@ -15,6 +15,7 @@ using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
 using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering;
@@ -195,6 +196,16 @@ using (window)
     RendererBackend backend = RendererSwitchOrder.Parse(requested);
     HostOptions runOptions = options;
 
+    // NVIDIA's optional runtime (DLSS, ray reconstruction, frame generation, Reflex). Found once; each
+    // Vulkan device started over it opens a session of its own, and a WebGPU one never looks.
+    StreamlineOptions? streamline = StreamlineLocator.Locate(options);
+    logger.Information(
+        "Streamline",
+        streamline is null
+            ? "No runtime found (install the NVIDIA DLSS pack from the launcher, or run tools/fetch-streamline.ps1); "
+                + "the engine's own reconstruction is used."
+            : $"Runtime folder '{streamline.EffectiveDirectory}'.");
+
     // The render loop runs on this thread, and the menu builds every backdrop on the pool beside it --
     // a texture pack's worth of pictures decoded and mipped on every core. A profile of the menu had the
     // pool at sixteen cores' worth while the frame waited its turn for one, so the picture stalled for as
@@ -246,7 +257,8 @@ using (window)
                 height,
                 vsync: true,
                 logger,
-                vulkanValidation)
+                vulkanValidation,
+                streamline)
             : null;
 
         using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu

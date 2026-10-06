@@ -120,6 +120,9 @@ public readonly record struct HostOptions(
         List<(int Frame, string Statement)> deferredCommands = [];
         List<string> contentDirectories = [];
         string? contentProfile = null;
+        string? streamlineDirectory = null;
+        bool noStreamline = false;
+        bool streamlineDevelopment = false;
         bool startFlying = false;
         bool playCutscenes = true;
         float cameraYaw = 0f;
@@ -405,6 +408,18 @@ public readonly record struct HostOptions(
             {
                 contentProfile = Next(args, ref i, "contentprofile");
             }
+            else if (arg.Equals("streamline", StringComparison.OrdinalIgnoreCase))
+            {
+                streamlineDirectory = Next(args, ref i, "streamline");
+            }
+            else if (arg.Equals("nostreamline", StringComparison.OrdinalIgnoreCase))
+            {
+                noStreamline = true;
+            }
+            else if (arg.Equals("streamline-dev", StringComparison.OrdinalIgnoreCase))
+            {
+                streamlineDevelopment = true;
+            }
             else if (arg.Equals("lockstep", StringComparison.OrdinalIgnoreCase))
             {
                 lockstep = true;
@@ -634,6 +649,9 @@ public readonly record struct HostOptions(
             DeferredCommands = deferredCommands,
             ContentDirectories = contentDirectories,
             ContentProfilePath = contentProfile,
+            StreamlineDirectory = streamlineDirectory,
+            NoStreamline = noStreamline,
+            StreamlineDevelopment = streamlineDevelopment,
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
@@ -702,6 +720,21 @@ public readonly record struct HostOptions(
     /// <c>OPENIGI_CONTENT_PROFILE</c>, and failing that to the game folder's own <c>overrides</c> alone.
     /// </remarks>
     public string? ContentProfilePath { get; init; }
+
+    /// <summary>Gets the NVIDIA Streamline folder named with <c>-streamline</c>, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// Overrides where the optional DLSS runtime is looked for. Without it the launcher's runtime pack is
+    /// used (<c>OPENIGI_STREAMLINE_PATH</c>), and failing that a development checkout's
+    /// <c>third-party/streamline</c>.
+    /// </remarks>
+    public string? StreamlineDirectory { get; init; }
+
+    /// <summary>Gets a value indicating whether <c>-nostreamline</c> turned the DLSS runtime off for this run.</summary>
+    public bool NoStreamline { get; init; }
+
+    /// <summary>Gets a value indicating whether <c>-streamline-dev</c> asked for NVIDIA's development runtime.</summary>
+    /// <remarks>Its debug overlays and JSON configuration; never what a player runs.</remarks>
+    public bool StreamlineDevelopment { get; init; }
 
     /// <summary>Gets the graphics preset a player with no saved settings starts on.</summary>
     /// <remarks>
@@ -959,6 +992,14 @@ public readonly record struct HostOptions(
                            OPENIGI_CONTENT_PROFILE. Without either, only the game folder's own
                            overrides folder is used. OPENIGI_OVERRIDES still adds one folder,
                            below any -content and above the profile.
+          -streamline <dir>
+                           The NVIDIA Streamline runtime (DLSS, ray reconstruction, frame generation,
+                           Reflex) to load. Defaults to OPENIGI_STREAMLINE_PATH, which the launcher sets
+                           when its runtime pack is installed, then third-party/streamline above the
+                           executable. Every DLL in the folder must be NVIDIA-signed or none is loaded.
+          -nostreamline    Run without the Streamline runtime even when it is installed.
+          -streamline-dev  Load the development runtime from the folder's development subfolder:
+                           NVIDIA's overlays and plugin configuration. Never for play.
           -runat <n> <cmd> Run one console statement on frame n, once. Unlike +<command>, which runs
                            before any level exists, this reaches a loaded world -- so a capture can fire
                            impact_test or blood_test and photograph the result.

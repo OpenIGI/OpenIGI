@@ -38,6 +38,7 @@ public sealed unsafe class DeviceFeatureChainTests
         (StructureType.PhysicalDeviceRayQueryFeaturesKhr, VulkanExtensionNames.RayQuery),
         (StructureType.PhysicalDeviceAccelerationStructureFeaturesKhr, KhrAccelerationStructure.ExtensionName),
         (StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr, VulkanExtensionNames.PortabilitySubset),
+        ((StructureType)VulkanExtensionNames.PresentIdFeaturesStructureType, VulkanExtensionNames.PresentId),
     ];
 
     /// <summary>
@@ -209,5 +210,7 @@ public sealed unsafe class DeviceFeatureChainTests
             RayQuery = everything,
             AccelerationStructure = everything,
             PortabilitySubset = everything,
+            PresentId = everything,
+            PrivateData = everything,
         };
 }

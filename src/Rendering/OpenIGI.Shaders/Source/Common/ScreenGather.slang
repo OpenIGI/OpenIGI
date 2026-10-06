@@ -49,8 +49,26 @@ OPENIGI_COMPUTE_TEXTURE(3) Texture2DArray<float4> uCutoutMasks;
 #endif
 
 static const int kVectorsPerPageUnused = 0;
+#ifndef OPENIGI_GATHER_PIXEL
+#define OPENIGI_GATHER_PIXEL 0
+#endif
+
+// How a screen-traced hit is read out of last frame's picture: 0 where it lands now, 1 through last frame's
+// camera with the probe history's occlusion test (the temporal gather), 2 through last frame's camera alone
+// (the pixel gather, which keeps no probe history).
+#ifndef OPENIGI_SCREEN_HIT_REPROJECT
+#define OPENIGI_SCREEN_HIT_REPROJECT 0
+#endif
+
+#if OPENIGI_GATHER_PIXEL
+// One ray a pixel, for DLSS ray reconstruction to denoise: the whole cosine hemisphere from a single
+// uniform pair, which the pixel draws afresh each frame.
+static const int kHemisphereResolution = 1;
+static const int kTracesPerProbe = 1;
+#else
 static const int kHemisphereResolution = 4;
 static const int kTracesPerProbe = 16;
+#endif
 static const float kPi = 3.14159265358979;
 
 bool IsSkyDepth(float depth)
@@ -261,13 +279,17 @@ bool ScreenTraceRadiance(float3 viewOrigin, float3 viewNormal, float3 viewDir, o
     float pixels = length(travel / texelSize);
     int used = int(clamp(pixels, 1.0, float(uScreenTraceSteps)));
     float stride = 1.0 / float(used);
-#if OPENIGI_SCREEN_HIT_REPROJECT
+#if OPENIGI_SCREEN_HIT_REPROJECT == 1
     // Interleaved gradient noise on the start pixel, advanced every frame, to seed the
     // march: a hash of the position alone gave a still camera the same step offsets for ever, and any
     // sub-pixel move scrambled them, flipping thin hits in and out under a hand on the mouse.
     float2 noisePixel = (startUv * float2(float(uScreenWidth), float(uScreenHeight)))
         + (5.588238 * float(uFrameIndex & 63));
     float jitter = frac(52.9829189 * frac(dot(noisePixel, float2(0.06711056, 0.00583715)))) * stride;
+#elif OPENIGI_GATHER_PIXEL
+    // White noise on the start pixel and the frame, as every other number the pixel gather draws.
+    float jitter = WhiteNoise3(
+        int2(startUv * float2(float(uScreenWidth), float(uScreenHeight))), uint(uFrame), 0x7Au).x * stride;
 #else
     float jitter = frac(sin(dot(startUv, float2(12.9898, 78.233))) * 43758.5453) * stride;
 #endif
@@ -344,7 +366,7 @@ bool ScreenTraceRadiance(float3 viewOrigin, float3 viewNormal, float3 viewDir, o
         return false;
     }
 
-#if OPENIGI_SCREEN_HIT_REPROJECT
+#if OPENIGI_SCREEN_HIT_REPROJECT == 1
     // The lit target is LAST frame's picture -- this pass runs before this frame is lit -- so the hit is
     // looked up where it stood last frame. Read at this frame's
     // position instead, every camera move sampled some other surface's light: a turn read tens of pixels
@@ -399,6 +421,27 @@ bool ScreenTraceRadiance(float3 viewOrigin, float3 viewNormal, float3 viewDir, o
     if (prevProbePos.w <= 0.0
         || abs(dot((prevProbePos.xyz + uPrevCameraToCache) - hitWorld, hitWorldNormal))
             > max(0.1, 2.0 * probeSpan))
+    {
+        return false;
+    }
+#elif OPENIGI_SCREEN_HIT_REPROJECT == 2
+    // Last frame's picture, read where the hit stood last frame, as above; with no probe history there is
+    // no telling whether something covered it then, and the one frame between makes that the rare case.
+    float3 hitView = ViewPositionAt(hitUv, DepthBilinear(uSceneDepth, uSceneDepthSampler, hitUv));
+    float3 hitWorld = uCameraToCache
+        + (uViewToWorld0 * hitView.x)
+        + (uViewToWorld1 * hitView.y)
+        + (uViewToWorld2 * hitView.z);
+    float3 colourView = (uColourWorldToView0 * (hitWorld.x - uColourCameraToCache.x))
+        + (uColourWorldToView1 * (hitWorld.y - uColourCameraToCache.y))
+        + (uColourWorldToView2 * (hitWorld.z - uColourCameraToCache.z));
+    if (colourView.z <= uUnproject.z)
+    {
+        return false;
+    }
+
+    float2 colourUv = ProjectToUv(colourView);
+    if (any(colourUv < float2(0.0, 0.0)) || any(colourUv > float2(1.0, 1.0)))
     {
         return false;
     }

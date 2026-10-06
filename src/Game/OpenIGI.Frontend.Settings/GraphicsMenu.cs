@@ -358,6 +358,53 @@ public static class GraphicsMenu
             []),
 
         new GraphicsSection(
+            "NVIDIA",
+            [],
+            [
+                new GraphicsSetting(
+                    "r_reconstruction",
+                    "Reconstruction",
+                    "What rebuilds the full-resolution picture each frame. Engine is the game's own temporal "
+                        + "filter; DLSS is NVIDIA's network, sharper and usually faster; Ray Reconstruction also "
+                        + "cleans up the traced lighting, at a higher cost. Needs an NVIDIA RTX GPU and the "
+                        + "NVIDIA DLSS download from the launcher."),
+                new GraphicsSetting(
+                    "r_dlss_quality",
+                    "DLSS Quality",
+                    "How far below your window DLSS renders before it rebuilds the picture. DLAA renders at "
+                        + "full resolution and only smooths it; Performance renders a quarter of the pixels. "
+                        + "Takes the place of Upscaling while DLSS runs."),
+                new GraphicsSetting(
+                    "r_frame_generation",
+                    "Frame Generation",
+                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs an "
+                        + "RTX 40-series or newer, and turns NVIDIA Reflex on to keep the controls responsive."),
+                new GraphicsSetting(
+                    "r_low_latency",
+                    "NVIDIA Reflex",
+                    "Starts each frame as late as the GPU allows, so what you see answers the mouse sooner. "
+                        + "Boost also keeps the GPU's clocks up."),
+                new GraphicsSetting(
+                    "r_frame_limit",
+                    "Frame Rate Cap",
+                    "Caps the frame rate through NVIDIA Reflex, which keeps the latency low while it does. "
+                        + "0 is no cap."),
+                new GraphicsSetting(
+                    "r_dvc",
+                    "RTX Dynamic Vibrance",
+                    "An AI filter over the finished picture that raises vibrance and saturation. Changes the "
+                        + "game's look; off is the picture as graded."),
+                new GraphicsSetting(
+                    "r_dvc_intensity",
+                    "Vibrance Intensity",
+                    "How strongly RTX Dynamic Vibrance raises vibrance."),
+                new GraphicsSetting(
+                    "r_dvc_saturation",
+                    "Vibrance Saturation",
+                    "How much extra saturation RTX Dynamic Vibrance adds."),
+            ]),
+
+        new GraphicsSection(
             "Camera",
             [],
             [
@@ -527,6 +574,7 @@ public static class GraphicsMenu
         // answering it a piece at a time produces combinations that are simply broken.
         "r_hdr",
         "r_deferred",
+        "r_dlssg_ui_recomposition", // frame generation's interface handling; on is NVIDIA's recommendation
         "r_msaa",           // inert on the deferred path, where the temporal filter is the anti-aliasing
         "r_autoexposure",
         "r_tonemap",

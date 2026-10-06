@@ -70,7 +70,7 @@
       "binding": 5,
       "kind": "StorageTexture",
       "dimensions": 2,
-      "storageFormat": "Rg16Float",
+      "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "None",
       "storageAccess": "WriteOnly"
     },

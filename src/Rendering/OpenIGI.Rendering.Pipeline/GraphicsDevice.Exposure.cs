@@ -28,12 +28,19 @@ public sealed partial class GraphicsDevice
         // The histogram this slot carried two frames ago, read before this frame's is recorded over it.
         float adapted = _autoExposure.Adapt(FrameSlot, post.ExposureDeltaSeconds);
 
+        // Under ray reconstruction the lit scene is one ray a pixel, and a meter that reads in logarithms reads
+        // a noisy picture as darker than the same light settled: the brightest samples count for less than
+        // the darkest pull down. The interiors came out about a tenth brighter than the engine's picture of
+        // the same light. The reconstruction's own output is that light settled, so it is what is metered.
+        bool settled = RayReconstructionRanThisFrame;
+        (int width, int height) = settled ? PostSize(scene) : (scene.Width, scene.Height);
         _autoExposure.Record(
             Encoder(),
             FrameSlot,
+            scene.View(settled ? SceneTargetId.ResolveOutput : SceneTargetId.Lit),
             scene.View(SceneTargetId.Lit),
-            scene.Width,
-            scene.Height,
+            width,
+            height,
             _profiler.Time(RenderStage.Exposure, "exposure"));
 
         return adapted;

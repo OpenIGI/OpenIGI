@@ -602,6 +602,94 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         Vector3d cameraPosition,
         Matrix3f viewToWorld) => Temporal.Add(settings);
 
+    /// <summary>Every history reset asked for, in order.</summary>
+    public List<HistoryResetReason> HistoryResets { get; } = [];
+
+    /// <inheritdoc/>
+    public void ResetHistory(HistoryResetReason reason) => HistoryResets.Add(reason);
+
+    /// <summary>Every reconstruction plan asked for, in order.</summary>
+    public List<ReconstructionRequest> ReconstructionRequests { get; } = [];
+
+    /// <summary>Gets or sets what <see cref="PlanReconstruction"/> answers; the engine's own unless a test says otherwise.</summary>
+    public Func<ReconstructionRequest, ReconstructionPlan> ReconstructionAnswer { get; set; } = _ => ReconstructionPlan.Engine();
+
+    /// <inheritdoc/>
+    public ReconstructionPlan PlanReconstruction(in ReconstructionRequest request)
+    {
+        ReconstructionRequests.Add(request);
+        return ReconstructionAnswer(request);
+    }
+
+    /// <inheritdoc/>
+    public bool RawLighting { get; set; }
+
+    /// <summary>Every latency marker placed, in order, with the frame beginnings recorded as <see cref="LatencyMarker.SimulationStart"/>.</summary>
+    public List<LatencyMarker> LatencyMarkers { get; } = [];
+
+    /// <summary>Gets or sets a value indicating whether <see cref="BeginLatencyFrame"/> begins a frame.</summary>
+    public bool BeginsLatencyFrames { get; set; }
+
+    /// <inheritdoc/>
+    public bool BeginLatencyFrame()
+    {
+        if (BeginsLatencyFrames)
+        {
+            LatencyMarkers.Add(LatencyMarker.SimulationStart);
+        }
+
+        return BeginsLatencyFrames;
+    }
+
+    /// <inheritdoc/>
+    public void MarkLatency(LatencyMarker marker) => LatencyMarkers.Add(marker);
+
+    /// <summary>Every low-latency setting applied, in order.</summary>
+    public List<(LowLatencyMode Mode, int FrameLimit)> LowLatencySettings { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetLowLatency(LowLatencyMode mode, int frameLimitFramesPerSecond) =>
+        LowLatencySettings.Add((mode, frameLimitFramesPerSecond));
+
+    /// <inheritdoc/>
+    public string LowLatencyUnavailable { get; set; } = "not a real device";
+
+    /// <inheritdoc/>
+    public bool PresentsOnRecord { get; set; }
+
+    /// <summary>Every Dynamic Vibrance setting applied, in order.</summary>
+    public List<(bool Enabled, float Intensity, float Saturation)> VibranceSettings { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetVibrance(bool enabled, float intensity, float saturationBoost) =>
+        VibranceSettings.Add((enabled, intensity, saturationBoost));
+
+    /// <inheritdoc/>
+    public string VibranceUnavailable { get; set; } = "not a real device";
+
+    /// <summary>Every frame generation request, in order.</summary>
+    public List<(FrameGenerationMode Mode, bool Gameplay)> FrameGenerationRequests { get; } = [];
+
+    /// <inheritdoc/>
+    public FrameGenerationStatus SetFrameGeneration(FrameGenerationMode mode, bool gameplay)
+    {
+        FrameGenerationRequests.Add((mode, gameplay));
+        return new FrameGenerationStatus(mode, false, 1, FrameGenerationUnavailable);
+    }
+
+    /// <inheritdoc/>
+    public string FrameGenerationUnavailable { get; set; } = "not a real device";
+
+    /// <summary>Every texture mip bias set, in order.</summary>
+    public List<float> TextureLodBiases { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetTextureLodBias(float bias) => TextureLodBiases.Add(bias);
+
+    /// <inheritdoc/>
+    public IReadOnlyDictionary<ReconstructionKind, string> ReconstructionSupport { get; set; } =
+        new Dictionary<ReconstructionKind, string> { [ReconstructionKind.Engine] = string.Empty };
+
     /// <summary>The cascade indices that were rendered, in order.</summary>
     public List<int> ShadowCascadesRendered { get; } = [];
 

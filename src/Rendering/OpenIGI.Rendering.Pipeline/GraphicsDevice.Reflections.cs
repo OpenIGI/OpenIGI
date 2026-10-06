@@ -346,7 +346,10 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>Adds the reflection to the lit scene, or puts it there alone for a view that isolates it.</summary>
-    private void RecordReflectionComposite(SceneTargetSet scene, bool isolate)
+    /// <param name="scene">The frame's targets.</param>
+    /// <param name="isolate">Whether the reflection replaces the scene rather than adding to it.</param>
+    /// <param name="target">Where it is laid, or null for the lit image.</param>
+    private void RecordReflectionComposite(SceneTargetSet scene, bool isolate, IRhiTextureView? target = null)
     {
         ShaderBindings bindings = _compositeBindings!;
         bindings.Bind("uReflection", scene.View(SceneTargetId.Reflection));
@@ -354,7 +357,7 @@ public sealed partial class GraphicsDevice
         bindings.Bind("uNormal", scene.View(SceneTargetId.Normal));
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
-            [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],
+            [new RhiColorAttachment(target ?? scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],
             Label: "glazing.composite"));
 
         pass.SetViewport(0, 0, scene.Width, scene.Height, 0f, 1f);

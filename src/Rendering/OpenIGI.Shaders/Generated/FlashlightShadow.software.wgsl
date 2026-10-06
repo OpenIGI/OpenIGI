@@ -56,9 +56,14 @@ fn Pcg3d_0( v_0 : vec3<u32>) -> vec3<u32>
     return _S4;
 }
 
-fn PixelRandom_0( px_0 : vec2<i32>,  frame_0 : f32) -> vec3<f32>
+fn WhiteNoise3_0( px_0 : vec2<i32>,  frame_0 : u32,  salt_0 : u32) -> vec3<f32>
 {
-    return fract(vec3<f32>(((Pcg3d_0(vec3<u32>(vec2<u32>(px_0), u32(1759714724)))) >> (vec3<u32>(u32(8))))) * vec3<f32>(5.9604644775390625e-08f) + vec3<f32>(frame_0) * vec3<f32>(0.75487768650054932f, 0.56984031200408936f, 0.6180340051651001f));
+    return vec3<f32>(((Pcg3d_0(vec3<u32>(vec2<u32>(px_0), (frame_0 ^ ((salt_0 * u32(2654435769))))))) >> (vec3<u32>(u32(8))))) * vec3<f32>(5.9604644775390625e-08f);
+}
+
+fn PixelRandom_0( px_1 : vec2<i32>,  frame_1 : f32) -> vec3<f32>
+{
+    return fract(vec3<f32>(((Pcg3d_0(vec3<u32>(vec2<u32>(px_1), u32(1759714724)))) >> (vec3<u32>(u32(8))))) * vec3<f32>(5.9604644775390625e-08f) + vec3<f32>(frame_1) * vec3<f32>(0.75487768650054932f, 0.56984031200408936f, 0.6180340051651001f));
 }
 
 fn ProjectToUv_0( viewPosition_0 : vec3<f32>) -> vec2<f32>
@@ -181,7 +186,16 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         textureStore((uRaw_0), (vec2<u32>(_S14)), (vec4<f32>(1.0f, 0.0f, 0.0f, 0.0f)));
         return;
     }
-    var random_0 : vec3<f32> = PixelRandom_0(_S14, p_0.cameraFrame_0.w);
+    var frame_2 : f32 = p_0.cameraFrame_0.w;
+    var random_0 : vec3<f32>;
+    if((p_0.reach_0.w) > 0.5f)
+    {
+        random_0 = WhiteNoise3_0(_S14, u32(frame_2), u32(61861));
+    }
+    else
+    {
+        random_0 = PixelRandom_0(_S14, frame_2);
+    }
     var axis_0 : vec3<f32> = p_0.axisCull_0.xyz;
     var helper_0 : vec3<f32>;
     if((abs(axis_0.y)) < 0.89999997615814209f)

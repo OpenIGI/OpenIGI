@@ -14,6 +14,7 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="Unprojection">How a depth sample becomes a view position.</param>
 /// <param name="Light">The flashlight, in view space.</param>
 /// <param name="FrameIndex">A number that changes every frame, so the point on the lens moves.</param>
+/// <param name="Raw">Whether DLSS ray reconstruction is the denoiser: the trace goes to the shading unfiltered.</param>
 public readonly record struct FlashlightShadowFrame(
     IRhiAccelerationStructure? World,
     IRhiTextureView? CutoutMasks,
@@ -22,7 +23,8 @@ public readonly record struct FlashlightShadowFrame(
     Matrix3f ViewToWorld,
     DepthUnprojection Unprojection,
     FlashlightLight Light,
-    long FrameIndex);
+    long FrameIndex,
+    bool Raw = false);
 
 /// <summary>
 /// The flashlight's shadow: one ray a pixel to a point on the lens, then spread over its penumbra.
@@ -77,7 +79,10 @@ public sealed class TracedFlashlightShadow : IDisposable
     }
 
     /// <summary>Gets the mask the shading reads, or null before one is made.</summary>
-    public IRhiTextureView? Mask => _mask?.View;
+    public IRhiTextureView? Mask => _rawLast ? _raw?.View : _mask?.View;
+
+    // Whether the last frame recorded went to the shading raw, the trace itself standing as the mask.
+    private bool _rawLast;
 
     /// <summary>Sizes the images for a render resolution, rebuilding them if it moved.</summary>
     /// <param name="width">The render width in pixels.</param>
@@ -135,7 +140,8 @@ public sealed class TracedFlashlightShadow : IDisposable
             frame.Unprojection,
             frame.Light,
             frame.FrameIndex,
-            frame.RecordAddress);
+            frame.RecordAddress,
+            frame.Raw);
 
         ComputePass shadow;
         if (frame.World is { } world && frame.CutoutMasks is { } masks)
@@ -155,6 +161,13 @@ public sealed class TracedFlashlightShadow : IDisposable
         shadow.Bind("uRaw", raw.View);
         shadow.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
         shadow.Dispatch(pass, _width, _height);
+
+        // Raw for ray reconstruction: the one ray a pixel is the answer.
+        _rawLast = frame.Raw;
+        if (frame.Raw)
+        {
+            return true;
+        }
 
         Span<float> filter = stackalloc float[FlashlightShadowParameters.FilterFloats];
         FlashlightShadowParameters.WriteFilter(filter, _width, _height, frame.Unprojection, frame.Light.LensRadius);

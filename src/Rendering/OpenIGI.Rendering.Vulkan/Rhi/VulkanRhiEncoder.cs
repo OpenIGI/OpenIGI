@@ -366,6 +366,17 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     /// <inheritdoc/>
     public void Dispose() => _disposed = true;
 
+    /// <summary>A full barrier around work recorded into this command buffer by something outside the RHI.</summary>
+    /// <remarks>
+    /// Streamline records its evaluations straight into <see cref="Command"/>. Before, so it sees what the
+    /// passes wrote; after, so the passes see what it wrote. The same barrier a pass boundary costs.
+    /// </remarks>
+    internal void ExternalBarrier()
+    {
+        ThrowIfFinished();
+        Barrier();
+    }
+
     /// <summary>Makes everything written so far visible to everything that follows.</summary>
     private void Barrier()
     {

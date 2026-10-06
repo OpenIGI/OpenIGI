@@ -53,6 +53,13 @@ public interface IRhiDevice : IDisposable
     /// </remarks>
     IRhiRayTracing? RayTracing { get; }
 
+    /// <summary>Gets NVIDIA's Streamline features, where this device started the optional runtime.</summary>
+    /// <remarks>
+    /// Null everywhere else — on WebGPU, off Windows, on a machine without the runtime pack — and every
+    /// caller falls back to the engine's own path when it is. See <see cref="IRhiStreamline"/>.
+    /// </remarks>
+    IRhiStreamline? Streamline => null;
+
     /// <summary>Describes what the device holds in memory, for a memory report.</summary>
     /// <returns>Lines of text, or empty where the backend has nothing to say.</returns>
     string DescribeMemory() => string.Empty;

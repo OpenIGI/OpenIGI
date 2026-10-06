@@ -100,4 +100,20 @@ internal static class VulkanExtensionNames
     /// has and this one may not.
     /// </remarks>
     public const string PortabilitySubset = "VK_KHR_portability_subset";
+
+    /// <summary>Present ids: a number attached to each present so a later query can name it.</summary>
+    /// <remarks>
+    /// Taken only for Streamline. <c>VK_NV_low_latency2</c>, which Reflex runs on and which Streamline adds
+    /// to the device itself, depends on it, and Streamline does not add the dependency — leaving it off
+    /// passes validation everywhere except the one message that names the missing extension. The ids are
+    /// the frame index the latency markers carry, which is how the driver matches a marker to a present.
+    /// </remarks>
+    public const string PresentId = "VK_KHR_present_id";
+
+    /// <summary>The structure type of <c>VkPhysicalDevicePresentIdFeaturesKHR</c>, from the registry.</summary>
+    /// <remarks>Silk 2.22 carries the structure but not its <c>StructureType</c> member.</remarks>
+    public const int PresentIdFeaturesStructureType = 1000294001;
+
+    /// <summary>The structure type of <c>VkPresentIdKHR</c>, from the registry.</summary>
+    public const int PresentIdStructureType = 1000294000;
 }

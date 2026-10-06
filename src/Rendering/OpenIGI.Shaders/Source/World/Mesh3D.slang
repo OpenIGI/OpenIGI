@@ -18,6 +18,12 @@
 #include "../Common/ClipSpace.slang"
 #include "../Common/SampledColour.slang"
 
+// The guide form (World/RigGuides.slang): the same draw, writing what the surface is made of rather than
+// how it is lit, for the first-person rig that the G-buffer never sees.
+#ifndef OPENIGI_MESH_GUIDES
+#define OPENIGI_MESH_GUIDES 0
+#endif
+
 // The combined model-view-projection, column-major and in the engine's OpenGL convention,
 // and the lit-view-model block. Exactly the guaranteed 128 bytes.
 struct MeshPush
@@ -210,6 +216,38 @@ Varyings vertexMain(VertexInput input)
     return output;
 }
 
+#if OPENIGI_MESH_GUIDES
+
+struct GuideTargets
+{
+    // The surface's colour in linear light, before any light: what the key light below multiplies.
+    float4 baseColour : SV_Target0;
+
+    // The view-space shading normal, with one in w to say a rig surface is here.
+    float4 normal : SV_Target1;
+};
+
+/// The guide stage: the rig's base colour and normal, exactly as the lit stage below derives them.
+[shader("fragment")]
+GuideTargets fragmentMain(Varyings input)
+{
+    float4 diffuse = uDiffuse.Sample(uDiffuseSampler, input.diffuseUv);
+    if (diffuse.a < cAlphaReference)
+    {
+        discard;
+    }
+
+    float3 lightmap = SampledDisplay(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
+    float3 base = SampledDisplay(diffuse.rgb) * lightmap * input.color.rgb * input.fade;
+
+    GuideTargets output;
+    output.baseColour = float4(DecodeSrgb(max(base, float3(0.0, 0.0, 0.0))), 1.0);
+    output.normal = float4(normalize(input.normal), 1.0);
+    return output;
+}
+
+#else
+
 /// The fragment stage: the diffuse sample modulated by the lightmap and vertex colour,
 /// alpha-tested, with the view-model key light layered on for the first-person rig.
 [shader("fragment")]
@@ -327,3 +365,5 @@ float4 fragmentMain(Varyings input) : SV_Target
 
     return float4(lit * push.markerExposure.y, alpha);
 }
+
+#endif

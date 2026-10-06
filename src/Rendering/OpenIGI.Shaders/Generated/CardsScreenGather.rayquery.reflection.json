@@ -232,7 +232,7 @@
     "name": "Globals",
     "group": 0,
     "binding": 49,
-    "size": 560,
+    "size": 624,
     "fields": [
       {
         "name": "uCutoutRecords",
@@ -435,28 +435,53 @@
         "size": 4
       },
       {
-        "name": "uTerrainMap0",
+        "name": "uFrame",
+        "offset": 472,
+        "size": 4
+      },
+      {
+        "name": "uColourWorldToView0",
         "offset": 480,
+        "size": 12
+      },
+      {
+        "name": "uColourWorldToView1",
+        "offset": 496,
+        "size": 12
+      },
+      {
+        "name": "uColourWorldToView2",
+        "offset": 512,
+        "size": 12
+      },
+      {
+        "name": "uColourCameraToCache",
+        "offset": 528,
+        "size": 12
+      },
+      {
+        "name": "uTerrainMap0",
+        "offset": 544,
         "size": 16
       },
       {
         "name": "uTerrainMap1",
-        "offset": 496,
+        "offset": 560,
         "size": 16
       },
       {
         "name": "uShelterMap0",
-        "offset": 512,
+        "offset": 576,
         "size": 16
       },
       {
         "name": "uShelterMap1",
-        "offset": 528,
+        "offset": 592,
         "size": 16
       },
       {
         "name": "uShelterMap2",
-        "offset": 544,
+        "offset": 608,
         "size": 16
       }
     ]

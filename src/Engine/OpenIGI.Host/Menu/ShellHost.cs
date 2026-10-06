@@ -25,6 +25,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="saveSettings">Persists the current settings.</param>
 /// <param name="saveProfiles">Persists player profiles and their progress.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
+/// <param name="settingUnavailable">Why a setting cannot take effect here, or empty when it can.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -36,7 +37,8 @@ public sealed class ShellHost(
     Action<int?> previewMission,
     Action saveSettings,
     Action saveProfiles,
-    CaptureThumbnail captureThumbnail) : IShellHost
+    CaptureThumbnail captureThumbnail,
+    Func<string, string>? settingUnavailable = null) : IShellHost
 {
     /// <inheritdoc/>
     public void StartMission(int missionId, int difficulty) => startMission(missionId, difficulty);
@@ -70,6 +72,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public Bgra32[] CaptureThumbnail(out int width, out int height) => captureThumbnail(out width, out height);
+
+    /// <inheritdoc/>
+    public string SettingUnavailable(string variable) => settingUnavailable?.Invoke(variable) ?? string.Empty;
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>

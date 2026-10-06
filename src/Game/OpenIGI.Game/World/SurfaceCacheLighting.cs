@@ -213,6 +213,9 @@ public sealed class SurfaceCacheLighting : IDisposable
     // the diagnostic dump; the temporal one reprojects and accumulates it for the live frame.
     private ComputeShaderHandle _screenGather;
     private ComputeShaderHandle _screenGatherTemporal;
+
+    // The one-ray-a-pixel form DLSS ray reconstruction denoises; traced only, so it is never built for the march.
+    private ComputeShaderHandle _pixelGather;
     private ComputeShaderHandle _screenGatherFilter;
     private ComputeShaderHandle _screenResolve;
 
@@ -1596,6 +1599,12 @@ public sealed class SurfaceCacheLighting : IDisposable
             _screenGatherTemporal = ComputeShaderHandle.None;
         }
 
+        if (_pixelGather.IsValid)
+        {
+            _device.DestroyComputeShader(_pixelGather);
+            _pixelGather = ComputeShaderHandle.None;
+        }
+
         if (_cacheUpdate.IsValid)
         {
             _device.DestroyComputeShader(_cacheUpdate);
@@ -1807,6 +1816,131 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         _device.Dispatch(_screenGather, (gridX + 7) / 8, (gridY + 7) / 8);
         _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
+    }
+
+    /// <summary>Gathers one ray of indirect light at every pixel, unfiltered, for DLSS ray reconstruction.</summary>
+    /// <param name="shadows">The clipmaps the ray falls back to past the traced world.</param>
+    /// <param name="sceneDepth">The frame's device depth, from the G-buffer.</param>
+    /// <param name="sceneNormal">The frame's normals, from the G-buffer.</param>
+    /// <param name="unproject">The projection's scales and planes, for turning depth into a view position.</param>
+    /// <param name="viewToWorld">The view-to-world rotation, matching what the deferred pass draws with.</param>
+    /// <param name="cameraToCache">The camera's world position relative to this pass's origin.</param>
+    /// <param name="screenWidth">The frame's width in pixels.</param>
+    /// <param name="screenHeight">The frame's height in pixels.</param>
+    /// <param name="skyColour">The sky's radiance, returned for a ray that escapes without a hit.</param>
+    /// <param name="frame">The presented-frame count, which the white noise is keyed on.</param>
+    /// <param name="output">The irradiance image to write, the frame's size.</param>
+    /// <param name="sceneColour">The previous frame's lit scene, read at an on-screen hit.</param>
+    /// <param name="screenTraceSteps">The screen trace's step cap, and its on/off (zero disables it).</param>
+    /// <param name="screenTraceDistance">How far a screen-traced ray reaches, in metres.</param>
+    /// <param name="screenThickness">The assumed surface thickness for the screen trace's hit test, in metres.</param>
+    /// <param name="colourWorldToView">The world-to-view rotation <paramref name="sceneColour"/> was rendered with.</param>
+    /// <param name="colourCameraToCache">The camera <paramref name="sceneColour"/> was rendered from, relative to this pass's origin.</param>
+    /// <returns><see langword="true"/> when the gather ran; <see langword="false"/> where it cannot trace.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same gather as the probes' -- the traced world first, then the cache's light where it struck, the
+    /// sky or the open ground on a miss -- with a probe at every pixel and a single ray from it. The probes'
+    /// own denoising, their pooling, cadence, accumulation and resolve, is exactly what ray reconstruction
+    /// replaces, and handed their output it would see a smooth, lagging signal it was not trained on.
+    /// </para>
+    /// <para>
+    /// The screen comes first, as for the probes: a ray that lands on something in last frame's lit picture
+    /// takes that light, read where the hit stood last frame. It is what carries a lamp's pool on the floor
+    /// up onto the ceiling and a lit machine's glow onto the wall beside it, which the cards hold coarsely
+    /// or not at all. Without it the interiors under ray reconstruction lost their bounce light.
+    /// </para>
+    /// </remarks>
+    public bool GatherPixels(
+        GlobalDistanceField? shadows,
+        TextureHandle sceneDepth,
+        TextureHandle sceneNormal,
+        in DepthUnprojection unproject,
+        Matrix3f viewToWorld,
+        Vector3f cameraToCache,
+        int screenWidth,
+        int screenHeight,
+        Vector3f skyColour,
+        uint frame,
+        TextureHandle output,
+        TextureHandle sceneColour,
+        int screenTraceSteps,
+        float screenTraceDistance,
+        float screenThickness,
+        Matrix3f colourWorldToView,
+        Vector3f colourCameraToCache)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (shadows is null || _lookup is null || screenWidth <= 0 || screenHeight <= 0)
+        {
+            return false;
+        }
+
+        EnsureTraceMode();
+        if (!_tracesRays)
+        {
+            return false;
+        }
+
+        if (!_pixelGather.IsValid)
+        {
+            _pixelGather = _device.CreateComputeShader(
+                ShaderModuleId.CardsScreenGather, new ShaderVariant("pixel"), "cards.pixel");
+        }
+
+        _device.BindStorageBuffer(0, _pages);
+        _device.BindStorageBuffer(3, _lookup.Cells);
+        _device.BindStorageBuffer(4, _lookup.Pages);
+        _device.BindImage(0, output, ImageAccess.Write);
+
+        _device.SetTexture(1, _device.CardAlbedo);
+        _device.SetTexture(4, _device.CardDepth);
+        _device.SetTexture(6, FinalLighting);
+        _device.SetTexture(7, sceneDepth);
+        _device.SetTexture(8, sceneNormal);
+        _device.SetTexture(11, sceneColour);
+
+        _device.SetComputeUniform(_pixelGather, "uMaxRayIntensity", ExposedRayCap());
+        _device.SetComputeUniform(_pixelGather, "uScreenTraceSteps", Math.Max(screenTraceSteps, 0));
+        _device.SetComputeUniform(_pixelGather, "uScreenTraceDistance", MathF.Max(screenTraceDistance, 0f));
+        _device.SetComputeUniform(_pixelGather, "uScreenThickness", MathF.Max(screenThickness, 0f));
+        _device.SetComputeUniform(_pixelGather, "uColourWorldToView0", colourWorldToView.Column1);
+        _device.SetComputeUniform(_pixelGather, "uColourWorldToView1", colourWorldToView.Column2);
+        _device.SetComputeUniform(_pixelGather, "uColourWorldToView2", colourWorldToView.Column3);
+        _device.SetComputeUniform(_pixelGather, "uColourCameraToCache", colourCameraToCache);
+        _device.SetComputeUniform(_pixelGather, "uSkyColour", skyColour);
+        _device.SetComputeUniform(_pixelGather, "uGroundSun", GroundSun());
+        _device.SetComputeUniform(_pixelGather, "uBounceScale", RenderCVars.GiBounce.Value);
+        _device.SetComputeUniform(_pixelGather, "uDebugSource", RenderCVars.GiSource.Value);
+
+        // Wrapped, as the traces' counts are: the noise only needs it to differ from one frame to the next.
+        _device.SetComputeUniform(_pixelGather, "uFrame", (int)(frame & 0xFFFFFFu));
+        BindTerrainHeights(_pixelGather);
+        WriteSkyHarmonics(_pixelGather);
+
+        _device.SetComputeUniform(_pixelGather, "uAtlasSize", new Vector3f(Width, Height, 0f));
+        _device.SetComputeUniform(_pixelGather, "uLookupBuckets", SurfaceCacheLookup.Buckets);
+        _device.SetComputeUniform(_pixelGather, "uLookupMin", _lookup.Minimum);
+        _device.SetComputeUniform(_pixelGather, "uLookupCell", SurfaceCacheLookup.CellMetres);
+
+        _device.SetComputeUniform(
+            _pixelGather, "uUnproject", unproject.XScale, unproject.YScale, unproject.Near, unproject.Far);
+        _device.SetComputeUniform(_pixelGather, "uViewToWorld0", viewToWorld.Column1);
+        _device.SetComputeUniform(_pixelGather, "uViewToWorld1", viewToWorld.Column2);
+        _device.SetComputeUniform(_pixelGather, "uViewToWorld2", viewToWorld.Column3);
+        _device.SetComputeUniform(_pixelGather, "uCameraToCache", cameraToCache);
+        _device.SetComputeUniform(_pixelGather, "uScreenWidth", screenWidth);
+        _device.SetComputeUniform(_pixelGather, "uScreenHeight", screenHeight);
+        _device.SetComputeUniform(_pixelGather, "uProbeStep", 1);
+
+        BindShadows(_pixelGather, shadows);
+
+        _device.SetComputeTimingLabel("cards.pixel");
+        _device.Dispatch(_pixelGather, (screenWidth + 7) / 8, (screenHeight + 7) / 8);
+        _device.SetComputeTimingLabel(null);
+        _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
+        return true;
     }
 
     /// <summary>Gathers indirect light per screen probe and accumulates it over frames.</summary>
@@ -2423,6 +2557,11 @@ public sealed class SurfaceCacheLighting : IDisposable
         if (_screenGatherTemporal.IsValid)
         {
             _device.DestroyComputeShader(_screenGatherTemporal);
+        }
+
+        if (_pixelGather.IsValid)
+        {
+            _device.DestroyComputeShader(_pixelGather);
         }
 
         if (_screenGatherFilter.IsValid)

@@ -129,6 +129,9 @@ public sealed partial class GraphicsDevice
         _sunTraced = false;
         _worldSettled = false;
 
+        // A cut asked for since the last frame takes effect here, before anything measures motion.
+        ConsumeHistoryReset();
+
         // The scene's passes draw at the render size whatever the window's viewport says, and a viewport
         // set during the capture — the map inset — is already in render coordinates.
         _sceneViewport = new Viewport(0, 0, _scene!.Width, _scene.Height);
@@ -137,6 +140,7 @@ public sealed partial class GraphicsDevice
         _shaded = false;
         ResetGlazingFrame();
         _capturing = true;
+        _frameDrawn = true;
         return true;
     }
 
@@ -439,11 +443,20 @@ public sealed partial class GraphicsDevice
         // it was painted. Last frame's: the sky is drawn before the frame says what it will be exposed by.
         _sceneExposure = MathF.Max(post.Exposure * adapted, 1e-3f);
 
+        // Into the back buffer, or into the picture's own image when the interface is to be drawn apart from
+        // it this frame (frame generation, Dynamic Vibrance). See GraphicsDevice.Layer.
+        IRhiTextureView resolveTarget = _frame.Target;
+        if (BeginLayeredResolve() is { } layered)
+        {
+            resolveTarget = layered.Target;
+            resolve = layered.Resolve;
+        }
+
         resolve.BindGrade(GradeSize(post) > 0f ? _colourLut?.View : null);
         resolve.BindFrame(colour, bloom);
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
-            [new RhiColorAttachment(_frame.Target, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
+            [new RhiColorAttachment(resolveTarget, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
             Timestamps: _profiler.Time(RenderStage.ToneMapGrade, "tonemap"),
             Label: "resolve")))
         {
@@ -457,6 +470,9 @@ public sealed partial class GraphicsDevice
         // done. Left armed, it is honoured by whatever opens the frame's pass next — the letterbox, the
         // HUD — which clears away the whole picture a moment after it was drawn.
         _clearPending = false;
+
+        // Dynamic Vibrance over the tone-mapped picture, before any interface is drawn on it.
+        RecordVibrance();
 
         scene.AdvanceFrame();
 
@@ -805,6 +821,13 @@ public sealed partial class GraphicsDevice
 
         NoteViewModelLens();
 
+        // Under ray reconstruction, the opaque scene as it stood before the first transparent draw.
+        if (_scene is { } current)
+        {
+            TakeColourBeforeTransparency(current, blend != BlendMode.Opaque || _material.Rain || _material.Glass);
+            pass = _scenePass ?? pass;
+        }
+
         // A raindrop is clear water: its own pipeline refracts the scene behind it.
         if (_material.Rain)
         {
@@ -824,6 +847,8 @@ public sealed partial class GraphicsDevice
         // A draw reflects when the frame has named a cube.
         (bool reflective, IRhiBindGroup environment) = EnvironmentFor();
         IRhiRenderPipeline pipeline = pipelines.ForState(_depthState, _cullMode, blend, _alphaReference, reflective);
+
+        NoteRigGuideDraw(call, ranges, push, environment);
 
         if (ranges.IsEmpty)
         {
@@ -861,6 +886,9 @@ public sealed partial class GraphicsDevice
         if (_scene is { } resized)
         {
             resized.Resize(width, height, outputWidth, outputHeight, historyScale);
+
+            // Every history was the old size; the targets that held them are gone.
+            ResetHistory(HistoryResetReason.Resize);
             return;
         }
 
@@ -967,6 +995,8 @@ public sealed partial class GraphicsDevice
     private void DisposeDeferred()
     {
         DisposeTemporal();
+        DisposeReconstruction();
+        DisposeLayers();
         DisposeShadows();
         DisposeGlazing();
         DisposeRain();

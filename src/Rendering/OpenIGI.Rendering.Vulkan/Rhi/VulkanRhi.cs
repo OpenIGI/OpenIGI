@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Memory;
+using OpenIGI.Rendering.Vulkan.Streamline;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 
@@ -22,7 +23,26 @@ public sealed class VulkanRhi : IDisposable
     private readonly VulkanCommands _commands;
     private readonly VulkanRhiDevice _rhi;
     private readonly VulkanSwapchain? _swapchain;
+    private readonly StreamlineRuntime? _streamlineRuntime;
+    private readonly VulkanRhiStreamline? _streamline;
     private bool _disposed;
+
+    /// <summary>The features every Streamline session asks for.</summary>
+    /// <remarks>
+    /// All of them at once, because what <c>slInit</c> is told to load decides what Streamline's own
+    /// <c>vkCreateDevice</c> adds to the device — Reflex's <c>VK_NV_low_latency2</c>, frame generation's
+    /// extra queues — and the device cannot be changed afterwards. Which of them then runs is the
+    /// renderer's choice, frame by frame.
+    /// </remarks>
+    private static readonly uint[] StreamlineFeatures =
+    [
+        SlFeature.Dlss,
+        SlFeature.DlssRr,
+        SlFeature.DlssG,
+        SlFeature.Reflex,
+        SlFeature.Pcl,
+        SlFeature.DeepDvc,
+    ];
 
     private VulkanRhi(
         VulkanInstance instance,
@@ -30,7 +50,9 @@ public sealed class VulkanRhi : IDisposable
         VulkanAllocator allocator,
         VulkanCommands commands,
         VulkanRhiDevice rhi,
-        VulkanSwapchain? swapchain = null)
+        VulkanSwapchain? swapchain = null,
+        StreamlineRuntime? streamlineRuntime = null,
+        VulkanRhiStreamline? streamline = null)
     {
         _instance = instance;
         _device = device;
@@ -38,6 +60,8 @@ public sealed class VulkanRhi : IDisposable
         _commands = commands;
         _rhi = rhi;
         _swapchain = swapchain;
+        _streamlineRuntime = streamlineRuntime;
+        _streamline = streamline;
     }
 
     /// <summary>Gets the device everything draws through.</summary>
@@ -104,6 +128,11 @@ public sealed class VulkanRhi : IDisposable
     /// <param name="vsync">Whether to wait for the display.</param>
     /// <param name="logger">Where the backend reports what it found.</param>
     /// <param name="enableValidation">Whether to load the validation layers.</param>
+    /// <param name="streamline">
+    /// Where NVIDIA's Streamline runtime is, or <see langword="null"/> to run without it. When it starts,
+    /// the instance and device are created through it and <see cref="IRhiDevice.Streamline"/> is set;
+    /// when it does not, the device is exactly what it would have been and the log says why.
+    /// </param>
     /// <returns>The device.</returns>
     public static VulkanRhi CreateForSurface(
         IVulkanSurfaceProvider surface,
@@ -111,22 +140,51 @@ public sealed class VulkanRhi : IDisposable
         int height,
         bool vsync,
         IOpenIgiLogger? logger = null,
-        bool enableValidation = false)
+        bool enableValidation = false,
+        StreamlineOptions? streamline = null)
     {
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
 
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
-        VulkanInstance instance = new(surface, enableValidation, log);
+
+        // Before the instance, which is the whole reason it is here: Streamline's own instance and device
+        // creation add what its plugins need, and a device created any other way is one it cannot use.
+        StreamlineRuntime? runtime = streamline is null
+            ? null
+            : StreamlineRuntime.TryCreate(streamline, StreamlineFeatures, log);
+
+        VulkanInstance instance;
+        try
+        {
+            instance = new(surface, enableValidation, log, runtime?.CreateVulkanApi());
+        }
+        catch
+        {
+            runtime?.Dispose();
+            throw;
+        }
 
         try
         {
-            PhysicalDeviceSelection selection = new PhysicalDeviceSelector(instance, log).Select();
+            runtime?.LogFeatureRequirements();
+            PhysicalDeviceSelection selection =
+                new PhysicalDeviceSelector(instance, log, forStreamline: runtime is not null).Select();
 
             VulkanDevice device = new(instance, selection, log);
             VulkanAllocator allocator = new(device);
             VulkanCommands commands = new(instance.Vk, device);
+
+            // Frame generation's plugin is unloaded before the first swapchain unless it was asked for:
+            // while loaded, the host renders off-screen and pays a copy every frame even with it off.
+            if (runtime is not null
+                && streamline is { FrameGeneration: false }
+                && runtime.IsFeatureSupported(SlFeature.DlssG, (nint)selection.Device.Handle) == SlResult.Ok)
+            {
+                _ = runtime.SetFeatureLoaded(SlFeature.DlssG, false);
+            }
+
             // Unsigned-normalised. The renderer's resolve writes for either kind, but its interface
             // composites at the display encoding and blends there, as the original did; over an sRGB
             // swapchain it blended in linear space instead, and every dark panel of the menu came out grey.
@@ -135,13 +193,21 @@ public sealed class VulkanRhi : IDisposable
 
             rhi.AttachSwapchain(swapchain);
 
-            return new VulkanRhi(instance, device, allocator, commands, rhi, swapchain)
+            VulkanRhiStreamline? seam = null;
+            if (runtime is not null)
+            {
+                seam = new VulkanRhiStreamline(runtime, rhi, selection.Device, log);
+                rhi.AttachStreamline(seam);
+            }
+
+            return new VulkanRhi(instance, device, allocator, commands, rhi, swapchain, runtime, seam)
             {
                 TimestampPeriodNanoseconds = selection.Properties.Limits.TimestampPeriod,
             };
         }
         catch
         {
+            runtime?.Dispose();
             instance.Dispose();
             throw;
         }
@@ -164,8 +230,15 @@ public sealed class VulkanRhi : IDisposable
 
         // The opposite order to construction, which is the only order that works: the pool and the
         // allocator name the device, and the device names the instance.
+        _rhi.DetachStreamline();
+        _streamline?.Dispose();
         _rhi.Dispose();
         _swapchain?.Dispose();
+
+        // Streamline goes after the swapchain, whose destruction it intercepts, and before the device:
+        // its shutdown tears NGX down against that device, and doing it afterwards faults inside the
+        // driver with nothing in the log.
+        _streamlineRuntime?.Dispose();
         _commands.Dispose();
         _allocator.Dispose();
         _device.Dispose();

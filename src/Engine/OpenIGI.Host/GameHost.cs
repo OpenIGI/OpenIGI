@@ -1194,6 +1194,13 @@ internal sealed partial class GameHost : IDisposable
 
         // The gather's raw per-probe estimates, traced by its first pass and pooled by its second.
         TextureHandle giRaw = default;
+
+        // The one-ray-a-pixel gather DLSS ray reconstruction denoises in all of the above's place, at the
+        // frame's size, and the count its white noise is keyed on.
+        TextureHandle giPixels = default;
+        int giPixelsWidth = 0;
+        int giPixelsHeight = 0;
+        uint giPixelFrame = 0;
         int giIndirectWidth = 0;
         int giIndirectHeight = 0;
         int giFrame = 0;
@@ -1720,7 +1727,8 @@ internal sealed partial class GameHost : IDisposable
                     var pixels = new Bgra32[captureWidth * captureHeight];
                     _device.CaptureFrame(captureWidth, captureHeight, pixels);
                     return pixels;
-                });
+                },
+                settingUnavailable: SettingUnavailable);
 
             shellHostForEntryCam = shellHost;
 
@@ -1956,6 +1964,28 @@ internal sealed partial class GameHost : IDisposable
 
             lastPassRendered = false;
             passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+
+            // NVIDIA Reflex, where its runtime runs: its mode, and the frame it paces. The frame begins only
+            // once the last one has been presented, so the passes that only tick neither sleep nor count, and
+            // it begins BEFORE the input below is read -- sleeping first is how the frame's input comes fresher.
+            // Frame generation needs Reflex on and turns it on whatever the setting says.
+            _device.SetLowLatency(EffectiveLowLatency(), RenderCVars.FrameLimit.Value);
+            _device.SetVibrance(
+                RenderCVars.DynamicVibrance.Value,
+                RenderCVars.DynamicVibranceIntensity.Value,
+                RenderCVars.DynamicVibranceSaturation.Value);
+
+            // Frame generation interpolates along the motion of play; a menu, a pause, the warm-up hold or a
+            // cutscene has none to follow, so it stands down for those and resumes with play. Asked here, at
+            // the top of the pass, because loading or unloading it rebuilds the swapchain between frames.
+            _device.SetFrameGeneration(
+                RenderCVars.FrameGeneration.Value,
+                gameplay: !menuMode
+                    && !pauseMenu
+                    && _activeMission is not null
+                    && !PresentationHoldsLevel
+                    && _cutscenes?.IsPlaying != true);
+            _device.BeginLatencyFrame();
 
             _window.PumpEvents();
 
@@ -3790,6 +3820,10 @@ internal sealed partial class GameHost : IDisposable
 
             lastPassRendered = true;
 
+            // Everything the frame simulated has run; recording its commands starts now.
+            _device.MarkLatency(LatencyMarker.SimulationEnd);
+            _device.MarkLatency(LatencyMarker.RenderSubmitStart);
+
             if (_options.IsBenchmark && _loop.Clock.FrameCount == BenchmarkSchedule.WarmUpFrames)
             {
                 framePerformance.Reset();
@@ -4057,16 +4091,35 @@ internal sealed partial class GameHost : IDisposable
                 float jitterX = 0f;
                 float jitterY = 0f;
 
+                // What reconstructs the frame, and so what it is rendered at, decided once: the render size,
+                // the jitter sequence's length and the textures' mip bias all follow from it together, and
+                // working any of them out separately is how a jitter ends up sized for one buffer and applied
+                // to another. See RenderResolutionPolicy.
+                ReconstructionPlan reconstruction = _device.PlanReconstruction(new ReconstructionRequest(
+                    RenderCVars.Reconstruction.Value,
+                    RenderCVars.DlssQualityMode.Value,
+                    _window.Width,
+                    _window.Height,
+                    wantsTemporal));
+                _reconstructionActive = reconstruction.Active;
+                RenderResolution resolution = RenderResolutionPolicy.Choose(
+                    _window.Width,
+                    _window.Height,
+                    RenderCVars.RenderScale.Value,
+                    wantsTemporal,
+                    reconstruction);
+                _device.SetTextureLodBias(resolution.MipBias);
+
                 if (wantsTemporal)
                 {
-                    (jitterX, jitterY) = TemporalJitter.At(temporalFrame);
+                    (jitterX, jitterY) = TemporalJitter.At(temporalFrame, resolution.JitterPhases);
 
                     // In RENDER pixels, not window pixels: the offset has to be half a pixel of the buffer
                     // being rasterised into, or at a render scale below one it moves the sample by less
                     // than the pixel it is meant to be exploring and the upsample has nothing to gather.
                     projection = Matrix4f.CreateTranslation(
-                        jitterX * 2f / Math.Max(1, (int)(_window.Width * RenderCVars.RenderScale.Value)),
-                        jitterY * 2f / Math.Max(1, (int)(_window.Height * RenderCVars.RenderScale.Value)),
+                        jitterX * 2f / resolution.RenderWidth,
+                        jitterY * 2f / resolution.RenderHeight,
                         0f) * unjitteredProjection;
                     temporalFrame++;
                 }
@@ -4283,8 +4336,8 @@ internal sealed partial class GameHost : IDisposable
                 // or on a backend that cannot offer a target, nothing here happens and the frame is drawn
                 // straight to the back buffer exactly as the original draws it.
                 SceneTargetDescription sceneTarget = new(
-                    Math.Max(1, (int)(_window.Width * RenderCVars.RenderScale.Value)),
-                    Math.Max(1, (int)(_window.Height * RenderCVars.RenderScale.Value)),
+                    resolution.RenderWidth,
+                    resolution.RenderHeight,
                     RenderCVars.OffscreenScene.Value ? Math.Max(1, RenderCVars.MultiSampling.Value) : 1,
                     Deferred: RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value,
 
@@ -4293,10 +4346,11 @@ internal sealed partial class GameHost : IDisposable
                     // build that had no offscreen path at all.
                     HighDynamicRange: RenderCVars.ToneMap.Value != ToneMapOperator.None,
 
-                    // Asked for only when the accumulation is running, because it is the accumulation that
-                    // does the upsampling: without it these are two buffers holding a stretched copy.
-                    OutputWidth: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Width : 0,
-                    OutputHeight: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Height : 0,
+                    // Asked for only when something reconstructs to it -- the accumulation under a render scale,
+                    // or an NVIDIA reconstruction at any size: without one these are two buffers holding a
+                    // stretched copy. See RenderResolutionPolicy.
+                    OutputWidth: resolution.OutputWidth,
+                    OutputHeight: resolution.OutputHeight,
                     GBuffer: (EffectiveLighting != LightingModel.Dynamic
                             ? GBufferLayout.BakedLighting
                             : GBufferLayout.Compact)
@@ -4986,12 +5040,15 @@ internal sealed partial class GameHost : IDisposable
 
                 if (mapScene is { } insetMap)
                 {
-                    float renderScale = captured ? RenderCVars.RenderScale.Value : 1f;
+                    // The render size over the window's, per axis: an NVIDIA reconstruction's render size is the
+                    // runtime's, not the render scale's, and need not keep the window's aspect to the pixel.
+                    float scaleX = captured ? resolution.RenderWidth / (float)Math.Max(1, _window.Width) : 1f;
+                    float scaleY = captured ? resolution.RenderHeight / (float)Math.Max(1, _window.Height) : 1f;
                     _device.SetViewport(new Viewport(
-                        (int)(insetMap.Viewport.X * renderScale),
-                        (int)((_window.Height - insetMap.Viewport.Y - insetMap.Viewport.Height) * renderScale),
-                        Math.Max(1, (int)(insetMap.Viewport.Width * renderScale)),
-                        Math.Max(1, (int)(insetMap.Viewport.Height * renderScale))));
+                        (int)(insetMap.Viewport.X * scaleX),
+                        (int)((_window.Height - insetMap.Viewport.Y - insetMap.Viewport.Height) * scaleY),
+                        Math.Max(1, (int)(insetMap.Viewport.Width * scaleX)),
+                        Math.Max(1, (int)(insetMap.Viewport.Height * scaleY))));
                 }
 
                 // The SIMOTECH map is the live terrain/object pass, not a view of the sky dome from
@@ -5334,7 +5391,68 @@ if (retailFog)
                     movingCards.CommitMoves();
                 }
 
-                if (giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
+                // Under ray reconstruction the light goes to it raw: a ray at every pixel, and none of the probes'
+                // pooling, cadence, accumulation or resolve below, which is exactly the denoising it replaces.
+                bool giPixelsRan = false;
+                if (giActive && _device.RawLighting && _sdfClipmaps is { } pixelField && _cardLighting is { } pixelCards)
+                {
+                    _device.EndStageTiming();
+                    _device.BeginStageTiming(RenderStage.GlobalIllumination);
+
+                    if (giPixelsWidth != sceneTarget.Width || giPixelsHeight != sceneTarget.Height)
+                    {
+                        if (giPixels.IsValid)
+                        {
+                            _device.DestroyTexture(giPixels);
+                        }
+
+                        giPixels = _device.CreateStorageTexture(
+                            sceneTarget.Width, sceneTarget.Height, VolumeFormat.Rgba16F, "cards.pixel");
+                        giPixelsWidth = sceneTarget.Width;
+                        giPixelsHeight = sceneTarget.Height;
+                    }
+
+                    Vector3f pixelCameraToCache = new(
+                        (float)(eye.Position.X - pixelCards.Origin.X),
+                        (float)(eye.Position.Y - pixelCards.Origin.Y),
+                        (float)(eye.Position.Z - pixelCards.Origin.Z));
+
+                    giPixelsRan = pixelCards.GatherPixels(
+                        pixelField,
+                        _device.SceneDepth,
+                        _device.SceneNormal,
+                        DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
+                        eye.Orientation.Transposed(),
+                        pixelCameraToCache,
+                        sceneTarget.Width,
+                        sceneTarget.Height,
+                        SkyFillColour(),
+                        giPixelFrame++,
+                        giPixels,
+
+                        // Last frame's lit picture and the camera it was rendered from, as the probes read it.
+                        _device.SceneColour,
+                        RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
+                        giTraceDistance,
+                        giTraceThickness,
+                        giResolvePrevWorldToView,
+                        giResolvePrevCameraToCache);
+
+                    if (giPixelsRan)
+                    {
+                        // The probes' histories go with the else below: they describe frames they did not see.
+                        _device.SetScreenIndirect(giPixels, giStrength, fullResolution: true);
+                        giContinuityValid = false;
+
+                        // This frame's camera is what next frame's lit picture will have been rendered from.
+                        giResolvePrevWorldToView = eye.Orientation;
+                        giResolvePrevCameraToCache = pixelCameraToCache;
+                    }
+
+                    _device.EndStageTiming();
+                }
+
+                if (!giPixelsRan && giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
                 {
                     // Timed, at last. This gather is the most expensive thing in a real-time-GI frame and
                     // NOTHING measured it: the bracket the surface-cache relight runs under closes long
@@ -5762,12 +5880,15 @@ if (retailFog)
                 // alpha test discards them entirely; blend their phase samples over the lit world.
                 if (mapScene is { } rotorMap)
                 {
-                    float renderScale = captured ? RenderCVars.RenderScale.Value : 1f;
+                    // The render size over the window's, per axis: an NVIDIA reconstruction's render size is the
+                    // runtime's, not the render scale's, and need not keep the window's aspect to the pixel.
+                    float scaleX = captured ? resolution.RenderWidth / (float)Math.Max(1, _window.Width) : 1f;
+                    float scaleY = captured ? resolution.RenderHeight / (float)Math.Max(1, _window.Height) : 1f;
                     _device.SetViewport(new Viewport(
-                        (int)(rotorMap.Viewport.X * renderScale),
-                        (int)((_window.Height - rotorMap.Viewport.Y - rotorMap.Viewport.Height) * renderScale),
-                        Math.Max(1, (int)(rotorMap.Viewport.Width * renderScale)),
-                        Math.Max(1, (int)(rotorMap.Viewport.Height * renderScale))));
+                        (int)(rotorMap.Viewport.X * scaleX),
+                        (int)((_window.Height - rotorMap.Viewport.Y - rotorMap.Viewport.Height) * scaleY),
+                        Math.Max(1, (int)(rotorMap.Viewport.Width * scaleX)),
+                        Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
                 }
 _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
@@ -7015,6 +7136,15 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 running = false;
             }
 
+            // The frame's commands are all recorded. Under NVIDIA's latency layer it goes to the GPU and the
+            // screen now, rather than at the head of the next pass as the original's cadence has it: a frame
+            // submitted only once the next one had begun would put every latency marker on the wrong frame.
+            // The scheduled present then finds no frame open and does nothing.
+            _device.MarkLatency(LatencyMarker.RenderSubmitEnd);
+            if (_device.PresentsOnRecord)
+            {
+                _device.SwapBuffers();
+            }
         }
 
         if (_options.BenchmarkPath is { } benchmarkPath)

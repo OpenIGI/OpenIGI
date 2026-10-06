@@ -26,12 +26,17 @@ internal static unsafe class VulkanCapabilityProbe
     /// <param name="device">The adapter to inspect.</param>
     /// <param name="available">The extension names the adapter reports.</param>
     /// <param name="apiVersion">The adapter's supported API version.</param>
+    /// <param name="forStreamline">
+    /// Whether the device will run NVIDIA Streamline, which needs two things nothing else here does:
+    /// private data and present ids. Off, the device is exactly what it would have been without it.
+    /// </param>
     /// <returns>The capabilities, and the extension list the logical device should enable.</returns>
     public static VulkanDeviceCapabilities Probe(
         Vk vk,
         PhysicalDevice device,
         HashSet<string> available,
-        uint apiVersion)
+        uint apiVersion,
+        bool forStreamline = false)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(available);
@@ -39,6 +44,15 @@ internal static unsafe class VulkanCapabilityProbe
         bool vulkan13 = apiVersion >= Vk.Version13;
 
         using VulkanStructChain chain = new();
+
+        PhysicalDevicePresentIdFeaturesKHR* presentIdFeatures = null;
+        if (forStreamline && available.Contains(VulkanExtensionNames.PresentId))
+        {
+            presentIdFeatures = chain.Add(new PhysicalDevicePresentIdFeaturesKHR
+            {
+                SType = (StructureType)VulkanExtensionNames.PresentIdFeaturesStructureType,
+            });
+        }
 
         PhysicalDeviceVulkan11Features* v11 = chain.Add(new PhysicalDeviceVulkan11Features
         {
@@ -265,6 +279,8 @@ internal static unsafe class VulkanCapabilityProbe
             dbLimits = null;
         }
 
+        bool presentIdUsable = presentIdFeatures is not null && presentIdFeatures->PresentId;
+
         return new VulkanDeviceCapabilities
         {
             EnabledExtensions = BuildExtensionList(
@@ -275,7 +291,10 @@ internal static unsafe class VulkanCapabilityProbe
                 descriptorBufferUsable,
                 positionFetchUsable,
                 localReadUsable,
-                robustness2Usable),
+                robustness2Usable,
+                presentIdUsable),
+            PrivateData = forStreamline && vulkan13 && v13->PrivateData,
+            PresentId = presentIdUsable,
             Synchronization2 = synchronization2,
             TimelineSemaphore = timelineSemaphore,
             BufferDeviceAddress = bufferDeviceAddress,
@@ -459,6 +478,15 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
+        if (capabilities.PresentId && Enabled(VulkanExtensionNames.PresentId))
+        {
+            chain.Add(new PhysicalDevicePresentIdFeaturesKHR
+            {
+                SType = (StructureType)VulkanExtensionNames.PresentIdFeaturesStructureType,
+                PresentId = true,
+            });
+        }
+
         if (apiVersion >= Vk.Version13)
         {
             chain.Add(new PhysicalDeviceVulkan13Features
@@ -467,6 +495,7 @@ internal static unsafe class VulkanCapabilityProbe
                 Synchronization2 = capabilities.Synchronization2,
                 DynamicRendering = capabilities.DynamicRendering,
                 Maintenance4 = true,
+                PrivateData = capabilities.PrivateData,
             });
         }
 
@@ -564,7 +593,8 @@ internal static unsafe class VulkanCapabilityProbe
         bool descriptorBuffer,
         bool positionFetch,
         bool localRead,
-        bool robustness2)
+        bool robustness2,
+        bool presentId)
     {
         List<string> enabled = [KhrSwapchain.ExtensionName];
 
@@ -630,6 +660,11 @@ internal static unsafe class VulkanCapabilityProbe
         if (positionFetch)
         {
             Take(VulkanExtensionNames.RayTracingPositionFetch);
+        }
+
+        if (presentId)
+        {
+            Take(VulkanExtensionNames.PresentId);
         }
 
         return enabled;

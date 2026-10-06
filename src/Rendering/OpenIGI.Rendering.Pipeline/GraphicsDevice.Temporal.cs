@@ -76,7 +76,9 @@ public sealed partial class GraphicsDevice
     {
         _occlusionRan = false;
 
-        if (!_occlusionSettings.Enabled || _screenPasses is not { } screen)
+        // Under ray reconstruction the gather's own rays darken the corners, one ray a pixel, and the network
+        // denoises them; a second, filtered darkening on top would count the occlusion twice.
+        if (!_occlusionSettings.Enabled || RawLighting || _screenPasses is not { } screen)
         {
             return;
         }
@@ -189,6 +191,7 @@ public sealed partial class GraphicsDevice
         {
             _velocityRecorded = false;
             RollObjectMotion();
+            EndHistoryReset();
             return;
         }
 
@@ -219,14 +222,29 @@ public sealed partial class GraphicsDevice
         RecordObjectVelocity(scene);
         _velocityRecorded = false;
 
-        if (settings.Enabled && _temporal is { } temporal)
+        // The constants every NVIDIA feature reads this frame -- this frame's jitter and camera, and the last
+        // frame's as "previous" -- built before anything evaluates. Built after the evaluation, as they once
+        // were, every evaluation was handed the frame before's: ray reconstruction, which leans on them to
+        // match its history, shimmered on every edge of a still picture, and DLAA a little.
+        CaptureFrameConstants();
+
+        if (settings.Enabled && TryRecordReconstruction(scene))
         {
+            // An NVIDIA reconstruction ran in the engine resolve's place and wrote the same output.
+            _temporalResolved = true;
+        }
+        else if (settings.Enabled && _temporal is { } temporal)
+        {
+            // On a reset frame the chain still runs, but believes no history: it writes this frame as it
+            // is, which is what the next frame then accumulates onto.
+            TemporalResolveSettings frameSettings = HistoryResetThisFrame ? settings with { Enabled = false } : settings;
+
             // Step by step while measuring, so the chain's cost is broken down rather than one figure.
             temporal.Record(
                 Encoder(),
                 scene,
                 state,
-                settings,
+                frameSettings,
                 FrameSlot,
                 timeStep: _profiler.Enabled ? _timeUpscaleStep ??= label => _profiler.Time(RenderStage.TemporalResolve, label) : null);
             _temporalResolved = true;
@@ -248,6 +266,7 @@ public sealed partial class GraphicsDevice
         _previousJitterY = state.JitterY;
         _hasPreviousFrame = true;
         RollObjectMotion();
+        EndHistoryReset();
     }
 
     /// <summary>The image the resolve reads: the temporal output when the resolve ran, the lit one otherwise.</summary>

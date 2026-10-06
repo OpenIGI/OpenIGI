@@ -190,6 +190,18 @@ public enum ShaderModuleId
     /// <summary>Deferred: this frame's depth copied into a colour target, for the next frame to read.</summary>
     CopyDepth,
 
+    /// <summary>Post: the lit image's additive marker turned into the mask an NVIDIA reconstruction reads.</summary>
+    ReactiveMask,
+
+    /// <summary>Post: the interface layer laid over the finished picture, when the two were drawn apart.</summary>
+    Compose,
+
+    /// <summary>World: the first-person rig's base colour and normal, for the guides the G-buffer cannot give it.</summary>
+    RigGuides,
+
+    /// <summary>Post: what each pixel is made of, the guides DLSS ray reconstruction reads beside the colour.</summary>
+    ReconstructionGuides,
+
     /// <summary>The flashlight's shadow: one ray a pixel to a point on its lens, traced or marched.</summary>
     FlashlightShadow,
 

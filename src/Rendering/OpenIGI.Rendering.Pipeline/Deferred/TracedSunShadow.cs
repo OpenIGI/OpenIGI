@@ -15,6 +15,11 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="SunAngleDegrees">How wide the sun's disc is.</param>
 /// <param name="FrameIndex">A number that changes every frame, so the one ray lands somewhere new.</param>
 /// <param name="AccumulationFrames">How many frames the temporal half averages; one or less skips it.</param>
+/// <param name="Raw">
+/// Whether DLSS ray reconstruction is the denoiser: the one ray a pixel goes to the shading as it is, drawn
+/// from white noise on the whole frame count (<paramref name="FrameIndex"/> must then be that), and neither
+/// the penumbra reconstruction nor the accumulation runs.
+/// </param>
 public readonly record struct TracedSunShadowFrame(
     IRhiAccelerationStructure World,
     IRhiTextureView CutoutMasks,
@@ -23,7 +28,8 @@ public readonly record struct TracedSunShadowFrame(
     Vector3f SunDirection,
     float SunAngleDegrees,
     float FrameIndex,
-    float AccumulationFrames);
+    float AccumulationFrames,
+    bool Raw = false);
 
 /// <summary>
 /// The sun's shadow asked of the geometry: one ray a pixel, spread over its penumbra, averaged over frames.
@@ -88,7 +94,10 @@ public sealed class TracedSunShadow : IDisposable
     }
 
     /// <summary>Gets the mask the shading reads, or null before one is made.</summary>
-    public IRhiTextureView? Mask => _mask?.View;
+    public IRhiTextureView? Mask => _rawLast ? _raw?.View : _mask?.View;
+
+    // Whether the last frame recorded went to the shading raw, so the mask is the trace itself.
+    private bool _rawLast;
 
     /// <summary>Forgets the accumulated history, for a camera that has moved somewhere unrelated.</summary>
     public void Invalidate() => _hasHistory = false;
@@ -203,7 +212,8 @@ public sealed class TracedSunShadow : IDisposable
             frame.FrameIndex,
             frame.RecordAddress,
             state.JitterX,
-            state.JitterY);
+            state.JitterY,
+            frame.Raw);
 
         _trace.Bind("uDepth", depth, _sampler);
         _trace.Bind("uNormal", normal, _sampler);
@@ -212,6 +222,15 @@ public sealed class TracedSunShadow : IDisposable
         _trace.Bind("uMasks", frame.CutoutMasks, _sampler);
         _trace.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
         _trace.Dispatch(pass, _width, _height);
+
+        // Raw for ray reconstruction: the trace is the answer, one ray a pixel, and the history is let go so
+        // the engine's own filter starts clean if the reconstruction is switched away.
+        _rawLast = frame.Raw;
+        if (frame.Raw)
+        {
+            _hasHistory = false;
+            return;
+        }
 
         Span<float> denoise = stackalloc float[SunShadowParameters.DenoiseFloats];
         SunShadowParameters.WriteDenoise(

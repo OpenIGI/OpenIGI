@@ -36,6 +36,14 @@ internal sealed unsafe class VulkanDevice : IDisposable
     /// <summary>Gets where the backend reports diagnostics.</summary>
     public IOpenIgiLogger Logger => _logger;
 
+    /// <summary>Gets the API the device was created through.</summary>
+    /// <remarks>
+    /// Everything that calls Vulkan on this device goes through this one, never a second
+    /// <c>Vk.GetApi</c>: under Streamline it is bound to the interposer, and a call that went around it
+    /// would reach the driver behind Streamline's back.
+    /// </remarks>
+    public Vk Vk => _vk;
+
     /// <summary>Initialises a new instance of the <see cref="VulkanDevice"/> class.</summary>
     /// <param name="instance">The instance the device is created under.</param>
     /// <param name="selection">The chosen adapter and how it will be used.</param>

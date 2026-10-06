@@ -386,6 +386,16 @@
           ]
         },
         {
+          "name": "pixel",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1",
+            "OPENIGI_GATHER_PIXEL": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
           "name": "software",
           "defines": {
             "OPENIGI_RAY_QUERY": "0"
@@ -438,6 +448,38 @@
     {
       "id": "CopyDepth",
       "source": "Deferred/CopyDepth.slang"
+    },
+    {
+      "id": "ReactiveMask",
+      "source": "Post/ReactiveMask.slang"
+    },
+    {
+      "id": "Compose",
+      "source": "Post/Compose.slang"
+    },
+    {
+      "id": "RigGuides",
+      "source": "World/RigGuides.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ReconstructionGuides",
+      "source": "Post/ReconstructionGuides.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
     },
     {
       "id": "FlashlightShadow",

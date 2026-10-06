@@ -270,7 +270,33 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     }
 
     /// <inheritdoc/>
-    public void SetProjection(in Matrix4f projection) => _projection = projection;
+    /// <remarks>
+    /// The first-person rig is drawn without the world's jitter for the engine's own resolve, which knows
+    /// the layer and never accumulates it. An NVIDIA reconstruction knows no such layer: every pixel it is
+    /// given has to carry the jitter it is told about, or the rig's edges are reconstructed from samples it
+    /// thinks were moved and were not. So under one the device jitters the rig itself, by the same render
+    /// pixels as the world, and keeps the unjittered projection for measuring the rig's motion.
+    /// </remarks>
+    public void SetProjection(in Matrix4f projection)
+    {
+        _unjitteredProjection = projection;
+        _projection = _firstPerson && RigJittered ? RigJitter() * projection : projection;
+    }
+
+    /// <summary>The projection last handed over, before the device jittered it for the rig.</summary>
+    private Matrix4f _unjitteredProjection = Matrix4f.Identity;
+
+    /// <summary>Gets a value indicating whether the first-person rig is drawn with the world's jitter.</summary>
+    private bool RigJittered =>
+        Capturing && _taa.Accumulates && _reconstructionPlan.Active != ReconstructionKind.Engine && _scene is not null;
+
+    /// <summary>The world's jitter as a clip-space translation, in this frame's render pixels.</summary>
+    private Matrix4f RigJitter() => _scene is { } scene
+        ? Matrix4f.CreateTranslation(
+            _taa.JitterX * 2f / Math.Max(1, scene.Width),
+            _taa.JitterY * 2f / Math.Max(1, scene.Height),
+            0f)
+        : Matrix4f.Identity;
 
     /// <inheritdoc/>
     public void SetDepthState(DepthState state) => _depthState = state;

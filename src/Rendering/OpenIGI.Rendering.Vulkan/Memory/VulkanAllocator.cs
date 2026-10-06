@@ -116,7 +116,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
     public VulkanAllocator(VulkanDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        _vk = Vk.GetApi();
+        _vk = device.Vk;
         _device = device.Device;
         _memoryProperties = device.MemoryProperties;
         SupportsDeviceAddress = device.Capabilities.BufferDeviceAddress;

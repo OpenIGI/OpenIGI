@@ -61,7 +61,7 @@
 [[vk::binding(4, 0)]] RaytracingAccelerationStructure uScene;
 #endif
 
-[[vk::binding(5, 0)]] [[vk::image_format("rg16f")]] WTexture2D<float4> uVisibility;
+[[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] WTexture2D<float4> uVisibility;
 
 // The sun's traced visibility this frame, at the same resolution, for the skip below: how much of the sun
 // a pixel already has decides whether the lamps' share of its light is enough to show a shadow in.
@@ -98,7 +98,7 @@ struct Params
     // The lamps, laid out exactly as the shading pass lays them out, so the two cannot disagree
     // about which lamp is which.
 
-    // count, whether they shadow, frame index, _.
+    // count, whether they shadow, frame index, and above a half when the trace feeds ray reconstruction raw.
     float4 lampControl;
 
     // largest source a ray samples, the hit records' address as a bit pattern (low word, high word), and
@@ -741,18 +741,7 @@ bool SoftwareBlocked(
 // structure across the screen, and well spread over the frames a pixel accumulates. The interleaved
 // gradient noise it replaces is a pattern of diagonal lines; at rest the accumulation hid it, and on the
 // move -- history partly rejected -- it came through as diagonal hatching across every lamp-lit floor.
-uint3 Pcg3d(uint3 v)
-{
-    v = (v * 1664525u) + 1013904223u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    v ^= v >> 16u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    return v;
-}
+#include "../Common/PixelNoise.slang"
 
 float3 PixelRandom(int2 px)
 {
@@ -806,9 +795,12 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     float originLift = 0.08 + (0.0005 * viewPos.z);
     float3 origin = worldPos + (normal * originLift);
 
-    // Wrapped so the low-discrepancy steps below keep their precision in a float.
-    float frame = float(uint(p.cameraFrame.w) % 65536u);
-    float3 pixelRandom = PixelRandom(px);
+    // Wrapped so the low-discrepancy steps below keep their precision in a float. Raw, for ray
+    // reconstruction, the pixel's numbers are drawn afresh each frame instead and nothing steps them: it
+    // denoises independent samples, and reads a sequence that moves coherently as structure.
+    bool rawNoise = p.lampControl.w > 0.5;
+    float frame = rawNoise ? 0.0 : float(uint(p.cameraFrame.w) % 65536u);
+    float3 pixelRandom = rawNoise ? WhiteNoise3(px, uint(p.cameraFrame.w), 0x1A3Du) : PixelRandom(px);
 #if !OPENIGI_LAMP_FIELD
     uint2 records = uint2(asuint(p.lampSource.y), asuint(p.lampSource.z));
 #endif
@@ -1099,5 +1091,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         return;
     }
 #endif
-    uVisibility.Store(px, float4(visibleSum / float(kSamples), penumbra, 0.0, 0.0));
+    // Raw, the shading reads this image itself rather than the filters' output, and its upsample keys each
+    // texel on the view depth the filters would otherwise have written beside it.
+    uVisibility.Store(px, float4(visibleSum / float(kSamples), penumbra, rawNoise ? viewPos.z : 0.0, 0.0));
 }

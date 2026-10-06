@@ -41,14 +41,19 @@ public sealed partial class GraphicsDevice
         }
 
         IRhiCommandEncoder encoder = Encoder();
+        _frameDrawn = true;
+
+        // The interface layer starts each frame transparent: it holds only what is drawn into it, and the
+        // end of the frame lays it over the picture by its coverage.
+        bool clearLayer = DrawsIntoLayer && _layerClearPending;
 
         _pass = encoder.BeginRenderPass(new RhiRenderPassDescriptor(
             [
                 new RhiColorAttachment(
-                    _frame.Target,
-                    _clearPending ? RhiLoadOp.Clear : RhiLoadOp.Load,
+                    FrameDrawTarget,
+                    clearLayer || _clearPending ? RhiLoadOp.Clear : RhiLoadOp.Load,
                     RhiStoreOp.Store,
-                    _clearColour),
+                    clearLayer ? RhiClearColor.Transparent : _clearColour),
             ],
             new RhiDepthAttachment(
                 Depth().View,
@@ -66,6 +71,7 @@ public sealed partial class GraphicsDevice
 
         _clearPending = false;
         _clearDepthPending = false;
+        _layerClearPending = false;
 
         ApplyViewport(_pass);
         return _pass;

@@ -114,9 +114,11 @@ public sealed partial class GraphicsDevice
         // Rasterised with this frame's own projection, jitter included, so the depth test covers the
         // fragments the draw did. The motion itself is measured between UNJITTERED positions, as the
         // camera's is: the current jitter is applied to the previous end below as well, which keeps the
-        // coverage and cancels the jitter out of the vector. The rig is drawn without a jitter at all.
+        // coverage and cancels the jitter out of the vector. The rig carries a jitter only under an NVIDIA
+        // reconstruction (see SetProjection), and then is measured exactly as the world is.
+        bool rigJittered = firstPerson && RigJittered;
         Matrix4f rasterNow = _projection * modelView;
-        Matrix4f motionNow = (firstPerson ? _projection : _temporalProjection) * modelView;
+        Matrix4f motionNow = (firstPerson ? _unjitteredProjection : _temporalProjection) * modelView;
         Vector3f viewTranslation = new(modelView.M14, modelView.M24, modelView.M34);
 
         // The rig's own position is meaningful only relative to the eye it moves with.
@@ -139,7 +141,7 @@ public sealed partial class GraphicsDevice
             && (translation - before.GuardPosition).LengthSquared <= MaxPairedJumpSquared
             && _scene is { } scene)
         {
-            Matrix4f currentJitter = firstPerson
+            Matrix4f currentJitter = firstPerson && !rigJittered
                 ? Matrix4f.Identity
                 : Matrix4f.CreateTranslation(
                     _taa.JitterX * 2f / Math.Max(1, scene.Width),

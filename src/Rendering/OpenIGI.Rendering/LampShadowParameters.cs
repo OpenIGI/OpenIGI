@@ -71,6 +71,10 @@ public static class LampShadowParameters
     /// The sun's luminance as the lighting pass applies it, where the sun was traced this frame; nought
     /// otherwise, which keeps every lamp shadow the sun's share would have skipped.
     /// </param>
+    /// <param name="rawNoise">
+    /// Whether the trace feeds ray reconstruction raw: each pixel's numbers drawn afresh every frame from
+    /// the whole frame count, which <paramref name="frameIndex"/> must then be.
+    /// </param>
     /// <param name="minimumVisible">
     /// The summed lamp light below which a pixel is left lit without a ray, because no shadow there could
     /// be seen; nought traces every pixel a lamp reaches.
@@ -87,7 +91,8 @@ public static class LampShadowParameters
         ulong cutoutRecords = 0,
         float minimumVisible = 0f,
         Vector3f sunDirection = default,
-        float sunLuminance = 0f)
+        float sunLuminance = 0f,
+        bool rawNoise = false)
     {
         Require(data, TraceFloats);
         data.Clear();
@@ -120,7 +125,13 @@ public static class LampShadowParameters
         // The lamp light below which nothing a shadow could take away would show; see the trace's skip.
         data[TraceHeaderFloats + MinimumVisibleSlot] = MathF.Max(minimumVisible, 0f);
         data[TraceHeaderFloats + CutoutRecordsLow + 1] = BitConverter.UInt32BitsToSingle((uint)(cutoutRecords >> 32));
+
+        // The control vector's last slot, which the shading leaves alone.
+        data[TraceHeaderFloats + RawNoiseSlot] = rawNoise ? 1f : 0f;
     }
+
+    /// <summary>The lamp block's control <c>w</c>, read only by the trace: whether it feeds ray reconstruction raw.</summary>
+    private const int RawNoiseSlot = 3;
 
     // Where in the lamp block the trace finds the records' address: the source vector's y and z.
     private const int CutoutRecordsLow = 5;

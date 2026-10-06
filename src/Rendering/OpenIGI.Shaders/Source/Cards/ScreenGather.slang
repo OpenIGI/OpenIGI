@@ -1,6 +1,10 @@
 // One screen probe every few pixels, each asking what light arrives over the hemisphere its surface
 // faces. The estimate goes straight out; the temporal form pools its neighbours and accumulates instead.
 //
+// The pixel form (OPENIGI_GATHER_PIXEL) is what DLSS ray reconstruction is fed: a probe at every pixel
+// firing one ray, drawn from white noise on the frame, and nothing pooled or accumulated -- the network is
+// the denoiser, and it is trained on exactly that signal.
+//
 // Compiled for SPIR-V alone in its traced form, which WGSL has no ray tracing for; the software form
 // compiles for both.
 
@@ -59,6 +63,16 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     // hits, 2 surface-cache hits, 3 sky; 4 shows the surface cache's own light at the surface instead.
     int uDebugSource;
 
+    // The presented-frame count, which keys the pixel form's white noise; read by no other form.
+    int uFrame;
+
+    // The pixel form's screen hits: the camera last frame's lit picture was rendered from, which they are
+    // read through. Unread by the other forms.
+    float3 uColourWorldToView0;
+    float3 uColourWorldToView1;
+    float3 uColourWorldToView2;
+    float3 uColourCameraToCache;
+
     // The terrain's height raster (TerrainHeightRaster), for the march that cannot trace the ground:
     // its low corner's world XY in metres, cells per metre, whether there is one; its size in cells, the
     // height its packing counts from and the metres one step stands for.
@@ -73,6 +87,11 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     float4 uShelterMap2;
 };
 
+#include "../Common/PixelNoise.slang"
+
+#if OPENIGI_GATHER_PIXEL
+#define OPENIGI_SCREEN_HIT_REPROJECT 2
+#endif
 #include "../Common/ScreenGather.slang"
 
 [shader("compute")]
@@ -114,7 +133,11 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         worldNormal = -worldNormal;
     }
 
-    uIndirect.Store(
-        probe,
-        float4(GatherIndirect(world, worldNormal, viewPosition, float2(0.5, 0.5)), 1.0));
+#if OPENIGI_GATHER_PIXEL
+    float2 jitter = WhiteNoise3(pixel, uint(uFrame), 0x61u).xy;
+#else
+    float2 jitter = float2(0.5, 0.5);
+#endif
+
+    uIndirect.Store(probe, float4(GatherIndirect(world, worldNormal, viewPosition, jitter), 1.0));
 }

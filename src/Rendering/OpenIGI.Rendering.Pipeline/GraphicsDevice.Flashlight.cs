@@ -69,7 +69,8 @@ public sealed partial class GraphicsDevice
                     _viewToWorld,
                     _unprojection,
                     _flashlight,
-                    (long)(_frameCounter % 65536UL)));
+                    RawLighting ? (long)(_frameCounter & 0xFFFFFFUL) : (long)(_frameCounter % 65536UL),
+                    RawLighting));
         }
     }
 
