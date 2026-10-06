@@ -11,7 +11,8 @@ namespace OpenIGI.Platform.Desktop;
 /// <para>
 /// A GLFW window has no icon of its own: the one embedded in the executable is the file's, and the window
 /// gets the system's blank default however it was started. So the icon is set on the window, from the same
-/// <c>openigi.ico</c> both executables carry, embedded here once for the game and the launcher alike.
+/// icon the executable carries, embedded here: <c>openigi.ico</c> for the game, and for the launcher the amber
+/// <c>openigi-launcher.ico</c> made from it, so the two are told apart in the taskbar.
 /// </para>
 /// <para>
 /// Not on macOS, where windows have no icons and GLFW reports the attempt as an error; the Dock shows the
@@ -20,7 +21,8 @@ namespace OpenIGI.Platform.Desktop;
 /// </remarks>
 public static partial class WindowIcon
 {
-    private const string ResourceName = "OpenIGI.Platform.Desktop.Assets.openigi.ico";
+    private const string GameResource = "OpenIGI.Platform.Desktop.Assets.openigi.ico";
+    private const string LauncherResource = "OpenIGI.Platform.Desktop.Assets.openigi-launcher.ico";
     private const int DirectoryEntrySize = 16;
     private const int BitmapHeaderSize = 40;
 
@@ -28,6 +30,10 @@ public static partial class WindowIcon
 
     // Every size the icon file carries, decoded once; the platform picks the one nearest each use.
     private static readonly Lazy<RawImage[]> Images = new(() => Decode(File.Value));
+
+    /// <summary>Gets or sets which program's icon is shown: the game's, or the launcher's.</summary>
+    /// <remarks>Set once at start, before any window or notification-area icon is made; it is read on first use.</remarks>
+    public static WindowIconKind Kind { get; set; } = WindowIconKind.Game;
 
     /// <summary>Sets the icon on a window that has been initialised.</summary>
     /// <param name="window">The window.</param>
@@ -63,7 +69,7 @@ public static partial class WindowIcon
 
     private static byte[] ReadFile()
     {
-        using Stream? stream = typeof(WindowIcon).Assembly.GetManifestResourceStream(ResourceName);
+        using Stream? stream = typeof(WindowIcon).Assembly.GetManifestResourceStream(Kind == WindowIconKind.Launcher ? LauncherResource : GameResource);
         if (stream is null)
         {
             return [];
@@ -163,4 +169,14 @@ public static partial class WindowIcon
 
     [LibraryImport("user32.dll")]
     private static unsafe partial nint CreateIconFromResourceEx(byte* data, uint length, int icon, uint version, int width, int height, uint flags);
+}
+
+/// <summary>Which of OpenIGI's programs an icon is for.</summary>
+public enum WindowIconKind
+{
+    /// <summary>The game: the green emblem.</summary>
+    Game,
+
+    /// <summary>The launcher: the same emblem in the launcher's amber.</summary>
+    Launcher,
 }

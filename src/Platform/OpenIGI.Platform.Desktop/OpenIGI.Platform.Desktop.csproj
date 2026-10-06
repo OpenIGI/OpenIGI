@@ -13,9 +13,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The OpenIGI icon: the game's and the launcher's executables carry it (ApplicationIcon), and
-         WindowIcon sets it on their windows, and TrayIcon in the notification area, from this embedded copy. -->
+    <!-- The OpenIGI icons: the game's, and the launcher's amber one made from it (tools/launcher-icon.sh). Each
+         executable carries its own (ApplicationIcon), and WindowIcon sets it on its windows, and TrayIcon in the
+         notification area, from these embedded copies. -->
     <EmbeddedResource Include="Assets\openigi.ico" LogicalName="OpenIGI.Platform.Desktop.Assets.openigi.ico" />
+    <EmbeddedResource Include="Assets\openigi-launcher.ico" LogicalName="OpenIGI.Platform.Desktop.Assets.openigi-launcher.ico" />
   </ItemGroup>
 
   <ItemGroup>
