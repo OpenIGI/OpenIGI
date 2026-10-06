@@ -128,6 +128,29 @@ public enum SceneTargetId
     /// lit image, and a pass cannot read the image it is writing.
     /// </remarks>
     RainBackdrop,
+
+    /// <summary>The exposure the tone mapper will multiply the scene by, one texel.</summary>
+    /// <remarks>
+    /// Written on the GPU every frame from the adapted exposure, so an NVIDIA reconstruction sees the image
+    /// the player will rather than raw radiance, without metering it a second time on its own.
+    /// </remarks>
+    Exposure,
+
+    /// <summary>Where this frame's history should not be trusted: additive effects that carry no motion.</summary>
+    /// <remarks>
+    /// Particles, tracers, muzzle flashes and rain draw over the lit image without motion vectors and mark
+    /// themselves by pushing its alpha above one. Read out of that into a mask a reconstruction takes as its
+    /// "bias towards the current frame" hint, so they neither ghost nor smear behind what moves.
+    /// </remarks>
+    ReactiveMask,
+
+    /// <summary>How far each pixel's reflected ray travelled before it struck something, in metres.</summary>
+    /// <remarks>
+    /// Written by the traced reflection: nought where no ray was fired, the ray's whole reach where it struck
+    /// nothing. What DLSS ray reconstruction reads to move a reflection with the camera, in place of specular
+    /// motion vectors.
+    /// </remarks>
+    SpecularHitDistance,
 }
 
 /// <summary>How a target's size follows the frame's.</summary>
@@ -147,6 +170,9 @@ public enum SceneTargetScale
     /// temporal resolve reconstructs the picture up to it.
     /// </summary>
     Output,
+
+    /// <summary>One texel, whatever the frame's size.</summary>
+    Unit,
 }
 
 /// <summary>Whether a target is one image or a pair swapped each frame.</summary>

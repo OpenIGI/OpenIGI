@@ -1,0 +1,40 @@
+{
+  "module": "ReactiveMask",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        8,
+        8,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uLit",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uMask",
+      "group": 0,
+      "binding": 1,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "R32Float",
+      "wgslStorageFormat": "R32Float",
+      "storageAccess": "WriteOnly"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": null
+}

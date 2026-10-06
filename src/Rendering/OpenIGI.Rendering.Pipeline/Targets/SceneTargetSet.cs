@@ -76,6 +76,18 @@ public sealed class SceneTargetSet : IDisposable
 
         // The scene behind the rain, copied from the lit image for the drops to refract.
         new(SceneTargetId.RainBackdrop, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination),
+
+        // What an NVIDIA reconstruction is told beside the colour: the exposure the tone mapper will apply,
+        // and where the history is not to be trusted.
+        new(SceneTargetId.Exposure, RhiTextureFormat.R32Float, SceneTargetScale.Unit, Compute),
+        // A full float rather than eight bits: Streamline's Vulkan layer cannot describe an R8 unorm image (its
+        // format table has the unsigned-integer R8 and not this one) and logs an error for every evaluation,
+        // and a half float is not a storage format every backend of the RHI writes.
+        new(SceneTargetId.ReactiveMask, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute),
+
+        // How far each reflected ray went, which the traced reflection writes every frame. A full float for
+        // the reason the mask above is one.
+        new(SceneTargetId.SpecularHitDistance, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute),
     ];
 
     private const RhiTextureUsage Attachment =
@@ -232,6 +244,7 @@ public sealed class SceneTargetSet : IDisposable
         SceneTargetScale.Output => (
             Math.Max(1, outputWidth > 0 ? outputWidth : width),
             Math.Max(1, outputHeight > 0 ? outputHeight : height)),
+        SceneTargetScale.Unit => (1, 1),
         _ => (Math.Max(1, width), Math.Max(1, height)),
     };
 

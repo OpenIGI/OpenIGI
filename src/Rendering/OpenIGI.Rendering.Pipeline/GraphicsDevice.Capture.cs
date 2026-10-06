@@ -179,6 +179,12 @@ public sealed partial class GraphicsDevice
     /// <summary>Reads the frame as drawn so far, by flushing it with a copy of its image on the end.</summary>
     private void ReadCurrentFrame(Span<Bgra32> target, int width, int height)
     {
+        // A frame drawn with its interface apart has nothing in the back buffer yet: the picture and the
+        // interface are laid together only at the frame's end, and until then the image still holds whatever
+        // a frame several presents ago left in it. Laid together now instead; anything drawn after the capture
+        // then lands directly on top, which is the same picture.
+        ComposeLayers();
+
         int frameWidth = CurrentMode.Width;
         int frameHeight = CurrentMode.Height;
 

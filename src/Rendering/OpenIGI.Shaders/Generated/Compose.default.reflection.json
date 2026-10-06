@@ -1,0 +1,50 @@
+{
+  "module": "Compose",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "vertexMain",
+      "stage": "Vertex",
+      "workgroupSize": null
+    },
+    {
+      "name": "fragmentMain",
+      "stage": "Fragment",
+      "workgroupSize": null
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDisplay",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uInterface",
+      "group": 0,
+      "binding": 1,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [
+    {
+      "name": "cClipYDown",
+      "id": 64
+    },
+    {
+      "name": "cTargetEncodes",
+      "id": 65
+    }
+  ],
+  "globals": null
+}

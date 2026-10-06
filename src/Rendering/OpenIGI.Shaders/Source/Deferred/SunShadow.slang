@@ -39,7 +39,8 @@ struct Params
     // xyz camera position, w the sine of the sun's half-angle.
     float4 camera;
 
-    // x the frame index (the dither's phase), yz this frame's sub-pixel jitter in pixels.
+    // x the frame index (the dither's phase), yz this frame's sub-pixel jitter in pixels, w above a half
+    // when the trace feeds ray reconstruction raw: white noise on the whole frame count instead of the dither.
     float4 jitter;
 
     // device address of the material records, low word then high.
@@ -79,6 +80,7 @@ float3 TangentToWorld(float3 v, float3 axis)
 }
 
 #include "../Common/FrameNoise.slang"
+#include "../Common/PixelNoise.slang"
 
 // One dimension of the cone sample, moving from frame to frame.
 float InterleavedGradientNoise(float2 pos, float frame)
@@ -189,9 +191,13 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // a metre is the knee: a centimetre at arm's length, four metres two kilometres out where a pixel is more.
     float offset = 0.02 + (0.002 * viewPos.z);
 
-    float2 rand = float2(
-        InterleavedGradientNoise(float2(px), p.jitter.x),
-        InterleavedGradientNoise(float2(px) + 97.0, p.jitter.x));
+    // Raw for ray reconstruction: independent per pixel and per frame, which is what it denoises. Otherwise
+    // the moving dither the engine's own accumulation converges fastest on.
+    float2 rand = p.jitter.w > 0.5
+        ? WhiteNoise3(px, uint(p.jitter.x), 0x51u).xy
+        : float2(
+            InterleavedGradientNoise(float2(px), p.jitter.x),
+            InterleavedGradientNoise(float2(px) + 97.0, p.jitter.x));
 
     float sinThetaMax = p.camera.w;
     float3 traceDirection = sinThetaMax > 0.0

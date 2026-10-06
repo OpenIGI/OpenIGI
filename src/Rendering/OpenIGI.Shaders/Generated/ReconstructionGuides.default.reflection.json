@@ -1,0 +1,140 @@
+{
+  "module": "ReconstructionGuides",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        8,
+        8,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDepth",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uBaseColour",
+      "group": 0,
+      "binding": 1,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uNormal",
+      "group": 0,
+      "binding": 2,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uMaterial",
+      "group": 0,
+      "binding": 3,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uDiffuseAlbedo",
+      "group": 0,
+      "binding": 4,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uSpecularAlbedo",
+      "group": 0,
+      "binding": 5,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uNormalRoughness",
+      "group": 0,
+      "binding": 6,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "p",
+      "group": 0,
+      "binding": 7,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uRigBaseColour",
+      "group": 0,
+      "binding": 8,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uRigNormal",
+      "group": 0,
+      "binding": 9,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uLit",
+      "group": 0,
+      "binding": 10,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uBeforeTransparency",
+      "group": 0,
+      "binding": 11,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "WriteOnly"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": null
+}

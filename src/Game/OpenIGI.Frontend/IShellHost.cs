@@ -74,4 +74,14 @@ public interface IShellHost
     /// <param name="height">Receives the capture height.</param>
     /// <returns>The captured pixels, or an empty array when no capture is available.</returns>
     OpenIGI.Core.Graphics.Bgra32[] CaptureThumbnail(out int width, out int height);
+
+    /// <summary>Says why a setting cannot take effect on this machine, or nothing when it can.</summary>
+    /// <param name="variable">The console variable the setting's row drives.</param>
+    /// <returns>The reason, for the row's tooltip; empty when the setting works here.</returns>
+    /// <remarks>
+    /// For the settings that depend on hardware or an optional download -- NVIDIA's features -- and for the
+    /// ones another setting takes over, such as the render scale while DLSS chooses the render size. The
+    /// row stays visible and is greyed out, so the player learns the option exists and what it needs.
+    /// </remarks>
+    string SettingUnavailable(string variable) => string.Empty;
 }

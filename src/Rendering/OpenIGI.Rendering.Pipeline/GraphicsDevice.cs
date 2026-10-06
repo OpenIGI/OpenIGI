@@ -196,9 +196,24 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
                 return;
             }
 
-            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, value);
+            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, EffectiveVSync);
         }
     } = true;
+
+    /// <summary>Gets whether presents wait for the display: the setting, unless frame generation cannot allow it.</summary>
+    private bool EffectiveVSync => VSyncEnabled && !_frameGenerationForcesVsyncOff;
+
+    /// <summary>Puts the effective vertical sync on the surface, now or once the open frame is presented.</summary>
+    private void ApplyEffectiveVSync()
+    {
+        if (_inFrame)
+        {
+            _surfaceStale = true;
+            return;
+        }
+
+        _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, EffectiveVSync);
+    }
 
     /// <inheritdoc/>
     public ScenePass CurrentPass { get; private set; } = ScenePass.None;
@@ -212,7 +227,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         ThrowIfDisposed();
 
         CurrentMode = mode;
-        _device.ConfigureSurface(mode.Width, mode.Height, VSyncEnabled);
+        _device.ConfigureSurface(mode.Width, mode.Height, EffectiveVSync);
 
         if (_depth is { } depth)
         {
@@ -271,6 +286,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         ClosePass();
     }
 
+    // Whether the open frame has drawn anything into the image it will present: a scene, or its own pass.
+    private bool _frameDrawn;
+
     /// <inheritdoc/>
     public void SwapBuffers()
     {
@@ -285,7 +303,25 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             return;
         }
 
+        // Presenting on record (NVIDIA's latency layer), a frame is sent the moment its pass has recorded it,
+        // and work recorded after that -- the surface cache's relight, at the head of a pass that only ticks --
+        // opens the next frame. Presented as it stood, with nothing drawn, it showed whatever the swapchain
+        // image last held: a picture several frames old, menus and interface included, on every other frame
+        // for as long as the relight ran. Held open instead, it becomes the start of the next frame that does
+        // draw, exactly as the present-then-begin cadence would have made it.
+        if (PresentsOnRecord && !_frameDrawn)
+        {
+            return;
+        }
+
+        _frameDrawn = false;
+
         _sprites.EndFrame();
+
+        // The interface layer over the picture, where they were drawn apart; the capture and the present
+        // both read the back buffer.
+        TagFrameGeneration();
+        ComposeLayers();
 
         // Before the profiler's own resolve and before the submit: the frame's image is the swapchain's,
         // and once it is presented the presentation engine owns it again.
@@ -313,10 +349,14 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _device.EndFrame(_frame);
         _inFrame = false;
 
+        // What frame generation did with the frame just presented, read on the presenting thread as its
+        // plugin asks.
+        ReadFrameGenerationState();
+
         if (_surfaceStale)
         {
             _surfaceStale = false;
-            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, VSyncEnabled);
+            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, EffectiveVSync);
         }
         _frameCounter++;
         ArmRecordedWorkMarkers();
@@ -488,7 +528,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         {
             // The surface has been outgrown. Reconfiguring and trying once is what the frame loop would
             // do anyway, and a second refusal is a frame not drawn rather than an exception.
-            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, VSyncEnabled);
+            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, EffectiveVSync);
 
             if (!_device.BeginFrame(out _frame))
             {

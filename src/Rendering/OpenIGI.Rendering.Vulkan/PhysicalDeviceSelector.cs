@@ -35,11 +35,13 @@ internal sealed unsafe class PhysicalDeviceSelector
     private readonly KhrSurface _khrSurface;
     private readonly SurfaceKHR _surface;
     private readonly IOpenIgiLogger _logger;
+    private readonly bool _forStreamline;
 
     /// <summary>Initialises a new instance of the <see cref="PhysicalDeviceSelector"/> class.</summary>
     /// <param name="instance">The instance and its surface to select against.</param>
     /// <param name="logger">Where to report the choice made.</param>
-    public PhysicalDeviceSelector(VulkanInstance instance, IOpenIgiLogger logger)
+    /// <param name="forStreamline">Whether the device will run NVIDIA Streamline; see <see cref="VulkanCapabilityProbe.Probe"/>.</param>
+    public PhysicalDeviceSelector(VulkanInstance instance, IOpenIgiLogger logger, bool forStreamline = false)
     {
         ArgumentNullException.ThrowIfNull(instance);
         _vk = instance.Vk;
@@ -47,6 +49,7 @@ internal sealed unsafe class PhysicalDeviceSelector
         _khrSurface = instance.KhrSurface;
         _surface = instance.Surface;
         _logger = logger;
+        _forStreamline = forStreamline;
     }
 
     /// <summary>Selects an adapter and works out how it will be used.</summary>
@@ -237,7 +240,7 @@ internal sealed unsafe class PhysicalDeviceSelector
         }
 
         VulkanDeviceCapabilities capabilities =
-            VulkanCapabilityProbe.Probe(_vk, device, available, properties.ApiVersion);
+            VulkanCapabilityProbe.Probe(_vk, device, available, properties.ApiVersion, _forStreamline);
 
         string name = VkString.Read(properties.DeviceName);
         return new PhysicalDeviceSelection(device, queues, properties, name, capabilities);

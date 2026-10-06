@@ -35,6 +35,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
     private SwapchainKHR _handle;
     private Image[] _images = [];
+    private ulong _lastPresentId;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanSwapchain"/> class.</summary>
@@ -108,18 +109,39 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <summary>Presents a rendered image once the given semaphore has been signalled.</summary>
     /// <param name="wait">The semaphore that must signal before the image is shown — the render's completion.</param>
     /// <param name="imageIndex">The index of the image to present.</param>
+    /// <param name="presentId">
+    /// The id to attach, or zero for none. Only carried when the device enabled present ids, which it
+    /// does for Streamline: the id is the frame index the latency markers carry, and it is how the driver
+    /// matches those markers to this present.
+    /// </param>
     /// <returns>
     /// The present result, with <see cref="Result.SuboptimalKhr"/> and
     /// <see cref="Result.ErrorOutOfDateKhr"/> tolerated so the caller can rebuild the swapchain.
     /// </returns>
-    public Result Present(Semaphore wait, uint imageIndex)
+    public Result Present(Semaphore wait, uint imageIndex, ulong presentId = 0)
     {
         SwapchainKHR swapchain = _handle;
         uint index = imageIndex;
         Semaphore waitSemaphore = wait;
+        // The spec requires every id on a swapchain to exceed the last. A frame presented without a fresh
+        // latency token (a loading screen, say) would repeat one, so a repeat is simply not attached.
+        bool attachId = presentId > _lastPresentId && _device.Capabilities.PresentId;
+        if (attachId)
+        {
+            _lastPresentId = presentId;
+        }
+
+        ulong id = presentId;
+        PresentIdKHR idInfo = new()
+        {
+            SType = (StructureType)Capabilities.VulkanExtensionNames.PresentIdStructureType,
+            SwapchainCount = 1,
+            PPresentIds = &id,
+        };
         PresentInfoKHR info = new()
         {
             SType = StructureType.PresentInfoKhr,
+            PNext = attachId ? &idInfo : null,
             WaitSemaphoreCount = 1,
             PWaitSemaphores = &waitSemaphore,
             SwapchainCount = 1,
@@ -139,12 +161,27 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <param name="height">The new height in pixels.</param>
     /// <param name="vsync">Whether presentation should wait for the vertical blank.</param>
     /// <remarks>A zero dimension — a minimised window — is left for the caller to skip rather than rebuilt.</remarks>
-    public void Recreate(int width, int height, bool vsync)
+    public void Recreate(int width, int height, bool vsync) => Recreate(width, height, vsync, null);
+
+    /// <summary>Rebuilds the swapchain, running something between destroying the old one and creating the new.</summary>
+    /// <param name="width">The new width in pixels.</param>
+    /// <param name="height">The new height in pixels.</param>
+    /// <param name="vsync">Whether presentation should wait for the vertical blank.</param>
+    /// <param name="between">What to run while no swapchain exists, or <see langword="null"/>.</param>
+    /// <remarks>
+    /// Frame generation is what needs the gap: its plugin is loaded or unloaded while there is no
+    /// swapchain, because the one created next is built for whichever arrangement is then in force.
+    /// </remarks>
+    public void Recreate(int width, int height, bool vsync, Action? between)
     {
         _device.WaitIdle();
         DestroySwapchain();
+        between?.Invoke();
         Create(width, height, vsync);
     }
+
+    /// <summary>Gets a value indicating whether the swapchain was last built to wait for the display.</summary>
+    public bool VSync { get; private set; }
 
     /// <inheritdoc/>
     public void Dispose()
@@ -160,6 +197,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
     private void Create(int width, int height, bool vsync)
     {
+        VSync = vsync;
         SurfaceCapabilitiesKHR capabilities;
         VkCheck.Ok(
             _khrSurface.GetPhysicalDeviceSurfaceCapabilities(_device.PhysicalDevice, _surface, &capabilities),

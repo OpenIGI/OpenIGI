@@ -38,9 +38,21 @@ public static class TemporalJitter
     /// camera and a sequence cut short at any point has averaged to somewhere near the pixel centre
     /// rather than to a corner of it.
     /// </remarks>
-    public static (float X, float Y) At(int frame)
+    public static (float X, float Y) At(int frame) => At(frame, Length);
+
+    /// <summary>Gets the offset for a frame from a sequence of a given length.</summary>
+    /// <param name="frame">The frame counter. Any value, including a negative one, is accepted.</param>
+    /// <param name="phases">How many offsets the sequence cycles through; see <see cref="RenderResolutionPolicy"/>.</param>
+    /// <returns>The offset from the pixel centre, each component within ±0.5.</returns>
+    /// <remarks>
+    /// The same Halton pair, only longer. Rendering further below the output spreads each render pixel over
+    /// more output pixels, and the sequence has to visit more points of it before each of those has been
+    /// sampled as often as an unscaled one would be.
+    /// </remarks>
+    public static (float X, float Y) At(int frame, int phases)
     {
-        int index = (int)(((uint)frame % Length) + 1);
+        int length = Math.Max(1, phases);
+        int index = (int)(((uint)frame % (uint)length) + 1);
         return (Halton(index, 2) - 0.5f, Halton(index, 3) - 0.5f);
     }
 

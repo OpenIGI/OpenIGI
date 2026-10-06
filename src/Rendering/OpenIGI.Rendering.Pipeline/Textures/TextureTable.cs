@@ -63,6 +63,49 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     /// </remarks>
     public TextureHandle NeutralDetail { get; }
 
+    /// <summary>Gets the mip bias every mipmapped texture is sampled with.</summary>
+    /// <remarks>
+    /// The render-to-output ratio decides it, so it moves whenever the reconstruction or its quality does;
+    /// <see cref="Rebias"/> is how a change reaches textures already loaded.
+    /// </remarks>
+    public float MipLodBias { get; private set; } = TextureLodBias.FromSettings();
+
+    /// <summary>Re-resolves every mipmapped texture's sampler at a new mip bias.</summary>
+    /// <param name="bias">The bias, in mip levels; negative is sharper.</param>
+    /// <returns>The handles whose sampler changed, so the bind groups that captured the old one can go.</returns>
+    /// <remarks>
+    /// Samplers are shared by description and the bias is part of the description, so this costs a handful
+    /// of new samplers, not one per texture. The old ones stay cached: switching back is free.
+    /// </remarks>
+    public IReadOnlyList<uint> Rebias(float bias)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (MathF.Abs(bias - MipLodBias) < 1e-4f)
+        {
+            return [];
+        }
+
+        MipLodBias = bias;
+        List<uint> changed = [];
+        foreach ((uint id, Entry entry) in _textures.ToArray())
+        {
+            if (entry.Description.MipLevels <= 1)
+            {
+                continue;
+            }
+
+            IRhiSampler sampler = SamplerFor(entry.Description);
+            if (!ReferenceEquals(sampler, entry.Sampler))
+            {
+                _textures[id] = entry with { Sampler = sampler };
+                changed.Add(id);
+            }
+        }
+
+        return changed;
+    }
+
     /// <summary>Gets how many textures are loaded, the white one included.</summary>
     public int Count => _textures.Count;
 
@@ -97,7 +140,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
             MipLevelCount: Math.Max(1, description.MipLevels),
             Label: label.Length > 0 ? label : $"texture-{id}"));
 
-        _textures[id] = new Entry(texture, SamplerFor(description));
+        _textures[id] = new Entry(texture, SamplerFor(description), description);
 
         UploadChain(texture, description, pixels);
 
@@ -137,7 +180,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
             MipLevelCount: Math.Max(1, description.MipLevels),
             Label: label.Length > 0 ? label : $"texture-{id}"));
 
-        _textures[id] = new Entry(texture, SamplerFor(description));
+        _textures[id] = new Entry(texture, SamplerFor(description), description);
 
         int levels = Math.Max(1, description.MipLevels);
         int at = 0;
@@ -288,7 +331,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         uint id = _next++;
-        _textures[id] = new Entry(texture, SamplerFor(description));
+        _textures[id] = new Entry(texture, SamplerFor(description), description);
 
         return new TextureHandle(id);
     }
@@ -383,8 +426,8 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
             LodMax: 1000f,
             $"{filter}-{address}",
 
-            // The settings' mip bias, only where there are levels to choose.
-            MipLodBias: description.MipLevels > 1 ? TextureLodBias.FromSettings() : 0f);
+            // The frame's mip bias, only where there are levels to choose.
+            MipLodBias: description.MipLevels > 1 ? MipLodBias : 0f);
 
         if (_samplers.TryGetValue(wanted, out IRhiSampler? existing))
         {
@@ -396,5 +439,5 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
         return made;
     }
 
-    private readonly record struct Entry(IRhiTexture Texture, IRhiSampler Sampler);
+    private readonly record struct Entry(IRhiTexture Texture, IRhiSampler Sampler, TextureDescription Description);
 }

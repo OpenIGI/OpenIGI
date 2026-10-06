@@ -378,8 +378,10 @@ public sealed class SettingsScreen : ShellScreen
                 // to be told which, and the help line shows only the tooltip's first line, so the note goes
                 // there rather than at the end.
                 string restart = NamesRequiringRestart(group.Variables) ? "   [takes effect on the next level]" : string.Empty;
+                string unavailable = Unavailable(group.Variables);
+                control.IsEnabled = unavailable.Length == 0;
                 control.Tooltip =
-                    $"{group.Help}{restart}\n\nSets: {string.Join(", ", group.Variables)}\n\nReachable from the console by name.";
+                    $"{unavailable}{group.Help}{restart}\n\nSets: {string.Join(", ", group.Variables)}\n\nReachable from the console by name.";
                 rows.Add(control);
                 TrackForReset(group.Variables);
             }
@@ -397,6 +399,23 @@ public sealed class SettingsScreen : ShellScreen
         List<SettingsGroup> groups = CvarGroups(theme, GameplayNames(), "General");
         groups.Add(SettingsGroup.Of("Interface and effects", SettingRows(theme, GraphicsMenu.InterfaceSettings)));
         return groups;
+    }
+
+    /// <summary>Why the first of these variables that cannot take effect here cannot, as a tooltip lead.</summary>
+    /// <param name="names">The variables a row drives.</param>
+    /// <returns>"Unavailable: reason." and a blank line, or empty when every one of them works here.</returns>
+    private string Unavailable(IReadOnlyList<string> names)
+    {
+        foreach (string name in names)
+        {
+            string reason = Context.Host.SettingUnavailable(name);
+            if (reason.Length > 0)
+            {
+                return $"Unavailable: {reason}.\n\n";
+            }
+        }
+
+        return string.Empty;
     }
 
     /// <summary>Whether any of these variables only takes effect on the next level load.</summary>
@@ -442,7 +461,9 @@ public sealed class SettingsScreen : ShellScreen
                 ? "   [takes effect on the next level]"
                 : string.Empty;
 
-            control.Tooltip = $"{setting.Help}{restart}\n\n{setting.Variable}";
+            string unavailable = Unavailable([setting.Variable]);
+            control.IsEnabled = unavailable.Length == 0;
+            control.Tooltip = $"{unavailable}{setting.Help}{restart}\n\n{setting.Variable}";
             rows.Add(control);
             CurrentTabCvars.Add(cvar);
         }

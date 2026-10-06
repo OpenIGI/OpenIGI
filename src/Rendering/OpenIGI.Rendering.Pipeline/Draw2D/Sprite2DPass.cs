@@ -44,6 +44,8 @@ public sealed class Sprite2DPass : IDisposable
     private readonly SpriteGeometryRing _geometry;
     private readonly TextureBindGroupCache _groups;
     private SpritePipelineSet? _text;
+    private SpritePipelineSet? _layerSprites;
+    private SpritePipelineSet? _layerText;
     private FullscreenPipeline? _backdrop;
     private float _projectionWidth = 1f;
     private float _projectionHeight = 1f;
@@ -94,6 +96,24 @@ public sealed class Sprite2DPass : IDisposable
 
     /// <summary>Gets the layout every 2D texture group is built against.</summary>
     public IRhiBindGroupLayout TextureLayout { get; }
+
+    /// <summary>Gets or sets a value indicating whether the draws land in an interface layer composited later.</summary>
+    /// <remarks>
+    /// Such a layer is laid over the picture by its coverage, so its additive draws must not add coverage of
+    /// their own. See <see cref="SpritePipelineSet.LayerBlendFor"/>. Built the first time it is asked for.
+    /// </remarks>
+    public bool DrawsIntoLayer { get; set; }
+
+    private SpritePipelineSet Sprites => DrawsIntoLayer
+        ? _layerSprites ??= new SpritePipelineSet(
+            _device,
+            ShaderModuleId.Sprite2D,
+            TextureLayout,
+            _targetFormat,
+            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive],
+            _depthFormat,
+            intoLayer: true)
+        : _sprites;
 
     /// <summary>Starts a frame: empties its ring and fixes what the projection divides by.</summary>
     /// <param name="frameInFlight">Which ring this frame appends into.</param>
@@ -146,7 +166,7 @@ public sealed class Sprite2DPass : IDisposable
             return;
         }
 
-        pass.SetPipeline(_sprites.ForBlend(blend));
+        pass.SetPipeline(Sprites.ForBlend(blend));
         BindTexture(pass, texture);
         PushProjection(pass);
 
@@ -181,15 +201,24 @@ public sealed class Sprite2DPass : IDisposable
             return;
         }
 
-        _text ??= new SpritePipelineSet(
-            _device,
-            ShaderModuleId.SdfText,
-            TextureLayout,
-            _targetFormat,
-            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive],
-            _depthFormat);
+        SpritePipelineSet text = DrawsIntoLayer
+            ? _layerText ??= new SpritePipelineSet(
+                _device,
+                ShaderModuleId.SdfText,
+                TextureLayout,
+                _targetFormat,
+                [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive],
+                _depthFormat,
+                intoLayer: true)
+            : _text ??= new SpritePipelineSet(
+                _device,
+                ShaderModuleId.SdfText,
+                TextureLayout,
+                _targetFormat,
+                [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive],
+                _depthFormat);
 
-        pass.SetPipeline(_text.ForBlend(blend));
+        pass.SetPipeline(text.ForBlend(blend));
         BindTexture(pass, atlas);
 
         Span<float> push = stackalloc float[SdfPushOffset / sizeof(float) + 16];
@@ -198,7 +227,7 @@ public sealed class Sprite2DPass : IDisposable
         push[1] = -_projectionHeight;
 
         WriteTextParameters(push[(SdfPushOffset / sizeof(float))..], parameters);
-        pass.SetPushData(MemoryMarshal.AsBytes(push)[.._text.PushDataBytes]);
+        pass.SetPushData(MemoryMarshal.AsBytes(push)[..text.PushDataBytes]);
 
         Append(pass, vertices, indices);
     }
@@ -259,6 +288,8 @@ public sealed class Sprite2DPass : IDisposable
         _disposed = true;
 
         _backdrop?.Dispose();
+        _layerText?.Dispose();
+        _layerSprites?.Dispose();
         _text?.Dispose();
         _sprites.Dispose();
         _geometry.Dispose();

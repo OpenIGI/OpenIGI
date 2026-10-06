@@ -3709,6 +3709,87 @@ public static class RenderCVars
         high: "0.7",
         ultra: "0.7");
 
+    /// <summary>What reconstructs the frame: the engine's own temporal resolve, DLSS, or DLSS ray reconstruction.</summary>
+    /// <remarks>
+    /// Not preset-managed: the NVIDIA kinds need the optional runtime and an adapter that runs them, and a
+    /// preset that wrote one would be writing something half the machines it runs on cannot do. Where the
+    /// chosen one cannot run the engine's resolve runs instead, and the log and the settings page say why.
+    /// Only meaningful with temporal anti-aliasing on (<c>r_taa</c> below one) on the deferred path.
+    /// </remarks>
+    public static readonly EnumCVar<ReconstructionKind> Reconstruction = CVar.Choice(
+        "r_reconstruction",
+        ReconstructionKind.Engine,
+        CVarOptions.Archive,
+        "Reconstruction: engine is the built-in temporal resolve, dlss is NVIDIA DLSS / DLAA, "
+            + "rayreconstruction is DLSS ray reconstruction (needs hardware ray tracing).");
+
+    /// <summary>How far below the output DLSS renders, when DLSS or ray reconstruction is the reconstruction.</summary>
+    public static readonly EnumCVar<DlssQuality> DlssQualityMode = CVar.Choice(
+        "r_dlss_quality",
+        DlssQuality.Quality,
+        CVarOptions.Archive,
+        "DLSS quality: dlaa renders at native resolution, quality/balanced/performance/ultraperformance below it. "
+            + "Replaces r_scale while DLSS runs.");
+
+    /// <summary>How many frames reach the screen per rendered one, with DLSS frame generation.</summary>
+    /// <remarks>
+    /// Needs an RTX 40-series or newer, hardware-accelerated GPU scheduling, and Reflex, which it turns on.
+    /// A multiplier the GPU cannot reach is clamped to what it reports.
+    /// </remarks>
+    public static readonly EnumCVar<FrameGenerationMode> FrameGeneration = CVar.Choice(
+        "r_frame_generation",
+        FrameGenerationMode.Off,
+        CVarOptions.Archive,
+        "DLSS frame generation: off, or x2 to x6 frames on screen per rendered frame (RTX 40-series and newer).");
+
+    /// <summary>NVIDIA Reflex: start each frame as late as the render allows, to cut input latency.</summary>
+    public static readonly EnumCVar<LowLatencyMode> LowLatency = CVar.Choice(
+        "r_low_latency",
+        LowLatencyMode.Off,
+        CVarOptions.Archive,
+        "NVIDIA Reflex low latency: off, on, or boost (also keeps the GPU clocked up).");
+
+    /// <summary>A frame-rate cap the driver enforces through Reflex, or nought for none.</summary>
+    public static readonly NumericCVar<int> FrameLimit = CVar.Int(
+        "r_frame_limit",
+        0,
+        0,
+        1000,
+        CVarOptions.Archive,
+        "Cap the frame rate through NVIDIA Reflex, in frames per second. 0 for no cap. Needs the NVIDIA runtime.");
+
+    /// <summary>Whether frame generation interpolates the picture and the interface separately.</summary>
+    public static readonly BoolCVar FrameGenerationUiRecomposition = CVar.Bool(
+        "r_dlssg_ui_recomposition",
+        true,
+        CVarOptions.Archive,
+        "DLSS frame generation: interpolate the picture without the interface and lay the interface back over it.");
+
+    /// <summary>Whether ray reconstruction is fed the raw traced light, or the engine's own denoised light.</summary>
+    public static readonly BoolCVar RayReconstructionRaw = CVar.Bool(
+        "r_rr_raw",
+        true,
+        CVarOptions.Developer,
+        "DLSS ray reconstruction: feed it the raw one-ray-a-pixel lighting (on, as NVIDIA intends) or the engine's "
+            + "own denoised lighting (off, to tell its reconstruction apart from its denoising).");
+
+    /// <summary>Which ray-reconstruction input to show in place of its output, for checking what it was fed.</summary>
+    public static readonly NumericCVar<int> RayReconstructionGuideView = CVar.Int(
+        "r_rr_guide_view",
+        0,
+        0,
+        4,
+        CVarOptions.Developer,
+        "Show a DLSS ray reconstruction input instead of its output: 1 diffuse albedo, 2 specular albedo, "
+            + "3 normal and roughness, 4 colour before transparency. DLAA only (the input and output sizes must match).");
+
+    /// <summary>Whether the interface is drawn into a layer of its own and composited, even with nothing needing it.</summary>
+    public static readonly BoolCVar InterfaceLayer = CVar.Bool(
+        "r_ui_layer",
+        false,
+        CVarOptions.Developer,
+        "Draw the interface into its own layer and composite it over the picture even when no NVIDIA feature needs it.");
+
     /// <summary>Whether cut-outs use a temporally-resolved hashed alpha test rather than a hard one.</summary>
     /// <remarks>
     /// A hard cut-out keeps or drops whole pixels, so a chain-link fence or a wire thinner than a pixel

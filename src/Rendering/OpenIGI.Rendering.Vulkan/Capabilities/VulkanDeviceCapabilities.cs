@@ -197,6 +197,18 @@ internal sealed class VulkanDeviceCapabilities
     /// <summary>Gets the adapter's core limits.</summary>
     public PhysicalDeviceLimits Limits { get; init; }
 
+    /// <summary>Gets a value indicating whether Vulkan 1.3 private data is enabled.</summary>
+    /// <remarks>
+    /// Asked for only when Streamline is running: nothing in the backend creates a private-data slot, but
+    /// Streamline's own Vulkan layer does, against the device this backend builds, and validation reports
+    /// it the moment that happens on a device without the feature.
+    /// </remarks>
+    public bool PrivateData { get; init; }
+
+    /// <summary>Gets a value indicating whether presents carry an id (<c>VK_KHR_present_id</c>).</summary>
+    /// <remarks>Asked for only when Streamline is running; see <see cref="VulkanExtensionNames.PresentId"/>.</remarks>
+    public bool PresentId { get; init; }
+
     /// <summary>
     /// Gets a value indicating whether rays can be traced against a hardware acceleration structure from
     /// an ordinary compute shader — the path every indirect-lighting pass takes.

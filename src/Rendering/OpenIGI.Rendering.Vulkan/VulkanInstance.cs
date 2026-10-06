@@ -52,16 +52,31 @@ internal sealed unsafe class VulkanInstance : IDisposable
     /// <param name="surfaceProvider">The window's surface bridge.</param>
     /// <param name="enableValidation">Whether to attach the Khronos validation layer if it is present.</param>
     /// <param name="logger">Where to report backend diagnostics.</param>
+    /// <param name="vk">
+    /// The API to create everything through, or <see langword="null"/> for the system loader. Streamline
+    /// hands in one bound to its interposer, so that it sees the instance and the device being created.
+    /// </param>
     /// <exception cref="GraphicsDeviceException">The instance or the surface could not be created.</exception>
-    public VulkanInstance(IVulkanSurfaceProvider surfaceProvider, bool enableValidation, IOpenIgiLogger logger)
+    public VulkanInstance(IVulkanSurfaceProvider surfaceProvider, bool enableValidation, IOpenIgiLogger logger, Vk? vk = null)
     {
         ArgumentNullException.ThrowIfNull(surfaceProvider);
         _logger = logger ?? NullLogger.Instance;
-        Vk = Vk.GetApi();
+        Vk = vk ?? Vk.GetApi();
 
         List<string> extensions = [.. surfaceProvider.GetRequiredInstanceExtensions()];
         bool wantDebug = enableValidation && ValidationLayerAvailable();
         if (wantDebug && !extensions.Contains(ExtDebugUtils.ExtensionName))
+        {
+            extensions.Add(ExtDebugUtils.ExtensionName);
+        }
+
+        // Under Streamline the debug-utils extension goes on whether or not anything here validates: its
+        // plugins name their own images and buffers and mark their passes through it, which is what makes them
+        // legible in a frame debugger (Streamline's programming guide asks for it), and without it every start
+        // logs that the names and markers are off. Enabling it costs nothing until a tool listens.
+        if (vk is not null
+            && !extensions.Contains(ExtDebugUtils.ExtensionName)
+            && InstanceExtensionAvailable(ExtDebugUtils.ExtensionName))
         {
             extensions.Add(ExtDebugUtils.ExtensionName);
         }

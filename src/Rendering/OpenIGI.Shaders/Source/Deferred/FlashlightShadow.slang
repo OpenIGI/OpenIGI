@@ -63,7 +63,8 @@ struct Params
     // xyz the beam's axis in view space, w the cosine of the spill's half-angle.
     float4 axisCull;
 
-    // the range, how far short of the lens a ray stops, the march's step count, _.
+    // the range, how far short of the lens a ray stops, the march's step count, and above a half when the
+    // trace feeds ray reconstruction raw.
     float4 reach;
 
     // the hit records' address as a bit pattern (low word, high word), _, _.
@@ -74,18 +75,7 @@ struct Params
 
 // A pixel's own random numbers, fixed for the pixel and moved every frame along the R2 sequence, so the
 // points on the lens spread evenly over the frames the temporal resolve blends.
-uint3 Pcg3d(uint3 v)
-{
-    v = (v * 1664525u) + 1013904223u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    v ^= v >> 16u;
-    v.x += v.y * v.z;
-    v.y += v.z * v.x;
-    v.z += v.x * v.y;
-    return v;
-}
+#include "../Common/PixelNoise.slang"
 
 float3 PixelRandom(int2 px, float frame)
 {
@@ -193,8 +183,9 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         return;
     }
 
+    // Raw, for ray reconstruction: drawn afresh each frame, which is what it denoises.
     float frame = p.cameraFrame.w;
-    float3 random = PixelRandom(px, frame);
+    float3 random = p.reach.w > 0.5 ? WhiteNoise3(px, uint(frame), 0xF1A5u) : PixelRandom(px, frame);
 
     // A point on the lens, uniform over its disc square to the beam, so the edge of a shadow has the few
     // centimetres of softness a real emitter gives it.

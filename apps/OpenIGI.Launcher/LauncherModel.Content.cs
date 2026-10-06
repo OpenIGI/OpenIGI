@@ -87,6 +87,10 @@ internal sealed class LoadOrderItem
 internal sealed partial class LauncherModel
 {
     private const string ContentFolder = "content";
+
+    // Where runtime packs are installed: beside the content, never in it, so nothing that lists or stacks the
+    // game's content folders ever sees a library of native code.
+    private const string RuntimeFolder = "runtime";
     private const string ListingFile = "listing.json";
     private const string ThumbnailFolder = ".thumbnails";
     private const string ProfileFile = "profile.json";
@@ -103,6 +107,7 @@ internal sealed partial class LauncherModel
     private readonly Dictionary<string, LocalListing> _localListings = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<LoadOrderItem> _loadOrder = [];
     private readonly List<ContentEntry> _available = [];
+    private readonly List<ContentEntry> _runtime = [];
     private ContentIndex? _contentIndex;
     private bool _checkingContent;
 
@@ -114,6 +119,9 @@ internal sealed partial class LauncherModel
 
     /// <summary>Gets the selected game's packs that are offered and not installed.</summary>
     public IReadOnlyList<ContentEntry> AvailableContent => _available;
+
+    /// <summary>Gets the runtime packs, installed or offered: the engine's, whichever game is selected.</summary>
+    public IReadOnlyList<ContentEntry> RuntimeContent => _runtime;
 
     /// <summary>Installs a pack, updates it to its newest version, or repairs the files a verify found damaged.</summary>
     /// <param name="id">The pack.</param>
@@ -167,7 +175,10 @@ internal sealed partial class LauncherModel
                     entry.Installed = installed;
                     entry.Damaged = new HashSet<string>();
                     entry.DownloadBytes = 0;
-                    ChangeSettings(s => ContentLoadOrder.AddInstalled(OrderFor(s, pack.Game), id));
+                    if (pack.Kind != ContentKind.Runtime)
+                    {
+                        ChangeSettings(s => ContentLoadOrder.AddInstalled(OrderFor(s, pack.Game), id));
+                    }
 
                     Job = null;
                     Recompute();
@@ -379,6 +390,19 @@ internal sealed partial class LauncherModel
             environment[GameStarter.LegacyOverridesVariable] = legacy;
         }
 
+        // Each installed runtime the game knows a variable for, by its folder. One the files of which are damaged,
+        // or that this game build is too old for, is left out: the game then runs without it, as it would with
+        // none installed.
+        foreach (ContentEntry runtime in _runtime)
+        {
+            if (runtime.Installed is not null
+                && runtime.State is not (ContentState.Incompatible or ContentState.Damaged or ContentState.Working)
+                && RuntimePacks.VariableFor(runtime.Pack.Id) is { } variable)
+            {
+                environment[variable] = InstallerAt(ContentKind.Runtime, runtime.Pack.Id).Files;
+            }
+        }
+
         try
         {
             ContentProfile.Write(path, profile);
@@ -406,8 +430,11 @@ internal sealed partial class LauncherModel
         return order;
     }
 
-    private ContentInstaller ContentInstallerFor(string id) =>
-        new(_http, Path.Combine(Settings.Library.Trim(), ContentFolder, id));
+    private ContentInstaller ContentInstallerFor(string id) => InstallerAt(Find(id)?.Pack.Kind ?? ContentKind.Overlay, id);
+
+    // Where a pack of a kind lives in the library.
+    private ContentInstaller InstallerAt(ContentKind kind, string id) =>
+        new(_http, Path.Combine(Settings.Library.Trim(), kind == ContentKind.Runtime ? RuntimeFolder : ContentFolder, id));
 
     private ContentEntry? Find(string id) => _packs.Find(p => p.Pack.Id == id);
 
@@ -417,20 +444,29 @@ internal sealed partial class LauncherModel
     {
         _packs.Clear();
         _targets.Clear();
-        string folder = Path.Combine(Settings.Library.Trim(), ContentFolder);
-        if (!Directory.Exists(folder))
-        {
-            return;
-        }
 
-        foreach (string directory in Directory.EnumerateDirectories(folder).Order(StringComparer.Ordinal))
+        // Each kind from its own folder, and only a pack of that kind from it: a runtime manifest found among the
+        // content, or the other way about, is left where it is rather than loaded from the wrong place.
+        foreach ((ContentKind kind, string name) in (ReadOnlySpan<(ContentKind, string)>)[(ContentKind.Overlay, ContentFolder), (ContentKind.Runtime, RuntimeFolder)])
         {
-            string id = Path.GetFileName(directory);
-            if (ContentManifest.IsValidId(id) && ContentInstallerFor(id).Installed() is { } installed && installed.Id == id)
+            string folder = Path.Combine(Settings.Library.Trim(), name);
+            if (!Directory.Exists(folder))
             {
-                // The listing last seen, so a renamed pack keeps its name and picture offline too.
-                ContentPack pack = RememberedListing(id) ?? installed.Listing;
-                _packs.Add(new ContentEntry { Pack = pack, Installed = installed, DownloadBytes = 0, ThumbnailPath = CachedThumbnail(pack) });
+                continue;
+            }
+
+            foreach (string directory in Directory.EnumerateDirectories(folder).Order(StringComparer.Ordinal))
+            {
+                string id = Path.GetFileName(directory);
+                if (ContentManifest.IsValidId(id)
+                    && InstallerAt(kind, id).Installed() is { } installed
+                    && installed.Id == id
+                    && installed.Kind == kind)
+                {
+                    // The listing last seen, so a renamed pack keeps its name and picture offline too.
+                    ContentPack pack = RememberedListing(id) ?? installed.Listing;
+                    _packs.Add(new ContentEntry { Pack = pack, Installed = installed, DownloadBytes = 0, ThumbnailPath = CachedThumbnail(pack) });
+                }
             }
         }
 
@@ -670,8 +706,11 @@ internal sealed partial class LauncherModel
 
         foreach (ContentEntry entry in _packs)
         {
-            entry.Enabled = Settings.ContentOrder.TryGetValue(entry.Pack.Game, out List<ContentOrderEntry>? order)
-                && order.Find(e => e.Id == entry.Pack.Id) is { Enabled: true };
+            // A runtime is in use whenever it is installed: it stands in no load order to be switched off in.
+            entry.Enabled = entry.Pack.Kind == ContentKind.Runtime
+                ? entry.Installed is not null
+                : Settings.ContentOrder.TryGetValue(entry.Pack.Game, out List<ContentOrderEntry>? order)
+                    && order.Find(e => e.Id == entry.Pack.Id) is { Enabled: true };
             if ((Job?.ContentId == entry.Pack.Id && !Job.Paused) || _busy.Contains(entry.Pack.Id))
             {
                 entry.State = ContentState.Working;
@@ -739,6 +778,8 @@ internal sealed partial class LauncherModel
     {
         _loadOrder.Clear();
         _available.Clear();
+        _runtime.Clear();
+        _runtime.AddRange(_packs.Where(static p => p.Pack.Kind == ContentKind.Runtime));
         if (Current.Retail is not { } title)
         {
             return;

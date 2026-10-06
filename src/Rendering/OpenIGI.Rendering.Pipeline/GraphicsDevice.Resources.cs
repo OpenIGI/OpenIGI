@@ -90,12 +90,13 @@ public sealed partial class GraphicsDevice
         Pass();
         ClosePass();
 
-        IRhiTexture destination = _textures.Reformat(texture, FrameCopyFormat(PresentFormat))!;
+        IRhiTexture frameColour = FrameColourSource;
+        IRhiTexture destination = _textures.Reformat(texture, FrameCopyFormat(frameColour.Format))!;
         int columns = Math.Min(width, Math.Min(destination.Width, CurrentMode.Width));
         int rows = Math.Min(height, Math.Min(destination.Height, CurrentMode.Height));
 
         Encoder().CopyTextureToTexture(
-            new RhiTextureRegion(_frame.Target.Texture),
+            new RhiTextureRegion(frameColour),
             new RhiTextureRegion(destination),
             new RhiExtent3D(columns, rows));
     }

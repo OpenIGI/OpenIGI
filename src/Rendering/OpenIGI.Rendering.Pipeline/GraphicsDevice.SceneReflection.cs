@@ -88,7 +88,10 @@ public sealed partial class GraphicsDevice
         {
             reflect.Bind("uScene", TracedWorld!.TraceableScene);
             reflect.Bind("uCutoutMasks", TracedWorld.CutoutMasks, _reflectSampler!);
+            reflect.Bind("uHitDistance", scene.View(SceneTargetId.SpecularHitDistance));
         }
+
+        _specularHitDistanceWritten = traces;
 
         bool roofs = HasShelterMap();
         Span<float> block = stackalloc float[ReflectionParameters.Floats];
@@ -102,7 +105,7 @@ public sealed partial class GraphicsDevice
             roofs ? _shelterTransform : ShelterMapTransform.None,
             _cameraPosition,
             SkyConditions.ViewHeightFor(altitudeMetres: 2f),
-            (int)(_frameCounter % 64UL),
+            RawLighting ? (int)(_frameCounter & 0xFFFFFFUL) : (int)(_frameCounter % 64UL),
             ReflectionReachMetres,
             traces,
             TracedReflectionReachMetres,
@@ -112,7 +115,8 @@ public sealed partial class GraphicsDevice
             _viewModelLensX,
             _viewModelLensY,
             marchesField ? _distanceFieldBinding : DistanceFieldBinding.None,
-            traces ? TracedWorld!.HitRecordAddress : 0UL));
+            traces ? TracedWorld!.HitRecordAddress : 0UL,
+            RawLighting));
 
         reflect.Bind("uLit", scene.View(SceneTargetId.Lit), _reflectSampler!);
         reflect.Bind("uSceneDepth", scene.View(SceneTargetId.Depth), _reflectSampler!);
@@ -131,6 +135,12 @@ public sealed partial class GraphicsDevice
         }
 
         RecordReflectionComposite(scene, isolate);
+
+        // The surfaces' own light, so it belongs in the colour before transparency as much as in the lit image.
+        if (RawLighting && ColourBeforeTransparencyTaken && !isolate && _colourBeforeTransparency is { } before)
+        {
+            RecordReflectionComposite(scene, isolate, before.View);
+        }
     }
 
     /// <summary>Tells the shading how far this frame's reflection answers for every pixel it reaches.</summary>

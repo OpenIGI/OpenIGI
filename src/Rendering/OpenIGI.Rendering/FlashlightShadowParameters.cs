@@ -45,6 +45,10 @@ public static class FlashlightShadowParameters
     /// The device address of the traced world's hit records, for the rays' cut-out test; nought where there
     /// are none, and every candidate is then taken as solid.
     /// </param>
+    /// <param name="rawNoise">
+    /// Whether the trace feeds ray reconstruction raw: white noise keyed on the frame count, which then wraps
+    /// at 2^24 rather than 2^16 so consecutive frames never repeat within a session's reach.
+    /// </param>
     public static void WriteTrace(
         Span<float> data,
         int width,
@@ -54,7 +58,8 @@ public static class FlashlightShadowParameters
         in DepthUnprojection unprojection,
         in FlashlightLight light,
         long frameIndex,
-        ulong cutoutRecords = 0)
+        ulong cutoutRecords = 0,
+        bool rawNoise = false)
     {
         Require(data, TraceFloats);
         data.Clear();
@@ -71,7 +76,7 @@ public static class FlashlightShadowParameters
         data[24] = camera.X;
         data[25] = camera.Y;
         data[26] = camera.Z;
-        data[27] = frameIndex % 65536;
+        data[27] = rawNoise ? frameIndex & 0xFFFFFF : frameIndex % 65536;
 
         data[28] = light.ViewPosition.X;
         data[29] = light.ViewPosition.Y;
@@ -90,7 +95,7 @@ public static class FlashlightShadowParameters
         data[36] = light.Range;
         data[37] = MathF.Max(light.Clearance, 0.02f);
         data[38] = ScreenSteps;
-        data[39] = 0f;
+        data[39] = rawNoise ? 1f : 0f;
 
         // The records' address as a bit pattern, low word then high, as every other trace carries it.
         data[40] = BitConverter.UInt32BitsToSingle((uint)cutoutRecords);

@@ -284,6 +284,16 @@
       "wgslStorageFormat": "None",
       "storageAccess": "None",
       "arrayed": true
+    },
+    {
+      "name": "uHitDistance",
+      "group": 0,
+      "binding": 27,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "R32Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "WriteOnly"
     }
   ],
   "pushBlock": null,

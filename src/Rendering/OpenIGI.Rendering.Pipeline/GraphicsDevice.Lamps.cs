@@ -37,6 +37,12 @@ public sealed partial class GraphicsDevice
     /// <summary>Gets this frame's lamps.</summary>
     private ReadOnlySpan<DeferredLocalLight> LocalLights => _localLights.AsSpan(0, _localLightCount);
 
+    /// <summary>The lamp trace's frame number: a short cycle for its sequences, the whole count for raw white noise.</summary>
+    private int LampFrameIndex => RawLighting ? (int)(_frameCounter & 0xFFFFFFUL) : (int)(_frameCounter % 64UL);
+
+    /// <summary>Whether the lamp shadows' filters run; the raw trace skips them whatever this says.</summary>
+    private static bool LampFilters => RenderCVars.LampDenoise.Value != 0;
+
     /// <inheritdoc/>
     public void SetLampOcclusionField(LampOcclusionField? field) => _lampField = field;
 
@@ -136,21 +142,22 @@ public sealed partial class GraphicsDevice
                     TracedWorld!.WorldScene,
                     _cameraPosition,
                     _lampBlock,
-                    (int)(_frameCounter % 64UL),
-                    RenderCVars.LampDenoise.Value != 0,
+                    LampFrameIndex,
+                    LampFilters,
                     TracedWorld.CutoutMasks,
                     TracedWorld.HitRecordAddress,
                     MinimumVisible: minimumVisibleLamp,
                     SunVisibility: sunMask,
                     SunDirection: sunDirection,
                     SunLuminance: sunLuminance,
-                    LightingChanged: lightingChanged)
+                    LightingChanged: lightingChanged,
+                    Raw: RawLighting)
                 : new TracedLampFrame(
                     null,
                     _cameraPosition,
                     _lampBlock,
-                    (int)(_frameCounter % 64UL),
-                    RenderCVars.LampDenoise.Value != 0,
+                    LampFrameIndex,
+                    LampFilters,
                     null,
                     0UL,
                     _textures.Resolve(_lampField!.Value.Clipmaps).View,
@@ -163,7 +170,8 @@ public sealed partial class GraphicsDevice
                     _lampMapSampler,
                     lightingChanged,
                     _lampBounceMapArray,
-                    WriteLampCoarseBlock());
+                    WriteLampCoarseBlock(),
+                    RawLighting);
         IRhiTextureView? lampVelocity = _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null;
 
         // Step by step while measuring, so the trace and the two filters are told apart in the breakdown.

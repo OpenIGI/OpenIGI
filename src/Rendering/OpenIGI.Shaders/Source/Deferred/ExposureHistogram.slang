@@ -8,6 +8,10 @@
 
 [[vk::binding(2, 0)]] RWStructuredBuffer<Atomic<uint>> uBins;
 
+// The lit scene, read for its alpha alone: which pixels are the world. The same image as uScene unless the
+// picture metered is a reconstruction's output, which carries no such marker and may be larger.
+[[vk::binding(4, 0)]] Texture2D<float4> uMarker;
+
 struct Params
 {
     // width, height, unused, unused.
@@ -43,7 +47,11 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint slot : SV_GroupIndex)
         // to the camera would otherwise raise the metered luminance and darken the whole frame, so that
         // merely holstering it changed the exposure of a room that had not moved.
         float4 lit = uScene.Load(int3(px, 0));
-        if (lit.a >= 0.5)
+        uint markerWidth;
+        uint markerHeight;
+        uMarker.GetDimensions(markerWidth, markerHeight);
+        int2 markerPx = int2((float2(px) + 0.5) * float2(float(markerWidth), float(markerHeight)) / p.size.xy);
+        if (uMarker.Load(int3(markerPx, 0)).a >= 0.5)
         {
             // Luminance, as a light meter reads: the exposure puts the scene's middle at the middle of the
             // display, and that is a matter of how bright the scene looks. A plain mean of the channels

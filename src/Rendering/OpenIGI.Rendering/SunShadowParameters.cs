@@ -45,6 +45,10 @@ public static class SunShadowParameters
     /// <param name="recordAddress">Where the hit records live, or zero to take every hit at face value.</param>
     /// <param name="jitterX">This frame's horizontal sub-pixel jitter, in pixels.</param>
     /// <param name="jitterY">This frame's vertical sub-pixel jitter, in pixels.</param>
+    /// <param name="rawNoise">
+    /// Whether the trace feeds ray reconstruction raw: white noise keyed on the whole frame count, which
+    /// <paramref name="frameIndex"/> must then be, rather than the cycling dither.
+    /// </param>
     public static void WriteTrace(
         Span<float> data,
         int width,
@@ -57,7 +61,8 @@ public static class SunShadowParameters
         float frameIndex,
         ulong recordAddress,
         float jitterX = 0f,
-        float jitterY = 0f)
+        float jitterY = 0f,
+        bool rawNoise = false)
     {
         Require(data, TraceFloats);
         data.Clear();
@@ -89,6 +94,7 @@ public static class SunShadowParameters
         // The frame's sub-pixel jitter, so the trace rebuilds each position where its depth was measured.
         data[33] = jitterX;
         data[34] = jitterY;
+        data[35] = rawNoise ? 1f : 0f;
 
         // The record buffer's address, as the two words the shader reassembles it from: the block is
         // declared uint4 there, so the bits are what matter and not the type they travel in.

@@ -193,6 +193,10 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         VkCheck.Ok(_vk.BeginCommandBuffer(transition, &begin), "vkBeginCommandBuffer");
 
+        // What frame generation reads when the image is presented goes back into the layout its tag named,
+        // whatever the passes after the tag did with it.
+        _streamline?.PrepareForPresent(transition);
+
         if (_frameTextures[_frameSlot] is { } target)
         {
             Transition(transition, target, ImageLayout.PresentSrcKhr);
@@ -213,13 +217,36 @@ internal sealed unsafe partial class VulkanRhiDevice
         _pending.Clear();
         HoldForSlot(_frameSlot, buffers);
 
-        Semaphore wait = _acquired[_frameSlot];
         Semaphore signal = _presentable[_imageIndex];
-        PipelineStageFlags stage = PipelineStageFlags.ColorAttachmentOutputBit;
+
+        // While frame generation is loaded the image handed out is Streamline's own, which it may still be
+        // writing; everything waits for it, not only colour output.
+        PipelineStageFlags acquireStage = _streamline?.WaitAcquireOnAllStages == true
+            ? PipelineStageFlags.AllCommandsBit
+            : PipelineStageFlags.ColorAttachmentOutputBit;
 
         // A flush earlier in the frame waited on the image already, and finished before anything after
         // it was sent, so everything here is ordered after the acquire without waiting a second time.
-        uint waits = _acquireWaited ? 0u : 1u;
+        // Frame generation's "inputs consumed" fence, when it handed one over, is waited on as well.
+        Semaphore* waitSemaphores = stackalloc Semaphore[2];
+        PipelineStageFlags* waitStages = stackalloc PipelineStageFlags[2];
+        ulong* waitValues = stackalloc ulong[2];
+        uint waits = 0;
+        if (!_acquireWaited)
+        {
+            waitSemaphores[waits] = _acquired[_frameSlot];
+            waitStages[waits] = acquireStage;
+            waitValues[waits] = 0;
+            waits++;
+        }
+
+        if (TakeFrameWait(out Semaphore inputsDone, out ulong inputsValue))
+        {
+            waitSemaphores[waits] = inputsDone;
+            waitStages[waits] = PipelineStageFlags.AllCommandsBit;
+            waitValues[waits] = inputsValue;
+            waits++;
+        }
 
         // The present's semaphore, and the count a readback of this frame waits for.
         Semaphore* signals = stackalloc Semaphore[2] { signal, _timeline };
@@ -227,6 +254,8 @@ internal sealed unsafe partial class VulkanRhiDevice
         TimelineSemaphoreSubmitInfo counted = new()
         {
             SType = StructureType.TimelineSemaphoreSubmitInfo,
+            WaitSemaphoreValueCount = waits,
+            PWaitSemaphoreValues = waitValues,
             SignalSemaphoreValueCount = 2,
             PSignalSemaphoreValues = values,
         };
@@ -238,8 +267,8 @@ internal sealed unsafe partial class VulkanRhiDevice
                 SType = StructureType.SubmitInfo,
                 PNext = HasTimeline ? &counted : null,
                 WaitSemaphoreCount = waits,
-                PWaitSemaphores = &wait,
-                PWaitDstStageMask = &stage,
+                PWaitSemaphores = waitSemaphores,
+                PWaitDstStageMask = waitStages,
                 CommandBufferCount = (uint)buffers.Length,
                 PCommandBuffers = first,
                 SignalSemaphoreCount = HasTimeline ? 2u : 1u,
@@ -249,7 +278,14 @@ internal sealed unsafe partial class VulkanRhiDevice
             Checked(_vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]), "vkQueueSubmit");
         }
 
-        Result presented = swapchain.Present(signal, _imageIndex);
+        // The present's own latency markers belong here: nothing above the backend knows when it happens.
+        // Its id is the frame's index, which is how the driver ties the markers to this present.
+        _streamline?.BeforePresent();
+        Result presented = swapchain.Present(
+            signal,
+            _imageIndex,
+            _streamline is { FrameOpen: true } streamline ? streamline.FrameIndex : 0);
+        _streamline?.AfterPresent();
         _inFrame = false;
         _frameSlot = (_frameSlot + 1) % _inFlight.Length;
 

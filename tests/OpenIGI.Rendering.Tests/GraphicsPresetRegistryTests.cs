@@ -149,6 +149,13 @@ public sealed class GraphicsPresetRegistryTests
             // the torch the player carries, kept whatever tier draws it; a preset resetting it would be
             // swapping their torch for a new one.
             "r_flashlight_wear",
+
+            // NVIDIA's features. They need an optional runtime and an RTX adapter, so a preset writing one would
+            // be writing something many machines it runs on cannot do; and a player who chose DLSS or a frame
+            // cap keeps it whatever tier they pick. Each falls back to the engine's own path, and says why,
+            // where it cannot run.
+            "r_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
+            "r_dlssg_ui_recomposition",
         ];
 
         _ = RenderCVars.Lighting;

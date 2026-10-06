@@ -142,14 +142,16 @@ public sealed class AutoExposure : IDisposable
     /// <summary>Meters this frame's lit scene into the slot's readback, unless that slot's map is still in flight.</summary>
     /// <param name="encoder">The frame's encoder, outside any pass.</param>
     /// <param name="frameInFlight">The slot this frame writes.</param>
-    /// <param name="lit">The lit scene colour.</param>
-    /// <param name="width">Its width.</param>
+    /// <param name="lit">The picture to meter: the lit scene, or a reconstruction of it.</param>
+    /// <param name="marker">The lit scene, whose alpha says which pixels are the world.</param>
+    /// <param name="width">The metered picture's width.</param>
     /// <param name="height">Its height.</param>
     /// <param name="timestamps">Where the stage's timing goes, if it is timed.</param>
     public void Record(
         IRhiCommandEncoder encoder,
         int frameInFlight,
         IRhiTextureView lit,
+        IRhiTextureView marker,
         int width,
         int height,
         RhiTimestampWrites? timestamps)
@@ -180,6 +182,7 @@ public sealed class AutoExposure : IDisposable
         using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(timestamps, "exposure")))
         {
             _histogram.Bind("uScene", lit, _sampler);
+            _histogram.Bind("uMarker", marker);
             _histogram.Bind("uBins", _bins);
             _histogram.Bind("p", _parameters.Write<float>(frameInFlight, parameters));
             _histogram.Dispatch(pass, width, height);

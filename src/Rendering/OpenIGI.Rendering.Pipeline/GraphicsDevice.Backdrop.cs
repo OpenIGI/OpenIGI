@@ -34,7 +34,10 @@ public sealed partial class GraphicsDevice
         Pass();
         ClosePass();
 
-        RhiTextureFormat format = FrameCopyFormat(PresentFormat);
+        // The picture as it stands: the back buffer, or under a layered frame the picture's own image -- the
+        // interface layer is not composited until the frame ends.
+        IRhiTexture frameColour = FrameColourSource;
+        RhiTextureFormat format = FrameCopyFormat(frameColour.Format);
         if (_backdropSource is null || _backdropSource.Width != width || _backdropSource.Height != height || _backdropSource.Format != format)
         {
             if (_backdropSource is not null)
@@ -51,9 +54,9 @@ public sealed partial class GraphicsDevice
         }
 
         Encoder().CopyTextureToTexture(
-            new RhiTextureRegion(_frame.Target.Texture),
+            new RhiTextureRegion(frameColour),
             new RhiTextureRegion(_backdropSource),
-            new RhiExtent3D(Math.Min(width, _frame.Target.Texture.Width), Math.Min(height, _frame.Target.Texture.Height)));
+            new RhiExtent3D(Math.Min(width, frameColour.Width), Math.Min(height, frameColour.Height)));
 
         if (_backdropBlur is null)
         {

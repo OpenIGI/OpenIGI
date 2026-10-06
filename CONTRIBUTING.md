@@ -69,7 +69,8 @@ copying its findings.
 
 ## Content packs and mods
 
-They are two separate systems, and they stay separate in names, folders, contracts and UI.
+They are two separate systems, and they stay separate in names, folders, contracts and UI. Runtime
+components, the third kind of download, are neither.
 
 - **Content** is asset overlays: folders that mirror the game's paths and replace its files.
   - They install to `<Library>/content/<id>/files`, are described by `ContentManifest`
@@ -90,6 +91,19 @@ They are two separate systems, and they stay separate in names, folders, contrac
   plugin host to load them, and the launcher's Mods tab.
   - A mod is never loaded through `ResourceOverrides`.
   - Content never runs code.
+- **Runtime components** are vendor-signed native libraries the engine loads, the first being NVIDIA's
+  Streamline runtime (DLSS, ray reconstruction, frame generation, Reflex).
+  - They are published as content packs of kind `Runtime` (`ContentKind`, `src/Core/OpenIGI.Releases`) for the
+    game id `engine`, which no game has, so a launcher from before kinds never offers one.
+  - They install to `<Library>/runtime/<id>/files`, stand in no load order, and reach the game through a
+    variable naming their folder (`RuntimePacks.VariableFor`; `OPENIGI_STREAMLINE_PATH` for Streamline).
+  - The engine loads a runtime's libraries by absolute path and only after checking the signature of every
+    library in the folder: NVIDIA's, or Microsoft's for the C++ runtime they carry. Anything else, and the
+    whole folder is refused.
+  - The release tool refuses a runtime pack holding configuration (`*.json`), logs or a development build.
+  - None of this is content: content still never runs code, and a runtime is never a mod. Nothing a runtime
+    pack carries is in this repository or its builds; a development checkout fetches it with
+    `tools/fetch-streamline.ps1`.
 
 ## Tests
 

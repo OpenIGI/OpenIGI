@@ -42,13 +42,18 @@ public sealed class SpritePipelineSet : IDisposable
     /// a pass with none. The 2D path ignores depth, but a pipeline still has to declare the attachment
     /// the pass carries: one that says nothing is refused outright by a backend that checks.
     /// </param>
+    /// <param name="intoLayer">
+    /// Whether the target is an interface layer composited over the picture later, in which case additive
+    /// draws leave its coverage alone. See <see cref="LayerBlendFor"/>.
+    /// </param>
     public SpritePipelineSet(
         IRhiDevice device,
         ShaderModuleId module,
         IRhiBindGroupLayout textureLayout,
         RhiTextureFormat targetFormat,
         IReadOnlyList<BlendMode> blends,
-        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined)
+        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined,
+        bool intoLayer = false)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(textureLayout);
@@ -81,7 +86,7 @@ public sealed class SpritePipelineSet : IDisposable
                 vertex,
                 fragment,
                 [SpriteVertexLayout.Layout()],
-                [new RhiColorTargetState(targetFormat, BlendFor(blends[i]))],
+                [new RhiColorTargetState(targetFormat, intoLayer ? LayerBlendFor(blends[i]) : BlendFor(blends[i]))],
 
                 // Present but neither testing nor writing: the 2D path draws over whatever is there.
                 depthFormat is RhiTextureFormat.Undefined
@@ -148,6 +153,23 @@ public sealed class SpritePipelineSet : IDisposable
             nameof(blend),
             blend,
             "The 2D path does not build a pipeline for that blend mode."),
+    };
+
+    /// <summary>How a blend mode is stated when the 2D path draws into an interface layer composited later.</summary>
+    /// <param name="blend">The blend mode.</param>
+    /// <returns>The blend state.</returns>
+    /// <remarks>
+    /// The layer is laid over the picture as <c>ui.rgb + (1 − ui.a)·picture</c>, so its alpha is how much of
+    /// the picture each pixel hides. An additive draw adds light and hides nothing: its alpha must leave the
+    /// layer's coverage as it was, or every glow would darken the picture under it once composited. Everything
+    /// else blends exactly as it does straight into the back buffer.
+    /// </remarks>
+    public static RhiBlendState? LayerBlendFor(BlendMode blend) => blend switch
+    {
+        BlendMode.Additive => new RhiBlendState(
+            new RhiBlendComponent(RhiBlendFactor.SourceAlpha, RhiBlendFactor.One, RhiBlendOperation.Add),
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.One, RhiBlendOperation.Add)),
+        _ => BlendFor(blend),
     };
 
     /// <inheritdoc/>

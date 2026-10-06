@@ -29,6 +29,11 @@ namespace OpenIGI.Releases;
 /// <param name="Published">When this version was published.</param>
 /// <param name="Size">The installed size: every file's length together.</param>
 /// <param name="Files">The files, by path relative to the pack's root, in ordinal order.</param>
+/// <param name="Kind">
+/// What the pack is: files the game reads in its own folders' place (<see cref="ContentKind.Overlay"/>, and
+/// every pack before kinds existed), or native code the engine loads (<see cref="ContentKind.Runtime"/>).
+/// Left out of the JSON for an overlay, so overlay manifests read and write exactly as they always have.
+/// </param>
 public sealed record ContentManifest(
     int Schema,
     string Id,
@@ -39,7 +44,8 @@ public sealed record ContentManifest(
     string? MinGameVersion,
     DateTimeOffset Published,
     long Size,
-    IReadOnlyList<ContentFile> Files)
+    IReadOnlyList<ContentFile> Files,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay)
 {
     /// <summary>The manifest format this library writes.</summary>
     public const int CurrentSchema = 1;
@@ -54,7 +60,7 @@ public sealed record ContentManifest(
 
     /// <summary>Gets the listing entry that stands for this version in the content index.</summary>
     [JsonIgnore]
-    public ContentPack Listing => new(Id, Version, Title, Summary, Game, MinGameVersion, Published, Size, DownloadSize);
+    public ContentPack Listing => new(Id, Version, Title, Summary, Game, MinGameVersion, Published, Size, DownloadSize, Kind: Kind);
 
     /// <summary>The largest picture a pack may have, in bytes.</summary>
     public const int MaxThumbnailBytes = 2 * 1024 * 1024;
@@ -100,6 +106,7 @@ public sealed record ContentChunk(string Hash, int Size, int StoredSize);
 /// <param name="Size">Its installed size.</param>
 /// <param name="Download">What installing it from nothing downloads.</param>
 /// <param name="Thumbnail">The address of the pack's picture, or <see langword="null"/> when it has none.</param>
+/// <param name="Kind">What the pack is; left out of the JSON for an overlay (see <see cref="ContentManifest.Kind"/>).</param>
 public sealed record ContentPack(
     string Id,
     string Version,
@@ -110,7 +117,8 @@ public sealed record ContentPack(
     DateTimeOffset Published,
     long Size,
     long Download,
-    string? Thumbnail = null)
+    string? Thumbnail = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay)
 {
     /// <summary>Gets the parsed <see cref="Version"/>.</summary>
     /// <exception cref="FormatException">The version is not a semantic version.</exception>
@@ -134,6 +142,38 @@ public sealed record ContentPack(
             && ReleaseVersion.TryParse(MinGameVersion, out ReleaseVersion minimum)
             && installed.CompareTo(minimum) >= 0;
     }
+}
+
+/// <summary>What a content pack is, which decides where it is installed and how the game is given it.</summary>
+public enum ContentKind
+{
+    /// <summary>Files the game reads in place of its own: textures, models, sounds. Stacked in a load order per game.</summary>
+    Overlay,
+
+    /// <summary>
+    /// Native libraries the engine loads, such as NVIDIA's DLSS runtime: one per engine rather than per game,
+    /// outside every load order, and handed to the game by a variable naming its folder. Published for the
+    /// game id <see cref="RuntimePacks.Game"/>, which no game has, so a launcher from before kinds never offers it.
+    /// </summary>
+    Runtime,
+}
+
+/// <summary>The game id a runtime pack is published for, and the variables that hand each one to the game.</summary>
+public static class RuntimePacks
+{
+    /// <summary>The game id every runtime pack is published for: the engine, not a game it runs.</summary>
+    public const string Game = "engine";
+
+    /// <summary>The NVIDIA Streamline runtime: DLSS, ray reconstruction, frame generation, Reflex.</summary>
+    public const string Streamline = "nvidia-streamline";
+
+    /// <summary>The variable the game reads the Streamline runtime's folder from.</summary>
+    public const string StreamlineVariable = "OPENIGI_STREAMLINE_PATH";
+
+    /// <summary>The variable a runtime pack's folder is handed to the game through, or null for a pack it does not know.</summary>
+    /// <param name="id">The pack.</param>
+    /// <returns>The variable's name.</returns>
+    public static string? VariableFor(string id) => id == Streamline ? StreamlineVariable : null;
 }
 
 /// <summary>What the update service lists of the optional content: every pack's newest version.</summary>

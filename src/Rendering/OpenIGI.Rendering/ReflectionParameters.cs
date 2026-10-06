@@ -54,6 +54,10 @@ public readonly record struct ReflectionCacheLookup(
 /// <param name="RigLensY">Its y scale.</param>
 /// <param name="Field">The distance field a marched ray walks; nought levels for none.</param>
 /// <param name="HitRecords">The traced world's hit records' device address, for the cut-out test; nought for none.</param>
+/// <param name="Raw">
+/// Whether DLSS ray reconstruction is the denoiser: a rough surface's ray drawn from white noise on the whole
+/// frame count (<paramref name="FrameIndex"/> must then be that) and laid down unspread.
+/// </param>
 public readonly record struct ReflectionFrame(
     int Width,
     int Height,
@@ -74,7 +78,8 @@ public readonly record struct ReflectionFrame(
     float RigLensX,
     float RigLensY,
     DistanceFieldBinding Field,
-    ulong HitRecords = 0UL);
+    ulong HitRecords = 0UL,
+    bool Raw = false);
 
 /// <summary>The reflection's parameter block (the Reflect module's Params), the same for every backend.</summary>
 /// <remarks>
@@ -155,6 +160,7 @@ public static class ReflectionParameters
         ShelterMapTransform shelter = frame.Shelter;
         data[40] = shelter.IsPresent ? 1f : 0f;
         data[41] = frame.Camera.Z;
+        data[42] = frame.Raw ? 1f : 0f;
 
         data[ShelterOffset] = shelter.OriginX;
         data[ShelterOffset + 1] = shelter.OriginY;

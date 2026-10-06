@@ -23,6 +23,10 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="LightingChanged">Whether a lamp's output changed a moment ago, which holds the history short.</param>
 /// <param name="CoarseMaps">Every lamp's coarse cube of maps, for the lamps the fine maps miss, or <see langword="null"/>.</param>
 /// <param name="Coarse">This frame's lamps' coarse records (<see cref="TracedLampShadow.CoarseFloats"/> floats).</param>
+/// <param name="Raw">
+/// Whether DLSS ray reconstruction is the denoiser: each pixel's rays drawn from white noise on the whole frame
+/// count (<paramref name="FrameIndex"/> must then be that), and neither filter runs.
+/// </param>
 /// <param name="SunLuminance">The sun's luminance as the lighting pass applies it; nought with no traced sun.</param>
 /// <param name="MinimumVisible">
 /// The summed lamp light at a pixel below which its shadow could not show at this exposure; such a pixel is
@@ -46,7 +50,8 @@ public readonly record struct TracedLampFrame(
     IRhiSampler? LampMapSampler = null,
     bool LightingChanged = false,
     IRhiTextureView? CoarseMaps = null,
-    ReadOnlyMemory<float> Coarse = default);
+    ReadOnlyMemory<float> Coarse = default,
+    bool Raw = false);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -129,7 +134,10 @@ public sealed class TracedLampShadow : IDisposable
     }
 
     /// <summary>Gets the filtered visibility the shading reads, or null before one is made.</summary>
-    public IRhiTextureView? Filtered => _filtered?.View;
+    public IRhiTextureView? Filtered => _rawLast ? _raw?.View : _filtered?.View;
+
+    // Whether the last frame recorded went to the shading raw, the trace itself standing as the filtered image.
+    private bool _rawLast;
 
     /// <summary>Gets the half-resolution width the lamps are traced at, for a frame of a given width.</summary>
     /// <param name="width">The render width.</param>
@@ -160,7 +168,9 @@ public sealed class TracedLampShadow : IDisposable
 
         const RhiTextureUsage usage = RhiTextureUsage.Storage | RhiTextureUsage.Sampled | RhiTextureUsage.RenderTarget;
 
-        _raw = Create(RhiTextureFormat.Rg16Float, usage, "lampshadow.raw");
+        // Four channels, not the two the filters read: raw, for ray reconstruction, the shading reads it in
+        // the filtered image's place, view depth and all.
+        _raw = Create(RhiTextureFormat.Rgba16Float, usage, "lampshadow.raw");
         _filtered = Create(RhiTextureFormat.Rgba16Float, usage, "lampshadow.filtered");
 
         for (int i = 0; i < _accumulated.Length; i++)
@@ -255,7 +265,8 @@ public sealed class TracedLampShadow : IDisposable
             frame.RecordAddress,
             frame.MinimumVisible,
             frame.SunDirection,
-            frame.SunVisibility is null ? 0f : frame.SunLuminance);
+            frame.SunVisibility is null ? 0f : frame.SunLuminance,
+            frame.Raw);
 
         if (frame.World is { } world)
         {
@@ -311,6 +322,15 @@ public sealed class TracedLampShadow : IDisposable
         }
         else
         {
+            return;
+        }
+
+        // Raw for ray reconstruction: the trace is the answer and neither filter runs. The history is let go
+        // so the filters start clean if the reconstruction is switched away.
+        _rawLast = frame.Raw;
+        if (frame.Raw)
+        {
+            _hasHistory = false;
             return;
         }
 

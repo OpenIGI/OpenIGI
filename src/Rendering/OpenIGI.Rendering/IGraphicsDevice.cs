@@ -1526,6 +1526,97 @@ public interface IGraphicsDevice : IDisposable
         Vector3d cameraPosition,
         Matrix3f viewToWorld);
 
+    /// <summary>Forgets every temporal history at the start of the next scene capture.</summary>
+    /// <param name="reason">Why, for the log.</param>
+    /// <remarks>
+    /// The upscaler's history, the traced shadows' and the fog's accumulation, the occlusion's, and an
+    /// NVIDIA reconstruction's own (its reset flag) all start over, and the frame's motion is measured as
+    /// none. Reasons accumulate until the capture that consumes them; calling it twice costs nothing.
+    /// </remarks>
+    void ResetHistory(HistoryResetReason reason);
+
+    /// <summary>Decides what the frame will be reconstructed with, and the render size that needs.</summary>
+    /// <param name="request">What the settings ask for, and the output size.</param>
+    /// <returns>
+    /// What will run. An NVIDIA reconstruction the device cannot run comes back as the engine's own, with the
+    /// reason; one it can, with the render size its runtime asked for.
+    /// </returns>
+    /// <remarks>Called once a frame before the scene target is sized; cheap when nothing has changed.</remarks>
+    ReconstructionPlan PlanReconstruction(in ReconstructionRequest request);
+
+    /// <summary>Gets a value indicating whether this frame's traced lighting goes to the frame unfiltered.</summary>
+    /// <remarks>
+    /// True while DLSS ray reconstruction is the denoiser: every traced light fires one ray a pixel from white
+    /// noise, and the game's own indirect gather is asked for the same -- one ray a pixel, with none of its
+    /// probe pooling or accumulation -- rather than its denoised probe grid.
+    /// </remarks>
+    bool RawLighting { get; }
+
+    /// <summary>Sets the mip bias every mipmapped texture is sampled with.</summary>
+    /// <param name="bias">The bias, in mip levels; negative is sharper.</param>
+    /// <remarks>
+    /// Changing it re-resolves the samplers of textures already loaded, so it takes effect on the next frame
+    /// rather than the next level. Cheap when it has not changed.
+    /// </remarks>
+    void SetTextureLodBias(float bias);
+
+    /// <summary>Begins a frame for latency measurement, pacing its start when low latency is on.</summary>
+    /// <returns><see langword="true"/> when a new frame began; false while the last one is still unpresented.</returns>
+    /// <remarks>
+    /// Called at the top of every pass of the host loop, before input is read; the device begins a frame only
+    /// once the previous one has reached the screen, so the loop passes that only tick neither pace nor
+    /// count. Where it begins one it sleeps as Reflex asks (the whole point is that the frame starts LATER,
+    /// so its input is fresher) and marks the simulation's start. Does nothing without NVIDIA's runtime.
+    /// </remarks>
+    bool BeginLatencyFrame();
+
+    /// <summary>Marks a boundary in the current frame for latency measurement.</summary>
+    /// <param name="marker">Which boundary.</param>
+    /// <remarks>The present's own boundaries are the device's; these are the ones only the host knows.</remarks>
+    void MarkLatency(LatencyMarker marker);
+
+    /// <summary>Sets NVIDIA Reflex's mode and its frame-rate cap.</summary>
+    /// <param name="mode">The mode.</param>
+    /// <param name="frameLimitFramesPerSecond">A cap in frames per second, or nought for none.</param>
+    /// <remarks>Cheap to repeat; sent to the driver only when it changes.</remarks>
+    void SetLowLatency(LowLatencyMode mode, int frameLimitFramesPerSecond);
+
+    /// <summary>Gets why low latency cannot run here, or an empty string where it can.</summary>
+    string LowLatencyUnavailable { get; }
+
+    /// <summary>Gets a value indicating whether the frame should be presented the moment it is recorded.</summary>
+    /// <remarks>
+    /// The original presents the frame at the head of the NEXT pass of its loop, and the engine keeps that
+    /// cadence. Latency measurement cannot work that way: the frame would be submitted to the GPU only once
+    /// the next one had begun, and every marker would describe the wrong frame. Where this is true the host
+    /// presents at the end of its recording instead, and the scheduled present finds nothing left to do.
+    /// </remarks>
+    bool PresentsOnRecord { get; }
+
+    /// <summary>Asks for DLSS frame generation this frame, and says what it is actually doing.</summary>
+    /// <param name="mode">The multiplier the settings ask for.</param>
+    /// <param name="gameplay">
+    /// Whether this frame is the game being played. Menus, loading screens, pauses and cuts are not: they
+    /// lack a continuous camera and the motion frame generation interpolates along, so it stands down for
+    /// them and resumes, without rebuilding anything, when play does.
+    /// </param>
+    /// <returns>What frame generation is doing, with the reason where that is not what was asked.</returns>
+    /// <remarks>
+    /// Call before the frame draws anything: turning frame generation on or off for good rebuilds the
+    /// swapchain, which cannot happen in the middle of a frame.
+    /// </remarks>
+    FrameGenerationStatus SetFrameGeneration(FrameGenerationMode mode, bool gameplay);
+
+    /// <summary>Gets why frame generation cannot run here, or an empty string where it can.</summary>
+    string FrameGenerationUnavailable { get; }
+
+    /// <summary>Gets each reconstruction kind with an empty string where it can run, and the reason where it cannot.</summary>
+    /// <remarks>
+    /// The engine's own is always available. The NVIDIA kinds need the optional runtime, started on an adapter
+    /// that runs them; the settings page greys them out with the reason otherwise.
+    /// </remarks>
+    IReadOnlyDictionary<ReconstructionKind, string> ReconstructionSupport { get; }
+
     /// <summary>Sets the sun's shadow map for this frame.</summary>
     /// <param name="settings">How the shadows are drawn, or <see cref="ShadowSettings.Off"/> for none.</param>
     /// <param name="cascades">The fitted cascades, from <see cref="ShadowCascades.Fit"/>.</param>

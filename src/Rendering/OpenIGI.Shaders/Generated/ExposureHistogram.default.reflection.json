@@ -52,6 +52,16 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uMarker",
+      "group": 0,
+      "binding": 4,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
     }
   ],
   "pushBlock": null,
