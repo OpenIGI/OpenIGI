@@ -31,6 +31,7 @@ internal static class ContentPublish
     /// <param name="Game">The game it is for, by title id.</param>
     /// <param name="MinGameVersion">The oldest game build that can read it, if any.</param>
     /// <param name="Kind">What the pack is: an overlay of game files, or a runtime the engine loads.</param>
+    /// <param name="Platforms">The platforms it is for, by runtime identifier, or <see langword="null"/> for every one.</param>
     internal sealed record Details(
         string Id,
         string Version,
@@ -38,7 +39,8 @@ internal static class ContentPublish
         string Summary,
         string Game,
         string? MinGameVersion,
-        ContentKind Kind = ContentKind.Overlay);
+        ContentKind Kind = ContentKind.Overlay,
+        IReadOnlyList<string>? Platforms = null);
 
     /// <summary>A chunked pack folder: the manifest, and where each chunk's stored object was written.</summary>
     /// <param name="Manifest">The version's manifest.</param>
@@ -81,6 +83,11 @@ internal static class ContentPublish
             throw new ArgumentException($"'{minimum}' is not a game version.");
         }
 
+        if (details.Platforms?.FirstOrDefault(static platform => !ContentManifest.IsValidPlatform(platform)) is { } platform)
+        {
+            throw new ArgumentException($"'{platform}' is not a platform: win, linux or osx, then x64, x86 or arm64 (win-x64).");
+        }
+
         string root = Path.GetFullPath(folder);
         if (!Directory.Exists(root))
         {
@@ -120,7 +127,8 @@ internal static class ContentPublish
             published,
             files.Sum(static file => file.Size),
             files,
-            details.Kind);
+            details.Kind,
+            details.Platforms is { Count: > 0 } platforms ? [.. platforms.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)] : null);
 
         return new Chunked(manifest, cache);
     }
@@ -146,6 +154,13 @@ internal static class ContentPublish
         {
             throw new ArgumentException(
                 $"A runtime pack is the engine's and is published for '{RuntimePacks.Game}', not '{details.Game}'.");
+        }
+
+        // Native libraries run on the one platform they were built for; a pack that named none would be offered,
+        // and downloaded, on every other.
+        if (details.Platforms is not { Count: > 0 })
+        {
+            throw new ArgumentException("A runtime pack holds native libraries: name the platforms they are for with --platform (win-x64).");
         }
 
         foreach (string path in paths)

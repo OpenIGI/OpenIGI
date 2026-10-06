@@ -515,12 +515,14 @@ internal sealed partial class LauncherModel
 
     private void MergeIndex(ContentIndex index)
     {
+        // A pack built for another platform -- NVIDIA's runtime is Windows' alone -- is not offered here at all.
+        ContentPack[] offered = [.. index.Packs.Where(static p => p.SupportsPlatform(LauncherPaths.Runtime))];
         foreach (ContentEntry entry in _packs)
         {
-            entry.Listed = index.Packs.Any(p => p.Id == entry.Pack.Id);
+            entry.Listed = offered.Any(p => p.Id == entry.Pack.Id);
         }
 
-        foreach (ContentPack pack in index.Packs)
+        foreach (ContentPack pack in offered)
         {
             if (Find(pack.Id) is { } entry)
             {
