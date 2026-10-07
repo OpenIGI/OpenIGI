@@ -186,9 +186,9 @@ internal static class Igi2PlayerFakes
     }
 
     /// <summary>A horizontal surface at one height that faces up or down, with a material and a light.</summary>
-    internal sealed class FakeCollider(double z, bool facesUp = true, int? material = null, float light = 0f) : IIgi2Collider
+    internal sealed class FakeCollider(double z, bool facesUp = true, int? material = null, float light = 0f, object? owner = null) : IIgi2Collider
     {
-        public object Owner => this;
+        public object Owner => owner ?? this;
 
         public double Z { get; } = z;
 
