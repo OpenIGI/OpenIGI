@@ -86,6 +86,14 @@ internal static class Igi2PlayerFakes
 
         public string? LandingSound(int material) => LandingSounds.GetValueOrDefault(material);
 
+        public Vector3f? Conveyor { get; set; }
+
+        public int Bumps { get; private set; }
+
+        public Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing) => Conveyor;
+
+        public void BumpHumans(Vector3d start, Vector3d destination) => Bumps++;
+
         public void SendLandingEvent() => LandingEvents++;
 
         public bool IsUnderWater(out float depth)

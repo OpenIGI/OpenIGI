@@ -65,6 +65,19 @@ public interface IIgi2HumanSurroundings
     /// <summary>Gets the collision engine the human finds its footing with.</summary>
     IIgi2CollisionQuery Collision { get; }
 
+    /// <summary>
+    /// Asks what underfoot pushes the human this tick, as a conveyor belt does (<c>ConveyorBelt_ePushObjectQTaskEvent</c>).
+    /// </summary>
+    /// <param name="ground">What the human stands on.</param>
+    /// <param name="footing">The footing hit on it.</param>
+    /// <returns>The push, or <see langword="null"/> when the ground does not push.</returns>
+    Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing);
+
+    /// <summary>Tells the humans the move passes that they were bumped, <c>Human_HumanCollision</c> (<c>igi2 0x4FDB00</c>).</summary>
+    /// <param name="start">Where the move started.</param>
+    /// <param name="destination">Where it ended.</param>
+    void BumpHumans(Vector3d start, Vector3d destination);
+
     /// <summary>Gets a level material's landing sound, or <see langword="null"/> when it has none.</summary>
     /// <param name="material">The level material slot, as a hit's <c>ptEnterMaterial</c> names it.</param>
     /// <returns>The sound's name.</returns>

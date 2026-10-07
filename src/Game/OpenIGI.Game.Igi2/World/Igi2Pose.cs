@@ -123,6 +123,36 @@ public sealed class Igi2Pose
             (((Fpu)ry * p[row + 1]) + ((Fpu)rz * p[row + 2]) + ((Fpu)rx * p[row])).F;
     }
 
+    /// <summary>
+    /// The turn about the vertical an orientation stands at: the gamma of <c>Real32x9_GetAngles</c> (<c>igi2 0x562D60</c>).
+    /// </summary>
+    /// <param name="m0">The orientation's first element, <c>tX.vX</c>.</param>
+    /// <param name="m3">Its fourth, <c>tY.vX</c>.</param>
+    /// <returns>The turn, in radians from zero to a whole turn.</returns>
+    /// <remarks>
+    /// <c>fpatan</c> of the two, which precision control does not reach; zero when the X axis stands within a ten
+    /// thousandth of vertical, and a quarter turn either way when <paramref name="m0"/> is zero. A negative turn is
+    /// brought into range by a whole turn, at 24 bits.
+    /// </remarks>
+    public static float Gamma(float m0, float m3)
+    {
+        Fpu length = Fpu.Sqrt(((Fpu)m3 * m3) + ((Fpu)m0 * m0));
+        if (!(length.Value > 0.0001))
+        {
+            return 0f;
+        }
+
+        Fpu gamma = m0 != 0f
+            ? Math.Atan2(m3, m0)
+            : (Fpu)(m3 < 0f ? -1.0 : 1.0) * 1.570796326794897;
+        if (gamma.Value < 0.0)
+        {
+            gamma += 6.283185307179589;
+        }
+
+        return gamma.F;
+    }
+
     /// <summary>The orientation as a matrix, row for row.</summary>
     /// <returns>The matrix.</returns>
     public Matrix3f ToMatrix()
