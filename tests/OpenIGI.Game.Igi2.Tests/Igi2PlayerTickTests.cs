@@ -114,16 +114,7 @@ public sealed class Igi2PlayerTickTests
     }
 
     private static (Igi2HumanPlayer Player, Igi2PlayerFakes.FakeAnimation Animation, Igi2PlayerFakes.FakeSurroundings Surroundings) OnFloor(
-        IIgi2PlayerWeaponControl? weapon = null)
-    {
-        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeAnimation animation, Igi2PlayerFakes.FakeSurroundings surroundings) = Igi2PlayerFakes.Player(weapon);
-        player.General = Igi2HumanPlayerGeneral.Unset with { DeltaTranslationScale = 1.75f };
-        player.GroundCheckZOffset = 4096f;
-        player.Damage.MaxDamage = 100f;
-        surroundings.World.Surfaces.Add(new Igi2PlayerFakes.FakeCollider(0.0));
-        player.Locomotion.Enter(Igi2PlayerState.Stand, player);
-        return (player, animation, surroundings);
-    }
+        IIgi2PlayerWeaponControl? weapon = null) => Igi2PlayerFakes.OnFloor(weapon);
 
     private static void Tick(Igi2HumanPlayer player, Igi2PlayerAction held, float mouseX = 0f)
     {

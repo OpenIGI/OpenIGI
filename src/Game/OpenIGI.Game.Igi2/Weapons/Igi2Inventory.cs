@@ -135,6 +135,26 @@ public sealed class Igi2Inventory
     /// <summary>Gets the position of <see cref="Current"/> among the weapon items (<c>Weapon+0x30</c>).</summary>
     public int CurrentIndex { get; private set; }
 
+    /// <summary>Gets the weapon's status, <c>eWeaponStatus</c> (<c>Weapon+0x38</c>).</summary>
+    public Igi2WeaponStatus Status { get; set; }
+
+    /// <summary>Gets or sets the ticks before the weapon may fire again, <c>nDelay</c> (<c>Weapon+0x48</c>).</summary>
+    public int Delay { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a held grenade's pin is out, <c>isPinPulled</c>.</summary>
+    public bool IsPinPulled { get; set; }
+
+    /// <summary>Gets or sets a pulled grenade's fuse, <c>nTimer</c>, in ticks.</summary>
+    public int Timer { get; set; }
+
+    /// <summary>Gets or sets the bullets fired since the weapon was put in hand, <c>nTotalBulletsFired</c>.</summary>
+    public int TotalBulletsFired { get; set; }
+
+    /// <summary>Finds a weapon by its number, the value of its <c>WEAPON_ID_*</c> constant (<c>WeaponType_GetWeaponTypeFromID</c>, <c>igi2 0x436710</c>).</summary>
+    /// <param name="number">The number.</param>
+    /// <returns>The item, or <see langword="null"/> for a number no weapon has.</returns>
+    public Igi2WeaponItem? WeaponByNumber(int number) => (uint)number < (uint)_weapons.Length ? _weapons[number] : null;
+
     /// <summary>Finds a weapon by the name of its constant.</summary>
     /// <param name="weaponId">The name, <c>WEAPON_ID_*</c>.</param>
     /// <returns>The item, or <see langword="null"/>.</returns>
@@ -212,6 +232,66 @@ public sealed class Igi2Inventory
 
         return added;
     }
+
+    /// <summary>Puts a carried weapon in hand (<c>Weapon_SingleActivateHandler</c>, <c>igi2 0x51D600</c>).</summary>
+    /// <param name="item">The weapon.</param>
+    /// <returns><see langword="true"/> when it went in hand; a weapon not carried does not.</returns>
+    /// <remarks>
+    /// <para>
+    /// The weapon put away is dropped from the inventory when it was thrown or laid and none of it is left: a grenade or
+    /// a proximity mine with no rounds carried, or an RPG-18 with none carried and none loaded either.
+    /// </para>
+    /// <para>
+    /// The new weapon starts ready, with no delay, no pin out, no fuse and no bullets fired. Not yet: the fire types'
+    /// own deactivate and activate handlers, and the overlay, which arrive with firing.
+    /// </para>
+    /// </remarks>
+    public bool Activate(Igi2WeaponItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (!item.IsActive)
+        {
+            return false;
+        }
+
+        if (Current is { } old && IsSpentWhenEmpty(old.WeaponType)
+            && FireTypeRounds(old, 0).Available == 0
+            && (!IsRpg18(old.WeaponType) || old.Loaded(0) == 0))
+        {
+            Disable(old, removeCarriedAmmo: true);
+        }
+
+        Current = item;
+        StatusDisplay = item;
+        CurrentIndex = Array.IndexOf(_weapons, item);
+        Delay = 0;
+        IsPinPulled = false;
+        Timer = 0;
+        TotalBulletsFired = 0;
+        Status = Igi2WeaponStatus.Ready;
+        return true;
+    }
+
+    /// <summary>Gets whether a weapon is used up when nothing of it is left: a grenade, a proximity mine or the RPG-18.</summary>
+    /// <param name="weaponType">The weapon.</param>
+    /// <returns><see langword="true"/> for those three.</returns>
+    public static bool IsSpentWhenEmpty(Igi2WeaponTypeTask weaponType)
+    {
+        ArgumentNullException.ThrowIfNull(weaponType);
+        return weaponType.WeaponType is Igi2WeaponTypeKind.Grenade or Igi2WeaponTypeKind.ProximityMine || IsRpg18(weaponType);
+    }
+
+    /// <summary>Gets whether a weapon is the single-shot launcher the engine names, <c>WEAPON_ID_RPG18</c> (<c>igi2 0x61E050</c>).</summary>
+    /// <param name="weaponType">The weapon.</param>
+    /// <returns><see langword="true"/> for the RPG-18.</returns>
+    public static bool IsRpg18(Igi2WeaponTypeTask weaponType)
+    {
+        ArgumentNullException.ThrowIfNull(weaponType);
+        return string.Equals(weaponType.WeaponId, Rpg18, StringComparison.Ordinal);
+    }
+
+    /// <summary>The weapon the engine treats as spent once fired, compared as sixteen characters.</summary>
+    public const string Rpg18 = "WEAPON_ID_RPG18";
 
     /// <summary>Gives a weapon rounds, loading each empty fire type first and carrying the rest (<c>Weapon_AddAmmoForWeapon</c>, <c>igi2 0x51ED50</c>).</summary>
     /// <param name="item">The weapon.</param>
@@ -415,6 +495,32 @@ public readonly record struct Igi2FireTypeRounds(Igi2AmmoTypeTask? AmmoType, int
 /// <param name="AmmoNumber">The ammunition's number, its <c>AMMO_ID_*</c> value.</param>
 /// <param name="Max">The limit, or <see cref="Igi2AmmoItem.NoLimit"/>.</param>
 public readonly record struct Igi2AmmoLimit(int AmmoNumber, int Max);
+
+/// <summary>A weapon's status, <c>WeaponStatus_e</c>: the values the ported code sets or tests.</summary>
+public enum Igi2WeaponStatus
+{
+    /// <summary>Ready to fire, <c>WEAPON_STATUS_READY</c>.</summary>
+    Ready = 0,
+
+    /// <summary>
+    /// A status the player's idle state will not reload a weapon in (<c>Weapon+0x38 == 5</c>,
+    /// <c>HumanPlayer_RunActionIdle</c>, <c>igi2 0x4B4142</c>); its name arrives with firing.
+    /// </summary>
+    Five = 5,
+
+    /// <summary>A pulled grenade went off in hand, <c>WEAPON_STATUS_EXPLODED_IN_HAND</c> (<c>Weapon_RunDelayedHandler</c>, <c>igi2 0x51C4D4</c>).</summary>
+    ExplodedInHand = 6,
+}
+
+/// <summary>The <c>WEAPONTYPE_*</c> values the ported code tests, <c>WeaponType+0x29C</c>.</summary>
+internal static class Igi2WeaponTypeKind
+{
+    /// <summary><c>WEAPONTYPE_GRENADE</c>.</summary>
+    public const int Grenade = 4;
+
+    /// <summary><c>WEAPONTYPE_PROXIMITYMINE</c>.</summary>
+    public const int ProximityMine = 7;
+}
 
 /// <summary>The <c>WEAPONCATEGORY_*</c> values the inventory itself tests.</summary>
 internal static class Igi2WeaponCategory

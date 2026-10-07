@@ -40,6 +40,17 @@ public sealed class Igi2HumanView
     /// <remarks>Made not stepping itself (<c>HumanView_CreateHandler</c> clears the bit): only the view's update steps it.</remarks>
     public Igi2AnimController ObjectAnimation { get; } = new() { Flags = Igi2AnimControllerBits.NoClip };
 
+    /// <summary>Gets or sets a value indicating whether a scope's zoom narrows the view, <c>isZoomMode</c>.</summary>
+    public bool IsZoomMode { get; set; }
+
+    /// <summary>Takes the scope's zoom off and the fields of view back to their defaults (<c>HumanView_DisableZoomMode</c>, <c>igi2 0x4D72E0</c>).</summary>
+    public void DisableZoomMode()
+    {
+        IsZoomMode = false;
+        FieldOfView = DefaultFieldOfView;
+        ObjectFieldOfView = DefaultObjectFieldOfView;
+    }
+
     /// <summary>Gets or sets how far a landing pushed the view down, <c>vImpactOffset</c>.</summary>
     public float ImpactOffset { get; set; }
 

@@ -107,13 +107,6 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
     /// <summary>Gets the upper-body action playing, <c>eCurrentUpperBody</c>.</summary>
     public int CurrentUpperBody { get; private set; }
 
-    /// <summary>Gets or sets the state of the player's action machine, <c>tAction.nState</c>.</summary>
-    /// <remarks>
-    /// The second machine, beside locomotion, that runs firing, reloading and weapon changes. The
-    /// locomotion states only ask whether it is idle; until it is ported it stays idle.
-    /// </remarks>
-    public int ActionState { get; set; } = Igi2PlayerActionState.Idle;
-
     /// <summary>Gets the upper-body action the current state asks for, <c>eRequestedUpperBody</c>.</summary>
     public int RequestedUpperBody { get; private set; }
 

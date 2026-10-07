@@ -50,8 +50,12 @@ public enum Igi2HumanChannel
     /// <summary><see cref="Player.Igi2PlayerAction.Peek"/>.</summary>
     Peek = 12,
 
-    /// <summary>Always −1 from the player's reader.</summary>
-    Unused13 = 13,
+    /// <summary>
+    /// A weapon to change to, by its <c>WEAPON_ID_*</c> number: −1 from the player's reader, overwritten by a weapon-category key
+    /// (<c>HumanPlayer_SelectWeaponFromCategory</c>, <c>igi2 0x4A0140</c>) and read as an integer by
+    /// <c>HumanPlayer_SelectWeapon</c> (<c>0x4A0350</c>).
+    /// </summary>
+    SelectWeapon = 13,
 
     /// <summary><see cref="Player.Igi2PlayerAction.ZoomIn"/>.</summary>
     ZoomIn = 14,

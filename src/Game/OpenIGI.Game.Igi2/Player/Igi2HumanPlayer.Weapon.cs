@@ -6,9 +6,6 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <content>The weapon in the player's hands as the first-person view shows it.</content>
 public sealed partial class Igi2HumanPlayer
 {
-    /// <summary>Gets or sets the action machine's signal, <c>tAction.bSignal</c>; it shares the locomotion signal's bits.</summary>
-    public Igi2PlayerSignal ActionSignal { get; set; }
-
     /// <summary>Plays a clip of the weapon in hand on the first-person model (<c>HumanPlayer_SetWeaponTypeAnim</c>, <c>igi2 0x4AC4D0</c>).</summary>
     /// <param name="request">The clip asked of the weapon.</param>
     /// <param name="time">The time into the clip to start from; from its end when it plays backwards.</param>

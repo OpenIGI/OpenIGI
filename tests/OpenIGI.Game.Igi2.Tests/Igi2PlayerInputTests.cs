@@ -44,7 +44,7 @@ public sealed class Igi2PlayerInputTests
 
         Assert.Equal((0.050000001f * 2f) - 0.050000001f, frame[(int)Igi2HumanChannel.LookX]);
         Assert.Equal(-0.050000001f * 4f, frame[(int)Igi2HumanChannel.LookY]);
-        Assert.Equal(-1f, frame[(int)Igi2HumanChannel.Unused13]);
+        Assert.Equal(-1f, frame[(int)Igi2HumanChannel.SelectWeapon]);
     }
 
     /// <summary>A frozen trigger reads zero until it is released, then frees itself.</summary>

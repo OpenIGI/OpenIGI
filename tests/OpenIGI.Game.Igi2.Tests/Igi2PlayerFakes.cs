@@ -20,6 +20,21 @@ internal static class Igi2PlayerFakes
         return (new Igi2HumanPlayer(weapon ?? Igi2NoWeaponControl.Instance, animation, surroundings), animation, surroundings);
     }
 
+    /// <summary>Builds a living player standing on a flat floor, with recording doubles.</summary>
+    /// <param name="weapon">The weapon controls; none when omitted.</param>
+    /// <returns>The player and its doubles.</returns>
+    public static (Igi2HumanPlayer Player, FakeAnimation Animation, FakeSurroundings Surroundings) OnFloor(
+        IIgi2PlayerWeaponControl? weapon = null)
+    {
+        (Igi2HumanPlayer player, FakeAnimation animation, FakeSurroundings surroundings) = Player(weapon);
+        player.General = Igi2HumanPlayerGeneral.Unset with { DeltaTranslationScale = 1.75f };
+        player.GroundCheckZOffset = 4096f;
+        player.Damage.MaxDamage = 100f;
+        surroundings.World.Surfaces.Add(new FakeCollider(0.0));
+        player.Locomotion.Enter(Igi2PlayerState.Stand, player);
+        return (player, animation, surroundings);
+    }
+
     /// <summary>Feeds one frame of held actions through the player's own reader.</summary>
     /// <param name="player">The player.</param>
     /// <param name="held">The actions held this tick.</param>
@@ -70,6 +85,14 @@ internal static class Igi2PlayerFakes
         public List<(Igi2AnimationClip? Clip, int Time, float Blend)> UpperBodySet { get; } = [];
 
         public bool UpperBodyEnded { get; set; }
+
+        public Igi2BoneHierarchy? Rig => null;
+
+        public int LastUpperBodyState { get; set; } = -1;
+
+        public List<(Igi2AnimationClip? Clip, int Time, float Blend, int State)> ClipsPlayed { get; } = [];
+
+        public void PlayClip(Igi2AnimationClip? clip, int time, float blendSeconds, int state) => ClipsPlayed.Add((clip, time, blendSeconds, state));
 
         public int UpperBodyTimeStep { get; set; }
 
@@ -171,6 +194,8 @@ internal static class Igi2PlayerFakes
         public int? ActiveCategory { get; init; }
 
         public bool IsHolding { get; init; }
+
+        public Weapons.Igi2Inventory? Inventory { get; init; }
 
         public Dictionary<Weapons.Igi2WeaponAnimRequest, Weapons.Igi2WeaponAnim> Anims { get; } = [];
 

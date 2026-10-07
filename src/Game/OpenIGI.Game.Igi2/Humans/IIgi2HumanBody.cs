@@ -41,6 +41,19 @@ public interface IIgi2HumanAnimation
     /// <param name="blendSeconds">The blend from the current pose; 0 for a cut.</param>
     void PlayState(int state, int time, float blendSeconds);
 
+    /// <summary>Gets the body's rig, or <see langword="null"/> for a model without bones.</summary>
+    Igi2BoneHierarchy? Rig { get; }
+
+    /// <summary>Gets or sets the state the upper-body clip was last set from, <c>iStateLastUsedToSetUpperBodyAnimation</c>.</summary>
+    int LastUpperBodyState { get; set; }
+
+    /// <summary>Plays a clip on the whole body, noting the state it stands for (<c>HumanAnim_SetAnimation</c>, <c>igi2 0x58F110</c>).</summary>
+    /// <param name="clip">The clip.</param>
+    /// <param name="time">The time to play it from, in clip ticks.</param>
+    /// <param name="blendSeconds">How long to blend it in.</param>
+    /// <param name="state">The state, <c>iStateLastUsedToSetMainAnimation</c>.</param>
+    void PlayClip(Igi2AnimationClip? clip, int time, float blendSeconds, int state);
+
     /// <summary>Gets a value indicating whether the upper-body clip has reached an end; false with none playing.</summary>
     bool UpperBodyEnded { get; }
 

@@ -86,20 +86,20 @@ public sealed partial class Igi2HumanPlayer
         return maxChange < change.Value ? maxChange : change;
     }
 
-    /// <summary>Selects the posture precision a state aims for.</summary>
+    /// <summary>Selects the posture precision a state aims for (<c>HumanPlayer_SetWeaponPrecision</c>, <c>igi2 0x49F5F0</c>).</summary>
     /// <param name="type">The posture.</param>
-    /// <param name="posture">Picks the weapon's precision for the posture.</param>
     /// <remarks>
     /// Every locomotion entry ends the same way: with a weapon held, the ideal precision is the posture's
-    /// own plus <c>|turning speed| × turning modifier × 3</c>; with none it is zero. The sum is formed
-    /// unrounded and stored once, as the original's FPU does.
+    /// own plus <c>|turning speed| × turning modifier × 3</c>; with none it is zero. The posture's own is one of the
+    /// weapon's seven, or for a jump the jumping modifier plus the running one, and from a crouch the crouched walk's
+    /// as well. The sum is formed unrounded and stored once, as the original's FPU does.
     /// </remarks>
-    private void AimPrecision(Igi2PrecisionType type, Func<Igi2WeaponPrecision, Fpu> posture)
+    private void AimPrecision(Igi2PrecisionType type)
     {
         if (Weapon.ActivePrecision is { } precision)
         {
             PrecisionType = type;
-            IdealModifiedPrecision = ((Fpu.Abs(TurningSpeed) * precision.TurningModifier * 3f) + posture(precision)).F;
+            IdealModifiedPrecision = ((Fpu.Abs(TurningSpeed) * precision.TurningModifier * 3f) + Posture(type, precision)).F;
         }
         else
         {
@@ -107,6 +107,20 @@ public sealed partial class Igi2HumanPlayer
             IdealModifiedPrecision = 0f;
         }
     }
+
+    /// <summary>The posture's own precision, by the switch in <c>HumanPlayer_SetWeaponPrecision</c> (<c>igi2 0x49F624</c>).</summary>
+    private static Fpu Posture(Igi2PrecisionType type, Igi2WeaponPrecision p) => type switch
+    {
+        Igi2PrecisionType.Running => p.Running,
+        Igi2PrecisionType.Walking => p.Walking,
+        Igi2PrecisionType.Crouching => p.Crouching,
+        Igi2PrecisionType.CrouchWalking => p.CrouchWalking,
+        Igi2PrecisionType.LyingFlat => p.LyingFlat,
+        Igi2PrecisionType.Crawling => p.Crawling,
+        Igi2PrecisionType.Jumping => (Fpu)p.JumpingModifier + p.Running,
+        Igi2PrecisionType.CrouchJumping => (Fpu)p.JumpingModifier + p.CrouchWalking + p.Running,
+        _ => p.Standing,
+    };
 
     private void Go(int state) => Locomotion.Enter(state, this);
 
@@ -266,7 +280,7 @@ public sealed partial class Igi2HumanPlayer
         Pose = Igi2HumanPose.Standing;
         Animation.PlayState(Igi2PlayerState.Stand, 0, StateBlendSeconds);
         RequestedUpperBody = 1;
-        AimPrecision(Igi2PrecisionType.Standing, static p => p.Standing);
+        AimPrecision(Igi2PrecisionType.Standing);
         Locomotion.Current = (_, _) => RunStand();
     }
 
@@ -295,7 +309,7 @@ public sealed partial class Igi2HumanPlayer
         Animation.PlayState(Igi2PlayerState.StandTurn, 0, StateBlendSeconds);
         RequestedUpperBody = 1;
         Animation.LoopMain();
-        AimPrecision(Igi2PrecisionType.Standing, static p => p.Standing);
+        AimPrecision(Igi2PrecisionType.Standing);
         Locomotion.Current = (_, _) => RunStandTurn();
     }
 
@@ -506,15 +520,15 @@ public sealed partial class Igi2HumanPlayer
         {
             case GaitFamily.Run:
                 RequestedUpperBody = 3;
-                AimPrecision(Igi2PrecisionType.Running, static p => p.Running);
+                AimPrecision(Igi2PrecisionType.Running);
                 break;
             case GaitFamily.Walk:
                 RequestedUpperBody = 2;
-                AimPrecision(Igi2PrecisionType.Walking, static p => p.Walking);
+                AimPrecision(Igi2PrecisionType.Walking);
                 break;
             default:
                 RequestedUpperBody = 5;
-                AimPrecision(Igi2PrecisionType.CrouchWalking, static p => p.CrouchWalking);
+                AimPrecision(Igi2PrecisionType.CrouchWalking);
                 break;
         }
 
@@ -627,7 +641,7 @@ public sealed partial class Igi2HumanPlayer
         Pose = Igi2HumanPose.Crouching;
         Animation.PlayState(state, 0, StateBlendSeconds);
         RequestedUpperBody = 4;
-        AimPrecision(Igi2PrecisionType.Crouching, static p => p.Crouching);
+        AimPrecision(Igi2PrecisionType.Crouching);
     }
 
     // State 23 -- InitStateCrouch 0x4A89F0, RunStateCrouch 0x4A8B20.

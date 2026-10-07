@@ -132,7 +132,7 @@ public sealed class Igi2PlayerInputReader
             frame[(int)channel] = (input.Current & action) != 0 ? 1f : 0f;
         }
 
-        frame[(int)Igi2HumanChannel.Unused13] = -1f;
+        frame[(int)Igi2HumanChannel.SelectWeapon] = -1f;
 
         for (int i = 0; i < Categories.Length; i++)
         {

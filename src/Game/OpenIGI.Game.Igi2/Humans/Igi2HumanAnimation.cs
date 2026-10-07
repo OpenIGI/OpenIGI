@@ -69,13 +69,16 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     /// <summary>Gets the active main controller.</summary>
     public Igi2AnimController Main { get; private set; }
 
+    /// <inheritdoc/>
+    public Igi2BoneHierarchy? Rig => _rig;
+
     /// <summary>Gets the active upper-body controller, or <see langword="null"/> when the main clip plays on the whole body.</summary>
     public Igi2AnimController? UpperBody { get; private set; }
 
     /// <summary>Gets the state the main clip was last set from, <c>iStateLastUsedToSetMainAnimation</c>.</summary>
     public int LastState { get; private set; } = -1;
 
-    /// <summary>Gets or sets the state the upper-body clip was last set from, <c>iStateLastUsedToSetUpperBodyAnimation</c>.</summary>
+    /// <inheritdoc/>
     public int LastUpperBodyState { get; set; } = -1;
 
     /// <summary>Gets the blend the last upper-body clip was set or cleared with, in ticks.</summary>
@@ -105,6 +108,13 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
 
     /// <inheritdoc/>
     public void StepMain() => Main.Step(Main.Time + Main.TimeStep);
+
+    /// <inheritdoc/>
+    public void PlayClip(Igi2AnimationClip? clip, int time, float blendSeconds, int state)
+    {
+        SetAnimation(clip, time, blendSeconds);
+        LastState = state;
+    }
 
     /// <inheritdoc/>
     public bool UpperBodyEnded => UpperBody?.IsEnded ?? false;

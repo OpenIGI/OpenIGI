@@ -40,6 +40,9 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Gets a value indicating whether a weapon is in hand (<c>Weapon+0x2C</c> with its type).</summary>
     bool IsHolding { get; }
 
+    /// <summary>Gets what the player carries, or <see langword="null"/> when the session has no weapons.</summary>
+    Igi2Inventory? Inventory { get; }
+
     /// <summary>Asks the weapon in hand for a clip (<c>WeaponType_GetAnimHandler</c>, <c>igi2 0x4360F0</c>).</summary>
     /// <param name="request">What is asked for.</param>
     /// <param name="rig">The asking rig: the first-person model's for a first-person request, the body's otherwise.</param>
@@ -95,6 +98,9 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public bool IsHolding => false;
+
+    /// <inheritdoc/>
+    public Igi2Inventory? Inventory => null;
 
     /// <inheritdoc/>
     public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig) => null;

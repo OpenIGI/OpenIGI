@@ -46,7 +46,7 @@ public sealed partial class Igi2HumanPlayer
         CurrentUpperBody = 0;
         RequestedUpperBody = 0;
         Animation.ClearUpperBody(0.4f);
-        AimPrecision(Igi2PrecisionType.LyingFlat, static p => p.LyingFlat);
+        AimPrecision(Igi2PrecisionType.LyingFlat);
         FlatOrientation = Orientation;
         Animation.ClearUpperBody(0f);
         GroundTolerance = ProneGroundTolerance;
@@ -97,7 +97,7 @@ public sealed partial class Igi2HumanPlayer
     {
         Pose = Igi2HumanPose.LyingFlat;
         Animation.PlayState(Igi2PlayerState.FlatCrawl, 0, StateBlendSeconds);
-        AimPrecision(Igi2PrecisionType.LyingFlat, static p => p.LyingFlat);
+        AimPrecision(Igi2PrecisionType.LyingFlat);
 
         // The reference is forgotten, not stopped: a crawl entered afresh starts its own loop.
         _crawlSound = null;
@@ -115,11 +115,11 @@ public sealed partial class Igi2HumanPlayer
 
         if ((Signal & MoveKeys) != 0)
         {
-            AimPrecision(Igi2PrecisionType.Crawling, static p => p.Crawling);
+            AimPrecision(Igi2PrecisionType.Crawling);
         }
         else
         {
-            AimPrecision(Igi2PrecisionType.LyingFlat, static p => p.LyingFlat);
+            AimPrecision(Igi2PrecisionType.LyingFlat);
         }
 
         int next = Stay;

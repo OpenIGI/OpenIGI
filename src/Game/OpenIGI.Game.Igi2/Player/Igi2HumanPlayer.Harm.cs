@@ -43,9 +43,6 @@ public sealed partial class Igi2HumanPlayer
     private static readonly int[] StandDeathAnimations = [92, 93, 94, 95, 96, 97, 98, 99];
     private static readonly int[] KneelDeathAnimations = [100, 101, 102, 103, 104, 105];
 
-    /// <summary>Gets a value indicating whether the action machine is locked, <c>HumanPlayer_t.isLockAction</c>.</summary>
-    public bool IsLockAction { get; private set; }
-
     // State 54 -- InitStateHit 0x4B2090, RunStateHit 0x4B21F0.
     private void EnterHit()
     {
@@ -69,7 +66,7 @@ public sealed partial class Igi2HumanPlayer
         CurrentUpperBody = 0;
         RequestedUpperBody = 0;
         Animation.ClearUpperBody(0.4f);
-        AimPrecision(Igi2PrecisionType.Standing, static p => p.Standing);
+        AimPrecision(Igi2PrecisionType.Standing);
         Locomotion.Current = (_, _) => RunHit();
     }
 
@@ -105,7 +102,7 @@ public sealed partial class Igi2HumanPlayer
         CurrentUpperBody = 0;
         RequestedUpperBody = 0;
         Animation.ClearUpperBody(0.4f);
-        AimPrecision(Igi2PrecisionType.Standing, static p => p.Standing);
+        AimPrecision(Igi2PrecisionType.Standing);
 
         IsRotateUpperBody = false;
         IsLockAction = true;

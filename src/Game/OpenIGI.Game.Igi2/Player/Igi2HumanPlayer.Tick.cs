@@ -52,7 +52,10 @@ public sealed partial class Igi2HumanPlayer
     /// <para>The order is the original's, because each step reads what the one before left.</para>
     /// <list type="number">
     /// <item>Off the ground, or hit, the next jump waits fifteen ticks; it counts down once landed.</item>
-    /// <item>Death is checked. A locked activation clears the activate key.</item>
+    /// <item>
+    /// Death is checked. A weapon-category key and the weapon cycle keys ask for a weapon change (the computer, which
+    /// keeps the cycle keys for itself, is not ported). A locked activation clears the activate key.
+    /// </item>
     /// <item>
     /// Water is sounded: wading stirs it; past 819.2 the player cannot lie, past 3276.8 not crouch, and past
     /// 5734.4 the swimming bit is raised. The weapon is drawn unless swimming.
@@ -61,7 +64,9 @@ public sealed partial class Igi2HumanPlayer
     /// Ground steeper than fifty degrees takes the forward and back keys away, a held missile launcher forbids lying,
     /// and a computer page open blocks fire.
     /// </item>
-    /// <item>The locomotion states run; the walk toggle flips on its key, and only standing can run.</item>
+    /// <item>
+    /// The locomotion states run, then the action states; the walk toggle flips on its key, and only standing can run.
+    /// </item>
     /// <item>The hit bit drops; the body turns, the view aims and, lying, is kept out of the ground.</item>
     /// <item>
     /// The animation's step is scaled; on the ground the legs' own speed is added to it. The body moves, unless
@@ -73,9 +78,8 @@ public sealed partial class Igi2HumanPlayer
     /// </item>
     /// </list>
     /// <para>
-    /// Not ported yet, and skipped where they fall: activation (<c>Human_UpdateActivate</c>), weapon selection, the
-    /// action machine, climbing, the dead body rising in water (<c>Human_PopPosition</c>), riding (<c>Human_Attach</c>),
-    /// the lying body's tilt to the ground (<c>Human_InterpolateZAxisToAveragedGroundNormal</c>), firing and the
+    /// Not ported yet, and skipped where they fall: activation (<c>Human_UpdateActivate</c>), climbing, the dead body
+    /// rising in water (<c>Human_PopPosition</c>), riding (<c>Human_Attach</c>), the lying body's tilt to the ground (<c>Human_InterpolateZAxisToAveragedGroundNormal</c>), firing and the
     /// weapon's status, the AI's notice, pickups and the screen flashes. The degraded-copy slowdown is inert: its
     /// factor is one.
     /// </para>
@@ -94,6 +98,8 @@ public sealed partial class Igi2HumanPlayer
         }
 
         UpdateDie();
+        SelectWeaponFromCategory();
+        SelectWeapon(forceCycle: false);
         if (IsActivateLocked)
         {
             Channels[Igi2HumanChannel.Activate] = 0f;
@@ -119,6 +125,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Locomotion.Tick(this);
+        Action.Tick(this);
         if (Channels.WasPressed(Igi2HumanChannel.ToggleWalkRun))
         {
             IsWalk = !IsWalk;

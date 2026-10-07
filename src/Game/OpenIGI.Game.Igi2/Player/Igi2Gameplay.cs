@@ -53,7 +53,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2BoneHierarchy? rig = models(spawn.Model)?.BoneHierarchy;
         Igi2BoneHierarchy? arms = FirstPersonRig(models, PlayerSpawn.FindGameplayTask(request.World.LevelRoot) as Igi2HumanPlayerTask);
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
-        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
+        player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
+        return player;
     }
 
     /// <summary>The rig of the model the first-person view carries.</summary>

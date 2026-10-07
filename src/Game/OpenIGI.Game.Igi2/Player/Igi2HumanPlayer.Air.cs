@@ -102,11 +102,11 @@ public sealed partial class Igi2HumanPlayer
     {
         if (crouched)
         {
-            AimPrecision(Igi2PrecisionType.CrouchJumping, static p => (Fpu)p.JumpingModifier + p.CrouchWalking + p.Running);
+            AimPrecision(Igi2PrecisionType.CrouchJumping);
         }
         else
         {
-            AimPrecision(Igi2PrecisionType.Jumping, static p => (Fpu)p.JumpingModifier + p.Running);
+            AimPrecision(Igi2PrecisionType.Jumping);
         }
     }
 
@@ -115,7 +115,7 @@ public sealed partial class Igi2HumanPlayer
     {
         Animation.PlayState(Igi2PlayerState.Fall, 0, 0f);
         Speed = AccumulatedSpeed;
-        AimPrecision(Igi2PrecisionType.Running, static p => p.Running);
+        AimPrecision(Igi2PrecisionType.Running);
         Locomotion.Current = (_, _) => RunFall();
     }
 

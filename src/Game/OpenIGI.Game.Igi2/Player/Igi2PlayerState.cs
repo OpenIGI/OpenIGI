@@ -127,6 +127,9 @@ public static class Igi2PlayerState
     /// <summary>Flinching from a hit.</summary>
     public const int Hit = 54;
 
+    /// <summary>Planting a charge at a C4 target (<c>HumanPlayer_InitStateActivateC4BombTBA</c>, <c>igi2 0x4AEC80</c>).</summary>
+    public const int ActivateC4BombTba = 43;
+
     /// <summary>Lying flat.</summary>
     public const int Flat = 75;
 
