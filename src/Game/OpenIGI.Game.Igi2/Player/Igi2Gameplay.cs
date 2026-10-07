@@ -29,6 +29,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <summary>What a terrain hit reports as struck.</summary>
     public const string TerrainOwner = "Terrain";
 
+    /// <summary>The model the first-person view falls back to, <c>005_01_1</c>.</summary>
+    public const string FirstPersonFallbackModel = "005_01_1";
+
     /// <summary>Gets the shared instance.</summary>
     public static Igi2Gameplay Instance { get; } = new();
 
@@ -46,9 +49,23 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2HumanPlayerGeneral general = tuning?.General ?? Igi2HumanPlayerGeneral.Unset;
         ArgumentNullException.ThrowIfNull(request.World.Mission);
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(request.World.Mission.PacksInLoadOrder, request.World.Resources);
-        Igi2BoneHierarchy? rig = Models(request.World)(spawn.Model)?.BoneHierarchy;
+        Func<string, Formats.World.MefModel?> models = Models(request.World);
+        Igi2BoneHierarchy? rig = models(spawn.Model)?.BoneHierarchy;
+        Igi2BoneHierarchy? arms = FirstPersonRig(models, PlayerSpawn.FindGameplayTask(request.World.LevelRoot) as Igi2HumanPlayerTask);
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
-        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons);
+        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
+    }
+
+    /// <summary>The rig of the model the first-person view carries.</summary>
+    /// <param name="models">The level's models, by name.</param>
+    /// <param name="player">The level's player, whose <c>1st Person Model</c> names it.</param>
+    /// <returns>The rig, or <see langword="null"/> when neither that model nor the fallback has bones.</returns>
+    /// <remarks><c>HumanView_CreateHandler</c> (<c>igi2 0x4D5A30</c>): a missing or unboned model falls back to <c>005_01_1</c>.</remarks>
+    public static Igi2BoneHierarchy? FirstPersonRig(Func<string, Formats.World.MefModel?> models, Igi2HumanPlayerTask? player)
+    {
+        ArgumentNullException.ThrowIfNull(models);
+        return (player is { FirstPersonModel.Length: > 0 } ? models(player.FirstPersonModel)?.BoneHierarchy : null)
+            ?? models(FirstPersonFallbackModel)?.BoneHierarchy;
     }
 
     /// <summary>Makes the player's inventory, fills it from the level's <c>Weapon</c> script and puts it behind the weapon control.</summary>
@@ -182,6 +199,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
     /// <param name="clips">The level's clips, or <see langword="null"/> for none.</param>
     /// <param name="rig">The player model's rig, or <see langword="null"/> for a model without bones.</param>
     /// <param name="weapons">The player's weapons, or <see langword="null"/> for none.</param>
+    /// <param name="firstPersonRig">The first-person model's rig, or <see langword="null"/> for none.</param>
     /// <returns>The player.</returns>
     public static Igi2TitlePlayer Spawn(
         Igi2CollisionWorld world,
@@ -191,7 +209,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
         Ai.AiDifficulty difficulty,
         Igi2AnimationLibrary? clips = null,
         Igi2BoneHierarchy? rig = null,
-        Igi2PlayerWeapons? weapons = null)
+        Igi2PlayerWeapons? weapons = null,
+        Igi2BoneHierarchy? firstPersonRig = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(general);
@@ -207,6 +226,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
             IdealGamma = gamma,
         };
         surroundings.Owner = human;
+        human.View.ObjectRig = firstPersonRig;
 
         // Human_UpdateInternalDataHandler (igi2 0x4FF2F0): the level's Gamma is the heading and the ideal heading
         // both, and the body stands upright turned by it.
@@ -220,7 +240,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
 
         // The view would first be placed on the first tick; placing it now gives the host's first frames the eyes
         // rather than the world's origin. It draws nothing from the run stream: a new view does not shake.
-        human.UpdateViewBody();
+        human.UpdateViewBody(updateAnimation: false);
         return new Igi2TitlePlayer(human, weapons);
     }
 

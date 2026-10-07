@@ -1,0 +1,187 @@
+using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.Animation;
+
+namespace OpenIGI.Game.Igi2.Weapons;
+
+/// <summary>Which of a weapon's clips is asked for, <c>WeaponTypeGetAnimType_e</c>.</summary>
+public enum Igi2WeaponAnimRequest
+{
+    /// <summary>The first-person clip held still, <c>WEAPONTYPE_GETANIMTYPE_1STSTAND</c>.</summary>
+    FirstStand = 0,
+
+    /// <summary>The first-person clip on the move.</summary>
+    FirstMove = 1,
+
+    /// <summary>The first-person draw, scaled to the weapon's <c>(De)Activate Time</c>.</summary>
+    FirstActivate = 2,
+
+    /// <summary>The first-person put-away, scaled the same way.</summary>
+    FirstDeactivate = 3,
+
+    /// <summary>The first-person shot (the fire type's).</summary>
+    FirstFire = 4,
+
+    /// <summary>The first-person held shot (the fire type's).</summary>
+    FirstFireHold = 5,
+
+    /// <summary>The first-person release (the fire type's).</summary>
+    FirstFireRelease = 6,
+
+    /// <summary>The first-person reload's start (the fire type's).</summary>
+    FirstReloadStart = 7,
+
+    /// <summary>The first-person reload's loop (the fire type's).</summary>
+    FirstReloadLoop = 8,
+
+    /// <summary>The first-person reload's end (the fire type's).</summary>
+    FirstReloadEnd = 9,
+
+    /// <summary>The third-person stand.</summary>
+    ThirdStand = 10,
+
+    /// <summary>The third-person walk.</summary>
+    ThirdWalk = 11,
+
+    /// <summary>The third-person run.</summary>
+    ThirdRun = 12,
+
+    /// <summary>The third-person crouched stand.</summary>
+    ThirdCrouchStand = 13,
+
+    /// <summary>The third-person crouched walk.</summary>
+    ThirdCrouchWalk = 14,
+
+    /// <summary>The third-person draw, from the body's weapon table.</summary>
+    ThirdActivate = 15,
+
+    /// <summary>The third-person put-away, from the body's weapon table.</summary>
+    ThirdDeactivate = 16,
+
+    /// <summary>The third-person shot (the fire type's).</summary>
+    ThirdFire = 17,
+
+    /// <summary>The third-person held shot (the fire type's).</summary>
+    ThirdFireHold = 18,
+
+    /// <summary>The third-person release (the fire type's).</summary>
+    ThirdFireRelease = 19,
+
+    /// <summary>The third-person reload's start (the fire type's).</summary>
+    ThirdReloadStart = 20,
+
+    /// <summary>The third-person reload's loop (the fire type's).</summary>
+    ThirdReloadLoop = 21,
+
+    /// <summary>The third-person reload's end (the fire type's).</summary>
+    ThirdReloadEnd = 22,
+
+    /// <summary>The third-person reload's start lying flat (the fire type's).</summary>
+    ThirdReloadStartFlat = 23,
+
+    /// <summary>The third-person reload's loop lying flat (the fire type's).</summary>
+    ThirdReloadLoopFlat = 24,
+
+    /// <summary>The third-person reload's end lying flat (the fire type's).</summary>
+    ThirdReloadEndFlat = 25,
+
+    /// <summary>The third-person draw lying flat, from the body's weapon table.</summary>
+    ThirdActivateFlat = 26,
+
+    /// <summary>The third-person put-away lying flat, from the body's weapon table.</summary>
+    ThirdDeactivateFlat = 27,
+}
+
+/// <summary>A clip a weapon gives for a request, and how fast to play it.</summary>
+/// <param name="Clip">The clip.</param>
+/// <param name="TimeScale">The rate, <c>tOut.vTimeScale</c>: one for its own speed.</param>
+public readonly record struct Igi2WeaponAnim(Igi2AnimationClip Clip, float TimeScale)
+{
+    /// <summary>Gets the ticks a frame advances the clip at this rate (<c>(__int64)(AnimController_nTicksPerFrame × vTimeScale)</c>).</summary>
+    public int TimeStep => Fpu.ToInt32(new Fpu(Igi2AnimController.TicksPerFrame) * TimeScale);
+}
+
+/// <summary>A weapon type's own answer to a clip request, <c>WeaponType_GetAnimHandler</c> (<c>igi2 0x4360F0</c>).</summary>
+/// <remarks>
+/// <para>
+/// The first-person stand and move are its named clips on the asking rig, at their own speed
+/// (<c>Hierarchy_GetAnim</c>, <c>0x57F360</c>, looks a name up in one rig's clips). The first-person draw and put-away
+/// are its named clips too, played so that the whole clip lasts the weapon's <c>(De)Activate Time</c>: the clip's
+/// seconds (its ticks times the float <c>1/4800</c>) over that time. The third-person stand, walk, run and crouched
+/// clips are named the same way.
+/// </para>
+/// <para>
+/// The third-person draw and put-away come from the body's weapon table instead
+/// (<c>WeaponType_GetAnimHeaderFromWeaponTypeAnim</c>, <c>0x4383B0</c>): rows <c>0xE9</c>–<c>0xEC</c>, the standing and
+/// lying <c>weaponraise</c>, scaled the same way unless the time is zero.
+/// </para>
+/// <para>
+/// Everything else is the fire type's to answer, as is any request this finds no clip for; the fire types' handlers
+/// (<c>Gun_GetAnimHandler</c>, <c>0x4822E0</c>, and the rest) arrive with firing, so for now those find none.
+/// </para>
+/// </remarks>
+public static class Igi2WeaponTypeAnim
+{
+    /// <summary>The float a clip's ticks are multiplied by to make seconds, <c>0x395A740E</c>.</summary>
+    private const float SecondsPerTick = 0.00020833334f;
+
+    /// <summary>Answers a request.</summary>
+    /// <param name="weaponType">The weapon.</param>
+    /// <param name="request">What is asked for.</param>
+    /// <param name="rig">The asking rig: the first-person model's for a first-person request, the body's otherwise.</param>
+    /// <param name="library">The level's clips.</param>
+    /// <param name="bodyTable">The weapon's table for <paramref name="rig"/>, or <see langword="null"/> for none.</param>
+    /// <returns>The clip and its rate, or <see langword="null"/> when there is none.</returns>
+    public static Igi2WeaponAnim? Get(
+        Igi2WeaponTypeTask weaponType,
+        Igi2WeaponAnimRequest request,
+        Igi2BoneHierarchy? rig,
+        Igi2AnimationLibrary? library,
+        IReadOnlyList<Igi2AnimationClip?>? bodyTable)
+    {
+        ArgumentNullException.ThrowIfNull(weaponType);
+        return request switch
+        {
+            Igi2WeaponAnimRequest.FirstStand => Named(weaponType.FirstPersonStandAnim),
+            Igi2WeaponAnimRequest.FirstMove => Named(weaponType.FirstPersonMoveAnim),
+            Igi2WeaponAnimRequest.FirstActivate => Scaled(Find(weaponType.FirstPersonActivateAnim), weaponType.DeActivateTime, alwaysScale: true),
+            Igi2WeaponAnimRequest.FirstDeactivate => Scaled(Find(weaponType.FirstPersonDeActivateAnim), weaponType.DeActivateTime, alwaysScale: true),
+            Igi2WeaponAnimRequest.ThirdStand => Named(weaponType.ThirdPersonStandAnim),
+            Igi2WeaponAnimRequest.ThirdWalk => Named(weaponType.ThirdPersonWalkAnim),
+            Igi2WeaponAnimRequest.ThirdRun => Named(weaponType.ThirdPersonRunAnim),
+            Igi2WeaponAnimRequest.ThirdCrouchStand => Named(weaponType.ThirdPersonCrouchStandAnim),
+            Igi2WeaponAnimRequest.ThirdCrouchWalk => Named(weaponType.ThirdPersonCrouchWalkAnim),
+            Igi2WeaponAnimRequest.ThirdActivate => Scaled(Row(TableRowActivate), weaponType.DeActivateTime, alwaysScale: false),
+            Igi2WeaponAnimRequest.ThirdDeactivate => Scaled(Row(TableRowActivate + 1), weaponType.DeActivateTime, alwaysScale: false),
+            Igi2WeaponAnimRequest.ThirdActivateFlat => Scaled(Row(TableRowActivate + 2), weaponType.DeActivateTime, alwaysScale: false),
+            Igi2WeaponAnimRequest.ThirdDeactivateFlat => Scaled(Row(TableRowActivate + 3), weaponType.DeActivateTime, alwaysScale: false),
+            _ => null,
+        };
+
+        Igi2AnimationClip? Find(string name) =>
+            rig is null || library is null || name.Length == 0 ? null : library.Find(rig, name);
+
+        Igi2WeaponAnim? Named(string name) => Find(name) is { } clip ? new Igi2WeaponAnim(clip, 1f) : null;
+
+        Igi2AnimationClip? Row(int row) => bodyTable is not null && (uint)row < (uint)bodyTable.Count ? bodyTable[row] : null;
+    }
+
+    /// <summary>The table row of the standing third-person draw, <c>0xE9</c>; the put-away and the lying pair follow it.</summary>
+    private const int TableRowActivate = Igi2WeaponTypeAnims.LowerWeapon;
+
+    /// <summary>A clip played so that it lasts the weapon's draw time; a third-person one keeps its own speed when that time is zero.</summary>
+    private static Igi2WeaponAnim? Scaled(Igi2AnimationClip? clip, float seconds, bool alwaysScale)
+    {
+        if (clip is null)
+        {
+            return null;
+        }
+
+        if (!alwaysScale && seconds == 0f)
+        {
+            return new Igi2WeaponAnim(clip, 1f);
+        }
+
+        Fpu clipSeconds = new Fpu(clip.TotalTime) * SecondsPerTick;
+        return new Igi2WeaponAnim(clip, (clipSeconds / seconds).F);
+    }
+}

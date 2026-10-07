@@ -51,6 +51,9 @@ public enum Igi2PlayerSignal : uint
     /// <summary>Jump held.</summary>
     Jump = 0x4000,
 
+    /// <summary>The peek key is held (channel 12); the action machine's packer raises it, not the locomotion's.</summary>
+    Peek = 0x8000,
+
     /// <summary>Struck this tick; the update clears it after the body has been updated.</summary>
     Hit = 0x10000,
 

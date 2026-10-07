@@ -48,6 +48,9 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     public int? ActiveCategory => Held?.WeaponCategory;
 
     /// <inheritdoc/>
+    public bool IsHolding => Held is not null;
+
+    /// <inheritdoc/>
     public bool ActiveIsZoom => Held is { } held && held.FireTaskType(1) == _taskTypes.Zoom;
 
     /// <inheritdoc/>
@@ -100,6 +103,10 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
 
         return table;
     }
+
+    /// <inheritdoc/>
+    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig) =>
+        Held is { } held ? Igi2WeaponTypeAnim.Get(held, request, rig, _clips, BodyClips(rig)) : null;
 
     /// <inheritdoc/>
     public void ClearAllWeapons() => _inventory.ClearAll();

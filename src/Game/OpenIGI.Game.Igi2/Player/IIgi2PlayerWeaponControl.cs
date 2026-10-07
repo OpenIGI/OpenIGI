@@ -1,5 +1,6 @@
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Igi2.Weapons;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -35,6 +36,15 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
 {
     /// <summary>Gets the held weapon type's <c>Weapon Category</c>, or <see langword="null"/> when nothing is held.</summary>
     int? ActiveCategory { get; }
+
+    /// <summary>Gets a value indicating whether a weapon is in hand (<c>Weapon+0x2C</c> with its type).</summary>
+    bool IsHolding { get; }
+
+    /// <summary>Asks the weapon in hand for a clip (<c>WeaponType_GetAnimHandler</c>, <c>igi2 0x4360F0</c>).</summary>
+    /// <param name="request">What is asked for.</param>
+    /// <param name="rig">The asking rig: the first-person model's for a first-person request, the body's otherwise.</param>
+    /// <returns>The clip and its rate, or <see langword="null"/> when there is none or nothing is held.</returns>
+    Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig);
 
     /// <summary>Gets a value indicating whether the held weapon type's task is a <c>Zoom</c>.</summary>
     bool ActiveIsZoom { get; }
@@ -82,6 +92,12 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public int? ActiveCategory => null;
+
+    /// <inheritdoc/>
+    public bool IsHolding => false;
+
+    /// <inheritdoc/>
+    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig) => null;
 
     /// <inheritdoc/>
     public bool ActiveIsZoom => false;

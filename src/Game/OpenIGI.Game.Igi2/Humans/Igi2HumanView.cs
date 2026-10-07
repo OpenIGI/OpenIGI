@@ -1,4 +1,6 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.Animation;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -22,6 +24,21 @@ public sealed class Igi2HumanView
 
     /// <summary>Gets the default object field of view's scale, <c>tan(30°)</c>.</summary>
     public static float DefaultObjectFieldOfView { get; } = (float)X87.ToFloat(Math.Tan(0.5235987901687622));
+
+    /// <summary>Gets or sets the rig of the first-person model the view carries, or <see langword="null"/> for none.</summary>
+    /// <remarks>
+    /// The view is itself a boned object with the human's first-person model (<c>HumanView_CreateHandler</c>,
+    /// <c>igi2 0x4D5A30</c>, falling back to <c>005_01_1</c> for a missing or unboned one); the arms and the weapon in
+    /// them play their clips on it.
+    /// </remarks>
+    public Igi2BoneHierarchy? ObjectRig { get; set; }
+
+    /// <summary>Gets a value indicating whether the first-person model is drawn with the view, <c>isObjectRegistered</c>.</summary>
+    public bool IsObjectRegistered => ObjectRig is not null;
+
+    /// <summary>Gets the first-person model's clip, <c>ptAnimController</c>.</summary>
+    /// <remarks>Made not stepping itself (<c>HumanView_CreateHandler</c> clears the bit): only the view's update steps it.</remarks>
+    public Igi2AnimController ObjectAnimation { get; } = new() { Flags = Igi2AnimControllerBits.NoClip };
 
     /// <summary>Gets or sets how far a landing pushed the view down, <c>vImpactOffset</c>.</summary>
     public float ImpactOffset { get; set; }

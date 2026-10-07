@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 
@@ -38,11 +39,15 @@ public abstract partial class Igi2Human
     /// them 204.8 short of whatever it meets.
     /// </para>
     /// <para>
+    /// With the first-person model registered, and asked to, its clip steps by its step.
+    /// </para>
+    /// <para>
     /// Not ported yet: the held object's retraction and the first-person model's placement, which follow the view
     /// when an object is registered with it.
     /// </para>
     /// </remarks>
-    public void UpdateViewBody()
+    /// <param name="updateAnimation">Whether the first-person clip steps, <c>isUpdateAnim</c>: the tick's update does, placing the view alone does not.</param>
+    public void UpdateViewBody(bool updateAnimation = true)
     {
         Igi2HumanView view = View;
         float alpha = ((Fpu)Alpha + view.Pitch).F;
@@ -86,6 +91,11 @@ public abstract partial class Igi2Human
 
         view.Position = eyes;
         view.StepObject();
+        if (view.IsObjectRegistered && updateAnimation)
+        {
+            Igi2AnimController arms = view.ObjectAnimation;
+            arms.Step(arms.Time + arms.TimeStep);
+        }
     }
 
     /// <summary>Where the eyes are above the feet in a posture, <c>HumanView_GetOriginalViewPosition</c> (<c>igi2 0x4D7150</c>).</summary>

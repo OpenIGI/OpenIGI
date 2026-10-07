@@ -12,8 +12,12 @@ public enum Igi2AnimControllerBits
     /// <summary>The clip wraps at its end, set from the clip's own loop flag.</summary>
     Loop = 0x1,
 
-    /// <summary>The controller is being handed over from, while a new clip is set on its partner.</summary>
-    Handover = 0x2,
+    /// <summary>
+    /// The controller steps itself each tick, <c>AnimController_SetAutoStep</c> (<c>igi2 0x554960</c>): controllers are
+    /// tasks, and <c>AnimController_RunHandler</c> (<c>0x5540D0</c>) steps one with this bit by its time step. A new
+    /// controller has it; a human's active main controller has it cleared, because the human steps that one itself.
+    /// </summary>
+    AutoStep = 0x2,
 
     /// <summary>The time has reached or passed an end of the clip.</summary>
     Ended = 0x4,
@@ -58,6 +62,15 @@ public sealed class Igi2AnimController
 
     /// <summary>Gets or sets the controller's bits.</summary>
     public Igi2AnimControllerBits Flags { get; set; }
+
+    /// <summary>Steps the controller by its time step when it steps itself (<c>AnimController_RunHandler</c>, <c>igi2 0x5540D0</c>).</summary>
+    public void AutoStep()
+    {
+        if ((Flags & Igi2AnimControllerBits.AutoStep) != 0)
+        {
+            Step(Time + TimeStep);
+        }
+    }
 
     /// <summary>Gets a value indicating whether the time has reached an end of the clip.</summary>
     public bool IsEnded => (Flags & Igi2AnimControllerBits.Ended) != 0;

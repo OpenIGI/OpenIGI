@@ -20,8 +20,15 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// weapon plays its rig's <c>stand</c> clip whatever the state.
 /// </para>
 /// <para>
-/// Not yet run: the upper-body controller, the blend itself and the pose it makes. The clip's root translation does
-/// not move the body — only the states' own movement and <see cref="Igi2Human.DeltaTranslation"/> do.
+/// The upper body has its own pair of controllers (<c>HumanAnim_Init</c>, <c>0x58F650</c>), set the same way
+/// (<c>HumanAnim_SetUpperBodyAnimationFromHeader</c>, <c>0x58F300</c>) or cleared to leave the main clip on the whole
+/// body (<c>HumanAnim_ClearUpperBodyAnimation</c>, <c>0x58F5E0</c>). An upper-body clip that is the main clip too does
+/// not trigger its events twice. A controller that steps itself does so in <see cref="AutoStep"/>: the main one handed
+/// over from, while it blends out, and both upper-body ones always.
+/// </para>
+/// <para>
+/// Not yet run: the blend itself and the pose it makes. The clip's root translation does not move the body — only
+/// the states' own movement and <see cref="Igi2Human.DeltaTranslation"/> do.
 /// </para>
 /// </remarks>
 public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
@@ -36,8 +43,10 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     private readonly Igi2BoneHierarchy? _rig;
     private readonly IReadOnlyList<int> _stateAnimations;
     private readonly Func<IReadOnlyList<Igi2AnimationClip?>?> _weaponClips;
-    private readonly Igi2AnimController _first = new();
-    private readonly Igi2AnimController _second = new();
+    private readonly Igi2AnimController _first = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
+    private readonly Igi2AnimController _second = new() { Flags = Igi2AnimControllerBits.NoClip };
+    private readonly Igi2AnimController _third = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
+    private readonly Igi2AnimController _fourth = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
 
     /// <summary>Initializes a new instance of the <see cref="Igi2HumanAnimation"/> class.</summary>
     /// <param name="library">The level's clips, or <see langword="null"/> for none.</param>
@@ -60,8 +69,17 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     /// <summary>Gets the active main controller.</summary>
     public Igi2AnimController Main { get; private set; }
 
+    /// <summary>Gets the active upper-body controller, or <see langword="null"/> when the main clip plays on the whole body.</summary>
+    public Igi2AnimController? UpperBody { get; private set; }
+
     /// <summary>Gets the state the main clip was last set from, <c>iStateLastUsedToSetMainAnimation</c>.</summary>
     public int LastState { get; private set; } = -1;
+
+    /// <summary>Gets or sets the state the upper-body clip was last set from, <c>iStateLastUsedToSetUpperBodyAnimation</c>.</summary>
+    public int LastUpperBodyState { get; set; } = -1;
+
+    /// <summary>Gets the blend the last upper-body clip was set or cleared with, in ticks.</summary>
+    public int UpperBodyBlendTicks { get; private set; }
 
     /// <summary>Gets the blend the last clip was set with, in ticks.</summary>
     public int BlendTicks { get; private set; }
@@ -89,9 +107,86 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     public void StepMain() => Main.Step(Main.Time + Main.TimeStep);
 
     /// <inheritdoc/>
-    /// <remarks>The upper-body controller is not run yet, so there is nothing to clear.</remarks>
+    public bool UpperBodyEnded => UpperBody?.IsEnded ?? false;
+
+    /// <inheritdoc/>
+    public int UpperBodyTimeStep
+    {
+        get => UpperBody?.TimeStep ?? 0;
+        set
+        {
+            if (UpperBody is { } upper)
+            {
+                upper.TimeStep = value;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public void ClearUpperBody(float blendSeconds)
     {
+        if (UpperBody is not null)
+        {
+            UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
+            UpperBody = null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void SetUpperBody(Igi2AnimationClip? clip, int time, float blendSeconds)
+    {
+        if (ReferenceEquals(UpperBody, _third) || ReferenceEquals(UpperBody, _fourth))
+        {
+            Igi2AnimController next = ReferenceEquals(UpperBody, _third) ? _fourth : _third;
+            UpperBody.Flags |= Igi2AnimControllerBits.SuppressTriggers;
+            next.SetAnimationAndTime(clip, time);
+            UpperBody = next;
+        }
+        else
+        {
+            _third.SetAnimationAndTime(clip, time);
+            UpperBody = _third;
+        }
+
+        UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
+        UpperBody.Flags = ReferenceEquals(Main.Clip, clip)
+            ? UpperBody.Flags | Igi2AnimControllerBits.SuppressTriggers
+            : UpperBody.Flags & ~Igi2AnimControllerBits.SuppressTriggers;
+    }
+
+    /// <inheritdoc/>
+    public void PlayUpperBodyState(int state, int time, float blendSeconds)
+    {
+        int animation = (uint)state < (uint)_stateAnimations.Count ? _stateAnimations[state] : 0;
+        if (_weaponClips() is { } clips)
+        {
+            Igi2AnimationClip? clip = (uint)animation < (uint)clips.Count ? clips[animation] : null;
+            if (animation is Igi2WeaponTypeAnims.LowerWeapon or Igi2WeaponTypeAnims.LowerWeaponLyingFlat)
+            {
+                SetUpperBody(clip, (clip?.TotalTime ?? 0) - time, blendSeconds);
+                UpperBodyTimeStep = -Igi2AnimController.TicksPerFrame;
+                LastUpperBodyState = state;
+                return;
+            }
+
+            SetUpperBody(clip, time, blendSeconds);
+        }
+        else
+        {
+            SetUpperBody(_rig is null ? null : _library?.Find(_rig, UnarmedClip), time, blendSeconds);
+        }
+
+        LastUpperBodyState = state;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>In the order the controllers were made, which is the order the body's children run in.</remarks>
+    public void AutoStep()
+    {
+        _first.AutoStep();
+        _second.AutoStep();
+        _third.AutoStep();
+        _fourth.AutoStep();
     }
 
     /// <inheritdoc/>
@@ -123,11 +218,14 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     private void SetAnimation(Igi2AnimationClip? clip, int time, float blendSeconds)
     {
         Igi2AnimController next = ReferenceEquals(Main, _first) ? _second : _first;
-        Main.Flags |= Igi2AnimControllerBits.Handover | Igi2AnimControllerBits.SuppressTriggers;
+        Main.Flags |= Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.SuppressTriggers;
         next.Flags &= ~Igi2AnimControllerBits.SuppressTriggers;
         next.SetAnimationAndTime(clip, time);
-        BlendTicks = Fpu.ToInt32((Fpu)blendSeconds * BlendTicksPerSecond);
+        BlendTicks = BlendTicksFor(blendSeconds);
         Main = next;
-        Main.Flags &= ~Igi2AnimControllerBits.Handover;
+        Main.Flags &= ~Igi2AnimControllerBits.AutoStep;
     }
+
+    /// <summary>A blend time in ticks, <c>(int)(seconds × 4800)</c> truncated.</summary>
+    private static int BlendTicksFor(float blendSeconds) => Fpu.ToInt32((Fpu)blendSeconds * BlendTicksPerSecond);
 }

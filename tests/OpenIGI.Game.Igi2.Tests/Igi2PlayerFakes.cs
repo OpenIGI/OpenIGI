@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
@@ -63,6 +64,22 @@ internal static class Igi2PlayerFakes
             Played.Add((state, time, blendSeconds));
             Looping = false;
         }
+
+        public List<(int State, int Time, float Blend)> UpperBodyPlayed { get; } = [];
+
+        public List<(Igi2AnimationClip? Clip, int Time, float Blend)> UpperBodySet { get; } = [];
+
+        public bool UpperBodyEnded { get; set; }
+
+        public int UpperBodyTimeStep { get; set; }
+
+        public int AutoSteps { get; private set; }
+
+        public void SetUpperBody(Igi2AnimationClip? clip, int time, float blendSeconds) => UpperBodySet.Add((clip, time, blendSeconds));
+
+        public void PlayUpperBodyState(int state, int time, float blendSeconds) => UpperBodyPlayed.Add((state, time, blendSeconds));
+
+        public void AutoStep() => AutoSteps++;
     }
 
     /// <summary>Surroundings with a settable fit and a count of walk events.</summary>
@@ -152,6 +169,13 @@ internal static class Igi2PlayerFakes
         public List<string> Calls { get; } = [];
 
         public int? ActiveCategory { get; init; }
+
+        public bool IsHolding { get; init; }
+
+        public Dictionary<Weapons.Igi2WeaponAnimRequest, Weapons.Igi2WeaponAnim> Anims { get; } = [];
+
+        public Weapons.Igi2WeaponAnim? GetAnim(Weapons.Igi2WeaponAnimRequest request, Formats.Animation.Igi2BoneHierarchy? rig) =>
+            Anims.TryGetValue(request, out Weapons.Igi2WeaponAnim anim) ? anim : null;
 
         public bool ActiveIsZoom => false;
 

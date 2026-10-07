@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Collision;
 
 namespace OpenIGI.Game.Igi2.Humans;
@@ -39,6 +40,30 @@ public interface IIgi2HumanAnimation
     /// <param name="time">The clip time to start at, in clip ticks.</param>
     /// <param name="blendSeconds">The blend from the current pose; 0 for a cut.</param>
     void PlayState(int state, int time, float blendSeconds);
+
+    /// <summary>Gets a value indicating whether the upper-body clip has reached an end; false with none playing.</summary>
+    bool UpperBodyEnded { get; }
+
+    /// <summary>Gets or sets the upper-body clip's step a tick; setting it with none playing does nothing.</summary>
+    int UpperBodyTimeStep { get; set; }
+
+    /// <summary>Plays a clip on the upper body (<c>HumanAnim_SetUpperBodyAnimationFromHeader</c>, <c>igi2 0x58F300</c>).</summary>
+    /// <param name="clip">The clip.</param>
+    /// <param name="time">The time to play it from, in clip ticks.</param>
+    /// <param name="blendSeconds">How long to blend it in.</param>
+    void SetUpperBody(Igi2AnimationClip? clip, int time, float blendSeconds);
+
+    /// <summary>
+    /// Plays a state's clip on the upper body, through the held weapon
+    /// (<c>HumanAnim_SetUpperBodyAnimationAndTimeFromState</c>, <c>igi2 0x58F460</c>).
+    /// </summary>
+    /// <param name="state">The state whose base animation to play.</param>
+    /// <param name="time">The time to play it from, in clip ticks.</param>
+    /// <param name="blendSeconds">How long to blend it in.</param>
+    void PlayUpperBodyState(int state, int time, float blendSeconds);
+
+    /// <summary>Steps every controller that steps itself, as the body's children run each tick.</summary>
+    void AutoStep();
 }
 
 /// <summary>The questions a human's states ask of the world around it.</summary>
