@@ -1,13 +1,13 @@
+using OpenIGI.Formats;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
-using OpenIGI.TestSupport;
 
-namespace OpenIGI.Formats.Tests;
+namespace OpenIGI.TestSupport;
 
 /// <summary>I.G.I. 2's shared model archives, <c>COMMON/models/{common,new}.res</c>, opened once.</summary>
 /// <remarks>Every character model and every animation clip the game ships lives in these two.</remarks>
-internal static class Igi2CommonModels
+public static class Igi2CommonModels
 {
     private static readonly string[] ArchiveNames = ["common.res", "new.res"];
 
