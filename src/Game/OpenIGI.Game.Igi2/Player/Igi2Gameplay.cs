@@ -3,6 +3,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
@@ -20,8 +21,9 @@ namespace OpenIGI.Game.Igi2.Player;
 /// </para>
 /// <para>
 /// The body plays the clips the level's packs load, picked by state through the held weapon
-/// (<see cref="Igi2HumanAnimation"/>). Not yet behind it: water, sounds, AI events, conveyors and the weapon (the
-/// player holds nothing, so its body plays its rig's <c>stand</c> clip).
+/// (<see cref="Igi2HumanAnimation"/>), and the view carries the level's first-person model with the weapon in hand,
+/// which the host draws through <see cref="ITitleFirstPerson"/>. Not yet behind it: water, sounds, AI events,
+/// conveyors and firing.
 /// </para>
 /// </remarks>
 public sealed class Igi2Gameplay : ITitleGameplay
@@ -51,9 +53,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(request.World.Mission.PacksInLoadOrder, request.World.Resources);
         Func<string, Formats.World.MefModel?> models = Models(request.World);
         Igi2BoneHierarchy? rig = models(spawn.Model)?.BoneHierarchy;
-        Igi2BoneHierarchy? arms = FirstPersonRig(models, PlayerSpawn.FindGameplayTask(request.World.LevelRoot) as Igi2HumanPlayerTask);
+        string? armsModel = FirstPersonModel(models, PlayerSpawn.FindGameplayTask(request.World.LevelRoot) as Igi2HumanPlayerTask);
+        Igi2BoneHierarchy? arms = armsModel is null ? null : models(armsModel)?.BoneHierarchy;
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
+        player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         return player;
     }
@@ -66,8 +70,23 @@ public sealed class Igi2Gameplay : ITitleGameplay
     public static Igi2BoneHierarchy? FirstPersonRig(Func<string, Formats.World.MefModel?> models, Igi2HumanPlayerTask? player)
     {
         ArgumentNullException.ThrowIfNull(models);
-        return (player is { FirstPersonModel.Length: > 0 } ? models(player.FirstPersonModel)?.BoneHierarchy : null)
-            ?? models(FirstPersonFallbackModel)?.BoneHierarchy;
+        return FirstPersonModel(models, player) is { } name ? models(name)?.BoneHierarchy : null;
+    }
+
+    /// <summary>The model the first-person view carries.</summary>
+    /// <param name="models">The level's models, by name.</param>
+    /// <param name="player">The level's player, whose <c>1st Person Model</c> names it.</param>
+    /// <returns>Its name, or <see langword="null"/> when neither that model nor the fallback has bones.</returns>
+    /// <remarks><c>HumanView_CreateHandler</c> (<c>igi2 0x4D5A30</c>): a missing or unboned model falls back to <c>005_01_1</c>.</remarks>
+    public static string? FirstPersonModel(Func<string, Formats.World.MefModel?> models, Igi2HumanPlayerTask? player)
+    {
+        ArgumentNullException.ThrowIfNull(models);
+        if (player is { FirstPersonModel.Length: > 0 } && models(player.FirstPersonModel)?.BoneHierarchy is not null)
+        {
+            return player.FirstPersonModel;
+        }
+
+        return models(FirstPersonFallbackModel)?.BoneHierarchy is not null ? FirstPersonFallbackModel : null;
     }
 
     /// <summary>Makes the player's inventory, fills it from the level's <c>Weapon</c> script and puts it behind the weapon control.</summary>
@@ -127,7 +146,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 }
 
 /// <summary>The ported player as the host steps it.</summary>
-public sealed class Igi2TitlePlayer : ITitlePlayer
+public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
 {
     /// <summary>DirectInput's relative counts to the analog axis, <c>Mouse_Update</c> (<c>igi2ed 0x55ED60</c>): a 255th each.</summary>
     private const double CountsToAnalog = 0.00392156862745098;
@@ -156,6 +175,10 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
 
     private readonly Igi2PlayerInputReader _reader = new();
     private readonly float[] _frame = new float[Igi2HumanChannels.Count];
+    private readonly Igi2FirstPersonFrame _firstPerson = new();
+    private long _ticks;
+    private TitleFirstPersonView? _held;
+    private long _heldTick = -1;
 
     private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons)
     {
@@ -189,6 +212,22 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
                 new Vector3f(m.M11, m.M21, m.M31),
                 new Vector3f(m.M13, m.M23, m.M33),
                 new Vector3f(m.M12, m.M22, m.M32));
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Built once a tick, on the first ask after it, from the view as the tick left it.</remarks>
+    public TitleFirstPersonView? FirstPerson
+    {
+        get
+        {
+            if (_heldTick != _ticks)
+            {
+                _held = _firstPerson.Build(Human, Inventory?.Current?.WeaponType.FixedModel, _ticks);
+                _heldTick = _ticks;
+            }
+
+            return _held;
         }
     }
 
@@ -256,6 +295,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
         Human.Update(_frame);
         Human.RunDelayed();
+        _ticks++;
     }
 
     /// <summary>The mouse's counts as the input port's analog axis: a 255th each, held within one either way.</summary>

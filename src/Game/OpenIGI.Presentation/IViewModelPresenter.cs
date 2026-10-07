@@ -63,6 +63,25 @@ public interface IViewModelPresenter : IDisposable
         Matrix3f? orientation = null);
 }
 
+/// <summary>Draws what a title's own player holds in front of its eyes, from the frame the player gives.</summary>
+/// <remarks>
+/// The counterpart of <see cref="IViewModelPresenter"/> for a player the title brings itself
+/// (<see cref="ITitleFirstPerson"/>): the pose and the parts come from the title, the models from its packs.
+/// </remarks>
+public interface ITitleViewModelPresenter : IDisposable
+{
+    /// <summary>Gets ready to draw a mission's models.</summary>
+    /// <param name="mission">The mission whose packs the models are read from.</param>
+    /// <returns><see langword="false"/> when the mission has nothing to draw them from.</returns>
+    bool Load(LoadedMission mission);
+
+    /// <summary>Draws the first-person view.</summary>
+    /// <param name="view">What the eyes hold.</param>
+    /// <param name="camera">Where it is seen from, in metres.</param>
+    /// <param name="projection">The view model's projection, which is not the world's.</param>
+    void Draw(TitleFirstPersonView view, in Camera3D camera, in Matrix4f projection);
+}
+
 /// <summary>Draws the weapon the player is holding.</summary>
 public interface IHeldWeaponPresenter : IDisposable
 {

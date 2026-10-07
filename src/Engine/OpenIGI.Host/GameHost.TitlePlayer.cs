@@ -6,6 +6,8 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -28,6 +30,7 @@ internal sealed partial class GameHost
 
     private ITitleGameplay? _gameplay;
     private ITitlePlayer? _titlePlayer;
+    private ITitleViewModelPresenter? _titleArms;
     private float _titleMouseX;
     private float _titleMouseY;
     private PlayerAction _titlePressed;
@@ -39,6 +42,8 @@ internal sealed partial class GameHost
     private void StandTitlePlayer(LoadedMission loaded, LevelTask levelRoot, WorldScene scene)
     {
         _titlePlayer = null;
+        _titleArms?.Dispose();
+        _titleArms = null;
         if (_gameplay is null)
         {
             return;
@@ -57,6 +62,17 @@ internal sealed partial class GameHost
 
         _titlePlayer = player;
         _player = null;
+
+        // What the title's player holds in front of its eyes, drawn from the title's own packs.
+        if (player is ITitleFirstPerson)
+        {
+            _titleArms = _presentation.CreateTitleViewModel(ViewModelRequest());
+            if (_titleArms is not null && !_titleArms.Load(loaded))
+            {
+                _titleArms.Dispose();
+                _titleArms = null;
+            }
+        }
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
@@ -120,6 +136,28 @@ internal sealed partial class GameHost
         _titleMouseY = 0f;
         _titlePressed = default;
         return true;
+    }
+
+    /// <summary>Draws what the title's player holds, after the world and over it, as the host's own rig draws its arms.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <remarks>
+    /// Only while walking with nothing else holding the view: not in the free camera, a cutscene, the computer or a
+    /// camera entry. Depth is cleared first so a wall the eyes stand against cannot cut through the hands, and the
+    /// geometry is flagged first-person so the lighting neither meters nor bounces off it.
+    /// </remarks>
+    private void DrawTitleFirstPerson(in Camera3D eye)
+    {
+        if (_titlePlayer is not ITitleFirstPerson hands || _titleArms is not { } arms
+            || !_playerMode || _computerOpen || _entry.IsCameraActive || _cutscenes?.IsPlaying == true
+            || hands.FirstPerson is not { } held)
+        {
+            return;
+        }
+
+        ViewModelDepth.Begin(_device);
+        _device.SetFirstPersonGeometry(true);
+        arms.Draw(held, eye, ViewModelProjection.Create(held.ObjectFieldOfView, FarPlane));
+        _device.SetFirstPersonGeometry(false);
     }
 
     /// <summary>The camera the title's player looks through, in metres.</summary>

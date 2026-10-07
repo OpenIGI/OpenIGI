@@ -19,7 +19,21 @@ public abstract partial class Igi2Human
 
     private const float HalfTurn = 3.1415927f;
 
+    /// <summary>How far ahead of the eyes the held object reaches, <c>2048</c>: what is nearer pulls it back.</summary>
+    private const float ObjectReach = 2048f;
+
+    /// <summary>How far a held object comes back out each tick once nothing is in front of it, <c>0x4297B426</c>.</summary>
+    private const float RetractRelease = 75.851852f;
+
+    /// <summary>How far a held object moves each tick toward a wall's pull, <c>0x42E38E39</c>.</summary>
+    private const float RetractFollow = 113.77778f;
+
+    /// <summary>The share of a landing's dip the held object takes on top of the eyes', <c>0.075</c> as a double.</summary>
+    private const double ObjectImpactShare = 0.075;
+
     private readonly Igi2LineTrace _eyeTrace = new(1) { Mesh = FootingMesh, Includes = static owner => !IsSweptThrough(owner) };
+
+    private readonly Igi2LineTrace _objectTrace = new(1) { Mesh = 0, Includes = static owner => !IsSweptThrough(owner) };
 
     /// <summary>
     /// Places the view on the body: <c>HumanView_UpdateBody</c> (<c>igi2 0x4D6510</c>), for the view alone.
@@ -39,11 +53,11 @@ public abstract partial class Igi2Human
     /// them 204.8 short of whatever it meets.
     /// </para>
     /// <para>
-    /// With the first-person model registered, and asked to, its clip steps by its step.
-    /// </para>
-    /// <para>
-    /// Not ported yet: the held object's retraction and the first-person model's placement, which follow the view
-    /// when an object is registered with it.
+    /// With the first-person model registered, a line 2048 ahead along the view finds how far the held object is to be
+    /// pulled back from what is in front of it, and the pull steps toward that: 113.8 a tick while something is there,
+    /// 75.9 a tick back out once nothing is. The model stands at the eyes plus that pull along the view and its share
+    /// of a landing's dip, turned from the view by the object's own pitch and turn; and, asked to, its clip steps by
+    /// its step.
     /// </para>
     /// </remarks>
     /// <param name="updateAnimation">Whether the first-person clip steps, <c>isUpdateAnim</c>: the tick's update does, placing the view alone does not.</param>
@@ -65,6 +79,7 @@ public abstract partial class Igi2Human
         Vector3d eyes = EyesAt(Position, Pose);
 
         Fpu leanX = view.PeekOffset.X, leanY = view.PeekOffset.Y, leanZ = view.PeekOffset.Z;
+        float objectDip = 0f;
         if (view.ShakeFactor != 0f)
         {
             leanX += Shake(view.ShakeRange, view.ShakeFactor);
@@ -74,8 +89,10 @@ public abstract partial class Igi2Human
 
         if (view.ImpactOffset != 0f)
         {
-            Fpu dip = (Fpu)view.ImpactOffset * Math.Sin(view.ImpactAngle);
+            double sine = Math.Sin(view.ImpactAngle);
+            Fpu dip = (Fpu)view.ImpactOffset * sine;
             leanZ += dip;
+            objectDip = (((Fpu)view.ImpactOffset * ObjectImpactShare) * sine).F;
             Fpu swing = (Fpu)view.ImpactAngle + ImpactSwing;
             view.ImpactAngle = swing.F;
             if (swing.Value >= HalfTurn)
@@ -90,12 +107,86 @@ public abstract partial class Igi2Human
         }
 
         view.Position = eyes;
+        Vector3f objectOffset = new(0f, 0f, objectDip);
+        if (view.IsObjectRegistered)
+        {
+            objectOffset = Retract(view, eyes, o, objectDip);
+        }
+
         view.StepObject();
-        if (view.IsObjectRegistered && updateAnimation)
+        if (!view.IsObjectRegistered)
+        {
+            return;
+        }
+
+        float[] turn = Igi2Pose.Rotation(view.ObjectPitch, 0f, view.ObjectYaw);
+        Matrix3f placed = ObjectFrame(o, turn);
+        if (updateAnimation)
         {
             Igi2AnimController arms = view.ObjectAnimation;
             arms.Step(arms.Time + arms.TimeStep);
         }
+
+        view.PlaceObject(
+            new Vector3d(
+                ((Fpu)objectOffset.X + eyes.X).Value,
+                ((Fpu)objectOffset.Y + eyes.Y).Value,
+                ((Fpu)objectOffset.Z + eyes.Z).Value),
+            placed);
+    }
+
+    /// <summary>
+    /// Pulls the held object back from what is in front of it, and gives its offset from the eyes
+    /// (<c>HumanView_UpdateBody</c>, <c>igi2 0x4D6A90</c>).
+    /// </summary>
+    /// <remarks>
+    /// The line is traced against every object's first collision mesh, which the eyes' own lean does not use, with the
+    /// same objects let through.
+    /// </remarks>
+    private Vector3f Retract(Igi2HumanView view, Vector3d eyes, float[] o, float objectDip)
+    {
+        Fpu aheadX = ((((Fpu)o[0] + o[2]) * 0.0) + ((Fpu)o[1] * ObjectReach));
+        Fpu aheadY = ((((Fpu)o[5] + o[3]) * 0.0) + ((Fpu)o[4] * ObjectReach));
+        Fpu aheadZ = ((((Fpu)o[8] + o[6]) * 0.0) + ((Fpu)o[7] * ObjectReach));
+        _objectTrace.Starts[0] = eyes;
+        _objectTrace.Ends[0] = new Vector3d((aheadX + eyes.X).Value, (aheadY + eyes.Y).Value, (aheadZ + eyes.Z).Value);
+        Surroundings.Collision.TraceLines(_objectTrace, AnyGroup);
+        Igi2Intersection hit = _objectTrace.Intersections[0];
+        view.RetractIdeal = hit.IsHit ? (-((Fpu)(double)ObjectReach - hit.Distance)).F : 0f;
+
+        float step = view.RetractIdeal == 0f ? RetractRelease : RetractFollow;
+        if (view.RetractReal < view.RetractIdeal)
+        {
+            float raised = ((Fpu)view.RetractReal + step).F;
+            view.RetractReal = raised > view.RetractIdeal ? view.RetractIdeal : raised;
+        }
+        else if (view.RetractReal > view.RetractIdeal)
+        {
+            float lowered = ((Fpu)view.RetractReal - step).F;
+            view.RetractReal = lowered < view.RetractIdeal ? view.RetractIdeal : lowered;
+        }
+
+        Fpu pull = view.RetractReal;
+        float x = ((((Fpu)o[0] + o[2]) * 0.0) + (pull * o[1])).F;
+        float y = ((((Fpu)o[5] + o[3]) * 0.0) + (pull * o[4])).F;
+        float z = ((((Fpu)o[8] + o[6]) * 0.0) + (pull * o[7])).F;
+        return new Vector3f(x, y, ((Fpu)z + objectDip).F);
+    }
+
+    /// <summary>The view's orientation times the object's own turn, each cell summed third term, second, first.</summary>
+    /// <remarks>
+    /// The original's rows after the first sum their terms in other orders; the model's orientation is drawn and feeds
+    /// nothing the game decides, so the first row's order serves for all nine.
+    /// </remarks>
+    private static Matrix3f ObjectFrame(float[] o, float[] n)
+    {
+        float Cell(int row, int column) =>
+            ((((Fpu)n[6 + column] * o[(row * 3) + 2]) + ((Fpu)n[3 + column] * o[(row * 3) + 1])) + ((Fpu)n[column] * o[row * 3])).F;
+
+        return new Matrix3f(
+            Cell(0, 0), Cell(0, 1), Cell(0, 2),
+            Cell(1, 0), Cell(1, 1), Cell(1, 2),
+            Cell(2, 0), Cell(2, 1), Cell(2, 2));
     }
 
     /// <summary>Where the eyes are above the feet in a posture, <c>HumanView_GetOriginalViewPosition</c> (<c>igi2 0x4D7150</c>).</summary>

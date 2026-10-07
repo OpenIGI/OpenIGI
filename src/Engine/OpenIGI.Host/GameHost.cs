@@ -6219,6 +6219,10 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                     _device.SetFirstPersonGeometry(false);
                 }
+                else
+                {
+                    DrawTitleFirstPerson(eye);
+                }
 
                 // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
                 // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
@@ -7806,6 +7810,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         _missileRenderer?.Dispose();
         _renderer?.Dispose();
         _arms?.Dispose();
+        _titleArms?.Dispose();
         _cardLighting?.Dispose();
         _cardLookup?.Dispose();
         _sdfClipmaps?.Dispose();

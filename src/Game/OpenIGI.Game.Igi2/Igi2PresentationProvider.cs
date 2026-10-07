@@ -5,6 +5,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ilff;
+using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
@@ -15,10 +16,10 @@ namespace OpenIGI.Game.Igi2;
 /// <summary>Builds the renderers I.G.I. 2 draws with.</summary>
 /// <remarks>
 /// <para>
-/// <b>Three members, and that is the honest surface.</b> The sequel draws its placed world, its ground
-/// and its sky; it has no first-person arms, no held weapon, no HUD and no map computer, because none of
-/// those systems exist for it yet. Every other factory is left at the interface's default of null, which
-/// the host reads as "this title does not present that pass" and skips.
+/// <b>Only what exists.</b> The sequel draws its placed world, its ground, its sky, its forests and water,
+/// and what its own player holds in front of its eyes (<see cref="CreateTitleViewModel"/>). It has no HUD
+/// and no map computer yet. Every other factory is left at the interface's default of null, which the host
+/// reads as "this title does not present that pass" and skips.
 /// </para>
 /// <para>
 /// <b>Not here yet, and for one shared reason.</b> The forest and the water are read and culled and
@@ -43,6 +44,11 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 {
     /// <summary>Gets the shared instance.</summary>
     public static Igi2PresentationProvider Instance { get; } = new();
+
+    /// <inheritdoc/>
+    /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
+    public ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
+        new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger);
 
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>

@@ -33,6 +33,21 @@ public sealed class Igi2HumanView
     /// </remarks>
     public Igi2BoneHierarchy? ObjectRig { get; set; }
 
+    /// <summary>Gets or sets the name of the first-person model the view carries, empty for none.</summary>
+    public string ObjectModel { get; set; } = string.Empty;
+
+    /// <summary>Gets where the first-person model stands, <c>tModelObj.tPos</c>: the eyes plus the object's offset.</summary>
+    public Vector3d ObjectPosition { get; private set; }
+
+    /// <summary>Gets the first-person model's orientation, <c>tModelObj.tOrientation</c>: the view's turned by the object's pitch and turn.</summary>
+    public Matrix3f ObjectOrientation { get; private set; } = Matrix3f.Identity;
+
+    /// <summary>Gets or sets how far the held object would be pulled back from what is in front of it, <c>vRetractIdeal</c>; zero or less.</summary>
+    public float RetractIdeal { get; set; }
+
+    /// <summary>Gets or sets how far the held object is pulled back now, <c>vRetractReal</c>; it steps toward <see cref="RetractIdeal"/>.</summary>
+    public float RetractReal { get; set; }
+
     /// <summary>Gets a value indicating whether the first-person model is drawn with the view, <c>isObjectRegistered</c>.</summary>
     public bool IsObjectRegistered => ObjectRig is not null;
 
@@ -137,6 +152,15 @@ public sealed class Igi2HumanView
     {
         PitchOffset = ((-(Fpu)PitchOffset * OffsetDamping) + PitchOffset).F;
         YawOffset = ((-(Fpu)YawOffset * OffsetDamping) + YawOffset).F;
+    }
+
+    /// <summary>Places the first-person model: at a position and turned by the object's pitch and turn from the view.</summary>
+    /// <param name="position">The eyes plus the object's offset.</param>
+    /// <param name="orientation">The model's orientation.</param>
+    internal void PlaceObject(Vector3d position, Matrix3f orientation)
+    {
+        ObjectPosition = position;
+        ObjectOrientation = orientation;
     }
 
     /// <summary>Steps the held object's pitch and turn toward their aims, by their steps, without passing them.</summary>

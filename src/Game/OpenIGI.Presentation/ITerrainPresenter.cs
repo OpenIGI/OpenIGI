@@ -270,6 +270,11 @@ public interface ITitlePresentationProvider
     /// <returns>The presenter.</returns>
     IViewModelPresenter? CreateViewModel(in ViewModelPresentationRequest request) => null;
 
+    /// <summary>Builds the presenter for what a title's own player holds in front of its eyes.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter, or <see langword="null"/> for a title whose player draws nothing there.</returns>
+    ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) => null;
+
     /// <summary>Builds the presenter for the weapon the player holds.</summary>
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>

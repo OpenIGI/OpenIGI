@@ -2858,6 +2858,7 @@ internal sealed partial class GameHost
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
         _arms?.Dispose();
+        _titleArms?.Dispose();
         _sky = null;
         _rain?.Dispose();
         _rain = null;
@@ -2888,6 +2889,7 @@ internal sealed partial class GameHost
         _arms = null;
         _player = null;
         _titlePlayer = null;
+        _titleArms = null;
         _playerMode = false;
         _scene = null;
         _playerTerrain = null;
