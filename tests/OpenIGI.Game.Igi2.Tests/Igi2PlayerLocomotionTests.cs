@@ -126,6 +126,72 @@ public sealed class Igi2PlayerLocomotionTests
         Assert.Equal(Igi2PlayerState.Stand, player.Locomotion.CurrentState);
     }
 
+    /// <summary>The running gaits move between each other by the held directions, as each retail per-tick decides.</summary>
+    /// <remarks>Run forward tests right and left before forward, so a lone sideways key still enters the diagonal.</remarks>
+    [Theory]
+    [InlineData(Igi2PlayerAction.MoveForwards | Igi2PlayerAction.MoveRight, Igi2PlayerState.RunForwardRight)]
+    [InlineData(Igi2PlayerAction.MoveForwards | Igi2PlayerAction.MoveLeft, Igi2PlayerState.RunForwardLeft)]
+    [InlineData(Igi2PlayerAction.MoveRight, Igi2PlayerState.RunForwardRight)]
+    [InlineData(Igi2PlayerAction.MoveBackwards, Igi2PlayerState.RunBackward)]
+    [InlineData(Igi2PlayerAction.None, Igi2PlayerState.Stand)]
+    public void Run_forward_follows_the_held_directions(Igi2PlayerAction held, int expected)
+    {
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        Tick(player, Igi2PlayerAction.None, grounded: true);
+        Tick(player, Igi2PlayerAction.MoveForwards, grounded: true);
+
+        Tick(player, held, grounded: true);
+
+        // Backward from a forward run passes through standing: run forward has no backward exit.
+        int state = player.Locomotion.CurrentState;
+        Assert.Equal(held == Igi2PlayerAction.MoveBackwards ? Igi2PlayerState.Stand : expected, state);
+    }
+
+    /// <summary>A side run takes a diagonal when forward or back joins it.</summary>
+    [Fact]
+    public void A_side_run_turns_diagonal()
+    {
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        Tick(player, Igi2PlayerAction.None, grounded: true);
+        Tick(player, Igi2PlayerAction.MoveRight, grounded: true);
+        Assert.Equal(Igi2PlayerState.RunRight, player.Locomotion.CurrentState);
+
+        Tick(player, Igi2PlayerAction.MoveRight | Igi2PlayerAction.MoveBackwards, grounded: true);
+
+        Assert.Equal(Igi2PlayerState.RunBackwardRight, player.Locomotion.CurrentState);
+    }
+
+    /// <summary>Changing between neighbouring gaits keeps the clip's place in its cycle.</summary>
+    [Fact]
+    public void Neighbouring_gaits_keep_their_phase()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeAnimation animation, _) = Igi2PlayerFakes.Player();
+        Tick(player, Igi2PlayerAction.None, grounded: true);
+        Tick(player, Igi2PlayerAction.MoveForwards, grounded: true);
+        animation.MainTime = 480;
+        animation.MainTotalTime = 960;
+
+        Tick(player, Igi2PlayerAction.MoveForwards | Igi2PlayerAction.MoveRight, grounded: true);
+
+        Assert.Equal((Igi2PlayerState.RunForwardRight, 480, 0.2f), animation.Played[^1]);
+    }
+
+    /// <summary>Each gait steers toward its own retail targets.</summary>
+    [Fact]
+    public void Running_backward_steers_to_its_own_target()
+    {
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        Tick(player, Igi2PlayerAction.None, grounded: true);
+        Tick(player, Igi2PlayerAction.MoveBackwards, grounded: true);
+
+        for (int i = 0; i < 20; i++)
+        {
+            Tick(player, Igi2PlayerAction.MoveBackwards, grounded: true);
+        }
+
+        Assert.Equal(-681.98401f, player.GroundMovementSpeed.Y, 0.01f);
+    }
+
     private static void Tick(Igi2HumanPlayer player, Igi2PlayerAction held, bool grounded)
     {
         Igi2PlayerFakes.Feed(player, held);

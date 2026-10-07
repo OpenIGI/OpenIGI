@@ -13,24 +13,18 @@ public sealed partial class Igi2HumanPlayer
     /// <remarks>The <c>vMaxYDelta</c> the stand, turn and run states pass <c>HumanPlayer_MoveOnGround</c>.</remarks>
     public const float GroundAcceleration = 118.76579f;
 
-    /// <summary>The sideways acceleration while running forward, per tick.</summary>
-    public const float RunForwardSideAcceleration = 63.624531f;
-
-    /// <summary>Running forward's target speed at a movement-speed scale of 1, units per tick.</summary>
-    public const float RunForwardSpeed = 890.74341f;
-
     /// <summary>How long a clip change blends in, seconds, in most states.</summary>
     public const float StateBlendSeconds = 0.2f;
-
-    /// <summary>The animation time scale running forward (<c>HUMANPLAYER_RUNFORWARD_ANIMTIMESCALE</c>, 0x63D764).</summary>
-    public const float RunForwardAnimationTimeScale = 1f;
 
     private TaskStateMachine CreateLocomotion()
     {
         var states = new TaskStateFunction?[Igi2PlayerState.Count];
         states[Igi2PlayerState.Stand] = (_, _) => EnterStand();
         states[Igi2PlayerState.StandTurn] = (_, _) => EnterStandTurn();
-        states[Igi2PlayerState.RunForward] = (_, _) => EnterRunForward();
+        foreach (Gait gait in RunGaits)
+        {
+            states[gait.State] = (_, _) => EnterGait(gait);
+        }
 
         return new TaskStateMachine(
             (_, _) => PackSignal(),
@@ -286,35 +280,113 @@ public sealed partial class Igi2HumanPlayer
         }
     }
 
-    // State 3 -- InitStateRunForward 0x4A38B0, RunStateRunForward 0x4A39F0.
-    private void EnterRunForward()
+    /// <summary>A directional gait: one walk, run or crawl state and the numbers that make it that gait.</summary>
+    /// <param name="State">The state.</param>
+    /// <param name="ForwardTarget">The target speed along local Y at a movement-speed scale of 1.</param>
+    /// <param name="ForwardStep">The most the Y speed changes per tick.</param>
+    /// <param name="SideTarget">The target speed along local X at a movement-speed scale of 1.</param>
+    /// <param name="SideStep">The most the X speed changes per tick.</param>
+    /// <param name="TimeScale">The gait's own animation rate, before the slope.</param>
+    /// <param name="WalkingCounterpart">Where the walk bit sends a running gait.</param>
+    /// <param name="KeepPhaseFrom">The states a change from keeps the clip's place in its cycle.</param>
+    /// <param name="CutAfterJump">Whether landing from a jump cuts straight to the clip instead of blending.</param>
+    /// <param name="Direction">The next state for the held directions, or <see cref="Stay"/>.</param>
+    private sealed record Gait(
+        int State,
+        float ForwardTarget,
+        float ForwardStep,
+        float SideTarget,
+        float SideStep,
+        float TimeScale,
+        int WalkingCounterpart,
+        int[] KeepPhaseFrom,
+        bool CutAfterJump,
+        Func<Igi2HumanPlayer, int> Direction);
+
+    private const int Stay = -1;
+
+    private const float RunForwardSpeed = 890.74341f;
+    private const float RunBackwardSpeed = -681.98401f;
+    private const float RunSideSpeed = 477.18399f;
+    private const float RunBackwardStep = 90.931198f;
+    private const float RunSideStep = 63.624531f;
+
+    /// <summary>
+    /// The running gaits, states 3 to 10, from their entries (<c>HumanPlayer_InitStateRun*</c>,
+    /// <c>igi2 0x4A38B0</c>–<c>0x4A5CC0</c>) and per-ticks (<c>0x4A39F0</c>–<c>0x4A5DE0</c>). The rates are the
+    /// <c>HUMANPLAYER_RUN*_ANIMTIMESCALE</c> globals at <c>0x63D764</c>: 1.0, except the two side runs at 1.2.
+    /// </summary>
+    private static readonly Gait[] RunGaits =
+    [
+        new(Igi2PlayerState.RunForward, RunForwardSpeed, GroundAcceleration, 0f, RunSideStep, 1f,
+            Igi2PlayerState.WalkForward, [Igi2PlayerState.RunForwardRight, Igi2PlayerState.RunForwardLeft, Igi2PlayerState.WalkForward, Igi2PlayerState.CrouchWalkForward], true,
+            static p => p.Has(Igi2PlayerSignal.Right) ? Igi2PlayerState.RunForwardRight
+                : p.Has(Igi2PlayerSignal.Left) ? Igi2PlayerState.RunForwardLeft
+                : p.Has(Igi2PlayerSignal.Forward) ? Stay : Igi2PlayerState.Stand),
+        new(Igi2PlayerState.RunForwardRight, RunForwardSpeed, GroundAcceleration, RunSideSpeed, RunSideStep, 1f,
+            Igi2PlayerState.WalkForwardRight, [Igi2PlayerState.RunForward, Igi2PlayerState.WalkForwardRight, Igi2PlayerState.CrouchWalkForwardRight], false,
+            static p => p.Has(Igi2PlayerSignal.Forward)
+                ? (p.Has(Igi2PlayerSignal.Right) ? Stay : Igi2PlayerState.RunForward)
+                : Igi2PlayerState.RunRight),
+        new(Igi2PlayerState.RunForwardLeft, RunForwardSpeed, GroundAcceleration, -RunSideSpeed, RunSideStep, 1f,
+            Igi2PlayerState.WalkForwardLeft, [Igi2PlayerState.RunForward, Igi2PlayerState.WalkForwardLeft, Igi2PlayerState.CrouchWalkForwardLeft], false,
+            static p => p.Has(Igi2PlayerSignal.Forward)
+                ? (p.Has(Igi2PlayerSignal.Left) ? Stay : Igi2PlayerState.RunForward)
+                : Igi2PlayerState.RunLeft),
+        new(Igi2PlayerState.RunBackward, RunBackwardSpeed, RunBackwardStep, 0f, RunSideStep, 1f,
+            Igi2PlayerState.WalkBackward, [Igi2PlayerState.RunBackwardRight, Igi2PlayerState.RunBackwardLeft, Igi2PlayerState.WalkBackward, Igi2PlayerState.CrouchWalkBackward], true,
+            static p => p.Has(Igi2PlayerSignal.Right) ? Igi2PlayerState.RunBackwardRight
+                : p.Has(Igi2PlayerSignal.Left) ? Igi2PlayerState.RunBackwardLeft
+                : p.Has(Igi2PlayerSignal.Backward) ? Stay : Igi2PlayerState.Stand),
+        new(Igi2PlayerState.RunBackwardRight, RunBackwardSpeed, RunBackwardStep, RunSideSpeed, RunSideStep, 1f,
+            Igi2PlayerState.WalkBackwardRight, [Igi2PlayerState.RunBackward, Igi2PlayerState.WalkBackwardRight, Igi2PlayerState.CrouchWalkBackwardRight], false,
+            static p => p.Has(Igi2PlayerSignal.Backward)
+                ? (p.Has(Igi2PlayerSignal.Right) ? Stay : Igi2PlayerState.RunBackward)
+                : Igi2PlayerState.RunRight),
+        new(Igi2PlayerState.RunBackwardLeft, RunBackwardSpeed, RunBackwardStep, -RunSideSpeed, RunSideStep, 1f,
+            Igi2PlayerState.WalkBackwardLeft, [Igi2PlayerState.RunBackward, Igi2PlayerState.WalkBackwardLeft, Igi2PlayerState.CrouchWalkBackwardLeft], false,
+            static p => p.Has(Igi2PlayerSignal.Backward)
+                ? (p.Has(Igi2PlayerSignal.Left) ? Stay : Igi2PlayerState.RunBackward)
+                : Igi2PlayerState.RunLeft),
+        new(Igi2PlayerState.RunRight, 0f, GroundAcceleration, RunSideSpeed, RunSideStep, 1.2f,
+            Igi2PlayerState.WalkRight, [Igi2PlayerState.WalkRight, Igi2PlayerState.CrouchWalkRight], true,
+            static p => !p.Has(Igi2PlayerSignal.Right) ? Igi2PlayerState.Stand
+                : p.Has(Igi2PlayerSignal.Forward) ? Igi2PlayerState.RunForwardRight
+                : p.Has(Igi2PlayerSignal.Backward) ? Igi2PlayerState.RunBackwardRight : Stay),
+        new(Igi2PlayerState.RunLeft, 0f, GroundAcceleration, -RunSideSpeed, RunSideStep, 1.2f,
+            Igi2PlayerState.WalkLeft, [Igi2PlayerState.WalkLeft, Igi2PlayerState.CrouchWalkLeft], true,
+            static p => !p.Has(Igi2PlayerSignal.Left) ? Igi2PlayerState.Stand
+                : p.Has(Igi2PlayerSignal.Forward) ? Igi2PlayerState.RunForwardLeft
+                : p.Has(Igi2PlayerSignal.Backward) ? Igi2PlayerState.RunBackwardLeft : Stay),
+    ];
+
+    private void EnterGait(Gait gait)
     {
         Pose = Igi2HumanPose.Standing;
         int previous = Locomotion.PreviousState;
-        if (previous is Igi2PlayerState.RunForwardRight or Igi2PlayerState.RunForwardLeft
-            or Igi2PlayerState.WalkForward or Igi2PlayerState.CrouchWalkForward)
+        if (Array.IndexOf(gait.KeepPhaseFrom, previous) >= 0)
         {
-            // From another forward gait the clip carries on at the same point in its cycle.
-            int time = PhaseContinuationTime();
-            Animation.PlayState(Igi2PlayerState.RunForward, time, StateBlendSeconds);
+            // From a neighbouring gait the clip carries on at the same point in its cycle.
+            Animation.PlayState(gait.State, PhaseContinuationTime(), StateBlendSeconds);
         }
         else
         {
-            Animation.PlayState(
-                Igi2PlayerState.RunForward,
-                0,
-                previous == Igi2PlayerState.Jump ? 0f : StateBlendSeconds);
+            Animation.PlayState(gait.State, 0, gait.CutAfterJump && previous == Igi2PlayerState.Jump ? 0f : StateBlendSeconds);
         }
 
         RequestedUpperBody = 3;
         AimPrecision(Igi2PrecisionType.Running, static p => p.Running);
-        Locomotion.Current = (_, _) => RunRunForward();
+        Locomotion.Current = (_, _) => RunGait(gait);
     }
 
-    private void RunRunForward()
+    private void RunGait(Gait gait)
     {
-        ControlGait(RunForwardAnimationTimeScale);
-        MoveOnGround(MovementSpeedScale * RunForwardSpeed, GroundAcceleration, 0f, RunForwardSideAcceleration);
+        ControlGait(gait.TimeScale);
+        MoveOnGround(
+            MovementSpeedScale * gait.ForwardTarget,
+            gait.ForwardStep,
+            MovementSpeedScale * gait.SideTarget,
+            gait.SideStep);
 
         if (Has(Igi2PlayerSignal.Swimming))
         {
@@ -331,36 +403,34 @@ public sealed partial class Igi2HumanPlayer
         if (Has(Igi2PlayerSignal.Dead))
         {
             Go(Igi2PlayerState.Die);
+            return;
         }
-        else if (Has(Igi2PlayerSignal.Hit))
+
+        if (Has(Igi2PlayerSignal.Hit))
         {
             Go(Igi2PlayerState.Hit);
+            return;
         }
-        else if (Has(Igi2PlayerSignal.Walking))
+
+        if (Has(Igi2PlayerSignal.Walking))
         {
-            Go(Igi2PlayerState.WalkForward);
+            Go(gait.WalkingCounterpart);
+            return;
         }
-        else if (TryJump())
+
+        if (TryJump())
         {
+            return;
         }
-        else if (Has(Igi2PlayerSignal.Right))
+
+        int next = gait.Direction(this);
+        if (next != Stay)
         {
-            Go(Igi2PlayerState.RunForwardRight);
+            Go(next);
         }
-        else if (Has(Igi2PlayerSignal.Left))
+        else if (!TryCrouch() && !TryLieDown())
         {
-            Go(Igi2PlayerState.RunForwardLeft);
-        }
-        else if (Has(Igi2PlayerSignal.Forward))
-        {
-            if (!TryCrouch() && !TryLieDown())
-            {
-                Surroundings.SendWalkEvent();
-            }
-        }
-        else
-        {
-            Go(Igi2PlayerState.Stand);
+            Surroundings.SendWalkEvent();
         }
     }
 }

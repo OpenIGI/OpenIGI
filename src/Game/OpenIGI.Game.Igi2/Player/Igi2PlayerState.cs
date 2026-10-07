@@ -82,6 +82,27 @@ public static class Igi2PlayerState
     /// <summary>Walking forward crouched.</summary>
     public const int CrouchWalkForward = 26;
 
+    /// <summary>Walking forward and right crouched.</summary>
+    public const int CrouchWalkForwardRight = 27;
+
+    /// <summary>Walking forward and left crouched.</summary>
+    public const int CrouchWalkForwardLeft = 28;
+
+    /// <summary>Walking backward crouched.</summary>
+    public const int CrouchWalkBackward = 29;
+
+    /// <summary>Walking backward and right crouched.</summary>
+    public const int CrouchWalkBackwardRight = 30;
+
+    /// <summary>Walking backward and left crouched.</summary>
+    public const int CrouchWalkBackwardLeft = 31;
+
+    /// <summary>Walking right crouched.</summary>
+    public const int CrouchWalkRight = 32;
+
+    /// <summary>Walking left crouched.</summary>
+    public const int CrouchWalkLeft = 33;
+
     /// <summary>Jumping.</summary>
     public const int Jump = 36;
 
