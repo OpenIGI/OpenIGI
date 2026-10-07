@@ -159,6 +159,8 @@ public sealed class Igi2PlayerInputTests
 
         public void LeaveZoomAlternateFireMode() => Calls.Add("LeaveZoom");
 
+        public void StopSoundSlot() => Calls.Add("StopSoundSlot");
+
         public void StepActionMenu(int direction) => Calls.Add($"Menu{direction}");
     }
 }

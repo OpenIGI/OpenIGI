@@ -57,6 +57,12 @@ public enum Igi2PrecisionType
 
     /// <summary>Walking crouched.</summary>
     CrouchWalking = 4,
+
+    /// <summary>In the air from a standing jump: running plus the jumping modifier.</summary>
+    Jumping = 7,
+
+    /// <summary>In the air from a crouched jump: running, the crouched walk and the jumping modifier.</summary>
+    CrouchJumping = 8,
 }
 
 /// <summary>The player, as I.G.I. 2's <c>HumanPlayer_t</c> runs it.</summary>
@@ -143,6 +149,35 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Gets or sets how much the ground's slope slows the gait, <c>Human_s.vGroundAngleFactor</c>.</summary>
     public float GroundAngleFactor { get; set; }
+
+    /// <summary>Gets or sets the player tuning the script set, <c>HumanPlayer_tGeneral</c>.</summary>
+    public Igi2HumanPlayerGeneral General { get; set; } = Igi2HumanPlayerGeneral.Unset;
+
+    /// <summary>Gets the first-person view the states kick, <c>Human_s.ptHumanViewQTask</c>.</summary>
+    public Igi2HumanView View { get; } = new();
+
+    /// <summary>Gets the damage the human has taken, <c>Human_s.tHumanDamage</c>.</summary>
+    public Igi2HumanDamage Damage { get; } = new();
+
+    /// <summary>Gets a value indicating whether the human has died, <c>Human_s.isDead</c>.</summary>
+    public bool IsDead { get; private set; }
+
+    /// <summary>Gets or sets the body's own speed in the air, <c>Human_s.tSpeed</c>.</summary>
+    public Vector3f Speed { get; set; }
+
+    /// <summary>Gets or sets the speed the body carries from the ground into the air, <c>Human_s.tAccumulatedSpeed</c>.</summary>
+    public Vector3f AccumulatedSpeed { get; set; }
+
+    /// <summary>Gets or sets the speed an impact gave the body, <c>Human_s.tImpactSpeed</c>.</summary>
+    public Vector3f ImpactSpeed { get; set; }
+
+    /// <summary>Gets or sets how far below the feet the ground still counts as underfoot, <c>Human_s.vGroundTolerance</c>.</summary>
+    /// <remarks>Zero from take-off until a jump starts down, so the ground left behind is not found again at once.</remarks>
+    public float GroundTolerance { get; set; } = LandingGroundTolerance;
+
+    /// <summary>Gets or sets a value indicating whether landings cannot hurt, <c>Human_s.isProtectedFromFallDamage</c>.</summary>
+    /// <remarks>Read only while airborne: a landing judges by what it was during the fall.</remarks>
+    public bool IsProtectedFromFallDamage { get; set; }
 
     /// <summary>Gets or sets how deep the water the human stands in is, <c>Human_s.vWaterDepth</c>.</summary>
     public float WaterDepth { get; set; }

@@ -59,6 +59,13 @@ public interface IIgi2PlayerWeaponControl
     /// <remarks><c>HumanPlayer_LeaveZoomAlternateFireMode</c> (<c>igi2 0x4BEC80</c>).</remarks>
     void LeaveZoomAlternateFireMode();
 
+    /// <summary>Stops the sound the held weapon has in its first slot, as death does.</summary>
+    /// <remarks>
+    /// <c>Human_UpdateDie</c> (<c>igi2 0x504010</c>) deletes the task <c>Weapon.aptSoundSlotQTaskRef[0]</c>
+    /// refers to, and the reference.
+    /// </remarks>
+    void StopSoundSlot();
+
     /// <summary>Moves the action menu's selection one way or the other.</summary>
     /// <param name="direction">+1 or −1.</param>
     void StepActionMenu(int direction);
@@ -102,6 +109,11 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public void LeaveZoomAlternateFireMode()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void StopSoundSlot()
     {
     }
 

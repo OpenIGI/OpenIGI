@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Player;
 
 namespace OpenIGI.Game.Igi2.Tests;
@@ -60,5 +61,33 @@ internal static class Igi2PlayerFakes
         public bool FitsLyingFlat() => Fits;
 
         public void SendWalkEvent() => WalkEvents++;
+
+        public int LandingEvents { get; private set; }
+
+        public List<string> Sounds { get; } = [];
+
+        public bool IsOnElevator { get; set; }
+
+        public Vector3d Motion { get; set; }
+
+        public float? Water { get; set; }
+
+        public string? GroundLandingSound { get; set; }
+
+        public int GroundsLeft { get; private set; }
+
+        public void SendLandingEvent() => LandingEvents++;
+
+        public void LeaveGround() => GroundsLeft++;
+
+        public Vector3d GroundMotion() => Motion;
+
+        public bool IsUnderWater(out float depth)
+        {
+            depth = Water ?? 0f;
+            return Water is not null;
+        }
+
+        public void PlaySound(string name) => Sounds.Add(name);
     }
 }

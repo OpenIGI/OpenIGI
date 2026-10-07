@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>The animation layer a human's states drive (<c>Human_s.tHumanAnim</c>).</summary>
@@ -42,4 +44,31 @@ public interface IIgi2HumanSurroundings
 
     /// <summary>Tells the AI the human is moving, so it can be heard (<c>HumanPlayer_SendWalkEvent</c>).</summary>
     void SendWalkEvent();
+
+    /// <summary>Tells the AI the human has landed, so it can be heard.</summary>
+    /// <remarks>Event 10 with flags <c>0x442</c> and radius 16384, sent by every landing (<c>HumanPlayer_InAirControl</c>).</remarks>
+    void SendLandingEvent();
+
+    /// <summary>Gets a value indicating whether the ground the human stands on is a lift (<c>Elevator</c>).</summary>
+    bool IsOnElevator { get; }
+
+    /// <summary>Lets go of the ground: drops the reference to it and forgets the ground intersection.</summary>
+    /// <remarks>What a jump's take-off does to <c>ptGroundQTaskRef</c>, <c>isGroundRigidObj</c> and <c>tGroundIntersection.isHit</c>.</remarks>
+    void LeaveGround();
+
+    /// <summary>Gets how far the rigid object underfoot moved since the last tick; zero on anything else.</summary>
+    /// <returns>The object's position less <c>Human_s.tGroundPrevPos</c>.</returns>
+    Vector3d GroundMotion();
+
+    /// <summary>Asks whether the human is under water, and how deep (<c>Water_IsUnderWater</c>, <c>igi2 0x591C30</c>).</summary>
+    /// <param name="depth">The depth, set only when the answer is yes.</param>
+    /// <returns>Whether any water sheet covers the human's position.</returns>
+    bool IsUnderWater(out float depth);
+
+    /// <summary>Gets the landing sound of the material the ground intersection entered, or <see langword="null"/> when there is none.</summary>
+    string? GroundLandingSound { get; }
+
+    /// <summary>Plays a named sound at the human's view (<c>SoundSys_NewSoundFn</c>).</summary>
+    /// <param name="name">The sound definition's name.</param>
+    void PlaySound(string name);
 }

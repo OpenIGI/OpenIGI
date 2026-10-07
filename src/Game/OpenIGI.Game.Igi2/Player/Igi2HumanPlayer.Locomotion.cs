@@ -27,16 +27,17 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.StandTurn] = (_, _) => EnterStandTurn();
         states[Igi2PlayerState.Crouch] = (_, _) => EnterCrouch();
         states[Igi2PlayerState.CrouchTurn] = (_, _) => EnterCrouchTurn();
+        states[Igi2PlayerState.Jump] = (_, _) => EnterJump();
+        states[Igi2PlayerState.Fall] = (_, _) => EnterFall();
         foreach (Gait gait in Gaits)
         {
             states[gait.State] = (_, _) => EnterGait(gait);
         }
 
-        return new TaskStateMachine(
-            (_, _) => PackSignal(),
-            states,
-            Igi2PlayerState.Stand,
-            exits: new TaskStateFunction?[Igi2PlayerState.Count]);
+        var exits = new TaskStateFunction?[Igi2PlayerState.Count];
+        exits[Igi2PlayerState.Jump] = (_, _) => ExitJump();
+
+        return new TaskStateMachine((_, _) => PackSignal(), states, Igi2PlayerState.Stand, exits: exits);
     }
 
     /// <summary>Steers the ground speed toward local targets, at most a given change per tick on each axis.</summary>
@@ -85,14 +86,15 @@ public sealed partial class Igi2HumanPlayer
     /// <param name="posture">Picks the weapon's precision for the posture.</param>
     /// <remarks>
     /// Every locomotion entry ends the same way: with a weapon held, the ideal precision is the posture's
-    /// own plus <c>|turning speed| × turning modifier × 3</c>; with none it is zero.
+    /// own plus <c>|turning speed| × turning modifier × 3</c>; with none it is zero. The sum is formed
+    /// unrounded and stored once, as the original's FPU does.
     /// </remarks>
-    private void AimPrecision(Igi2PrecisionType type, Func<Igi2WeaponPrecision, float> posture)
+    private void AimPrecision(Igi2PrecisionType type, Func<Igi2WeaponPrecision, double> posture)
     {
         if (Weapon.ActivePrecision is { } precision)
         {
             PrecisionType = type;
-            IdealModifiedPrecision = posture(precision) + (MathF.Abs(TurningSpeed) * precision.TurningModifier * 3f);
+            IdealModifiedPrecision = (float)((Math.Abs((double)TurningSpeed) * precision.TurningModifier * 3.0) + posture(precision));
         }
         else
         {
