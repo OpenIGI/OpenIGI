@@ -83,6 +83,14 @@ public sealed class Igi2TerrainCollider : IIgi2Collider
         }
     }
 
+    /// <summary>Lines in any direction against the ground, <c>Terrain_TraceLinesHandler1</c> (<c>igi2 0x5730B0</c>).</summary>
+    /// <param name="trace">The lines and their running results; a hit replaces a line's result only when nearer.</param>
+    public void TraceLines(Igi2LineTrace trace)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+        Igi2TerrainLineTrace.Trace(this, _surface, trace);
+    }
+
     /// <summary>The level material a terrain material id stands for: its <c>TerrainMaterial</c>'s <c>Game material</c>.</summary>
     /// <param name="id">The id a material map holds.</param>
     /// <returns>The level material slot, or <see langword="null"/> when no <c>TerrainMaterial</c> has the id or its slot is out of range.</returns>

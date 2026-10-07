@@ -206,17 +206,15 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// (<c>igi2 0x5519C0</c>).
     /// </summary>
     /// <param name="trace">The lines: their starts and ends are read, their results reset to the ends and filled.</param>
-    /// <param name="groups">The query groups.</param>
-    /// <exception cref="NotSupportedException">The groups ask for the ground, whose line handler is not ported yet.</exception>
+    /// <param name="groups">The query groups; <see cref="TerrainGroup"/> asks for the ground as well.</param>
     public void TraceLines(Igi2LineTrace trace, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
+        TraceObjects(trace, groups & ~TerrainGroup);
         if ((groups & TerrainGroup) != 0)
         {
-            throw new NotSupportedException("The terrain's line handler, Terrain_TraceLinesHandler1 (igi2 0x5730B0), is not ported.");
+            _terrain?.TraceLines(trace);
         }
-
-        TraceObjects(trace, groups);
     }
 
     /// <summary>
