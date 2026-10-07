@@ -55,7 +55,7 @@ public sealed partial class Igi2HumanPlayer
         if (Has(Igi2PlayerSignal.Swimming))
         {
             Surroundings.PlaySound("water_land_02");
-            Go(Igi2PlayerState.Swim);
+            Go(Igi2PlayerState.TreadWater);
             return;
         }
 
@@ -128,7 +128,7 @@ public sealed partial class Igi2HumanPlayer
         if (Has(Igi2PlayerSignal.Swimming))
         {
             Surroundings.PlaySound("water_land_02");
-            Go(Igi2PlayerState.Swim);
+            Go(Igi2PlayerState.TreadWater);
             return;
         }
 

@@ -30,6 +30,9 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.Jump] = (_, _) => EnterJump();
         states[Igi2PlayerState.Fall] = (_, _) => EnterFall();
         states[Igi2PlayerState.Flat] = (_, _) => EnterFlat();
+        states[Igi2PlayerState.Hit] = (_, _) => EnterHit();
+        states[Igi2PlayerState.Die] = (_, _) => EnterDie();
+        states[Igi2PlayerState.DieAlternate] = (_, _) => EnterDie();
         states[Igi2PlayerState.FlatCrawl] = (_, _) => EnterFlatCrawl();
         foreach (Gait gait in Gaits)
         {
@@ -121,7 +124,7 @@ public sealed partial class Igi2HumanPlayer
         }
         else if (Has(Igi2PlayerSignal.Swimming))
         {
-            Go(Igi2PlayerState.Swim);
+            Go(Igi2PlayerState.TreadWater);
         }
         else if (!Has(Igi2PlayerSignal.Grounded))
         {
@@ -144,7 +147,7 @@ public sealed partial class Igi2HumanPlayer
     {
         if (Has(Igi2PlayerSignal.Swimming))
         {
-            Go(Igi2PlayerState.Swim);
+            Go(Igi2PlayerState.TreadWater);
         }
         else if (!Has(Igi2PlayerSignal.Grounded))
         {

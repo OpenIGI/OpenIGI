@@ -66,6 +66,17 @@ public interface IIgi2PlayerWeaponControl
     /// </remarks>
     void StopSoundSlot();
 
+    /// <summary>Takes any overlay off: the scope's zoom on the owner's view and the overlay task.</summary>
+    /// <remarks><c>Weapon_SetOverlayStatus</c> (<c>igi2 0x51F1C0</c>) with status 0.</remarks>
+    void ClearOverlay();
+
+    /// <summary>Lets go of both fire types' triggers and clears the weapon's status, as death and water do.</summary>
+    /// <remarks>Sets <c>atFireTypeData[0..1].isReleaseFire</c> and zeroes <c>eWeaponStatus</c>.</remarks>
+    void ReleaseTriggers();
+
+    /// <summary>Takes every weapon away (<c>Weapon_ClearAllWeapons</c>, <c>igi2 0x51DCF0</c>).</summary>
+    void ClearAllWeapons();
+
     /// <summary>Moves the action menu's selection one way or the other.</summary>
     /// <param name="direction">+1 or −1.</param>
     void StepActionMenu(int direction);
@@ -114,6 +125,21 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public void StopSoundSlot()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ClearOverlay()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ReleaseTriggers()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ClearAllWeapons()
     {
     }
 

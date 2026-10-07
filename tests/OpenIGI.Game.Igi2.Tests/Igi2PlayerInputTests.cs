@@ -120,7 +120,7 @@ public sealed class Igi2PlayerInputTests
     [Fact]
     public void Fire_on_the_designator_raises_its_zoom()
     {
-        RecordingWeapon weapon = new() { ActiveCategory = Igi2HumanPlayer.LaserDesignatorCategory };
+        Igi2PlayerFakes.RecordingWeapon weapon = new() { ActiveCategory = Igi2HumanPlayer.LaserDesignatorCategory };
         Igi2HumanPlayer player = Igi2PlayerFakes.Player(weapon).Player;
         Igi2PlayerFakes.Feed(player, Igi2PlayerAction.Fire);
 
@@ -135,32 +135,5 @@ public sealed class Igi2PlayerInputTests
         float[] frame = new float[Igi2HumanChannels.Count];
         new Igi2PlayerInputReader().Read(input, frame);
         return frame;
-    }
-
-    private sealed class RecordingWeapon : IIgi2PlayerWeaponControl
-    {
-        public List<string> Calls { get; } = [];
-
-        public int? ActiveCategory { get; init; }
-
-        public bool ActiveIsZoom => false;
-
-        public Igi2WeaponPrecision? ActivePrecision => null;
-
-        public bool IsZoomFireModeActive => false;
-
-        public bool IsZoomedModeAllowed => true;
-
-        public void Fire() => Calls.Add("Fire");
-
-        public void ClearTrigger() => Calls.Add("ClearTrigger");
-
-        public void Zoom(bool zoomIn) => Calls.Add(zoomIn ? "ZoomIn" : "ZoomOut");
-
-        public void LeaveZoomAlternateFireMode() => Calls.Add("LeaveZoom");
-
-        public void StopSoundSlot() => Calls.Add("StopSoundSlot");
-
-        public void StepActionMenu(int direction) => Calls.Add($"Menu{direction}");
     }
 }

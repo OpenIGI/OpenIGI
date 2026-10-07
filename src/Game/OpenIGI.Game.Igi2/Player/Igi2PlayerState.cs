@@ -67,8 +67,17 @@ public static class Igi2PlayerState
     /// <summary>Walking left.</summary>
     public const int WalkLeft = 18;
 
-    /// <summary>Swimming; slots 19 and 20 share its entry.</summary>
-    public const int Swim = 21;
+    /// <summary>Swimming forward.</summary>
+    public const int SwimForward = 19;
+
+    /// <summary>Swimming backward.</summary>
+    public const int SwimBackward = 20;
+
+    /// <summary>Treading water; the three swim states share one entry.</summary>
+    public const int TreadWater = 21;
+
+    /// <summary>Dying, a second slot with the same entry as <see cref="Die"/>.</summary>
+    public const int DieAlternate = 22;
 
     /// <summary>Dying.</summary>
     public const int Die = 55;

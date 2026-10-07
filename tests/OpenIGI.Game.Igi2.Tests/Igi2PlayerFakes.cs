@@ -123,4 +123,38 @@ internal static class Igi2PlayerFakes
             IsAlive = false;
         }
     }
+
+    /// <summary>Weapon controls that record each request by name.</summary>
+    internal sealed class RecordingWeapon : IIgi2PlayerWeaponControl
+    {
+        public List<string> Calls { get; } = [];
+
+        public int? ActiveCategory { get; init; }
+
+        public bool ActiveIsZoom => false;
+
+        public Igi2WeaponPrecision? ActivePrecision => null;
+
+        public bool IsZoomFireModeActive => false;
+
+        public bool IsZoomedModeAllowed => true;
+
+        public void Fire() => Calls.Add("Fire");
+
+        public void ClearTrigger() => Calls.Add("ClearTrigger");
+
+        public void Zoom(bool zoomIn) => Calls.Add(zoomIn ? "ZoomIn" : "ZoomOut");
+
+        public void LeaveZoomAlternateFireMode() => Calls.Add("LeaveZoom");
+
+        public void StopSoundSlot() => Calls.Add("StopSoundSlot");
+
+        public void ClearOverlay() => Calls.Add("ClearOverlay");
+
+        public void ReleaseTriggers() => Calls.Add("ReleaseTriggers");
+
+        public void ClearAllWeapons() => Calls.Add("ClearAllWeapons");
+
+        public void StepActionMenu(int direction) => Calls.Add($"Menu{direction}");
+    }
 }
