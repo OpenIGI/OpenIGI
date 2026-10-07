@@ -42,6 +42,9 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <remarks><c>HumanPlayer_Update</c> (<c>igi2 0x4A20C0</c>): the active slot's task is a <c>Gun</c> whose ammo is a <c>Missile</c>.</remarks>
     bool ActiveIsMissileLauncher { get; }
 
+    /// <summary>Gets how much the weapons carried slow the player, <c>Weapon_GetSummedMovementSlowDown</c> (<c>igi2 0x51F550</c>).</summary>
+    float SummedMovementSlowDown { get; }
+
     /// <summary>Gets the held weapon type's precision, or <see langword="null"/> when nothing is held.</summary>
     Igi2WeaponPrecision? ActivePrecision { get; }
 
@@ -84,6 +87,9 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public bool ActiveIsMissileLauncher => false;
+
+    /// <inheritdoc/>
+    public float SummedMovementSlowDown => 0f;
 
     /// <inheritdoc/>
     public Igi2WeaponPrecision? ActivePrecision => null;

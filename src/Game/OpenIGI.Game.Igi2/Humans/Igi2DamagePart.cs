@@ -8,6 +8,9 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// </remarks>
 public enum Igi2DamagePart
 {
+    /// <summary>No zone, <c>HUMANDAMAGE_PART_NONE</c>: nothing has hit yet since the damage was cleared.</summary>
+    None = -1,
+
     /// <summary>Right foot.</summary>
     RightFoot = 0,
 

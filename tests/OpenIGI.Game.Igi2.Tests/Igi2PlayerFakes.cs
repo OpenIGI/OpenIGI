@@ -157,6 +157,8 @@ internal static class Igi2PlayerFakes
 
         public bool ActiveIsMissileLauncher { get; init; }
 
+        public float SummedMovementSlowDown { get; init; }
+
         public Igi2WeaponPrecision? ActivePrecision => null;
 
         public bool IsZoomFireModeActive => false;
