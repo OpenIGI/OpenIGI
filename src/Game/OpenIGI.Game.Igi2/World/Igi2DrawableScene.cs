@@ -69,11 +69,7 @@ public static class Igi2DrawableScene
         // The walk is given the models because one type cannot be placed without them: a train's
         // carriages are spaced by the distance between their model's two couplings, which nothing
         // authors. See Igi2Train.
-        Igi2WorldScene placed = Igi2WorldScene.Build(
-            levelRoot,
-            name => table.TryResolveMesh(name, out string? mesh) && TryFind(packs, mesh, out _, out MefModel? model)
-                ? model
-                : null);
+        Igi2WorldScene placed = Igi2WorldScene.Build(levelRoot, Models(table, packs));
 
         List<WorldPlacement> drawable = [];
         int unresolved = 0;
@@ -296,6 +292,19 @@ public static class Igi2DrawableScene
             unresolved,
             lit,
             attached);
+    }
+
+    /// <summary>Resolves a placement's model name to its mesh: through the pack table, then the packs nearest first.</summary>
+    /// <param name="table">The level's pack table.</param>
+    /// <param name="packs">The packs, in load order.</param>
+    /// <returns>The lookup; it answers <see langword="null"/> for a name nothing the level ships holds.</returns>
+    public static Func<string, MefModel?> Models(Igi2ModelTable table, IReadOnlyList<LoadedPack> packs)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        ArgumentNullException.ThrowIfNull(packs);
+        return name => table.TryResolveMesh(name, out string? mesh) && TryFind(packs, mesh, out _, out MefModel? model)
+            ? model
+            : null;
     }
 
     private static bool TryFind(

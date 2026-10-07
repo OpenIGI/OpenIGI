@@ -47,10 +47,14 @@ public sealed class Igi2Ground : IGroundHeightField
     public Igi2Ground(Igi2TerrainSurface surface)
     {
         ArgumentNullException.ThrowIfNull(surface);
+        Surface = surface;
         _tiles = surface.Tiles;
         _discards = surface.DiscardBoxes;
         _origin = surface.Origin;
     }
+
+    /// <summary>Gets the tiles, holes and materials this ground was built from.</summary>
+    public Igi2TerrainSurface Surface { get; }
 
     /// <summary>Gets a value indicating whether this level has any ground to stand on.</summary>
     public bool IsEmpty => _tiles.Count == 0;

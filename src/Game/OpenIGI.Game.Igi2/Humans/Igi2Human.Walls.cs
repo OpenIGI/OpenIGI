@@ -70,6 +70,25 @@ public abstract partial class Igi2Human
     private const int MaxSweepLines = (3 * 9) + 1;
 
     /// <summary>
+    /// Whether the body, in its current posture, fits where it stands: the wall sweep run on the spot against a copy
+    /// of the signal word, as the stand states probe a lie-down (<c>HumanPlayer_RunStateStand</c>, <c>igi2 0x4A2F70</c>).
+    /// </summary>
+    /// <returns><see langword="false"/> when the sweep touches a wall.</returns>
+    /// <remarks>
+    /// The sweep's signal is a local copy in the original, so only its wall bit is read and the body's own signal word
+    /// is left as it was; what the sweep allows the posture is the body's, as it is after any sweep.
+    /// </remarks>
+    public bool FitsWhereItStands()
+    {
+        uint flags = Locomotion.Flags;
+        Vector3d spot = Position;
+        ObjectCollision(Position, ref spot, out _);
+        bool touches = (Locomotion.Flags & WallSignal) != 0;
+        Locomotion.Flags = flags;
+        return !touches;
+    }
+
+    /// <summary>
     /// Keeps a move out of the walls: <c>Human_ObjectCollision</c> (<c>igi2 0x4FBA60</c>).
     /// </summary>
     /// <param name="from">Where the move starts.</param>

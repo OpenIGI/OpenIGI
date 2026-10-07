@@ -98,12 +98,18 @@ public sealed class Igi2PlayerContentModule : IContentModule
 
         context.Types.Register<HumanPlayerTask>("HumanPlayer");
         context.Types.Register<Player.HumanPlayerConfigItemTask>(Player.HumanPlayerConfigItemTask.TypeName);
+        context.Services.GetOrProvide(() => new Player.Igi2PlayerTuning(context.Logger));
     }
 
     /// <inheritdoc/>
-    /// <remarks>Nothing to load: a character's model and animations arrive with the level's packs.</remarks>
+    /// <remarks>
+    /// The player's tuning, out of <c>humanplayer.qvm</c>, as <c>Flow_CreateHandler</c> (<c>igi2 0x401600</c>) reads
+    /// it before any level. A character's model and animations arrive with the level's packs.
+    /// </remarks>
     public void LoadTables(ContentLoadContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Player.Igi2PlayerTuning>().Load(context.Resources, context.Natives, context.Tasks);
     }
 }
 
