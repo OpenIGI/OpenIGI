@@ -48,6 +48,9 @@ public enum Igi2PrecisionType
 
     /// <summary>Running.</summary>
     Running = 1,
+
+    /// <summary>Walking.</summary>
+    Walking = 2,
 }
 
 /// <summary>The player, as I.G.I. 2's <c>HumanPlayer_t</c> runs it.</summary>
