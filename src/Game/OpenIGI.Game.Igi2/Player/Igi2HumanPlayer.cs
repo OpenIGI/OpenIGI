@@ -58,6 +58,12 @@ public enum Igi2PrecisionType
     /// <summary>Walking crouched.</summary>
     CrouchWalking = 4,
 
+    /// <summary>Lying flat.</summary>
+    LyingFlat = 5,
+
+    /// <summary>Crawling.</summary>
+    Crawling = 6,
+
     /// <summary>In the air from a standing jump: running plus the jumping modifier.</summary>
     Jumping = 7,
 
@@ -194,6 +200,16 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Gets the precision the current state aims for, <c>vIdealModifiedPrecision</c>.</summary>
     public float IdealModifiedPrecision { get; private set; }
+
+    /// <summary>Gets the upper-body action playing, <c>eCurrentUpperBody</c>.</summary>
+    public int CurrentUpperBody { get; private set; }
+
+    /// <summary>Gets or sets the state of the player's action machine, <c>tAction.nState</c>.</summary>
+    /// <remarks>
+    /// The second machine, beside locomotion, that runs firing, reloading and weapon changes. The
+    /// locomotion states only ask whether it is idle; until it is ported it stays idle.
+    /// </remarks>
+    public int ActionState { get; set; } = Igi2PlayerActionState.Idle;
 
     /// <summary>Gets the upper-body action the current state asks for, <c>eRequestedUpperBody</c>.</summary>
     public int RequestedUpperBody { get; private set; }

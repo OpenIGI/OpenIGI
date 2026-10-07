@@ -25,6 +25,10 @@ public interface IIgi2HumanAnimation
     /// <summary>Makes the main controller loop its clip (<c>nFlags |= 1</c>).</summary>
     void LoopMain();
 
+    /// <summary>Takes the upper-body clip off, blending back to the main clip (<c>HumanAnim_ClearUpperBodyAnimation</c>).</summary>
+    /// <param name="blendSeconds">The blend; 0 for a cut.</param>
+    void ClearUpperBody(float blendSeconds);
+
     /// <summary>Starts the clip a state plays, at a time, blending in over a duration.</summary>
     /// <param name="state">The locomotion state whose animation to play.</param>
     /// <param name="time">The clip time to start at, in clip ticks.</param>
@@ -71,4 +75,22 @@ public interface IIgi2HumanSurroundings
     /// <summary>Plays a named sound at the human's view (<c>SoundSys_NewSoundFn</c>).</summary>
     /// <param name="name">The sound definition's name.</param>
     void PlaySound(string name);
+
+    /// <summary>Plays a named sound at the human's view and keeps hold of it, as a state holding a loop does.</summary>
+    /// <param name="name">The sound definition's name.</param>
+    /// <returns>The playing sound.</returns>
+    IIgi2SoundInstance StartSound(string name);
+}
+
+/// <summary>A sound a state holds on to: the task a <c>QReference</c> keeps, which may end on its own.</summary>
+public interface IIgi2SoundInstance
+{
+    /// <summary>Gets a value indicating whether the sound is still playing (the reference's object still exists).</summary>
+    bool IsAlive { get; }
+
+    /// <summary>Moves the sound to the human's position (<c>SoundSys_eSetPositionQTaskEvent</c>).</summary>
+    void MoveToHuman();
+
+    /// <summary>Stops the sound and lets go of it (<c>QTask_DeleteQTaskAndQTaskRefSafe</c>).</summary>
+    void Delete();
 }

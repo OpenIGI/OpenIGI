@@ -29,6 +29,8 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.CrouchTurn] = (_, _) => EnterCrouchTurn();
         states[Igi2PlayerState.Jump] = (_, _) => EnterJump();
         states[Igi2PlayerState.Fall] = (_, _) => EnterFall();
+        states[Igi2PlayerState.Flat] = (_, _) => EnterFlat();
+        states[Igi2PlayerState.FlatCrawl] = (_, _) => EnterFlatCrawl();
         foreach (Gait gait in Gaits)
         {
             states[gait.State] = (_, _) => EnterGait(gait);
@@ -36,6 +38,7 @@ public sealed partial class Igi2HumanPlayer
 
         var exits = new TaskStateFunction?[Igi2PlayerState.Count];
         exits[Igi2PlayerState.Jump] = (_, _) => ExitJump();
+        exits[Igi2PlayerState.FlatCrawl] = (_, _) => ExitFlatCrawl();
 
         return new TaskStateMachine((_, _) => PackSignal(), states, Igi2PlayerState.Stand, exits: exits);
     }

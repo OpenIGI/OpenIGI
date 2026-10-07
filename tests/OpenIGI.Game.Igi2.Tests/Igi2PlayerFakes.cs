@@ -44,6 +44,10 @@ internal static class Igi2PlayerFakes
 
         public void LoopMain() => Looping = true;
 
+        public List<float> UpperBodyClears { get; } = [];
+
+        public void ClearUpperBody(float blendSeconds) => UpperBodyClears.Add(blendSeconds);
+
         public void PlayState(int state, int time, float blendSeconds)
         {
             Played.Add((state, time, blendSeconds));
@@ -89,5 +93,34 @@ internal static class Igi2PlayerFakes
         }
 
         public void PlaySound(string name) => Sounds.Add(name);
+
+        public List<FakeSound> Started { get; } = [];
+
+        public IIgi2SoundInstance StartSound(string name)
+        {
+            FakeSound sound = new(name);
+            Started.Add(sound);
+            return sound;
+        }
+    }
+
+    /// <summary>A held sound that records being moved and deleted.</summary>
+    internal sealed class FakeSound(string name) : IIgi2SoundInstance
+    {
+        public string Name { get; } = name;
+
+        public bool IsAlive { get; set; } = true;
+
+        public int Moves { get; private set; }
+
+        public bool Deleted { get; private set; }
+
+        public void MoveToHuman() => Moves++;
+
+        public void Delete()
+        {
+            Deleted = true;
+            IsAlive = false;
+        }
     }
 }
