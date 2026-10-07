@@ -1,4 +1,6 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
@@ -16,8 +18,9 @@ namespace OpenIGI.Game.Igi2.Player;
 /// ticks it: the channels read, <c>HumanPlayer_Update</c>, then the delayed half.
 /// </para>
 /// <para>
-/// Not yet behind it: the animation layer (a still stand-in reports every clip played out), water, sounds, AI
-/// events, conveyors and the weapon (the player holds nothing).
+/// The body plays the clips the level's packs load, picked by state through the held weapon
+/// (<see cref="Igi2HumanAnimation"/>). Not yet behind it: water, sounds, AI events, conveyors and the weapon (the
+/// player holds nothing, so its body plays its rig's <c>stand</c> clip).
 /// </para>
 /// </remarks>
 public sealed class Igi2Gameplay : ITitleGameplay
@@ -39,7 +42,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         Igi2CollisionWorld world = BuildCollision(request.World, request.Built);
         Igi2HumanPlayerGeneral general = request.Services.TryGet(out Igi2PlayerTuning? tuning) ? tuning.General : Igi2HumanPlayerGeneral.Unset;
-        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty);
+        ArgumentNullException.ThrowIfNull(request.World.Mission);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(request.World.Mission.PacksInLoadOrder, request.World.Resources);
+        Igi2BoneHierarchy? rig = Models(request.World)(spawn.Model)?.BoneHierarchy;
+        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig);
     }
 
     /// <summary>Builds the collision a level's player moves through: its solid placements and its ground.</summary>
@@ -51,12 +57,19 @@ public sealed class Igi2Gameplay : ITitleGameplay
         ArgumentNullException.ThrowIfNull(world.Mission);
         ArgumentNullException.ThrowIfNull(world.LevelRoot);
 
-        List<Formats.World.MtpPack> mtp = [.. world.Mission.PacksInLoadOrder.Select(static pack => pack.Pack)];
-        Func<string, Formats.World.MefModel?> models = Igi2DrawableScene.Models(Igi2ModelTable.Create(mtp), world.Mission.PacksInLoadOrder);
+        Func<string, Formats.World.MefModel?> models = Models(world);
         Igi2WorldScene scene = Igi2WorldScene.Build(world.LevelRoot, models);
         Igi2TerrainSurface? ground = built.Ground is Igi2Ground level ? level.Surface : null;
         Igi2Forest forests = Igi2Forest.Build(world.LevelRoot, world.Resources);
         return Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner, forests);
+    }
+
+    /// <summary>Resolves a placed model name to its mesh through the mission's packs.</summary>
+    private static Func<string, Formats.World.MefModel?> Models(in WorldBuildRequest world)
+    {
+        ArgumentNullException.ThrowIfNull(world.Mission);
+        List<Formats.World.MtpPack> mtp = [.. world.Mission.PacksInLoadOrder.Select(static pack => pack.Pack)];
+        return Igi2DrawableScene.Models(Igi2ModelTable.Create(mtp), world.Mission.PacksInLoadOrder);
     }
 }
 
@@ -122,19 +135,25 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
     /// <param name="position">Where the level places the player's feet.</param>
     /// <param name="gamma">The heading the level gives it.</param>
     /// <param name="difficulty">The active difficulty.</param>
+    /// <param name="clips">The level's clips, or <see langword="null"/> for none.</param>
+    /// <param name="rig">The player model's rig, or <see langword="null"/> for a model without bones.</param>
     /// <returns>The player.</returns>
     public static Igi2TitlePlayer Spawn(
         Igi2CollisionWorld world,
         Igi2HumanPlayerGeneral general,
         Vector3d position,
         float gamma,
-        Ai.AiDifficulty difficulty)
+        Ai.AiDifficulty difficulty,
+        Igi2AnimationLibrary? clips = null,
+        Igi2BoneHierarchy? rig = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(general);
 
         Igi2PlayerSurroundings surroundings = new(world);
-        Igi2HumanPlayer human = new(Igi2NoWeaponControl.Instance, new Igi2StillAnimation(), surroundings)
+        Igi2NoWeaponControl weapon = Igi2NoWeaponControl.Instance;
+        Igi2HumanAnimation animation = new(clips, rig, Igi2PlayerStateAnimations.Table, () => weapon.BodyClips(rig));
+        Igi2HumanPlayer human = new(weapon, animation, surroundings)
         {
             General = general,
             Position = position,
@@ -251,29 +270,4 @@ internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world) : IIgi2Hu
         {
         }
     }
-}
-
-/// <summary>An animation layer with no clips: every clip has played out, and steps move nothing.</summary>
-/// <remarks>The stand-in until the clip layer (<c>MINA</c> sets through the weapon's animation table) drives the body.</remarks>
-internal sealed class Igi2StillAnimation : IIgi2HumanAnimation
-{
-    public int MainTime { get; private set; }
-
-    public int MainTotalTime => 0;
-
-    public int MainTimeStep { get; set; }
-
-    public bool MainEnded => true;
-
-    public void LoopMain()
-    {
-    }
-
-    public void StepMain() => MainTime += MainTimeStep;
-
-    public void ClearUpperBody(float blendSeconds)
-    {
-    }
-
-    public void PlayState(int state, int time, float blendSeconds) => MainTime = time;
 }

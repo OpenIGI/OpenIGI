@@ -155,6 +155,8 @@ internal static class Igi2PlayerFakes
 
         public bool ActiveIsZoom => false;
 
+        public IReadOnlyList<Formats.Animation.Igi2AnimationClip?>? BodyClips(Formats.Animation.Igi2BoneHierarchy? rig) => null;
+
         public bool ActiveIsMissileLauncher { get; init; }
 
         public float SummedMovementSlowDown { get; init; }

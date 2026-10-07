@@ -1,3 +1,4 @@
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -134,6 +135,9 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
     public void ReleaseTriggers()
     {
     }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<Igi2AnimationClip?>? BodyClips(Igi2BoneHierarchy? rig) => null;
 
     /// <inheritdoc/>
     public void ClearAllWeapons()

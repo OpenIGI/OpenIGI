@@ -5,10 +5,12 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -23,6 +25,12 @@ public sealed class RetailIgi2GameplayTests
     {
         Igi2Level level = Igi2Level.Find("location1", "level1");
         return Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), Igi2Gameplay.TerrainOwner);
+    });
+
+    private static readonly Lazy<Igi2AnimationLibrary> Clips = new(static () =>
+    {
+        (List<LoadedPack> packs, Engine.Resources.ResourceRegistry resources) = Igi2LevelScene.Packs(Igi2Level.Find("location1", "level1"));
+        return Igi2AnimationLibrary.Load(packs, resources);
     });
 
     /// <summary>The session reads the player's tuning from <c>humanplayer.qvm</c> when its tables load.</summary>
@@ -70,6 +78,20 @@ public sealed class RetailIgi2GameplayTests
         Assert.True((player.Human.Signal & Igi2PlayerSignal.Grounded) != 0, "the player left the ground.");
     }
 
+    /// <summary>Spawned unarmed, the player's body plays its rig's looping <c>stand</c> from the start.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_unarmed_player_plays_stand()
+    {
+        Igi2TitlePlayer player = Spawned(out _);
+        Igi2HumanAnimation animation = Assert.IsType<Igi2HumanAnimation>(player.Human.Animation);
+
+        player.Tick(Idle);
+
+        Assert.Equal("stand", animation.Main.Clip?.Name);
+        Assert.Equal(Igi2PlayerState.Stand, animation.LastState);
+        Assert.False(animation.MainEnded);
+    }
+
     /// <summary>The mouse turns the view; the camera's rows are the view's right, up and forward axes.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_mouse_turns_the_view()
@@ -93,7 +115,14 @@ public sealed class RetailIgi2GameplayTests
         Igi2Level level = Igi2Level.Find("location1", "level1");
         Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
         spawn = point.Position;
-        return Igi2TitlePlayer.Spawn(Mission1.Value, Tuning.Value, point.Position, point.Gamma, AiDifficulty.Easy);
+        return Igi2TitlePlayer.Spawn(
+            Mission1.Value,
+            Tuning.Value,
+            point.Position,
+            point.Gamma,
+            AiDifficulty.Easy,
+            Clips.Value,
+            level.ModelFor(point.Model)?.BoneHierarchy);
     }
 
     private static Igi2HumanPlayerGeneral LoadTuning()

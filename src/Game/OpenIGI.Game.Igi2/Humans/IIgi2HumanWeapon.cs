@@ -1,3 +1,5 @@
+using OpenIGI.Formats.Animation;
+
 namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>What the human-level functions ask of a human's weapon, whoever holds it.</summary>
@@ -20,4 +22,13 @@ public interface IIgi2HumanWeapon
 
     /// <summary>Takes every weapon away (<c>Weapon_ClearAllWeapons</c>, <c>igi2 0x51DCF0</c>).</summary>
     void ClearAllWeapons();
+
+    /// <summary>Gets the held weapon type's clips for a body's rig, one per base animation.</summary>
+    /// <param name="rig">The body's rig.</param>
+    /// <returns>The clips, or <see langword="null"/> when nothing is held.</returns>
+    /// <remarks>
+    /// A weapon type keeps a table for each of two rigs and hands over the first when the body's rig is its rig, the
+    /// second otherwise (<c>HumanAnim_SetAnimationAndTimeFromState</c>, <c>igi2 0x58FAA0</c>).
+    /// </remarks>
+    IReadOnlyList<Igi2AnimationClip?>? BodyClips(Igi2BoneHierarchy? rig);
 }
