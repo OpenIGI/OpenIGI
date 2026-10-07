@@ -157,6 +157,8 @@ public sealed class Igi2PlayerInputTests
 
         public void Zoom(bool zoomIn) => Calls.Add(zoomIn ? "ZoomIn" : "ZoomOut");
 
+        public void LeaveZoomAlternateFireMode() => Calls.Add("LeaveZoom");
+
         public void StepActionMenu(int direction) => Calls.Add($"Menu{direction}");
     }
 }

@@ -51,6 +51,12 @@ public enum Igi2PrecisionType
 
     /// <summary>Walking.</summary>
     Walking = 2,
+
+    /// <summary>Crouching still.</summary>
+    Crouching = 3,
+
+    /// <summary>Walking crouched.</summary>
+    CrouchWalking = 4,
 }
 
 /// <summary>The player, as I.G.I. 2's <c>HumanPlayer_t</c> runs it.</summary>
@@ -137,6 +143,9 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Gets or sets how much the ground's slope slows the gait, <c>Human_s.vGroundAngleFactor</c>.</summary>
     public float GroundAngleFactor { get; set; }
+
+    /// <summary>Gets or sets how deep the water the human stands in is, <c>Human_s.vWaterDepth</c>.</summary>
+    public float WaterDepth { get; set; }
 
     /// <summary>Gets or sets the turning speed, <c>Human_s.vTurningSpeed</c>.</summary>
     public float TurningSpeed { get; set; }
