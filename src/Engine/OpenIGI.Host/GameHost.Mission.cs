@@ -363,6 +363,11 @@ internal sealed partial class GameHost
     /// </remarks>
     private void UpdatePlayerTask()
     {
+        if (TickTitlePlayer())
+        {
+            return;
+        }
+
         if (_playerTicked
             || _cutscenes?.IsPlaying == true
             || !_playerMode
@@ -1974,6 +1979,7 @@ internal sealed partial class GameHost
             }
             : null;
         _player = null;
+        _titlePlayer = null;
         _playerMode = false;
         _pendingGenericTbaExplosions.Clear();
 
@@ -2477,6 +2483,9 @@ internal sealed partial class GameHost
             }
         }
 
+        // A title that brings its own player stands it here, in place of the rig above.
+        StandTitlePlayer(loaded, levelRoot, scene);
+
         // The things standing in the world rather than being it: planted foliage, and water. Both are
         // handed the mission's model lookup, which is the one thing the ground and the sky do not need --
         // a forest plants instances of a model, and the model lives in a pack rather than in the level's
@@ -2878,6 +2887,7 @@ internal sealed partial class GameHost
         _missileRenderer = null;
         _arms = null;
         _player = null;
+        _titlePlayer = null;
         _playerMode = false;
         _scene = null;
         _playerTerrain = null;

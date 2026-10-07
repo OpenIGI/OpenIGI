@@ -6,7 +6,9 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi1;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Titles;
@@ -252,6 +254,19 @@ public static class TitleCatalog
         throw new ArgumentException($"This build has no renderers for '{title.Id}'.", nameof(title));
     }
 
+    /// <summary>Finds a title's own player, for a title that brings one.</summary>
+    /// <param name="title">The title to run.</param>
+    /// <returns>Its gameplay, or <see langword="null"/> for a title that walks the host's own rig.</returns>
+    /// <remarks>
+    /// A fifth lookup, for the reason of the other four. Project I.G.I. walks the host's rig, which was built
+    /// over that game; I.G.I. 2 brings the player ported from its own <c>HumanPlayer</c>.
+    /// </remarks>
+    public static ITitleGameplay? GameplayFor(GameTitle title)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        return title == GameTitle.Igi2 ? Igi2Gameplay.Instance : null;
+    }
+
     /// <summary>The catalogue as the host sees it.</summary>
     /// <remarks>
     /// A nested type rather than a second class, because it is this class read through an interface: the
@@ -281,7 +296,8 @@ public static class TitleCatalog
                     PresentationFor(title),
                     WorldBuilderFor(title),
                     log => MissionCatalogueFor(title, log),
-                    dataRoot(title));
+                    dataRoot(title),
+                    GameplayFor(title));
 
                 return true;
             }

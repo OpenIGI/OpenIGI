@@ -727,6 +727,7 @@ internal sealed partial class GameHost : IDisposable
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
+        _gameplay = binding.Gameplay;
         _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
         _options = options;
@@ -2772,7 +2773,11 @@ internal sealed partial class GameHost : IDisposable
 
             // F1 swaps between flying and walking. The player takes the camera's position when it is
             // switched on, so the swap happens where you were looking.
-            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && _player is not null && _camera is not null)
+            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && _titlePlayer is not null)
+            {
+                ToggleTitlePlayer();
+            }
+            else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && _player is not null && _camera is not null)
             {
                 _playerMode = !_playerMode;
                 if (_playerMode)
@@ -2925,6 +2930,13 @@ internal sealed partial class GameHost : IDisposable
                 {
                     _player?.HoldStill();
                     _window.CursorLocked = false;
+                }
+                else if (_playerMode && _titlePlayer is not null)
+                {
+                    // A title's own player takes its look on the tick, as the original does; the frame only
+                    // gathers what the mouse and the keys did since the last one.
+                    GatherTitleInput();
+                    _window.CursorLocked = !captureMode;
                 }
                 else if (_playerMode && _player is not null)
                 {
@@ -4148,6 +4160,7 @@ internal sealed partial class GameHost : IDisposable
                     : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                         && interactionCamera.IsActive
                         ? interactionCamera.Camera
+                        : _playerMode && _titlePlayer is { } titlePlayer ? TitleCamera(titlePlayer)
                         : _playerMode && _player is not null ? _player.Camera : _camera.Camera;
 
                 // The walking eye glides between its tick pair, and so does the recoil kick inside its

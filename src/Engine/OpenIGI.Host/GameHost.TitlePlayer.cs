@@ -1,0 +1,154 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Level;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Config;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
+using OpenIGI.Rendering;
+
+namespace OpenIGI.Host;
+
+/// <content>A title's own player: stood up, fed its input once a tick, and looked through.</content>
+/// <remarks>
+/// <para>
+/// Present only for a title whose composition root supplies an <see cref="ITitleGameplay"/>. Everything here is
+/// behind <see cref="_titlePlayer"/>, which stays <see langword="null"/> for a title that walks the host's own rig,
+/// so that rig's path is the one it always was.
+/// </para>
+/// <para>
+/// The host's rig and a title's player are never both standing: when the title stands its own, the host's is let go
+/// and every system that reads the host's rig sees no player.
+/// </para>
+/// </remarks>
+internal sealed partial class GameHost
+{
+    private const double TitleUnitsPerMetre = 4096.0;
+
+    private ITitleGameplay? _gameplay;
+    private ITitlePlayer? _titlePlayer;
+    private float _titleMouseX;
+    private float _titleMouseY;
+    private PlayerAction _titlePressed;
+
+    /// <summary>Stands the title's own player where the level places it, when the title brings one.</summary>
+    /// <param name="loaded">The mission.</param>
+    /// <param name="levelRoot">The level's tree.</param>
+    /// <param name="scene">The placements the scene walk produced.</param>
+    private void StandTitlePlayer(LoadedMission loaded, LevelTask levelRoot, WorldScene scene)
+    {
+        _titlePlayer = null;
+        if (_gameplay is null)
+        {
+            return;
+        }
+
+        ITitlePlayer? player = _gameplay.CreatePlayer(new TitlePlayerRequest(
+            new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger),
+            new WorldBuildResult(scene, 0, 0, _ground, _spins),
+            _title.Services,
+            (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2)));
+        if (player is null)
+        {
+            _logger.Warning("Player", "The level places no player for the title to stand.");
+            return;
+        }
+
+        _titlePlayer = player;
+        _player = null;
+        _titleMouseX = 0f;
+        _titleMouseY = 0f;
+        _titlePressed = default;
+        _playerMode = !_options.StartFlying;
+
+        Vector3d eye = player.EyePosition;
+        _logger.Information(
+            "Player",
+            FormattableString.Invariant($"The title's player stands at {player.Position}; eye at -campos ")
+                + FormattableString.Invariant(
+                    $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}."));
+    }
+
+    /// <summary>Gathers a frame's input for the title's player: the mouse adds up and presses are kept until a tick.</summary>
+    private void GatherTitleInput()
+    {
+        _titleMouseX += _window.Input.Mouse.DeltaX;
+        _titleMouseY += _window.Input.Mouse.DeltaY;
+        foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
+        {
+            if (PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            {
+                _titlePressed |= action;
+            }
+        }
+    }
+
+    /// <summary>Runs the title's player for one tick, with the input gathered since the last.</summary>
+    /// <returns><see langword="true"/> when the title has its own player, whether or not it ran this tick.</returns>
+    private bool TickTitlePlayer()
+    {
+        if (_titlePlayer is not { } player)
+        {
+            return false;
+        }
+
+        if (_playerTicked || !_playerMode || _cutscenes?.IsPlaying == true)
+        {
+            return true;
+        }
+
+        _playerTicked = true;
+        PlayerAction held = default;
+        foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
+        {
+            if (PlayerProfileInputBindings.IsDown(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
+            {
+                held |= action;
+            }
+        }
+
+        PlayerProfile? profile = _configuration.Active;
+        player.Tick(new TitlePlayerInput(
+            _titleMouseX,
+            _titleMouseY,
+            held,
+            _titlePressed,
+            profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
+            profile?.InvertMouse ?? false));
+        _titleMouseX = 0f;
+        _titleMouseY = 0f;
+        _titlePressed = default;
+        return true;
+    }
+
+    /// <summary>The camera the title's player looks through, in metres.</summary>
+    private static Camera3D TitleCamera(ITitlePlayer player)
+    {
+        Vector3d eye = player.EyePosition;
+        return new Camera3D(
+            new Vector3d(eye.X / TitleUnitsPerMetre, eye.Y / TitleUnitsPerMetre, eye.Z / TitleUnitsPerMetre),
+            player.ViewOrientation);
+    }
+
+    /// <summary>F1 between the title's player and the free camera: the free camera leaves from where the eyes are.</summary>
+    private void ToggleTitlePlayer()
+    {
+        if (_titlePlayer is not { } player || _camera is null)
+        {
+            return;
+        }
+
+        _playerMode = !_playerMode;
+        if (!_playerMode)
+        {
+            Camera3D eye = TitleCamera(player);
+            Vector3f forward = eye.Orientation.Row3;
+            float yaw = MathF.Atan2(forward.X, forward.Y);
+            float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
+            _camera.MoveTo(eye.Position, yaw, pitch);
+        }
+
+        _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
+    }
+}

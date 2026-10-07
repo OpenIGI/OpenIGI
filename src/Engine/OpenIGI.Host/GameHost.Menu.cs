@@ -71,6 +71,7 @@ internal sealed partial class GameHost
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene
         // that has just been replaced.
         _player = null;
+        _titlePlayer = null;
         _playerMode = false;
 
         // The outgoing backdrop's renderer owns a level's worth of GL textures, and a backdrop is now
