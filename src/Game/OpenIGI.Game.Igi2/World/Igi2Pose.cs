@@ -160,6 +160,50 @@ public sealed class Igi2Pose
         return gamma.F;
     }
 
+    /// <summary>
+    /// The turn about the vertical a direction points at: the gamma of <c>Real32x3_GetAngles</c> (<c>igi2 0x561AF0</c>).
+    /// </summary>
+    /// <param name="direction">The direction; need not be normalised.</param>
+    /// <returns>The turn, in radians, as stored: <c>fpatan</c> of y over x, or zero when x is zero.</returns>
+    public static float DirectionGamma(Vector3f direction) =>
+        direction.X == 0f ? 0f : Fpu.Atan2(direction.Y, direction.X).F;
+
+    /// <summary>
+    /// The inverse of a nine-float matrix, transposed: <c>Real32x9_InvertSafe</c> (<c>igi2 0x563490</c>), which
+    /// divides each cofactor by the determinant and stores it where the element it was formed for stands.
+    /// </summary>
+    /// <param name="m">The matrix, row by row.</param>
+    /// <returns>The cofactors over the determinant, row by row: the inverse of the matrix's transpose.</returns>
+    /// <remarks>
+    /// Five products are stored as floats first and one is kept on the FPU; the determinant sums them in the
+    /// handler's order, and its reciprocal is taken against a double one.
+    /// </remarks>
+    public static float[] InverseTranspose(IReadOnlyList<float> m)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+
+        Fpu p37 = (Fpu)m[3] * m[7];
+        float p65 = ((Fpu)m[6] * m[5]).F;
+        float p84 = ((Fpu)m[8] * m[4]).F;
+        float p57 = ((Fpu)m[5] * m[7]).F;
+        float p83 = ((Fpu)m[8] * m[3]).F;
+        float p64 = ((Fpu)m[6] * m[4]).F;
+        Fpu det = ((Fpu)p84 * m[0]) + (p37 * m[2]) + ((Fpu)p65 * m[1]) - ((Fpu)p57 * m[0]) - ((Fpu)p83 * m[1]) - ((Fpu)p64 * m[2]);
+        Fpu inverse = (Fpu)1.0 / det;
+        return
+        [
+            (((Fpu)p84 - p57) * inverse).F,
+            (-(((Fpu)p83 - p65) * inverse)).F,
+            ((p37 - p64) * inverse).F,
+            (-((((Fpu)m[8] * m[1]) - ((Fpu)m[2] * m[7])) * inverse)).F,
+            ((((Fpu)m[8] * m[0]) - ((Fpu)m[6] * m[2])) * inverse).F,
+            (-((((Fpu)m[0] * m[7]) - ((Fpu)m[6] * m[1])) * inverse)).F,
+            ((((Fpu)m[5] * m[1]) - ((Fpu)m[2] * m[4])) * inverse).F,
+            (-((((Fpu)m[5] * m[0]) - ((Fpu)m[3] * m[2])) * inverse)).F,
+            ((((Fpu)m[4] * m[0]) - ((Fpu)m[3] * m[1])) * inverse).F,
+        ];
+    }
+
     /// <summary>The orientation as a matrix, row for row.</summary>
     /// <returns>The matrix.</returns>
     public Matrix3f ToMatrix()

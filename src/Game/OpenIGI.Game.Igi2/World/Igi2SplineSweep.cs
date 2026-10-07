@@ -56,12 +56,14 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
     private readonly bool _linear;
     private readonly bool _flipped;
 
-    private Igi2SplineSweep(Igi2SplineFrame[] frames, Vector3d midpoint, Vector3f chord, bool linear, bool flipped)
+    private Igi2SplineSweep(Igi2SplineFrame[] frames, Vector3d start, Vector3d stop, Vector3d midpoint, Vector3f chord, bool linear, bool flipped)
     {
         _frames = frames;
         _chord = chord;
         _linear = linear;
         _flipped = flipped;
+        Start = start;
+        Stop = stop;
         Midpoint = midpoint;
 
         _areaLengths = new float[frames.Length - 1];
@@ -109,6 +111,15 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
     /// what the object's own world position then adds back.
     /// </remarks>
     public Vector3d Midpoint { get; }
+
+    /// <summary>Gets the earlier waypoint's position, where the segment starts, in engine units.</summary>
+    public Vector3d Start { get; }
+
+    /// <summary>Gets the later waypoint's position, the one that owns the segment, in engine units.</summary>
+    public Vector3d Stop { get; }
+
+    /// <summary>Gets whether the model runs backwards along the curve, the owning waypoint's <c>Flip</c>.</summary>
+    public bool IsFlipped => _flipped;
 
     /// <summary>Gets the sampled frames, from the earlier waypoint to the later one.</summary>
     public IReadOnlyList<Igi2SplineFrame> Frames => _frames;
@@ -176,7 +187,7 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
                         (float)(((stop.Z - start.Z) * t) + start.Z - midpoint.Z)));
             }
 
-            return new Igi2SplineSweep(frames, midpoint, chord, linear: true, flipped);
+            return new Igi2SplineSweep(frames, start, stop, midpoint, chord, linear: true, flipped);
         }
 
         // The tangent at each end is that waypoint's own first column, lengthened by the straight-line
@@ -238,7 +249,7 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
             frames[i] = new Igi2SplineFrame(orientation, position);
         }
 
-        return new Igi2SplineSweep(frames, midpoint, chord, linear: false, flipped);
+        return new Igi2SplineSweep(frames, start, stop, midpoint, chord, linear: false, flipped);
     }
 
     /// <summary>

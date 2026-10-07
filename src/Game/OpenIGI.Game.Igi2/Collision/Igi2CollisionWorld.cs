@@ -62,6 +62,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     private const int MaxAttachmentDepth = 16;
 
     private readonly Igi2RigidObject[] _objects;
+    private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
     private readonly Igi2TerrainCollider? _terrain;
 
@@ -69,16 +70,25 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// <param name="objects">The placed solid models.</param>
     /// <param name="terrain">The ground, or <see langword="null"/> for a level with none.</param>
     /// <param name="forests">The stands of trees, or <see langword="null"/> for none.</param>
-    public Igi2CollisionWorld(IEnumerable<Igi2RigidObject> objects, Igi2TerrainCollider? terrain, IEnumerable<Igi2ForestCollider>? forests = null)
+    /// <param name="segments">The straight spline segments, or <see langword="null"/> for none.</param>
+    public Igi2CollisionWorld(
+        IEnumerable<Igi2RigidObject> objects,
+        Igi2TerrainCollider? terrain,
+        IEnumerable<Igi2ForestCollider>? forests = null,
+        IEnumerable<Igi2SplineSegment>? segments = null)
     {
         ArgumentNullException.ThrowIfNull(objects);
         _objects = [.. objects];
+        _segments = segments is null ? [] : [.. segments];
         _forests = forests is null ? [] : [.. forests];
         _terrain = terrain;
     }
 
     /// <summary>Gets the placed solid models.</summary>
     public IReadOnlyList<Igi2RigidObject> Objects => _objects;
+
+    /// <summary>Gets the straight spline segments.</summary>
+    public IReadOnlyList<Igi2SplineSegment> Segments => _segments;
 
     /// <summary>Gets the stands of trees.</summary>
     public IReadOnlyList<Igi2ForestCollider> Forests => _forests;
@@ -102,8 +112,12 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// </para>
     /// <para>
     /// A model with bones becomes a <c>BoneMagicObj</c>, which does not answer ground queries, so it is left out.
-    /// Its own attachments are still followed. Placements whose model is bent along a span, such as spline segments
-    /// and wires, have line handlers of their own and are not here.
+    /// Its own attachments are still followed.
+    /// </para>
+    /// <para>
+    /// A straight spline segment becomes an <see cref="Igi2SplineSegment"/>, its radius taken over the model's levels
+    /// of detail. Segments bent along a curve, and wires, have handlers of their own that are not ported yet; they are
+    /// left out.
     /// </para>
     /// </remarks>
     public static Igi2CollisionWorld Build(
@@ -118,8 +132,15 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
         ArgumentNullException.ThrowIfNull(terrainOwner);
 
         List<Igi2RigidObject> objects = [];
+        List<Igi2SplineSegment> segments = [];
         foreach (Igi2Placement placement in scene.StaticPlacements)
         {
+            if (placement.Geometry is Igi2SplineSweep { IsLinear: true } sweep)
+            {
+                AddSegment(placement, sweep);
+                continue;
+            }
+
             if (placement.Geometry is not null)
             {
                 continue;
@@ -141,7 +162,36 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
             }
         }
 
-        return new Igi2CollisionWorld(objects, terrain, stands);
+        return new Igi2CollisionWorld(objects, terrain, stands, segments);
+
+        void AddSegment(Igi2Placement placement, Igi2SplineSweep sweep)
+        {
+            if (models(placement.Model) is not { } model || Meshes(model) is not { } meshes)
+            {
+                return;
+            }
+
+            float radius = 0f;
+            foreach (string level in Igi2SplineSegment.LevelsOfDetail(placement.Model, name => models(name) is not null))
+            {
+                float levelRadius = models(level)!.NativeMarkerBound;
+                if (radius < levelRadius)
+                {
+                    radius = levelRadius;
+                }
+            }
+
+            if (Igi2SplineSegment.Straight(
+                new Igi2CollisionOwner(placement.TypeName, placement.LevelId, placement.Model, 0),
+                sweep.Start,
+                sweep.Stop,
+                sweep.IsFlipped,
+                meshes,
+                radius) is { } segment)
+            {
+                segments.Add(segment);
+            }
+        }
 
         void Add(Igi2Placement root, string modelName, Igi2Pose pose, int depth)
         {
@@ -267,6 +317,23 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
                 && p.Z - r <= max.Z && min.Z <= r + p.Z)
             {
                 solid.NextZ(trace);
+            }
+        }
+
+        foreach (Igi2SplineSegment segment in _segments)
+        {
+            if ((groups & (segment.Group | EveryTypeGroup)) == 0)
+            {
+                continue;
+            }
+
+            Vector3d p = segment.Position;
+            double r = segment.Radius;
+            if (max.X >= p.X - r && min.X <= r + p.X
+                && max.Y >= p.Y - r && min.Y <= r + p.Y
+                && p.Z - r <= max.Z && min.Z <= r + p.Z)
+            {
+                segment.NextZ(trace);
             }
         }
 
