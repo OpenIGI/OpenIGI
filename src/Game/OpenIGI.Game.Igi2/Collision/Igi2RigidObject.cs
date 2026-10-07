@@ -48,7 +48,7 @@ public sealed class Igi2CollisionMesh
 }
 
 /// <summary>A placed solid model, <c>RigidDynCubeObj</c>, as the collision sees it: a pose, a scale, and its meshes.</summary>
-public sealed class Igi2RigidObject
+public sealed class Igi2RigidObject : IIgi2Collider
 {
     private readonly IReadOnlyList<Igi2CollisionMesh?> _meshes;
 
@@ -65,7 +65,7 @@ public sealed class Igi2RigidObject
         IsBuildingMesh = isBuildingMesh;
     }
 
-    /// <summary>Gets what a hit reports as struck.</summary>
+    /// <summary>Gets what the object stands for in the level.</summary>
     public object Owner { get; }
 
     /// <summary>Gets or sets the position, <c>tPos</c>, world units.</summary>
@@ -104,4 +104,11 @@ public sealed class Igi2RigidObject
     /// <param name="level">The level, <c>iMesh</c>.</param>
     /// <returns>The level, or <see langword="null"/> when the model has none there.</returns>
     public Igi2CollisionMesh? Mesh(int level) => (uint)level < (uint)_meshes.Count ? _meshes[level] : null;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>RigidDynCubeObj_TraceLinesHandler</c> answers both the line and the ground events
+    /// (<c>RigidDynCubeObj_GenericOpen</c>, <c>igi2 0x58E170</c>), so this is <see cref="Igi2RigidTrace"/>.
+    /// </remarks>
+    public void NextZ(Igi2LineTrace trace) => Igi2RigidTrace.Trace(this, trace);
 }

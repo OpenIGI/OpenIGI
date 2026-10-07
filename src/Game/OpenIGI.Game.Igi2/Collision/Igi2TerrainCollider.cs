@@ -4,7 +4,7 @@ using OpenIGI.Game.Igi2.World;
 namespace OpenIGI.Game.Igi2.Collision;
 
 /// <summary>The level's terrain as the collision sees it: the ground's tiles, its discard boxes and its materials.</summary>
-public sealed class Igi2TerrainCollider
+public sealed class Igi2TerrainCollider : IIgi2Collider
 {
     /// <summary>The number of level material slots, <c>World_t.aptQMaterial</c>; a terrain material outside them has none.</summary>
     public const int MaterialSlots = 0x40;
@@ -20,7 +20,7 @@ public sealed class Igi2TerrainCollider
         Owner = owner ?? throw new ArgumentNullException(nameof(owner));
     }
 
-    /// <summary>Gets what a hit reports as struck.</summary>
+    /// <summary>Gets what the ground stands for in the level: the terrain.</summary>
     public object Owner { get; }
 
     /// <summary>
@@ -67,7 +67,7 @@ public sealed class Igi2TerrainCollider
             }
 
             hit.IsHit = true;
-            hit.HitObject = Owner;
+            hit.HitObject = this;
             hit.Position = new Vector3d(start.X, start.Y, height);
             hit.LocalPosition = new Vector3f(
                 ((Fpu)start.X - origin.X).F,

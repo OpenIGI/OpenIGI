@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Igi2.Collision;
 public sealed class Igi2Intersection
 {
     /// <summary>Gets or sets what was struck, <c>ptHitObj</c>.</summary>
-    public object? HitObject { get; set; }
+    public IIgi2Collider? HitObject { get; set; }
 
     /// <summary>Gets or sets where, in the world, <c>tPos</c>.</summary>
     public Vector3d Position { get; set; }

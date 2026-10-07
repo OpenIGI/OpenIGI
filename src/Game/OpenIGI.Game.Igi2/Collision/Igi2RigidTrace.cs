@@ -519,7 +519,7 @@ public static class Igi2RigidTrace
         Fpu wz = (wz0 * m[8]) + (wx0 * m[6]) + (wy0 * m[7]);
         Vector3d p = o.Position;
 
-        hit.HitObject = o.Owner;
+        hit.HitObject = o;
         hit.Position = new Vector3d(((Fpu)wx + p.X).Value, ((Fpu)wy + p.Y).Value, (wz + p.Z).Value);
         hit.LocalPosition = point;
         hit.LocalNormal = new Vector3f(nx, ny, nz);

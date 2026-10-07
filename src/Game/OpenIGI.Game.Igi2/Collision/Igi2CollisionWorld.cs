@@ -225,7 +225,7 @@ public sealed class Igi2CollisionWorld
                 && max.Y >= p.Y - r && min.Y <= r + p.Y
                 && p.Z - r <= max.Z && min.Z <= r + p.Z)
             {
-                Igi2RigidTrace.Trace(solid, trace);
+                solid.NextZ(trace);
             }
         }
 

@@ -109,7 +109,7 @@ public sealed class RetailIgi2CollisionWorldTests
         // From well above, so the roof, if any, is found first; step down until a floor faces up.
         Igi2Intersection hit = Footing(middle, reach: -400000.0);
         Assert.True(hit.IsHit, "nothing under the hangar.");
-        Assert.IsType<Igi2CollisionOwner>(hit.HitObject);
+        Assert.IsType<Igi2CollisionOwner>(hit.HitObject?.Owner);
     }
 
     /// <summary>The two-line query <c>Human_GroundCollision</c> makes: down 40960 for the ground, up 8192 for the roof.</summary>

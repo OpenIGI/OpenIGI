@@ -45,7 +45,7 @@ public sealed class RetailIgi2RigidTraceTests
                 Assert.True(expected is not null, $"{name} face {f}: the reference finds nothing.");
                 Assert.True(hit.IsHit, $"{name} face {f}: the line through the face's centre struck nothing.");
                 Assert.InRange(hit.Distance, expected!.Value - 0.5, expected.Value + 41.0);
-                Assert.Same(name, hit.HitObject);
+                Assert.Same(name, hit.HitObject?.Owner);
                 checkedLines++;
             }
         }
@@ -69,11 +69,12 @@ public sealed class RetailIgi2RigidTraceTests
         earlier.IsHit = true;
         earlier.Distance = 1.0;
         earlier.Position = start;
-        earlier.HitObject = "nearer";
+        Igi2RigidObject nearer = Place("nearer", mesh);
+        earlier.HitObject = nearer;
 
         Igi2RigidTrace.Trace(model, trace);
 
-        Assert.Equal("nearer", earlier.HitObject);
+        Assert.Same(nearer, earlier.HitObject);
         Assert.Equal(1.0, earlier.Distance);
     }
 

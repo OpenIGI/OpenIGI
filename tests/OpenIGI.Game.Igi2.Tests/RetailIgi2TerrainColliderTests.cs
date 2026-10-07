@@ -27,7 +27,8 @@ public sealed class RetailIgi2TerrainColliderTests
 
             Igi2Intersection hit = trace.Intersections[0];
             Assert.True(hit.IsHit);
-            Assert.Equal("terrain", hit.HitObject);
+            Assert.Same(collider, hit.HitObject);
+            Assert.Equal("terrain", hit.HitObject?.Owner);
 
             Vector3d origin = surface.Origin;
             Assert.True(Igi2TerrainVertex.TrySample(surface.Tiles, ((Fpu)at.X - origin.X).F, ((Fpu)at.Y - origin.Y).F, out Igi2TerrainSample sample));
@@ -64,9 +65,10 @@ public sealed class RetailIgi2TerrainColliderTests
         Igi2Intersection nearer = held.Intersections[0];
         nearer.IsHit = true;
         nearer.Distance = 1.0;
-        nearer.HitObject = "crate";
+        Igi2TerrainCollider crate = new(surface, "crate");
+        nearer.HitObject = crate;
         collider.NextZ(held);
-        Assert.Equal("crate", nearer.HitObject);
+        Assert.Same(crate, nearer.HitObject);
     }
 
     /// <summary>The hangar's discard box leaves no ground under its middle for a line to strike.</summary>
