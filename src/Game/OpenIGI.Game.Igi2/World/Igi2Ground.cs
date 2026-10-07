@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// </para>
 /// <para>
 /// <b>A <see cref="DiscardTask"/> removes the ground here too.</b> <c>Terrain_GetNextZHandler</c> tests
-/// the point against <c>DiscardTask_IsDiscardVertex</c> (<c>igi2ed 0x65A670</c>) before it accepts a
+/// the point against <c>DiscardTask_IsDiscardVertex</c> (<c>igi2 0x5D1850</c>) before it accepts a
 /// surface, so a body over one of the level's discard boxes gets no terrain at all and falls to
 /// whatever collision mesh was built in the hole. The renderer applies the same boxes, which is what
 /// keeps the surface a body stands on the surface it can see.
@@ -38,7 +38,8 @@ namespace OpenIGI.Game.Igi2.World;
 public sealed class Igi2Ground : IGroundHeightField
 {
     private readonly IReadOnlyList<Igi2TerrainTile> _tiles;
-    private readonly Igi2TerrainDiscard[] _discards;
+    private readonly Igi2DiscardBox[] _discards;
+    private readonly Vector3d _origin;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2Ground"/> class.</summary>
     /// <param name="surface">The level's loaded tiles.</param>
@@ -47,7 +48,8 @@ public sealed class Igi2Ground : IGroundHeightField
     {
         ArgumentNullException.ThrowIfNull(surface);
         _tiles = surface.Tiles;
-        _discards = surface.Discards;
+        _discards = surface.DiscardBoxes;
+        _origin = surface.Origin;
     }
 
     /// <summary>Gets a value indicating whether this level has any ground to stand on.</summary>
@@ -115,78 +117,21 @@ public sealed class Igi2Ground : IGroundHeightField
     public override string ToString() =>
         $"I.G.I. 2 ground over {_tiles.Count} tile(s), {_discards.Length} discard(s)";
 
-    // Terrain_VertexFunction, 0x5706F0: the tile, the cell, the triangle, the height and the normal.
+    // Terrain_GetNextZHandler, 0x572E80: the point relative to the terrain as floats, the ground there
+    // (Igi2TerrainVertex), the discard boxes, and the height back in the world at the client's precision.
     private bool TrySample(double x, double y, out TerrainGround ground)
     {
         ground = default;
-        if (_tiles.Count == 0)
+        float relativeX = ((Fpu)x - _origin.X).F;
+        float relativeY = ((Fpu)y - _origin.Y).F;
+        if (!Igi2TerrainVertex.TrySample(_tiles, relativeX, relativeY, out Igi2TerrainSample sample)
+            || Igi2DiscardBox.AnyContains(_discards, relativeX, relativeY))
         {
             return false;
         }
 
-        // 0x62E9E3: the discard is tested before the surface is kept, and on X and Y alone. A point
-        // inside a box has no terrain under it at any height.
-        if (Igi2TerrainDiscard.AnyContains(_discards, x, y))
-        {
-            return false;
-        }
-
-        Igi2TerrainTile tile = Select(x, y);
-
-        // 0x570790: the sample index, clamped to the grid. Clamping rather than refusing is the
-        // original's own edge behaviour -- the outer half texel reads the edge sample flat.
-        double column = Math.Clamp(tile.ColumnAt(x), 0.0, tile.Width - 1);
-        double row = Math.Clamp(tile.RowAt(y), 0.0, tile.Height - 1);
-
-        int x0 = (int)column;
-        int y0 = (int)row;
-        int x1 = Math.Min(tile.Width - 1, x0 + 1);
-        int y1 = Math.Min(tile.Height - 1, y0 + 1);
-
-        double u = column - x0;
-        double v = row - y0;
-
-        double h00 = tile.HeightAt(x0, y0);
-        double h10 = tile.HeightAt(x1, y0);
-        double h01 = tile.HeightAt(x0, y1);
-        double h11 = tile.HeightAt(x1, y1);
-
-        double height;
-        double slopeX;
-        double slopeY;
-
-        if (1.0 - u < v)
-        {
-            // 0x570926: the far triangle, hung off the (x1, y1) corner.
-            height = ((1.0 - v) * (h10 - h11)) + ((h01 - h11) * (1.0 - u)) + h11;
-            slopeX = (h01 - h11) / tile.TexelWidth;
-            slopeY = (h10 - h11) / tile.TexelHeight;
-        }
-        else
-        {
-            // 0x570966: the near triangle, hung off the (x0, y0) corner.
-            height = (u * (h10 - h00)) + ((h01 - h00) * v) + h00;
-            slopeX = -(h10 - h00) / tile.TexelWidth;
-            slopeY = -(h01 - h00) / tile.TexelHeight;
-        }
-
-        double length = Math.Sqrt((slopeX * slopeX) + (slopeY * slopeY) + 1.0);
-        ground = new TerrainGround(height, slopeX / length, slopeY / length, 1.0 / length);
+        double height = ((Fpu)sample.RelativeZ + _origin.Z).Value;
+        ground = new TerrainGround(height, sample.Normal.X, sample.Normal.Y, sample.Normal.Z);
         return true;
-    }
-
-    // 0x570750: backwards through the tiles, first containing one wins, and tile 0 answers for
-    // everything else -- it is the level's whole ground and the finer tiles are patches laid on it.
-    private Igi2TerrainTile Select(double x, double y)
-    {
-        for (int i = _tiles.Count - 1; i > 0; i--)
-        {
-            if (_tiles[i].CoversPoint(x, y))
-            {
-                return _tiles[i];
-            }
-        }
-
-        return _tiles[0];
     }
 }

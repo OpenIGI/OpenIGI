@@ -1,5 +1,4 @@
 ﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
@@ -62,7 +61,7 @@ public sealed class RetailIgi2TerrainLodTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            if (Surface(level).IsEmpty)
+            if (level.Terrain().IsEmpty)
             {
                 continue;
             }
@@ -102,7 +101,7 @@ public sealed class RetailIgi2TerrainLodTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -161,7 +160,7 @@ public sealed class RetailIgi2TerrainLodTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -217,7 +216,7 @@ public sealed class RetailIgi2TerrainLodTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -259,7 +258,7 @@ public sealed class RetailIgi2TerrainLodTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -296,7 +295,7 @@ public sealed class RetailIgi2TerrainLodTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -364,12 +363,5 @@ public sealed class RetailIgi2TerrainLodTests
         yield return StandingOn(tile);
         yield return LookingAt(tile, MathF.PI / 2f, 0f);
         yield return LookingAt(tile, MathF.PI, 0.5f);
-    }
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
     }
 }

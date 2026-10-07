@@ -83,6 +83,66 @@ public readonly record struct Igi2TerrainDiscard(double MinX, double MinY, doubl
 }
 
 /// <summary>
+/// The ground one <see cref="DiscardTask"/> takes away as the game's own ground query tests it: four floats
+/// relative to the terrain, at the client's precision.
+/// </summary>
+/// <param name="MinX">The west edge, relative to the terrain.</param>
+/// <param name="MinY">The south edge.</param>
+/// <param name="MaxX">The east edge.</param>
+/// <param name="MaxY">The north edge.</param>
+/// <remarks>
+/// <see cref="Igi2TerrainDiscard"/> is the same box in world doubles for drawing. The ground query needs these
+/// floats bit for bit: a body standing on a box's edge is over ground or not by the last bit.
+/// </remarks>
+public readonly record struct Igi2DiscardBox(float MinX, float MinY, float MaxX, float MaxY)
+{
+    /// <summary>
+    /// The box <c>DiscardTask_UpdateInternalDataHandler</c> (<c>igi2 0x5D1A90</c>) stores: the task's position
+    /// less the terrain's, then the half extents either side.
+    /// </summary>
+    /// <param name="task">The task.</param>
+    /// <param name="terrain">The position of the world's terrain.</param>
+    /// <returns>The box.</returns>
+    public static Igi2DiscardBox From(DiscardTask task, Vector3d terrain)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        float x = ((Fpu)task.Position.X - terrain.X).F;
+        Fpu y = (Fpu)task.Position.Y - terrain.Y;
+        Fpu halfWidth = (Fpu)task.Width * 2048f;
+        Fpu halfHeight = (Fpu)task.Height * 2048f;
+        return new Igi2DiscardBox(((Fpu)x - halfWidth).F, (y - halfHeight).F, (halfWidth + x).F, (halfHeight + y).F);
+    }
+
+    /// <summary>
+    /// <c>DiscardTask_IsDiscardVertex</c> (<c>igi2 0x5D1850</c>): closed on all four sides; an unordered point is
+    /// outside.
+    /// </summary>
+    /// <param name="x">The X relative to the terrain.</param>
+    /// <param name="y">The Y relative to the terrain.</param>
+    /// <returns><see langword="true"/> when the box holds the point.</returns>
+    public bool Contains(float x, float y) => x >= MinX && x <= MaxX && y >= MinY && y <= MaxY;
+
+    /// <summary>Gets whether any box holds a point.</summary>
+    /// <param name="boxes">The boxes.</param>
+    /// <param name="x">The X relative to the terrain.</param>
+    /// <param name="y">The Y relative to the terrain.</param>
+    /// <returns><see langword="true"/> when one does.</returns>
+    public static bool AnyContains(ReadOnlySpan<Igi2DiscardBox> boxes, float x, float y)
+    {
+        foreach (Igi2DiscardBox box in boxes)
+        {
+            if (box.Contains(x, y))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+/// <summary>
 /// A hole cut through the ground — I.G.I. 2's <c>DiscardTask</c>, the box inside which the terrain is
 /// neither drawn nor stood on.
 /// </summary>

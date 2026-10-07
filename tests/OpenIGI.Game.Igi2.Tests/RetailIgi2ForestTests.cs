@@ -1,6 +1,5 @@
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -91,7 +90,7 @@ public sealed class RetailIgi2ForestTests
         foreach (Igi2Level level in Igi2Level.All())
         {
             Igi2Forest forest = Forest(level);
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (forest.IsEmpty || surface.IsEmpty)
             {
                 continue;
@@ -139,12 +138,5 @@ public sealed class RetailIgi2ForestTests
             "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
 
         return Igi2Forest.Build(level.Root, new ResourceRegistry(files));
-    }
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
     }
 }

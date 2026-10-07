@@ -1,5 +1,4 @@
 ﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -30,7 +29,7 @@ public sealed class RetailIgi2GroundTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -53,11 +52,14 @@ public sealed class RetailIgi2GroundTests
                         continue;
                     }
 
+                    double tolerance = Slack(tile, x, y);
                     Assert.True(
-                        ground.TryGetGround(at.X, at.Y, at.Z, out TerrainGround found),
+                        ground.TryGetGround(at.X, at.Y, at.Z + tolerance, out TerrainGround found),
                         $"Tile {tile.Id} sample ({x}, {y}) has no ground under its own position.");
 
-                    Assert.Equal(at.Z, found.Height, 3);
+                    Assert.True(
+                        Math.Abs(found.Height - at.Z) <= tolerance,
+                        $"{level.Directory} tile {tile.Id} sample ({x}, {y}): {found.Height} for {at.Z}, slack {tolerance}.");
                     checks++;
                 }
             }
@@ -80,7 +82,7 @@ public sealed class RetailIgi2GroundTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -101,7 +103,7 @@ public sealed class RetailIgi2GroundTests
                         continue;
                     }
 
-                    Assert.True(ground.TryGetGround(at.X, at.Y, at.Z, out TerrainGround found));
+                    Assert.True(ground.TryGetGround(at.X, at.Y, at.Z + Slack(tile, x, y), out TerrainGround found));
 
                     double length = Math.Sqrt(
                         (found.NormalX * found.NormalX)
@@ -135,7 +137,7 @@ public sealed class RetailIgi2GroundTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.Tiles.Count < 2)
             {
                 continue;
@@ -158,8 +160,9 @@ public sealed class RetailIgi2GroundTests
                     }
 
                     // Asked from far enough above that the window cannot be what decides it.
-                    Assert.True(ground.TryGetGround(at.X, at.Y, at.Z, out TerrainGround found));
-                    Assert.Equal(at.Z, found.Height, 3);
+                    double tolerance = Slack(fine, x, y);
+                    Assert.True(ground.TryGetGround(at.X, at.Y, at.Z + tolerance, out TerrainGround found));
+                    Assert.InRange(found.Height, at.Z - tolerance, at.Z + tolerance);
 
                     compared++;
                     differed += Math.Abs(found.Height - CoarseHeightAt(coarse, at.X, at.Y)) > 4096.0 ? 1 : 0;
@@ -183,8 +186,8 @@ public sealed class RetailIgi2GroundTests
     [RequiresTitleDataFact("igi2")]
     public void Nothing_answers_outside_the_probes_own_window()
     {
-        Igi2Level level = Igi2Level.All().First(static l => !Surface(l).IsEmpty);
-        Igi2TerrainSurface surface = Surface(level);
+        Igi2Level level = Igi2Level.All().First(static l => !l.Terrain().IsEmpty);
+        Igi2TerrainSurface surface = level.Terrain();
         IGroundHeightField ground = new Igi2Ground(surface);
         Igi2TerrainTile tile = surface.Tiles[^1];
         Vector3d at = tile.PositionOf(tile.Width / 2, tile.Height / 2);
@@ -233,7 +236,7 @@ public sealed class RetailIgi2GroundTests
 
             spawns++;
 
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -266,10 +269,28 @@ public sealed class RetailIgi2GroundTests
         return tile.HeightAt(column, row);
     }
 
-    private static Igi2TerrainSurface Surface(Igi2Level level)
+    /// <summary>How far the client's 24-bit arithmetic may land from a sample's exact height.</summary>
+    /// <remarks>
+    /// Two parts. The height is a float relative to the terrain's Z and the sum with that Z is another, so each is
+    /// good to a few single-precision steps of the larger magnitude: on <c>location1/level3</c>, nine kilometres
+    /// up, that is sixteen units, and on <c>location2/level1</c>, whose terrain sits 200 metres down, a quarter. And the fractional sample index, a float
+    /// near a few hundred, is good to about 2^-14 of a texel, which on a steep cell moves the height by that
+    /// fraction of the step to the next sample, in whichever neighbouring cell the index resolves into. A
+    /// half-texel error, the thing this guards against, would be off by half a step.
+    /// </remarks>
+    private static double Slack(Igi2TerrainTile tile, int x, int y)
     {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
+        double here = tile.HeightAt(x, y);
+        double step = 0.0;
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                step = Math.Max(step, Math.Abs(tile.HeightAt(x + dx, y + dy) - here));
+            }
+        }
+
+        double magnitude = Math.Max(Math.Abs(here), Math.Abs(here - tile.BaseHeight));
+        return Math.Max(1.0 / 64.0, magnitude * Math.Pow(2.0, -21.0)) + (step * Math.Pow(2.0, -8.0));
     }
 }

@@ -68,6 +68,20 @@ public readonly record struct Igi2TerrainTile(
     Igi2TerrainMap? Lightmap,
     IReadOnlyList<Igi2TerrainExtent> Submaps)
 {
+    /// <summary>Gets the tile's span along X in metres as the engine holds it, <c>vWorldWidth</c>.</summary>
+    /// <remarks>
+    /// <c>TerrainMap_UpdateInternalDataHandler</c> (<c>igi2 0x575610</c>) copies it from the authored
+    /// <c>World width</c> when the tile loads. The float itself is kept, not the derived spacing, because the
+    /// ground query (<see cref="Igi2TerrainVertex"/>) recomputes the spacing from it at the client's precision.
+    /// </remarks>
+    public float WorldWidth { get; init; }
+
+    /// <summary>Gets the tile's span along Y in metres as the engine holds it, <c>vWorldHeight</c>.</summary>
+    public float WorldHeight { get; init; }
+
+    /// <summary>Gets the position of the <c>Terrain</c> the tile belongs to, which the ground query works relative to.</summary>
+    public Vector3d TerrainOrigin { get; init; }
+
     /// <summary>Gets the world height of one sample.</summary>
     /// <param name="x">The sample's column.</param>
     /// <param name="y">The sample's row.</param>
@@ -362,12 +376,25 @@ public sealed class Igi2TerrainSurface
     private Igi2TerrainSurface(
         IReadOnlyList<Igi2TerrainTile> tiles,
         IReadOnlyDictionary<int, TerrainMaterialTask> materials,
-        Igi2TerrainDiscard[] discards)
+        Igi2TerrainDiscard[] discards,
+        Igi2DiscardBox[] discardBoxes,
+        TerrainTask? terrain)
     {
         Tiles = tiles;
         Materials = materials;
         Discards = discards;
+        DiscardBoxes = discardBoxes;
+        Terrain = terrain;
     }
+
+    /// <summary>Gets the level's terrain, the task its ground is placed by; <see langword="null"/> when it has none.</summary>
+    public TerrainTask? Terrain { get; }
+
+    /// <summary>Gets the position the ground is measured from: the terrain's.</summary>
+    public Vector3d Origin => Terrain?.Position ?? default;
+
+    /// <summary>Gets the discard boxes as the ground query tests them, relative to <see cref="Origin"/>.</summary>
+    public Igi2DiscardBox[] DiscardBoxes { get; }
 
     /// <summary>Gets the level's tiles, in the order it declared them.</summary>
     public IReadOnlyList<Igi2TerrainTile> Tiles { get; }
@@ -430,6 +457,8 @@ public sealed class Igi2TerrainSurface
         List<Igi2TerrainTile> tiles = [];
         Dictionary<int, TerrainMaterialTask> materials = [];
         List<Igi2TerrainDiscard> discards = [];
+        List<DiscardTask> discardTasks = [];
+        TerrainTask? terrain = null;
 
         // heightmaps.res keys its entries by bare file name -- `heightmap000.thm`, not the alias-
         // qualified path the task builds. The original never notices: TerrainMap_Alloc sprintfs a name
@@ -442,9 +471,15 @@ public sealed class Igi2TerrainSurface
 
         foreach (GameTask task in Walk(levelRoot))
         {
-            if (task is TerrainMaterialTask material)
+            if (task is TerrainTask level)
             {
-                materials[material.MaterialId] = material;
+                terrain ??= level;
+            }
+            else if (task is TerrainMaterialTask material)
+            {
+                // The first one with an id wins: Terrain_GetNextZHandler (igi2 0x572E80) walks the
+                // terrain's TerrainMaterial children in order and stops at the first match.
+                materials.TryAdd(material.MaterialId, material);
             }
             else if (task is TerrainMapTask map && TryLoad(map, byName, log, out Igi2TerrainTile tile))
             {
@@ -456,6 +491,7 @@ public sealed class Igi2TerrainSurface
                 // keeps them in DiscardTask_ptQTaskList, a flat list every terrain vertex is tested
                 // against, so where in the tree one sits does not matter. The whole walk is the list.
                 discards.Add(discard.Region);
+                discardTasks.Add(discard);
             }
         }
 
@@ -464,7 +500,13 @@ public sealed class Igi2TerrainSurface
         log.Information(
             LogCategory,
             $"Terrain: {tiles.Count} tile(s), {materials.Count} material(s), {discards.Count} discard(s).");
-        return new Igi2TerrainSurface(tiles, materials, [.. discards]);
+        Vector3d origin = terrain?.Position ?? default;
+        return new Igi2TerrainSurface(
+            tiles,
+            materials,
+            [.. discards],
+            [.. discardTasks.Select(d => Igi2DiscardBox.From(d, origin))],
+            terrain);
     }
 
     /// <inheritdoc/>
@@ -525,7 +567,12 @@ public sealed class Igi2TerrainSurface
             BaseHeightOf(map),
             Matching(materialMap, heights) ? materialMap : null,
             Matching(lightMap, heights) ? lightMap : null,
-            []);
+            [])
+        {
+            WorldWidth = map.WorldWidth,
+            WorldHeight = map.WorldHeight,
+            TerrainOrigin = TerrainOf(map)?.Position ?? default,
+        };
 
         return true;
     }
@@ -533,17 +580,20 @@ public sealed class Igi2TerrainSurface
     // The Z a tile's samples are measured from, which Terrain_GetZFromWorldCoordinates takes from the
     // TerrainMap's parent rather than from the TerrainMap. A tile the level parented somewhere else is
     // measured from nothing, which is the same answer the original gives when no terrain is active.
-    private static double BaseHeightOf(TerrainMapTask map)
+    private static double BaseHeightOf(TerrainMapTask map) => TerrainOf(map)?.Position.Z ?? 0.0;
+
+    // The Terrain a tile hangs under, QTask_GetFirstParentOfType's answer.
+    private static TerrainTask? TerrainOf(TerrainMapTask map)
     {
         for (GameTask? parent = map.Parent; parent is not null; parent = parent.Parent)
         {
             if (parent is TerrainTask terrain)
             {
-                return terrain.Position.Z;
+                return terrain;
             }
         }
 
-        return 0.0;
+        return null;
     }
 
     // A map whose extent disagrees with the height map's is not usable as a per-sample channel. The
