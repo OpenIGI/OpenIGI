@@ -86,8 +86,8 @@ public abstract partial class Igi2Human
         }
 
         Fpu inverse = (Fpu)1f / up;
-        float roll = X87.ToFloat(Math.Atan2(((Fpu)across * inverse).Value, 1.0));
-        float pitch = X87.ToFloat(-Math.Atan2((ahead * inverse).Value, 1.0));
+        float roll = Fpu.Atan2((Fpu)across * inverse, 1.0).F;
+        float pitch = (-Fpu.Atan2(ahead * inverse, 1.0)).F;
         float[] t = Igi2Pose.Rotation(pitch, roll, 0f);
         float[] r = new float[9];
         for (int c = 0; c < 3; c++)

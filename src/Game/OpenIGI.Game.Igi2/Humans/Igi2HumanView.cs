@@ -41,8 +41,8 @@ public sealed class Igi2HumanView
     /// <summary>Gets or sets the pitch the view is aimed at, <c>vIdealViewAlpha</c>, in radians, up positive.</summary>
     public float IdealPitch { get; set; }
 
-    /// <summary>Gets the pitch the view looks at, <c>vViewAlpha</c>: the aim plus the offsets.</summary>
-    public float Pitch { get; private set; }
+    /// <summary>Gets or sets the pitch the view looks at, <c>vViewAlpha</c>: the aim plus the offsets.</summary>
+    public float Pitch { get; set; }
 
     /// <summary>Gets or sets what kicks the pitch for a while, <c>vOffsetViewAlpha</c>.</summary>
     public float PitchOffset { get; set; }
@@ -58,6 +58,88 @@ public sealed class Igi2HumanView
 
     /// <summary>Gets or sets what kicks the sideways turn for a while, <c>vOffsetViewGamma</c>.</summary>
     public float YawOffset { get; set; }
+
+    /// <summary>Gets or sets how fast a kick to the view dies away each tick, <c>vDampenOffsetView</c>; zero when the view is made.</summary>
+    public float OffsetDamping { get; set; }
+
+    /// <summary>Gets or sets where the eyes are, <c>HumanView_t.tPos</c>: placed by <see cref="Igi2Human.UpdateViewBody"/>.</summary>
+    public Vector3d Position { get; set; }
+
+    /// <summary>Gets or sets which way the eyes look, <c>HumanView_t.tOrientation</c>: rows are the view's X, Y and Z axes.</summary>
+    public Matrix3f Orientation { get; set; } = Matrix3f.Identity;
+
+    /// <summary>Gets or sets how far the view leans out of the body, in the view's frame, <c>tPeekOffset</c>.</summary>
+    public Vector3f PeekOffset { get; set; }
+
+    /// <summary>Gets or sets how hard the view shakes, <c>vShakeFactor</c>; it runs down to zero by <see cref="ShakeTime"/> each tick.</summary>
+    public float ShakeFactor { get; set; }
+
+    /// <summary>Gets or sets the largest turn a shake gives the view, <c>vShakeAngle</c>.</summary>
+    public float ShakeAngle { get; set; }
+
+    /// <summary>Gets or sets the largest move a shake gives the eyes, <c>vShakeRange</c>.</summary>
+    public float ShakeRange { get; set; }
+
+    /// <summary>Gets or sets how much of the shake runs out each tick, <c>vShakeTime</c>.</summary>
+    public float ShakeTime { get; set; }
+
+    /// <summary>Gets or sets the held object's pitch, <c>vObjectAlpha</c>; it steps toward <see cref="IdealObjectPitch"/>.</summary>
+    public float ObjectPitch { get; set; }
+
+    /// <summary>Gets or sets the held object's aimed pitch, <c>vIdealObjectAlpha</c>.</summary>
+    public float IdealObjectPitch { get; set; }
+
+    /// <summary>Gets or sets how far the held object's pitch steps each tick, <c>vStepAlpha</c>.</summary>
+    public float ObjectPitchStep { get; set; }
+
+    /// <summary>Gets or sets the held object's turn, <c>vObjectGamma</c>; it steps toward <see cref="IdealObjectYaw"/>.</summary>
+    public float ObjectYaw { get; set; }
+
+    /// <summary>Gets or sets the held object's aimed turn, <c>vIdealObjectGamma</c>.</summary>
+    public float IdealObjectYaw { get; set; }
+
+    /// <summary>Gets or sets how far the held object's turn steps each tick, <c>vStepGamma</c>.</summary>
+    public float ObjectYawStep { get; set; }
+
+    /// <summary>
+    /// Lets a kick to the view die away, as the end of <c>HumanPlayer_Update</c> (<c>igi2 0x4A268F</c>) does: each offset
+    /// loses <see cref="OffsetDamping"/> of itself.
+    /// </summary>
+    public void DampenOffsets()
+    {
+        PitchOffset = ((-(Fpu)PitchOffset * OffsetDamping) + PitchOffset).F;
+        YawOffset = ((-(Fpu)YawOffset * OffsetDamping) + YawOffset).F;
+    }
+
+    /// <summary>Steps the held object's pitch and turn toward their aims, by their steps, without passing them.</summary>
+    /// <remarks>The middle of <c>HumanView_UpdateBody</c> (<c>igi2 0x4D6D23</c>).</remarks>
+    internal void StepObject()
+    {
+        if (ObjectPitch == IdealObjectPitch && ObjectYaw == IdealObjectYaw)
+        {
+            return;
+        }
+
+        ObjectPitch = Toward(ObjectPitch, IdealObjectPitch, ObjectPitchStep);
+        ObjectYaw = Toward(ObjectYaw, IdealObjectYaw, ObjectYawStep);
+    }
+
+    private static float Toward(float value, float ideal, float step)
+    {
+        if (value < ideal)
+        {
+            float raised = ((Fpu)step + value).F;
+            return raised > ideal ? ideal : raised;
+        }
+
+        if (value > ideal)
+        {
+            float lowered = ((Fpu)value - step).F;
+            return lowered < ideal ? ideal : lowered;
+        }
+
+        return value;
+    }
 
     /// <summary>
     /// Aims the view up or down from the look input: <c>HumanView_UpdateView</c> (<c>igi2 0x4D62F0</c>).

@@ -90,6 +90,12 @@ public readonly struct X87Single(double value)
     /// <returns>The cosine.</returns>
     public static X87Single Cos(X87Single a) => new(Math.Cos(a.Value));
 
+    /// <summary>The arc tangent of <paramref name="y"/> over <paramref name="x"/>, <c>fpatan</c>, which precision control does not narrow.</summary>
+    /// <param name="y">The rise.</param>
+    /// <param name="x">The run.</param>
+    /// <returns>The angle at full precision.</returns>
+    public static X87Single Atan2(X87Single y, X87Single x) => new(Math.Atan2(y.Value, x.Value));
+
     /// <summary><c>fistp</c> under rounding toward zero: the integer part.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The truncated integer.</returns>
