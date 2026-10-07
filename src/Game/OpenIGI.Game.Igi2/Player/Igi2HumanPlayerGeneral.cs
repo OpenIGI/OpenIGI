@@ -1,3 +1,5 @@
+using OpenIGI.Game.Igi2.Humans;
+
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>

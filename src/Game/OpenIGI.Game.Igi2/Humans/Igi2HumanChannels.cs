@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Igi2.Player;
+namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>A human's channel block: this tick's 63 control values and last tick's.</summary>
 /// <remarks>

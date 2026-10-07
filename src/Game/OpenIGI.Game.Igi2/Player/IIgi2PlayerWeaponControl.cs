@@ -1,3 +1,5 @@
+using OpenIGI.Game.Igi2.Humans;
+
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>A weapon type's spread per posture, in degrees, and its two modifiers.</summary>
@@ -28,7 +30,7 @@ public readonly record struct Igi2WeaponPrecision(
 /// zoom keys, and fire for a weapon that zooms when fired. This is the small part of the weapon those
 /// paths touch, so the locomotion code does not depend on the whole weapon system.
 /// </remarks>
-public interface IIgi2PlayerWeaponControl
+public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
 {
     /// <summary>Gets the held weapon type's <c>Weapon Category</c>, or <see langword="null"/> when nothing is held.</summary>
     int? ActiveCategory { get; }
@@ -58,24 +60,6 @@ public interface IIgi2PlayerWeaponControl
     /// <summary>Takes a zoomed weapon out of its zoomed fire mode, as getting up from lying flat does.</summary>
     /// <remarks><c>HumanPlayer_LeaveZoomAlternateFireMode</c> (<c>igi2 0x4BEC80</c>).</remarks>
     void LeaveZoomAlternateFireMode();
-
-    /// <summary>Stops the sound the held weapon has in its first slot, as death does.</summary>
-    /// <remarks>
-    /// <c>Human_UpdateDie</c> (<c>igi2 0x504010</c>) deletes the task <c>Weapon.aptSoundSlotQTaskRef[0]</c>
-    /// refers to, and the reference.
-    /// </remarks>
-    void StopSoundSlot();
-
-    /// <summary>Takes any overlay off: the scope's zoom on the owner's view and the overlay task.</summary>
-    /// <remarks><c>Weapon_SetOverlayStatus</c> (<c>igi2 0x51F1C0</c>) with status 0.</remarks>
-    void ClearOverlay();
-
-    /// <summary>Lets go of both fire types' triggers and clears the weapon's status, as death and water do.</summary>
-    /// <remarks>Sets <c>atFireTypeData[0..1].isReleaseFire</c> and zeroes <c>eWeaponStatus</c>.</remarks>
-    void ReleaseTriggers();
-
-    /// <summary>Takes every weapon away (<c>Weapon_ClearAllWeapons</c>, <c>igi2 0x51DCF0</c>).</summary>
-    void ClearAllWeapons();
 
     /// <summary>Moves the action menu's selection one way or the other.</summary>
     /// <param name="direction">+1 or −1.</param>

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -43,33 +43,8 @@ public sealed partial class Igi2HumanPlayer
     private static readonly int[] StandDeathAnimations = [92, 93, 94, 95, 96, 97, 98, 99];
     private static readonly int[] KneelDeathAnimations = [100, 101, 102, 103, 104, 105];
 
-    /// <summary>Gets or sets the game's run random stream, <c>Game.tRunRandomState</c>, which flinches and deaths draw from.</summary>
-    /// <remarks>Shared with everything else that draws from it; the session supplies the one stream.</remarks>
-    public IgiRandom Random { get; set; } = new();
-
-    /// <summary>Gets or sets the pain sound playing, <c>Human_s.ptHitSoundQTaskRef</c>; death cuts it off.</summary>
-    public IIgi2SoundInstance? HitSound { get; set; }
-
-    /// <summary>Gets or sets the body's whole speed last tick, <c>Human_s.tTotalSpeed</c>; a death carries it on.</summary>
-    public Vector3f TotalSpeed { get; set; }
-
-    /// <summary>Gets a value indicating whether the death clip has played out, <c>Human_s.isDeathAnimationDone</c>.</summary>
-    public bool IsDeathAnimationDone { get; private set; }
-
-    /// <summary>Gets or sets a value indicating whether a dead body has come to rest, <c>Human_s.isDeathPositionStabilized</c>.</summary>
-    public bool IsDeathPositionStabilized { get; set; }
-
-    /// <summary>Gets a value indicating whether the upper body turns with the aim, <c>Human_s.isRotateUpperBody</c>.</summary>
-    public bool IsRotateUpperBody { get; private set; } = true;
-
     /// <summary>Gets a value indicating whether the action machine is locked, <c>HumanPlayer_t.isLockAction</c>.</summary>
     public bool IsLockAction { get; private set; }
-
-    /// <summary>Gets a value indicating whether the body's orientation is frozen, <c>Human_s.isLockOrientation</c>.</summary>
-    public bool IsLockOrientation { get; private set; }
-
-    /// <summary>Gets the camera mode, <c>Human_s.eHumanCameraMode</c>; 5 is the death camera.</summary>
-    public int CameraMode { get; private set; }
 
     // State 54 -- InitStateHit 0x4B2090, RunStateHit 0x4B21F0.
     private void EnterHit()
@@ -138,7 +113,7 @@ public sealed partial class Igi2HumanPlayer
         View.IsLockOrientation = true;
         IsLockOrientation = true;
         Weapon.ReleaseTriggers();
-        PlayDeathSound();
+        PlayDeathSound("player_death_", 3);
 
         Speed = TotalSpeed;
         Locomotion.Current = (_, _) => RunDie();
@@ -164,15 +139,6 @@ public sealed partial class Igi2HumanPlayer
             Igi2HumanPose.LyingFlat => FlatDeathAnimation,
             _ => StandDeathAnimations[Random.NextBounded((uint)StandDeathAnimations.Length)],
         };
-    }
-
-    /// <summary>Cuts off the pain sound and plays one of three death cries (<c>Human_PlayDeathSound</c>, <c>igi2 0x503280</c>).</summary>
-    private void PlayDeathSound()
-    {
-        HitSound?.Delete();
-        HitSound = null;
-        uint draw = Random.NextBounded(3);
-        Surroundings.PlaySound($"player_death_{draw}");
     }
 
     private void RunDie()

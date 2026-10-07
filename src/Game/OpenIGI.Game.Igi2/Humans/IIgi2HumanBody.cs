@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi2.Player;
+namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>The animation layer a human's states drive (<c>Human_s.tHumanAnim</c>).</summary>
 /// <remarks>

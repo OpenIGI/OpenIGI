@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Igi2.Player;
+namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>A human's seventeen damage zones, <c>DamagePart_e</c>, in the original's order.</summary>
 /// <remarks>

@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Igi2.Player;
+namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>How hurt a human is, <c>HumanDamage_t</c>: a total against a limit, and the share each zone took.</summary>
 public sealed class Igi2HumanDamage

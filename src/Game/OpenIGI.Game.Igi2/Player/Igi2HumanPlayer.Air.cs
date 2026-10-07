@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -8,9 +9,6 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>The speed gravity takes off the vertical each tick in the air.</summary>
     /// <remarks>The float <c>0x42A97BBF</c> in <c>HumanPlayer_InAirControl</c> (<c>igi2 0x49FCC0</c>).</remarks>
     public const float GravityPerTick = 84.741692f;
-
-    /// <summary>The ground tolerance once a jump is coming down, and after it ends.</summary>
-    public const float LandingGroundTolerance = 819.20001f;
 
     /// <summary>The landing speed, in metres per second, above which a landing hurts.</summary>
     public const double SafeLandingSpeed = 16.5;
@@ -273,17 +271,4 @@ public sealed partial class Igi2HumanPlayer
         Surroundings.SendLandingEvent();
     }
 
-    /// <summary>Death, once the damage reaches the limit: the weapon's sound slot is stopped and the dead bit raised.</summary>
-    /// <remarks><c>Human_UpdateDie</c> (<c>igi2 0x504010</c>), single-player path.</remarks>
-    private void UpdateDie()
-    {
-        if (!Damage.IsFatal || IsDead)
-        {
-            return;
-        }
-
-        Weapon.StopSoundSlot();
-        IsDead = true;
-        Signal |= Igi2PlayerSignal.Dead;
-    }
 }

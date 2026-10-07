@@ -1,44 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
-
-/// <summary>A human's posture, <c>Human_s.ePose</c>.</summary>
-public enum Igi2HumanPose
-{
-    /// <summary>Standing.</summary>
-    Standing = 0,
-
-    /// <summary>Crouching.</summary>
-    Crouching = 1,
-
-    /// <summary>Lying flat.</summary>
-    LyingFlat = 2,
-}
-
-/// <summary>The postures a human is allowed into, <c>Human_s.bAllowedStance</c>.</summary>
-/// <remarks>Cleared bit by bit by whatever forbids a posture this tick: water depth, a held launcher, a jump cooldown.</remarks>
-[Flags]
-public enum Igi2AllowedStance : byte
-{
-    /// <summary>Nothing allowed.</summary>
-    None = 0,
-
-    /// <summary>Standing.</summary>
-    Stand = 0x1,
-
-    /// <summary>Crouching.</summary>
-    Crouch = 0x2,
-
-    /// <summary>Lying flat.</summary>
-    Lie = 0x4,
-
-    /// <summary>Jumping.</summary>
-    Jump = 0x8,
-
-    /// <summary>Everything.</summary>
-    All = Stand | Crouch | Lie | Jump,
-}
 
 /// <summary>Which of the held weapon's precisions the player's posture selects, <c>ePrecisionType</c>.</summary>
 public enum Igi2PrecisionType
@@ -74,14 +38,13 @@ public enum Igi2PrecisionType
 /// <summary>The player, as I.G.I. 2's <c>HumanPlayer_t</c> runs it.</summary>
 /// <remarks>
 /// <para>
-/// One class for the player's simulation: the channel block its input fills, the locomotion state
-/// machine, and the per-player state its states read and write. It grows a retail function at a time;
-/// each member names the one it comes from. The parts of the engine the states reach into — the
-/// animation layer, the collision probe, the AI's ears, the held weapon — are behind interfaces, so the
-/// locomotion logic is testable on its own.
+/// The player's own part over the shared <see cref="Igi2Human"/> body: its tuning, its signal word, its
+/// states and its action machine. It grows a retail function at a time; each member names the one it
+/// comes from. The parts of the engine the states reach into — the animation layer, the collision probe,
+/// the AI's ears, the held weapon — are behind interfaces, so the locomotion logic is testable on its own.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2HumanPlayer
+public sealed partial class Igi2HumanPlayer : Igi2Human
 {
     /// <summary>The fire category whose weapon zooms on fire rather than shooting.</summary>
     /// <remarks>
@@ -99,30 +62,17 @@ public sealed partial class Igi2HumanPlayer
         IIgi2PlayerWeaponControl weapon,
         IIgi2HumanAnimation animation,
         IIgi2HumanSurroundings surroundings)
+        : base(animation, surroundings, static human => ((Igi2HumanPlayer)human).CreateLocomotion())
     {
         ArgumentNullException.ThrowIfNull(weapon);
-        ArgumentNullException.ThrowIfNull(animation);
-        ArgumentNullException.ThrowIfNull(surroundings);
         Weapon = weapon;
-        Animation = animation;
-        Surroundings = surroundings;
-        Locomotion = CreateLocomotion();
     }
-
-    /// <summary>Gets the channel block the player's input fills.</summary>
-    public Igi2HumanChannels Channels { get; } = new();
 
     /// <summary>Gets or sets the held-weapon controls.</summary>
     public IIgi2PlayerWeaponControl Weapon { get; set; }
 
-    /// <summary>Gets the animation layer the states drive.</summary>
-    public IIgi2HumanAnimation Animation { get; }
-
-    /// <summary>Gets the world the states probe.</summary>
-    public IIgi2HumanSurroundings Surroundings { get; }
-
-    /// <summary>Gets the locomotion state machine, <c>Human_s.tState</c>.</summary>
-    public TaskStateMachine Locomotion { get; }
+    /// <inheritdoc/>
+    protected override IIgi2HumanWeapon HumanWeapon => Weapon;
 
     /// <summary>Gets or sets the locomotion signal word, <c>tState.bSignal</c>.</summary>
     public Igi2PlayerSignal Signal
@@ -134,62 +84,15 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Gets or sets a value indicating whether walking is toggled on, <c>isWalk</c>.</summary>
     public bool IsWalk { get; set; }
 
-    /// <summary>Gets a value indicating whether the human runs rather than walks, <c>Human_s.isRunning</c>.</summary>
-    public bool IsRunning { get; private set; }
-
-    /// <summary>Gets or sets the posture.</summary>
-    public Igi2HumanPose Pose { get; set; }
-
-    /// <summary>Gets or sets the postures allowed this tick.</summary>
-    public Igi2AllowedStance AllowedStance { get; set; } = Igi2AllowedStance.All;
-
     /// <summary>Gets or sets the perfect-shot timer, <c>nPerfectShotTimer</c>.</summary>
     /// <remarks>Counts up while the player keeps still and is zeroed by almost every input.</remarks>
     public int PerfectShotTimer { get; set; }
 
-    /// <summary>Gets or sets the body's orientation, <c>tModelObj.tOrientation</c>: rows are the local X, Y and Z axes.</summary>
-    public Matrix3f Orientation { get; set; } = Matrix3f.Identity;
-
     /// <summary>Gets or sets the speed the player's own legs add on the ground, <c>tGroundMovementSpeed</c>.</summary>
     public Vector3f GroundMovementSpeed { get; set; }
 
-    /// <summary>Gets or sets how much the ground's slope slows the gait, <c>Human_s.vGroundAngleFactor</c>.</summary>
-    public float GroundAngleFactor { get; set; }
-
     /// <summary>Gets or sets the player tuning the script set, <c>HumanPlayer_tGeneral</c>.</summary>
     public Igi2HumanPlayerGeneral General { get; set; } = Igi2HumanPlayerGeneral.Unset;
-
-    /// <summary>Gets the first-person view the states kick, <c>Human_s.ptHumanViewQTask</c>.</summary>
-    public Igi2HumanView View { get; } = new();
-
-    /// <summary>Gets the damage the human has taken, <c>Human_s.tHumanDamage</c>.</summary>
-    public Igi2HumanDamage Damage { get; } = new();
-
-    /// <summary>Gets a value indicating whether the human has died, <c>Human_s.isDead</c>.</summary>
-    public bool IsDead { get; private set; }
-
-    /// <summary>Gets or sets the body's own speed in the air, <c>Human_s.tSpeed</c>.</summary>
-    public Vector3f Speed { get; set; }
-
-    /// <summary>Gets or sets the speed the body carries from the ground into the air, <c>Human_s.tAccumulatedSpeed</c>.</summary>
-    public Vector3f AccumulatedSpeed { get; set; }
-
-    /// <summary>Gets or sets the speed an impact gave the body, <c>Human_s.tImpactSpeed</c>.</summary>
-    public Vector3f ImpactSpeed { get; set; }
-
-    /// <summary>Gets or sets how far below the feet the ground still counts as underfoot, <c>Human_s.vGroundTolerance</c>.</summary>
-    /// <remarks>Zero from take-off until a jump starts down, so the ground left behind is not found again at once.</remarks>
-    public float GroundTolerance { get; set; } = LandingGroundTolerance;
-
-    /// <summary>Gets or sets a value indicating whether landings cannot hurt, <c>Human_s.isProtectedFromFallDamage</c>.</summary>
-    /// <remarks>Read only while airborne: a landing judges by what it was during the fall.</remarks>
-    public bool IsProtectedFromFallDamage { get; set; }
-
-    /// <summary>Gets or sets how deep the water the human stands in is, <c>Human_s.vWaterDepth</c>.</summary>
-    public float WaterDepth { get; set; }
-
-    /// <summary>Gets or sets the turning speed, <c>Human_s.vTurningSpeed</c>.</summary>
-    public float TurningSpeed { get; set; }
 
     /// <summary>Gets or sets the scale on every target speed, <c>vMovementSpeedScale</c>.</summary>
     /// <remarks>Set each tick from the carried weapons' slow-down; see <c>HumanPlayer_RunDelayedHandler</c>.</remarks>

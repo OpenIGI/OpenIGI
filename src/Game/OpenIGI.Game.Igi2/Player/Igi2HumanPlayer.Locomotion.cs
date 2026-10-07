@@ -1,14 +1,12 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <content>The locomotion states and the movement they share.</content>
 public sealed partial class Igi2HumanPlayer
 {
-    /// <summary>The animation controller's ticks per game frame, <c>AnimController_nTicksPerFrame</c> (<c>igi2 0x63681C</c>).</summary>
-    public const int AnimationTicksPerFrame = 160;
-
     /// <summary>The ground acceleration while standing, and toward full speed when running, per tick.</summary>
     /// <remarks>The <c>vMaxYDelta</c> the stand, turn and run states pass <c>HumanPlayer_MoveOnGround</c>.</remarks>
     public const float GroundAcceleration = 118.76579f;
@@ -73,18 +71,6 @@ public sealed partial class Igi2HumanPlayer
             (float)((localX * o.M11) + (localY * o.M12)),
             (float)((localY * o.M22) + (localX * o.M21)),
             (float)((localX * o.M31) + (localY * o.M32)));
-    }
-
-    /// <summary>Sets the gait's animation rate for this tick: slower uphill.</summary>
-    /// <param name="timeScale">The state's own rate.</param>
-    /// <remarks>
-    /// <c>Human_RunningControl</c> (<c>igi2 0x5030E0</c>):
-    /// <c>(1 − clamp(groundAngleFactor, −0.2, 1)) × 160 × timeScale</c> clip ticks per tick, truncated.
-    /// </remarks>
-    public void ControlGait(float timeScale)
-    {
-        double factor = Math.Clamp((double)GroundAngleFactor, -0.2, 1.0);
-        Animation.MainTimeStep = (int)((1.0 - factor) * AnimationTicksPerFrame * timeScale);
     }
 
     /// <summary>Selects the posture precision a state aims for.</summary>
@@ -397,7 +383,7 @@ public sealed partial class Igi2HumanPlayer
     /// <remarks>
     /// <para>
     /// The run rates are the <c>HUMANPLAYER_RUN*_ANIMTIMESCALE</c> globals at <c>0x63D764</c> — 1.0, the two
-    /// side runs 1.2 — applied through <see cref="ControlGait"/>. The walks never call it, so a walk plays at
+    /// side runs 1.2 — applied through <see cref="Igi2Human.ControlGait"/>. The walks never call it, so a walk plays at
     /// whatever rate its clip was left with.
     /// </para>
     /// <para>

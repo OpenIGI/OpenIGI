@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Igi2.Player;
+namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>The player's first-person view, <c>HumanView_t</c>: so far, what landing and dying do to it.</summary>
 /// <remarks>Grows with the view's port (<c>HumanView</c>, <c>igi2 0x4D5C50</c>).</remarks>
