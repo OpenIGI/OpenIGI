@@ -62,20 +62,26 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     private const int MaxAttachmentDepth = 16;
 
     private readonly Igi2RigidObject[] _objects;
+    private readonly Igi2ForestCollider[] _forests;
     private readonly Igi2TerrainCollider? _terrain;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CollisionWorld"/> class.</summary>
     /// <param name="objects">The placed solid models.</param>
     /// <param name="terrain">The ground, or <see langword="null"/> for a level with none.</param>
-    public Igi2CollisionWorld(IEnumerable<Igi2RigidObject> objects, Igi2TerrainCollider? terrain)
+    /// <param name="forests">The stands of trees, or <see langword="null"/> for none.</param>
+    public Igi2CollisionWorld(IEnumerable<Igi2RigidObject> objects, Igi2TerrainCollider? terrain, IEnumerable<Igi2ForestCollider>? forests = null)
     {
         ArgumentNullException.ThrowIfNull(objects);
         _objects = [.. objects];
+        _forests = forests is null ? [] : [.. forests];
         _terrain = terrain;
     }
 
     /// <summary>Gets the placed solid models.</summary>
     public IReadOnlyList<Igi2RigidObject> Objects => _objects;
+
+    /// <summary>Gets the stands of trees.</summary>
+    public IReadOnlyList<Igi2ForestCollider> Forests => _forests;
 
     /// <summary>Gets the ground, or <see langword="null"/> for a level with none.</summary>
     public Igi2TerrainCollider? Terrain => _terrain;
@@ -85,6 +91,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// <param name="models">Resolves a model name to its mesh, or <see langword="null"/> when nothing ships it.</param>
     /// <param name="ground">The level's ground, or <see langword="null"/>.</param>
     /// <param name="terrainOwner">What a hit on the ground reports as struck.</param>
+    /// <param name="forests">The level's stands of trees, or <see langword="null"/> for none.</param>
     /// <returns>The world.</returns>
     /// <remarks>
     /// <para>
@@ -103,7 +110,8 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
         Igi2WorldScene scene,
         Func<string, MefModel?> models,
         Igi2TerrainSurface? ground,
-        object terrainOwner)
+        object terrainOwner,
+        Igi2Forest? forests = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(models);
@@ -124,7 +132,16 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
         }
 
         Igi2TerrainCollider? terrain = ground is { IsEmpty: false } ? new Igi2TerrainCollider(ground, terrainOwner) : null;
-        return new Igi2CollisionWorld(objects, terrain);
+        List<Igi2ForestCollider> stands = [];
+        foreach (Igi2ForestStand stand in forests?.Stands ?? [])
+        {
+            if (models(stand.Model) is { } tree && Igi2ForestCollider.Build(stand, tree) is { } collider)
+            {
+                stands.Add(collider);
+            }
+        }
+
+        return new Igi2CollisionWorld(objects, terrain, stands);
 
         void Add(Igi2Placement root, string modelName, Igi2Pose pose, int depth)
         {
@@ -192,7 +209,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
         uint objectGroups = groups & ~TerrainGroup;
         if (objectGroups != 0)
         {
-            TraceObjects(trace, objectGroups);
+            TraceObjects(trace, objectGroups, lines: false);
         }
 
         if ((groups & TerrainGroup) != 0)
@@ -210,7 +227,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     public void TraceLines(Igi2LineTrace trace, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
-        TraceObjects(trace, groups & ~TerrainGroup);
+        TraceObjects(trace, groups & ~TerrainGroup, lines: true);
         if ((groups & TerrainGroup) != 0)
         {
             _terrain?.TraceLines(trace);
@@ -221,7 +238,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// The object half of a line trace, <c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>): every result is reset
     /// to the line's end, and every object whose bounds meet the lines' padded box is traced.
     /// </summary>
-    private void TraceObjects(Igi2LineTrace trace, uint groups)
+    private void TraceObjects(Igi2LineTrace trace, uint groups, bool lines)
     {
         Vector3d min = trace.Starts[0], max = trace.Starts[0];
         for (int i = 0; i < trace.Count; i++)
@@ -253,6 +270,32 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
             }
         }
 
+        // The stands answer the two events with different handlers: ground queries steer by the first line's start,
+        // line traces by the lines' rectangle and through the foliage.
+        foreach (Igi2ForestCollider forest in _forests)
+        {
+            if ((groups & (forest.Group | EveryTypeGroup)) == 0)
+            {
+                continue;
+            }
+
+            Vector3d p = forest.Position;
+            double r = forest.BoundingRadius;
+            if (max.X >= p.X - r && min.X <= r + p.X
+                && max.Y >= p.Y - r && min.Y <= r + p.Y
+                && p.Z - r <= max.Z && min.Z <= r + p.Z)
+            {
+                if (lines)
+                {
+                    forest.TraceLines(trace);
+                }
+                else
+                {
+                    forest.NextZ(trace);
+                }
+            }
+        }
+
         void Grow(Vector3d v)
         {
             min = new Vector3d(Math.Min(min.X, v.X), Math.Min(min.Y, v.Y), Math.Min(min.Z, v.Z));
@@ -261,7 +304,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     }
 
     /// <summary>The model's collision mesh levels, or <see langword="null"/> when it has none.</summary>
-    private static Igi2CollisionMesh?[]? Meshes(MefModel model)
+    internal static Igi2CollisionMesh?[]? Meshes(MefModel model)
     {
         Igi2CollisionMesh?[] levels = new Igi2CollisionMesh?[MefCollisionMesh.MeshLevels];
         bool any = false;

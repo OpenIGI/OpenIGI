@@ -55,7 +55,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Func<string, Formats.World.MefModel?> models = Igi2DrawableScene.Models(Igi2ModelTable.Create(mtp), world.Mission.PacksInLoadOrder);
         Igi2WorldScene scene = Igi2WorldScene.Build(world.LevelRoot, models);
         Igi2TerrainSurface? ground = built.Ground is Igi2Ground level ? level.Surface : null;
-        return Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner);
+        Igi2Forest forests = Igi2Forest.Build(world.LevelRoot, world.Resources);
+        return Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner, forests);
     }
 }
 

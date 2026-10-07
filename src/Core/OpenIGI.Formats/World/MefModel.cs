@@ -137,6 +137,13 @@ public sealed class MefModel
     /// </remarks>
     public float NativeMarkerBound { get; }
 
+    /// <summary>Gets the centre of the render mesh's bounding sphere, <c>Mesh3D_Mesh_t.tRenderMeshSphere</c> at <c>MESH+0x30</c>.</summary>
+    /// <remarks>
+    /// I.G.I. 2's <c>Forest_UpdateInternalDataHandler</c> (<c>igi2 0x5A2F40</c>) measures a tree model's radius from it:
+    /// the furthest collision vertex from this centre.
+    /// </remarks>
+    public Vector3f RenderSphereCentre { get; private init; }
+
     /// <summary>Gets the vertices, widened to the 40-byte layout.</summary>
     public ReadOnlySpan<MefVertex> Vertices => _vertices;
 
@@ -237,6 +244,10 @@ public sealed class MefModel
         int triangleCount = ReadInt32(mesh[96..], "the mesh triangle count");
         int headerVertexCount = ReadInt32(mesh[100..], "the mesh vertex count");
         float nativeMarkerBound = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x78..]);
+        Vector3f renderSphereCentre = new(
+            BinaryPrimitives.ReadSingleLittleEndian(mesh[0x30..]),
+            BinaryPrimitives.ReadSingleLittleEndian(mesh[0x34..]),
+            BinaryPrimitives.ReadSingleLittleEndian(mesh[0x38..]));
 
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
         (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format, profile);
@@ -310,7 +321,10 @@ public sealed class MefModel
             influences,
             nativeMarkerBound,
             boneHierarchy,
-            boneNames);
+            boneNames)
+        {
+            RenderSphereCentre = renderSphereCentre,
+        };
     }
 
     private static (Igi2BoneHierarchy? Hierarchy, IReadOnlyList<string> Names) ReadBones(
