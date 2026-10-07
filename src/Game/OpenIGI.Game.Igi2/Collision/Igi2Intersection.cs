@@ -54,6 +54,28 @@ public sealed class Igi2Intersection
     /// <summary>Gets or sets how bright the surface is where struck, <c>vLight</c>.</summary>
     public float Light { get; set; }
 
+    /// <summary>Takes on every field of another record, as a structure copy does.</summary>
+    /// <param name="other">The record to copy.</param>
+    public void CopyFrom(Igi2Intersection other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        HitObject = other.HitObject;
+        Position = other.Position;
+        LocalPosition = other.LocalPosition;
+        LocalNormal = other.LocalNormal;
+        Normal = other.Normal;
+        Sector = other.Sector;
+        Face = other.Face;
+        Portal = other.Portal;
+        EnterMaterial = other.EnterMaterial;
+        LeaveMaterial = other.LeaveMaterial;
+        IsDoubleFace = other.IsDoubleFace;
+        IsHit = other.IsHit;
+        Distance = other.Distance;
+        HitUV = other.HitUV;
+        Light = other.Light;
+    }
+
     /// <summary>Forgets any hit, as a trace does before it starts a line.</summary>
     public void Clear()
     {

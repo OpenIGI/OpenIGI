@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// the derived class.
 /// </para>
 /// </remarks>
-public abstract class Igi2Human
+public abstract partial class Igi2Human
 {
     /// <summary>The animation controller's ticks per game frame, <c>AnimController_nTicksPerFrame</c> (<c>igi2 0x63681C</c>).</summary>
     public const int AnimationTicksPerFrame = 160;
@@ -103,8 +103,8 @@ public abstract class Igi2Human
     /// <remarks>Read only while airborne: a landing judges by what it was during the fall.</remarks>
     public bool IsProtectedFromFallDamage { get; set; }
 
-    /// <summary>Gets or sets a value indicating whether what the human stands on is a rigid object, <c>Human_s.isGroundRigidObj</c>.</summary>
-    public bool IsGroundRigidObject { get; set; }
+    /// <summary>Gets a value indicating whether what the human stands on is a rigid object, <c>Human_s.isGroundRigidObj</c>.</summary>
+    public bool IsGroundRigidObject { get; private set; }
 
     /// <summary>Gets or sets where the rigid object underfoot stood last tick, <c>Human_s.tGroundPrevPos</c>.</summary>
     public Vector3d GroundPreviousPosition { get; set; }

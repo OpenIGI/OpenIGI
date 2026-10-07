@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Collision;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -56,22 +57,18 @@ public interface IIgi2HumanSurroundings
     /// <summary>Gets a value indicating whether the ground the human stands on is a lift (<c>Elevator</c>).</summary>
     bool IsOnElevator { get; }
 
-    /// <summary>Lets go of the ground: drops the reference to it and forgets the ground intersection.</summary>
-    /// <remarks>What a jump's take-off does to <c>ptGroundQTaskRef</c>, <c>isGroundRigidObj</c> and <c>tGroundIntersection.isHit</c>.</remarks>
-    void LeaveGround();
-
-    /// <summary>Gets where the object underfoot stands, when it is a rigid object (<c>RigidDynCubeObj</c> or derived).</summary>
-    /// <param name="position">The object's position, <c>tPos</c>.</param>
-    /// <returns>Whether there is such an object underfoot.</returns>
-    bool TryGetGroundObjectPosition(out Vector3d position);
-
     /// <summary>Asks whether the human is under water, and how deep (<c>Water_IsUnderWater</c>, <c>igi2 0x591C30</c>).</summary>
     /// <param name="depth">The depth, set only when the answer is yes.</param>
     /// <returns>Whether any water sheet covers the human's position.</returns>
     bool IsUnderWater(out float depth);
 
-    /// <summary>Gets the landing sound of the material the ground intersection entered, or <see langword="null"/> when there is none.</summary>
-    string? GroundLandingSound { get; }
+    /// <summary>Gets the collision engine the human finds its footing with.</summary>
+    IIgi2CollisionQuery Collision { get; }
+
+    /// <summary>Gets a level material's landing sound, or <see langword="null"/> when it has none.</summary>
+    /// <param name="material">The level material slot, as a hit's <c>ptEnterMaterial</c> names it.</param>
+    /// <returns>The sound's name.</returns>
+    string? LandingSound(int material);
 
     /// <summary>Plays a named sound at the human's view (<c>SoundSys_NewSoundFn</c>).</summary>
     /// <param name="name">The sound definition's name.</param>

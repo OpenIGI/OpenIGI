@@ -20,6 +20,7 @@ public sealed class Igi2PlayerAirTests
     {
         (Igi2HumanPlayer player, _, Igi2PlayerFakes.FakeSurroundings surroundings) = Player();
         player.AccumulatedSpeed = new Vector3f(100f, 0f, 5f);
+        player.GroundIntersection.IsHit = true;
         Tick(player, Igi2PlayerAction.None, grounded: true);
 
         Tick(player, Igi2PlayerAction.Jump, grounded: true);
@@ -28,7 +29,8 @@ public sealed class Igi2PlayerAirTests
         Assert.Equal(new Vector3f(100f, 0f, 839.3703002929688f), player.Speed);
         Assert.False(player.Signal.HasFlag(Igi2PlayerSignal.Grounded));
         Assert.Equal(0f, player.GroundTolerance);
-        Assert.Equal(1, surroundings.GroundsLeft);
+        Assert.False(player.GroundIntersection.IsHit);
+        Assert.Null(player.GroundCollider);
         Assert.Equal(["jump_1"], surroundings.Sounds);
     }
 
@@ -122,7 +124,8 @@ public sealed class Igi2PlayerAirTests
     {
         (Igi2HumanPlayer player, _, Igi2PlayerFakes.FakeSurroundings surroundings) = Fall(maxDamage: 100f);
         surroundings.Water = 300f;
-        surroundings.GroundLandingSound = "land_concrete";
+        surroundings.LandingSounds[3] = "land_concrete";
+        player.GroundIntersection.EnterMaterial = 3;
 
         Tick(player, Igi2PlayerAction.None, grounded: true);
 

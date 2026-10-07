@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 
@@ -73,23 +74,19 @@ internal static class Igi2PlayerFakes
 
         public bool IsOnElevator { get; set; }
 
-        public Vector3d? GroundObject { get; set; }
-
         public float? Water { get; set; }
 
-        public string? GroundLandingSound { get; set; }
+        public Dictionary<int, string> LandingSounds { get; } = [];
 
-        public int GroundsLeft { get; private set; }
+        public FakeCollision World { get; } = new();
+
+        public IIgi2CollisionQuery? Query { get; set; }
+
+        public IIgi2CollisionQuery Collision => Query ?? World;
+
+        public string? LandingSound(int material) => LandingSounds.GetValueOrDefault(material);
 
         public void SendLandingEvent() => LandingEvents++;
-
-        public void LeaveGround() => GroundsLeft++;
-
-        public bool TryGetGroundObjectPosition(out Vector3d position)
-        {
-            position = GroundObject ?? default;
-            return GroundObject is not null;
-        }
 
         public bool IsUnderWater(out float depth)
         {
@@ -161,5 +158,69 @@ internal static class Igi2PlayerFakes
         public void ClearAllWeapons() => Calls.Add("ClearAllWeapons");
 
         public void StepActionMenu(int direction) => Calls.Add($"Menu{direction}");
+    }
+
+    /// <summary>A level of flat floors and ceilings, each answering vertical lines as a handler does.</summary>
+    internal sealed class FakeCollision : IIgi2CollisionQuery
+    {
+        public List<FakeCollider> Surfaces { get; } = [];
+
+        public int Queries { get; private set; }
+
+        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
+        {
+            Queries++;
+            for (int i = 0; i < trace.Starts.Length; i++)
+            {
+                Vector3d start = trace.Starts[i];
+                trace.Ends[i] = new Vector3d(start.X, start.Y, start.Z + distances[i]);
+                trace.Intersections[i].IsHit = false;
+                trace.Intersections[i].HitObject = null;
+            }
+
+            foreach (FakeCollider surface in Surfaces)
+            {
+                surface.NextZ(trace);
+            }
+        }
+    }
+
+    /// <summary>A horizontal surface at one height that faces up or down, with a material and a light.</summary>
+    internal sealed class FakeCollider(double z, bool facesUp = true, int? material = null, float light = 0f) : IIgi2Collider
+    {
+        public object Owner => this;
+
+        public double Z { get; } = z;
+
+        public int Probes { get; private set; }
+
+        public void NextZ(Igi2LineTrace trace)
+        {
+            Probes++;
+            for (int i = 0; i < trace.Starts.Length; i++)
+            {
+                double from = trace.Starts[i].Z, to = trace.Ends[i].Z;
+                if (Z < Math.Min(from, to) || Z > Math.Max(from, to))
+                {
+                    continue;
+                }
+
+                double distance = Math.Abs(from - Z);
+                Igi2Intersection hit = trace.Intersections[i];
+                if (hit.IsHit && !(distance < hit.Distance))
+                {
+                    continue;
+                }
+
+                hit.IsHit = true;
+                hit.HitObject = this;
+                hit.Distance = distance;
+                hit.Position = new Vector3d(trace.Starts[i].X, trace.Starts[i].Y, Z);
+                hit.Normal = new Vector3f(0f, 0f, facesUp ? 1f : -1f);
+                hit.LocalNormal = hit.Normal;
+                hit.EnterMaterial = material;
+                hit.Light = light;
+            }
+        }
     }
 }

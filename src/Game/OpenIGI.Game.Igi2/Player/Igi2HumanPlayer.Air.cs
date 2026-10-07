@@ -35,7 +35,7 @@ public sealed partial class Igi2HumanPlayer
         Vector3f carried = AccumulatedSpeed;
         Speed = new Vector3f(carried.X, carried.Y, ((Fpu)General.UpwardJumpSpeed + carried.Z).F);
         Signal &= ~Igi2PlayerSignal.Grounded;
-        Surroundings.LeaveGround();
+        LeaveGround();
         GroundTolerance = 0f;
         Locomotion.Current = (_, _) => RunJump();
     }
@@ -162,7 +162,7 @@ public sealed partial class Igi2HumanPlayer
             WaterDepth = depth;
             Surroundings.PlaySound("water_land_01");
         }
-        else if (Surroundings.GroundLandingSound is { } sound)
+        else if (GroundIntersection.EnterMaterial is int material && Surroundings.LandingSound(material) is { } sound)
         {
             Surroundings.PlaySound(sound);
         }
@@ -229,7 +229,7 @@ public sealed partial class Igi2HumanPlayer
         Fpu groundX = 0f;
         Fpu groundY = 0f;
         Fpu groundZ = 0f;
-        if (IsGroundRigidObject && Surroundings.TryGetGroundObjectPosition(out Vector3d now))
+        if (TryGetGroundObjectPosition(out Vector3d now))
         {
             groundX = (Fpu)now.X - GroundPreviousPosition.X;
             groundY = (Fpu)now.Y - GroundPreviousPosition.Y;

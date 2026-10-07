@@ -31,7 +31,7 @@ public sealed record Igi2CollisionOwner(string TypeName, int LevelId, string Mod
 /// exactly the same distance a line keeps: a handler replaces a hit only when it is strictly nearer.
 /// </para>
 /// </remarks>
-public sealed class Igi2CollisionWorld
+public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
 {
     /// <summary>The query-group bit that asks for the ground, <c>0x80000000</c>.</summary>
     public const uint TerrainGroup = 0x80000000;
