@@ -47,10 +47,21 @@ public sealed class Igi2HumanWeapons
         _functions = functions;
         _tables = tables;
 
+        FireTaskTypes = new Igi2FireTaskTypes(
+            TaskTypeConstant(natives, "TASKTYPE_GUN"),
+            TaskTypeConstant(natives, "TASKTYPE_ZOOM"),
+            TaskTypeConstant(natives, "TASKTYPE_MISSILE"));
+
         functions.Register(natives, AddWeaponNative, AddWeapon, 1);
         functions.Register(natives, AddAmmoNative, AddAmmo, 2);
         functions.Register(natives, AddAmmoForWeaponNative, AddAmmoForWeapon, 3);
     }
+
+    /// <summary>Gets the task-type ids a held weapon is tested against.</summary>
+    public Igi2FireTaskTypes FireTaskTypes { get; }
+
+    /// <summary>Gets the session's weapons and ammunition.</summary>
+    public Igi2WeaponTables Tables => _tables;
 
     /// <summary>Makes a human's inventory, carrying nothing, within the ammunition limits.</summary>
     /// <param name="ammoLimits">The player tuning's limits.</param>
@@ -90,6 +101,9 @@ public sealed class Igi2HumanWeapons
             }
         }
     }
+
+    private static int TaskTypeConstant(NativeRegistry natives, string name) =>
+        natives.TryResolve(name, out QvmSymbol? symbol) ? symbol.Read().ToInt32() : Igi2WeaponConstants.NoTaskType;
 
     /// <summary><c>Human_AddWeapon(weaponId)</c>: carries the weapon with a load of ammunition (<c>Human_AddWeaponCB</c>, <c>igi2 0x4FB740</c>).</summary>
     private static QvmValue AddWeapon(Igi2ScriptCall call)
@@ -146,3 +160,9 @@ public sealed class Igi2HumanWeapons
         return QvmValue.Zero;
     }
 }
+
+/// <summary>The task-type ids a held weapon is tested against, as their <c>TASKTYPE_*</c> constants give them.</summary>
+/// <param name="Gun">A gun, <c>Gun_eQTaskType</c>.</param>
+/// <param name="Zoom">A zoom, <c>Zoom_eQTaskType</c>.</param>
+/// <param name="Missile">A missile, <c>Missile_eQTaskType</c>.</param>
+public readonly record struct Igi2FireTaskTypes(int Gun, int Zoom, int Missile);

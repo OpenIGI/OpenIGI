@@ -1,5 +1,10 @@
+using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -39,7 +44,7 @@ public sealed class RetailIgi2InventoryTests
     {
         Igi2Level level = Igi2Level.Find("location1", "level1");
 
-        Igi2Inventory inventory = Igi2Gameplay.Arm(Session.Value.Session.Services, level.Root, Tuning)!;
+        Igi2Inventory inventory = Igi2Gameplay.Arm(Session.Value.Session.Services, level.Root, Tuning)!.Inventory;
 
         string[] carried = [.. inventory.Weapons.Where(static w => w.IsActive).Select(static w => w.WeaponType.WeaponId)];
         Assert.Equal(
@@ -111,6 +116,105 @@ public sealed class RetailIgi2InventoryTests
         Assert.Equal(50, inventory.FindAmmo("AMMO_ID_AK74CLIP")!.Count);
         Assert.False(inventory.FindWeapon("WEAPON_ID_AK47")!.IsActive);
     }
+
+    /// <summary>
+    /// A carried gun with nothing loaded and nothing carried for it may only be selected when its type allows that; a round
+    /// carried makes it selectable, and a weapon not carried never is.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Only_a_weapon_that_can_fire_is_selectable()
+    {
+        Igi2Inventory inventory = Weapons.CreateInventory(Tuning.AmmoLimits);
+        Igi2WeaponItem glock = inventory.FindWeapon("WEAPON_ID_GLOCK")!;
+        Assert.False(inventory.IsSelectable(glock));
+
+        inventory.EnableWeaponType("WEAPON_ID_GLOCK", addAmmo: false);
+        Assert.Equal(0, glock.Loaded(0));
+        Assert.Equal(glock.WeaponType.SelectableWhenEmpty, inventory.IsSelectable(glock));
+
+        inventory.AddAmmo("AMMO_ID_GLOCKCLIP", 1);
+        Assert.True(inventory.IsSelectable(glock));
+        Assert.Equal(new Igi2FireTypeRounds(Tables.Ammo(Constant("AMMO_ID_GLOCKCLIP")), 0, 1, glock.WeaponType.AmmoInfo(0, Tables).BulletsPerRound, glock.WeaponType.AmmoInfo(0, Tables).RoundsPerClip), inventory.FireTypeRounds(glock, 0));
+    }
+
+    /// <summary>The next weapon of a category is the first carried one after the given weapon, and none follows the last.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_next_weapon_of_a_category_does_not_wrap()
+    {
+        Igi2Inventory inventory = PlayerLoadout();
+        Igi2WeaponItem glock = inventory.FindWeapon("WEAPON_ID_GLOCK")!;
+
+        Assert.Same(glock, inventory.NextInCategory(Constant("WEAPONCATEGORY_SIDEARM"), null));
+        Assert.Null(inventory.NextInCategory(Constant("WEAPONCATEGORY_SIDEARM"), glock.WeaponType));
+        Assert.Same(inventory.FindWeapon("WEAPON_ID_MP5SD"), inventory.NextInCategory(Constant("WEAPONCATEGORY_PRIMARY"), null));
+    }
+
+    /// <summary>Disabling a weapon empties it, and its carried ammunition too when asked; clearing takes everything.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Disabling_and_clearing_take_weapons_and_rounds_away()
+    {
+        Igi2Inventory inventory = PlayerLoadout();
+        Igi2WeaponItem glock = inventory.FindWeapon("WEAPON_ID_GLOCK")!;
+
+        inventory.Disable(glock, removeCarriedAmmo: true);
+        Assert.False(glock.IsActive);
+        Assert.Equal(0, glock.Loaded(0));
+        Assert.Equal(0, inventory.FindAmmo("AMMO_ID_GLOCKCLIP")!.Count);
+        Assert.Equal(300, inventory.FindAmmo("AMMO_ID_MP5CLIP")!.Count);
+
+        inventory.ClearAll();
+        Assert.Null(inventory.Current);
+        Assert.DoesNotContain(inventory.Weapons, static w => w.IsActive);
+        Assert.All(inventory.Ammo, static a => Assert.Equal(0, a.Count));
+    }
+
+    /// <summary>The weapon in hand slows its carrier in full and every other carried weapon by half.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_weapon_in_hand_slows_in_full_and_the_rest_by_half()
+    {
+        Igi2Inventory inventory = PlayerLoadout();
+
+        double expected = inventory.Weapons
+            .Where(static w => w.IsActive)
+            .Sum(w => ReferenceEquals(w, inventory.Current) ? w.WeaponType.MovementSpeedModifier : w.WeaponType.MovementSpeedModifier * 0.5);
+
+        Assert.Equal(expected, inventory.SummedMovementSlowDown, 5);
+    }
+
+    /// <summary>The control answers from the weapon in hand: its category, precision, zoom, launcher and body clips.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_control_answers_from_the_weapon_in_hand()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level1");
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(level);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(Session.Value.Session.Services, level.Root, Tuning, clips)!;
+        Igi2WeaponTypeTask mp5 = weapons.Inventory.Current!.WeaponType;
+
+        Assert.Equal(Constant("WEAPONCATEGORY_PRIMARY"), weapons.ActiveCategory);
+        Assert.Equal(mp5.StandingPrecisionDegrees, weapons.ActivePrecision!.Value.Standing);
+        Assert.Equal(mp5.TurningPrecisionModifier, weapons.ActivePrecision!.Value.TurningModifier);
+        Assert.False(weapons.ActiveIsMissileLauncher);
+
+        Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint spawn));
+        Igi2BoneHierarchy rig = level.ModelFor(spawn.Model)!.BoneHierarchy!;
+        IReadOnlyList<Igi2AnimationClip?> body = weapons.BodyClips(rig)!;
+        Assert.Same(body, weapons.BodyClips(rig));
+        Assert.Equal(
+            Igi2WeaponTypeAnims.BuildTable(clips, rig, mp5.WeaponAnimationName, (Igi2WeaponAnimFamily)mp5.WeaponType)[0]?.Name,
+            body[0]?.Name);
+
+        Igi2PlayerWeapons launcher = new(Weapons.CreateInventory([]), Weapons.FireTaskTypes, clips);
+        launcher.Inventory.EnableWeaponType("WEAPON_ID_RPG7", addAmmo: true);
+        Assert.True(launcher.ActiveIsMissileLauncher);
+        Igi2PlayerWeapons sniper = new(Weapons.CreateInventory([]), Weapons.FireTaskTypes, clips);
+        sniper.Inventory.EnableWeaponType("WEAPON_ID_DRAGUNOV", addAmmo: true);
+        Assert.True(sniper.ActiveIsZoom);
+        Assert.False(weapons.ActiveIsZoom);
+    }
+
+    private static Igi2Inventory PlayerLoadout() =>
+        Igi2Gameplay.Arm(Session.Value.Session.Services, Igi2Level.Find("location1", "level1").Root, Tuning)!.Inventory;
 
     private static int Constant(string name)
     {

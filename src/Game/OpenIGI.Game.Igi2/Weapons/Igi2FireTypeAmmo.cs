@@ -4,7 +4,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 
 /// <summary>What one of a weapon's two fire types fires and how much of it a load holds.</summary>
 /// <param name="AmmoType">The ammunition it uses, or <see langword="null"/> for none.</param>
-/// <param name="UsesAmmo">Whether it uses ammunition at all.</param>
+/// <param name="RoundsToFire">The rounds one use takes, <c>nRoundsToFire</c>: one for the kinds that use ammunition, none otherwise.</param>
 /// <param name="BulletsPerRound">The bullets one round fires.</param>
 /// <param name="RoundsPerClip">The rounds one load holds.</param>
 /// <remarks>
@@ -13,19 +13,19 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// of their ammunition per load, and a fire type with no handler of its own reports none
 /// (<c>FireType_GetAmmoInfoHandler</c>, <c>0x470490</c>).
 /// </remarks>
-public readonly record struct Igi2FireTypeAmmo(Igi2AmmoTypeTask? AmmoType, bool UsesAmmo, int BulletsPerRound, int RoundsPerClip)
+public readonly record struct Igi2FireTypeAmmo(Igi2AmmoTypeTask? AmmoType, int RoundsToFire, int BulletsPerRound, int RoundsPerClip)
 {
     /// <summary>Gets what a slot with no fire type reports: an entry left zeroed (<c>WeaponType_GetAmmoInfoHandler</c>, <c>0x436340</c>).</summary>
     public static Igi2FireTypeAmmo Absent => default;
 
     /// <summary>Gets what a fire type that uses no ammunition reports, a one-round load of nothing.</summary>
     /// <remarks><c>FireType_GetAmmoInfoHandler</c> (<c>0x470490</c>), and the same from <c>Knife</c> (<c>0x4CF880</c>) and <c>PullPin</c> (<c>0x4C8040</c>).</remarks>
-    public static Igi2FireTypeAmmo None => new(null, false, 0, 1);
+    public static Igi2FireTypeAmmo None => new(null, 0, 0, 1);
 
     /// <summary>Gets what a fire type that throws or places one of its ammunition per use reports.</summary>
     /// <param name="ammoType">The ammunition.</param>
     /// <returns>A one-round load of it.</returns>
-    public static Igi2FireTypeAmmo OneRound(Igi2AmmoTypeTask? ammoType) => new(ammoType, true, 1, 1);
+    public static Igi2FireTypeAmmo OneRound(Igi2AmmoTypeTask? ammoType) => new(ammoType, 1, 1, 1);
 }
 
 /// <summary>A fire type that reports its own ammunition, rather than the base fire type's none.</summary>
@@ -44,7 +44,7 @@ public sealed partial class Igi2GunTask : IIgi2FireTypeAmmo
     public Igi2FireTypeAmmo AmmoInfo(Igi2WeaponTables tables)
     {
         ArgumentNullException.ThrowIfNull(tables);
-        return new(tables.Ammo(AmmoTypeId), true, BulletsPerRound, RoundsPerClip);
+        return new(tables.Ammo(AmmoTypeId), 1, BulletsPerRound, RoundsPerClip);
     }
 }
 
@@ -140,6 +140,11 @@ public sealed partial class Igi2WeaponTypeTask
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
     /// <returns>The flag.</returns>
     public bool IsForceReload(int slot) => slot == 0 ? PrimaryForceReload : SecondaryForceReload;
+
+    /// <summary>Gets the task type a slot's fire type is declared as, <c>atFireTypes[slot].eQTaskType</c>; <c>TASKTYPE_NONE</c> for none.</summary>
+    /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
+    /// <returns>The type id.</returns>
+    public int FireTaskType(int slot) => slot == 0 ? PrimaryFireTaskType : SecondaryFireTaskType;
 
     /// <summary>Reports what a slot's fire type fires (<c>WeaponType_GetAmmoInfo</c>, <c>igi2 0x436930</c>).</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>

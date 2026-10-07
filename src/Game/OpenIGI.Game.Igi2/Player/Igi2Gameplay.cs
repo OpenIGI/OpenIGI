@@ -47,20 +47,25 @@ public sealed class Igi2Gameplay : ITitleGameplay
         ArgumentNullException.ThrowIfNull(request.World.Mission);
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(request.World.Mission.PacksInLoadOrder, request.World.Resources);
         Igi2BoneHierarchy? rig = Models(request.World)(spawn.Model)?.BoneHierarchy;
-        Igi2Inventory? inventory = Arm(request.Services, request.World.LevelRoot, tuning);
-        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, inventory);
+        Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
+        return Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons);
     }
 
-    /// <summary>Makes the player's inventory and fills it from the level's <c>Weapon</c> script.</summary>
+    /// <summary>Makes the player's inventory, fills it from the level's <c>Weapon</c> script and puts it behind the weapon control.</summary>
     /// <param name="services">The session's tables.</param>
     /// <param name="levelRoot">The level, whose <c>HumanPlayer</c> carries the script.</param>
     /// <param name="tuning">The player tuning, whose ammunition limits bound the inventory.</param>
-    /// <returns>The inventory, or <see langword="null"/> when the session has no weapons.</returns>
+    /// <param name="clips">The level's clips, which the held weapon's body clips come from.</param>
+    /// <returns>The weapons, or <see langword="null"/> when the session has none.</returns>
     /// <remarks>
     /// <c>Human_CreateHandler</c> (<c>igi2 0x4FDC90</c>) makes the inventory within the limits; the script runs once the level
     /// is loaded (<c>Human_UpdateInternalDataAfterCarryoverHandler</c>, <c>0x4FF440</c>).
     /// </remarks>
-    public static Igi2Inventory? Arm(Engine.Titles.IServiceCatalog services, Engine.Tasks.GameTask? levelRoot, Igi2PlayerTuning? tuning)
+    public static Igi2PlayerWeapons? Arm(
+        Engine.Titles.IServiceCatalog services,
+        Engine.Tasks.GameTask? levelRoot,
+        Igi2PlayerTuning? tuning,
+        Igi2AnimationLibrary? clips = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         if (!services.TryGet(out Igi2HumanWeapons? weapons))
@@ -74,7 +79,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             weapons.RunWeaponScript(inventory, player.WeaponScript);
         }
 
-        return inventory;
+        return new Igi2PlayerWeapons(inventory, weapons.FireTaskTypes, clips);
     }
 
     /// <summary>Builds the collision a level's player moves through: its solid placements and its ground.</summary>
@@ -133,17 +138,20 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
     private readonly Igi2PlayerInputReader _reader = new();
     private readonly float[] _frame = new float[Igi2HumanChannels.Count];
 
-    private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2Inventory? inventory)
+    private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons)
     {
         Human = human;
-        Inventory = inventory;
+        Weapons = weapons;
     }
 
     /// <summary>Gets the ported player.</summary>
     public Igi2HumanPlayer Human { get; }
 
+    /// <summary>Gets the player's weapons, or <see langword="null"/> when the session has none.</summary>
+    public Igi2PlayerWeapons? Weapons { get; }
+
     /// <summary>Gets what the player carries, or <see langword="null"/> when the session has no weapons.</summary>
-    public Igi2Inventory? Inventory { get; }
+    public Igi2Inventory? Inventory => Weapons?.Inventory;
 
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
@@ -173,7 +181,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
     /// <param name="difficulty">The active difficulty.</param>
     /// <param name="clips">The level's clips, or <see langword="null"/> for none.</param>
     /// <param name="rig">The player model's rig, or <see langword="null"/> for a model without bones.</param>
-    /// <param name="inventory">What the player carries, or <see langword="null"/> for nothing.</param>
+    /// <param name="weapons">The player's weapons, or <see langword="null"/> for none.</param>
     /// <returns>The player.</returns>
     public static Igi2TitlePlayer Spawn(
         Igi2CollisionWorld world,
@@ -183,13 +191,13 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
         Ai.AiDifficulty difficulty,
         Igi2AnimationLibrary? clips = null,
         Igi2BoneHierarchy? rig = null,
-        Igi2Inventory? inventory = null)
+        Igi2PlayerWeapons? weapons = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(general);
 
         Igi2PlayerSurroundings surroundings = new(world);
-        Igi2NoWeaponControl weapon = Igi2NoWeaponControl.Instance;
+        IIgi2PlayerWeaponControl weapon = weapons ?? (IIgi2PlayerWeaponControl)Igi2NoWeaponControl.Instance;
         Igi2HumanAnimation animation = new(clips, rig, Igi2PlayerStateAnimations.Table, () => weapon.BodyClips(rig));
         Igi2HumanPlayer human = new(weapon, animation, surroundings)
         {
@@ -213,7 +221,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
         // The view would first be placed on the first tick; placing it now gives the host's first frames the eyes
         // rather than the world's origin. It draws nothing from the run stream: a new view does not shake.
         human.UpdateViewBody();
-        return new Igi2TitlePlayer(human, inventory);
+        return new Igi2TitlePlayer(human, weapons);
     }
 
     /// <inheritdoc/>

@@ -70,6 +70,9 @@ public sealed class Igi2AmmoItem
         Clamp();
     }
 
+    /// <summary>Takes every round away.</summary>
+    internal void Empty() => Count = 0;
+
     private void Clamp()
     {
         if (Limit == NoLimit)
@@ -244,6 +247,142 @@ public sealed class Igi2Inventory
     /// <param name="rounds">The rounds.</param>
     public void AddAmmo(string ammoId, int rounds) => FindAmmo(ammoId)?.Add(rounds);
 
+    /// <summary>Gets how much the carried weapons slow their carrier (<c>Weapon_GetSummedMovementSlowDown</c>, <c>igi2 0x51F550</c>).</summary>
+    /// <remarks>Each carried weapon's <c>Movement Speed Modifier</c>, the one in hand in full and the rest by half.</remarks>
+    public float SummedMovementSlowDown
+    {
+        get
+        {
+            Fpu sum = 0.0;
+            foreach (Igi2WeaponItem item in _weapons)
+            {
+                if (item.IsActive)
+                {
+                    sum = ReferenceEquals(item, Current)
+                        ? sum + item.WeaponType.MovementSpeedModifier
+                        : sum + ((Fpu)item.WeaponType.MovementSpeedModifier * 0.5);
+                }
+            }
+
+            return sum.F;
+        }
+    }
+
+    /// <summary>Reports what a weapon holds and has to hand for one fire type (<c>Weapon_GetFireTypeAmmoInfoFromWeaponTypeItem</c>, <c>igi2 0x51E7C0</c>).</summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
+    /// <returns>The report.</returns>
+    public Igi2FireTypeRounds FireTypeRounds(Igi2WeaponItem item, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        Igi2FireTypeAmmo ammo = item.WeaponType.AmmoInfo(slot, _tables);
+        int available = ammo.AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried ? carried.Count : 0;
+        return new Igi2FireTypeRounds(ammo.AmmoType, item.Loaded(slot), available, ammo.BulletsPerRound, ammo.RoundsPerClip);
+    }
+
+    /// <summary>Gets whether a weapon may be put in hand (<c>Weapon_IsWeaponSelectable</c>, <c>igi2 0x51E700</c>).</summary>
+    /// <param name="item">The weapon.</param>
+    /// <returns>
+    /// <see langword="true"/> when it is carried and either may be selected when empty, or one of its declared fire types
+    /// takes no rounds, has rounds loaded, or has its ammunition carried.
+    /// </returns>
+    public bool IsSelectable(Igi2WeaponItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (!item.IsActive)
+        {
+            return false;
+        }
+
+        if (item.WeaponType.SelectableWhenEmpty)
+        {
+            return true;
+        }
+
+        for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
+        {
+            if (item.WeaponType.FireTaskType(slot) == Igi2WeaponConstants.NoTaskType)
+            {
+                continue;
+            }
+
+            Igi2FireTypeAmmo ammo = item.WeaponType.AmmoInfo(slot, _tables);
+            if (ammo.RoundsToFire == 0 || item.Loaded(slot) != 0
+                || (ammo.AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { Count: not 0 }))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Finds the next carried weapon of a category after a given one, without wrapping
+    /// (<c>Weapon_GetNextEnabledWeaponTypeFromCategory</c>, <c>igi2 0x51F380</c>).
+    /// </summary>
+    /// <param name="category">The <c>WEAPONCATEGORY_*</c> value.</param>
+    /// <param name="after">The weapon to start after, or <see langword="null"/> to start from the first.</param>
+    /// <returns>The weapon, or <see langword="null"/> when none follows.</returns>
+    public Igi2WeaponItem? NextInCategory(int category, Igi2WeaponTypeTask? after)
+    {
+        foreach (Igi2WeaponItem item in _weapons)
+        {
+            if (after is not null)
+            {
+                if (ReferenceEquals(item.WeaponType, after))
+                {
+                    after = null;
+                }
+
+                continue;
+            }
+
+            if (item.IsActive && item.WeaponType.WeaponCategory == category)
+            {
+                return item;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Stops carrying a weapon, emptying it and, when asked, its ammunition too (<c>Weapon_DisableWeaponType</c>, <c>igi2 0x51F060</c>).</summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="removeCarriedAmmo">Whether the carried rounds of its fire types' ammunition go too.</param>
+    public void Disable(Igi2WeaponItem item, bool removeCarriedAmmo)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        item.IsActive = false;
+        for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
+        {
+            item.SetLoaded(slot, 0);
+            if (removeCarriedAmmo && item.WeaponType.AmmoInfo(slot, _tables).AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried)
+            {
+                carried.Empty();
+            }
+        }
+    }
+
+    /// <summary>Takes every weapon and every round away (<c>Weapon_ClearAllWeapons</c>, <c>igi2 0x51DCF0</c>).</summary>
+    public void ClearAll()
+    {
+        Current = null;
+        StatusDisplay = null;
+        CurrentIndex = 0;
+        foreach (Igi2WeaponItem item in _weapons)
+        {
+            item.IsActive = false;
+            item.SetLoaded(0, 0);
+            item.SetLoaded(1, 0);
+        }
+
+        foreach (Igi2AmmoItem item in _ammo)
+        {
+            item.Empty();
+        }
+    }
+
     /// <summary>Works out a fraction of a load for each of a weapon's fire types, never less than one round.</summary>
     /// <param name="weaponType">The weapon.</param>
     /// <param name="fraction">The fraction of a full load.</param>
@@ -263,6 +402,14 @@ public sealed class Igi2Inventory
         return rounds;
     }
 }
+
+/// <summary>What a weapon holds and has to hand for one fire type, <c>WeaponGetFireTypeAmmoContext_s</c>.</summary>
+/// <param name="AmmoType">The ammunition the fire type uses, or <see langword="null"/>.</param>
+/// <param name="Loaded">The rounds loaded, <c>nAmmoInWeapon</c>.</param>
+/// <param name="Available">The rounds carried besides, <c>nAmmoAvailable</c>.</param>
+/// <param name="BulletsPerRound">The bullets one round fires.</param>
+/// <param name="RoundsPerClip">The rounds one load holds.</param>
+public readonly record struct Igi2FireTypeRounds(Igi2AmmoTypeTask? AmmoType, int Loaded, int Available, int BulletsPerRound, int RoundsPerClip);
 
 /// <summary>The most of one ammunition a human may carry.</summary>
 /// <param name="AmmoNumber">The ammunition's number, its <c>AMMO_ID_*</c> value.</param>
