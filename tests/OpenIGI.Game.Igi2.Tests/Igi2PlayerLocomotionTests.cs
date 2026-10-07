@@ -39,10 +39,11 @@ public sealed class Igi2PlayerLocomotionTests
     }
 
     /// <summary>The gait slows uphill: (1 − clamp(factor, −0.2, 1)) × 160 × scale, truncated.</summary>
+    /// <remarks>At 24-bit truncating precision 1 + 0.2 lands just under 1.2, so the steepest downhill step is 191, not 192.</remarks>
     [Theory]
     [InlineData(0f, 1f, 160)]
     [InlineData(0.5f, 1.2f, 96)]
-    [InlineData(-1f, 1f, 192)]
+    [InlineData(-1f, 1f, 191)]
     [InlineData(2f, 1f, 0)]
     public void The_gait_rate_follows_the_slope(float factor, float scale, int expected)
     {

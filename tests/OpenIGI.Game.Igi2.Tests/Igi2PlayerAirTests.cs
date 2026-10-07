@@ -10,8 +10,8 @@ public sealed class Igi2PlayerAirTests
 {
     private static readonly Igi2HumanPlayerGeneral Tuning = Igi2HumanPlayerGeneral.Unset with
     {
-        UpwardJumpSpeed = 834.370361328125f,
-        InAirControlSpeed = 7.5851850509643555f,
+        UpwardJumpSpeed = 834.3703002929688f,
+        InAirControlSpeed = 7.585184574127197f,
     };
 
     /// <summary>A jump starts with the carried speed plus the upward jump speed, off the ground.</summary>
@@ -25,7 +25,7 @@ public sealed class Igi2PlayerAirTests
         Tick(player, Igi2PlayerAction.Jump, grounded: true);
 
         Assert.Equal(Igi2PlayerState.Jump, player.Locomotion.CurrentState);
-        Assert.Equal(new Vector3f(100f, 0f, (float)(834.370361328125 + 5.0)), player.Speed);
+        Assert.Equal(new Vector3f(100f, 0f, 839.3703002929688f), player.Speed);
         Assert.False(player.Signal.HasFlag(Igi2PlayerSignal.Grounded));
         Assert.Equal(0f, player.GroundTolerance);
         Assert.Equal(1, surroundings.GroundsLeft);
@@ -61,8 +61,8 @@ public sealed class Igi2PlayerAirTests
 
         Tick(player, Igi2PlayerAction.MoveForwards, grounded: false);
 
-        Assert.Equal(-184.74169921875f, player.Speed.Z);
-        Assert.Equal(7.5851850509643555f, player.Speed.Y);
+        Assert.Equal(-184.74168395996094f, player.Speed.Z);
+        Assert.Equal(7.585184574127197f, player.Speed.Y);
         Assert.Equal(0f, player.Speed.X);
     }
 
@@ -78,8 +78,8 @@ public sealed class Igi2PlayerAirTests
 
         Tick(player, Igi2PlayerAction.None, grounded: true);
 
-        Assert.Equal(98.84466552734375f, player.Damage.Damage);
-        Assert.Equal(98.84466552734375f, player.Damage.PartDamage(Igi2DamagePart.Chest));
+        Assert.Equal(98.8446044921875f, player.Damage.Damage);
+        Assert.Equal(98.8446044921875f, player.Damage.PartDamage(Igi2DamagePart.Chest));
         Assert.Equal(-1024f, player.View.ImpactOffset);
         Assert.Contains("player_fall_3", surroundings.Sounds);
         Assert.Equal(1, surroundings.LandingEvents);

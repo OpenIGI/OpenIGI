@@ -73,7 +73,7 @@ internal static class Igi2PlayerFakes
 
         public bool IsOnElevator { get; set; }
 
-        public Vector3d Motion { get; set; }
+        public Vector3d? GroundObject { get; set; }
 
         public float? Water { get; set; }
 
@@ -85,7 +85,11 @@ internal static class Igi2PlayerFakes
 
         public void LeaveGround() => GroundsLeft++;
 
-        public Vector3d GroundMotion() => Motion;
+        public bool TryGetGroundObjectPosition(out Vector3d position)
+        {
+            position = GroundObject ?? default;
+            return GroundObject is not null;
+        }
 
         public bool IsUnderWater(out float depth)
         {

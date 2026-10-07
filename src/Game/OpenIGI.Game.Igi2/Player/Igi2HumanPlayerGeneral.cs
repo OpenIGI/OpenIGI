@@ -61,9 +61,9 @@ public sealed record Igi2HumanPlayerGeneral(
             PerTick(item.ForwardJumpSpeed),
             PerTick(item.UpwardJumpSpeed),
             PerTick(item.InAirControlSpeed),
-            item.PeekLengthSideways * UnitsPerMetre,
-            item.PeekLengthUp * UnitsPerMetre,
-            (int)(item.PeekTime * (double)TicksPerSecond),
+            ((Fpu)item.PeekLengthSideways * UnitsPerMetre).F,
+            ((Fpu)item.PeekLengthUp * UnitsPerMetre).F,
+            Fpu.ToInt32((Fpu)item.PeekTime * TicksPerSecond),
             item.MaxDamageScale,
             item.ElectricFenceDamageScale,
             item.ThrowingBaseVelocity,
@@ -75,5 +75,5 @@ public sealed record Igi2HumanPlayerGeneral(
     /// <param name="kilometresPerHour">The speed as the script writes it.</param>
     /// <returns>The speed per tick.</returns>
     public static float PerTick(float kilometresPerHour) =>
-        (float)(kilometresPerHour * (double)MetresPerKilometreInUnits * PerHourInTicks);
+        ((Fpu)kilometresPerHour * MetresPerKilometreInUnits * PerHourInTicks).F;
 }

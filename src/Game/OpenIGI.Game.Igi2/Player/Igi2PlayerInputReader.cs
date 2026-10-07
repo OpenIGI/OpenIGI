@@ -113,19 +113,19 @@ public sealed class Igi2PlayerInputReader
         frame.Clear();
 
         float sensitivity = Math.Clamp(MouseSensitivity, MinimumSensitivity, MaximumSensitivity);
-        float lookX = sensitivity * input.MouseX;
+        float lookX = ((Fpu)sensitivity * input.MouseX).F;
         if ((input.Current & Igi2PlayerAction.TurnLeft) != 0)
         {
-            lookX -= TurnKeyStep;
+            lookX = ((Fpu)lookX - TurnKeyStep).F;
         }
 
         if ((input.Current & Igi2PlayerAction.TurnRight) != 0)
         {
-            lookX += TurnKeyStep;
+            lookX = ((Fpu)lookX + TurnKeyStep).F;
         }
 
         frame[(int)Igi2HumanChannel.LookX] = lookX;
-        frame[(int)Igi2HumanChannel.LookY] = sensitivity * ((InvertMouse ? -1f : 1f) * input.MouseY);
+        frame[(int)Igi2HumanChannel.LookY] = ((Fpu)sensitivity * (InvertMouse ? -input.MouseY : input.MouseY)).F;
 
         foreach ((Igi2PlayerAction action, Igi2HumanChannel channel) in HeldBindings)
         {

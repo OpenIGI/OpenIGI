@@ -60,9 +60,10 @@ public interface IIgi2HumanSurroundings
     /// <remarks>What a jump's take-off does to <c>ptGroundQTaskRef</c>, <c>isGroundRigidObj</c> and <c>tGroundIntersection.isHit</c>.</remarks>
     void LeaveGround();
 
-    /// <summary>Gets how far the rigid object underfoot moved since the last tick; zero on anything else.</summary>
-    /// <returns>The object's position less <c>Human_s.tGroundPrevPos</c>.</returns>
-    Vector3d GroundMotion();
+    /// <summary>Gets where the object underfoot stands, when it is a rigid object (<c>RigidDynCubeObj</c> or derived).</summary>
+    /// <param name="position">The object's position, <c>tPos</c>.</param>
+    /// <returns>Whether there is such an object underfoot.</returns>
+    bool TryGetGroundObjectPosition(out Vector3d position);
 
     /// <summary>Asks whether the human is under water, and how deep (<c>Water_IsUnderWater</c>, <c>igi2 0x591C30</c>).</summary>
     /// <param name="depth">The depth, set only when the answer is yes.</param>

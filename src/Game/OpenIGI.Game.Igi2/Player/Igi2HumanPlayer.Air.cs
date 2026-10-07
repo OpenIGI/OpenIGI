@@ -33,7 +33,7 @@ public sealed partial class Igi2HumanPlayer
         Surroundings.PlaySound("jump_1");
 
         Vector3f carried = AccumulatedSpeed;
-        Speed = new Vector3f(carried.X, carried.Y, (float)(General.UpwardJumpSpeed + (double)carried.Z));
+        Speed = new Vector3f(carried.X, carried.Y, ((Fpu)General.UpwardJumpSpeed + carried.Z).F);
         Signal &= ~Igi2PlayerSignal.Grounded;
         Surroundings.LeaveGround();
         GroundTolerance = 0f;
@@ -102,11 +102,11 @@ public sealed partial class Igi2HumanPlayer
     {
         if (crouched)
         {
-            AimPrecision(Igi2PrecisionType.CrouchJumping, static p => p.JumpingModifier + (double)p.CrouchWalking + p.Running);
+            AimPrecision(Igi2PrecisionType.CrouchJumping, static p => (Fpu)p.JumpingModifier + p.CrouchWalking + p.Running);
         }
         else
         {
-            AimPrecision(Igi2PrecisionType.Jumping, static p => p.JumpingModifier + (double)p.Running);
+            AimPrecision(Igi2PrecisionType.Jumping, static p => (Fpu)p.JumpingModifier + p.Running);
         }
     }
 
@@ -176,7 +176,7 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     private void ControlInAir()
     {
-        double vertical = Speed.Z - (double)GravityPerTick;
+        Fpu vertical = (Fpu)Speed.Z - GravityPerTick;
 
         float control = General.InAirControlSpeed;
         float side = 0f;
@@ -187,10 +187,10 @@ public sealed partial class Igi2HumanPlayer
 
         if (Channels.IsHeld(Igi2HumanChannel.MoveRight))
         {
-            side = (float)(control + (double)side);
+            side = ((Fpu)control + side).F;
         }
 
-        double forward = 0.0;
+        Fpu forward = 0f;
         if (Channels.IsHeld(Igi2HumanChannel.MoveForwards))
         {
             forward = control;
@@ -203,14 +203,14 @@ public sealed partial class Igi2HumanPlayer
 
         // The push is taken through the orientation with a zero local vertical, as the original spells it.
         Matrix3f o = Orientation;
-        float pushX = (float)((forward * o.M12) + (side * (double)o.M11) + (o.M13 * 0.0));
-        float pushY = (float)((forward * o.M22) + (side * (double)o.M21) + (o.M23 * 0.0));
-        double pushZ = (forward * o.M32) + (side * (double)o.M31) + (o.M33 * 0.0);
+        float pushX = ((forward * o.M12) + ((Fpu)side * o.M11) + ((Fpu)o.M13 * 0f)).F;
+        float pushY = ((forward * o.M22) + ((Fpu)side * o.M21) + ((Fpu)o.M23 * 0f)).F;
+        Fpu pushZ = (forward * o.M32) + ((Fpu)side * o.M31) + ((Fpu)o.M33 * 0f);
 
-        float x = (float)(pushX + (double)Speed.X);
-        float y = (float)(pushY + (double)Speed.Y);
+        float x = ((Fpu)pushX + Speed.X).F;
+        float y = ((Fpu)pushY + Speed.Y).F;
         vertical += pushZ;
-        Speed = new Vector3f(x, y, (float)vertical);
+        Speed = new Vector3f(x, y, vertical.F);
 
         if (!Has(Igi2PlayerSignal.Grounded))
         {
@@ -223,37 +223,53 @@ public sealed partial class Igi2HumanPlayer
     }
 
     /// <summary>The landing: a view kick by impact speed, damage over the safe speed, and a noise the AI hears.</summary>
-    private void Land(float x, float y, double vertical)
+    private void Land(float x, float y, Fpu vertical)
     {
-        // A landing on something moving is measured against how far it moved this tick.
-        Vector3d ground = Surroundings.GroundMotion();
+        // A landing on a moving rigid object is measured against how far it moved this tick.
+        Fpu groundX = 0f;
+        Fpu groundY = 0f;
+        Fpu groundZ = 0f;
+        if (IsGroundRigidObject && Surroundings.TryGetGroundObjectPosition(out Vector3d now))
+        {
+            groundX = (Fpu)now.X - GroundPreviousPosition.X;
+            groundY = (Fpu)now.Y - GroundPreviousPosition.Y;
+            groundZ = (Fpu)now.Z - GroundPreviousPosition.Z;
+        }
 
-        double impact;
+        Fpu impact;
         if (_fallDamageProtected)
         {
-            impact = Math.Abs(vertical);
+            impact = Fpu.Abs(vertical);
         }
         else
         {
-            float dx = (float)(x - ground.X);
-            float dy = (float)(y - ground.Y);
-            double dz = vertical - ground.Z;
-            impact = Math.Sqrt((dx * (double)dx) + (dy * (double)dy) + (dz * dz));
+            float dx = ((Fpu)x - groundX).F;
+            float dy = ((Fpu)y - groundY).F;
+            Fpu dz = vertical - groundZ;
+            impact = Fpu.Sqrt(((Fpu)dx * dx) + ((Fpu)dy * dy) + (dz * dz));
         }
 
         // Units per tick to metres per second.
-        double metresPerSecond = impact * (1.0 / Igi2HumanPlayerGeneral.UnitsPerMetre) * Igi2HumanPlayerGeneral.TicksPerSecond;
+        Fpu metresPerSecond = impact * (1f / Igi2HumanPlayerGeneral.UnitsPerMetre) * Igi2HumanPlayerGeneral.TicksPerSecond;
 
-        double kick = 0.125 * metresPerSecond;
-        kick = kick < 0.0 ? 0.0 : kick > 1.0 ? 1.0 : kick;
-        View.ImpactOffset = (float)(kick * -1024.0);
+        Fpu kick = (Fpu)0.125f * metresPerSecond;
+        if (kick.Value < 0.0)
+        {
+            kick = 0f;
+        }
+        else if (kick.Value > 1.0)
+        {
+            kick = 1f;
+        }
+
+        View.ImpactOffset = (kick * -1024.0).F;
         View.ImpactAngle = 0f;
 
-        double excess = metresPerSecond - SafeLandingSpeed;
-        if (excess > 0.0)
+        Fpu excess = metresPerSecond - SafeLandingSpeed;
+        if (excess.Value > 0.0)
         {
             Damage.LastPart = Igi2DamagePart.Chest;
-            float amount = (float)(excess * LandingDamagePerMetrePerSecond * Damage.MaxDamage);
+            float amount = (excess * LandingDamagePerMetrePerSecond * Damage.MaxDamage).F;
             if (!IsDead)
             {
                 Damage.Add(Igi2DamagePart.Chest, amount);
@@ -262,13 +278,12 @@ public sealed partial class Igi2HumanPlayer
             if (amount != 0f)
             {
                 Surroundings.PlaySound(
-                    Damage.MaxDamage * (double)0.1f > amount ? "player_fall_1"
-                    : Damage.MaxDamage * (double)0.2f > amount ? "player_fall_2"
+                    ((Fpu)Damage.MaxDamage * 0.1f).Value > amount ? "player_fall_1"
+                    : ((Fpu)Damage.MaxDamage * 0.2f).Value > amount ? "player_fall_2"
                     : "player_fall_3");
             }
         }
 
         Surroundings.SendLandingEvent();
     }
-
 }

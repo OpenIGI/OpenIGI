@@ -61,16 +61,29 @@ public sealed partial class Igi2HumanPlayer
         Vector3f s = GroundMovementSpeed;
 
         // The original keeps the two local components in float temporaries before stepping them.
-        double localX = (float)((s.Y * (double)o.M21) + (s.X * (double)o.M11) + (o.M31 * (double)s.Z));
-        double localY = (float)((s.X * (double)o.M12) + (o.M32 * (double)s.Z) + (s.Y * (double)o.M22));
+        float localX = (((Fpu)s.Y * o.M21) + ((Fpu)s.X * o.M11) + ((Fpu)o.M31 * s.Z)).F;
+        float localY = (((Fpu)s.X * o.M12) + ((Fpu)o.M32 * s.Z) + ((Fpu)s.Y * o.M22)).F;
 
-        localY += Math.Clamp(forwardTarget - localY, -(double)maxForwardChange, maxForwardChange);
-        localX += Math.Clamp(sideTarget - localX, -(double)maxSideChange, maxSideChange);
+        Fpu y = Step((Fpu)forwardTarget - localY, maxForwardChange) + localY;
+        Fpu x = Step((Fpu)sideTarget - localX, maxSideChange) + localX;
 
+        // Back through the orientation with a zero local vertical, as the original spells it.
         GroundMovementSpeed = new Vector3f(
-            (float)((localX * o.M11) + (localY * o.M12)),
-            (float)((localY * o.M22) + (localX * o.M21)),
-            (float)((localX * o.M31) + (localY * o.M32)));
+            ((x * o.M11) + (y * o.M12) + ((Fpu)o.M13 * 0f)).F,
+            ((y * o.M22) + (x * o.M21) + ((Fpu)o.M23 * 0f)).F,
+            ((x * o.M31) + (y * o.M32) + ((Fpu)o.M33 * 0f)).F);
+    }
+
+    /// <summary>A change clamped to at most a step either way, as <c>HumanPlayer_MoveOnGround</c> compares it.</summary>
+    private static Fpu Step(Fpu change, float maxChange)
+    {
+        float least = -maxChange;
+        if (least > change.Value)
+        {
+            return least;
+        }
+
+        return maxChange < change.Value ? maxChange : change;
     }
 
     /// <summary>Selects the posture precision a state aims for.</summary>
@@ -81,12 +94,12 @@ public sealed partial class Igi2HumanPlayer
     /// own plus <c>|turning speed| × turning modifier × 3</c>; with none it is zero. The sum is formed
     /// unrounded and stored once, as the original's FPU does.
     /// </remarks>
-    private void AimPrecision(Igi2PrecisionType type, Func<Igi2WeaponPrecision, double> posture)
+    private void AimPrecision(Igi2PrecisionType type, Func<Igi2WeaponPrecision, Fpu> posture)
     {
         if (Weapon.ActivePrecision is { } precision)
         {
             PrecisionType = type;
-            IdealModifiedPrecision = (float)((Math.Abs((double)TurningSpeed) * precision.TurningModifier * 3.0) + posture(precision));
+            IdealModifiedPrecision = ((Fpu.Abs(TurningSpeed) * precision.TurningModifier * 3f) + posture(precision)).F;
         }
         else
         {
@@ -243,8 +256,8 @@ public sealed partial class Igi2HumanPlayer
     private int PhaseContinuationTime()
     {
         int total = Animation.MainTotalTime;
-        double fraction = total != 0 ? Animation.MainTime / (double)total : 0.0;
-        return (int)(total * fraction);
+        Fpu fraction = total != 0 ? (Fpu)(double)Animation.MainTime / (double)total : 0f;
+        return Fpu.ToInt32((Fpu)(double)total * fraction);
     }
 
     // State 0 -- InitStateStand 0x4A2CA0, RunStateStand 0x4A2D80.
@@ -516,9 +529,9 @@ public sealed partial class Igi2HumanPlayer
         }
 
         MoveOnGround(
-            MovementSpeedScale * gait.ForwardTarget,
+            ((Fpu)MovementSpeedScale * gait.ForwardTarget).F,
             gait.ForwardStep,
-            MovementSpeedScale * gait.SideTarget,
+            ((Fpu)MovementSpeedScale * gait.SideTarget).F,
             gait.SideStep);
 
         if (gait.Family == GaitFamily.CrouchWalk)

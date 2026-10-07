@@ -28,15 +28,15 @@ public sealed class RetailIgi2PlayerConfigTests
         Assert.StartsWith("DefineHumanPlayerAmmoLimit(", item.AmmoLimitScript, StringComparison.Ordinal);
     }
 
-    /// <summary>The speeds become world units per tick in float, the peek time whole ticks truncated.</summary>
+    /// <summary>The speeds become world units per tick at the client's 24-bit truncating precision, the peek time whole ticks.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_tuning_converts_to_world_units_and_ticks()
     {
         Igi2HumanPlayerGeneral general = Igi2HumanPlayerGeneral.From(LoadItem());
 
-        Assert.Equal(834.370361328125f, general.UpwardJumpSpeed);
+        Assert.Equal(834.3703002929688f, general.UpwardJumpSpeed);
         Assert.Equal(284.4444274902344f, general.ForwardJumpSpeed);
-        Assert.Equal(7.5851850509643555f, general.InAirControlSpeed);
+        Assert.Equal(7.585184574127197f, general.InAirControlSpeed);
         Assert.Equal(4096f, general.PeekOffsetX);
         Assert.Equal(7, general.PeekTime);
         Assert.Equal(0.175f, general.DamageMultipliers[(int)Igi2DamagePart.Chest]);

@@ -103,6 +103,12 @@ public abstract class Igi2Human
     /// <remarks>Read only while airborne: a landing judges by what it was during the fall.</remarks>
     public bool IsProtectedFromFallDamage { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether what the human stands on is a rigid object, <c>Human_s.isGroundRigidObj</c>.</summary>
+    public bool IsGroundRigidObject { get; set; }
+
+    /// <summary>Gets or sets where the rigid object underfoot stood last tick, <c>Human_s.tGroundPrevPos</c>.</summary>
+    public Vector3d GroundPreviousPosition { get; set; }
+
     /// <summary>Gets or sets how deep the water the human stands in is, <c>Human_s.vWaterDepth</c>.</summary>
     public float WaterDepth { get; set; }
 
@@ -135,8 +141,17 @@ public abstract class Igi2Human
     /// </remarks>
     public void ControlGait(float timeScale)
     {
-        double factor = Math.Clamp((double)GroundAngleFactor, -0.2, 1.0);
-        Animation.MainTimeStep = (int)((1.0 - factor) * AnimationTicksPerFrame * timeScale);
+        float factor = GroundAngleFactor;
+        if (factor < -0.2f)
+        {
+            factor = -0.2f;
+        }
+        else if (factor > 1f)
+        {
+            factor = 1f;
+        }
+
+        Animation.MainTimeStep = Fpu.ToInt32(((Fpu)1f - factor) * (double)AnimationTicksPerFrame * timeScale);
     }
 
     /// <summary>Death, once the damage reaches the limit: the weapon's sound slot is stopped and the dead bit raised.</summary>

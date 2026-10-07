@@ -30,7 +30,7 @@ public sealed class Igi2HumanDamage
     /// <param name="amount">The damage.</param>
     public void Add(Igi2DamagePart part, float amount)
     {
-        _parts[(int)part] = amount + _parts[(int)part];
-        Damage = amount + Damage;
+        _parts[(int)part] = ((Fpu)amount + _parts[(int)part]).F;
+        Damage = ((Fpu)amount + Damage).F;
     }
 }

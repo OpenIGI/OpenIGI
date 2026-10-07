@@ -65,7 +65,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         // A flinch plays at its own pace: two-fifteenths of its length per tick.
-        Animation.MainTimeStep = (int)(Animation.MainTotalTime * (double)HitTimeScale * AnimationTicksPerFrame * 4.0);
+        Animation.MainTimeStep = Fpu.ToInt32((Fpu)(double)Animation.MainTotalTime * HitTimeScale * (double)AnimationTicksPerFrame * 4f);
         CurrentUpperBody = 0;
         RequestedUpperBody = 0;
         Animation.ClearUpperBody(0.4f);

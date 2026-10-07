@@ -190,7 +190,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         (float x, float y) = CrawlSpeeds[side + (4 * along)];
-        MoveOnGround(y * MovementSpeedScale, CrawlStep, x * MovementSpeedScale, CrawlStep);
+        MoveOnGround(((Fpu)y * MovementSpeedScale).F, CrawlStep, ((Fpu)x * MovementSpeedScale).F, CrawlStep);
     }
 
     private void StopCrawlSound()
