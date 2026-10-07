@@ -123,6 +123,14 @@ public sealed class Igi2Pose
             (((Fpu)ry * p[row + 1]) + ((Fpu)rz * p[row + 2]) + ((Fpu)rx * p[row])).F;
     }
 
+    /// <summary>The orientation as a matrix, row for row.</summary>
+    /// <returns>The matrix.</returns>
+    public Matrix3f ToMatrix()
+    {
+        IReadOnlyList<float> m = Orientation;
+        return new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+    }
+
     /// <summary>The orientation as a fresh array, for a consumer that keeps its own copy.</summary>
     /// <returns>The nine floats, row by row.</returns>
     public float[] ToArray() => [.. Orientation];

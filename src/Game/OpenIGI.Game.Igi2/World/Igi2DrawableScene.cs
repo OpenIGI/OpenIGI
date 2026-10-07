@@ -103,8 +103,7 @@ public static class Igi2DrawableScene
         // static world geometry the name is simply the model.
         bool Emit(
             string modelName,
-            Vector3d unitsPosition,
-            Matrix3f orientation,
+            Igi2Pose pose,
             string mounted,
             Matrix3f mountedOrientation,
             IIgi2PlacementGeometry? geometry,
@@ -118,6 +117,9 @@ public static class Igi2DrawableScene
             {
                 return false;
             }
+
+            Vector3d unitsPosition = pose.Position;
+            Matrix3f orientation = pose.ToMatrix();
 
             // Claimed before the children are walked, and claimed whether or not this model is
             // lightmapped: RigidDynCubeObj_EnumerateLightmapVirModelsHandler (igi2 0x53C6D0) enumerates
@@ -205,7 +207,7 @@ public static class Igi2DrawableScene
                         unitsPosition.Z + mountOffset.Z);
                 }
 
-                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, null, variant, depth + 1, ref index))
+                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, ref index))
                 {
                     attached++;
                 }
@@ -217,22 +219,15 @@ public static class Igi2DrawableScene
 
             foreach (MefAttachment attachment in model.Attachments)
             {
-                // Parent to world is the column-vector product M*v, which is what the renderer applies
-                // for the parent's own orientation, and the rotation composes parent then child. This is
-                // the same composition WorldScene uses for Project I.G.I.'s attachment trees, and it is
-                // what 0x56D0B0 computes: the parent's rows dotted with the attachment's offset, and the
-                // parent's matrix times the attachment's.
-                Vector3f offset = orientation.Transposed().Transform(attachment.Position);
-                Vector3d childPosition = new(
-                    unitsPosition.X + offset.X,
-                    unitsPosition.Y + offset.Y,
-                    unitsPosition.Z + offset.Z);
-
+                // ModelObj_CreateAttachObject (igi2 0x56D0B0): the parent's rows dotted with the record's
+                // offset, and the parent's matrix times the record's matrix TRANSPOSED -- the loader points
+                // the attachment array straight at the ATTA chunk's bytes, and the composition reads them
+                // column for row. The collision world places the same tree through the same pose, so what
+                // is drawn is what is stood on.
                 int at = drawable.Count;
                 if (Emit(
                     attachment.Name,
-                    childPosition,
-                    orientation * attachment.Orientation,
+                    pose.Attach(attachment),
                     string.Empty,
                     default,
                     geometry: null,
@@ -275,8 +270,9 @@ public static class Igi2DrawableScene
             int index = 0;
             if (!Emit(
                 placement.Model,
-                placement.Position,
-                placement.Frame ?? WorldScene.ToOrientation(placement.Orientation),
+                placement.Frame is { } frame
+                    ? Igi2Pose.FromMatrix(placement.Position, frame)
+                    : Igi2Pose.FromAngles(placement.Position, placement.Orientation),
                 placement.MountedModel,
                 WorldScene.ToOrientation(placement.MountedOrientation),
                 placement.Geometry,

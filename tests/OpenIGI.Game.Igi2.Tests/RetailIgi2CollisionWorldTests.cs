@@ -3,6 +3,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -68,6 +69,48 @@ public sealed class RetailIgi2CollisionWorldTests
         Assert.InRange(child.Position.X, parent.Position.X + offset.X - 0.25, parent.Position.X + offset.X + 0.25);
         Assert.InRange(child.Position.Y, parent.Position.Y + offset.Y - 0.125, parent.Position.Y + offset.Y + 0.125);
         Assert.InRange(child.Position.Z, parent.Position.Z + offset.Z - 1e-3, parent.Position.Z + offset.Z + 1e-3);
+    }
+
+    /// <summary>
+    /// Every attached part the collision world places is drawn at the same place, turned the same way: both go
+    /// through <see cref="Igi2Pose.Attach"/>, so what is seen is what is stood on.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Attached_parts_are_drawn_where_they_collide()
+    {
+        IReadOnlyList<WorldPlacement> drawn = Igi2LevelScene.Build(Mission1.Value).Built.Scene.Placements;
+        Dictionary<(long, long, long), List<Matrix3f>> byCell = [];
+        foreach (WorldPlacement placement in drawn)
+        {
+            (long, long, long) cell = Cell(placement.Position * WorldScene.UnitsPerMetre);
+            if (!byCell.TryGetValue(cell, out List<Matrix3f>? list))
+            {
+                byCell[cell] = list = [];
+            }
+
+            list.Add(placement.Orientation);
+        }
+
+        int compared = 0, turned = 0;
+        foreach (Igi2RigidObject solid in World.Value.Objects)
+        {
+            if (solid.Owner is not Igi2CollisionOwner { Depth: > 0 })
+            {
+                continue;
+            }
+
+            float[] m = solid.Orientation;
+            Matrix3f expected = new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+            Assert.True(byCell.TryGetValue(Cell(solid.Position), out List<Matrix3f>? candidates), $"nothing drawn at {solid.Position}.");
+            Assert.Contains(candidates, c => c.Equals(expected));
+            compared++;
+            turned += Math.Abs(m[1] - m[3]) > 0.5f ? 1 : 0;
+        }
+
+        Assert.True(compared > 100, $"only {compared} attached parts were compared.");
+        Assert.True(turned > 0, "no attached part is turned asymmetrically, so the transpose is untested.");
+
+        static (long, long, long) Cell(Vector3d units) => ((long)Math.Round(units.X), (long)Math.Round(units.Y), (long)Math.Round(units.Z));
     }
 
     /// <summary>Mission 1's world holds its placed solid models and their attachments, and its ground.</summary>
