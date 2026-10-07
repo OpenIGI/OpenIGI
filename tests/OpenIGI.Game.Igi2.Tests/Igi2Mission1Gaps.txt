@@ -745,7 +745,6 @@ type Gun    # WEAPONS/weapon.qvm
 type GunPickup    # MISSIONS/location1/level1/objects.qvm
 type HumanAI    # MISSIONS/location1/level1/objects.qvm
 type HumanAIConfigItem    # COMMON/ai/settings.qvm
-type HumanPlayerConfigItem    # HUMANPLAYER/humanplayer.qvm
 type HumanPlayerInput    # MISSIONS/location1/level1/objects.qvm
 type HumanSoldier    # MISSIONS/location1/level1/objects.qvm
 type InputBox    # MENUSYSTEM/ingamemenu.qvm

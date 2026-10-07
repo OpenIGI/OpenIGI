@@ -97,6 +97,7 @@ public sealed class Igi2PlayerContentModule : IContentModule
         ArgumentNullException.ThrowIfNull(context);
 
         context.Types.Register<HumanPlayerTask>("HumanPlayer");
+        context.Types.Register<Player.HumanPlayerConfigItemTask>(Player.HumanPlayerConfigItemTask.TypeName);
     }
 
     /// <inheritdoc/>
