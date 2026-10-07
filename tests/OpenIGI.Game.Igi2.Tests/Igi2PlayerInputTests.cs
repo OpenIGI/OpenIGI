@@ -72,8 +72,9 @@ public sealed class Igi2PlayerInputTests
     [InlineData(false, true, false)]
     public void Running_is_the_toggle_inverted_by_the_modifier(bool walkToggle, bool modifier, bool running)
     {
-        Igi2HumanPlayer player = new(Igi2NoWeaponControl.Instance) { IsWalk = walkToggle };
-        Feed(player, modifier ? Igi2PlayerAction.ModifyWalkRun : 0);
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        player.IsWalk = walkToggle;
+        Igi2PlayerFakes.Feed(player, modifier ? Igi2PlayerAction.ModifyWalkRun : 0);
 
         player.PackSignal();
 
@@ -85,14 +86,12 @@ public sealed class Igi2PlayerInputTests
     [Fact]
     public void The_handler_keeps_physics_bits_and_rebuilds_input_bits()
     {
-        Igi2HumanPlayer player = new(Igi2NoWeaponControl.Instance)
-        {
-            Signal = Igi2PlayerSignal.Grounded | Igi2PlayerSignal.Forward,
-            Pose = Igi2HumanPose.LyingFlat,
-            PerfectShotTimer = 9,
-        };
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        player.Signal = Igi2PlayerSignal.Grounded | Igi2PlayerSignal.Forward;
+        player.Pose = Igi2HumanPose.LyingFlat;
+        player.PerfectShotTimer = 9;
 
-        Feed(player, Igi2PlayerAction.ToggleStandLie);
+        Igi2PlayerFakes.Feed(player, Igi2PlayerAction.ToggleStandLie);
         player.PackSignal();
 
         Assert.True(player.Signal.HasFlag(Igi2PlayerSignal.Grounded));
@@ -105,12 +104,12 @@ public sealed class Igi2PlayerInputTests
     [Fact]
     public void Crouch_resets_the_timer_on_change_only()
     {
-        Igi2HumanPlayer player = new(Igi2NoWeaponControl.Instance);
-        Feed(player, Igi2PlayerAction.Crouch);
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        Igi2PlayerFakes.Feed(player, Igi2PlayerAction.Crouch);
         player.PackSignal();
 
         player.PerfectShotTimer = 5;
-        Feed(player, Igi2PlayerAction.Crouch);
+        Igi2PlayerFakes.Feed(player, Igi2PlayerAction.Crouch);
         player.PackSignal();
 
         Assert.True(player.Signal.HasFlag(Igi2PlayerSignal.Crouch));
@@ -122,8 +121,8 @@ public sealed class Igi2PlayerInputTests
     public void Fire_on_the_designator_raises_its_zoom()
     {
         RecordingWeapon weapon = new() { ActiveCategory = Igi2HumanPlayer.LaserDesignatorCategory };
-        Igi2HumanPlayer player = new(weapon);
-        Feed(player, Igi2PlayerAction.Fire);
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player(weapon).Player;
+        Igi2PlayerFakes.Feed(player, Igi2PlayerAction.Fire);
 
         player.PackSignal();
 
@@ -138,13 +137,6 @@ public sealed class Igi2PlayerInputTests
         return frame;
     }
 
-    private static void Feed(Igi2HumanPlayer player, Igi2PlayerAction held)
-    {
-        float[] frame = new float[Igi2HumanChannels.Count];
-        new Igi2PlayerInputReader().Read(new Igi2PlayerInputState(0f, 0f, held, 0), frame);
-        player.Channels.Accept(frame);
-    }
-
     private sealed class RecordingWeapon : IIgi2PlayerWeaponControl
     {
         public List<string> Calls { get; } = [];
@@ -152,6 +144,8 @@ public sealed class Igi2PlayerInputTests
         public int? ActiveCategory { get; init; }
 
         public bool ActiveIsZoom => false;
+
+        public Igi2WeaponPrecision? ActivePrecision => null;
 
         public bool IsZoomFireModeActive => false;
 

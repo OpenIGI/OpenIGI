@@ -1,5 +1,27 @@
 namespace OpenIGI.Game.Igi2.Player;
 
+/// <summary>A weapon type's spread per posture, in degrees, and its two modifiers.</summary>
+/// <param name="Standing">Standing still (<c>WeaponType+0x348</c>).</param>
+/// <param name="Running">Running (<c>+0x34C</c>).</param>
+/// <param name="Walking">Walking (<c>+0x350</c>).</param>
+/// <param name="Crouching">Crouching still (<c>+0x354</c>).</param>
+/// <param name="CrouchWalking">Walking crouched (<c>+0x358</c>).</param>
+/// <param name="LyingFlat">Lying flat (<c>+0x35C</c>).</param>
+/// <param name="Crawling">Crawling (<c>+0x360</c>).</param>
+/// <param name="JumpingModifier">Added while in the air (<c>+0x364</c>).</param>
+/// <param name="TurningModifier">Scaled by the turning speed and added in every posture (<c>+0x368</c>).</param>
+/// <remarks>The <c>WeaponType</c> parameters of the same names, registered by <c>WeaponType_Open</c> (<c>igi2 0x436C60</c>).</remarks>
+public readonly record struct Igi2WeaponPrecision(
+    float Standing,
+    float Running,
+    float Walking,
+    float Crouching,
+    float CrouchWalking,
+    float LyingFlat,
+    float Crawling,
+    float JumpingModifier,
+    float TurningModifier);
+
 /// <summary>What the player's input handling asks of the weapon it is holding.</summary>
 /// <remarks>
 /// The signal handler is mostly about locomotion, but a few channels act on the weapon directly — the
@@ -13,6 +35,9 @@ public interface IIgi2PlayerWeaponControl
 
     /// <summary>Gets a value indicating whether the held weapon type's task is a <c>Zoom</c>.</summary>
     bool ActiveIsZoom { get; }
+
+    /// <summary>Gets the held weapon type's precision, or <see langword="null"/> when nothing is held.</summary>
+    Igi2WeaponPrecision? ActivePrecision { get; }
 
     /// <summary>Gets a value indicating whether the held weapon is in its zoomed fire mode (<c>Human_IsZoomFireModeActive</c>).</summary>
     bool IsZoomFireModeActive { get; }
@@ -46,6 +71,9 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public bool ActiveIsZoom => false;
+
+    /// <inheritdoc/>
+    public Igi2WeaponPrecision? ActivePrecision => null;
 
     /// <inheritdoc/>
     public bool IsZoomFireModeActive => false;
