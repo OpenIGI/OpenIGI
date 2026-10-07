@@ -68,6 +68,15 @@ public enum Igi2HumanChannel
     /// <summary>Low button bit <c>0x80000000</c>, which no single-player action binds.</summary>
     Button31 = 18,
 
+    /// <summary>Narrows the view's field of view by four percent while held (<c>HumanView_UpdateView</c>, <c>igi2 0x4D62F0</c>).</summary>
+    FieldOfViewNarrow = 19,
+
+    /// <summary>Widens the view's field of view by the same step while held.</summary>
+    FieldOfViewWiden = 20,
+
+    /// <summary>Puts the view's field of view back to its default while held.</summary>
+    FieldOfViewReset = 21,
+
     /// <summary><see cref="Player.Igi2PlayerAction.ToggleWalkRun"/>.</summary>
     ToggleWalkRun = 23,
 
