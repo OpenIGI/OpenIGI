@@ -80,6 +80,20 @@ public sealed class Igi2RigidObject
     /// <summary>Gets the model's radius.</summary>
     public float Radius { get; }
 
+    /// <summary>
+    /// Gets the radius the bounds tests use: the model's radius scaled by the largest of the three scales, as the
+    /// line handler forms it.
+    /// </summary>
+    public float BoundingRadius
+    {
+        get
+        {
+            float sx = Scale.X, sy = Scale.Y, sz = Scale.Z;
+            float largest = sy > sz ? sy : sz;
+            return ((Fpu)Radius * (largest < sx ? sx : largest)).F;
+        }
+    }
+
     /// <summary>Gets a value indicating whether the model draws as a building.</summary>
     public bool IsBuildingMesh { get; }
 

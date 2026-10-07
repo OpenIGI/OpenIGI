@@ -85,6 +85,11 @@ public readonly struct X87Single(double value)
     /// <returns>The sine.</returns>
     public static X87Single Sin(X87Single a) => new(Math.Sin(a.Value));
 
+    /// <summary><c>fcos</c>: precision control does not apply to it.</summary>
+    /// <param name="a">The operand.</param>
+    /// <returns>The cosine.</returns>
+    public static X87Single Cos(X87Single a) => new(Math.Cos(a.Value));
+
     /// <summary><c>fistp</c> under rounding toward zero: the integer part.</summary>
     /// <param name="a">The operand.</param>
     /// <returns>The truncated integer.</returns>
