@@ -39,7 +39,7 @@ public sealed class Igi2TerrainCollider : IIgi2Collider
         ArgumentNullException.ThrowIfNull(trace);
 
         Vector3d origin = _surface.Origin;
-        for (int i = 0; i < trace.Starts.Length; i++)
+        for (int i = 0; i < trace.Count; i++)
         {
             Vector3d start = trace.Starts[i];
             double endZ = trace.Ends[i].Z;

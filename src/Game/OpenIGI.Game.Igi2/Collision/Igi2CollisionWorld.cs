@@ -38,9 +38,18 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
 
     /// <summary>
     /// The bit every object type's group carries: <c>QTask_SetQTaskTypeGroup</c> (<c>igi2 0x40B2D0</c>) ORs
-    /// <c>0x20000000</c> into whatever group a type is given.
+    /// <c>0x20000000</c> into whatever group a type is given, so a query naming it reaches every type.
     /// </summary>
     public const uint EveryTypeGroup = 0x20000000;
+
+    /// <summary>The group humans are in, <c>1</c>.</summary>
+    public const uint HumanGroup = 0x1;
+
+    /// <summary>The group forests are in, <c>Forest_bQTaskGroup</c>: <c>2</c>.</summary>
+    public const uint ForestGroup = 0x2;
+
+    /// <summary>The group spline segments are in, <c>0x10000000</c>.</summary>
+    public const uint SplineGroup = 0x10000000;
 
     /// <summary>
     /// How far a vertical query's box reaches above and below its lines: <c>16387</c> units, against <c>2</c> across.
@@ -162,19 +171,18 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// <param name="trace">The lines: their starts are read, their ends written, their results cleared and filled.</param>
     /// <param name="distances">How far each line reaches along Z: negative down, positive up.</param>
     /// <param name="groups">
-    /// The query groups. Any bit below the top asks for the objects, which every type answers to through
-    /// <see cref="EveryTypeGroup"/>; <see cref="TerrainGroup"/> asks for the ground.
+    /// The query groups: an object takes part when its type's group shares a bit with them (every type has
+    /// <see cref="EveryTypeGroup"/>), and <see cref="TerrainGroup"/> asks for the ground.
     /// </param>
-    /// <exception cref="ArgumentException">The groups ask for objects without <see cref="EveryTypeGroup"/>, which needs the per-type groups this port has not read.</exception>
     public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
-        if (distances.Length != trace.Starts.Length)
+        if (distances.Length != trace.Count)
         {
             throw new ArgumentException("One distance per line.", nameof(distances));
         }
 
-        for (int i = 0; i < trace.Starts.Length; i++)
+        for (int i = 0; i < trace.Count; i++)
         {
             Vector3d start = trace.Starts[i];
             trace.Ends[i] = new Vector3d(start.X, start.Y, distances[i] + start.Z);
@@ -184,12 +192,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
         uint objectGroups = groups & ~TerrainGroup;
         if (objectGroups != 0)
         {
-            if ((objectGroups & EveryTypeGroup) == 0)
-            {
-                throw new ArgumentException("Only queries that include every object type are supported.", nameof(groups));
-            }
-
-            TraceObjects(trace);
+            TraceObjects(trace, objectGroups);
         }
 
         if ((groups & TerrainGroup) != 0)
@@ -199,13 +202,31 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     }
 
     /// <summary>
+    /// Lines in any direction against the objects of some groups: <c>World_TraceLinesSpecificMesh</c>
+    /// (<c>igi2 0x5519C0</c>).
+    /// </summary>
+    /// <param name="trace">The lines: their starts and ends are read, their results reset to the ends and filled.</param>
+    /// <param name="groups">The query groups.</param>
+    /// <exception cref="NotSupportedException">The groups ask for the ground, whose line handler is not ported yet.</exception>
+    public void TraceLines(Igi2LineTrace trace, uint groups)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+        if ((groups & TerrainGroup) != 0)
+        {
+            throw new NotSupportedException("The terrain's line handler, Terrain_TraceLinesHandler1 (igi2 0x5730B0), is not ported.");
+        }
+
+        TraceObjects(trace, groups);
+    }
+
+    /// <summary>
     /// The object half of a line trace, <c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>): every result is reset
     /// to the line's end, and every object whose bounds meet the lines' padded box is traced.
     /// </summary>
-    private void TraceObjects(Igi2LineTrace trace)
+    private void TraceObjects(Igi2LineTrace trace, uint groups)
     {
         Vector3d min = trace.Starts[0], max = trace.Starts[0];
-        for (int i = 0; i < trace.Starts.Length; i++)
+        for (int i = 0; i < trace.Count; i++)
         {
             Grow(trace.Starts[i]);
             Grow(trace.Ends[i]);
@@ -219,6 +240,11 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
         max = new Vector3d(max.X + BoxWidth, max.Y + BoxWidth, max.Z + BoxDepth);
         foreach (Igi2RigidObject solid in _objects)
         {
+            if ((groups & (solid.Group | EveryTypeGroup)) == 0)
+            {
+                continue;
+            }
+
             Vector3d p = solid.Position;
             double r = solid.BoundingRadius;
             if (max.X >= p.X - r && min.X <= r + p.X

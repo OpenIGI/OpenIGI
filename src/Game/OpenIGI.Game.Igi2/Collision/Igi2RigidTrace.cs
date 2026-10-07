@@ -47,7 +47,7 @@ public static class Igi2RigidTrace
             return;
         }
 
-        for (int i = 0; i < trace.Starts.Length; i++)
+        for (int i = 0; i < trace.Count; i++)
         {
             Line(model, mesh, trace, trace.Starts[i], trace.Ends[i], trace.Intersections[i]);
         }

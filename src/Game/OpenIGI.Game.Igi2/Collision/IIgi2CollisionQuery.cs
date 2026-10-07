@@ -11,4 +11,9 @@ public interface IIgi2CollisionQuery
     /// <param name="distances">How far each line reaches along Z: negative down, positive up.</param>
     /// <param name="groups">The query groups; the top bit asks for the ground.</param>
     void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups);
+
+    /// <summary>Lines in any direction against the objects of some groups: <c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>).</summary>
+    /// <param name="trace">The lines: their starts and ends are read, their results reset to the ends and filled.</param>
+    /// <param name="groups">The query groups.</param>
+    void TraceLines(Igi2LineTrace trace, uint groups);
 }

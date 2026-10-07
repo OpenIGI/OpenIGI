@@ -77,8 +77,14 @@ public sealed class Igi2RigidObject : IIgi2Collider
     /// <summary>Gets or sets the scale on each local axis, <c>+0xF8</c>.</summary>
     public Vector3f Scale { get; set; } = new(1f, 1f, 1f);
 
+    /// <summary>The group every rigid type is in, <c>RigidDynCubeObj_GenericOpen</c> (<c>igi2 0x58E170</c>): <c>0x08000000</c>.</summary>
+    public const uint RigidGroup = 0x08000000;
+
     /// <summary>Gets the model's radius.</summary>
     public float Radius { get; }
+
+    /// <summary>Gets the collision group of the object's type; queries name the groups they reach.</summary>
+    public uint Group { get; init; } = RigidGroup;
 
     /// <summary>
     /// Gets the radius the bounds tests use: the model's radius scaled by the largest of the three scales, as the

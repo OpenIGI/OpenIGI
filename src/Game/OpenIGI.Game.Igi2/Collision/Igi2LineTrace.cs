@@ -18,6 +18,8 @@ public interface IIgi2SceneLighting
 /// <summary>A batch of lines traced together, <c>TraceLinesContext_s</c>: their ends, their results, and what may stop them.</summary>
 public sealed class Igi2LineTrace
 {
+    private int _count;
+
     /// <summary>The material row a trace ignores when none is named: row 0, air.</summary>
     /// <remarks><c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>) sets <c>iIgnoreMaterial</c> to zero.</remarks>
     public const int AirMaterial = 0;
@@ -30,9 +32,23 @@ public sealed class Igi2LineTrace
         Starts = new Vector3d[lineCount];
         Ends = new Vector3d[lineCount];
         Intersections = new Igi2Intersection[lineCount];
+        Count = lineCount;
         for (int i = 0; i < lineCount; i++)
         {
             Intersections[i] = new Igi2Intersection();
+        }
+    }
+
+    /// <summary>Gets or sets how many of the lines are traced, <c>nNumLines</c>: the first that many.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">The count is negative or more than the batch holds.</exception>
+    public int Count
+    {
+        get => _count;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, Starts.Length);
+            _count = value;
         }
     }
 

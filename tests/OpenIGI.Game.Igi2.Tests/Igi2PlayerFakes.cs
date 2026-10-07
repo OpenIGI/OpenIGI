@@ -163,6 +163,21 @@ internal static class Igi2PlayerFakes
     /// <summary>A level of flat floors and ceilings, each answering vertical lines as a handler does.</summary>
     internal sealed class FakeCollision : IIgi2CollisionQuery
     {
+        public void TraceLines(Igi2LineTrace trace, uint groups)
+        {
+            Queries++;
+            for (int i = 0; i < trace.Count; i++)
+            {
+                trace.Intersections[i].IsHit = false;
+                trace.Intersections[i].HitObject = null;
+            }
+
+            foreach (FakeCollider surface in Surfaces)
+            {
+                surface.NextZ(trace);
+            }
+        }
+
         public List<FakeCollider> Surfaces { get; } = [];
 
         public int Queries { get; private set; }
@@ -170,7 +185,7 @@ internal static class Igi2PlayerFakes
         public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
         {
             Queries++;
-            for (int i = 0; i < trace.Starts.Length; i++)
+            for (int i = 0; i < trace.Count; i++)
             {
                 Vector3d start = trace.Starts[i];
                 trace.Ends[i] = new Vector3d(start.X, start.Y, start.Z + distances[i]);
@@ -197,7 +212,7 @@ internal static class Igi2PlayerFakes
         public void NextZ(Igi2LineTrace trace)
         {
             Probes++;
-            for (int i = 0; i < trace.Starts.Length; i++)
+            for (int i = 0; i < trace.Count; i++)
             {
                 double from = trace.Starts[i].Z, to = trace.Ends[i].Z;
                 if (Z < Math.Min(from, to) || Z > Math.Max(from, to))
