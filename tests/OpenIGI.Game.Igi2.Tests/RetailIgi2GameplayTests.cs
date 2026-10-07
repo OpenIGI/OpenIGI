@@ -125,13 +125,5 @@ public sealed class RetailIgi2GameplayTests
             level.ModelFor(point.Model)?.BoneHierarchy);
     }
 
-    private static Igi2HumanPlayerGeneral LoadTuning()
-    {
-        VirtualFileSystem files = new();
-        files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
-        ResourceRegistry resources = new(files);
-        GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
-        TitleSession session = TitleSession.Start(Igi2Runtime.Instance.Modules, loop, files, resources, loadTables: true);
-        return session.Services.Require<Igi2PlayerTuning>().General;
-    }
+    private static Igi2HumanPlayerGeneral LoadTuning() => Igi2Session.Start().Require<Igi2PlayerTuning>().General;
 }

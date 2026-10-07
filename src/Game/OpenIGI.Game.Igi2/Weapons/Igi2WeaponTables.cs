@@ -2,7 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Scripting.Qvm;
+using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -76,42 +76,17 @@ public sealed class Igi2WeaponTables
         ArgumentNullException.ThrowIfNull(natives);
         ArgumentNullException.ThrowIfNull(tree);
 
-        Run(resources, natives, AmmoScript);
+        Igi2SessionScript.Run(resources, natives, AmmoScript);
         int before = _ammo.Count;
         Collect(tree.Root, _ammo);
         RegisterIds(natives, _ammo, before, static a => a.AmmoId, UndefinedAmmo);
 
-        Run(resources, natives, WeaponScript);
+        Igi2SessionScript.Run(resources, natives, WeaponScript);
         before = _weapons.Count;
         Collect(tree.Root, _weapons);
         RegisterIds(natives, _weapons, before, static w => w.WeaponId, UndefinedWeapon);
 
         _logger.Information(LogCategory, $"{_ammo.Count} ammunition types and {_weapons.Count} weapon types read.");
-    }
-
-    private static void Run(ResourceRegistry resources, NativeRegistry natives, string script)
-    {
-        if (!resources.TryLoad(script, out ReadOnlyMemory<byte> bytes))
-        {
-            throw new EngineFatalException($"Couldn't load script: {script}");
-        }
-
-        QvmProgram program;
-        try
-        {
-            program = QvmProgram.Read(bytes);
-        }
-        catch (QvmFormatException ex)
-        {
-            throw new EngineFatalException($"Couldn't load script: {script}", ex);
-        }
-
-        QvmInterpreter interpreter = new(program, natives);
-        QvmError error = interpreter.Run();
-        if (error != QvmError.None)
-        {
-            throw new EngineFatalException($"{script} faulted with {error}: {interpreter.ErrorMessage}");
-        }
     }
 
     /// <summary>Gathers the tasks of one type in the order they were made, which is their order in the tree.</summary>

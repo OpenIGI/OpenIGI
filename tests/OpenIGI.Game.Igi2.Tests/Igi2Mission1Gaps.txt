@@ -214,8 +214,6 @@ name DefineAnimTrigger    # ANIMTRIGGER/animtrigger.qvm
 name DefineGameMaterial    # MATERIAL/material.qvm
 name DefineGraph    # COMMON/sounds/sounds.qvm
 name DefineGroup    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
-name DefineHumanPlayerAmmoLimit    # HUMANPLAYER/humanplayer.qvm
-name DefineHumanPlayerWeaponCycle    # HUMANPLAYER/humanplayer.qvm
 name DefinePhysicsObjType    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
 name DefineQMaterial    # MATERIAL/material.qvm
 name DefineSound    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
@@ -328,8 +326,6 @@ name HUMAN_TEAM_BAD    # MENUSYSTEM/ingamemenu.qvm
 name HUMAN_TEAM_GOOD    # MENUSYSTEM/ingamemenu.qvm
 name HumanAI_nEvent    # COMMON/ai/default.qvm
 name HumanPlayer_isDead    # MENUSYSTEM/ingamemenu.qvm
-name Human_AddAmmo    # MISSIONS/location1/level1/objects.qvm
-name Human_AddWeapon    # MISSIONS/location1/level1/objects.qvm
 name INPUTPORT_DEVICE_KEYBOARD    # config.qvm
 name INPUTPORT_DEVICE_MOUSE    # config.qvm
 name Inventory    # config.qvm

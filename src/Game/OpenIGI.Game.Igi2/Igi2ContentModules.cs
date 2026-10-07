@@ -72,12 +72,10 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
 /// <summary>The player the level places.</summary>
 /// <remarks>
 /// <para>
-/// The two classes are the first game's, unchanged, because the first four parameters are the same four
-/// in the same order -- <c>Position</c>, <c>Gamma</c>, <c>Model</c>, <c>Team</c> -- and parameters bind
-/// by name, so the sequel's extra ones (a starting weapon, a first-person model, the visibility
-/// triple) are simply not bound yet. What the class carries that a placeholder cannot is the level's
-/// own spawn: <c>PlayerSpawn</c> looks for a <c>HumanPlayerTask</c>, and without one a level that
-/// declares its player perfectly well appears to declare none.
+/// The player is the first game's <see cref="HumanPlayerTask"/> with the sequel's six further parameters bound
+/// (<see cref="Player.Igi2HumanPlayerTask"/>): its starting weapons, first-person model, visibility triple and carry-over
+/// flag. What the class carries that a placeholder cannot is the level's own spawn: <c>PlayerSpawn</c> looks for a
+/// <c>HumanPlayerTask</c>, and without one a level that declares its player perfectly well appears to declare none.
 /// </para>
 /// <para>
 /// <b>That absence was not a missing feature but a failing mission.</b> Dropped where the debugging
@@ -97,9 +95,10 @@ public sealed class Igi2PlayerContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        context.Types.Register<HumanPlayerTask>("HumanPlayer");
+        context.Types.Register<Player.Igi2HumanPlayerTask>("HumanPlayer");
         context.Types.Register<Player.HumanPlayerConfigItemTask>(Player.HumanPlayerConfigItemTask.TypeName);
-        context.Services.GetOrProvide(() => new Player.Igi2PlayerTuning(context.Logger));
+        Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
+        context.Services.GetOrProvide(() => new Player.Igi2PlayerTuning(context.Logger)).RegisterNatives(context.Natives, functions);
     }
 
     /// <inheritdoc/>
@@ -110,7 +109,8 @@ public sealed class Igi2PlayerContentModule : IContentModule
     public void LoadTables(ContentLoadContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        context.Services.Require<Player.Igi2PlayerTuning>().Load(context.Resources, context.Natives, context.Tasks);
+        context.Services.Require<Player.Igi2PlayerTuning>().Load(
+            context.Resources, context.Natives, context.Tasks, context.Services.Require<Scripting.Igi2ScriptFunctions>());
     }
 }
 
@@ -149,7 +149,9 @@ public sealed class Igi2WeaponContentModule : IContentModule
         context.Types.Register<Weapons.Igi2FireModeTask>(Weapons.Igi2FireModeTask.TypeName);
         context.Types.Register<Weapons.Igi2LaserDotSwitchTask>(Weapons.Igi2LaserDotSwitchTask.TypeName);
         Weapons.Igi2WeaponConstants.Register(context.Natives, context.Types);
-        context.Services.GetOrProvide(() => new Weapons.Igi2WeaponTables(context.Logger));
+        Weapons.Igi2WeaponTables tables = context.Services.GetOrProvide(() => new Weapons.Igi2WeaponTables(context.Logger));
+        Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
+        context.Services.GetOrProvide(() => new Weapons.Igi2HumanWeapons(context.Natives, functions, tables));
     }
 
     /// <inheritdoc/>

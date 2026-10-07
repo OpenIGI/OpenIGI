@@ -1,9 +1,5 @@
-using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Time;
-using OpenIGI.Engine.Titles;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Engine.World;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
@@ -21,11 +17,8 @@ public sealed class RetailIgi2WeaponTablesTests
 {
     private static readonly Lazy<(Igi2WeaponTables Tables, NativeRegistry Natives, TaskTypeRegistry Types)> Session = new(static () =>
     {
-        VirtualFileSystem files = new();
-        files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
-        GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
-        TitleSession session = TitleSession.Start(Igi2Runtime.Instance.Modules, loop, files, new ResourceRegistry(files), loadTables: true);
-        return (session.Services.Require<Igi2WeaponTables>(), loop.Natives, loop.Types);
+        Igi2Session session = Igi2Session.Start();
+        return (session.Require<Igi2WeaponTables>(), session.Loop.Natives, session.Loop.Types);
     });
 
     /// <summary>Every kind of ammunition gets its number, in the order the script made them, as a constant.</summary>
