@@ -141,8 +141,20 @@ public sealed class Igi2TitlePlayer : ITitlePlayer
             IdealGamma = gamma,
         };
         surroundings.Owner = human;
+
+        // Human_UpdateInternalDataHandler (igi2 0x4FF2F0): the level's Gamma is the heading and the ideal heading
+        // both, and the body stands upright turned by it.
+        float[] facing = Igi2Pose.Rotation(0f, 0f, gamma);
+        human.Orientation = new Matrix3f(
+            facing[0], facing[1], facing[2],
+            facing[3], facing[4], facing[5],
+            facing[6], facing[7], facing[8]);
         human.Create(difficulty);
         human.MaintainCollisionZOffset();
+
+        // The view would first be placed on the first tick; placing it now gives the host's first frames the eyes
+        // rather than the world's origin. It draws nothing from the run stream: a new view does not shake.
+        human.UpdateViewBody();
         return new Igi2TitlePlayer(human);
     }
 
