@@ -1,5 +1,4 @@
 using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -25,7 +24,7 @@ public sealed class RetailIgi2AnimationClipTests
     {
         int clips = 0;
         int looping = 0;
-        foreach ((string name, Igi2AnimationClip clip) in Clips())
+        foreach ((string name, Igi2AnimationClip clip) in Igi2CommonModels.Clips())
         {
             clips++;
             looping += clip.Loops ? 1 : 0;
@@ -42,22 +41,23 @@ public sealed class RetailIgi2AnimationClipTests
             }
 
             Assert.True(clip.DeclaredEventCount == keys, $"{name}: header says {clip.DeclaredEventCount} events, tracks hold {keys}.");
-            Assert.Equal(clip.BoneCount, clip.Hierarchy.Count);
-            Assert.Equal(clip.BoneCount, clip.BoneTranslations.Count);
+            Assert.Equal(clip.BoneCount, clip.Hierarchy.ChildCounts.Count);
+            Assert.Equal(clip.BoneCount, clip.Hierarchy.Translations.Count);
+            Assert.Equal(clip.BoneCount, Igi2BoneHierarchy.CountBones([.. clip.Hierarchy.ChildCounts]));
 
             // The hierarchy's root entry is never applied, and it is the root track's first key to within
             // float rounding (a few clips differ in the last bit).
             if (clip.Translation.Count > 0)
             {
-                Assert.Equal(clip.Translation[0].Translation.X, clip.BoneTranslations[0].X, 0.001f);
-                Assert.Equal(clip.Translation[0].Translation.Y, clip.BoneTranslations[0].Y, 0.001f);
-                Assert.Equal(clip.Translation[0].Translation.Z, clip.BoneTranslations[0].Z, 0.001f);
+                Assert.Equal(clip.Translation[0].Translation.X, clip.Hierarchy.Translations[0].X, 0.001f);
+                Assert.Equal(clip.Translation[0].Translation.Y, clip.Hierarchy.Translations[0].Y, 0.001f);
+                Assert.Equal(clip.Translation[0].Translation.Z, clip.Hierarchy.Translations[0].Z, 0.001f);
             }
 
             // Breadth-first order puts every parent before its children.
             for (int bone = 1; bone < clip.BoneCount; bone++)
             {
-                Assert.InRange(clip.Parents[bone], 0, bone - 1);
+                Assert.InRange(clip.Hierarchy.Parents[bone], 0, bone - 1);
             }
         }
 
@@ -92,8 +92,8 @@ public sealed class RetailIgi2AnimationClipTests
         Assert.Equal(3200, clip.TotalTime);
         Assert.Equal(31, clip.BoneCount);
         Assert.Equal(2, clip.AttachObjects.Count);
-        Assert.Equal(-1, clip.Parents[0]);
-        Assert.Equal([0, 0, 0], clip.Parents.Skip(1).Take(3));
+        Assert.Equal(-1, clip.Hierarchy.Parents[0]);
+        Assert.Equal([0, 0, 0], clip.Hierarchy.Parents.Skip(1).Take(3));
     }
 
     /// <summary>The child counts are read breadth-first.</summary>
@@ -101,32 +101,17 @@ public sealed class RetailIgi2AnimationClipTests
     public void Child_counts_read_breadth_first()
     {
         // Root with two children; its first child has two, its second none.
-        Assert.Equal([-1, 0, 0, 1, 1], Igi2AnimationClip.ParentsOf([2, 2, 0, 0, 0]));
+        Assert.Equal([-1, 0, 0, 1, 1], Igi2BoneHierarchy.ParentsOf([2, 2, 0, 0, 0]));
     }
 
     /// <summary>Counts that place the wrong number of bones are refused.</summary>
     [Fact]
     public void Counts_that_do_not_make_one_tree_are_refused()
     {
-        Assert.Throws<ArgumentException>(() => Igi2AnimationClip.ParentsOf([1, 0, 0]));
-        Assert.Throws<ArgumentException>(() => Igi2AnimationClip.ParentsOf([3, 0, 0]));
+        Assert.Throws<ArgumentException>(() => Igi2BoneHierarchy.ParentsOf([1, 0, 0]));
+        Assert.Throws<ArgumentException>(() => Igi2BoneHierarchy.ParentsOf([3, 0, 0]));
     }
 
     private static Igi2AnimationClip Clip(string name) =>
-        Clips().Single(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)).Clip;
-
-    private static IEnumerable<(string Name, Igi2AnimationClip Clip)> Clips()
-    {
-        string models = Path.Combine(GameDataSource.Igi2.RequireRoot(), "COMMON", "models");
-        foreach (string archive in new[] { "common.res", "new.res" })
-        {
-            foreach (IresEntry entry in IresArchive.Read(File.ReadAllBytes(Path.Combine(models, archive))).Entries)
-            {
-                if (entry.Name.EndsWith(".iff", StringComparison.OrdinalIgnoreCase))
-                {
-                    yield return (Path.GetFileNameWithoutExtension(entry.Name), Igi2AnimationClip.Read(entry.Data));
-                }
-            }
-        }
-    }
+        Igi2CommonModels.Clips().Single(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)).Clip;
 }

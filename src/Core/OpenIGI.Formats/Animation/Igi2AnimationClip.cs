@@ -21,9 +21,8 @@ namespace OpenIGI.Formats.Animation;
 /// attach-object count and the clip's name. Pointer fields are written by the loader and ignored here.
 /// </description></item>
 /// <item><term><c>HIER</c></term><description>
-/// The bone hierarchy: one child-count byte per bone, padded to four, then one <c>real32x3</c>
-/// translation per bone. The byte string is the hierarchy's identity — <c>Hierarchy_Register</c>
-/// (<c>0x57EDF0</c>) hashes it — and is read <b>breadth-first</b>; see <see cref="Parents"/>.
+/// The bone hierarchy, in the layout a bone mesh shares; see <see cref="Igi2BoneHierarchy"/>. Its shape
+/// is what matches the clip to a model.
 /// </description></item>
 /// <item><term><c>EVNT</c></term><description>
 /// A stream of variable-length records (<see cref="Igi2AnimationEventType"/>) in time order, ending in
@@ -49,8 +48,8 @@ public sealed class Igi2AnimationClip
     /// <summary>The header chunk, <c>ANHD</c>, as its bytes appear on disk.</summary>
     public static readonly FourCc HeaderChunk = FourCc.FromString("DHNA");
 
-    /// <summary>The hierarchy chunk, <c>HIER</c>, as its bytes appear on disk.</summary>
-    public static readonly FourCc HierarchyChunk = FourCc.FromString("REIH");
+    /// <summary>The hierarchy chunk, <c>HIER</c>, as its bytes appear on disk; a bone mesh has one too.</summary>
+    public static readonly FourCc HierarchyChunk = Igi2BoneHierarchy.ChunkTag;
 
     /// <summary>The event chunk, <c>EVNT</c>, as its bytes appear on disk.</summary>
     public static readonly FourCc EventChunk = FourCc.FromString("TNVE");
@@ -74,9 +73,7 @@ public sealed class Igi2AnimationClip
         string name,
         bool loops,
         int totalTime,
-        byte[] hierarchy,
-        int[] parents,
-        Vector3f[] boneTranslations,
+        Igi2BoneHierarchy hierarchy,
         int declaredEventCount,
         Igi2TranslationKey[] translation,
         Igi2RotationKey[][] rotations,
@@ -89,8 +86,6 @@ public sealed class Igi2AnimationClip
         Loops = loops;
         TotalTime = totalTime;
         Hierarchy = hierarchy;
-        Parents = parents;
-        BoneTranslations = boneTranslations;
         DeclaredEventCount = declaredEventCount;
         Translation = translation;
         _rotations = rotations;
@@ -110,25 +105,14 @@ public sealed class Igi2AnimationClip
     public int TotalTime { get; }
 
     /// <summary>Gets the number of bones the clip animates.</summary>
-    public int BoneCount => Parents.Count;
+    public int BoneCount => Hierarchy.BoneCount;
 
-    /// <summary>Gets the hierarchy's child-count bytes, one per bone.</summary>
+    /// <summary>Gets the hierarchy of the rig the clip was authored on.</summary>
     /// <remarks>
-    /// The engine's identity for a skeleton: two clips with the same bytes drive the same rig, which is
-    /// how a clip is matched to a model without naming one.
+    /// Its shape decides which models the clip can drive (<see cref="Igi2BoneHierarchy.HasShapeOf"/>);
+    /// its translations do not pose anything, because the engine offsets bones by the model's own.
     /// </remarks>
-    public IReadOnlyList<byte> Hierarchy { get; }
-
-    /// <summary>Gets each bone's parent, <c>-1</c> for the root.</summary>
-    /// <remarks>
-    /// Breadth-first: <c>BoneDynCubeObj_UpdateHierarchy</c> (<c>igi2 0x564B50</c>) walks the bones in
-    /// order as parents, and each takes its child count of bones from one shared cursor that starts at
-    /// bone 1. So bone 0's children are bones <c>1..c₀</c>, bone 1's are the next <c>c₁</c>, and so on.
-    /// </remarks>
-    public IReadOnlyList<int> Parents { get; }
-
-    /// <summary>Gets each bone's translation from its parent, as the hierarchy chunk stores it.</summary>
-    public IReadOnlyList<Vector3f> BoneTranslations { get; }
+    public Igi2BoneHierarchy Hierarchy { get; }
 
     /// <summary>Gets the event count the header declares, tail included.</summary>
     public int DeclaredEventCount { get; }
@@ -166,62 +150,6 @@ public sealed class Igi2AnimationClip
         return _rotations[bone];
     }
 
-    /// <summary>Builds the shared skeleton this clip's hierarchy describes.</summary>
-    /// <returns>The skeleton, with the hierarchy chunk's translations as its rest pose.</returns>
-    /// <remarks>
-    /// The root's rest translation is zero, whatever the chunk stores for it.
-    /// <c>BoneDynCubeObj_UpdateHierarchy</c> (<c>igi2 0x564B50</c>) puts the root at the sampled root
-    /// translation and starts reading hierarchy translations at bone 1, so the chunk's first entry —
-    /// which matches the root track's first key to within float rounding in every shipped clip — is
-    /// never applied. Zeroing it lets
-    /// <see cref="BonePose.Evaluate"/> place the root exactly where the root track says.
-    /// </remarks>
-    public BoneSkeleton CreateSkeleton()
-    {
-        Vector3f[] rest = [.. BoneTranslations];
-        rest[0] = default;
-        return BoneSkeleton.Create(Parents, rest);
-    }
-
-    /// <summary>Gets each bone's parent from a breadth-first child-count string.</summary>
-    /// <param name="hierarchy">One child count per bone.</param>
-    /// <returns>The parents, <see cref="BoneSkeleton.NoParent"/> for the root.</returns>
-    /// <exception cref="ArgumentException">The counts do not describe exactly one tree over the bones.</exception>
-    public static int[] ParentsOf(ReadOnlySpan<byte> hierarchy)
-    {
-        int[] parents = new int[hierarchy.Length];
-        if (parents.Length == 0)
-        {
-            return parents;
-        }
-
-        parents[0] = BoneSkeleton.NoParent;
-        int next = 1;
-        for (int parent = 0; parent < hierarchy.Length; parent++)
-        {
-            for (int child = 0; child < hierarchy[parent]; child++)
-            {
-                if (next >= parents.Length)
-                {
-                    throw new ArgumentException(
-                        $"Bone {parent} claims more children than the {parents.Length} bones hold.",
-                        nameof(hierarchy));
-                }
-
-                parents[next++] = parent;
-            }
-        }
-
-        if (next != parents.Length)
-        {
-            throw new ArgumentException(
-                $"The child counts place {next} bones, not {parents.Length}.",
-                nameof(hierarchy));
-        }
-
-        return parents;
-    }
-
     /// <summary>Reads a clip file.</summary>
     /// <param name="data">The file bytes.</param>
     /// <returns>The clip.</returns>
@@ -253,16 +181,7 @@ public sealed class Igi2AnimationClip
         int attachCount = ReadInt(header, 0x24);
         string name = ReadName(header[HeaderFieldsSize..]);
 
-        (byte[] hierarchy, Vector3f[] translations) = ReadHierarchy(Require(container, HierarchyChunk).Span, boneCount);
-        int[] parents;
-        try
-        {
-            parents = ParentsOf(hierarchy);
-        }
-        catch (ArgumentException ex)
-        {
-            throw new IlffFormatException($"Animation '{name}' has a malformed hierarchy: {ex.Message}", ex);
-        }
+        Igi2BoneHierarchy hierarchy = Igi2BoneHierarchy.Read(Require(container, HierarchyChunk).Span, boneCount);
 
         EventStream events = EventStream.Read(Require(container, EventChunk), name);
 
@@ -281,8 +200,6 @@ public sealed class Igi2AnimationClip
             loops,
             totalTime,
             hierarchy,
-            parents,
-            translations,
             declaredEvents,
             events.Track(Igi2AnimationEventType.Translation, 0, ReadTranslationKey),
             rotations,
@@ -296,25 +213,6 @@ public sealed class Igi2AnimationClip
         container.TryFindChunk(chunk, out IlffChunk found)
             ? found.Payload
             : throw new IlffFormatException($"An animation clip has no '{chunk}' chunk.");
-
-    private static (byte[] Hierarchy, Vector3f[] Translations) ReadHierarchy(ReadOnlySpan<byte> chunk, int boneCount)
-    {
-        int padded = (boneCount + 3) & ~3;
-        int expected = padded + (boneCount * 12);
-        if (boneCount <= 0 || chunk.Length < expected)
-        {
-            throw new IlffFormatException(
-                $"A {boneCount}-bone hierarchy needs {expected} bytes but the chunk holds {chunk.Length}.");
-        }
-
-        var translations = new Vector3f[boneCount];
-        for (int bone = 0; bone < boneCount; bone++)
-        {
-            translations[bone] = ReadVector(chunk, padded + (bone * 12));
-        }
-
-        return (chunk[..boneCount].ToArray(), translations);
-    }
 
     private static Igi2AnimationAttachObject[] ReadAttachObjects(
         ReadOnlySpan<byte> chunk,

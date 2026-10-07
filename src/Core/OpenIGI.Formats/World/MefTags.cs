@@ -42,6 +42,12 @@ public static class MefTags
     /// <summary>Chunk <c>ATTA</c> (<c>ATTA</c>): attachment and bone mount points.</summary>
     public static FourCc Attachments { get; } = FourCc.FromString("ATTA");
 
+    /// <summary>Chunk <c>HIER</c>: an I.G.I. 2 bone mesh's bone hierarchy.</summary>
+    public static FourCc BoneHierarchy => Animation.Igi2BoneHierarchy.ChunkTag;
+
+    /// <summary>Chunk <c>BNAM</c>: an I.G.I. 2 bone mesh's bone names, sixteen bytes each.</summary>
+    public static FourCc BoneNames { get; } = FourCc.FromString("MANB");
+
     /// <summary>Chunk <c>TROP</c> (<c>PORT</c>): portals.</summary>
     public static FourCc Portals { get; } = FourCc.FromString("TROP");
 
