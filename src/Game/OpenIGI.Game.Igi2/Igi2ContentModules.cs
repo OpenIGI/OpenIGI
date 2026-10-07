@@ -20,6 +20,7 @@ public static class Igi2ContentModules
     public static IReadOnlyList<IContentModule> All { get; } =
     [
         new Igi2ScriptVocabularyModule(),
+        new Igi2WeaponContentModule(),
         new Igi2PlayerContentModule(),
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
@@ -110,6 +111,52 @@ public sealed class Igi2PlayerContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Player.Igi2PlayerTuning>().Load(context.Resources, context.Natives, context.Tasks);
+    }
+}
+
+/// <summary>The ammunition and weapons: their task types, the constants their scripts use, and the two scripts.</summary>
+/// <remarks>
+/// Ahead of the player's module, because <c>Flow_CreateHandler</c> (<c>igi2 0x401600</c>) loads the weapons before the
+/// player's tuning and the tuning names them by their <c>WEAPON_ID_*</c> and <c>AMMO_ID_*</c> constants.
+/// </remarks>
+public sealed class Igi2WeaponContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Weapons";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        context.Types.Register<Weapons.Igi2AmmoTypeTask>(Weapons.Igi2AmmoTypeTask.TypeName);
+        context.Types.Register<Weapons.Igi2WeaponTypeTask>(Weapons.Igi2WeaponTypeTask.TypeName);
+        context.Types.Register<Weapons.Igi2WeaponTypeParameterContainerTask>(Weapons.Igi2WeaponTypeParameterContainerTask.TypeName);
+        context.Types.Register<Weapons.Igi2TagItemInt32Task>(Weapons.Igi2TagItemInt32Task.TypeName);
+        context.Types.Register<Weapons.Igi2TagItemReal32Task>(Weapons.Igi2TagItemReal32Task.TypeName);
+        context.Types.Register<Weapons.Igi2TagItemString16Task>(Weapons.Igi2TagItemString16Task.TypeName);
+        context.Types.Register<Weapons.Igi2TagItemBool8Task>(Weapons.Igi2TagItemBool8Task.TypeName);
+        context.Types.Register<Weapons.Igi2GunTask>(Weapons.Igi2GunTask.TypeName);
+        context.Types.Register<Weapons.Igi2ZoomTask>(Weapons.Igi2ZoomTask.TypeName);
+        context.Types.Register<Weapons.Igi2ProjectileLauncherTask>(Weapons.Igi2ProjectileLauncherTask.TypeName);
+        context.Types.Register<Weapons.Igi2C4BombTask>(Weapons.Igi2C4BombTask.TypeName);
+        context.Types.Register<Weapons.Igi2ProximityMineTask>(Weapons.Igi2ProximityMineTask.TypeName);
+        context.Types.Register<Weapons.Igi2RemoteMineTask>(Weapons.Igi2RemoteMineTask.TypeName);
+        context.Types.Register<Weapons.Igi2MedipackTask>(Weapons.Igi2MedipackTask.TypeName);
+        context.Types.Register<Weapons.Igi2KnifeTask>(Weapons.Igi2KnifeTask.TypeName);
+        context.Types.Register<Weapons.Igi2LaserDesignatorTask>(Weapons.Igi2LaserDesignatorTask.TypeName);
+        context.Types.Register<Weapons.Igi2PullPinTask>(Weapons.Igi2PullPinTask.TypeName);
+        context.Types.Register<Weapons.Igi2FireModeTask>(Weapons.Igi2FireModeTask.TypeName);
+        context.Types.Register<Weapons.Igi2LaserDotSwitchTask>(Weapons.Igi2LaserDotSwitchTask.TypeName);
+        Weapons.Igi2WeaponConstants.Register(context.Natives, context.Types);
+        context.Services.GetOrProvide(() => new Weapons.Igi2WeaponTables(context.Logger));
+    }
+
+    /// <inheritdoc/>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Weapons.Igi2WeaponTables>().Load(context.Resources, context.Natives, context.Tasks);
     }
 }
 

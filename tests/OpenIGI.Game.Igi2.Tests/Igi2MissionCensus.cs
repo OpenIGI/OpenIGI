@@ -59,8 +59,10 @@ internal static class Igi2MissionCensus
         string objects = Path.Combine(levelDirectory, "objects.qvm");
 
         // The tree is loaded for real, through the title's own session: that is what exports each
-        // task's variables into the namespace, and what tells a class from a placeholder.
-        RetailIgi2LevelLoadTests.Harness harness = new(objects);
+        // task's variables into the namespace, and what tells a class from a placeholder. The session's
+        // tables are loaded first, as the original loads them before any level: they register names --
+        // the ammunition's and the weapons' ids -- that only exist once their scripts have run.
+        RetailIgi2LevelLoadTests.Harness harness = new(objects, loadTables: true);
         new World.Igi2MissionCatalogue(NullLogger.Instance).Register(harness.Loop.Natives);
         harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
 

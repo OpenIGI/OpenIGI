@@ -114,46 +114,6 @@ name AIVoice_RaiseAlarm    # COMMON/ai/squaddefault.qvm
 name AIVoice_SearchArea    # COMMON/ai/squaddefault.qvm
 name AIVoice_TakeCover    # COMMON/ai/squaddefault.qvm
 name AIVoice_WhatsThat    # COMMON/ai/squaddefault.qvm
-name AMMODISPLAYTYPE_BARREL    # WEAPONS/weapon.qvm
-name AMMODISPLAYTYPE_CLIP    # WEAPONS/weapon.qvm
-name AMMODISPLAYTYPE_NONE    # WEAPONS/weapon.qvm
-name AMMODISPLAYTYPE_NORMAL    # WEAPONS/weapon.qvm
-name AMMODISPLAYTYPE_SHELL    # WEAPONS/weapon.qvm
-name AMMO_ID_AK74CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_AUGCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_BARRETCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_C4BOMB    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_COLTANACONDACLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_DESERTEAGLECLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_DRAGUNOVCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_FLASHBANG    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_G11CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_G36CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_GLOCKCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_GRENADE    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_JACKHAMMERCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_M16CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_M203CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_M2HBCLIP    # WEAPONS/weapon.qvm
-name AMMO_ID_MAC10CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_MAKAROVCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_MEDIPACK    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_MINIMICLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_MP5CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_PROXIMITYMINE    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_PSG1CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_PSG1SDCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_RPG18CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_RPG7CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_SMG2CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_SMOKEGRENADE    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_SOCOMCLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_SPAS12CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_TYPE64CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_UNDEFINED    # WEAPONS/weapon.qvm
-name AMMO_ID_UZICLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_UZIX2CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
-name AMMO_ID_XM1041CLIP    # HUMANPLAYER/humanplayer.qvm, WEAPONS/weapon.qvm
 name Activate    # config.qvm
 name AlternateFire    # config.qvm
 name AreaActivate_149.nActive    # MISSIONS/location1/level1/objects.qvm
@@ -356,9 +316,6 @@ name GfxOptions_SetWaterQualityLevel    # config.qvm
 name GfxOptions_SetWindOnForests    # config.qvm
 name GoGfxCrossHairColour    # config.qvm
 name GoGfxCrossHairThickness    # config.qvm
-name HUMANAI_DETECTIONEVENT_GUNSHOT_PISTOL_RANGE    # WEAPONS/weapon.qvm
-name HUMANAI_DETECTIONEVENT_GUNSHOT_RANGE    # WEAPONS/weapon.qvm
-name HUMANAI_DETECTIONEVENT_GUNSHOT_SILENCED_RANGE    # WEAPONS/weapon.qvm
 name HUMANANIM_TRIGGER_CLOSECOMBAT_DEALDAMAGE    # ANIMTRIGGER/animtrigger.qvm
 name HUMANANIM_TRIGGER_CLOSEDRAWER    # ANIMTRIGGER/animtrigger.qvm
 name HUMANANIM_TRIGGER_DEADBODY_SOUND    # ANIMTRIGGER/animtrigger.qvm
@@ -527,15 +484,6 @@ name SCamera_118.isDetection    # MISSIONS/location1/level1/objects.qvm
 name SCamera_119.isDetection    # MISSIONS/location1/level1/objects.qvm
 name SCamera_121.isDetection    # MISSIONS/location1/level1/objects.qvm
 name SCamera_124.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SIGHTDISPLAYTYPE_ASSAULTRIFLE    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_GRENADE    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_MINIMI    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_NONE    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_PISTOL    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_RPG    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_SHOTGUN    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_SMG    # WEAPONS/weapon.qvm
-name SIGHTDISPLAYTYPE_SNIPERRIFLE    # WEAPONS/weapon.qvm
 name Say    # config.qvm
 name Scores    # config.qvm
 name ScrollListBox_985.nActiveID    # MENUSYSTEM/ingamemenu.qvm
@@ -588,117 +536,35 @@ name Switch_3429.isOn    # MISSIONS/location1/level1/objects.qvm
 name Switch_3429.isPressed    # MISSIONS/location1/level1/objects.qvm
 name TASKTYPE_AISTATIONARYGUN    # magicobjconfig.qvm
 name TASKTYPE_ANIMSOUND    # ANIMTRIGGER/animtrigger.qvm
-name TASKTYPE_AUGSNIPEROVERLAY    # WEAPONS/weapon.qvm
-name TASKTYPE_BINOCULAROVERLAY    # WEAPONS/weapon.qvm
 name TASKTYPE_BOMBBACKPACK    # magicobjconfig.qvm
-name TASKTYPE_C4BOMB    # WEAPONS/weapon.qvm
 name TASKTYPE_CAR    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
 name TASKTYPE_CARDOOR    # magicobjconfig.qvm
 name TASKTYPE_DEATHZONE    # magicobjconfig.qvm
-name TASKTYPE_DRAGUNOVSNIPEROVERLAY    # WEAPONS/weapon.qvm
 name TASKTYPE_DRAWER    # magicobjconfig.qvm
-name TASKTYPE_FIREMODE    # WEAPONS/weapon.qvm
-name TASKTYPE_G11SNIPEROVERLAY    # WEAPONS/weapon.qvm
 name TASKTYPE_GENERICPHYSICSMAGICOBJ    # PHYSICSOBJ/physicsobj.qvm
 name TASKTYPE_GENERICPHYSICSOBJ    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/physicsobj.qvm, PHYSICSOBJ/weapons/physicsobj.qvm
 name TASKTYPE_GLASS    # magicobjconfig.qvm
-name TASKTYPE_GRENADE    # PHYSICSOBJ/physicsobj.qvm, WEAPONS/weapon.qvm
 name TASKTYPE_GRENADEPIN    # magicobjconfig.qvm
-name TASKTYPE_GUN    # WEAPONS/weapon.qvm
-name TASKTYPE_GUNSHOT    # WEAPONS/weapon.qvm
 name TASKTYPE_GUNSHOTEFFECT    # MATERIAL/material.qvm
 name TASKTYPE_HELI    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/helis/mil/heli.qvm
 name TASKTYPE_HITZONE    # magicobjconfig.qvm
 name TASKTYPE_HUMAN    # ANIMTRIGGER/animtrigger.qvm
 name TASKTYPE_HUMANPLAYER    # ANIMTRIGGER/animtrigger.qvm
 name TASKTYPE_HUMANSOLDIER    # ANIMTRIGGER/animtrigger.qvm
-name TASKTYPE_IMPACTGRENADE    # WEAPONS/weapon.qvm
-name TASKTYPE_KNIFE    # WEAPONS/weapon.qvm
 name TASKTYPE_LADDER    # magicobjconfig.qvm
-name TASKTYPE_LASERDESIGNATOR    # WEAPONS/weapon.qvm
-name TASKTYPE_LASERDESIGNATOROVERLAY    # WEAPONS/weapon.qvm
-name TASKTYPE_LASERDOTSWITCH    # WEAPONS/weapon.qvm
-name TASKTYPE_MEDIPACK    # WEAPONS/weapon.qvm
-name TASKTYPE_MISSILE    # PHYSICSOBJ/missiles/HIND/missile.qvm, PHYSICSOBJ/missiles/RPG18/missile.qvm, PHYSICSOBJ/missiles/RPG7/missile.qvm, …
-name TASKTYPE_NONE    # WEAPONS/weapon.qvm
 name TASKTYPE_PLANE    # PHYSICSOBJ/planes/CutSceneMissile/plane.qvm, PHYSICSOBJ/planes/JSF/plane.qvm, PHYSICSOBJ/planes/SU27/plane.qvm
 name TASKTYPE_PRIMARYMAGICOBJ    # magicobjconfig.qvm
-name TASKTYPE_PROJECTILELAUNCHER    # WEAPONS/weapon.qvm
-name TASKTYPE_PROXIMITYMINE    # WEAPONS/weapon.qvm
-name TASKTYPE_PSG1SNIPEROVERLAY    # WEAPONS/weapon.qvm
-name TASKTYPE_PULLPIN    # WEAPONS/weapon.qvm
-name TASKTYPE_REMOTEMINE    # WEAPONS/weapon.qvm
 name TASKTYPE_ROTOR    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/helis/mil/heli.qvm, magicobjconfig.qvm
 name TASKTYPE_RPGROCKET    # magicobjconfig.qvm
 name TASKTYPE_SHADOWVOLUME    # magicobjconfig.qvm
-name TASKTYPE_SNIPEROVERLAY    # WEAPONS/weapon.qvm
 name TASKTYPE_WEAPONMAGICOBJ    # magicobjconfig.qvm
 name TASKTYPE_WHEEL    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
-name TASKTYPE_ZOOM    # WEAPONS/weapon.qvm
 name TeamSay    # config.qvm
 name Thermal    # config.qvm
 name ToggleBox_998.isOn    # MENUSYSTEM/ingamemenu.qvm
 name ToggleWalkRun    # config.qvm
 name USA    # config.qvm
 name WATERRENDER_QUALITY_HIGH    # config.qvm
-name WEAPONCATEGORY_BINOCULARS    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_C4    # WEAPONS/weapon.qvm
-name WEAPONCATEGORY_FLASHBANG    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_GRENADE    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_KNIFE    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_LASERDESIGNATOR    # WEAPONS/weapon.qvm
-name WEAPONCATEGORY_MEDIPACK    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_NONE    # WEAPONS/weapon.qvm
-name WEAPONCATEGORY_PRIMARY    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_PROXIMITYMINE    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_SIDEARM    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_SMOKEGRENADE    # MENUSYSTEM/ingamemenu.qvm, WEAPONS/weapon.qvm
-name WEAPONCATEGORY_THERMOCHEMICAL    # WEAPONS/weapon.qvm
-name WEAPONTYPE_BINOCULAR    # WEAPONS/weapon.qvm
-name WEAPONTYPE_C4BOMB    # WEAPONS/weapon.qvm
-name WEAPONTYPE_GRENADE    # WEAPONS/weapon.qvm
-name WEAPONTYPE_GUN    # WEAPONS/weapon.qvm
-name WEAPONTYPE_KNIFE    # WEAPONS/weapon.qvm
-name WEAPONTYPE_MEDIPACK    # WEAPONS/weapon.qvm
-name WEAPONTYPE_PISTOL    # WEAPONS/weapon.qvm
-name WEAPONTYPE_PROXIMITYMINE    # WEAPONS/weapon.qvm
-name WEAPONTYPE_SHOTGUN    # WEAPONS/weapon.qvm
-name WEAPONTYPE_SPECIAL    # WEAPONS/weapon.qvm
-name WEAPON_ID_AK47    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_AUG    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_BARRET    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_BARRETTHERMO    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_C4BOMB    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_COLT    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_DESERTEAGLE    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_DRAGUNOV    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_FLASHBANG    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_G11    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_G36    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_GLOCK    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_GRENADE    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_HK104    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_JACKHAMMER    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_KNIFE    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_LASERDESIGNATOR    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_M16A2    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_MAC10    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_MAKAROV    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_MEDIPACK    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_MINIMI    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_MP5SD    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_PROXIMITYMINE    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_PSG1    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_PSG1SD    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_RPG18    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_RPG7    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_SMG2    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_SMOKEGRENADE    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_SOCOM    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_SPAS12    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_TYPE64SMG    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_UZI    # HUMANPLAYER/humanplayer.qvm
-name WEAPON_ID_UZIX2    # HUMANPLAYER/humanplayer.qvm
 name WeaponCategory1    # config.qvm
 name WeaponCategory2    # config.qvm
 name WeaponCategory3    # config.qvm
@@ -713,10 +579,8 @@ type AIGraph    # MISSIONS/location1/level1/objects.qvm
 type AISquad    # MISSIONS/location1/level1/objects.qvm
 type AlarmControl    # MISSIONS/location1/level1/objects.qvm
 type AmbientArea    # MISSIONS/location1/level1/objects.qvm
-type AmmoType    # WEAPONS/ammo.qvm
 type AreaActivate    # MISSIONS/location1/level1/objects.qvm
 type Building    # MISSIONS/location1/level1/objects.qvm
-type C4Bomb    # WEAPONS/weapon.qvm
 type ColumnView    # MENUSYSTEM/ingamemenu.qvm
 type ColumnViewColumn    # MENUSYSTEM/ingamemenu.qvm
 type ComputerHilight    # MISSIONS/location1/level1/objects.qvm
@@ -736,21 +600,16 @@ type EditCamera    # MISSIONS/location1/level1/objects.qvm
 type EditRigidObj    # MISSIONS/location1/level1/objects.qvm
 type EditVariable    # MISSIONS/location1/level1/objects.qvm
 type ExplodeObject    # MISSIONS/location1/level1/objects.qvm
-type FireMode    # WEAPONS/weapon.qvm
 type Floor    # MISSIONS/location1/level1/objects.qvm
 type GenericTBA    # MISSIONS/location1/level1/objects.qvm
 type GlobalLight    # MISSIONS/location1/level1/objects.qvm
 type GlobalLightKeyframe    # MISSIONS/location1/level1/objects.qvm
-type Gun    # WEAPONS/weapon.qvm
 type GunPickup    # MISSIONS/location1/level1/objects.qvm
 type HumanAI    # MISSIONS/location1/level1/objects.qvm
 type HumanAIConfigItem    # COMMON/ai/settings.qvm
 type HumanPlayerInput    # MISSIONS/location1/level1/objects.qvm
 type HumanSoldier    # MISSIONS/location1/level1/objects.qvm
 type InputBox    # MENUSYSTEM/ingamemenu.qvm
-type Knife    # WEAPONS/weapon.qvm
-type LaserDesignator    # WEAPONS/weapon.qvm
-type LaserDotSwitch    # WEAPONS/weapon.qvm
 type LevelFlow    # MISSIONS/location1/level1/objects.qvm
 type LevelInfo    # MISSIONS/location1/level1/objects.qvm
 type LevelTimer    # MISSIONS/location1/level1/objects.qvm
@@ -759,7 +618,6 @@ type LightmapInfo    # MISSIONS/location1/level1/objects.qvm
 type ListBox    # MENUSYSTEM/ingamemenu.qvm
 type MagicObjConfig    # magicobjconfig.qvm
 type MagicObjConfigContainer    # magicobjconfig.qvm
-type Medipack    # WEAPONS/weapon.qvm
 type MenuFrame    # MENUSYSTEM/ingamemenu.qvm
 type MenuManager    # MENUSYSTEM/ingamemenu.qvm
 type MenuScreen    # MENUSYSTEM/ingamemenu.qvm
@@ -770,10 +628,6 @@ type MissionScoreSettings    # MISSIONS/location1/level1/objects.qvm
 type PatrolPath    # MISSIONS/location1/level1/objects.qvm
 type PatrolPathCommand    # MISSIONS/location1/level1/objects.qvm
 type PictureBox    # MENUSYSTEM/ingamemenu.qvm
-type ProjectileLauncher    # WEAPONS/weapon.qvm
-type ProximityMine    # WEAPONS/weapon.qvm
-type PullPin    # WEAPONS/weapon.qvm
-type RemoteMine    # WEAPONS/weapon.qvm
 type RotateAttachment    # MISSIONS/location1/level1/objects.qvm
 type SCamera    # MISSIONS/location1/level1/objects.qvm
 type ScrollListBox    # MENUSYSTEM/ingamemenu.qvm
@@ -788,11 +642,4 @@ type SplinePathGuideQTask    # MISSIONS/location1/level1/objects.qvm
 type SplinePathNodeQTask    # MISSIONS/location1/level1/objects.qvm
 type StatusMessage    # MISSIONS/location1/level1/objects.qvm
 type Switch    # MISSIONS/location1/level1/objects.qvm
-type TagItemBool8    # WEAPONS/weapon.qvm
-type TagItemInt32    # WEAPONS/weapon.qvm, magicobjconfig.qvm
-type TagItemReal32    # WEAPONS/weapon.qvm, magicobjconfig.qvm
-type TagItemString16    # WEAPONS/weapon.qvm
 type ToggleBox    # MENUSYSTEM/ingamemenu.qvm
-type WeaponType    # WEAPONS/weapon.qvm
-type WeaponTypeParameterContainer    # WEAPONS/weapon.qvm
-type Zoom    # WEAPONS/weapon.qvm

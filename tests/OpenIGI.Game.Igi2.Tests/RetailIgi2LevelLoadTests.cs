@@ -135,20 +135,25 @@ public sealed class RetailIgi2LevelLoadTests
     {
         public const string ScriptName = "LOCAL:objects.qvm";
 
-        public Harness(string scriptPath, IReadOnlyList<string>? structuralTypes = null)
+        public Harness(string scriptPath, IReadOnlyList<string>? structuralTypes = null, bool loadTables = false)
         {
             Igi2Runtime title = Igi2Runtime.Instance;
             Loop = new GameLoop(
                 new ManualTimeSource(1_000),
                 structuralTypes: structuralTypes ?? title.Layout.StructuralTaskTypes);
 
-            Resources = new ResourceRegistry(new VirtualFileSystem());
-            Resources.Register(ScriptName, File.ReadAllBytes(scriptPath));
+            // By default registration only: the tables a module would load live beside a mounted game, and
+            // this harness mounts nothing but the one script under test. Asked to, it mounts the game and
+            // loads the session's tables first, as the original does before any level.
+            VirtualFileSystem files = new();
+            if (loadTables)
+            {
+                files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
+            }
 
-            // Registration only. The tables a module would load live beside a mounted mission, and this
-            // harness mounts nothing but the one script under test.
-            Session = TitleSession.Start(
-                title.Modules, Loop, new VirtualFileSystem(), Resources, loadTables: false);
+            Resources = new ResourceRegistry(files);
+            Resources.Register(ScriptName, File.ReadAllBytes(scriptPath));
+            Session = TitleSession.Start(title.Modules, Loop, files, Resources, loadTables: loadTables);
 
             LevelRoot = (LevelTask)Loop.Tasks.New(Loop.Tasks.Root, Loop.Types.Get(EngineTaskTypes.Level));
             Loader = new LevelLoader(LevelRoot, Loop.TaskCommands, Loop.Natives, Resources);
