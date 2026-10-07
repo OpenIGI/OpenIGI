@@ -26,6 +26,10 @@ public interface IIgi2HumanAnimation
     /// <summary>Makes the main controller loop its clip (<c>nFlags |= 1</c>).</summary>
     void LoopMain();
 
+    /// <summary>Advances the main controller by its time step: <c>AnimController_Step(main, nTime + nTimeStep)</c>.</summary>
+    /// <remarks>The human's update steps it once a tick, after the body has moved.</remarks>
+    void StepMain();
+
     /// <summary>Takes the upper-body clip off, blending back to the main clip (<c>HumanAnim_ClearUpperBodyAnimation</c>).</summary>
     /// <param name="blendSeconds">The blend; 0 for a cut.</param>
     void ClearUpperBody(float blendSeconds);
@@ -61,6 +65,10 @@ public interface IIgi2HumanSurroundings
     /// <param name="depth">The depth, set only when the answer is yes.</param>
     /// <returns>Whether any water sheet covers the human's position.</returns>
     bool IsUnderWater(out float depth);
+
+    /// <summary>Stirs the water the human wades in, <c>Water_PlayerMovementEffect</c> (<c>igi2 0x591F00</c>).</summary>
+    /// <param name="isRunning">Whether the human runs through it rather than standing or treading.</param>
+    void StirWater(bool isRunning);
 
     /// <summary>Gets the collision engine the human finds its footing with.</summary>
     IIgi2CollisionQuery Collision { get; }

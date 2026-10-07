@@ -46,6 +46,14 @@ internal static class Igi2PlayerFakes
 
         public void LoopMain() => Looping = true;
 
+        public int Steps { get; private set; }
+
+        public void StepMain()
+        {
+            Steps++;
+            MainTime += MainTimeStep;
+        }
+
         public List<float> UpperBodyClears { get; } = [];
 
         public void ClearUpperBody(float blendSeconds) => UpperBodyClears.Add(blendSeconds);
@@ -102,6 +110,10 @@ internal static class Igi2PlayerFakes
             return Water is not null;
         }
 
+        public List<bool> Stirs { get; } = [];
+
+        public void StirWater(bool isRunning) => Stirs.Add(isRunning);
+
         public void PlaySound(string name) => Sounds.Add(name);
 
         public List<FakeSound> Started { get; } = [];
@@ -142,6 +154,8 @@ internal static class Igi2PlayerFakes
         public int? ActiveCategory { get; init; }
 
         public bool ActiveIsZoom => false;
+
+        public bool ActiveIsMissileLauncher { get; init; }
 
         public Igi2WeaponPrecision? ActivePrecision => null;
 

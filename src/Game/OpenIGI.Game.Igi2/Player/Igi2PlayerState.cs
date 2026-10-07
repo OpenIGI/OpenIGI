@@ -82,6 +82,12 @@ public static class Igi2PlayerState
     /// <summary>Dying.</summary>
     public const int Die = 55;
 
+    /// <summary>Waiting for the network, the multiplayer starting state; the body is not moved in it.</summary>
+    public const int NetworkWait = 56;
+
+    /// <summary>The debug fly, <c>HumanPlayer_InitStateFly</c> (<c>igi2 0x4B29D0</c>); the body is not moved in it.</summary>
+    public const int Fly = 57;
+
     /// <summary>Crouching still.</summary>
     public const int Crouch = 23;
 

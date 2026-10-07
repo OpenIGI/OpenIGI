@@ -38,6 +38,10 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Gets a value indicating whether the held weapon type's task is a <c>Zoom</c>.</summary>
     bool ActiveIsZoom { get; }
 
+    /// <summary>Gets a value indicating whether the held weapon is a gun firing missiles, which cannot be fired lying down.</summary>
+    /// <remarks><c>HumanPlayer_Update</c> (<c>igi2 0x4A20C0</c>): the active slot's task is a <c>Gun</c> whose ammo is a <c>Missile</c>.</remarks>
+    bool ActiveIsMissileLauncher { get; }
+
     /// <summary>Gets the held weapon type's precision, or <see langword="null"/> when nothing is held.</summary>
     Igi2WeaponPrecision? ActivePrecision { get; }
 
@@ -77,6 +81,9 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public bool ActiveIsZoom => false;
+
+    /// <inheritdoc/>
+    public bool ActiveIsMissileLauncher => false;
 
     /// <inheritdoc/>
     public Igi2WeaponPrecision? ActivePrecision => null;
