@@ -72,6 +72,9 @@ internal sealed partial class GameHost
                 _titleArms.Dispose();
                 _titleArms = null;
             }
+
+            // Lit as the world's unbaked objects are: the arms and the weapon carry no lightmap.
+            _titleArms?.Shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
         }
         _titleMouseX = 0f;
         _titleMouseY = 0f;

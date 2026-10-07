@@ -70,6 +70,9 @@ public interface IViewModelPresenter : IDisposable
 /// </remarks>
 public interface ITitleViewModelPresenter : IDisposable
 {
+    /// <summary>Gets or sets how the level lights an object with no bake, which is what the view's models are.</summary>
+    ObjectShading Shading { get; set; }
+
     /// <summary>Gets ready to draw a mission's models.</summary>
     /// <param name="mission">The mission whose packs the models are read from.</param>
     /// <returns><see langword="false"/> when the mission has nothing to draw them from.</returns>

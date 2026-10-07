@@ -24,6 +24,10 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 /// (<c>WeaponMagicObj_GetModelName</c>, <c>0x4733B0</c>). The player says which model each part is; this resolves
 /// names to meshes and textures through the mission's pack table, as the placed world does.
 /// </para>
+/// <para>
+/// None of the view's models has a bake, so each is lit as an unlightmapped object is: the level's fixed-function sun
+/// and object ambient per vertex (<see cref="IGraphicsDevice.SetVertexSun"/>), the sun turned into the model's frame.
+/// </para>
 /// </remarks>
 public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
 {
@@ -51,6 +55,9 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
         _resources = resources;
         _logger = logger ?? NullLogger.Instance;
     }
+
+    /// <inheritdoc/>
+    public ObjectShading Shading { get; set; } = ObjectShading.Default;
 
     /// <inheritdoc/>
     public bool Load(LoadedMission mission)
@@ -95,7 +102,8 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
             }
 
             Matrix4f modelView;
-            if (wanted.Pose is { } pose)
+            Matrix3f orientation;
+            if (wanted.Pose is not null)
             {
                 if (part.Tick != view.Tick && !Reskin(part, wanted))
                 {
@@ -103,14 +111,19 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
                 }
 
                 part.Tick = view.Tick;
-                modelView = camera.CreateModelView(WorldScene.ToMetres(origin), view.Orientation);
+                orientation = view.Orientation;
+                modelView = camera.CreateModelView(WorldScene.ToMetres(origin), orientation);
             }
             else
             {
                 Vector3f local = view.Orientation.Transposed().Transform(wanted.Position);
                 Vector3d at = new(origin.X + local.X, origin.Y + local.Y, origin.Z + local.Z);
-                modelView = camera.CreateModelView(WorldScene.ToMetres(at), view.Orientation * wanted.Orientation);
+                orientation = view.Orientation * wanted.Orientation;
+                modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
             }
+
+            // The sun in the model's own frame, as the world pass turns it for an unbaked placement.
+            _device.SetVertexSun(Shading.Sun is { } sun ? orientation.Transposed().Transform(sun.Direction) : Vector3f.Zero);
 
             foreach ((MeshSubset subset, TextureHandle texture) in part.Subsets)
             {
@@ -118,6 +131,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
             }
         }
 
+        _device.SetVertexSun(Vector3f.Zero);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
