@@ -22,6 +22,11 @@ public interface IIgi2GunShotWorld
     /// <param name="struck">What was struck.</param>
     /// <returns>Whether it is a boned object.</returns>
     bool IsBoned(IIgi2Collider struck);
+
+    /// <summary>Gets whether what was struck is a human, a type derived from <c>Human</c>.</summary>
+    /// <param name="struck">What was struck.</param>
+    /// <returns>Whether it is a human.</returns>
+    bool IsHuman(IIgi2Collider struck);
 }
 
 /// <summary>
@@ -30,7 +35,7 @@ public interface IIgi2GunShotWorld
 /// </summary>
 /// <param name="Intersection">Where the bullet struck: the face, the point and the materials either side.</param>
 /// <param name="Damage">How much damage the bullet still does there: its damage factor, less up to 30% over its range, times what is left of its penetration.</param>
-/// <param name="ShotVector">From where this leg of the trace started to the bullet's end, in world units.</param>
+/// <param name="ShotVector">The shot's line: a bullet's from where this leg of its trace started to its end, in world units; a stab's unit direction.</param>
 /// <param name="Shooter">The human whose weapon fired it, or <see langword="null"/>.</param>
 /// <param name="WeaponType">The weapon that fired it.</param>
 /// <param name="AmmoType">The ammunition, or <see langword="null"/>.</param>

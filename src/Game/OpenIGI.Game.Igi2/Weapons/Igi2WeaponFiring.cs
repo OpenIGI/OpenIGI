@@ -74,6 +74,21 @@ public sealed class Igi2WeaponFiring
     /// <summary>Gets the weapon's bullets, the <c>GunShot</c> <c>Weapon_CreateHandler</c> (<c>igi2 0x51C320</c>) makes under it.</summary>
     public Igi2GunShot GunShot { get; } = new();
 
+    /// <summary>Gets or sets the level the weapon's bullets and stabs strike, or <see langword="null"/> for none: then nothing is struck.</summary>
+    public IIgi2GunShotWorld? World { get; set; }
+
+    /// <summary>Gets or sets what the weapon's bullets and stabs show and sound where they strike.</summary>
+    public IIgi2GunShotEffects ImpactEffects { get; set; } = Igi2NoGunShotEffects.Instance;
+
+    /// <summary>Traces the bullets fired last tick (<c>GunShot_RunHandler</c>, <c>igi2 0x4C76E0</c>); with no level they are forgotten.</summary>
+    public void RunGunShot()
+    {
+        if (World is { } world)
+        {
+            GunShot.Run(Owner, HitProbability, world, ImpactEffects);
+        }
+    }
+
     /// <summary>
     /// Gets or sets how likely the weapon's bullets are to strike the player, <c>Weapon+0x64</c>: one, as
     /// <c>Weapon_CreateHandler</c> sets it, unless the holder's AI lowers it.

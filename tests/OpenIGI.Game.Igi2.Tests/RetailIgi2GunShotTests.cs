@@ -210,6 +210,8 @@ public sealed class RetailIgi2GunShotTests
         public bool IsWater(IIgi2Collider struck) => false;
 
         public bool IsBoned(IIgi2Collider struck) => false;
+
+        public bool IsHuman(IIgi2Collider struck) => false;
     }
 
     private sealed class Recording : IIgi2GunShotEffects

@@ -209,6 +209,31 @@ public sealed class Igi2Pose
     }
 
     /// <summary>
+    /// Turns an orientation about Z, <c>Real32x9_RotateGamma</c> (<c>igi2 0x562960</c>): each row <c>(a, b, c)</c> becomes
+    /// <c>(cos·a + sin·b, −sin·a + cos·b, c)</c>, each sum taken with the zero the routine multiplies the third into.
+    /// </summary>
+    /// <param name="m">The orientation, row by row.</param>
+    /// <param name="angle">The angle, in radians.</param>
+    /// <returns>The turned orientation, row by row.</returns>
+    public static float[] RotateGamma(IReadOnlyList<float> m, float angle)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+        Fpu sin = Fpu.Sin(angle), cos = Fpu.Cos(angle);
+        Fpu minusSin = -sin;
+        float[] turned = new float[9];
+        for (int row = 0; row < 3; row++)
+        {
+            Fpu a = m[row * 3], b = m[(row * 3) + 1], c = m[(row * 3) + 2];
+            Fpu zero = c * 0f;
+            turned[row * 3] = (((cos * a) + (sin * b)) + zero).F;
+            turned[(row * 3) + 1] = (((minusSin * a) + (cos * b)) + zero).F;
+            turned[(row * 3) + 2] = (((a + b) * 0f) + c).F;
+        }
+
+        return turned;
+    }
+
+    /// <summary>
     /// The turn about the vertical a direction points at: the gamma of <c>Real32x3_GetAngles</c> (<c>igi2 0x561AF0</c>).
     /// </summary>
     /// <param name="direction">The direction; need not be normalised.</param>

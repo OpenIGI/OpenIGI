@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Igi2.Animation;
+using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
@@ -357,6 +358,61 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(mp5sd.Number, player.ChangeWeaponId);
     }
 
+    /// <summary>
+    /// The knife sweeps its traces from the left of the aim (<c>Knife_WeaponFireHandler</c>), each two metres long, until
+    /// one strikes: here the second, into concrete, which rings its material's knife sound and takes the knife's damage
+    /// factor. It plays its fire sound, waits its delay, fires no rounds and draws nothing past the fire frame's two.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_knife_stabs_until_a_trace_strikes()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, RecordingEffects effects) = ArmedPlayer();
+        Igi2WeaponItem knifeItem = weapons.Inventory.Weapons.Single(static w => w.WeaponType.WeaponId == "WEAPON_ID_KNIFE");
+        Assert.True(weapons.Inventory.Activate(knifeItem));
+        Igi2KnifeTask knife = (Igi2KnifeTask)knifeItem.WeaponType.FireType(0)!;
+        Igi2GameMaterials materials = Mission1.Value.Session.Require<Igi2GameMaterials>();
+        StrikeOnCall world = new(materials, strikeOn: 2, material: 11);
+        ImpactRecording impacts = new();
+        weapons.World = world;
+        weapons.ImpactEffects = impacts;
+        IgiRandom reference = new(0u);
+        reference.NextRaw();
+        reference.NextRaw();
+        player.Random = new IgiRandom(0u);
+
+        weapons.Firing.Fire(0);
+
+        Assert.True(knife.Traces >= 2);
+        Assert.Equal(2, world.Calls.Count);
+        Assert.InRange(Vector3d.Distance(world.Calls[0].Start, world.Calls[0].End), Igi2KnifeFire.Reach - 0.01, Igi2KnifeFire.Reach + 0.01);
+        Assert.Equal([materials[11]!.KnifeHitSound], impacts.Sounds);
+        Igi2WeaponHit hit = Assert.Single(world.Target.Hits);
+        Assert.Equal(knife.DamageFactor, hit.Damage);
+        Assert.Equal([$"0:{knife.FireSound}:once"], effects.Sounds);
+        Assert.Equal(Fpu.ToInt32(new Fpu(knife.DelaySeconds) * 30f), weapons.Inventory.Delay);
+        Assert.Equal(reference.NextRaw(), player.Random.NextRaw());
+    }
+
+    /// <summary>
+    /// The knife's first-person fire clips come in turn (<c>Knife_GetAnimHandler</c>): as many as it names before an empty
+    /// one, then round to the first again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_knife_takes_its_fire_clips_in_turn()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2WeaponItem knifeItem = weapons.Inventory.Weapons.Single(static w => w.WeaponType.WeaponId == "WEAPON_ID_KNIFE");
+        Assert.True(weapons.Inventory.Activate(knifeItem));
+        Igi2KnifeTask knife = (Igi2KnifeTask)knifeItem.WeaponType.FireType(0)!;
+        string[] named = [.. new[] { knife.FirstFireAnim, knife.FirstFireAnim1, knife.FirstFireAnim2 }.TakeWhile(static n => n.Length != 0)];
+        Assert.NotEmpty(named);
+
+        string[] played = [.. Enumerable.Range(0, named.Length + 1)
+            .Select(_ => weapons.GetAnim(Igi2WeaponAnimRequest.FirstFire, player.View.ObjectRig, 0)?.Clip.Name ?? "(none)")];
+
+        Assert.Equal([.. named, named[0]], played);
+    }
+
     /// <summary>The three angles of an orientation give it back (<c>Real32x9_GetAngles</c> against <c>Real32x9_Create</c>).</summary>
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()
@@ -450,6 +506,83 @@ public sealed class RetailIgi2FiringTests
         public void RemoveOverlay() => Sounds.Add("overlay:off");
 
         public void PlayViewSound(string sound) => Sounds.Add($"view:{sound}");
+    }
+
+    /// <summary>Strikes nothing until a given call, then a target of one material halfway along the line.</summary>
+    private sealed class StrikeOnCall(Igi2GameMaterials materials, int strikeOn, int material) : IIgi2GunShotWorld, IIgi2CollisionQuery
+    {
+        public List<(Vector3d Start, Vector3d End)> Calls { get; } = [];
+
+        public HitTarget Target { get; } = new();
+
+        public IIgi2CollisionQuery Collision => this;
+
+        public Igi2GameMaterials Materials => materials;
+
+        public bool IsWater(IIgi2Collider struck) => false;
+
+        public bool IsBoned(IIgi2Collider struck) => false;
+
+        public bool IsHuman(IIgi2Collider struck) => false;
+
+        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups) => throw new NotSupportedException();
+
+        public void TraceLines(Igi2LineTrace trace, uint groups)
+        {
+            Vector3d start = trace.Starts[0], end = trace.Ends[0];
+            Calls.Add((start, end));
+            Igi2Intersection hit = trace.Intersections[0];
+            hit.IsHit = Calls.Count == strikeOn;
+            hit.HitObject = hit.IsHit ? Target : null;
+            hit.Position = hit.IsHit ? new Vector3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2) : end;
+            hit.EnterMaterial = hit.IsHit ? material : null;
+        }
+    }
+
+    private sealed class HitTarget : IIgi2Collider, IIgi2WeaponHitTarget
+    {
+        public List<Igi2WeaponHit> Hits { get; } = [];
+
+        public object Owner => this;
+
+        public void NextZ(Igi2LineTrace trace) => throw new NotSupportedException();
+
+        public void WeaponHit(in Igi2WeaponHit hit) => Hits.Add(hit);
+    }
+
+    private sealed class ImpactRecording : IIgi2GunShotEffects
+    {
+        public List<string> Sounds { get; } = [];
+
+        public bool NewSound(string sound, Vector3d position)
+        {
+            Sounds.Add(sound);
+            return sound.Length != 0;
+        }
+
+        public void SendAiEvent(in Igi2WeaponAiEvent aiEvent)
+        {
+        }
+
+        public void Tracer(in Igi2Tracer tracer)
+        {
+        }
+
+        public void Fragments(in Igi2ImpactFragments fragments)
+        {
+        }
+
+        public void WaterSplash(in Igi2WaterSplash splash)
+        {
+        }
+
+        public void BulletHole(in Igi2BulletHoleMark hole)
+        {
+        }
+
+        public void Smoke(in Igi2ImpactSmoke smoke)
+        {
+        }
     }
 
     private sealed record Mission1Setup(Igi2Level Level, Igi2HumanPlayerTask Task, Igi2AnimationLibrary Library, Igi2Session Session);

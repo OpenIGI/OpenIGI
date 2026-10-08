@@ -9,7 +9,8 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// </para>
 /// <para>
 /// Ported: the <c>Gun</c> (<c>Gun_Open</c>, <c>igi2 0x4835E0</c>), the <c>FireMode</c> (<c>FireMode_Open</c>,
-/// <c>0x51BE60</c>) and the <c>Zoom</c> (<c>Zoom_Open</c>, <c>0x525DA0</c>). Not yet: the knife, the pin and the rest.
+/// <c>0x51BE60</c>), the <c>Zoom</c> (<c>Zoom_Open</c>, <c>0x525DA0</c>) and the <c>Knife</c> (<c>Knife_Open</c>,
+/// <c>0x4CF970</c>). Not yet: the pin and the rest.
 /// </para>
 /// </remarks>
 public static class Igi2FireHandlers
@@ -22,8 +23,10 @@ public static class Igi2FireHandlers
         Igi2GunFire gun = new(tables);
         Igi2FireModeFire fireMode = new();
         Igi2ZoomFire zoom = new();
+        Igi2KnifeFire knife = new();
         return parameters => parameters switch
         {
+            Igi2KnifeTask => knife,
             Igi2GunTask => gun,
             Igi2FireModeTask => fireMode,
             Igi2ZoomTask => zoom,

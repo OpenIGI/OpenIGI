@@ -59,7 +59,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
         if (request.Services.TryGet(out Igi2GameMaterials? materials))
         {
-            player.GunShotWorld = new Igi2LevelGunShotWorld(world, materials);
+            if (weapons is not null)
+            {
+                weapons.World = new Igi2LevelGunShotWorld(world, materials);
+            }
         }
 
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
@@ -200,8 +203,6 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
     /// <summary>Gets what the player carries, or <see langword="null"/> when the session has no weapons.</summary>
     public Igi2Inventory? Inventory => Weapons?.Inventory;
 
-    /// <summary>Gets or sets the level the player's bullets fly through, or <see langword="null"/> when the session has no materials.</summary>
-    public IIgi2GunShotWorld? GunShotWorld { get; set; }
 
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
@@ -305,10 +306,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
-        if (Weapons is { } weapons && GunShotWorld is { } shots)
-        {
-            weapons.RunGunShot(shots);
-        }
+        Weapons?.RunGunShot();
 
         Human.View.RunZoom();
 
@@ -351,6 +349,8 @@ internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2G
     public bool IsWater(IIgi2Collider struck) => false;
 
     public bool IsBoned(IIgi2Collider struck) => false;
+
+    public bool IsHuman(IIgi2Collider struck) => false;
 }
 
 /// <summary>What the player's states ask of the world, answered from the collision world and nothing else yet.</summary>

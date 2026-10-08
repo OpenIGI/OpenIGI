@@ -100,6 +100,14 @@ public readonly record struct Igi2WeaponAnim(Igi2AnimationClip Clip, float TimeS
     public int TimeStep => Fpu.ToInt32(new Fpu(Igi2AnimController.TicksPerFrame) * TimeScale);
 }
 
+/// <summary>Which of a knife's first-person fire clips plays next, the static count <c>Knife_GetAnimHandler</c> keeps (<c>igi2 0x6D91A0</c>).</summary>
+/// <remarks>One count for every knife: the player's first-person view is its only asker.</remarks>
+public sealed class Igi2KnifeClipCycle
+{
+    /// <summary>Gets or sets the clip to play next.</summary>
+    public int Next { get; set; }
+}
+
 /// <summary>A weapon type's own answer to a clip request, <c>WeaponType_GetAnimHandler</c> (<c>igi2 0x4360F0</c>).</summary>
 /// <remarks>
 /// <para>
@@ -116,12 +124,15 @@ public readonly record struct Igi2WeaponAnim(Igi2AnimationClip Clip, float TimeS
 /// </para>
 /// <para>
 /// Everything else is the fire type's to answer, as is any request this finds no clip for: the request goes on to the
-/// handler of the fire type in the asker's fire-type slot, when there is one. The gun's is <see cref="GunAnim"/>; the
-/// other fire types' handlers are not yet ported and find none.
+/// handler of the fire type in the asker's fire-type slot, when there is one. The gun's and the knife's are ported; the
+/// other fire types' handlers are not yet, and find none.
 /// </para>
 /// </remarks>
 public static class Igi2WeaponTypeAnim
 {
+    /// <summary>The first-person fire clips a knife names at most, <c>3</c>.</summary>
+    public const int KnifeFireClips = 3;
+
     /// <summary>The float a clip's ticks are multiplied by to make seconds, <c>0x395A740E</c>.</summary>
     private const float SecondsPerTick = 0.00020833334f;
 
@@ -132,6 +143,10 @@ public static class Igi2WeaponTypeAnim
     /// <param name="library">The level's clips.</param>
     /// <param name="bodyTable">The weapon's table for <paramref name="rig"/>, or <see langword="null"/> for none.</param>
     /// <param name="fireType">The asker's fire type, <c>nFireType</c>, whose handler answers what this does not; -1 for none.</param>
+    /// <param name="knifeClips">
+    /// The count a knife's first-person fire clips are taken in turn by, the handler's own static; <see langword="null"/>
+    /// takes the first every time.
+    /// </param>
     /// <returns>The clip and its rate, or <see langword="null"/> when there is none.</returns>
     public static Igi2WeaponAnim? Get(
         Igi2WeaponTypeTask weaponType,
@@ -139,7 +154,8 @@ public static class Igi2WeaponTypeAnim
         Igi2BoneHierarchy? rig,
         Igi2AnimationLibrary? library,
         IReadOnlyList<Igi2AnimationClip?>? bodyTable,
-        int fireType)
+        int fireType,
+        Igi2KnifeClipCycle? knifeClips = null)
     {
         ArgumentNullException.ThrowIfNull(weaponType);
         Igi2WeaponAnim? own = request switch
@@ -165,7 +181,12 @@ public static class Igi2WeaponTypeAnim
             return own;
         }
 
-        return weaponType.FireType(fireType) is Igi2GunTask gun ? GunAnim(gun, request, Find, Row) : null;
+        return weaponType.FireType(fireType) switch
+        {
+            Igi2GunTask gun => GunAnim(gun, request, Find, Row),
+            Igi2KnifeTask knife => KnifeAnim(knife, request, Find, knifeClips ?? new Igi2KnifeClipCycle()),
+            _ => null,
+        };
 
         Igi2AnimationClip? Find(string name) =>
             rig is null || library is null || name.Length == 0 ? null : library.Find(rig, name);
@@ -219,6 +240,38 @@ public static class Igi2WeaponTypeAnim
             Igi2WeaponAnimRequest.FirstReloadLoop or Igi2WeaponAnimRequest.ThirdReloadLoop or Igi2WeaponAnimRequest.ThirdReloadLoopFlat => ReloadStep.Loop,
             _ => ReloadStep.End,
         };
+    }
+
+    /// <summary>
+    /// A knife's answer, <c>Knife_GetAnimHandler</c> (<c>igi2 0x4CF7E0</c>): its first-person fire clips in turn, as many as
+    /// it names before the first it leaves empty (<c>Knife_UpdateInternalDataHandler</c>, <c>0x4CF780</c>), and its
+    /// third-person one; each at its own speed.
+    /// </summary>
+    private static Igi2WeaponAnim? KnifeAnim(Igi2KnifeTask knife, Igi2WeaponAnimRequest request, Func<string, Igi2AnimationClip?> find, Igi2KnifeClipCycle cycle)
+    {
+        switch (request)
+        {
+            case Igi2WeaponAnimRequest.FirstFire:
+                string[] names = [knife.FirstFireAnim, knife.FirstFireAnim1, knife.FirstFireAnim2];
+                int count = 0;
+                while (count < KnifeFireClips && names[count].Length != 0)
+                {
+                    count++;
+                }
+
+                if (cycle.Next < 0 || cycle.Next >= count)
+                {
+                    cycle.Next = 0;
+                }
+
+                Igi2AnimationClip? clip = find(names[cycle.Next]);
+                cycle.Next++;
+                return clip is null ? null : new Igi2WeaponAnim(clip, 1f);
+            case Igi2WeaponAnimRequest.ThirdFire:
+                return find(knife.ThirdFireAnim) is { } third ? new Igi2WeaponAnim(third, 1f) : null;
+            default:
+                return null;
+        }
     }
 
     /// <summary>One reload step at the rate the whole reload takes, summed as the handler sums it for that step.</summary>

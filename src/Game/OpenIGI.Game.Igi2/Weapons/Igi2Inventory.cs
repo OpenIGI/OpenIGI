@@ -543,6 +543,9 @@ internal static class Igi2WeaponTypeKind
     /// <summary><c>WEAPONTYPE_SHOTGUN</c>: the last type whose shots count towards accuracy.</summary>
     public const int Shotgun = 2;
 
+    /// <summary><c>WEAPONTYPE_KNIFE</c>.</summary>
+    public const int Knife = 3;
+
     /// <summary><c>WEAPONTYPE_GRENADE</c>.</summary>
     public const int Grenade = 4;
 
