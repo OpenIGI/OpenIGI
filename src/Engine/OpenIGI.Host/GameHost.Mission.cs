@@ -3225,6 +3225,7 @@ internal sealed partial class GameHost
         _player.ResetOptics();
         _player.StopWeaponsForDeath();
         StopBinocularTransitionSound();
+        StopLadderSlideSound();
 
         // The player receives no further simulation ticks after death, so the weapon sound player
         // cannot observe a quiet tick and retire an automatic loop on its own.

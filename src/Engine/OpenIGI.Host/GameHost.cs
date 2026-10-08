@@ -3466,8 +3466,7 @@ internal sealed partial class GameHost : IDisposable
                         }
                         else
                         {
-                            _soldiers?.StartPlayerLadderAnimation(
-                                PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                            StartLadderClimbAnimation();
                         }
                     }
 
@@ -3505,10 +3504,10 @@ internal sealed partial class GameHost : IDisposable
                                 _soldiers.AdvancePlayerLadderAnimation(
                                     _player.LadderFacing,
                                     out Vector3d climbDelta,
-                                    out bool rungBoundary,
+                                    out float? rungEventTime,
                                     out _);
                                 _player.MoveLadder(climbDelta);
-                                if (rungBoundary)
+                                if (TakeLadderRungEvent(rungEventTime))
                                 {
                                     _player.CompleteLadderStep();
                                     _soldiers.SetPlayerLadderPlaybackDirection(0);
@@ -3521,16 +3520,17 @@ internal sealed partial class GameHost : IDisposable
                                 _soldiers.AdvancePlayerLadderAnimation(
                                     _player.LadderFacing,
                                     out Vector3d topDelta,
-                                    out _,
+                                    out float? topEventTime,
                                     out bool topAnimationEnded);
                                 _player.MoveLadder(topDelta);
+                                TakeLadderRungEvent(topEventTime);
+
                                 if (topAnimationEnded)
                                 {
                                     _player.CompleteLadderTopTransition(_ground!);
                                     if (_player.LadderPhase == LadderTraversalPhase.Climbing)
                                     {
-                                        _soldiers.StartPlayerLadderAnimation(
-                                            PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                                        StartLadderClimbAnimation();
                                     }
                                 }
 
@@ -3580,6 +3580,10 @@ internal sealed partial class GameHost : IDisposable
                         interactionCamera.Tick();
                     }
                 }
+
+                // Outside the ladder block on purpose: the tick the slide reaches the ground has already
+                // left the ladder, and that tick is the one that must stop the sound.
+                TickLadderSlideSound();
 
                 if (_player is { IsInWorldInteraction: true } interacting)
                 {

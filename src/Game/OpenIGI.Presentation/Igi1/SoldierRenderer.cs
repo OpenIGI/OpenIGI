@@ -5564,19 +5564,21 @@ public sealed class SoldierRenderer : IDisposable
     /// Receives the clip's root-motion delta for this tick, already rotated into the facing frame (world
     /// units) — the same transform a walking guard's motion gets. The caller applies it to the position.
     /// </param>
-    /// <param name="rungBoundary">Receives whether animation 168 crossed authored event 8.</param>
+    /// <param name="rungEventTime">
+    /// Receives the authored time of the event 8 the clip crossed, or null when it crossed none.
+    /// </param>
     /// <param name="ended">Receives whether a non-looping top transition reached its endpoint.</param>
     /// <remarks>Ticks and re-skins the body but does not move it; placement is the caller's, via
     /// <see cref="PlacePlayerBodyClimbing"/>.</remarks>
     public void AdvancePlayerLadderAnimation(
         float facing,
         out Vector3d rootDelta,
-        out bool rungBoundary,
+        out float? rungEventTime,
         out bool ended)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         rootDelta = default;
-        rungBoundary = false;
+        rungEventTime = null;
         ended = false;
         if (_playerBodyView is not { } view || _playerBodyGroup?.Model is not { } model)
         {
@@ -5589,7 +5591,7 @@ public sealed class SoldierRenderer : IDisposable
 
         Vector3f rm = view.RootMotion();
         rootDelta = SoldierDeathFall.RotateAboutZ(new Vector3d(rm.X, rm.Y, rm.Z), facing);
-        rungBoundary = view.CrossedLadderBoundary;
+        rungEventTime = view.LadderBoundaryTime;
         ended = view.ClipEndedThisTick;
         ReskinPlayerBody(view, model);
 

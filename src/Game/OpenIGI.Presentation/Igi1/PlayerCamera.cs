@@ -2466,12 +2466,36 @@ public sealed class PlayerCamera
         _body.Position = _climb.Position;
     }
 
+    /// <summary>Moves the body by the frame animation 168 runs on entering state 37.</summary>
+    /// <param name="rootDelta">That frame's root motion, rotated into the facing frame, in world units.</param>
+    public void MoveLadderEntryFrame(Vector3d rootDelta)
+    {
+        _climb.MoveEntryFrame(rootDelta);
+        _body.Position = _climb.Position;
+    }
+
     /// <summary>Commits the rung whose clip has just completed, returning the climb to a boundary.</summary>
     public void CompleteLadderStep()
     {
         _climb.CompleteStep();
         _body.Position = _climb.Position;
+    }
+
+    /// <summary>Takes a crossing of rung event 8 unless it repeats the event time the climb last took.</summary>
+    /// <param name="time">The crossed event's authored time.</param>
+    /// <returns><see langword="true"/> when the crossing counts; see <see cref="HumanLadderClimb.AcceptRungEvent"/>.</returns>
+    public bool AcceptLadderRungEvent(float time) => _climb.AcceptRungEvent(time);
+
+    /// <summary>Marks a crossing of rung event 8 in states 37, 38 or 39: the AI hears it and a rung sounds.</summary>
+    /// <returns>The rung sound's definition name, to be played at <see cref="LadderFeet"/>.</returns>
+    /// <remarks>
+    /// The three states run the same block (<c>0x40D6B0</c>, <c>0x40D920</c>, <c>0x40DA80</c>), so the
+    /// top transitions in animation 170 make both the noise and the sound too, not only a climbed rung.
+    /// </remarks>
+    public string TakeLadderStep()
+    {
         AiNoise?.Invoke(AiEvent.Ladder);
+        return _climb.NextStepSound();
     }
 
     /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>

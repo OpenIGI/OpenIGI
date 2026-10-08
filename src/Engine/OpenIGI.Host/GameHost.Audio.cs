@@ -13,6 +13,7 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
 using OpenIGI.Host.Audio;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
@@ -49,6 +50,12 @@ internal sealed partial class GameHost
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
     private AudioVoiceHandle _binocularZoomVoice;
+
+    /// <summary>The voice ladder state 40 started — retail's <c>Human+3508</c>.</summary>
+    private AudioVoiceHandle _ladderSlideVoice;
+
+    /// <summary>Whether the current slide has already started its sound.</summary>
+    private bool _ladderSliding;
 
     private void SetCutsceneSound(CutsceneSoundEvent sound)
     {
@@ -478,6 +485,7 @@ internal sealed partial class GameHost
     private void ResetSoundsForMission()
     {
         StopBinocularTransitionSound();
+        StopLadderSlideSound();
         StopGrenadeCook();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
@@ -658,6 +666,119 @@ internal sealed partial class GameHost
     private void PlayJumpSound()
     {
         _sounds?.PlayDefinition(PlayerBody.JumpSoundName, priority: 200);
+    }
+
+    /// <summary>Enters state 37's clip: animation 168's first frame, then held at the mount event.</summary>
+    /// <remarks>
+    /// <para>
+    /// The entry <c>0x40D660</c> starts animation 168 as a new clip node: a full frame step forward
+    /// (<c>0x4D4F60</c>), flagged <c>0x8000</c> so its first tick also reports the event at its start
+    /// time (<c>0x4D4B60</c>). <c>HumanPlayer_Update</c> ticks that clip and moves the human by it in
+    /// the same update, and the next update's state 37 finds event 8 at zero against the latch its entry
+    /// cleared: it pauses the clip, commits nothing, and plays a rung sound. That is the sound of getting
+    /// on — from the foot, or at the end of the top mount.
+    /// </para>
+    /// <para>
+    /// The port takes all of it here, in one go, so the pause is in place before any input can start a
+    /// rung; otherwise the mount event would land on the first rung's tick and commit it.
+    /// </para>
+    /// </remarks>
+    private void StartLadderClimbAnimation()
+    {
+        if (_soldiers is null || _player is null)
+        {
+            return;
+        }
+
+        _soldiers.StartPlayerLadderAnimation(PlayerCamera.LadderClimbAnimation, loops: true);
+        _soldiers.AdvancePlayerLadderAnimation(
+            _player.LadderFacing, out Vector3d entryDelta, out float? mountEventTime, out _);
+        _player.MoveLadderEntryFrame(entryDelta);
+        TakeLadderRungEvent(mountEventTime);
+        _soldiers.SetPlayerLadderPlaybackDirection(0);
+    }
+
+    /// <summary>Sounds a ladder state's crossing of event 8, when the latch lets it count.</summary>
+    /// <param name="eventTime">The crossed event's time, or null when the clip crossed none.</param>
+    /// <returns><see langword="true"/> when the crossing counted, so state 37 should commit its rung.</returns>
+    private bool TakeLadderRungEvent(float? eventTime)
+    {
+        if (_player is null || eventTime is not { } time || !_player.AcceptLadderRungEvent(time))
+        {
+            return false;
+        }
+
+        PlayLadderStepSound(_player.TakeLadderStep());
+        return true;
+    }
+
+    /// <summary>Plays the rung sound of a ladder state's event 8 at the climbing human.</summary>
+    /// <param name="sound">The definition name the climb took from its cycle.</param>
+    /// <remarks>
+    /// <c>0x40D6B0</c> starts it under the sound root and then moves the voice to <c>Human+32</c>
+    /// (<c>0x4E6C30</c>) -- a positional one-shot, with neither the pitch spread nor the crouch scale a
+    /// footstep gets.
+    /// </remarks>
+    private void PlayLadderStepSound(string sound)
+    {
+        if (_player is not { } player)
+        {
+            return;
+        }
+
+        _sounds?.PlayDefinition(sound, player.LadderFeet, priority: 40);
+    }
+
+    /// <summary>Starts, carries and stops the slide-down sound of ladder state 40.</summary>
+    /// <remarks>
+    /// <para>
+    /// The entry <c>0x40DBA0</c> starts <c>wire_slide_1</c> as a child of the human itself and keeps the
+    /// voice at <c>Human+3508</c>; the per-tick <c>0x40DBF0</c> stops it on the ground signal, in the
+    /// same block that detaches from the ladder. Being the human's child, the voice falls with it, so
+    /// here its position is moved every tick.
+    /// </para>
+    /// <para>
+    /// It is started once per slide, not whenever nothing is playing: should the definition be a
+    /// one-shot that runs out before the ground, the original stays silent rather than starting it
+    /// again.
+    /// </para>
+    /// </remarks>
+    private void TickLadderSlideSound()
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        if (_player is not { LadderPhase: LadderTraversalPhase.SlidingDown } player)
+        {
+            StopLadderSlideSound();
+            return;
+        }
+
+        if (!_ladderSliding)
+        {
+            _ladderSliding = true;
+            _ladderSlideVoice = _sounds.PlayDefinition(
+                HumanLadderClimb.SlideSoundName, player.LadderFeet, priority: 60);
+        }
+        else if (_ladderSlideVoice.IsValidHandle && _sounds.IsPlaying(_ladderSlideVoice))
+        {
+            _sounds.SetDefinitionVoicePosition(
+                HumanLadderClimb.SlideSoundName, _ladderSlideVoice, player.LadderFeet, priority: 60);
+        }
+    }
+
+    /// <summary>Stops the ladder slide's voice, at the ground or at a lifecycle boundary.</summary>
+    private void StopLadderSlideSound()
+    {
+        if (_ladderSlideVoice.IsValidHandle)
+        {
+            _sounds?.Stop(_ladderSlideVoice);
+            _ladderSlideVoice = AudioVoiceHandle.None;
+        }
+
+        _ladderSliding = false;
     }
 
     /// <summary>Plays a footstep where it landed.</summary>
