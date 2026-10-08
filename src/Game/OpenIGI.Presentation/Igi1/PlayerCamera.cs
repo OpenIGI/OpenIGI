@@ -1435,9 +1435,11 @@ public sealed class PlayerCamera
         // through can be traced to the exact model and task blocking it. Only while trying to move.
         LogWallBlockIfAny(forward, strafe);
 
+        // Every pickup family answers the message 0x410F70 sends each tick with the Human's origin (+32), not the
+        // feet: from the feet, an item on a crate a metre up was only in reach mid-jump.
         if (_weapons is not null && _gunPickups is not null)
         {
-            foreach (GunPickup pickup in _gunPickups.CollectAt(_body.Position, _weapons))
+            foreach (GunPickup pickup in _gunPickups.CollectAt(_body.Origin, _weapons))
             {
                 GunPickedUp?.Invoke(pickup);
             }
@@ -1445,7 +1447,7 @@ public sealed class PlayerCamera
 
         if (_genericPickups is { } genericPickups)
         {
-            foreach (GenericPickup pickup in genericPickups.CollectAt(_body.Position))
+            foreach (GenericPickup pickup in genericPickups.CollectAt(_body.Origin))
             {
                 GenericPickedUp?.Invoke(pickup);
             }

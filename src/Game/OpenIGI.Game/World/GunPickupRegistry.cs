@@ -212,8 +212,9 @@ public sealed class GunPickup
 
 /// <summary>Finds and resolves the original game's automatic world weapon pickups.</summary>
 /// <remarks>
-/// <para><c>GunPickup::Update</c> at <c>0x46D230</c> tests the human's feet against the pickup every
-/// tick: planar distance must be less than 2867.2 units (0.7 m) and vertical distance less than 4096
+/// <para><c>GunPickup</c>'s proximity handler at <c>0x46D230</c> tests the Human's origin (<c>+32</c>, sent every
+/// tick by <c>0x410F70</c>), not its feet, against the pickup: planar distance must be less than 2867.2 units
+/// (0.7 m) -- or the model's bounding radius, when that is larger -- and vertical distance less than 4096
 /// units (1 m). It does not require aiming or the activate key. On success it sends the human the
 /// weapon id plus one full magazine, marks itself for deletion and publishes <c>PICKEDUPWEAPON…</c>.</para>
 /// <para>Presentation owns the sound and notification; this registry owns only the level data, range
@@ -251,8 +252,8 @@ public sealed class GunPickupRegistry
         return registry;
     }
 
-    /// <summary>Consumes every pickup the player's feet overlap this tick.</summary>
-    /// <param name="position">The player feet position in engine units.</param>
+    /// <summary>Consumes every pickup within the retail reach of the Human's origin this tick.</summary>
+    /// <param name="position">The Human's origin (<c>+32</c>) in engine units, not its feet.</param>
     /// <param name="inventory">The player's weapon inventory.</param>
     /// <returns>The pickups collected in level-tree order.</returns>
     public IReadOnlyList<GunPickup> CollectAt(Vector3d position, PlayerWeapons inventory)

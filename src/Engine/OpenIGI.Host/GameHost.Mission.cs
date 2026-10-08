@@ -640,6 +640,10 @@ internal sealed partial class GameHost
             difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
             isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
+        // A transmission sounds as it goes up: 0x486650 plays the message's Sound ("message", "fail") at the
+        // listener, like the pickup cue.
+        objectives.MessageSound = sound => _sounds?.PlayDefinition(sound, priority: 180);
+
         // The areas and edit variables update inside the level's one walk, where the tree places them.
         objectives.AttachTo(
             _cutscenes.Walker,
@@ -928,7 +932,7 @@ internal sealed partial class GameHost
         _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
         _interactions = WorldInteractionRegistry.Build(
             levelRoot, loaded, _doors, _loop.Variables, _elevators, random: _soundRandom);
-        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
+        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables, scene.Placements);
         world.GenericPickups = _genericPickups;
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven

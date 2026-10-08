@@ -192,6 +192,38 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void LevelTwoCrateC4IsPickedUpFromTheFloorAndItsTransmissionSounds()
+    {
+        // Probed in retail (IGI_PROBE_HOOKS=pickup): the C4 lies on a 1.4 m crate in the explosives room. Standing
+        // on the floor beside it, the Human's origin at (126045409, -37933259, 175425546), 0x46C630 saw it 1477.8
+        // units away and 2389.1 above, took it at once, and the transmission it set off played "message" from
+        // 0x486650. Its feet are 6266 units below the item, so a feet test only passed mid-jump.
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        new ConditionalContainerGate(variables).Prepare(root);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        GenericPickupRegistry pickups = GenericPickupRegistry.Build(root, variables, scene.Placements);
+        MissionObjectiveRuntime objectives = new(root, variables);
+        List<string> sounds = [];
+        objectives.MessageSound = sounds.Add;
+        GenericPickup c4 = Assert.Single(pickups.Items, static item => item.Task.Id == 200);
+        Assert.Equal(GenericPickupRegistry.PickupRadius, c4.ReachRadius);
+
+        PlayerBody body = new() { Position = new Vector3d(126045409.0, -37933259.0, 175421668.8) };
+        Assert.Equal(175425546.0, body.Origin.Z, 1.0);
+        Assert.Empty(pickups.CollectAt(body.Position));
+        Assert.Same(c4, Assert.Single(pickups.CollectAt(body.Origin)));
+        Assert.True(variables.TryRead("GenericPickup_200.isPickedUp", out QvmValue picked));
+        Assert.Equal(1, picked.Integer);
+
+        for (int tick = 0; tick < 5 && sounds.Count == 0; tick++)
+        {
+            objectives.Tick();
+        }
+
+        Assert.Equal(["message"], sounds);
+    }
+
+    [RequiresGameDataFact]
     public void SwitchPressPulseConsumesOneRegistryTickAtATime()
     {
         (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(1);
