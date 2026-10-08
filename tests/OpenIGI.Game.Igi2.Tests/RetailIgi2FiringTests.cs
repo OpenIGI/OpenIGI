@@ -252,6 +252,39 @@ public sealed class RetailIgi2FiringTests
         Assert.Null(weapons.GetAnim(Igi2WeaponAnimRequest.FirstFire, player.View.ObjectRig, -1));
     }
 
+    /// <summary>
+    /// The alternate key on the MP5SD fires its second slot, a fire mode (<c>FireMode_WeaponFireHandler</c>): the pull's
+    /// first tick steps the weapon to its next of three fire modes and fires nothing, and each later pull steps it on,
+    /// round to the first again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_alternate_key_steps_the_mp5sd_through_its_fire_modes()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, RecordingEffects effects) = ArmedPlayer();
+        Igi2WeaponItem mp5sd = weapons.Inventory.Current!;
+        Assert.Equal(3, mp5sd.WeaponType.AvailableFireModes);
+        List<int> modes = [];
+
+        for (int pull = 0; pull < 3; pull++)
+        {
+            for (int tick = 0; tick < 4; tick++)
+            {
+                Tick(player, Igi2PlayerAction.AlternateFire);
+            }
+
+            modes.Add(mp5sd.ActiveFireMode);
+            for (int tick = 0; tick < 4; tick++)
+            {
+                Tick(player, Igi2PlayerAction.None);
+            }
+        }
+
+        Assert.Equal([1, 2, 0], modes);
+        Assert.Equal(30, mp5sd.Loaded(0));
+        Assert.Equal(0, weapons.Firing.GunShot.BulletsFired);
+        Assert.Empty(effects.Sounds);
+    }
+
     /// <summary>The three angles of an orientation give it back (<c>Real32x9_GetAngles</c> against <c>Real32x9_Create</c>).</summary>
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()
