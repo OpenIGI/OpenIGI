@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
@@ -106,6 +107,30 @@ public sealed class RetailIgi2GunShotTests
         Assert.Empty(effects.AiEvents);
         Assert.Empty(shot.Instants);
         Assert.Equal(1, shot.BulletsFired);
+    }
+
+    /// <summary>
+    /// Mission 1's ground stops a round fired straight down at the spawn: the ground's face is the only one struck, the
+    /// AI hears it there, and the ground's material rings.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Mission_1s_ground_stops_a_round_fired_into_it()
+    {
+        (Igi2WeaponTypeTask mp5sd, Igi2GameMaterials materials) = Session.Value;
+        Igi2Level level = Igi2Level.Find("location1", "level1");
+        Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint spawn));
+        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), "terrain");
+        Recording effects = new();
+        Igi2GunShot shot = new();
+        Vector3d muzzle = new(spawn.Position.X, spawn.Position.Y, spawn.Position.Z + 8192.0);
+        shot.AddInstant(muzzle, new Vector3f(0f, 0f, -1f), 260f, 0.29f, 5f, mp5sd, null);
+
+        shot.Run(new Shooter(new IgiRandom(3u)), 1f, new World(world, materials), effects);
+
+        Igi2WeaponAiEvent heard = Assert.Single(effects.AiEvents);
+        Assert.InRange(heard.Position.Z, spawn.Position.Z - 4096.0, spawn.Position.Z + 4096.0);
+        string ring = Assert.Single(effects.Sounds);
+        Assert.Contains(Enumerable.Range(0, Igi2GameMaterials.Rows), row => materials[row]?.BulletHitSounds.Contains(ring) == true);
     }
 
     /// <summary>A sixteenth bullet in one tick is counted and lost (<c>GunShot_AddInstant</c>, <c>igi2 0x4C7980</c>).</summary>
