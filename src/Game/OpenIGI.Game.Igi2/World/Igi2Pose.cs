@@ -176,6 +176,39 @@ public sealed class Igi2Pose
     }
 
     /// <summary>
+    /// The three angles an orientation stands at, <c>Real32x9_GetAngles</c> (<c>igi2 0x562D60</c>): the inverse of
+    /// <see cref="Rotation"/>.
+    /// </summary>
+    /// <param name="m">The orientation, row by row.</param>
+    /// <returns>Alpha, beta and gamma, each in radians from zero to a whole turn.</returns>
+    /// <remarks>
+    /// <para>
+    /// With the X axis more than a ten thousandth off vertical, alpha is <c>fpatan</c> of <c>m7</c> over <c>m8</c>, beta
+    /// of <c>−m6</c> over that length, and gamma as <see cref="Gamma"/> gives it; with it vertical, alpha is
+    /// <c>fpatan</c> of <c>−m5</c> over <c>m4</c> and gamma is zero. A zero denominator is a quarter turn by the
+    /// numerator's sign. Each negative angle is brought into range by a whole turn, at 24 bits.
+    /// </para>
+    /// <para>
+    /// Both zero is <c>"Atan2 undefined in origo"</c> and the original stops; a matrix the game builds never has it, and
+    /// this answers zero.
+    /// </para>
+    /// </remarks>
+    public static (float Alpha, float Beta, float Gamma) Angles(IReadOnlyList<float> m)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+        Fpu length = Fpu.Sqrt(((Fpu)m[3] * m[3]) + ((Fpu)m[0] * m[0]));
+        bool upright = !(length.Value > 0.0001);
+        Fpu alpha = upright ? Atan2OrQuarter(-m[5], m[4]) : Atan2OrQuarter(m[7], m[8]);
+        Fpu beta = Atan2OrQuarter(-m[6], length);
+        return (InRange(alpha), InRange(beta), Gamma(m[0], m[3]));
+
+        static Fpu Atan2OrQuarter(Fpu y, Fpu x) =>
+            x.Value != 0.0 ? Math.Atan2(y.Value, x.Value) : y.Value == 0.0 ? 0.0 : (Fpu)(y.Value < 0.0 ? -1.0 : 1.0) * 1.570796326794897;
+
+        static float InRange(Fpu angle) => (angle.Value < 0.0 ? angle + 6.283185307179589 : angle).F;
+    }
+
+    /// <summary>
     /// The turn about the vertical a direction points at: the gamma of <c>Real32x3_GetAngles</c> (<c>igi2 0x561AF0</c>).
     /// </summary>
     /// <param name="direction">The direction; need not be normalised.</param>

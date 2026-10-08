@@ -21,6 +21,9 @@ public sealed class Igi2WeaponItem
     /// <summary>Gets a value indicating whether the human carries this weapon.</summary>
     public bool IsActive { get; internal set; }
 
+    /// <summary>Gets the fire mode in use, <c>iActiveFireMode</c> (<c>WeaponTypeItem+0x18</c>); the first until a fire mode key changes it.</summary>
+    public int ActiveFireMode { get; internal set; }
+
     /// <summary>Gets the rounds loaded in a fire type, <c>anFireTypeAmmoCount</c>.</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
     /// <returns>The rounds.</returns>
@@ -73,6 +76,10 @@ public sealed class Igi2AmmoItem
     /// <summary>Takes every round away.</summary>
     internal void Empty() => Count = 0;
 
+    /// <summary>Takes rounds fired straight from what is carried, with no limit applied (<c>Weapon_SingleFireHandler</c>, <c>igi2 0x51CD40</c>).</summary>
+    /// <param name="rounds">The rounds.</param>
+    internal void Spend(int rounds) => Count -= rounds;
+
     private void Clamp()
     {
         if (Limit == NoLimit)
@@ -119,6 +126,9 @@ public sealed class Igi2Inventory
         _ammo = [.. tables.AmmoTypes.Select(static (a, i) => new Igi2AmmoItem(a, i))];
         _weapons = [.. tables.WeaponTypes.Select(static (w, i) => new Igi2WeaponItem(w, i))];
     }
+
+    /// <summary>Gets the session's weapons and ammunition the inventory was made over.</summary>
+    public Igi2WeaponTables Tables => _tables;
 
     /// <summary>Gets one item for each weapon type, by number.</summary>
     public IReadOnlyList<Igi2WeaponItem> Weapons => _weapons;
@@ -502,11 +512,23 @@ public enum Igi2WeaponStatus
     /// <summary>Ready to fire, <c>WEAPON_STATUS_READY</c>.</summary>
     Ready = 0,
 
+    /// <summary>It fired this tick, <c>WEAPON_STATUS_FIRE</c> (<c>Weapon_SingleFireHandler</c>, <c>igi2 0x51CD40</c>).</summary>
+    Fire = 1,
+
+    /// <summary>A burst has fired all its rounds and waits for the trigger to come up, <c>WEAPON_STATUS_LOCKED</c>.</summary>
+    Locked = 2,
+
+    /// <summary>It is waiting out its delay between shots, <c>WEAPON_STATUS_DELAY</c>.</summary>
+    Delay = 3,
+
+    /// <summary>It had nothing to fire, <c>WEAPON_STATUS_EMPTY</c>.</summary>
+    Empty = 4,
+
     /// <summary>
-    /// A status the player's idle state will not reload a weapon in (<c>Weapon+0x38 == 5</c>,
-    /// <c>HumanPlayer_RunActionIdle</c>, <c>igi2 0x4B4142</c>); its name arrives with firing.
+    /// Waiting on the server, <c>WEAPON_STATUS_WAITING</c>: multiplayer only, and a status the player's idle state will
+    /// not reload a weapon in (<c>HumanPlayer_RunActionIdle</c>, <c>igi2 0x4B4142</c>).
     /// </summary>
-    Five = 5,
+    Waiting = 5,
 
     /// <summary>A pulled grenade went off in hand, <c>WEAPON_STATUS_EXPLODED_IN_HAND</c> (<c>Weapon_RunDelayedHandler</c>, <c>igi2 0x51C4D4</c>).</summary>
     ExplodedInHand = 6,
@@ -515,6 +537,12 @@ public enum Igi2WeaponStatus
 /// <summary>The <c>WEAPONTYPE_*</c> values the ported code tests, <c>WeaponType+0x29C</c>.</summary>
 internal static class Igi2WeaponTypeKind
 {
+    /// <summary><c>WEAPONTYPE_GUN</c>.</summary>
+    public const int Gun = 0;
+
+    /// <summary><c>WEAPONTYPE_SHOTGUN</c>: the last type whose shots count towards accuracy.</summary>
+    public const int Shotgun = 2;
+
     /// <summary><c>WEAPONTYPE_GRENADE</c>.</summary>
     public const int Grenade = 4;
 

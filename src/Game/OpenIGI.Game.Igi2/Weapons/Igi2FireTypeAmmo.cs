@@ -40,6 +40,26 @@ public interface IIgi2FireTypeAmmo
 /// <content>The gun's report: its own ammunition, bullets per round and clip size (<c>Gun_GetAmmoInfoHandler</c>, <c>igi2 0x482710</c>).</content>
 public sealed partial class Igi2GunTask : IIgi2FireTypeAmmo
 {
+    /// <summary>Gets a fire mode's fire sound, <c>azFireSound1[mode]</c> (<c>Gun+0x274</c>).</summary>
+    /// <param name="mode">The fire mode, 0 to 2.</param>
+    /// <returns>The sound's name.</returns>
+    public string FireSound(int mode) => mode switch
+    {
+        0 => FireSound1,
+        1 => FireSound11,
+        _ => FireSound12,
+    };
+
+    /// <summary>Gets whether a fire mode's fire sound loops, <c>aisFireSoundLooped[mode]</c> (<c>Gun+0x2F8</c>).</summary>
+    /// <param name="mode">The fire mode, 0 to 2.</param>
+    /// <returns>The flag.</returns>
+    public bool IsFireSoundLooped(int mode) => mode switch
+    {
+        0 => PlayFireSoundLooped,
+        1 => PlayFireSoundLooped1,
+        _ => PlayFireSoundLooped2,
+    };
+
     /// <inheritdoc/>
     public Igi2FireTypeAmmo AmmoInfo(Igi2WeaponTables tables)
     {
@@ -145,6 +165,26 @@ public sealed partial class Igi2WeaponTypeTask
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
     /// <returns>The type id.</returns>
     public int FireTaskType(int slot) => slot == 0 ? PrimaryFireTaskType : SecondaryFireTaskType;
+
+    /// <summary>Gets the rounds a fire mode fires for one pull, <c>anRoundsInSuccession</c> (<c>WeaponType+0x2C8</c>).</summary>
+    /// <param name="mode">The fire mode, 0 to 2.</param>
+    /// <returns>The rounds: one for single shots, the clip for full automatic, and none for a fire type that is not a gun.</returns>
+    public int RoundsInSuccession(int mode) => mode switch
+    {
+        0 => FiremodeRoundsInSuccession,
+        1 => FiremodeRoundsInSuccession1,
+        _ => FiremodeRoundsInSuccession2,
+    };
+
+    /// <summary>Gets how long a burst's fire sound plays before its tail, <c>avFireModeSoundStopTime</c> (<c>WeaponType+0x334</c>).</summary>
+    /// <param name="mode">The fire mode, 0 to 2.</param>
+    /// <returns>The time, in seconds.</returns>
+    public float FireSoundStopTime(int mode) => mode switch
+    {
+        0 => FiremodeFiresoundStopTime,
+        1 => FiremodeFiresoundStopTime1,
+        _ => FiremodeFiresoundStopTime2,
+    };
 
     /// <summary>Reports what a slot's fire type fires (<c>WeaponType_GetAmmoInfo</c>, <c>igi2 0x436930</c>).</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
