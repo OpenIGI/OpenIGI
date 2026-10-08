@@ -35,10 +35,10 @@ public enum Igi2PlayerWeaponStatus
 /// change waits on.
 /// </para>
 /// <para>
-/// Ported: locked (0), idle (1), firing (2, 3, 4), the weapon change (6) and firing empty (9), with the upper-body
-/// modes the states set (<c>HumanPlayer_SetUpperBody</c>, <c>0x4BD2E0</c>) and the weapon selection the update runs
-/// before the machines. Not yet: reloading (5), peeking (7), the computer (8) and throwing (10), and from the idle state
-/// the binoculars, activating objects and dropping the weapon. Where idle would go to one of those it stays idle.
+/// Ported: locked (0), idle (1), firing (2, 3, 4), reloading (5), the weapon change (6) and firing empty (9), with the
+/// upper-body modes the states set (<c>HumanPlayer_SetUpperBody</c>, <c>0x4BD2E0</c>) and the weapon selection the
+/// update runs before the machines. Not yet: peeking (7), the computer (8) and throwing (10), and from the idle state the
+/// binoculars, activating objects and dropping the weapon. Where idle would go to one of those it stays idle.
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
@@ -104,6 +104,7 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerActionState.InitFire] = (_, _) => EnterInitFire();
         states[Igi2PlayerActionState.Fire] = (_, _) => EnterFire();
         states[Igi2PlayerActionState.FireRelease] = (_, _) => EnterFireRelease();
+        states[Igi2PlayerActionState.Reload] = (_, _) => EnterReload();
         states[Igi2PlayerActionState.ChangeWeapon] = (_, _) => EnterChangeWeapon();
         states[Igi2PlayerActionState.FireEmpty] = (_, _) => EnterFireEmpty();
         return new TaskStateMachine((_, _) => PackActionSignal(), states, Igi2PlayerActionState.Idle, exits: new TaskStateFunction?[Igi2PlayerActionState.Count]);
@@ -386,8 +387,8 @@ public sealed partial class Igi2HumanPlayer
     /// With a weapon in hand the fire keys fire (<see cref="TryFireFromIdle"/>) and the reload key reloads.
     /// </para>
     /// <para>
-    /// Not yet: the binoculars, peeking, the computer and activating objects; reloading and throwing, whose states are not
-    /// ported, so where idle would go to one of them it stays idle; and dropping the weapon.
+    /// Not yet: the binoculars, peeking, the computer and activating objects; throwing, whose state is not ported, so
+    /// where idle would throw it stays idle; and dropping the weapon.
     /// </para>
     /// </remarks>
     private void RunIdle()
@@ -474,11 +475,7 @@ public sealed partial class Igi2HumanPlayer
         Igi2FireTypeRounds rounds = inventory.FireTypeRounds(held, FireType);
         if (rounds.AmmoType is not null && rounds.Loaded == 0 && inventory.Status != Igi2WeaponStatus.Waiting)
         {
-            if (rounds.Available == 0 && !IsUnlimitedAmmo)
-            {
-                GoAction(Igi2PlayerActionState.FireEmpty);
-            }
-
+            GoAction(rounds.Available != 0 || IsUnlimitedAmmo ? Igi2PlayerActionState.Reload : Igi2PlayerActionState.FireEmpty);
             return true;
         }
 
@@ -501,7 +498,8 @@ public sealed partial class Igi2HumanPlayer
         return true;
     }
 
-    /// <summary>The idle state's reload check, on the primary fire type: whether it would reload, which is not ported, so it stays idle.</summary>
+    /// <summary>The idle state's reload check, on the primary fire type: the reload key with less than a load in and more to hand.</summary>
+    /// <returns><see langword="true"/> when it reloads.</returns>
     private bool WantsReload(Igi2WeaponItem held)
     {
         if ((ActionSignal & Igi2PlayerSignal.Reload) == 0)
@@ -510,7 +508,13 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Igi2FireTypeRounds rounds = Weapon.Inventory!.FireTypeRounds(held, 0);
-        return rounds.Loaded != rounds.RoundsPerClip && (rounds.Available != 0 || IsUnlimitedAmmo);
+        if (rounds.Loaded == rounds.RoundsPerClip || (rounds.Available == 0 && !IsUnlimitedAmmo))
+        {
+            return false;
+        }
+
+        GoAction(Igi2PlayerActionState.Reload);
+        return true;
     }
 
     /// <summary>

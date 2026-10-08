@@ -161,6 +161,11 @@ public sealed partial class Igi2WeaponTypeTask
     /// <returns>The flag.</returns>
     public bool IsForceReload(int slot) => slot == 0 ? PrimaryForceReload : SecondaryForceReload;
 
+    /// <summary>Gets whether a slot is reloaded a round at a time, its <c>Reload rounds individiually</c> flag.</summary>
+    /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
+    /// <returns>The flag.</returns>
+    public bool IsReloadRoundsIndividually(int slot) => slot == 0 ? PrimaryReloadRoundsIndividually : SecondaryReloadRoundsIndividually;
+
     /// <summary>Gets the task type a slot's fire type is declared as, <c>atFireTypes[slot].eQTaskType</c>; <c>TASKTYPE_NONE</c> for none.</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
     /// <returns>The type id.</returns>

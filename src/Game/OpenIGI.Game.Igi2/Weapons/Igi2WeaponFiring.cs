@@ -73,6 +73,9 @@ public sealed class Igi2WeaponFiring
     /// <summary>Gets or sets the fire type last fired or let go, <c>nFireType</c> (<c>Weapon+0x34</c>).</summary>
     public int FireType { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether reloading takes nothing from what is carried, <c>isUnlimitedAmmo</c>.</summary>
+    public bool IsUnlimitedAmmo { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the weapon fires on by itself, <c>isAutoFire</c>.</summary>
     public bool IsAutoFire { get; set; }
 
@@ -290,6 +293,69 @@ public sealed class Igi2WeaponFiring
             trigger.IsFireStatus = false;
             trigger.IsReleaseFire = false;
             trigger.RoundsFired = 0;
+        }
+    }
+
+    /// <summary>Reloads the weapon in hand, <c>Weapon_Reload</c> (<c>igi2 0x51E120</c>) as <c>Weapon_SingleReloadHandler</c> (<c>0x51D440</c>) does it.</summary>
+    /// <remarks>
+    /// The delay is cleared. Each fire type that uses ammunition starts its count of rounds fired again and, unless it is
+    /// loaded by hand, takes what its clip lacks — a single round when it is reloaded a round at a time — from what is
+    /// carried, no more than there is, or all of it with ammunition that never runs out. An empty weapon is then ready.
+    /// </remarks>
+    public void Reload()
+    {
+        if (_inventory.Current is not { } item)
+        {
+            return;
+        }
+
+        _inventory.Delay = 0;
+        Igi2WeaponTypeTask weaponType = item.WeaponType;
+        for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
+        {
+            Igi2FireTypeAmmo ammo = weaponType.AmmoInfo(slot, _tables);
+            if (ammo.AmmoType is not { } ammoType)
+            {
+                continue;
+            }
+
+            Igi2AmmoItem? carried = _inventory.FindAmmo(ammoType.AmmoId);
+            int lacking = ammo.RoundsPerClip - item.Loaded(slot);
+            _fireTypes[slot].RoundsFired = 0;
+            if (weaponType.IsForceReload(slot) || lacking == 0)
+            {
+                continue;
+            }
+
+            if (weaponType.IsReloadRoundsIndividually(slot))
+            {
+                lacking = 1;
+            }
+
+            if (carried is null)
+            {
+                continue;
+            }
+
+            if (!IsUnlimitedAmmo)
+            {
+                if (lacking > carried.Count)
+                {
+                    lacking = carried.Count;
+                }
+
+                carried.Spend(lacking);
+            }
+
+            if (lacking != 0)
+            {
+                item.SetLoaded(slot, item.Loaded(slot) + lacking);
+            }
+        }
+
+        if (_inventory.Status == Igi2WeaponStatus.Empty)
+        {
+            _inventory.Status = Igi2WeaponStatus.Ready;
         }
     }
 

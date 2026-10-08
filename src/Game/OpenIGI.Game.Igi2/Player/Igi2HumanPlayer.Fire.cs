@@ -18,8 +18,7 @@ namespace OpenIGI.Game.Igi2.Player;
 /// and the fire key coming up lets go.
 /// </para>
 /// <para>
-/// Not yet: a weapon that never runs out reloading itself when empty (<c>Weapon_Reload</c>, with reloading), and the AI
-/// hearing it (<c>HumanPlayer_SendHandleWeaponAIEvent</c>).
+/// Not yet: the AI hearing a weapon that never runs out reload itself when empty (<c>HumanPlayer_SendHandleWeaponAIEvent</c>).
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
@@ -177,7 +176,7 @@ public sealed partial class Igi2HumanPlayer
     /// </para>
     /// <para>
     /// Otherwise the weapon's status decides. A shot that kicked is taken. An empty weapon ends the pull: with ammunition
-    /// that never runs out it would reload (not yet); otherwise the trigger is let go and the weapon made ready, and once
+    /// that never runs out it reloads where it stands; otherwise the trigger is let go and the weapon made ready, and once
     /// the first-person clip has played the empty state follows. Last, a fire type in the slot fires on the first tick —
     /// every tick for a laser designator — and the first tick is over.
     /// </para>
@@ -214,7 +213,11 @@ public sealed partial class Igi2HumanPlayer
             else if (inventory.Status == Igi2WeaponStatus.Empty)
             {
                 IsFirstFire = false;
-                if (!IsUnlimitedAmmo)
+                if (IsUnlimitedAmmo)
+                {
+                    firing.Reload();
+                }
+                else
                 {
                     firing.FireTypeState(FireType).IsReleaseFire = true;
                     inventory.Status = Igi2WeaponStatus.Ready;

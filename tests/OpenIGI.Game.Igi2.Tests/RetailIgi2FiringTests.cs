@@ -162,6 +162,72 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(reference.NextRaw(), player.Random.NextRaw());
     }
 
+    /// <summary>
+    /// The reload key with a round fired reloads: the start, then the rest of the clip taken from what is carried
+    /// (<c>Weapon_SingleReloadHandler</c>), and back to idle once the clips have played.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Reloading_tops_the_clip_up_from_what_is_carried()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Tick(player, Igi2PlayerAction.Fire);
+        Tick(player, Igi2PlayerAction.None);
+        for (int tick = 0; tick < 30 && player.ActionState != Igi2PlayerActionState.Idle; tick++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+        }
+
+        Igi2Inventory inventory = weapons.Inventory;
+        Igi2WeaponItem mp5 = inventory.Current!;
+        int loaded = mp5.Loaded(0);
+        int carried = inventory.FireTypeRounds(mp5, 0).Available;
+        Assert.True(loaded < 30);
+
+        Tick(player, Igi2PlayerAction.Reload);
+        Assert.Equal(Igi2PlayerActionState.Reload, player.ActionState);
+        for (int tick = 0; tick < 600 && player.ActionState != Igi2PlayerActionState.Idle; tick++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+        }
+
+        Assert.Equal(Igi2PlayerActionState.Idle, player.ActionState);
+        Assert.Equal(30, mp5.Loaded(0));
+        Assert.Equal(carried - (30 - loaded), inventory.FireTypeRounds(mp5, 0).Available);
+    }
+
+    /// <summary>Fired with nothing loaded but more carried, the MP5SD reloads instead of clicking.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void An_mp5sd_fired_empty_with_more_carried_reloads()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, RecordingEffects effects) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        inventory.Disable(inventory.Current!, removeCarriedAmmo: false);
+        inventory.EnableWeaponType("WEAPON_ID_MP5SD", addAmmo: false);
+
+        Tick(player, Igi2PlayerAction.Fire);
+
+        Assert.Equal(Igi2PlayerActionState.Reload, player.ActionState);
+        Assert.Empty(effects.Projectiles);
+    }
+
+    /// <summary>A reload takes no more than is carried, and a round at a time for a weapon reloaded so.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_reload_takes_no_more_than_is_carried()
+    {
+        (_, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        Igi2WeaponItem mp5 = inventory.Current!;
+        Igi2AmmoItem clips = inventory.FindAmmo(inventory.FireTypeRounds(mp5, 0).AmmoType!.AmmoId)!;
+        inventory.Disable(mp5, removeCarriedAmmo: true);
+        inventory.EnableWeaponType("WEAPON_ID_MP5SD", addAmmo: false);
+        inventory.AddAmmo(clips.AmmoType.AmmoId, 12);
+
+        weapons.Firing.Reload();
+
+        Assert.Equal(12, mp5.Loaded(0));
+        Assert.Equal(0, clips.Count);
+    }
+
     /// <summary>The three angles of an orientation give it back (<c>Real32x9_GetAngles</c> against <c>Real32x9_Create</c>).</summary>
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()
