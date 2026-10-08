@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -69,7 +70,12 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
         ArgumentNullException.ThrowIfNull(weapon);
         _weapon = weapon;
         weapon.Bind(this);
+        BodyTriggers = new Igi2PlayerBodyTriggers(this);
+        View.ObjectAnimation.Target = new Igi2PlayerViewTriggers(this);
     }
+
+    /// <summary>Gets what the body's clips fire their anim triggers on: the player (<see cref="TriggerFromBody"/>).</summary>
+    public IIgi2AnimTriggerTarget BodyTriggers { get; }
 
     /// <summary>Gets or sets the held-weapon controls; the player becomes their holder.</summary>
     public IIgi2PlayerWeaponControl Weapon

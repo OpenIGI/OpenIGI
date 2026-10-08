@@ -23,6 +23,7 @@ public static class Igi2ContentModules
         new Igi2WeaponContentModule(),
         new Igi2MaterialContentModule(),
         new Igi2PlayerContentModule(),
+        new Igi2AnimTriggerContentModule(),
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
         new Igi2WaterContentModule(),
@@ -186,6 +187,29 @@ public sealed class Igi2MaterialContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Igi2GameMaterials>().Load(context.Resources, context.Natives);
+    }
+}
+
+/// <summary>The anim trigger types the clips fire, out of <c>animtrigger.qvm</c> (<see cref="Animation.Igi2AnimTriggers"/>).</summary>
+/// <remarks>After the player's module, so the <c>HumanPlayer</c> type the script names is the player's own class.</remarks>
+public sealed class Igi2AnimTriggerContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Anim triggers";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.GetOrProvide(() => new Animation.Igi2AnimTriggers(context.Logger)).Register(context.Natives, context.Types);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>At start-up, as <c>AnimTrigger_ParseConfigFile</c> reads it before any level.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Animation.Igi2AnimTriggers>().Load(context.Resources, context.Natives);
     }
 }
 

@@ -12,6 +12,8 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <param name="HeldTime">The ticks the trigger had been down.</param>
 /// <param name="WeaponType">The weapon that fired it.</param>
 /// <param name="AmmoType">The ammunition, or <see langword="null"/>.</param>
+/// <param name="ExplodeTime">The ticks before a thrown projectile goes off, <c>nExplodeTime</c>; none for a bullet.</param>
+/// <param name="Thrower">Who fired it, <c>ptIgnoreQTask</c>, or <see langword="null"/>.</param>
 public readonly record struct Igi2ProjectileLaunch(
     int ProjectileTaskType,
     Vector3d Position,
@@ -21,7 +23,9 @@ public readonly record struct Igi2ProjectileLaunch(
     float EffectiveRange,
     int HeldTime,
     Igi2WeaponTypeTask WeaponType,
-    Igi2AmmoTypeTask? AmmoType);
+    Igi2AmmoTypeTask? AmmoType,
+    int ExplodeTime = 0,
+    IIgi2WeaponOwner? Thrower = null);
 
 /// <summary>An event a weapon raises for the AI to perceive, <c>HumanAIEventContext_t</c> as <c>HumanAI_SendEvent</c> takes it.</summary>
 /// <param name="Event">The event, <c>AIEVENT_*</c>.</param>

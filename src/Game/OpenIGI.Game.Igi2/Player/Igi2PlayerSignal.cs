@@ -66,6 +66,18 @@ public enum Igi2PlayerSignal : uint
     /// <summary>Next weapon held.</summary>
     NextWeapon = 0x80000,
 
+    /// <summary>
+    /// A clip reached its hold point, <c>HUMANANIM_TRIGGER_STOPANIMATION</c> (<c>HumanPlayer_TriggerAnimTriggerHandler</c>,
+    /// <c>igi2 0x4B7F9B</c>); the state that plays it clears it.
+    /// </summary>
+    StopAnimation = 0x100000,
+
+    /// <summary>A clip opened a drawer, <c>HUMANANIM_TRIGGER_OPENDRAWER</c>.</summary>
+    OpenDrawer = 0x200000,
+
+    /// <summary>A clip closed a drawer, <c>HUMANANIM_TRIGGER_CLOSEDRAWER</c>.</summary>
+    CloseDrawer = 0x400000,
+
     /// <summary>Deep enough in water to swim (5734.4 units).</summary>
     Swimming = 0x800000,
 

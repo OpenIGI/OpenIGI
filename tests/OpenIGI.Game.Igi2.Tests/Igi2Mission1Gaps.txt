@@ -210,7 +210,6 @@ name CutScene_3124.nTick    # MISSIONS/location1/level1/objects.qvm
 name CutScene_3401.isFinished    # MISSIONS/location1/level1/objects.qvm
 name CutScene_3401.nTick    # MISSIONS/location1/level1/objects.qvm
 name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # config.qvm
-name DefineAnimTrigger    # ANIMTRIGGER/animtrigger.qvm
 name DefineGraph    # COMMON/sounds/sounds.qvm
 name DefineGroup    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
 name DefinePhysicsObjType    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
@@ -312,14 +311,6 @@ name GfxOptions_SetWaterQualityLevel    # config.qvm
 name GfxOptions_SetWindOnForests    # config.qvm
 name GoGfxCrossHairColour    # config.qvm
 name GoGfxCrossHairThickness    # config.qvm
-name HUMANANIM_TRIGGER_CLOSECOMBAT_DEALDAMAGE    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_CLOSEDRAWER    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_DEADBODY_SOUND    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_FEETSOUND    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_OPENDRAWER    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_STOPANIMATION    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_THROWGRENADE    # ANIMTRIGGER/animtrigger.qvm
-name HUMANANIM_TRIGGER_THROWGRENADE_RELEASE    # ANIMTRIGGER/animtrigger.qvm
 name HUMAN_TEAM_BAD    # MENUSYSTEM/ingamemenu.qvm
 name HUMAN_TEAM_GOOD    # MENUSYSTEM/ingamemenu.qvm
 name HumanAI_nEvent    # COMMON/ai/default.qvm
@@ -528,7 +519,6 @@ name Switch_2925.isPressed    # MISSIONS/location1/level1/objects.qvm
 name Switch_3429.isOn    # MISSIONS/location1/level1/objects.qvm
 name Switch_3429.isPressed    # MISSIONS/location1/level1/objects.qvm
 name TASKTYPE_AISTATIONARYGUN    # magicobjconfig.qvm
-name TASKTYPE_ANIMSOUND    # ANIMTRIGGER/animtrigger.qvm
 name TASKTYPE_BOMBBACKPACK    # magicobjconfig.qvm
 name TASKTYPE_CAR    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
 name TASKTYPE_CARDOOR    # magicobjconfig.qvm
@@ -540,9 +530,6 @@ name TASKTYPE_GLASS    # magicobjconfig.qvm
 name TASKTYPE_GRENADEPIN    # magicobjconfig.qvm
 name TASKTYPE_HELI    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/helis/mil/heli.qvm
 name TASKTYPE_HITZONE    # magicobjconfig.qvm
-name TASKTYPE_HUMAN    # ANIMTRIGGER/animtrigger.qvm
-name TASKTYPE_HUMANPLAYER    # ANIMTRIGGER/animtrigger.qvm
-name TASKTYPE_HUMANSOLDIER    # ANIMTRIGGER/animtrigger.qvm
 name TASKTYPE_LADDER    # magicobjconfig.qvm
 name TASKTYPE_PLANE    # PHYSICSOBJ/planes/CutSceneMissile/plane.qvm, PHYSICSOBJ/planes/JSF/plane.qvm, PHYSICSOBJ/planes/SU27/plane.qvm
 name TASKTYPE_PRIMARYMAGICOBJ    # magicobjconfig.qvm

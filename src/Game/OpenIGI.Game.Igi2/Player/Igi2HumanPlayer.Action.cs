@@ -107,6 +107,7 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerActionState.Reload] = (_, _) => EnterReload();
         states[Igi2PlayerActionState.ChangeWeapon] = (_, _) => EnterChangeWeapon();
         states[Igi2PlayerActionState.FireEmpty] = (_, _) => EnterFireEmpty();
+        states[Igi2PlayerActionState.ThrowGrenade] = (_, _) => EnterThrowGrenade();
         return new TaskStateMachine((_, _) => PackActionSignal(), states, Igi2PlayerActionState.Idle, exits: new TaskStateFunction?[Igi2PlayerActionState.Count]);
     }
 
@@ -487,7 +488,13 @@ public sealed partial class Igi2HumanPlayer
 
         if (weaponType.WeaponType == Igi2WeaponTypeKind.Grenade)
         {
-            return (inventory.Delay == 0 && (Channels[Igi2HumanChannel.Fire] != 0f || !inventory.IsPinPulled)) || WantsReload(held);
+            if (inventory.Delay == 0 && (Channels[Igi2HumanChannel.Fire] != 0f || !inventory.IsPinPulled))
+            {
+                GoAction(Igi2PlayerActionState.ThrowGrenade);
+                return true;
+            }
+
+            return WantsReload(held);
         }
 
         if (weaponType.WeaponCategory is Igi2WeaponCategory.Binoculars or Igi2WeaponCategory.ThermoChemical)

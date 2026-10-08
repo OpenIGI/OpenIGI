@@ -9,8 +9,9 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// </para>
 /// <para>
 /// Ported: the <c>Gun</c> (<c>Gun_Open</c>, <c>igi2 0x4835E0</c>), the <c>FireMode</c> (<c>FireMode_Open</c>,
-/// <c>0x51BE60</c>), the <c>Zoom</c> (<c>Zoom_Open</c>, <c>0x525DA0</c>) and the <c>Knife</c> (<c>Knife_Open</c>,
-/// <c>0x4CF970</c>). Not yet: the pin and the rest.
+/// <c>0x51BE60</c>), the <c>Zoom</c> (<c>Zoom_Open</c>, <c>0x525DA0</c>), the <c>Knife</c> (<c>Knife_Open</c>,
+/// <c>0x4CF970</c>), the <c>PullPin</c> (<c>PullPin_Open</c>, <c>0x4C80C0</c>) and the <c>ProjectileLauncher</c>
+/// (<c>ProjectileLauncher_Open</c>, <c>0x526E20</c>). Not yet: the charges, the mines, the medipack and the designator.
 /// </para>
 /// </remarks>
 public static class Igi2FireHandlers
@@ -24,8 +25,12 @@ public static class Igi2FireHandlers
         Igi2FireModeFire fireMode = new();
         Igi2ZoomFire zoom = new();
         Igi2KnifeFire knife = new();
+        Igi2PullPinFire pin = new();
+        Igi2ProjectileLauncherFire launcher = new(tables);
         return parameters => parameters switch
         {
+            Igi2PullPinTask => pin,
+            Igi2ProjectileLauncherTask => launcher,
             Igi2KnifeTask => knife,
             Igi2GunTask => gun,
             Igi2FireModeTask => fireMode,

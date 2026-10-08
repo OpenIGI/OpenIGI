@@ -51,7 +51,8 @@ public sealed class Igi2HumanWeapons
             TaskTypeConstant(natives, "TASKTYPE_GUN"),
             TaskTypeConstant(natives, "TASKTYPE_ZOOM"),
             TaskTypeConstant(natives, "TASKTYPE_MISSILE"),
-            TaskTypeConstant(natives, "TASKTYPE_GUNSHOT"));
+            TaskTypeConstant(natives, "TASKTYPE_GUNSHOT"),
+            TaskTypeConstant(natives, "TASKTYPE_GRENADE"));
 
         functions.Register(natives, AddWeaponNative, AddWeapon, 1);
         functions.Register(natives, AddAmmoNative, AddAmmo, 2);
@@ -167,4 +168,5 @@ public sealed class Igi2HumanWeapons
 /// <param name="Zoom">A zoom, <c>Zoom_eQTaskType</c>.</param>
 /// <param name="Missile">A missile, <c>Missile_eQTaskType</c>.</param>
 /// <param name="GunShot">A gun's bullets, <c>GunShot_eQTaskType</c>.</param>
-public readonly record struct Igi2FireTaskTypes(int Gun, int Zoom, int Missile, int GunShot);
+/// <param name="Grenade">A thrown grenade, <c>Grenade_eQTaskType</c>.</param>
+public readonly record struct Igi2FireTaskTypes(int Gun, int Zoom, int Missile, int GunShot, int Grenade = Igi2WeaponConstants.NoTaskType);

@@ -29,6 +29,14 @@ public enum Igi2AnimControllerBits
     SuppressTriggers = 0x20,
 }
 
+/// <summary>What a controller's clip fires its anim triggers on: the object the clip plays on.</summary>
+public interface IIgi2AnimTriggerTarget
+{
+    /// <summary>A trigger the clip played through, <c>AnimTrigger_Trigger</c> (<c>igi2 0x433D50</c>).</summary>
+    /// <param name="trigger">The trigger.</param>
+    void Trigger(in Igi2AnimationTrigger trigger);
+}
+
 /// <summary>
 /// One clip being played: its time, its step a tick and whether it has ended, <c>AnimController_t</c>.
 /// </summary>
@@ -42,8 +50,17 @@ public enum Igi2AnimControllerBits
 /// wrapped, until a clip is set again.
 /// </para>
 /// <para>
-/// The clip's events, attach objects and the interpolated pose are not run here; this is the time and the bits the
-/// states read.
+/// A step fires the clip's anim triggers it plays through (<c>AnimController_TriggerEvents</c>, <c>0x553D50</c>), on its
+/// <see cref="Target"/>: forward, those after the old time up to the new; backward, those after the new time up to the old,
+/// still in time order. A looping clip that wraps forward first fires the rest of the clip and then the start up to the new
+/// time; wrapping backward, the start up to the old time and then the rest after the new. A clip set afresh fires the
+/// triggers at the tick it is set to and the one before (<c>AnimController_Seek</c>, <c>0x553F60</c>, fires none and leaves
+/// the time one before). A controller with <see cref="Igi2AnimControllerBits.SuppressTriggers"/> fires none.
+/// </para>
+/// <para>
+/// The clip's other events, its attach objects and the interpolated pose are not run here. A trigger placed on a bone fires
+/// only for a bone the controller animates; this takes every bone of the clip as animated, which holds for a controller
+/// playing the whole body.
 /// </para>
 /// </remarks>
 public sealed class Igi2AnimController
@@ -62,6 +79,9 @@ public sealed class Igi2AnimController
 
     /// <summary>Gets or sets the controller's bits.</summary>
     public Igi2AnimControllerBits Flags { get; set; }
+
+    /// <summary>Gets or sets what the clip's anim triggers fire on, the object the clip plays on; <see langword="null"/> fires none.</summary>
+    public IIgi2AnimTriggerTarget? Target { get; set; }
 
     /// <summary>Steps the controller by its time step when it steps itself (<c>AnimController_RunHandler</c>, <c>igi2 0x5540D0</c>).</summary>
     public void AutoStep()
@@ -111,20 +131,62 @@ public sealed class Igi2AnimController
 
         int total = clip.TotalTime;
         bool loops = (Flags & Igi2AnimControllerBits.Loop) != 0;
+        int old = Time;
+        (int After, int UpTo)? wrapped = null;
         if (time >= 0)
         {
             if (time >= total)
             {
                 Flags |= Igi2AnimControllerBits.Ended;
-                time = loops ? time % total : total;
+                if (loops)
+                {
+                    wrapped = (old, int.MaxValue);
+                    old = -1;
+                    time %= total;
+                }
+                else
+                {
+                    time = total;
+                }
             }
         }
         else
         {
             Flags |= Igi2AnimControllerBits.Ended;
-            time = loops ? total + (time % total) : 0;
+            if (loops)
+            {
+                wrapped = (int.MinValue, old);
+                old = total + 1;
+                time = total + (time % total);
+            }
+            else
+            {
+                time = 0;
+            }
+        }
+
+        if (time != old && (Flags & Igi2AnimControllerBits.SuppressTriggers) == 0 && Target is { } target)
+        {
+            if (wrapped is { } first)
+            {
+                Fire(clip, first.After, first.UpTo, target);
+            }
+
+            Fire(clip, time > old ? old : time, time > old ? time : old, target);
         }
 
         Time = time;
+    }
+
+    /// <summary>Fires the clip's triggers after one time and up to another, in time order.</summary>
+    private static void Fire(Igi2AnimationClip clip, int after, int upTo, IIgi2AnimTriggerTarget target)
+    {
+        foreach (Igi2AnimationTrigger trigger in clip.Triggers)
+        {
+            if (trigger.Time > after && trigger.Time <= upTo)
+            {
+                target.Trigger(trigger);
+            }
+        }
     }
 }

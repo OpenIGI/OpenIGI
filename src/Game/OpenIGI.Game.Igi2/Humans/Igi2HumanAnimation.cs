@@ -69,6 +69,18 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     /// <summary>Gets the active main controller.</summary>
     public Igi2AnimController Main { get; private set; }
 
+    /// <summary>Sets what the body's clips fire their anim triggers on, on all four controllers.</summary>
+    public IIgi2AnimTriggerTarget? TriggerTarget
+    {
+        set
+        {
+            _first.Target = value;
+            _second.Target = value;
+            _third.Target = value;
+            _fourth.Target = value;
+        }
+    }
+
     /// <inheritdoc/>
     public Igi2BoneHierarchy? Rig => _rig;
 

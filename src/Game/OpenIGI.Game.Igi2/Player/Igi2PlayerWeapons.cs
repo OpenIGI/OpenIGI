@@ -147,7 +147,20 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig, int fireType) =>
-        Held is { } held ? Igi2WeaponTypeAnim.Get(held, request, rig, _clips, BodyClips(rig), fireType, _knifeClips) : null;
+        Held is { } held
+            ? Igi2WeaponTypeAnim.Get(held, request, rig, _clips, BodyClips(rig), fireType, _knifeClips, RoundsCarried(fireType))
+            : null;
+
+    /// <summary>Gets or sets where the grenades the weapon throws go.</summary>
+    public IIgi2GrenadeWorld Grenades
+    {
+        get => _firing.Grenades;
+        set => _firing.Grenades = value;
+    }
+
+    /// <summary>The rounds carried for a fire type of the weapon in hand, <c>Weapon_GetFireTypeAmmoInfoFromWeaponTypeItem</c>.</summary>
+    private int RoundsCarried(int fireType) =>
+        (uint)fireType < Igi2WeaponTypeTask.FireTypeSlots && _inventory.Current is { } item ? _inventory.FireTypeRounds(item, fireType).Available : 0;
 
     /// <inheritdoc/>
     public void ClearAllWeapons() => _inventory.ClearAll();

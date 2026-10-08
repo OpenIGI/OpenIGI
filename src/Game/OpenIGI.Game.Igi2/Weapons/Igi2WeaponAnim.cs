@@ -124,8 +124,10 @@ public sealed class Igi2KnifeClipCycle
 /// </para>
 /// <para>
 /// Everything else is the fire type's to answer, as is any request this finds no clip for: the request goes on to the
-/// handler of the fire type in the asker's fire-type slot, when there is one. The gun's and the knife's are ported; the
-/// other fire types' handlers are not yet, and find none.
+/// handler of the fire type in the asker's fire-type slot, when there is one. The gun's, the knife's, the pin's
+/// (<c>PullPin_GetAnimHandler</c>, <c>0x4C7FD0</c>) and the launcher's (<c>ProjectileLauncher_GetAnimHandler</c>,
+/// <c>0x526960</c>, whose last round throws with its <c>Last</c> clips) are ported; the other fire types' are not yet, and
+/// find none.
 /// </para>
 /// </remarks>
 public static class Igi2WeaponTypeAnim
@@ -147,6 +149,9 @@ public static class Igi2WeaponTypeAnim
     /// The count a knife's first-person fire clips are taken in turn by, the handler's own static; <see langword="null"/>
     /// takes the first every time.
     /// </param>
+    /// <param name="roundsCarried">
+    /// The rounds carried for the asker's fire type, <c>nAmmoAvailable</c>: a launcher throws its last differently.
+    /// </param>
     /// <returns>The clip and its rate, or <see langword="null"/> when there is none.</returns>
     public static Igi2WeaponAnim? Get(
         Igi2WeaponTypeTask weaponType,
@@ -155,7 +160,8 @@ public static class Igi2WeaponTypeAnim
         Igi2AnimationLibrary? library,
         IReadOnlyList<Igi2AnimationClip?>? bodyTable,
         int fireType,
-        Igi2KnifeClipCycle? knifeClips = null)
+        Igi2KnifeClipCycle? knifeClips = null,
+        int roundsCarried = 0)
     {
         ArgumentNullException.ThrowIfNull(weaponType);
         Igi2WeaponAnim? own = request switch
@@ -185,6 +191,18 @@ public static class Igi2WeaponTypeAnim
         {
             Igi2GunTask gun => GunAnim(gun, request, Find, Row),
             Igi2KnifeTask knife => KnifeAnim(knife, request, Find, knifeClips ?? new Igi2KnifeClipCycle()),
+            Igi2PullPinTask pin => request switch
+            {
+                Igi2WeaponAnimRequest.FirstFire => Named(pin.FirstFireAnim),
+                Igi2WeaponAnimRequest.ThirdFire => Named(pin.ThirdFireAnim),
+                _ => null,
+            },
+            Igi2ProjectileLauncherTask launcher => request switch
+            {
+                Igi2WeaponAnimRequest.FirstFire => Named(roundsCarried != 0 || launcher.FirstFireLastAnim.Length == 0 ? launcher.FirstFireAnim : launcher.FirstFireLastAnim),
+                Igi2WeaponAnimRequest.ThirdFire => Named(roundsCarried != 0 || launcher.ThirdFireLastAnim.Length == 0 ? launcher.ThirdFireAnim : launcher.ThirdFireLastAnim),
+                _ => null,
+            },
             _ => null,
         };
 

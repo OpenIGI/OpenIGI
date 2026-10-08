@@ -74,6 +74,9 @@ public sealed class Igi2WeaponFiring
     /// <summary>Gets the weapon's bullets, the <c>GunShot</c> <c>Weapon_CreateHandler</c> (<c>igi2 0x51C320</c>) makes under it.</summary>
     public Igi2GunShot GunShot { get; } = new();
 
+    /// <summary>Gets or sets where the grenades the weapon throws go (<c>Grenade_CreateProjectileHandler</c>, <c>igi2 0x484BE0</c>).</summary>
+    public IIgi2GrenadeWorld Grenades { get; set; } = Igi2NoGrenades.Instance;
+
     /// <summary>Gets or sets the level the weapon's bullets and stabs strike, or <see langword="null"/> for none: then nothing is struck.</summary>
     public IIgi2GunShotWorld? World { get; set; }
 
@@ -135,6 +138,10 @@ public sealed class Igi2WeaponFiring
         if (launch.ProjectileTaskType == _taskTypes.GunShot)
         {
             GunShot.CreateProjectile(launch, Igi2GunShotParameters.Of(fireTypeParameters));
+        }
+        else if (launch.ProjectileTaskType == _taskTypes.Grenade)
+        {
+            Grenades.Launch(Igi2GrenadeThrow.Of(launch, Igi2GrenadeParameters.Of(fireTypeParameters)));
         }
         else
         {

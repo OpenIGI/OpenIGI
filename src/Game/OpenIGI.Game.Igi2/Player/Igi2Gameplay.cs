@@ -70,6 +70,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        if (request.Services.TryGet(out Igi2AnimTriggers? triggers))
+        {
+            player.Human.AnimTriggers = triggers;
+        }
+
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         return player;
@@ -312,6 +317,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         };
         surroundings.Owner = human;
         human.View.ObjectRig = firstPersonRig;
+        animation.TriggerTarget = human.BodyTriggers;
 
         // Human_UpdateInternalDataHandler (igi2 0x4FF2F0): the level's Gamma is the heading and the ideal heading
         // both, and the body stands upright turned by it.
