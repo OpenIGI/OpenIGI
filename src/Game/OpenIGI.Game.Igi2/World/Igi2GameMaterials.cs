@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Scripting;
@@ -30,9 +31,22 @@ public sealed record Igi2GunShotEffectParameters(
 /// <param name="Parameters">What a <c>GunShotEffect</c> leaves; <see langword="null"/> for a type that reads none.</param>
 public sealed record Igi2MaterialEffect(int TaskType, Igi2GunShotEffectParameters? Parameters);
 
+/// <summary>
+/// The half of a material that draws and that sight passes through, <c>QMaterial_t</c> (the first 32 bytes of
+/// <c>GameMaterial_s</c>) as <c>GameMaterial_DefineQMaterialCB</c> (<c>igi2 0x432DC0</c>) fills it.
+/// </summary>
+/// <param name="Transparency">How much of a line of sight passes a face of it, <c>vTransparency</c>: none at zero.</param>
+/// <param name="Density">Its density, <c>vDensity</c>.</param>
+/// <param name="Friction">Its friction, <c>vFriction</c>.</param>
+/// <param name="Color">Its colour, <c>tColor</c>: each channel the script's whole number times <c>2^-20</c>.</param>
+public readonly record struct Igi2QMaterial(float Transparency, float Density, float Friction, Vector3f Color);
+
 /// <summary>One surface the world is made of, <c>GameMaterial_s</c> as <c>GameMaterial_DefineGameMaterialCB</c> (<c>igi2 0x432FF0</c>) fills it.</summary>
 public sealed class Igi2GameMaterial
 {
+    /// <summary>Gets the drawing half, which <c>DefineQMaterial</c> set for this row before the game half.</summary>
+    public Igi2QMaterial QMaterial { get; init; }
+
     /// <summary>Gets the row the material is in, the level material row a collision face names.</summary>
     public required int Index { get; init; }
 
@@ -116,6 +130,7 @@ public sealed class Igi2GameMaterials
     private const string LogCategory = "Material";
 
     private readonly Igi2GameMaterial?[] _rows = new Igi2GameMaterial?[Rows];
+    private readonly Igi2QMaterial[] _qMaterials = new Igi2QMaterial[Rows];
     private readonly IOpenIgiLogger _logger;
     private int _gunShotEffectType = Weapons.Igi2WeaponConstants.NoTaskType;
     private int _active;
@@ -143,8 +158,7 @@ public sealed class Igi2GameMaterials
         natives.RegisterFunction("SetActiveMaterial", SetActive);
         natives.RegisterFunction("DefineGameMaterial", Define);
 
-        // The drawing half of a material: nothing the game logic reads.
-        natives.RegisterFunction("DefineQMaterial", static _ => QvmValue.FromInt32(1));
+        natives.RegisterFunction("DefineQMaterial", DefineQ);
     }
 
     /// <summary>Runs the material script.</summary>
@@ -153,6 +167,7 @@ public sealed class Igi2GameMaterials
     public void Load(ResourceRegistry resources, NativeRegistry natives)
     {
         Array.Clear(_rows);
+        Array.Clear(_qMaterials);
         _active = 0;
         Igi2SessionScript.Run(resources, natives, Script);
         _logger.Information(LogCategory, $"{_rows.Count(static r => r is not null)} materials read.");
@@ -162,6 +177,23 @@ public sealed class Igi2GameMaterials
     {
         _active = call.GetInt32(0);
         return QvmValue.FromInt32(1);
+    }
+
+    /// <summary>The drawing half of the active row: three numbers, then the colour as three whole numbers of <c>2^-20</c>.</summary>
+    private QvmValue DefineQ(QvmCallContext call)
+    {
+        if ((uint)_active < Rows)
+        {
+            _qMaterials[_active] = new Igi2QMaterial(
+                call.GetSingle(0),
+                call.GetSingle(1),
+                call.GetSingle(2),
+                new Vector3f(Channel(call.GetInt32(3)), Channel(call.GetInt32(4)), Channel(call.GetInt32(5))));
+        }
+
+        return QvmValue.FromInt32(1);
+
+        static float Channel(int value) => (new Fpu((double)value) * 0.00000095367432).F;
     }
 
     private QvmValue Define(QvmCallContext call)
@@ -186,6 +218,7 @@ public sealed class Igi2GameMaterials
 
         _rows[_active] = new Igi2GameMaterial
         {
+            QMaterial = _qMaterials[_active],
             Index = _active,
             Name = Text(call, 0, 32),
             PenetrationPower = call.GetSingle(1),

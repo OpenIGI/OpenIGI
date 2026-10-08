@@ -31,6 +31,21 @@ public sealed class RetailIgi2GameMaterialsTests
     }
 
     /// <summary>
+    /// Each row's drawing half comes first (<c>DefineQMaterial</c>): glass lets a line of sight through whole, a fence
+    /// four fifths of it, concrete none.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Glass_lets_sight_through_and_concrete_does_not()
+    {
+        Igi2GameMaterials materials = Materials.Value;
+
+        Assert.Equal(1f, materials[14]!.QMaterial.Transparency);
+        Assert.Equal(0.8f, materials[18]!.QMaterial.Transparency);
+        Assert.Equal(0f, materials[11]!.QMaterial.Transparency);
+        Assert.Equal(0.9f, materials[11]!.QMaterial.Density);
+    }
+
+    /// <summary>
     /// Both of a material's effects are gunshot effects that read six parameters each: wood shows a hole where a bullet
     /// goes on and a dent where it stops, its hole two centimetres across in world units.
     /// </summary>
