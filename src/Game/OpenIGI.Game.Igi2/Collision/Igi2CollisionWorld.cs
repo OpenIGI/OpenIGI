@@ -252,6 +252,10 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// The query groups: an object takes part when its type's group shares a bit with them (every type has
     /// <see cref="EveryTypeGroup"/>), and <see cref="TerrainGroup"/> asks for the ground.
     /// </param>
+    /// <remarks>
+    /// Each end is the start's height plus its distance, added at the FPU's 24 bits (<c>fadd qword</c>, <c>igi2 0x551342</c>).
+    /// <c>World_GetNextZNoMaterial</c> (<c>0x550BE0</c>), which physics probes the ground with, is the same query.
+    /// </remarks>
     public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
@@ -263,7 +267,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
         for (int i = 0; i < trace.Count; i++)
         {
             Vector3d start = trace.Starts[i];
-            trace.Ends[i] = new Vector3d(start.X, start.Y, distances[i] + start.Z);
+            trace.Ends[i] = new Vector3d(start.X, start.Y, ((Fpu)distances[i] + start.Z).Value);
             trace.Intersections[i].IsHit = false;
         }
 
@@ -285,10 +289,21 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// </summary>
     /// <param name="trace">The lines: their starts and ends are read, their results reset to the ends and filled.</param>
     /// <param name="groups">The query groups; <see cref="TerrainGroup"/> asks for the ground as well.</param>
+    /// <remarks>
+    /// When every line is vertical the objects are asked with the ground query's event instead (<c>isTraceAlongZ</c>,
+    /// <c>igi2 0x5516CF</c>), which a stand of trees answers by its ground handler; the ground itself always takes the line
+    /// trace. <c>World_TraceLines</c> (<c>0x551640</c>), which physics traces its contact points with, is this at mesh 0.
+    /// </remarks>
     public void TraceLines(Igi2LineTrace trace, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
-        TraceObjects(trace, groups & ~TerrainGroup, lines: true);
+        bool alongZ = true;
+        for (int i = 0; i < trace.Count && alongZ; i++)
+        {
+            alongZ = trace.Starts[i].X == trace.Ends[i].X && trace.Starts[i].Y == trace.Ends[i].Y;
+        }
+
+        TraceObjects(trace, groups & ~TerrainGroup, lines: !alongZ);
         if ((groups & TerrainGroup) != 0)
         {
             _terrain?.TraceLines(trace);

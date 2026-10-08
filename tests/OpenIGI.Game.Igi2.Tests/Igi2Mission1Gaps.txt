@@ -212,7 +212,6 @@ name CutScene_3401.nTick    # MISSIONS/location1/level1/objects.qvm
 name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # config.qvm
 name DefineGraph    # COMMON/sounds/sounds.qvm
 name DefineGroup    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
-name DefinePhysicsObjType    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
 name DefineSound    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
 name DefineTriggerOnce    # COMMON/sounds/sounds.qvm
 name Door_3588.nDoorOpenTicks    # MISSIONS/location1/level1/objects.qvm
@@ -269,9 +268,6 @@ name GOSoundSpeech    # config.qvm
 name GOSpeakerSetup    # config.qvm
 name GOStart    # config.qvm
 name GOVersion    # config.qvm
-name GRENADE_EXPLOSIONTYPE_FLASHBANG    # PHYSICSOBJ/physicsobj.qvm
-name GRENADE_EXPLOSIONTYPE_NORMAL    # PHYSICSOBJ/physicsobj.qvm
-name GRENADE_EXPLOSIONTYPE_SMOKE    # PHYSICSOBJ/physicsobj.qvm
 name Game_DisableMusic    # MISSIONS/location1/level1/objects.qvm
 name Game_EnableMusic    # MISSIONS/location1/level1/objects.qvm
 name Game_FillSaveGameScrollListBox    # MENUSYSTEM/ingamemenu.qvm
@@ -407,9 +403,6 @@ name LowerStance    # config.qvm
 name MENUMANAGER_IDLE    # MENUSYSTEM/ingamemenu.qvm
 name MENUMANAGER_QUITTOMAINMENU    # MENUSYSTEM/ingamemenu.qvm
 name MENUMANAGER_RESTARTLEVEL    # MENUSYSTEM/ingamemenu.qvm
-name MISSILE_SMOKE_NORMAL    # PHYSICSOBJ/missiles/HIND/missile.qvm, PHYSICSOBJ/missiles/RPG18/missile.qvm, PHYSICSOBJ/missiles/RPG7/missile.qvm, …
-name MISSILE_TYPE_MISSILE_BALLISTIC    # PHYSICSOBJ/missiles/HIND/missile.qvm
-name MISSILE_TYPE_MISSILE_DIRECT    # PHYSICSOBJ/missiles/RPG18/missile.qvm, PHYSICSOBJ/missiles/RPG7/missile.qvm, PHYSICSOBJ/missiles/cgm2/missile.qvm
 name MOUSE_BUTTON_1    # config.qvm
 name MOUSE_BUTTON_2    # config.qvm
 name MOUSE_WHEEL_DOWN    # config.qvm
@@ -520,24 +513,17 @@ name Switch_3429.isOn    # MISSIONS/location1/level1/objects.qvm
 name Switch_3429.isPressed    # MISSIONS/location1/level1/objects.qvm
 name TASKTYPE_AISTATIONARYGUN    # magicobjconfig.qvm
 name TASKTYPE_BOMBBACKPACK    # magicobjconfig.qvm
-name TASKTYPE_CAR    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
 name TASKTYPE_CARDOOR    # magicobjconfig.qvm
 name TASKTYPE_DEATHZONE    # magicobjconfig.qvm
 name TASKTYPE_DRAWER    # magicobjconfig.qvm
-name TASKTYPE_GENERICPHYSICSMAGICOBJ    # PHYSICSOBJ/physicsobj.qvm
-name TASKTYPE_GENERICPHYSICSOBJ    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/physicsobj.qvm, PHYSICSOBJ/weapons/physicsobj.qvm
 name TASKTYPE_GLASS    # magicobjconfig.qvm
 name TASKTYPE_GRENADEPIN    # magicobjconfig.qvm
-name TASKTYPE_HELI    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/helis/mil/heli.qvm
 name TASKTYPE_HITZONE    # magicobjconfig.qvm
 name TASKTYPE_LADDER    # magicobjconfig.qvm
-name TASKTYPE_PLANE    # PHYSICSOBJ/planes/CutSceneMissile/plane.qvm, PHYSICSOBJ/planes/JSF/plane.qvm, PHYSICSOBJ/planes/SU27/plane.qvm
 name TASKTYPE_PRIMARYMAGICOBJ    # magicobjconfig.qvm
-name TASKTYPE_ROTOR    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/helis/mil/heli.qvm, magicobjconfig.qvm
 name TASKTYPE_RPGROCKET    # magicobjconfig.qvm
 name TASKTYPE_SHADOWVOLUME    # magicobjconfig.qvm
 name TASKTYPE_WEAPONMAGICOBJ    # magicobjconfig.qvm
-name TASKTYPE_WHEEL    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
 name TeamSay    # config.qvm
 name Thermal    # config.qvm
 name ToggleBox_998.isOn    # MENUSYSTEM/ingamemenu.qvm

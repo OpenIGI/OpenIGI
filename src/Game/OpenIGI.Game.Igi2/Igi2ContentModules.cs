@@ -24,6 +24,7 @@ public static class Igi2ContentModules
         new Igi2MaterialContentModule(),
         new Igi2PlayerContentModule(),
         new Igi2AnimTriggerContentModule(),
+        new Igi2PhysicsObjectContentModule(),
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
         new Igi2WaterContentModule(),
@@ -210,6 +211,29 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Animation.Igi2AnimTriggers>().Load(context.Resources, context.Natives);
+    }
+}
+
+/// <summary>The physics object types, out of the scripts under <c>LOCAL:physicsobj</c> (<see cref="Physics.Igi2PhysicsObjectTypes"/>).</summary>
+/// <remarks>After the weapons' module, whose <c>TASKTYPE_GRENADE</c> and <c>TASKTYPE_MISSILE</c> the scripts name.</remarks>
+public sealed class Igi2PhysicsObjectContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Physics objects";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.GetOrProvide(() => new Physics.Igi2PhysicsObjectTypes(context.Logger)).Register(context.Natives, context.Types);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>At start-up, as <c>Flow_CreateHandler</c> (<c>igi2 0x401600</c>) walks the directory before any level.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Physics.Igi2PhysicsObjectTypes>().Load(context.FileSystem, context.Resources, context.Natives);
     }
 }
 

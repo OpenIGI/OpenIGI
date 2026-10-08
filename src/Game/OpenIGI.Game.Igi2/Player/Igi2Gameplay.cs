@@ -62,6 +62,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (weapons is not null)
             {
                 weapons.World = new Igi2LevelGunShotWorld(world, materials);
+                if (request.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? physicsTypes))
+                {
+                    Weapons.Igi2Grenades grenades = new(physicsTypes, models, new Physics.Igi2PhysicsWorld(world, materials));
+                    weapons.Grenades = grenades;
+                    player.Grenades = grenades;
+                }
             }
 
             if (request.Services.TryGet(out Igi2HumanWeapons? armoury))
@@ -215,6 +221,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets what the player carries, or <see langword="null"/> when the session has no weapons.</summary>
     public Igi2Inventory? Inventory => Weapons?.Inventory;
 
+    /// <summary>Gets or sets the grenades the player has thrown that are still in flight, or <see langword="null"/> for none.</summary>
+    public Weapons.Igi2Grenades? Grenades { get; set; }
+
 
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
@@ -257,22 +266,23 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     }
 
     /// <inheritdoc/>
-    /// <remarks>The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies; built once a tick.</remarks>
+    /// <remarks>
+    /// The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies, then the grenades in flight, each
+    /// its <c>ProjectileModel</c>; built once a tick.
+    /// </remarks>
     public IReadOnlyList<TitleWorldModel> WorldModels
     {
         get
         {
             if (_lyingTick != _ticks)
             {
-                _lying = Human.Pickups is { } pickups
-                    ? [.. pickups.Items.Select(static p => new TitleWorldModel(
-                        p.WeaponType.FixedModel,
-                        p.Position,
-                        new Matrix3f(
-                            p.Orientation[0], p.Orientation[1], p.Orientation[2],
-                            p.Orientation[3], p.Orientation[4], p.Orientation[5],
-                            p.Orientation[6], p.Orientation[7], p.Orientation[8])))]
+                IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
+                    ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
                     : [];
+                IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
+                    ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
+                    : [];
+                _lying = [.. pickups, .. flying];
                 _lyingTick = _ticks;
             }
 
@@ -344,6 +354,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
         Weapons?.RunGunShot();
+        Grenades?.Run();
         Human.Pickups?.Run();
 
         Human.View.RunZoom();
@@ -353,6 +364,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         Human.RunDelayed();
         _ticks++;
     }
+
+    /// <summary>Nine floats row by row as a matrix.</summary>
+    private static Matrix3f Rows(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
     /// <summary>The mouse's counts as the input port's analog axis: a 255th each, held within one either way.</summary>
     private static float Analog(float counts)
