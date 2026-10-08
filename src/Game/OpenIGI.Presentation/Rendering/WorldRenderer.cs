@@ -206,7 +206,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
 
-    /// <summary>Gets or sets GenericTBA destruction state for authored interaction placements.</summary>
+    /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
     public WorldInteractionRegistry? Interactions { get; set; }
 
     /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
@@ -1273,14 +1273,6 @@ public sealed class WorldRenderer : IWorldPresenter
             };
         }
 
-        if (Interactions?.TryGet(placement.Owner, out WorldInteraction? interaction) == true
-            && interaction is { IsDestroyed: true })
-        {
-            displayed = placement.DestroyedReplacement is { } genericReplacement
-                ? placement with { Instance = genericReplacement.Instance, Pack = genericReplacement.Pack, Model = genericReplacement.Model }
-                : placement with { IsSuppressed = true };
-        }
-
         if (SecurityCameras?.TryGetHeadOrientation(
             placement,
             _frameAlpha,
@@ -1538,6 +1530,15 @@ public sealed class WorldRenderer : IWorldPresenter
         {
             drawPosition = rotatingPosition;
             drawOrientation = rotatingOrientation;
+        }
+        else if (Interactions?.TryGetPlacedPose(
+            placement.Owner,
+            out Vector3d placedUnits,
+            out Matrix3f placedOrientation) == true)
+        {
+            // A planted charge: state 36 moved its EditRigidObj to where the plant's trace struck.
+            drawPosition = placedUnits / WorldScene.UnitsPerMetre;
+            drawOrientation = placedOrientation;
         }
     }
 

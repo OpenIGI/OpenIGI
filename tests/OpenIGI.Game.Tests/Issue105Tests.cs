@@ -98,6 +98,50 @@ public sealed class Issue105Tests
         }
     }
 
+    // Probed in retail (IGI_PROBE_HOOKS=tba, Mission 6): state 36's entry for each tank, from the eye the autopilot
+    // stood the player at, to the contact its cast struck, the body origin before the ground snap's Z and the
+    // gamma handed to 0x463220. The second approach is diagonal, so the facet normal's gamma (-0.981745) and the
+    // eye-to-target one (-0.927) tell apart.
+    [RequiresGameDataTheory]
+    [InlineData(1602, 1610, 24774204.0, 89496000.0, 174508706.7, 24774204.0, 89498395.1, 24774204.0, 89496349.8, 0.196349f)]
+    [InlineData(1603, 1611, 24815854.0, 89503536.0, 174508802.7, 24819000.4, 89505895.8, 24817362.1, 89504667.0, -0.981745f)]
+    public void MissionSixChargePlantStandsTheBodyAndChargeWhereRetailDoes(
+        int chargeId,
+        int placedId,
+        double eyeX,
+        double eyeY,
+        double eyeZ,
+        double contactX,
+        double contactY,
+        double bodyX,
+        double bodyY,
+        float facing)
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        new ConditionalContainerGate(variables).Prepare(root);
+        WorldScene scene = WorldScene.Build(mission, root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        WorldInteraction charge = Assert.Single(interactions.Items, item => item.Task.Id == chargeId);
+        Assert.Equal(placedId, charge.PlacedTaskId);
+        Assert.Equal(245, charge.ActivateAnimation);
+
+        ChargePlantPose plant = charge.PlantPose(new Vector3d(eyeX, eyeY, eyeZ), solids.Tracer());
+
+        Assert.Equal(contactX, plant.Contact.X, 2.0);
+        Assert.Equal(contactY, plant.Contact.Y, 2.0);
+        Assert.Equal(bodyX, plant.Position.X, 2.0);
+        Assert.Equal(bodyY, plant.Position.Y, 2.0);
+        Assert.Equal(facing, plant.Facing, 1e-4f);
+
+        GameTask placed = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(placedId));
+        Assert.False(interactions.TryGetPlacedPose(placed, out _, out _));
+        charge.PlaceTask(plant.Contact, plant.Facing);
+        Assert.True(interactions.TryGetPlacedPose(placed, out Vector3d at, out _));
+        Assert.Equal(plant.Contact, at);
+    }
+
     [RequiresGameDataFact]
     public void MissionSixAllFiveAuthoredCabinetsCanBeSearchedFromTheirUsePoses()
     {

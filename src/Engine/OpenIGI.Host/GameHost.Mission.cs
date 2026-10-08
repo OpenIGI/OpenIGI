@@ -2086,7 +2086,6 @@ internal sealed partial class GameHost
             : null;
         _player = null;
         _playerMode = false;
-        _pendingGenericTbaExplosions.Clear();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.

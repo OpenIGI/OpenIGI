@@ -106,84 +106,27 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
-    public void LevelTwoGenericExplosiveChargesPublishTheirAuthoredBlastExactlyOnce()
+    public void LevelTwoChargesOnlyFinishWhenPlanted()
     {
-        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
-        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
-            root, mission, DoorRegistry.Build(root), variables);
-        List<WorldInteraction> charges = interactions.Items
-            .Where(static item => item.Type == InteractionActivateType.Generic && item.Explosion is not null)
-            .ToList();
-
-        Assert.Equal(3, charges.Count);
-        WorldInteraction charge = Assert.Single(charges, static item => item.Task.Id == 282);
-        GenericTbaExplosionParameters payload = Assert.IsType<GenericTbaExplosionParameters>(charge.Explosion);
-        Assert.False(payload.Explodable);
-        Assert.Equal(1f, payload.DamageScale);
-        Assert.Equal(0.5f, payload.ExplosionRadiusMetres);
-        Assert.Equal(0.5f, payload.ExplosionFalloffMetres);
-        Assert.Equal(1f, payload.ExplosionDamageScale);
-        Assert.Equal(0f, payload.ExplosionDelaySeconds);
-        Assert.Equal(5, payload.FragmentCount);
-        Assert.Equal(4, payload.FireballCount);
-        Assert.Equal(string.Empty, payload.DestroyedModelName);
-        Assert.Equal(string.Empty, payload.ExplosionExpression);
-        Assert.Equal("explo_02_m", payload.ExplosionSound);
-
-        charge.BeginUse();
-        charge.CompleteUse();
-
-        Assert.True(charge.IsCompleted);
-        Assert.False(charge.IsDestroyed);
-        Assert.True(variables.TryRead("GenericTBA_282.isFinished", out var finished));
-        Assert.Equal(1, finished.Integer);
-        Assert.True(variables.TryRead("GenericTBA_282.isFinishedThisTick", out var finishedThisTick));
-        Assert.Equal(1, finishedThisTick.Integer);
-        (WorldInteraction emitted, GenericTbaExplosionParameters emittedPayload) = Assert.Single(
-            interactions.ConsumeExplosions());
-        Assert.Same(charge, emitted);
-        Assert.Equal(payload, emittedPayload);
-        Assert.Empty(interactions.ConsumeExplosions());
-
-        charge.MarkExplosionPresented();
-        Assert.True(charge.IsDestroyed);
-        interactions.Tick();
-        Assert.Empty(interactions.ConsumeExplosions());
-    }
-
-    [RequiresGameDataFact]
-    public void LevelTwoAiGenericExplosiveChargeSurvivesResolverBeforeActivationExactlyOnce()
-    {
-        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
-        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
-            root, mission, DoorRegistry.Build(root), variables);
-        WorldInteraction charge = Assert.Single(
-            interactions.Items,
-            static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
-
-        interactions.Tick();
-        Assert.Empty(interactions.ConsumeExplosions());
-        Assert.True(interactions.ActivateFromAi(charge.Task.Id));
-        Assert.True(charge.ExplosionTriggeredThisTick);
-        interactions.Tick();
-
-        (WorldInteraction emitted, GenericTbaExplosionParameters payload) = Assert.Single(
-            interactions.ConsumeExplosions());
-        Assert.Same(charge, emitted);
-        Assert.Same(charge.Explosion, payload);
-        Assert.Empty(interactions.ConsumeExplosions());
-    }
-
-    [RequiresGameDataFact]
-    public void LevelTwoGenericExplosiveChargeStopsBlockingWorldTracesAfterPresentation()
-    {
+        // Retail (probed, 0x443EA0): planting GenericTBA_282 sets isFinished and isFinishedThisTick and nothing
+        // else. Explodable is FALSE on all three charges, so the task never runs its ExplodeObject update: no
+        // blast, no Explosion0, the tank keeps its model and its collision. The outro's own ExplodeObjects
+        // are what blow up.
         (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
             root, mission, DoorRegistry.Build(root), variables);
-        WorldInteraction charge = Assert.Single(
-            interactions.Items,
-            static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
         WorldScene scene = WorldScene.Build(mission, root, magic);
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(root, scene.Placements, variables);
+        List<WorldInteraction> charges = interactions.Items
+            .Where(static item => item.Type == InteractionActivateType.Generic)
+            .ToList();
+        Assert.Equal([282, 284, 286], charges.Select(static item => item.Task.Id).Order());
+        Assert.All(charges, static charge => Assert.False(Assert.IsType<bool>(
+            charge.Task.TryGetValue("Explodable", out object? explodable) ? explodable : null)));
+        Assert.All(charges, static charge => Assert.Equal(245, charge.ActivateAnimation));
+        Assert.DoesNotContain(destructibles.Objects, item => charges.Any(charge => ReferenceEquals(charge.Task, item.Owner)));
+
+        WorldInteraction charge = Assert.Single(charges, static item => item.Task.Id == 282);
         WorldPlacement placement = Assert.Single(
             scene.Placements,
             candidate => ReferenceEquals(candidate.Owner, charge.Task)
@@ -195,14 +138,20 @@ public sealed class RetailInteractionInventoryTests
             centre - new Vector3d(span, 0.0, 0.0),
             centre + new Vector3d(span, 0.0, 0.0),
             WorldTraceMask.World);
-
         Assert.True(HitsOwner(solids, request, charge.Task));
-        charge.BeginUse();
-        charge.CompleteUse();
-        charge.MarkExplosionPresented(solids);
 
-        Assert.True(charge.IsDestroyed);
-        Assert.False(HitsOwner(solids, request, charge.Task));
+        Assert.True(charge.BeginUse());
+        charge.CompleteUse();
+
+        Assert.True(charge.IsCompleted);
+        Assert.True(variables.TryRead("GenericTBA_282.isFinished", out QvmValue finished));
+        Assert.Equal(1, finished.Integer);
+        Assert.True(variables.TryRead("GenericTBA_282.isFinishedThisTick", out QvmValue finishedThisTick));
+        Assert.Equal(1, finishedThisTick.Integer);
+        interactions.Tick();
+        destructibles.Tick();
+        Assert.Empty(destructibles.ConsumeReadyExplosions());
+        Assert.True(HitsOwner(solids, request, charge.Task));
 
         static bool HitsOwner(ObjectCollisionIndex collision, WorldTraceRequest trace, GameTask owner)
         {
@@ -220,6 +169,26 @@ public sealed class RetailInteractionInventoryTests
                 && collision.TryTrace(trace with { IgnoredOwner = blocker }, out WorldTraceHit next)
                 && ReferenceEquals(next.Owner, owner);
         }
+    }
+
+    [RequiresGameDataFact]
+    public void LevelTwoAiActivationFinishesAChargeWithoutABlast()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables);
+        WorldInteraction charge = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
+
+        interactions.Tick();
+        Assert.True(interactions.ActivateFromAi(charge.Task.Id));
+        Assert.True(charge.IsCompleted);
+        Assert.True(charge.CompletedThisTick);
+        interactions.Tick();
+        Assert.False(charge.CompletedThisTick);
+        Assert.True(variables.TryRead("GenericTBA_282.isFinished", out QvmValue finished));
+        Assert.Equal(1, finished.Integer);
     }
 
     [RequiresGameDataFact]

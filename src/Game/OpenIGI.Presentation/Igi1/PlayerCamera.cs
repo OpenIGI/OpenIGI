@@ -1136,7 +1136,7 @@ public sealed class PlayerCamera
             ? HumanLocomotionStates.For(43).AnimationId
             : HumanLocomotionStates.For(42).AnimationId,
         InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
-            ActiveAnimationParameter(_activeInteraction.Task),
+            _activeInteraction.ActivateAnimation,
         _ => -1,
     };
 
@@ -1565,6 +1565,15 @@ public sealed class PlayerCamera
                 _interactionUseArmed = false;
                 double standingHeight = _body.Position.Z;
                 (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
+                if (interaction.Type == InteractionActivateType.PlaceExplosive)
+                {
+                    // State 36 places from the eye, not the feet: it casts to the target, backs the body off the
+                    // contact and moves the charge model there, all on entry.
+                    ChargePlantPose plant = interaction.PlantPose(_body.Eye, PlantTrace());
+                    interaction.PlaceTask(plant.Contact, plant.Facing);
+                    (position, facing) = (plant.Position, plant.Facing);
+                }
+
                 _body.Position = position;
                 SnapBodyForInteraction(_body, interaction.Type, terrain, standingHeight);
                 _interactionFacing = facing;
@@ -1954,9 +1963,6 @@ public sealed class PlayerCamera
     /// <summary>How far up a ladder a climber takes hold — chest height, in world units.</summary>
     private const double LadderGrabHeightUnits = 1.25 * WorldScene.UnitsPerMetre;
 
-    private static int ActiveAnimationParameter(DeclaredTask task) =>
-        task.TryGetValue("Activate Anim", out object? raw) && raw is int animation ? animation : -1;
-
     private int _upperBodyAnimation = -1;
     private bool _upperBodyLoops;
     private float _upperBodyBlendSeconds;
@@ -2313,6 +2319,15 @@ public sealed class PlayerCamera
                 look * PresentationBlend.InterpolateRotation(_previousRotation, _rotation, alpha));
         }
     }
+
+    // The world cast state 36 plants along (0x4CC2A0): objects and the ground, nearest first.
+    private WorldTraceCast? PlantTrace() => (_walls, TerrainTrace) switch
+    {
+        ({ } walls, { } ground) => WorldTrace.Nearest(walls.Tracer(), ground),
+        ({ } walls, null) => walls.Tracer(),
+        (null, { } ground) => ground,
+        _ => null,
+    };
 
     private WorldRayCast ViewModelWalls()
     {

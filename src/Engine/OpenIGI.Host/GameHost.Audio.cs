@@ -125,17 +125,6 @@ internal sealed partial class GameHost
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
 
-    private readonly List<PendingGenericTbaExplosion> _pendingGenericTbaExplosions = [];
-
-    private sealed class PendingGenericTbaExplosion(
-        WorldInteraction interaction, Vector3d position, GenericTbaExplosionParameters parameters, int remainingTicks)
-    {
-        public WorldInteraction Interaction { get; } = interaction;
-        public Vector3d Position { get; } = position;
-        public GenericTbaExplosionParameters Parameters { get; } = parameters;
-        public int RemainingTicks { get; set; } = remainingTicks;
-    }
-
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
 
@@ -1377,88 +1366,6 @@ internal sealed partial class GameHost
                 {
                     BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
                 }
-            }
-        }
-    }
-
-    /// <summary>Consumes and presents authored GenericTBA explosions once per completed interaction.</summary>
-    private void ResolveGenericTbaExplosions()
-    {
-        if (_interactions is { } interactions)
-        {
-            foreach ((WorldInteraction interaction, GenericTbaExplosionParameters parameters) in interactions.ConsumeExplosions())
-            {
-                int delayTicks = Math.Max(0, (int)MathF.Round(
-                    Math.Max(0f, parameters.ExplosionDelaySeconds) * GameClock.DefaultTickRate));
-                _pendingGenericTbaExplosions.Add(
-                    new PendingGenericTbaExplosion(interaction, interaction.Anchor, parameters, delayTicks));
-            }
-        }
-
-        for (int i = _pendingGenericTbaExplosions.Count - 1; i >= 0; i--)
-        {
-            PendingGenericTbaExplosion pending = _pendingGenericTbaExplosions[i];
-            if (pending.RemainingTicks > 0)
-            {
-                pending.RemainingTicks--;
-                continue;
-            }
-
-            pending.Interaction.MarkExplosionPresented(_worldSolids);
-            PresentGenericTbaExplosion(pending.Position, pending.Parameters);
-            _pendingGenericTbaExplosions.RemoveAt(i);
-        }
-    }
-
-    private void PresentGenericTbaExplosion(Vector3d position, GenericTbaExplosionParameters parameters)
-    {
-        string sound = parameters.ExplosionSound.Length > 0 ? parameters.ExplosionSound : "explo_02_m";
-        _sounds?.PlayDefinition(sound, position, priority: 90);
-        // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
-        // at presentation time as the other world blasts, including after an authored delay.
-        _soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
-        _impactParticles?.SpawnRetailExplosion(
-            position,
-            new RetailExplosionShape(
-                parameters.ExplosionRadiusUnits,
-                parameters.FireballCount,
-                parameters.FragmentCount));
-
-        if (parameters.ExplosionExpression.Length > 0)
-        {
-            _ = new LevelExpressionRuntime(_loop.Variables).Execute(parameters.ExplosionExpression);
-        }
-
-        float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
-        _soldiers?.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-        HandleDestructibleBlast(
-            source: null,
-            originUnits: position,
-            radiusUnits: parameters.ExplosionRadiusUnits,
-            falloffUnits: parameters.ExplosionFalloffUnits,
-            damageFactor: damageFactor);
-        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-
-        if (_player is null)
-        {
-            return;
-        }
-
-        ReachPlayerWithBlast(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits);
-        float playerDistance = (float)(_player.Body.Position - position).Length;
-        float dose = ExplosionDamage.Dose(
-            playerDistance,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-            parameters.ExplosionRadiusUnits,
-            parameters.ExplosionFalloffUnits,
-            damageFactor);
-        if (dose > 0f && !_playerHealth.IsDead)
-        {
-            _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            FlashPlayerForBlast();
-            if (_playerHealth.IsDead)
-            {
-                BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
             }
         }
     }
