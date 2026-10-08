@@ -167,13 +167,21 @@ public sealed class CutsceneRuntime
     }
 
     /// <summary>Every live vehicle's sound inputs, as its update left them this tick.</summary>
-    /// <returns>One entry per active, undestroyed Car or Heli.</returns>
+    /// <returns>One entry per active, undestroyed Car, Heli or Plane.</returns>
+    /// <remarks>
+    /// A plane instantiates <c>su27</c> while its "Play sound" holds (<c>0x433690</c>), as a helicopter does
+    /// <c>helicopter_1</c> (<c>0x4316D0</c>). Both answer their sounds' parameter query with a two-entry array
+    /// (<c>0x434A30</c>, <c>0x432BB0</c>; laid out by <c>0x4E6AB0</c> as a count, then the values) that their
+    /// physics step fills after each step (<c>0x433B50</c>, <c>0x431E30</c>): parameter 0 the thrust (<c>+1824</c>),
+    /// parameter 1 whether it is above 0.01. <c>plane_01</c> reads parameter 1, so a jet sounds at its curves'
+    /// "on" point whenever its engine is running.
+    /// </remarks>
     public IEnumerable<VehicleSoundSource> VehicleSoundSources()
     {
         foreach ((GameTask task, TransformState state) in _taskTransforms)
         {
             if (task is not DeclaredTask vehicle
-                || vehicle.Type.Name is not ("Car" or "Heli")
+                || vehicle.Type.Name is not ("Car" or "Heli" or "Plane")
                 || !ConditionalContainerGate.IsTaskActive(vehicle)
                 || _destructibles?.IsDestroyed(vehicle) == true)
             {
@@ -181,15 +189,22 @@ public sealed class CutsceneRuntime
             }
 
             bool helicopter = vehicle.Type.Name == "Heli";
+            bool plane = vehicle.Type.Name == "Plane";
             string set = helicopter
                 ? "helicopter_1"
-                : _vehiclePhysics?.TryGetCar(Text(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
-                    ? car.EngineSoundSet
-                    : string.Empty;
+                : plane
+                    ? "su27"
+                    : _vehiclePhysics?.TryGetCar(Text(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
+                        ? car.EngineSoundSet
+                        : string.Empty;
             string gate = Text(vehicle, "Play sound");
             bool on = string.IsNullOrWhiteSpace(gate) || _expressions.EvaluateCondition(gate, emptyValue: true, vehicle);
-            float throttle = helicopter ? state.RetailHeli?.Collective ?? 0f : state.RetailBody?.Throttle ?? 0f;
-            float speed = helicopter ? 0f : Math.Min((state.RetailBody?.Speed ?? 0f) * 0.001f, 1f);
+            float throttle = helicopter
+                ? state.RetailHeli?.Collective ?? 0f
+                : plane
+                    ? state.RetailPlane?.Thrust ?? 0f
+                    : state.RetailBody?.Throttle ?? 0f;
+            float speed = helicopter || plane ? 0f : Math.Min((state.RetailBody?.Speed ?? 0f) * 0.001f, 1f);
             yield return new VehicleSoundSource(
                 vehicle,
                 set,
