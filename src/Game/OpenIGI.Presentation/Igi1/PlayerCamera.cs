@@ -3056,35 +3056,34 @@ public sealed class PlayerCamera
                     return;
                 }
 
-                // The graze first. The collision index has already turned the normal to face the ray, so
-                // the angle between the reversed travel and that normal is the incidence 0x4B2B30 returns:
-                // near zero arriving square on, near a right angle arriving along the surface.
-                if (GunShotBallistics.CanDeflect(deflected))
+                // The graze first, then the bite. The collision index has already turned the normal to face
+                // the ray, so the angle between the reversed travel and that normal is the incidence 0x4B2B30
+                // returns. The original will not let a round through a surface whose trace named no object,
+                // whatever the margin, so a hit on the bare level shell always stops it.
+                GunShotImpact outcome = GunShotBallistics.ResolveEntry(
+                    penetrationPower,
+                    struck,
+                    namedObject: richHit.Owner is not null,
+                    GunShotBallistics.IncidenceRadians(direction, hit.Normal),
+                    deflected,
+                    _random.NextSingle);
+                if (outcome == GunShotImpact.Deflected)
                 {
-                    float incidence = IncidenceRadians(direction, hit.Normal);
-                    if (_random.NextSingle()
-                        < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
-                    {
-                        // 0x47BD7B sounds the whizz directly here rather than through the material's
-                        // window, so a round that glances always gets one.
-                        deflected = true;
-                        Deflected?.Invoke(hit.Position);
+                    // 0x47BD7B sounds the whizz directly here rather than through the material's
+                    // window, so a round that glances always gets one.
+                    deflected = true;
+                    Deflected?.Invoke(hit.Position);
 
-                        // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
-                        // on metal and concrete is the dent rather than the hole. The latch is set here,
-                        // before the impact is recorded at 0x47BDED; CommitMarks reads it.
-                        Record(hit, richHit, exitCrossing: false);
-                        direction = Reflect(direction, hit.Normal);
-                        origin = StepOff(hit.Position, direction);
-                        continue;
-                    }
+                    // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
+                    // on metal and concrete is the dent rather than the hole. The latch is set here,
+                    // before the impact is recorded at 0x47BDED; CommitMarks reads it.
+                    Record(hit, richHit, exitCrossing: false);
+                    direction = Reflect(direction, hit.Normal);
+                    origin = StepOff(hit.Position, direction);
+                    continue;
                 }
 
-                // Then the bite. The original will not let a round through a surface whose trace named no
-                // object, whatever the margin, so a hit on the bare level shell always stops it.
-                if (richHit.Owner is null
-                    || !GunShotBallistics.Penetrates(
-                        penetrationPower, struck.BulletResistance, _random.NextSingle()))
+                if (outcome == GunShotImpact.Stopped)
                 {
                     Record(hit, richHit, exitCrossing: false);
                     return;
@@ -3239,20 +3238,8 @@ public sealed class PlayerCamera
     public Action<Vector3d>? Deflected { get; set; }
 
     /// <summary>The angle a round arrives at, measured off the surface normal.</summary>
-    internal static float IncidenceRadians(Vector3d direction, Vector3f normal)
-    {
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return 0f;
-        }
-
-        double dot = ((-direction.X / length) * normal.X)
-            + ((-direction.Y / length) * normal.Y)
-            + ((-direction.Z / length) * normal.Z);
-        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
-    }
+    internal static float IncidenceRadians(Vector3d direction, Vector3f normal) =>
+        GunShotBallistics.IncidenceRadians(direction, normal);
 
     /// <summary>Mirrors a direction about a surface normal, as the deflection at <c>0x47BC8E</c> does.</summary>
     internal static Vector3d Reflect(Vector3d direction, Vector3f normal)

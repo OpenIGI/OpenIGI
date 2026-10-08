@@ -1477,16 +1477,64 @@ internal sealed partial class GameHost
                         }
                     }
 
-                    // Where the world stops this ray, over its whole length -- one cast serves cover,
+                    // Where the world stops this ray, over its whole length -- one walk serves cover,
                     // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
                     // the same mark a player's round does. In retail a miss is visible: the round lands
                     // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
                     // are why the guards seemed to hit with every bullet.
                     // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
                     // owner through), so its own hull never stops the round.
-                    bool worldBlocked = worldTrace(
-                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
-                        out WorldTraceHit blocker);
+                    //
+                    // It is a WALK, not one cast: 0x47B750 marches every round, the player's or a guard's,
+                    // through each surface its power beats (GunShotBallistics.ResolveEntry). Stopping at the
+                    // first surface had the mission-1 water-tower sniper empty its rifle into its own
+                    // railing -- Fence, resistance 0, against the Dragunov's power 3. The probe saw all 18 of
+                    // retail's rounds strike that railing 4.3 m out and carry on, 15 of them to hit; the
+                    // port's 37 all stopped there. A glance ends the walk here: the reflected leg is not
+                    // followed. Distances are along the whole round, from the muzzle.
+                    List<WorldTraceHit> passed = [];
+                    bool worldBlocked = false;
+                    bool worldDeflected = false;
+                    WorldTraceHit blocker = default;
+                    {
+                        Vector3d line = to - from;
+                        double length = line.Length;
+                        Vector3d direction = length > 0.0 ? line / length : default;
+                        Vector3d origin = from;
+                        double travelled = 0.0;
+                        for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && travelled < length; pass++)
+                        {
+                            if (!worldTrace(
+                                new WorldTraceRequest(origin, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
+                                out WorldTraceHit surface))
+                            {
+                                break;
+                            }
+
+                            surface = surface with { Distance = travelled + surface.Distance };
+                            GunShotImpact outcome = _worldMaterials is { } faces && faces.TryGet(surface.Material, out GameMaterial face)
+                                ? GunShotBallistics.ResolveEntry(
+                                    weapon.PenetrationPower,
+                                    face,
+                                    namedObject: surface.Owner is not null,
+                                    GunShotBallistics.IncidenceRadians(direction, surface.Normal),
+                                    alreadyDeflected: false,
+                                    () => (float)_shotRandom.NextDouble())
+                                : GunShotImpact.Stopped;
+                            if (outcome != GunShotImpact.Penetrated)
+                            {
+                                worldBlocked = true;
+                                worldDeflected = outcome == GunShotImpact.Deflected;
+                                blocker = surface;
+                                break;
+                            }
+
+                            passed.Add(surface);
+                            travelled = surface.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                            origin = from + (direction * travelled);
+                        }
+                    }
+
                     WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
 
                     // A round that meets no hostile body falls through to the soldiers behind the
@@ -1495,9 +1543,17 @@ internal sealed partial class GameHost
                     // ray, nearest first, and the first one it meets (per its own probability roll)
                     // takes it. True when a soldier consumed the round; false when it flew past them all.
                     bool SoldiersTakeTheRound()
-                        => _soldiers is not null
-                            && _soldiers.TryShootAiRound(
-                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
+                    {
+                        if (_soldiers is null
+                            || !_soldiers.TryShootAiRound(
+                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out HumanHit taken))
+                        {
+                            return false;
+                        }
+
+                        MarkPassed(taken.Distance);
+                        return true;
+                    }
 
                     // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
                     void OfferNearMiss(Vector3d stop)
@@ -1535,34 +1591,60 @@ internal sealed partial class GameHost
                         }
                     }
 
+                    // The surface that ended the round, after every one it went through on the way.
                     void MarkTheImpact()
                     {
+                        MarkPassed(double.MaxValue);
                         if (!worldBlocked)
                         {
                             return;
                         }
 
+                        MarkSurface(blocker);
+                        if (worldDeflected)
+                        {
+                            PlayRicochetSound(blocker.Position);
+                        }
+                    }
+
+                    // The surfaces the round went through before it ended this far from the muzzle.
+                    void MarkPassed(double upTo)
+                    {
+                        foreach (WorldTraceHit surface in passed)
+                        {
+                            if (surface.Distance < upTo)
+                            {
+                                MarkSurface(surface);
+                            }
+                        }
+
+                        passed.RemoveAll(surface => surface.Distance < upTo);
+                    }
+
+                    void MarkSurface(in WorldTraceHit surface)
+                    {
+                        WorldRayHit face = surface.RayHit;
                         if (_worldMaterials is { } table)
                         {
                             _player.Marks.TryAdd(
-                                worldHit,
-                                BulletMarks.SurfaceOf(blocker),
+                                face,
+                                BulletMarks.SurfaceOf(surface),
                                 table,
                                 probe: _player.MarkProbe,
-                                placement: blocker.Placement);
+                                placement: surface.Placement);
                         }
 
                         PlayBulletImpactSound(
-                            worldHit.Position,
+                            face.Position,
                             struckHuman: false,
-                            surfaceMaterial: worldHit.Material);
+                            surfaceMaterial: face.Material);
 
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
                         ApplyRoundContact(
-                            worldHit.Position,
-                            blocker.Owner,
-                            blocker.Placement,
+                            face.Position,
+                            surface.Owner,
+                            surface.Placement,
                             weapon.DamageFactor);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
@@ -1571,12 +1653,12 @@ internal sealed partial class GameHost
                             && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
                         {
                             string material = _worldMaterials is { } names
-                                && names.TryGet(worldHit.Material, out GameMaterial struck)
+                                && names.TryGet(face.Material, out GameMaterial struck)
                                 ? struck.Name
                                 : string.Empty;
                             bursts.SpawnBurst(
-                                worldHit.Position,
-                                worldHit.Normal,
+                                face.Position,
+                                face.Normal,
                                 ImpactParticleRenderer.KindOf(material),
                                 intensity);
                         }
@@ -1584,6 +1666,11 @@ internal sealed partial class GameHost
 
                     if (!met)
                     {
+                        _logger.Debug(
+                            "Weapon",
+                            $"Guard {shooter?.Soldier.Id} round missed the player's body"
+                                + (worldBlocked ? $"; the world stops it at {blocker.Kind} '{blocker.Label}', {worldHit.Distance / WorldScene.UnitsPerMetre:0.0} m." : "."));
+
                         // Geometric miss -- aim lag against a moving target, a running patrol's spray, or
                         // a dead player whose corpse stops nothing. The round flies on: offer it to the
                         // soldiers, and only then does it land where the world says.
@@ -1605,8 +1692,9 @@ internal sealed partial class GameHost
                         MarkTheImpact();
                         _logger.Debug(
                             "Weapon",
-                            $"Guard round blocked by {blocker.Kind} '{blocker.Label}' at "
-                                + $"{blocker.Fraction:P1} before the player body.");
+                            $"Guard {shooter?.Soldier.Id} round blocked by {blocker.Kind} '{blocker.Label}' "
+                                + $"(material {worldHit.Material}) {worldHit.Distance / WorldScene.UnitsPerMetre:0.0} m out, "
+                                + $"before the player body at {hit.Distance / WorldScene.UnitsPerMetre:0.0} m.");
                         return;
                     }
 
@@ -1619,6 +1707,10 @@ internal sealed partial class GameHost
                     // past -- through to whatever stands behind the player, where it marks.
                     if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
                     {
+                        _logger.Debug(
+                            "Weapon",
+                            $"Guard {shooter?.Soldier.Id} round reached the player's body and failed its roll (p {probability:0.000}).");
+
                         // The roll failed against the player -- the round flies past to whoever stands
                         // behind them: an opposing soldier if the shooter is hostile, a guard if the
                         // shooter is a friendly.
@@ -1630,8 +1722,10 @@ internal sealed partial class GameHost
                         return;
                     }
 
-                    // The round stops at the player: the soldiers it passed on the way still hear it go by.
+                    // The round stops at the player: the soldiers it passed on the way still hear it go by,
+                    // and the surfaces it went through on the way keep their marks.
                     OfferNearMiss(hit.Position);
+                    MarkPassed(hit.Distance);
 
                     // The roll connected with the player's body. A friendly's round that meets the
                     // player is consumed there with no damage -- retail's cast collides with a same-team
