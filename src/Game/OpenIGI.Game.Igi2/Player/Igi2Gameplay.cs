@@ -224,6 +224,10 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
     }
 
     /// <inheritdoc/>
+    /// <remarks>The view's <c>vFOV</c>, which a zoom steers.</remarks>
+    public float FieldOfViewScale => Human.View.FieldOfView;
+
+    /// <inheritdoc/>
     /// <remarks>Built once a tick, on the first ask after it, from the view as the tick left it.</remarks>
     public TitleFirstPersonView? FirstPerson
     {

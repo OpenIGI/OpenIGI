@@ -64,6 +64,9 @@ public interface ITitlePlayer
     /// <summary>Gets which way the eyes look: rows are the view's right, up and forward axes, the camera's convention.</summary>
     Matrix3f ViewOrientation { get; }
 
+    /// <summary>Gets how wide the eyes see, as the tangent of half the view's horizontal angle: one, ninety degrees, unless a zoom narrows it.</summary>
+    float FieldOfViewScale => 1f;
+
     /// <summary>Runs one game tick.</summary>
     /// <param name="input">The tick's input.</param>
     void Tick(in TitlePlayerInput input);
