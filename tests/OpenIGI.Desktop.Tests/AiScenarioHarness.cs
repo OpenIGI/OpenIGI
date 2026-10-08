@@ -1364,7 +1364,7 @@ public sealed class AiScenarioHarness : IDisposable
 
         List<OpenIGI.Engine.Tasks.DeclaredTask> vehicles = [.. Walk(loop.Tasks.Root)
             .OfType<OpenIGI.Engine.Tasks.DeclaredTask>()
-            .Where(static task => task.Type.Name is "Car" or "Heli")];
+            .Where(static task => task.Type.Name is "Car" or "Heli" or "Plane")];
         HumanHealth health = (HumanHealth)healthField.GetValue(host)!;
         FieldInfo deadField = typeof(GameHost).GetField("_playerDead", BindingFlags.NonPublic | BindingFlags.Instance)!;
         bool[] triggers = new bool[guns.Count];
@@ -1379,6 +1379,7 @@ public sealed class AiScenarioHarness : IDisposable
         int vehicleWeaponKey = 0;
         int vehicleWeaponTick = -1;
         int vehicleFireUntil = -1;
+        int vehicleUseUntil = -1;
         double[]? vehicleAimPoint = null;
 
         // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
@@ -1678,8 +1679,33 @@ public sealed class AiScenarioHarness : IDisposable
                     case "fire":
                         vehicleFireUntil = tick + (args.Length >= 1 ? (int)args[0] : 1);
                         break;
+                    case "use":
+                        vehicleUseUntil = tick + (args.Length >= 1 ? (int)args[0] : 1);
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} use");
+                        break;
                     case "quit":
                         quit = true;
+                        break;
+                    case "complete":
+                        // complete <task id>: finish that interaction as its completion 0x443EA0 does -- isFinished
+                        // is a byte retail's setvar can write, but the port binds it read-only off the interaction.
+                        if (typeof(GameHost).GetField("_interactions", BindingFlags.NonPublic | BindingFlags.Instance)!
+                            .GetValue(host) is WorldInteractionRegistry interactions
+                            && interactions.Items.FirstOrDefault(item => item.Task.Id == (int)args[0]) is { } finished)
+                        {
+                            typeof(WorldInteraction).GetProperty(nameof(WorldInteraction.IsCompleted))!
+                                .SetValue(finished, true);
+                            log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} complete {(int)args[0]}");
+                        }
+                        else
+                        {
+                            object? registry = typeof(GameHost).GetField("_interactions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host);
+                            string ids = registry is WorldInteractionRegistry all
+                                ? string.Join(",", all.Items.Select(item => $"{item.Task.Type.Name}#{item.Task.Id}"))
+                                : "no registry";
+                            log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} complete {(int)args[0]} NOT FOUND among {ids}");
+                        }
+
                         break;
                 }
             }
@@ -1703,6 +1729,7 @@ public sealed class AiScenarioHarness : IDisposable
             }
 
             vehicleInput.Mouse.SetButton(MouseButton.Left, down: tick < vehicleFireUntil);
+            vehicleInput.Keyboard.SetKey(KeyCode.E, down: tick < vehicleUseUntil);
             if (player.FiredThisTick)
             {
                 log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} FIRED {player.HeldWeaponType?.ScriptId}");
