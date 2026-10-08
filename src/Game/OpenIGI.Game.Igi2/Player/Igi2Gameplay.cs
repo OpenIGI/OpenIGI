@@ -63,6 +63,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             {
                 weapons.World = new Igi2LevelGunShotWorld(world, materials);
             }
+
+            if (request.Services.TryGet(out Igi2HumanWeapons? armoury))
+            {
+                player.Human.Pickups = Pickups.Igi2PickupList.Build(request.World.LevelRoot, armoury.Tables, models, world, materials);
+            }
         }
 
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
@@ -307,6 +312,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
         Weapons?.RunGunShot();
+        Human.Pickups?.Run();
 
         Human.View.RunZoom();
 
@@ -392,6 +398,10 @@ internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world) : IIgi2Hu
     public string? LandingSound(int material) => null;
 
     public void PlaySound(string name)
+    {
+    }
+
+    public void ShowStatusMessage(string key)
     {
     }
 

@@ -139,6 +139,7 @@ public sealed class Igi2WeaponContentModule : IContentModule
         context.Types.Register<Weapons.Igi2TagItemBool8Task>(Weapons.Igi2TagItemBool8Task.TypeName);
         context.Types.Register<Weapons.Igi2GunTask>(Weapons.Igi2GunTask.TypeName);
         context.Types.Register<Weapons.Igi2ZoomTask>(Weapons.Igi2ZoomTask.TypeName);
+        context.Types.Register<Pickups.Igi2GunPickupTask>(Pickups.Igi2GunPickupTask.TypeName);
         context.Types.Register<Weapons.Igi2ProjectileLauncherTask>(Weapons.Igi2ProjectileLauncherTask.TypeName);
         context.Types.Register<Weapons.Igi2C4BombTask>(Weapons.Igi2C4BombTask.TypeName);
         context.Types.Register<Weapons.Igi2ProximityMineTask>(Weapons.Igi2ProximityMineTask.TypeName);

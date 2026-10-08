@@ -83,7 +83,7 @@ public sealed class Igi2Forest
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2ForestStand> stands = [];
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
         {
             if (task is not ForestTask forest || task.Id == GameTask.NoId)
             {
@@ -134,19 +134,6 @@ public sealed class Igi2Forest
 
     /// <inheritdoc/>
     public override string ToString() => $"I.G.I. 2 forest, {Stands.Count} stand(s), {TreeCount} trees";
-
-    private static IEnumerable<GameTask> Walk(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
-    }
 }
 
 /// <summary>One <c>Forest</c> task's stand of trees.</summary>

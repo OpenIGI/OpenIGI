@@ -332,6 +332,30 @@ public sealed class Igi2Inventory
         }
     }
 
+    /// <summary>
+    /// Sets what a weapon holds and adds to what is carried of its ammunition, <c>Weapon_SetAmmoForWeapon</c>
+    /// (<c>igi2 0x51EE40</c>): the first fire type is loaded with up to a load of the given rounds, the second with one,
+    /// and each fire type's ammunition is given its rounds within its limit.
+    /// </summary>
+    /// <param name="item">The weapon.</param>
+    /// <param name="ammoInClip">The rounds to load the first fire type with.</param>
+    /// <param name="rounds">The rounds for each fire type's ammunition.</param>
+    public void SetAmmoForWeapon(Igi2WeaponItem item, int ammoInClip, IReadOnlyList<int> rounds)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(rounds);
+        int perClip = item.WeaponType.AmmoInfo(0, _tables).RoundsPerClip;
+        item.SetLoaded(0, ammoInClip < perClip ? ammoInClip : perClip);
+        item.SetLoaded(1, 1);
+        for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
+        {
+            if (item.WeaponType.AmmoInfo(slot, _tables).AmmoType is { } ammoType && FindAmmo(ammoType.AmmoId) is { } carried)
+            {
+                carried.Add(rounds[slot]);
+            }
+        }
+    }
+
     /// <summary>Adds rounds of an ammunition to what is carried (<c>Weapon_AddAmmoToAmmoType</c>, <c>igi2 0x51F150</c>).</summary>
     /// <param name="ammoId">The name of its constant, <c>AMMO_ID_*</c>.</param>
     /// <param name="rounds">The rounds.</param>
@@ -559,6 +583,31 @@ internal static class Igi2WeaponTypeKind
 /// <summary>The <c>WEAPONCATEGORY_*</c> values the inventory itself tests.</summary>
 internal static class Igi2WeaponCategory
 {
+    /// <summary><c>WEAPONCATEGORY_GRENADE</c>.</summary>
+    public const int Grenade = 4;
+
+    /// <summary><c>WEAPONCATEGORY_PROXIMITYMINE</c>.</summary>
+    public const int ProximityMine = 5;
+
+    /// <summary><c>WEAPONCATEGORY_FLASHBANG</c>.</summary>
+    public const int Flashbang = 6;
+
+    /// <summary><c>WEAPONCATEGORY_SMOKEGRENADE</c>.</summary>
+    public const int SmokeGrenade = 7;
+
+    /// <summary><c>WEAPONCATEGORY_MEDIPACK</c>.</summary>
+    public const int Medipack = 8;
+
+    /// <summary>
+    /// Gets whether a category is carried as rounds of itself, with no load to fill: the thrown weapons, the mine and the
+    /// medipack, which <c>GunPickup_PickupHandler</c> (<c>igi2 0x46C0A0</c>) and <c>Human_PickupGun</c> (<c>0x4FFF20</c>)
+    /// both single out.
+    /// </summary>
+    /// <param name="category">The <c>WEAPONCATEGORY_*</c> value.</param>
+    /// <returns><see langword="true"/> for those five.</returns>
+    public static bool IsCarriedAsRounds(int category) =>
+        category is Flashbang or Grenade or SmokeGrenade or ProximityMine or Medipack;
+
     /// <summary><c>WEAPONCATEGORY_THERMOCHEMICAL</c>.</summary>
     public const int ThermoChemical = 11;
 

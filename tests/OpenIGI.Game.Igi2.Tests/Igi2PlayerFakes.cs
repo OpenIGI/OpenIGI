@@ -156,6 +156,10 @@ internal static class Igi2PlayerFakes
 
         public void PlaySound(string name) => Sounds.Add(name);
 
+        public List<string> Messages { get; } = [];
+
+        public void ShowStatusMessage(string key) => Messages.Add(key);
+
         public List<FakeSound> Started { get; } = [];
 
         public IIgi2SoundInstance StartSound(string name)

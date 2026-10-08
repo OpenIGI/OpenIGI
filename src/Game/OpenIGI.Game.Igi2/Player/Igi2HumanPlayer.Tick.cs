@@ -81,7 +81,7 @@ public sealed partial class Igi2HumanPlayer
     /// <para>
     /// Not ported yet, and skipped where they fall: activation (<c>Human_UpdateActivate</c>), climbing, the dead body
     /// rising in water (<c>Human_PopPosition</c>), riding (<c>Human_Attach</c>), the lying body's tilt to the ground (<c>Human_InterpolateZAxisToAveragedGroundNormal</c>), the AI's notice,
-    /// pickups and the screen flashes. The degraded-copy slowdown is inert: its
+    /// the action menu's pickups and the screen flashes. The degraded-copy slowdown is inert: its
     /// factor is one.
     /// </para>
     /// </remarks>
@@ -170,6 +170,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Weapon.UpdateStatus();
+        Pickup();
         View.DampenOffsets();
     }
 

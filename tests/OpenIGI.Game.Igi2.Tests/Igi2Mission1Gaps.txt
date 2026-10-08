@@ -596,7 +596,6 @@ type Floor    # MISSIONS/location1/level1/objects.qvm
 type GenericTBA    # MISSIONS/location1/level1/objects.qvm
 type GlobalLight    # MISSIONS/location1/level1/objects.qvm
 type GlobalLightKeyframe    # MISSIONS/location1/level1/objects.qvm
-type GunPickup    # MISSIONS/location1/level1/objects.qvm
 type HumanAI    # MISSIONS/location1/level1/objects.qvm
 type HumanAIConfigItem    # COMMON/ai/settings.qvm
 type HumanPlayerInput    # MISSIONS/location1/level1/objects.qvm

@@ -469,7 +469,7 @@ public sealed class Igi2TerrainSurface
             byName[BareName(entry.Name)] = entry;
         }
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
         {
             if (task is TerrainTask level)
             {
@@ -621,18 +621,5 @@ public sealed class Igi2TerrainSurface
     {
         int slash = name.LastIndexOfAny(['/', '\\']);
         return slash >= 0 ? name[(slash + 1)..] : name;
-    }
-
-    private static IEnumerable<GameTask> Walk(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
     }
 }

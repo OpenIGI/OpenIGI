@@ -133,6 +133,10 @@ public interface IIgi2HumanSurroundings
     /// <param name="name">The sound definition's name.</param>
     void PlaySound(string name);
 
+    /// <summary>Shows the player a message on the status line, <c>StatusMessage_New</c> (<c>igi2 0x510200</c>), localised.</summary>
+    /// <param name="key">The message's key in the localised strings.</param>
+    void ShowStatusMessage(string key);
+
     /// <summary>Plays a named sound at the human's view and keeps hold of it, as a state holding a loop does.</summary>
     /// <param name="name">The sound definition's name.</param>
     /// <returns>The playing sound.</returns>

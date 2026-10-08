@@ -104,7 +104,7 @@ public sealed class Igi2WaterSurface
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2WaterSheet> sheets = [];
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
         {
             if (task is not WaterTask water)
             {
@@ -148,17 +148,4 @@ public sealed class Igi2WaterSurface
 
     /// <inheritdoc/>
     public override string ToString() => $"I.G.I. 2 water, {Sheets.Count} sheet(s)";
-
-    private static IEnumerable<GameTask> Walk(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
-    }
 }
