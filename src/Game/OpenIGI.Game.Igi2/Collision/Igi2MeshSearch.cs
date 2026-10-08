@@ -11,6 +11,19 @@ internal interface IIgi2FaceVisitor
     void Visit(int face);
 }
 
+/// <summary>The order a face test sums the plane distance's three products in, which a 24-bit FPU makes matter.</summary>
+internal enum Igi2PlaneSum
+{
+    /// <summary>y, x, z: the solid-model line handler (<c>RigidDynCubeObj_TraceLinesHandler</c>).</summary>
+    YXZ,
+
+    /// <summary>z, y, x: the spline handler (<c>SplineObjSegment_TraceLinesHandler</c>).</summary>
+    ZYX,
+
+    /// <summary>x, z, y: the solid-model line-of-sight handler (<c>RigidDynCubeObj_LineOfSightHandler</c>).</summary>
+    XZY,
+}
+
 /// <summary>Where a line crosses a face: the plane's side, the parameter along the line, the point and the barycentric weights.</summary>
 /// <param name="Dot">The face's normal dotted with the line: below zero when the line enters the face's front.</param>
 /// <param name="T">How far along the line, as stored: a float.</param>
@@ -76,6 +89,9 @@ internal sealed class Igi2MeshSearch
     /// <summary>Gets the box's high corner.</summary>
     public Vector3f Max { get; private set; }
 
+    /// <summary>Gets or sets a value indicating whether the walk is to stop after the face it is testing.</summary>
+    public bool Stopped { get; set; }
+
     /// <summary><c>(lo ≤ S or lo ≤ E) and (hi ≥ S or hi ≥ E)</c>, an unordered comparison passing: an object's bounds against a line on one axis.</summary>
     /// <param name="lo">The bounds' low side.</param>
     /// <param name="hi">The bounds' high side.</param>
@@ -92,6 +108,15 @@ internal sealed class Igi2MeshSearch
     {
         Min = new Vector3f(Lower(a.X, b.X), Lower(a.Y, b.Y), Lower(a.Z, b.Z));
         Max = new Vector3f(Upper(a.X, b.X), Upper(a.Y, b.Y), Upper(a.Z, b.Z));
+    }
+
+    /// <summary>The search box with no pad: the two points' lower and higher components, as the line-of-sight handler takes them.</summary>
+    /// <param name="a">One corner's point.</param>
+    /// <param name="b">The other's.</param>
+    public void TightBox(Vector3f a, Vector3f b)
+    {
+        Min = new Vector3f(a.X < b.X ? a.X : b.X, a.Y < b.Y ? a.Y : b.Y, a.Z < b.Z ? a.Z : b.Z);
+        Max = new Vector3f(a.X > b.X ? a.X : b.X, a.Y > b.Y ? a.Y : b.Y, a.Z > b.Z ? a.Z : b.Z);
     }
 
     /// <summary>
@@ -216,6 +241,10 @@ internal sealed class Igi2MeshSearch
             for (int f = firstFace; f < firstFace + count; f++)
             {
                 faces.Visit(f);
+                if (Stopped)
+                {
+                    return;
+                }
             }
         }
     }
@@ -234,12 +263,10 @@ internal sealed class Igi2MeshSearch
     /// Whether the normal is reversed for the plane test (a flipped spline segment); the dominant-axis divisions keep
     /// the unreversed components, as the handler does.
     /// </param>
-    /// <param name="zFirst">
-    /// Whether the plane distance sums z, y, x (the spline handler) rather than y, x, z (the solid-model handler).
-    /// </param>
+    /// <param name="planeSum">The order the plane distance's products are summed in.</param>
     /// <param name="crossing">Receives the crossing.</param>
     /// <returns>Whether the line crosses the face.</returns>
-    public bool Cross(float[] v, int i0, int i1, int i2, Vector3f s, Vector3f d, bool flip, bool zFirst, out Igi2FaceCrossing crossing)
+    public bool Cross(float[] v, int i0, int i1, int i2, Vector3f s, Vector3f d, bool flip, Igi2PlaneSum planeSum, out Igi2FaceCrossing crossing)
     {
         crossing = default;
         Vector3f lo = Min, hi = Max;
@@ -283,9 +310,12 @@ internal sealed class Igi2MeshSearch
         }
 
         Fpu ox = (Fpu)v0x - s.X, oy = (Fpu)v0y - s.Y, oz = (Fpu)v0z - s.Z;
-        Fpu plane = zFirst
-            ? (oz * pz0) + (oy * py0) + (ox * px0)
-            : (oy * py0) + (ox * px0) + (oz * pz0);
+        Fpu plane = planeSum switch
+        {
+            Igi2PlaneSum.ZYX => (oz * pz0) + (oy * py0) + (ox * px0),
+            Igi2PlaneSum.XZY => (ox * px0) + (oz * pz0) + (oy * py0),
+            _ => (oy * py0) + (ox * px0) + (oz * pz0),
+        };
         Fpu t = plane / dot;
         float tf = t.F;
         if (t.Value < 0.0 || tf > 1f)

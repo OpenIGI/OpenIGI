@@ -61,6 +61,17 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
     /// <summary>How deep an attachment tree is followed before it is taken for a cycle; the shipped data has none.</summary>
     private const int MaxAttachmentDepth = 16;
 
+    /// <summary>
+    /// The placed types sight passes through: each links the line-of-sight event, 9, to no handler. <c>GunPickup</c>
+    /// (<c>GunPickup_Open</c>, <c>igi2 0x46C780</c>), <c>SCamera</c> (<c>0x490C00</c>), <c>Wire</c> (<c>0x514EF0</c>),
+    /// <c>EditorRigidObj</c> (<c>0x580890</c>), <c>EditCamera</c> (<c>0x580E10</c>) and <c>Origo</c> (<c>0x5C9A50</c>).
+    /// The other two pickups keep the handler they inherit, and block it.
+    /// </summary>
+    private static readonly HashSet<string> SightThrough = new(StringComparer.Ordinal)
+    {
+        "GunPickup", "SCamera", "Wire", "EditorRigidObj", "EditCamera", "Origo",
+    };
+
     private readonly Igi2RigidObject[] _objects;
     private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
@@ -283,6 +294,81 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery
             _terrain?.TraceLines(trace);
         }
     }
+
+    /// <summary>
+    /// A line of sight through the objects of some groups and, when asked, the ground: <c>World_LineOfSight</c>
+    /// (<c>igi2 0x551F60</c>).
+    /// </summary>
+    /// <param name="sight">The line, what it may meet, and its running results.</param>
+    /// <param name="groups">
+    /// The query groups: an object takes part when its type's group shares a bit with them, and
+    /// <see cref="TerrainGroup"/> asks for the ground.
+    /// </param>
+    /// <returns><see langword="true"/> when the line crossed no face.</returns>
+    /// <remarks>
+    /// <para>
+    /// The objects of the stationary tree along the line answer first, each with its own handler: the solid models
+    /// (<see cref="Igi2RigidLineOfSight"/>), the spline segments (<see cref="Igi2SplineSegmentLineOfSight"/>) and the
+    /// stands of trees (<see cref="Igi2ForestCollider.LineOfSight"/>); a line of no length meets none. Then, if anything
+    /// still gets through and the ground is asked for, the line is traced against the ground alone, and striking it
+    /// blocks the sight.
+    /// </para>
+    /// <para>
+    /// The original walks its octree's cubes along the line. Each handler tests its own bounds, so a walk over every
+    /// object meets the same faces; only the order can differ, and with it which of two materials crossed at exactly
+    /// the same distance is kept.
+    /// </para>
+    /// </remarks>
+    public bool LineOfSight(Igi2LineOfSight sight, uint groups)
+    {
+        ArgumentNullException.ThrowIfNull(sight);
+        uint objectGroups = groups & ~TerrainGroup;
+        if (objectGroups != 0 && sight.Start != sight.End)
+        {
+            foreach (Igi2RigidObject solid in _objects)
+            {
+                if ((objectGroups & (solid.Group | EveryTypeGroup)) != 0 && !PassesSight(solid.Owner))
+                {
+                    Igi2RigidLineOfSight.Meet(solid, sight);
+                }
+            }
+
+            foreach (Igi2SplineSegment segment in _segments)
+            {
+                if ((objectGroups & (segment.Group | EveryTypeGroup)) != 0)
+                {
+                    Igi2SplineSegmentLineOfSight.Meet(segment, sight);
+                }
+            }
+
+            foreach (Igi2ForestCollider forest in _forests)
+            {
+                if ((objectGroups & (forest.Group | EveryTypeGroup)) != 0)
+                {
+                    forest.LineOfSight(sight);
+                }
+            }
+        }
+
+        if (sight.Transparency != 0f && (groups & TerrainGroup) != 0 && _terrain is not null)
+        {
+            Igi2LineTrace ground = new(1);
+            ground.Starts[0] = sight.Start;
+            ground.Ends[0] = sight.End;
+            TraceLines(ground, TerrainGroup);
+            if (ground.Intersections[0].IsHit)
+            {
+                sight.Transparency = 0f;
+                sight.IsHit = true;
+            }
+        }
+
+        return sight.IsClear;
+    }
+
+    /// <summary>Whether a placed object's type has no line-of-sight handler; an attachment is a magic object of its own and has one.</summary>
+    private static bool PassesSight(object owner) =>
+        owner is Igi2CollisionOwner { Depth: 0 } placed && SightThrough.Contains(placed.TypeName);
 
     /// <summary>
     /// The object half of a line trace, <c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>): every result is reset

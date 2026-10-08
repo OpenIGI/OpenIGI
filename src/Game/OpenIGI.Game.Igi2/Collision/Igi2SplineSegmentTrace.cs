@@ -200,7 +200,7 @@ public static class Igi2SplineSegmentTrace
         {
             int[] faces = mesh.Faces;
             int i0 = 3 * faces[4 * face], i1 = 3 * faces[(4 * face) + 1], i2 = 3 * faces[(4 * face) + 2];
-            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip: false, zFirst: true, out Igi2FaceCrossing crossing))
+            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip: false, Igi2PlaneSum.ZYX, out Igi2FaceCrossing crossing))
             {
                 return;
             }

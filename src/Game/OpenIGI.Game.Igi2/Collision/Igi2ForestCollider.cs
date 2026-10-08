@@ -213,6 +213,140 @@ public sealed class Igi2ForestCollider : IIgi2Collider
         }
     }
 
+    /// <summary>
+    /// A line of sight against the trees, <c>Forest_GetLineOfSightHandler</c> (<c>igi2 0x5A1260</c>) over
+    /// <c>Forest_LineOfSightTrees_Optimized</c> (<c>0x5A0B10</c>).
+    /// </summary>
+    /// <param name="sight">The line of sight.</param>
+    /// <remarks>
+    /// The walk steers by the sight's start and enters a region, or meets a tree, only when the line crosses it widened
+    /// by a radius and a half (<c>Forest_IsLineOutOfNode</c>, <c>0x5A02F0</c>). Each tree is met as a solid model,
+    /// foliage and all; one that crosses the sight nearer than anything before blocks it outright and ends the walk.
+    /// </remarks>
+    public void LineOfSight(Igi2LineOfSight sight)
+    {
+        ArgumentNullException.ThrowIfNull(sight);
+        if (_index.Root == Igi2ForestBsp.NoNode)
+        {
+            return;
+        }
+
+        float vx = ((Fpu)sight.Start.X - Position.X).F;
+        float vy = ((Fpu)sight.Start.Y - Position.Y).F;
+        Region root = new(_halfExtent, -_halfExtent, _halfExtent, -_halfExtent);
+        _ = Sight(sight, _index.Root, 0, root, vx, vy);
+    }
+
+    private bool Sight(Igi2LineOfSight sight, int node, int level, Region region, float vx, float vy)
+    {
+        Igi2ForestBspNode n = _index.Nodes[node];
+        Vector3f at = _index.Positions[n.Tree];
+        int axis = level & 1;
+        bool below = Side(at, axis, vx, vy);
+
+        Region near = region.Split(axis, keepLow: !below, Coordinate(at, axis));
+        int nearChild = below ? n.High : n.Low;
+        if (nearChild != Igi2ForestBsp.NoNode && !IsLineOut(near, sight)
+            && Sight(sight, nearChild, level + 1, near, vx, vy))
+        {
+            return true;
+        }
+
+        if (!IsLineOut(new Region(at.X, at.X, at.Y, at.Y), sight))
+        {
+            float before = sight.T;
+            Place(n.Tree, at);
+            Igi2RigidLineOfSight.Meet(_tree, sight);
+            if (sight.IsHit && sight.T < before)
+            {
+                sight.Transparency = 0f;
+                return true;
+            }
+        }
+
+        Region far = region.Split(axis, keepLow: below, Coordinate(at, axis));
+        int farChild = below ? n.Low : n.High;
+        return farChild != Igi2ForestBsp.NoNode && !IsLineOut(far, sight)
+            && Sight(sight, farChild, level + 1, far, vx, vy);
+    }
+
+    /// <summary>
+    /// Whether the sight's line, seen from above, misses a region widened by a radius and a half:
+    /// <c>Forest_IsLineOutOfNode</c> (<c>igi2 0x5A02F0</c>).
+    /// </summary>
+    /// <remarks>
+    /// Each end gets an outcode from the signs of its four distances to the sides. An end inside means the line is in;
+    /// ends outside the same side mean it is out. Otherwise the line is cut against the sides the start is outside of,
+    /// left, below, right and above in turn, each cut moving the start's other coordinate to where the line crosses that
+    /// side, and it is in when a cut falls strictly within the side's span.
+    /// </remarks>
+    private bool IsLineOut(Region region, Igi2LineOfSight sight)
+    {
+        float x1 = ((Fpu)sight.Start.X - Position.X).F, y1 = ((Fpu)sight.Start.Y - Position.Y).F;
+        float x2 = ((Fpu)sight.End.X - Position.X).F, y2 = ((Fpu)sight.End.Y - Position.Y).F;
+        Fpu reach = (Fpu)_treeRadius * 1.5f;
+        float minX = ((Fpu)region.MinX - reach).F, minY = ((Fpu)region.MinY - reach).F;
+        float maxX = (reach + region.MaxX).F, maxY = (reach + region.MaxY).F;
+
+        int start = Outcode(x1, y1), finish = Outcode(x2, y2);
+        if (start * finish == 0)
+        {
+            return false;
+        }
+
+        if ((start & finish) != 0)
+        {
+            return true;
+        }
+
+        if (start == 5 || finish == 10)
+        {
+            return false;
+        }
+
+        if ((start & 1) != 0)
+        {
+            y1 = (((((Fpu)y2 - y1) * ((Fpu)minX - x1)) / ((Fpu)x2 - x1)) + y1).F;
+            if (y1 > minY && y1 < maxY)
+            {
+                return false;
+            }
+        }
+
+        if ((start & 2) != 0)
+        {
+            x1 = (((((Fpu)minY - y1) * ((Fpu)x2 - x1)) / ((Fpu)y2 - y1)) + x1).F;
+            if (x1 > minX && x1 < maxX)
+            {
+                return false;
+            }
+        }
+
+        if ((start & 4) != 0)
+        {
+            y1 = (((((Fpu)maxX - x1) * ((Fpu)y2 - y1)) / ((Fpu)x2 - x1)) + y1).F;
+            if (y1 > minY && y1 < maxY)
+            {
+                return false;
+            }
+        }
+
+        if ((start & 8) == 0)
+        {
+            return true;
+        }
+
+        float x = (((((Fpu)maxY - y1) * ((Fpu)x2 - x1)) / ((Fpu)y2 - y1)) + x1).F;
+        return !(x > minX && x < maxX);
+
+        // Left, below, right, above: the sign bits of the four differences, a zero difference counting as inside.
+        int Outcode(float px, float py) =>
+            (float.IsNegative(((Fpu)px - minX).F) ? 1 : 0)
+            | (float.IsNegative(((Fpu)py - minY).F) ? 2 : 0)
+            | (float.IsNegative(((Fpu)maxX - px).F) ? 4 : 0)
+            | (float.IsNegative(((Fpu)maxY - py).F) ? 8 : 0);
+    }
+
     private bool Ground(Igi2LineTrace trace, int node, int level, Region region, float px, float py)
     {
         Igi2ForestBspNode n = _index.Nodes[node];
