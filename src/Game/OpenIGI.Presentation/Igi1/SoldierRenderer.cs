@@ -4216,8 +4216,23 @@ public sealed class SoldierRenderer : IDisposable
         // own clips; otherwise the gait picks between the walk cycle and the soldier's stand
         // animation.
         HumanSoldierClass soldierClass = brain.SoldierClass;
-        int walkAnimation = soldierClass.WalkAnimation;
+
+        // A PATROL'S GAITS ARE THE SOLDIER'S OWN FORWARD STATES, picked by the byte at Human+3328. The soldier's
+        // create (0x45CC50) sets it to 1 and only a press of input slot 20 (+512) flips it (0x45D080). The AI's
+        // channel 0 is that slot, and the walk and run setters every walker calls each tick (0x4525E0, 0x452660)
+        // press it exactly when the byte is wrong for the gait: so 1 is WALKING. The machine reads it as signal
+        // 0x40000 (0x45CCF0) and a plain forward goes to state 3 with it and state 2 without (0x457A00) -- clip 57
+        // walking, clip 3 running, on the guard's table. Mission 12's patrols walk in state 3 on the probe; the
+        // port had walked them in the player's walk clip and run them in the combat run (state 17), whose strides
+        // carried them half a metre off the original's path. Classes with machines of their own keep theirs.
+        bool soldierGaits = brain.Body is HumanSoldierBodyMachine;
+        int walkAnimation = soldierGaits
+            ? brain.Body.StateTable.AnimationOf(HumanSoldierStates.FastForwardState)
+            : soldierClass.WalkAnimation;
         int runAnimation = brain.Body.StateTable.AnimationOf(soldierClass.RunState);
+        int patrolRunAnimation = soldierGaits
+            ? brain.Body.StateTable.AnimationOf(HumanSoldierStates.ForwardState)
+            : runAnimation;
         if (brain.Body.IsFlinching)
         {
             // A flinch owns the body over any other clip: every per-tick leaves for it on the pulse.
@@ -4302,9 +4317,10 @@ public sealed class SoldierRenderer : IDisposable
             // (0x48E920): a RunTo leg installs the run gait and it stays until the next movement
             // command changes it. The alarm-response routes (level 1's 2600/2605-2616) are authored
             // as RunTo, so an alarmed guard RUNS between its posts -- playing the walk clip here is
-            // what made them amble out of the barracks at 1.28 m/s. The run clip's own root motion
-            // carries the brain at run speed; sets without one fall back to the walk.
-            if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
+            // what made them amble out of the barracks at 1.28 m/s. The run gait is the soldier's
+            // state 2 (see above), and its clip's own root motion carries the brain at run speed;
+            // sets without one fall back to the walk.
+            if (patrolRunAnimation < 0 || !view.SetMoving(true, patrolRunAnimation))
             {
                 view.SetMoving(true, walkAnimation);
             }
@@ -4619,7 +4635,14 @@ public sealed class SoldierRenderer : IDisposable
             // Stand() does. A level often authors a soldier a little below its floor; the query only
             // pulls UP onto a floor within the half-metre probe, so a soldier already on its floor
             // does not move.
-            double groundedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+            //
+            // NOT a soldier its graph stands: 0x462390 takes an AI's height from the graph and casts no ray
+            // at all, which the brain has already applied. Mission 12's castle guard sits on a crate edge in
+            // clip 4 with his graph node on the floor; the snap found the crate half a metre up and drew him
+            // floating over it, where the original draws him at node plus root height.
+            double groundedZ = brain.HasGraph && brain.StoodOnGraph && !brain.GraphInParentFrame
+                ? soldier.Position.Z
+                : SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
             return (new Vector3d(
                 soldier.Position.X / WorldScene.UnitsPerMetre,
                 soldier.Position.Y / WorldScene.UnitsPerMetre,
