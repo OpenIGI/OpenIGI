@@ -1066,6 +1066,18 @@ internal sealed partial class GameHost
                                 parentPosition,
                                 RetailOrientation.Euler(parentAngles.X, parentAngles.Y, parentAngles.Z));
                         }
+                        else if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask { Type.Name: "Train" } graphTrain
+                            && scene.Placements.FirstOrDefault(placement => ReferenceEquals(placement.Owner, graphTrain)) is { } trainPlacement)
+                        {
+                            // A Train has no point position -- its "Position" is a scalar along its rail -- so the
+                            // branch above never saw one, and the wagon's graph landed at the world origin. The car
+                            // stands where its consist puts it (0x42A7C0); its graph is in that frame like any other.
+                            Matrix3f m = trainPlacement.Orientation;
+                            graph.ApplyWorldOffset(
+                                graphPos,
+                                trainPlacement.Position * WorldScene.UnitsPerMetre,
+                                [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33]);
+                        }
                         else
                         {
                             graph.ApplyWorldOffset(graphPos);

@@ -52,7 +52,6 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
     private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
     private readonly Dictionary<WorldPlacement, (GameTask Vehicle, int Index)> _gunPlacements = [];
-    private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
     private readonly Func<string, float>? _modelLength;
@@ -2477,9 +2476,14 @@ public sealed class CutsceneRuntime
             out Matrix3f parentOrientation);
         position = parentPosition
             + parentOrientation.Transposed().Transform(attachment.RelativePosition);
+        // Human_SetParent (0x463310) keeps L = H0 * P0^T at Human+1928 -- the Human's frame times the
+        // TRANSPOSED parent frame, in that order -- and every tick 0x4610C0 rebuilds the Human as P * L.
+        // That is a conjugation, not a relative frame: a Human attached to a pitched parent leans at once.
+        // Mission 1's 3031, attached to wagon 607_01_1 pitched 10.6 degrees down the hill, leans 21 degrees
+        // there and 10.6 on the flat, and his climb-down clip's root steps are turned through that lean.
         orientation = parentOrientation
-            * attachment.ParentOriginOrientation.Transposed()
-            * attachment.Orientation;
+            * attachment.Orientation
+            * attachment.ParentOriginOrientation.Transposed();
         if (_taskTransforms.TryGetValue(task, out TransformState? state))
         {
             state.Position = position;
@@ -2772,64 +2776,53 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        if (string.Equals(task.Type.Name, "Train", StringComparison.Ordinal)
-            && RailroadPath.FromTrain(declared) is { } railroad)
+        if (string.Equals(task.Type.Name, "Train", StringComparison.Ordinal))
         {
+            float length = Math.Max(0f, _modelLength?.Invoke(Text(declared, "Model")) ?? 0f);
+            float pivot = Math.Max(0f, _modelPivot?.Invoke(Text(declared, "Model")) ?? 0f);
+
+            // Retail's Train::UpdateConsist (0x42A2C0/0x42A7C0) places the whole consist from the lead's
+            // scalar: one coupler per car walked along the rail's polyline (0x4FEC10), each car laid on the
+            // chord between its pair at its own pivot fraction. A child Train couples behind the cars its
+            // lead already has, and carries no rail position of its own.
             if (task.Parent is DeclaredTask parent
                 && string.Equals(parent.Type.Name, "Train", StringComparison.Ordinal)
                 && _taskTransforms.TryGetValue(parent, out TransformState? parentTrain)
-                && parentTrain.TrainRoot is { Railroad: { } rootRailroad } root)
+                && parentTrain.TrainRoot is { Consist: { } consist } root)
             {
-                float parentLength = Math.Max(0f, _modelLength?.Invoke(Text(parent, "Model")) ?? 0f);
-                float parentPivot = Math.Max(0f, _modelPivot?.Invoke(Text(parent, "Model")) ?? 0f);
-                // Child Train records leave Flip Direction at their default.  The consist is one
-                // railroad body, so spacing and orientation inherit the root locomotive's frame.
-                float consistDirection = rootRailroad.Flipped ? 1f : -1f;
-                float frontOffset = _trainTailOffsets.TryGetValue(parent, out float tail)
-                    ? tail
-                    : parentTrain.TrainOffset + (consistDirection * parentLength * (1f - parentPivot));
-                float childLength = Math.Max(0f, _modelLength?.Invoke(Text(declared, "Model")) ?? 0f);
-                float childPivot = Math.Max(0f, _modelPivot?.Invoke(Text(declared, "Model")) ?? 0f);
-                // Retail's Train::UpdateConsist (0x42A2C0/0x42A7C0) asks the railroad solver for
-                // the two coupler samples bounding each car, then places the model origin at
-                // lerp(front, rear, abs(magicVertex0.x) / couplerDistance).  TrainOffset therefore
-                // identifies the model pivot, while the tail map keeps the next coupler boundary.
-                float offset = frontOffset + (consistDirection * childLength * childPivot);
-                rootRailroad.Evaluate(root.TrackPosition + offset, out Vector3d childPosition, out Matrix3f childOrientation);
+                int index = consist.Add(declared, length, pivot);
+                consist.TryPlace(root.TrackPosition, index, out Vector3d childPosition, out Matrix3f childOrientation);
                 TransformState childState = new(childPosition, childOrientation)
                 {
-                    Railroad = rootRailroad,
+                    Consist = consist,
                     TrainRoot = root,
-                    TrainOffset = offset,
+                    ConsistIndex = index,
                 };
                 Remember(task, childState);
-                float tailOffset = frontOffset + (consistDirection * childLength);
-                _trainTailOffsets[parent] = tailOffset;
-                _trainTailOffsets[task] = tailOffset;
                 return;
             }
 
-            float rootLength = Math.Max(0f, _modelLength?.Invoke(Text(declared, "Model")) ?? 0f);
-            float rootPivot = Math.Max(0f, _modelPivot?.Invoke(Text(declared, "Model")) ?? 0f);
-            float direction = railroad.Flipped ? 1f : -1f;
-            float rootOffset = direction * rootLength * rootPivot;
-            railroad.Evaluate(railroad.InitialPosition + rootOffset, out Vector3d railPosition, out Matrix3f railOrientation);
-            TransformState trainState = new(railPosition, railOrientation)
+            if (RailroadPath.FromTrain(declared) is { } railroad)
             {
-                Railroad = railroad,
-                TrackPosition = railroad.InitialPosition,
-                PreviousTrackPosition = railroad.InitialPosition,
-                TrainOffset = rootOffset,
-                Thrust = RealNamed(declared, "Original thrust"),
-                TargetThrust = RealNamed(declared, "Original thrust"),
-                OriginalThrust = RealNamed(declared, "Original thrust"),
-                ThrustStep = MathF.Abs(RealNamed(declared, "ThrustStep")),
-                MaxSpeed = RealNamed(declared, "MaxSpeed"),
-            };
-            trainState.TrainRoot = trainState;
-            Remember(task, trainState);
-            _trainTailOffsets[task] = direction * rootLength;
-            return;
+                RailroadConsist cars = new(railroad);
+                int lead = cars.Add(declared, length, pivot);
+                cars.TryPlace(railroad.InitialPosition, lead, out Vector3d railPosition, out Matrix3f railOrientation);
+                TransformState trainState = new(railPosition, railOrientation)
+                {
+                    Consist = cars,
+                    ConsistIndex = lead,
+                    TrackPosition = railroad.InitialPosition,
+                    PreviousTrackPosition = railroad.InitialPosition,
+                    Thrust = RealNamed(declared, "Original thrust"),
+                    TargetThrust = RealNamed(declared, "Original thrust"),
+                    OriginalThrust = RealNamed(declared, "Original thrust"),
+                    ThrustStep = MathF.Abs(RealNamed(declared, "ThrustStep")),
+                    MaxSpeed = RealNamed(declared, "MaxSpeed"),
+                };
+                trainState.TrainRoot = trainState;
+                Remember(task, trainState);
+                return;
+            }
         }
 
         Vector3d position = Vector(declared, "Position");
@@ -3336,7 +3329,7 @@ public sealed class CutsceneRuntime
         ReadOnlySpan<float> channels = program.Channels;
 
         if (string.Equals(type, "Train", StringComparison.Ordinal)
-            && transform.Railroad is { } trainRailroad)
+            && transform.Consist is { } trainConsist)
         {
             // Train::ReadChannels (IGI.exe 0x42B040) treats tick zero as receiver setup, not a
             // physics update. It installs the channel-one hold sentinel and restores the authored
@@ -3365,13 +3358,17 @@ public sealed class CutsceneRuntime
 
             transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, transform.ThrustStep);
             transform.Speed = transform.MaxSpeed * transform.Thrust * (4_096_000f / 108_000f);
-            transform.TrackPosition += trainRailroad.Flipped ? -transform.Speed : transform.Speed;
-            trainRailroad.Evaluate(
-                transform.TrackPosition + transform.TrainOffset,
+            transform.TrackPosition += trainConsist.Railroad.Flipped ? -transform.Speed : transform.Speed;
+            if (trainConsist.TryPlace(
+                transform.TrackPosition,
+                transform.ConsistIndex,
                 out Vector3d railPosition,
-                out Matrix3f railOrientation);
-            transform.Position = railPosition;
-            transform.Orientation = railOrientation;
+                out Matrix3f railOrientation))
+            {
+                transform.Position = railPosition;
+                transform.Orientation = railOrientation;
+            }
+
             transform.IsDynamic = true;
             return;
         }
@@ -3788,13 +3785,14 @@ public sealed class CutsceneRuntime
         out Vector3d position,
         out Matrix3f orientation)
     {
-        if (state.TrainRoot is { Railroad: { } railroad } root)
-        {
-            float trackPosition = previous ? root.PreviousTrackPosition : root.TrackPosition;
-            railroad.Evaluate(
-                trackPosition + state.TrainOffset,
+        // A rail the original cannot walk leaves every car where it was (0x42A2C0 returns early).
+        if (state.TrainRoot is { Consist: { } consist } root
+            && consist.TryPlace(
+                previous ? root.PreviousTrackPosition : root.TrackPosition,
+                state.ConsistIndex,
                 out position,
-                out orientation);
+                out orientation))
+        {
             return;
         }
 
@@ -4868,7 +4866,7 @@ public sealed class CutsceneRuntime
         public Vector3f Euler { get; set; }
         public float Speed { get; set; }
         public bool IsDynamic { get; set; }
-        public RailroadPath? Railroad { get; set; }
+        public RailroadConsist? Consist { get; set; }
         public float TrackPosition { get; set; }
         public float PreviousTrackPosition { get; set; }
         public int DynamicRevision { get; set; }
@@ -4879,7 +4877,7 @@ public sealed class CutsceneRuntime
         public float ThrustStep { get; set; }
         public float MaxSpeed { get; set; }
         public TransformState? TrainRoot { get; set; }
-        public float TrainOffset { get; set; }
+        public int ConsistIndex { get; set; }
         public Vector3f Control { get; set; }
         public float Steering { get; set; }
         public float TargetSteering { get; set; }

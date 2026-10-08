@@ -167,6 +167,85 @@ public sealed class RetailSplineSegment
     }
 
     /// <summary>
+    /// The polyline <c>Segment_Build</c> (<c>0x4E4530</c>) leaves on a segment for the railroad solver: its
+    /// <c>N + 1</c> points (<c>+260</c>, floats relative to the waypoints' midpoint at <c>+32</c>), each piece's
+    /// length (<c>+1352</c>, the last entry 0) and their float sum (<c>+248</c>).
+    /// </summary>
+    /// <param name="p0">The previous waypoint's position.</param>
+    /// <param name="p1">This waypoint's position.</param>
+    /// <param name="a3">The previous waypoint's orientation (<c>0x4B38E0</c>), row-major.</param>
+    /// <param name="a4">This waypoint's orientation.</param>
+    /// <param name="count">The matrix count <c>N</c>; a straight segment uses 1.</param>
+    /// <param name="straight">
+    /// Whether the segment is laid straight (<c>+418</c> or <c>+417</c>): the points then lie on the chord,
+    /// and only the first piece is given a length, the chord's over <c>N</c>.
+    /// </param>
+    /// <param name="middle">Receives the waypoints' midpoint.</param>
+    /// <param name="lengths">Receives the piece lengths, <c>N + 1</c> of them.</param>
+    /// <param name="total">Receives their sum.</param>
+    /// <returns>The points, three floats each.</returns>
+    internal static float[] Polyline(
+        Vector3d p0,
+        Vector3d p1,
+        float[] a3,
+        float[] a4,
+        int count,
+        bool straight,
+        out Vector3d middle,
+        out float[] lengths,
+        out float total)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        double length = Dist(p0, p1);
+        double[] cx = Hermite(p0.X, p1.X, ((X87)a3[0] * length).Value, ((X87)a4[0] * length).Value);
+        double[] cy = Hermite(p0.Y, p1.Y, ((X87)a3[3] * length).Value, ((X87)a4[3] * length).Value);
+        double[] cz = Hermite(p0.Z, p1.Z, ((X87)a3[6] * length).Value, ((X87)a4[6] * length).Value);
+        middle = new Vector3d(
+            (((X87)p0.X + p1.X) * 0.5).Value,
+            (((X87)p0.Y + p1.Y) * 0.5).Value,
+            (((X87)p0.Z + p1.Z) * 0.5).Value);
+
+        float invN = ((X87)1.0f / (double)count).F;
+        float[] points = new float[3 * (count + 1)];
+        lengths = new float[count + 1];
+        total = 0f;
+        for (int k = 0; k <= count; k++)
+        {
+            double t = ((X87)(double)k * invN).Value;
+            if (straight)
+            {
+                // X takes the double t, Y and Z its float copy (+0x5C), as the listing does.
+                float tf = X87.ToFloat(t);
+                points[3 * k] = ((X87)((X87)p1.X - p0.X) * t + p0.X - middle.X).F;
+                points[(3 * k) + 1] = ((X87)((X87)p1.Y - p0.Y) * tf + p0.Y - middle.Y).F;
+                points[(3 * k) + 2] = ((X87)((X87)p1.Z - p0.Z) * tf + p0.Z - middle.Z).F;
+                if (k == 0)
+                {
+                    float dx = ((X87)p1.X - p0.X).F, dy = ((X87)p1.Y - p0.Y).F, dz = ((X87)p1.Z - p0.Z).F;
+                    lengths[0] = (X87.Sqrt((X87)dx * dx + (X87)dy * dy + (X87)dz * dz) * invN).F;
+                    total = ((X87)lengths[0] + total).F;
+                }
+
+                continue;
+            }
+
+            points[3 * k] = ((X87)Eval(cx, t) - middle.X).F;
+            points[(3 * k) + 1] = ((X87)Eval(cy, t) - middle.Y).F;
+            points[(3 * k) + 2] = ((X87)Eval(cz, t) - middle.Z).F;
+            if (k > 0)
+            {
+                X87 dx = (X87)points[3 * k] - points[3 * (k - 1)];
+                X87 dy = (X87)points[(3 * k) + 1] - points[(3 * (k - 1)) + 1];
+                X87 dz = (X87)points[(3 * k) + 2] - points[(3 * (k - 1)) + 2];
+                lengths[k - 1] = X87.Sqrt(dx * dx + dy * dy + dz * dz).F;
+                total = ((X87)lengths[k - 1] + total).F;
+            }
+        }
+
+        return points;
+    }
+
+    /// <summary>
     /// <c>Segment_Build</c>'s tree for a bent segment: the model's sphere tree copied, its centres bent by <c>0x4E1440</c>
     /// (the vertex bend over 24-byte records), then every radius rebuilt by <c>0x4E51C0</c> -- zeroed on entry, the
     /// children first, then each vertex of the node's own faces widening the node and every node above it.

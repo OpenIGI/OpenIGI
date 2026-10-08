@@ -1347,6 +1347,26 @@ public sealed class AiScenarioHarness : IDisposable
                             System.Collections.IDictionary brains = (System.Collections.IDictionary)typeof(SoldierRenderer).GetField("_brains", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!;
                             AiSoldier? brain = brains.Contains(view) ? (AiSoldier?)brains[view] : null;
                             object? P(string name) => member.GetType().GetProperty(name)?.GetValue(member);
+
+                            // The port's half of the probe's [human] parent/local: what the actor rides, its offset
+                            // in the parent's frame, and where that parent is now.
+                            if (typeof(CutsceneRuntime).GetField("_attachments", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime)
+                                    is System.Collections.IDictionary attachments
+                                && attachments.Contains(view.Soldier)
+                                && attachments[view.Soldier] is { } attachment)
+                            {
+                                Type kind = attachment.GetType();
+                                object parentTask = kind.GetProperty("ParentTask")!.GetValue(attachment)!;
+                                object parentState = kind.GetProperty("Parent")!.GetValue(attachment)!;
+                                Vector3d relative = (Vector3d)kind.GetProperty("RelativePosition")!.GetValue(attachment)!;
+                                Vector3d parentAt = (Vector3d)parentState.GetType().GetProperty("Position")!.GetValue(parentState)!;
+                                log.AppendLine(CultureInfo.InvariantCulture, $"[attach] tick={tick} id={view.Soldier.Id} parent={((OpenIGI.Engine.Tasks.GameTask)parentTask).Id} {((OpenIGI.Engine.Tasks.GameTask)parentTask).Type.Name} local=({relative.X:0.0},{relative.Y:0.0},{relative.Z:0.0}) parentAt=({parentAt.X:0},{parentAt.Y:0},{parentAt.Z:0})");
+                                if (runtime.TryGetAttachedDrawTransform(view.Soldier, out _, out Matrix3f face))
+                                {
+                                    log.AppendLine(CultureInfo.InvariantCulture, $"[attachface] tick={tick} id={view.Soldier.Id} face=[{face.M11:0.00000} {face.M12:0.00000} {face.M13:0.00000}; {face.M21:0.00000} {face.M22:0.00000} {face.M23:0.00000}; {face.M31:0.00000} {face.M32:0.00000} {face.M33:0.00000}]");
+                                }
+                            }
+
                             log.AppendLine(CultureInfo.InvariantCulture, $"[actor] tick={tick} view=({view.Position.X:0.0},{view.Position.Y:0.0},{view.Position.Z:0.0}) brain=({brain?.Position.X:0.0},{brain?.Position.Y:0.0},{brain?.Position.Z:0.0}) act={brain?.Activity} req={brain?.RequestedAnimation} route={brain?.Route?.Current?.Kind} root={P("HasCutsceneRootMotion")} move={P("HasCutsceneGameplayMovement")} sample=({view.RootSample.X:0.0},{view.RootSample.Y:0.0},{view.RootSample.Z:0.0}) anim={view.CurrentAnimation}");
                         }
                     }

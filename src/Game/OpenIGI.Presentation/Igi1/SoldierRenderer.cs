@@ -4376,6 +4376,21 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
+        // An AI-driven Human never casts for its ground: 0x462390's AI branch reads the node under it from
+        // its graph and, when that graph is authored in a placed model's frame (AIGraph +100) and the Human
+        // has no parent yet, calls Human_SetParent (0x463310) with the graph's owner -- registered or not.
+        // Mission 1's 1666 stands on wagon 1888's graph from load and rides it through the landing scene;
+        // the ray below could not see that wagon, whose collision is still static until its train moves.
+        if (GraphCarrierOf(view) is { } carrier)
+        {
+            if (!Cutscenes.TryGetAttachedDrawTransform(view.Soldier, out _, out _))
+            {
+                Cutscenes.TryAttachActorToTask(view.Soldier, carrier, view.Soldier.Position, view.Orientation);
+            }
+
+            return;
+        }
+
         // A moving owner that leaves its conditional container is the native
         // Human_GroundCollision inactive-owner branch (0x463550): clear the parent slot first. An
         // empty query is intentionally different and leaves an existing parent in place, so this
@@ -4421,6 +4436,16 @@ public sealed class SoldierRenderer : IDisposable
                 view.Orientation);
         }
     }
+
+    /// <summary>The vehicle an AI actor's own graph is authored on, which the original parents it to.</summary>
+    private GameTask? GraphCarrierOf(SoldierView view) =>
+        _brains.TryGetValue(view, out AiSoldier? brain)
+        && brain.GraphInParentFrame
+        && FindMind(view) is { GraphId: > 0 } mind
+        && view.Soldier.Tree.FromId(mind.GraphId)?.Parent is { } owner
+        && CinematicActor.IsVehicle(owner)
+            ? owner
+            : null;
 
     private void AttachStagedActorsToVehicles()
     {
