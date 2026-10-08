@@ -1056,6 +1056,116 @@ public sealed class AiScenarioHarness : IDisposable
     /// soldier's feet and drawn origin every n ticks, with each staged actor's brain state -- the port half of
     /// the probe's <c>cutscene</c> hook set.
     /// </remarks>
+    /// <summary>
+    /// The port half of the probe's <c>scene</c> hook set: a played opening cutscene, one line per thing in shot
+    /// per tick, in the probe's units and layouts.
+    /// </summary>
+    /// <remarks>
+    /// Runs only when <c>OPENIGI_SCENE_CAPTURE</c> names the trace file; <c>_MISSION</c> picks the mission (12)
+    /// and <c>_TICKS</c> how many scene ticks to record (2000). Each tick logs the running scene, its tick and
+    /// shot, the camera (position in engine units, orientation, field of view), every elevator, and every
+    /// soldier's drawn origin, orientation and clip.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void CutsceneParityCapture()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_SCENE_CAPTURE");
+        if (string.IsNullOrEmpty(output))
+        {
+            return;
+        }
+
+        int mission = EnvInt("OPENIGI_SCENE_CAPTURE_MISSION", 12);
+        int ticks = EnvInt("OPENIGI_SCENE_CAPTURE_TICKS", 2000);
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(),
+            "-mission", mission.ToString(CultureInfo.InvariantCulture), "-lockstep", "-frames", "1000000");
+        host.Start();
+        host.ScriptedViewInput = new InputState();
+        BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
+        FieldInfo cutscenesField = typeof(GameHost).GetField("_cutscenes", hidden)!;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
+        FieldInfo elevatorsField = typeof(GameHost).GetField("_elevators", hidden)!;
+
+        CutsceneRuntime? runtime = null;
+        for (int i = 0; i < 20_000 && runtime?.Frame is null; i++)
+        {
+            Assert.True(host.Step());
+            runtime = cutscenesField.GetValue(host) as CutsceneRuntime;
+            if (elevatorsField.GetValue(host) is ElevatorRegistry early)
+            {
+                foreach (PlacedElevator lift in early.Elevators.Where(static lift => lift.State.TransformChangedThisTick))
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture,
+                        $"[early] step={i} id={lift.Task.Id} pos=({lift.State.Position.X:0.000},{lift.State.Position.Y:0.000},{lift.State.Position.Z:0.000}) frame={runtime?.Frame is not null}");
+                }
+            }
+        }
+
+        Assert.NotNull(runtime?.Frame);
+        int lastSceneTick = int.MinValue;
+        int lastScene = -1;
+        for (int step = 0; step < ticks * 4 && runtime.Frame is { } _; step++)
+        {
+            Assert.True(host.Step());
+            if (runtime.Frame is not { } frame)
+            {
+                break;
+            }
+
+            int sceneTick = frame.Scene.Ticks;
+            if (sceneTick == lastSceneTick && frame.Scene.Id == lastScene)
+            {
+                continue;
+            }
+
+            lastSceneTick = sceneTick;
+            lastScene = frame.Scene.Id;
+            Vector3d at = frame.Camera.Position * Metre;
+            Matrix3f m = frame.Camera.Orientation;
+            log.AppendLine(CultureInfo.InvariantCulture,
+                $"[scene] id={frame.Scene.Id} tick={sceneTick} shot={frame.ShotIndex} cam=({at.X:0.000},{at.Y:0.000},{at.Z:0.000}) fov={frame.FieldOfView:0.000000000} m=[{m.M11:0.000000} {m.M12:0.000000} {m.M13:0.000000}; {m.M21:0.000000} {m.M22:0.000000} {m.M23:0.000000}; {m.M31:0.000000} {m.M32:0.000000} {m.M33:0.000000}]");
+
+            if (elevatorsField.GetValue(host) is ElevatorRegistry elevators)
+            {
+                foreach (PlacedElevator elevator in elevators.Elevators)
+                {
+                    Vector3d p = elevator.State.Position;
+                    Matrix3f e = elevator.Orientation;
+                    log.AppendLine(CultureInfo.InvariantCulture,
+                        $"[elevator] scene={sceneTick} id={elevator.Task.Id} pos=({p.X:0.000},{p.Y:0.000},{p.Z:0.000}) m=[{e.M11:0.000000} {e.M12:0.000000} {e.M13:0.000000}; {e.M21:0.000000} {e.M22:0.000000} {e.M23:0.000000}; {e.M31:0.000000} {e.M32:0.000000} {e.M33:0.000000}]");
+                }
+            }
+
+            if (soldiersField.GetValue(host) is SoldierRenderer soldiers)
+            {
+                foreach (object group in (System.Collections.IEnumerable)typeof(SoldierRenderer).GetField("_groups", hidden)!.GetValue(soldiers)!)
+                {
+                    foreach (object member in (System.Collections.IEnumerable)group.GetType().GetProperty("Soldiers")!.GetValue(group)!)
+                    {
+                        SoldierView view = (SoldierView)member.GetType().GetProperty("View")!.GetValue(member)!;
+                        Vector3d where = (Vector3d)member.GetType().GetProperty("TickWhere")!.GetValue(member)! * Metre;
+                        Matrix3f o = (Matrix3f)member.GetType().GetProperty("TickOrientation")!.GetValue(member)!;
+                        bool staged = member.GetType().GetProperty("IsCutsceneActor")!.GetValue(member) is true;
+                        string attached = runtime.TryGetAttachedDrawTransform(view.Soldier, out Vector3d riding, out _)
+                            ? FormattableString.Invariant($" riding=({riding.X * Metre:0},{riding.Y * Metre:0},{riding.Z * Metre:0})")
+                            : string.Empty;
+                        log.AppendLine(CultureInfo.InvariantCulture,
+                            $"[human] scene={sceneTick} id={view.Soldier.Id} staged={staged} drawn=({where.X:0.000},{where.Y:0.000},{where.Z:0.000}) anim={view.CurrentAnimation}{attached} m=[{o.M11:0.000000} {o.M12:0.000000} {o.M13:0.000000}; {o.M21:0.000000} {o.M22:0.000000} {o.M23:0.000000}; {o.M31:0.000000} {o.M32:0.000000} {o.M33:0.000000}]");
+                    }
+                }
+            }
+
+            if (sceneTick >= ticks)
+            {
+                break;
+            }
+        }
+
+        File.WriteAllText(output, log.ToString());
+    }
+
     [RequiresGameDataFact]
     public void ScriptedVehicleCapture()
     {
