@@ -3610,8 +3610,8 @@ internal sealed partial class GameHost : IDisposable
                             interacting.InteractionFacing,
                             out Vector3d interactionRootDelta,
                             out _,
-                            out _);
-                        interacting.ApplyInteractionRootMotion(interactionRootDelta);
+                            out bool interactionClipEnded);
+                        interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded);
                         _soldiers.PlacePlayerBodyClimbing(
                             interacting.InteractionFeet, interacting.InteractionFacing);
                     }

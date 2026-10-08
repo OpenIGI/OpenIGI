@@ -618,8 +618,6 @@ public sealed class RetailInteractionInventoryTests
                 Vector3d mountLocal = fence.Orientation.Transform(mount - fence.Anchor);
                 Assert.Equal(2457.6, mountLocal.Y, precision: 3);
                 Assert.Equal(3891.2, mountLocal.Z, precision: 3);
-                Vector3d exitLocal = fence.Orientation.Transform(fence.FenceExitPoint(mount) - fence.Anchor);
-                Assert.Equal(-2457.6, exitLocal.Y, precision: 3);
             }
             foreach (WorldInteraction interaction in interactions.Items.Where(
                 static item => item.Type == InteractionActivateType.StationaryGun))

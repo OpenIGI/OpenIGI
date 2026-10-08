@@ -94,7 +94,9 @@ public sealed class PlayerCamera
     private HeldGun? _mountedGun;
     private int _interactionTick;
     private bool _interactionUseArmed;
-    private Vector3d _fenceExitPosition;
+    private Vector3d _fenceRootDelta;
+    private Vector3d _fenceAppliedDelta;
+    private bool _fenceClipEnded;
     private int _electricFenceCooldown;
     private float _interactionFacing;
     private Vector3d _wireDirection;
@@ -1071,23 +1073,37 @@ public sealed class PlayerCamera
     /// </remarks>
     public float InteractionFacing => _interactionFacing;
 
-    /// <summary>Consumes this tick's authored horizontal root motion for a self-driving interaction.</summary>
+    /// <summary>Consumes this tick's authored root motion for a self-driving interaction.</summary>
+    /// <param name="rootDelta">The clip's world-space root step this tick.</param>
+    /// <param name="clipEnded">Whether a non-looping clip reached its end this tick.</param>
     /// <remarks>
-    /// Fence animation 171 carries Jones across the obstacle in its root track. As with ordinary grounded
-    /// locomotion, X/Y move the human task while the current root Z is presentation height; applying Z here
-    /// as well would lift the task and then add the same vault height again when the body is drawn.
+    /// <para>
+    /// Fence animation 171 carries Jones across the obstacle in its root track, and the mover (<c>0x4614B0</c>)
+    /// applies all three components of the step to the Human's origin -- the height included, which is how the
+    /// origin rises over the fence. The body is drawn at that origin with the root's own height taken out
+    /// (<see cref="SoldierRenderer.StartPlayerInteractionAnimation"/>), as on a ladder. Keeping the task at its
+    /// mount height and drawing the root height on top instead put the whole vault 0.96 m too high: the mount
+    /// is already the origin, 3891.2 above the fence's base, and the clip's first root sample is 3938.6.
+    /// </para>
+    /// <para>
+    /// The step moved is the clip's PREVIOUS one. A clip node samples its root and takes the difference
+    /// (<c>0x4D4840</c>) before it advances its clock (<c>0x4D4B60</c>), so the origin stands still on the
+    /// update that mounts, and the frame on which the clip ends is never moved at all. Measured on mission 1's
+    /// fence, retail's origin is the port's of one update before, tick for tick, and its fall starts with the
+    /// second-to-last step, not the last.
+    /// </para>
     /// </remarks>
-    internal void ApplyInteractionRootMotion(Vector3d rootDelta)
+    internal void ApplyInteractionRootMotion(Vector3d rootDelta, bool clipEnded = false)
     {
         if (_activeInteraction?.Type != InteractionActivateType.Fence)
         {
             return;
         }
 
-        _body.Position = new Vector3d(
-            _body.Position.X + rootDelta.X,
-            _body.Position.Y + rootDelta.Y,
-            _body.Position.Z);
+        _body.Position += _fenceRootDelta;
+        _fenceAppliedDelta = _fenceRootDelta;
+        _fenceRootDelta = rootDelta;
+        _fenceClipEnded |= clipEnded;
     }
 
     /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
@@ -1337,8 +1353,16 @@ public sealed class PlayerCamera
 
         if (_activeInteraction is not null)
         {
+            InteractionActivateType type = _activeInteraction.Type;
             TickInteraction(input, terrain);
-            return;
+
+            // A finished fence vault enters state 29 inside HumanPlayer_Update's state machine (0x4109A0), and
+            // the same update's mover then makes the fall's first move. Every other interaction stays put
+            // for the tick it ends on, as before.
+            if (_activeInteraction is not null || type != InteractionActivateType.Fence)
+            {
+                return;
+            }
         }
 
         // Which ladder, if any, is in reach — for the action icon and for mounting.
@@ -1545,9 +1569,9 @@ public sealed class PlayerCamera
                 SnapBodyForInteraction(_body, interaction.Type, terrain, standingHeight);
                 _interactionFacing = facing;
                 _body.Yaw = -facing;
-                _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
-                    ? interaction.FenceExitPoint(position)
-                    : position;
+                _fenceRootDelta = default;
+                _fenceAppliedDelta = default;
+                _fenceClipEnded = false;
                 if (interaction.Type != InteractionActivateType.StationaryGun)
                 {
                     interaction.BeginUse();
@@ -1718,16 +1742,18 @@ public sealed class PlayerCamera
 
     private void TickFence(WorldInteraction fence, IGroundHeightField? terrain)
     {
-        // State 41 plants the task root at the authored fence mount and lets animation 171 carry the
-        // visible body over it. Its own duration accessor returns six seconds (0x440270), not the
-        // one-second parabolic placeholder this replaces.
-        if (_interactionTick < fence.DurationTicks)
+        // State 41 plants the task root at the authored fence mount and lets animation 171 carry it over.
+        // It leaves on the clip's end bit (0x40DD00); the six-second duration accessor (0x440270), the clip's
+        // own length, only bounds a climb whose clip never reports. At the end the origin is wherever the clip
+        // left it -- 0.94 m up, on the far side -- and state 29 drops it from there with the last step moved as
+        // its velocity, rather than snapping to a landing point.
+        if (!_fenceClipEnded && _interactionTick < fence.DurationTicks)
         {
             AiNoise?.Invoke(AiEvent.Fence);
         }
         else
         {
-            _body.Position = _fenceExitPosition;
+            _body.BeginFallFromVault(_body.Position, _fenceAppliedDelta);
             EndInteraction(completed: false, terrain);
         }
     }
@@ -1863,12 +1889,8 @@ public sealed class PlayerCamera
             // release/end look like an instant teleport to ground instead of a drop from the cable.
             body.EndLadderTraversal(terrain, placeOnGround: false);
         }
-        else if (type == InteractionActivateType.Fence)
-        {
-            // The authored traversal ends above its far-side landing point; settle that endpoint onto
-            // the nearest terrain or placed-model surface before ordinary locomotion resumes.
-            body.PlaceOnGround(terrain);
-        }
+        // A fence ends in the fall it has already been handed (PlayerBody.BeginFallFromVault), so it, too, is left
+        // where it is.
         // Retail self-driving interaction states leave the root exactly where their initializer put it.
         // Re-running spawn placement here searches up to half a kilometre downward and can move the
         // player onto an unrelated surface beneath the building when Use is released.

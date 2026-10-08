@@ -265,22 +265,6 @@ public sealed class WorldInteraction
         };
     }
 
-    /// <summary>Gets the landing root on the far side of the fence mount returned by <see cref="BodyPose"/>.</summary>
-    public Vector3d FenceExitPoint(Vector3d from)
-    {
-        if (Type != InteractionActivateType.Fence)
-        {
-            return from;
-        }
-
-        Vector3d local = Orientation.Transform(from - Anchor);
-        local = new Vector3d(
-            ClampFenceX(local.X),
-            local.Y >= 0.0 ? -2457.6 : 2457.6,
-            3891.2);
-        return Anchor + Orientation.Transposed().Transform(local);
-    }
-
     private (Vector3d Position, float Facing) FenceMountPose(Vector3d from)
     {
         Vector3d local = Orientation.Transform(from - Anchor);

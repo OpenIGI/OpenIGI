@@ -1018,6 +1018,12 @@ public sealed class SoldierRenderer : IDisposable
         _sightTraceForTesting is { } trace
         && HasLineOfSight(trace, from, to, AiSoldier.SightObstructionTolerance);
 
+    /// <summary>Where the player's body model is drawn, in engine units: retail's <c>Human+32</c>, for scenario runs.</summary>
+    internal Vector3d PlayerBodyDrawnOriginForTesting => PlayerBodyPlacement().Where * WorldScene.UnitsPerMetre;
+
+    /// <summary>The player body clip's current root sample height (<c>Human+1308</c>), for scenario runs.</summary>
+    internal double PlayerBodyRootSampleZForTesting => _playerBodyView?.RootSample.Z ?? 0.0;
+
     /// <summary>A soldier's accumulated damage, for scenario runs.</summary>
     internal float DamageForTesting(SoldierView soldier) =>
         _health.TryGetValue(soldier, out HumanHealth? health) ? health.Damage : 0f;
@@ -5493,10 +5499,17 @@ public sealed class SoldierRenderer : IDisposable
         ResetPlayerTraversalHistory();
     }
 
-    /// <summary>Starts a non-ladder interaction clip with its authored root height intact.</summary>
+    /// <summary>Starts a non-ladder interaction clip, with its authored root height intact unless it is the fence's.</summary>
     /// <remarks>
+    /// <para>
     /// Wire animations 172/173 carry a non-zero root-height track. IGI1 adds that sample when locating
     /// the body; suppressing it as if the wire were a ladder leaves both hands visibly off the cable.
+    /// </para>
+    /// <para>
+    /// The fence's animation 171 is the other way round, like a ladder's: its task position IS the Human's
+    /// origin, which the root motion lifts over the fence step by step (Z included), so the root height is
+    /// already in the position and drawing it again put the vault 0.96 m in the air.
+    /// </para>
     /// </remarks>
     public void StartPlayerInteractionAnimation(int animation, bool loops)
     {
@@ -5512,7 +5525,7 @@ public sealed class SoldierRenderer : IDisposable
             loops,
             backwards: false,
             paused: false,
-            suppressRootHeight: false,
+            suppressRootHeight: animation == HumanLocomotionStates.For(41).AnimationId,
 
             // With the exact 3686.4-unit task anchor from sub_411F20, the posed wrist centres of both
             // retail wire clips sit 375..567 units below the cable. Half a retail model grid cell puts
