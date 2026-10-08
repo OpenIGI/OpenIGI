@@ -294,7 +294,7 @@ public sealed class SoldierRendererHitscanTests
     [InlineData(429)]
     [InlineData(430)]
     [InlineData(431)]
-    public void PostRescueGeneratedGuardLeavesItsBodyAndRespawnsArmed(int taskId)
+    public void PostRescueGeneratedGuardIsReplacedArmedOnceItsBodyHasGone(int taskId)
     {
         using RagdollScope ragdoll = new(enabled: false);
         using Scenario scenario = CreateScenario(prepareContainers: true);
@@ -339,27 +339,54 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(firstLife.IsDead);
         MeshHandle corpseMesh = Get<MeshHandle>(firstMember, "Mesh");
 
-        // Audio state and alert replies are keyed by runtime identity, not the authored task ID.
-        // A retained corpse must not advance its replacement's sound loop on the same tick.
+        // Retail GuardGenerator replaces its guard only once he is dead AND out of the world, and deletes the
+        // body as it clones (0x487EE0). His own HumanAI takes him out (0x44F410): it waits for the death clip
+        // (Human+828), counts AI+15680 = 300 down past nought, and unregisters him because his parent is a
+        // GuardGenerator. So with the clip ending on tick E: body gone on E+302, replacement on E+303.
         List<int> soundEmitters = [];
         scenario.Renderer.SetWeaponSound((id, _, _, _) => soundEmitters.Add(id));
+        int soldiersAlive = scenario.Renderer.Count;
+        int clipEnded = -1;
+        int bodyGone = -1;
+        SoldierView? replacement = null;
+        int replacedAt = -1;
+        for (int tick = 0; tick < 2000 && replacement is null; tick++)
+        {
+            soundEmitters.Clear();
+            scenario.Renderer.Tick(enemyAlive: false);
+            if (clipEnded < 0 && firstLife.ClipEndedThisTick)
+            {
+                clipEnded = tick;
+            }
 
-        // Retail GuardGenerator clones another live subtree. It does not revive and erase the corpse.
-        scenario.Renderer.Tick(enemyAlive: false);
+            if (bodyGone < 0 && scenario.Renderer.Count < soldiersAlive)
+            {
+                bodyGone = tick;
+            }
+
+            replacement = RendererSoldiers(scenario.Renderer)
+                .FirstOrDefault(view => view.Soldier.Id == taskId && !view.IsDead);
+            if (replacement is not null)
+            {
+                replacedAt = tick;
+            }
+        }
+
+        Assert.True(clipEnded >= 0, "the death clip never ended");
+        Assert.Equal(clipEnded + SoldierRenderer.GeneratedBodyLingerTicks + 2, bodyGone);
+        Assert.NotNull(replacement);
+        Assert.Equal(clipEnded + SoldierRenderer.GeneratedBodyLingerTicks + 3, replacedAt);
         AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
-        SoldierView[] lives = RendererSoldiers(scenario.Renderer)
-            .Where(view => view.Soldier.Id == taskId)
-            .ToArray();
-        Assert.Equal(2, lives.Length);
-        Assert.True(firstLife.IsDead);
-        SoldierView replacement = Assert.Single(lives, view => !view.IsDead);
+
+        // One live instance under the authored id, the old one gone: its brain and its body.
+        Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == taskId);
+        Assert.Equal(soldiersAlive, scenario.Renderer.Count);
 
         object replacementMember = MemberFor(scenario.Renderer, replacement);
         Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(replacementMember, "WeaponType").ScriptId);
         object? replacementWeaponValue = replacementMember.GetType().GetProperty("Weapon")!.GetValue(replacementMember);
         Assert.NotNull(replacementWeaponValue);
-        object replacementWeapon = replacementWeaponValue;
-        MeshHandle replacementWeaponMesh = Get<MeshHandle>(replacementWeapon, "Mesh");
+        MeshHandle replacementWeaponMesh = Get<MeshHandle>(replacementWeaponValue, "Mesh");
 
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         Assert.True(Get<bool>(replacementMember, "HasHandState"));
@@ -370,16 +397,13 @@ public sealed class SoldierRendererHitscanTests
             Get<Vector3d>(replacementMember, "DrawnWeaponOrigin"),
             Get<Matrix3f>(replacementMember, "DrawnWeaponRotation"));
         scenario.Device.MeshDraws.Clear();
-        scenario.Renderer.Draw(
-            drawCamera,
-            Matrix4f.Identity);
-        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
+        scenario.Renderer.Draw(drawCamera, Matrix4f.Identity);
+        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
         Assert.Contains(
             scenario.Device.MeshDraws,
             draw => draw.Mesh == replacementWeaponMesh && draw.ModelView == replacementWeaponTransform);
 
-        // Shoot the generated life too. This is the user-visible failure mode: the replacement used
-        // to be the original view reset in place, so its first hit made the body appear to evaporate.
+        // The replacement is a real life of its own: shot, it dies where it stands, and the cap still counts.
         for (int shot = 0; shot < maxHitsToKill && !replacement.IsDead; shot++)
         {
             MeshHitRay replacementRay = FindAnyMeshHitRay(
@@ -393,28 +417,6 @@ public sealed class SoldierRendererHitscanTests
                 out _));
         }
         Assert.True(replacement.IsDead);
-        MeshHandle replacementCorpseMesh = Get<MeshHandle>(replacementMember, "Mesh");
-
-        soundEmitters.Clear();
-        scenario.Renderer.Tick(enemyAlive: false);
-        AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
-        SoldierView[] nextGeneration = RendererSoldiers(scenario.Renderer)
-            .Where(view => view.Soldier.Id == taskId)
-            .ToArray();
-        Assert.Equal(3, nextGeneration.Length);
-        Assert.Equal(2, nextGeneration.Count(view => view.IsDead));
-        SoldierView nextLive = Assert.Single(nextGeneration, view => !view.IsDead);
-        object nextMember = MemberFor(scenario.Renderer, nextLive);
-        Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(nextMember, "WeaponType").ScriptId);
-        Assert.NotNull(nextMember.GetType().GetProperty("Weapon")!.GetValue(nextMember));
-
-        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
-        scenario.Device.MeshDraws.Clear();
-        scenario.Renderer.Draw(
-            new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)),
-            Matrix4f.Identity);
-        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
-        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == replacementCorpseMesh);
     }
 
     [RequiresGameDataFact]

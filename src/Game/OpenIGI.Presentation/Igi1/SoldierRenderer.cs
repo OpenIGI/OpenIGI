@@ -112,6 +112,11 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
     private readonly Dictionary<int, AiSoldier> _brainsByRuntimeId = [];
     private readonly Dictionary<GuardGeneratorTask, SoldierView> _guardGenerators = [];
+
+    // The tick a generator's dead guard finished its death clip on (Human+828, 0x45C740), and whether its
+    // HumanAI has since taken the body out of the world.
+    private readonly Dictionary<GuardGeneratorTask, int> _generatedDeathEnded = [];
+    private readonly Dictionary<GuardGeneratorTask, (Member Member, Group Group)> _generatedBodyGone = [];
     private LevelExpressionRuntime? _guardExpressions;
     private readonly Dictionary<AiStationaryGun, HeldWeapon?> _stationaryWeaponVisuals = [];
 
@@ -3227,31 +3232,94 @@ public sealed class SoldierRenderer : IDisposable
         // until its mesh and runtime subtree have actually been created. A transient upload failure
         // must leave the generator eligible to retry on the next tick.
         GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
-        if (decision != GuardSpawnDecision.FirstSpawn
+
+        // A REPLACEMENT WAITS FOR THE BODY TO LEAVE, and the body leaves ten seconds after it lands. The
+        // generator replaces its guard only once he is dead (Human+3317) AND out of the world (+3318 clear,
+        // 0x463190), deleting the body as it clones (0x487EE0 -> 0x4015F0, 0x488000). What takes him out is his
+        // own HumanAI (0x44F410): once his death clip has run (+828, which 0x45C740 sets on the tick after the
+        // clip ends) it counts AI+15680 -- 300, written only by the constructor -- down past nought, and then,
+        // because his parent is a GuardGenerator (0x488610), unregisters him (0x4609A0). So: clip ends on tick
+        // E, the countdown runs E+1..E+301, the body goes on E+302 whether the generator is on or spent, and
+        // the replacement comes on E+303. The port had cloned on the tick he died and left the body lying.
+        if (decision == GuardSpawnDecision.FirstSpawn || !view.IsDead)
+        {
+            return;
+        }
+
+        // This runs before the soldier's own tick, so a clip that ended is the last tick's.
+        if (!_generatedDeathEnded.ContainsKey(generator) && view.ClipEndedThisTick)
+        {
+            _generatedDeathEnded[generator] = _tick - 1;
+        }
+
+        if (!_generatedDeathEnded.TryGetValue(generator, out int ended))
+        {
+            return;
+        }
+
+        if (!_generatedBodyGone.ContainsKey(generator)
+            && _tick >= ended + GeneratedBodyLingerTicks + 2
+            && RemoveGeneratedBody(view) is { } removed)
+        {
+            _generatedBodyGone[generator] = removed;
+        }
+
+        if (_generatedBodyGone.TryGetValue(generator, out (Member Member, Group Group) body)
+            && _tick >= ended + GeneratedBodyLingerTicks + 3
             && isOn
-            && view.IsDead
             && generator.SpawnCount < generator.MaxSpawns
-            && SpawnGeneratedGuard(generator, view) is { } fresh)
+            && SpawnGeneratedGuard(generator, view, body.Member, body.Group) is { } fresh)
         {
             _ = generator.Advance(isOn: true, childIsDead: true);
             _guardGenerators[generator] = fresh;
+            _generatedDeathEnded.Remove(generator);
+            _generatedBodyGone.Remove(generator);
+            _brains.Remove(view);
         }
     }
 
-    /// <summary>Clones a fresh rendered Human/HumanAI subtree while leaving the killed body in the world.</summary>
-    private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView)
+    /// <summary>HumanAI+15680: how long a generated guard's body stays after its death clip, in ticks.</summary>
+    /// <remarks>The constructor (<c>0x44F060</c>) writes 300 and nothing else in the image writes it.</remarks>
+    internal const int GeneratedBodyLingerTicks = 300;
+
+    /// <summary>Takes a generated guard's body out of the world, as his HumanAI's unregister does.</summary>
+    /// <remarks>
+    /// Every draw, shadow, hit test and sweep walks the groups, so leaving the group is leaving the world. The brain
+    /// stays until the replacement is cloned from it.
+    /// </remarks>
+    private (Member Member, Group Group)? RemoveGeneratedBody(SoldierView view)
     {
-        Member? deadMember = FindMember(deadView);
-        if (deadMember is null || !_brains.TryGetValue(deadView, out AiSoldier? deadBrain))
+        if (FindMember(view) is not { } member
+            || _groups.FirstOrDefault(candidate => candidate.Soldiers.Contains(member)) is not { } group)
         {
-            _logger.Warning(LogCategory, $"{generator.Name} could not clone its missing rendered Human subtree.");
             return null;
         }
 
-        Group? group = _groups.FirstOrDefault(candidate => candidate.Soldiers.Contains(deadMember));
-        if (group is null)
+        group.Soldiers.Remove(member);
+        if (member.Mesh.IsValid)
         {
-            _logger.Warning(LogCategory, $"{generator.Name} could not find its rendered Human group.");
+            _device.DestroyMesh(member.Mesh);
+        }
+
+        if (_brains.TryGetValue(view, out AiSoldier? brain))
+        {
+            _brainsByRuntimeId.Remove(brain.RuntimeId);
+        }
+
+        Count--;
+        return (member, group);
+    }
+
+    /// <summary>Clones a fresh rendered Human/HumanAI subtree from the dead one's, whose body has already gone.</summary>
+    private SoldierView? SpawnGeneratedGuard(
+        GuardGeneratorTask generator,
+        SoldierView deadView,
+        Member deadMember,
+        Group group)
+    {
+        if (!_brains.TryGetValue(deadView, out AiSoldier? deadBrain))
+        {
+            _logger.Warning(LogCategory, $"{generator.Name} could not clone its missing rendered Human subtree.");
             return null;
         }
 
@@ -3327,9 +3395,8 @@ public sealed class SoldierRenderer : IDisposable
             freshView.Position,
             freshView.Soldier.Gamma,
             brain => CombatWeaponState(brain, freshMember));
-        // The corpse remains registered: sharing its runtime ID would advance one weapon sound
-        // twice per tick and send replies to the old guard's alerts to its replacement instead.
-        // Keep the authored Soldier.Id for mission queries, but give each live instance its own ID.
+        // A fresh runtime ID for each live instance: the old guard's alerts and weapon sound must not be
+        // answered by its replacement. Keep the authored Soldier.Id for mission queries.
         freshBrain.RuntimeId = checked(_brainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
         BindViewTracking(freshBrain, freshView);
         freshBrain.SetDefaultTarget(_playerTarget);
@@ -3340,7 +3407,7 @@ public sealed class SoldierRenderer : IDisposable
         _logger.Information(
             LogCategory,
             $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
-                + $"{freshView.Soldier.Name} cloned at its authored position; the previous body remains.");
+                + $"{freshView.Soldier.Name} cloned at its authored position.");
         return freshView;
     }
 
