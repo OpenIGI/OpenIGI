@@ -51,6 +51,25 @@ public sealed class RetailIgi2FirstPersonTests
         Assert.InRange(gun.Z, -1500f, 0f);
     }
 
+    /// <summary>
+    /// The MP5SD's walk clip hangs the gun on the right hand so that it is held level with the view: the record's
+    /// matrix, read transposed as <c>ModelObj_CreateAttachObject</c> (<c>igi2 0x56D0B0</c>) reads it, undoes the
+    /// hand's own turn. Read untransposed it tilted the gun nine degrees up and over.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_mp5sd_is_held_level_with_the_view()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons) = ArmedPlayer();
+        Settle(player);
+
+        Matrix3f gun = Frame(player, weapons, 1).Parts[1].Orientation;
+
+        Assert.Equal("walk_mp5_1st", player.View.ObjectAnimation.Clip!.Name);
+        AssertNear(new Vector3f(1f, 0f, 0f), gun.Column1);
+        AssertNear(new Vector3f(0f, 1f, 0f), gun.Column2);
+        AssertNear(new Vector3f(0f, 0f, 1f), gun.Column3);
+    }
+
     /// <summary>After a change to the Glock, the hand holds the Glock's fixed model, <c>139_01_1</c>.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_hand_follows_the_weapon_changed_to()
@@ -117,6 +136,13 @@ public sealed class RetailIgi2FirstPersonTests
         }
 
         return new Vector3f((float)(x / count), (float)(y / count), (float)(z / count));
+    }
+
+    private static void AssertNear(Vector3f expected, Vector3f actual, float tolerance = 1e-4f)
+    {
+        Assert.InRange(actual.X, expected.X - tolerance, expected.X + tolerance);
+        Assert.InRange(actual.Y, expected.Y - tolerance, expected.Y + tolerance);
+        Assert.InRange(actual.Z, expected.Z - tolerance, expected.Z + tolerance);
     }
 
     private sealed record Mission1Setup(Igi2Level Level, Igi2HumanPlayerTask Task, Igi2AnimationLibrary Library, Igi2Session Session);

@@ -97,12 +97,10 @@ public sealed class Igi2Pose
     /// </remarks>
     public Igi2Pose Attach(MefAttachment attachment)
     {
-        Matrix3f file = attachment.Orientation;
-        float xx = file.M11, xy = file.M21, xz = file.M31;
-        float yx = file.M12, yy = file.M22, yz = file.M32;
-        float zx = (((Fpu)yz * xy) - ((Fpu)yy * xz)).F;
-        float zy = (-(((Fpu)yz * xx) - ((Fpu)yx * xz))).F;
-        float zz = (((Fpu)yy * xx) - ((Fpu)yx * xy)).F;
+        Matrix3f relative = RelativeOrientation(attachment.Orientation);
+        float xx = relative.M11, xy = relative.M12, xz = relative.M13;
+        float yx = relative.M21, yy = relative.M22, yz = relative.M23;
+        float zx = relative.M31, zy = relative.M32, zz = relative.M33;
 
         IReadOnlyList<float> p = Orientation;
         Vector3f at = attachment.Position;
@@ -128,6 +126,23 @@ public sealed class Igi2Pose
 
         float Lower(int row, float rx, float ry, float rz) =>
             (((Fpu)ry * p[row + 1]) + ((Fpu)rz * p[row + 2]) + ((Fpu)rx * p[row])).F;
+    }
+
+    /// <summary>
+    /// How an attach record's matrix turns its object against what it hangs on: <c>ModelObj_CreateAttachObject</c>
+    /// (<c>igi2 0x56D0B0</c>) for a model's attachments and a clip's attach objects alike.
+    /// </summary>
+    /// <param name="record">The record's matrix, as the file stores it.</param>
+    /// <returns>The relative orientation: the record's first two columns as rows, the third row their cross product.</returns>
+    /// <remarks>The relative orientation then stands under the parent's (and its bone's) orientation: world = P · B · R.</remarks>
+    public static Matrix3f RelativeOrientation(Matrix3f record)
+    {
+        float xx = record.M11, xy = record.M21, xz = record.M31;
+        float yx = record.M12, yy = record.M22, yz = record.M32;
+        float zx = (((Fpu)yz * xy) - ((Fpu)yy * xz)).F;
+        float zy = (-(((Fpu)yz * xx) - ((Fpu)yx * xz))).F;
+        float zz = (((Fpu)yy * xx) - ((Fpu)yx * xy)).F;
+        return new Matrix3f(xx, xy, xz, yx, yy, yz, zx, zy, zz);
     }
 
     /// <summary>
