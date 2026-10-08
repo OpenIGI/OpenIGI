@@ -30,8 +30,12 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 /// None of the view's models has a bake, so each is lit as an unlightmapped object is: the level's fixed-function sun
 /// and object ambient per vertex (<see cref="IGraphicsDevice.SetVertexSun"/>), the sun turned into the model's frame.
 /// </para>
+/// <para>
+/// The same models drawn in the world are the weapons lying in the level (<see cref="DrawWorld"/>): rigid, unbaked, and
+/// lit the same way, under the world's projection.
+/// </para>
 /// </remarks>
-public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
+public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorldModelPresenter
 {
     private const string LogCategory = "igi2.viewmodel";
 
@@ -124,19 +128,50 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
                 modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
             }
 
-            // The sun in the model's own frame, as the world pass turns it for an unbaked placement: the
-            // orientation takes the model to the world as M * v, so the transpose (the row-vector Transform)
-            // takes the world's sun back.
-            _device.SetVertexSun(Shading.Sun is { } sun ? orientation.Transform(sun.Direction) : Vector3f.Zero);
+            DrawPart(part, modelView, orientation);
+        }
 
-            foreach ((MeshSubset subset, TextureHandle texture) in part.Subsets)
+        _device.SetVertexSun(Vector3f.Zero);
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
+    }
+
+    /// <inheritdoc/>
+    public void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection)
+    {
+        ArgumentNullException.ThrowIfNull(models);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_models is null || models.Count == 0)
+        {
+            return;
+        }
+
+        _device.SetProjection(projection);
+        _device.SetCullMode(CullMode.None);
+        _device.SetDepthState(DepthState.TestAndWrite);
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
+        foreach (TitleWorldModel wanted in models)
+        {
+            if (Resolve(wanted.Model, skinned: false) is { } part)
             {
-                _device.DrawMesh(part.Mesh, subset.IndexOffset, subset.IndexCount, modelView, texture, TextureHandle.None, BlendMode.Opaque);
+                DrawPart(part, camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation), wanted.Orientation);
             }
         }
 
         _device.SetVertexSun(Vector3f.Zero);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+    }
+
+    /// <summary>Draws one part, lit by the sun turned into its frame.</summary>
+    private void DrawPart(Part part, in Matrix4f modelView, Matrix3f orientation)
+    {
+        // The sun in the model's own frame, as the world pass turns it for an unbaked placement: the orientation takes
+        // the model to the world as M * v, so the transpose (the row-vector Transform) takes the world's sun back.
+        _device.SetVertexSun(Shading.Sun is { } sun ? orientation.Transform(sun.Direction) : Vector3f.Zero);
+
+        foreach ((MeshSubset subset, TextureHandle texture) in part.Subsets)
+        {
+            _device.DrawMesh(part.Mesh, subset.IndexOffset, subset.IndexCount, modelView, texture, TextureHandle.None, BlendMode.Opaque);
+        }
     }
 
     /// <inheritdoc/>

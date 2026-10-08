@@ -159,7 +159,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 }
 
 /// <summary>The ported player as the host steps it.</summary>
-public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
+public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels
 {
     /// <summary>DirectInput's relative counts to the analog axis, <c>Mouse_Update</c> (<c>igi2ed 0x55ED60</c>): a 255th each.</summary>
     private const double CountsToAnalog = 0.00392156862745098;
@@ -192,6 +192,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
     private long _ticks;
     private TitleFirstPersonView? _held;
     private long _heldTick = -1;
+    private TitleWorldModel[] _lying = [];
+    private long _lyingTick = -1;
 
     private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons)
     {
@@ -246,6 +248,30 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
             }
 
             return _held;
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies; built once a tick.</remarks>
+    public IReadOnlyList<TitleWorldModel> WorldModels
+    {
+        get
+        {
+            if (_lyingTick != _ticks)
+            {
+                _lying = Human.Pickups is { } pickups
+                    ? [.. pickups.Items.Select(static p => new TitleWorldModel(
+                        p.WeaponType.FixedModel,
+                        p.Position,
+                        new Matrix3f(
+                            p.Orientation[0], p.Orientation[1], p.Orientation[2],
+                            p.Orientation[3], p.Orientation[4], p.Orientation[5],
+                            p.Orientation[6], p.Orientation[7], p.Orientation[8])))]
+                    : [];
+                _lyingTick = _ticks;
+            }
+
+            return _lying;
         }
     }
 

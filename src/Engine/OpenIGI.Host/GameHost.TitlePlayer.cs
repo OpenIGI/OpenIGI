@@ -203,6 +203,17 @@ internal sealed partial class GameHost
         _device.SetFirstPersonGeometry(false);
     }
 
+    /// <summary>Draws the models the title's player has lying in its level, with the world's projection and depth.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    private void DrawTitleWorldModels(in Camera3D eye, in Matrix4f projection)
+    {
+        if (_titlePlayer is ITitleWorldModels owned && _titleArms is ITitleWorldModelPresenter models)
+        {
+            models.DrawWorld(owned.WorldModels, eye, projection);
+        }
+    }
+
     /// <summary>The camera the title's player looks through, in metres.</summary>
     private static Camera3D TitleCamera(ITitlePlayer player)
     {

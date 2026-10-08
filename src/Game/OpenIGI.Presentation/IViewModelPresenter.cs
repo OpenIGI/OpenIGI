@@ -85,6 +85,20 @@ public interface ITitleViewModelPresenter : IDisposable
     void Draw(TitleFirstPersonView view, in Camera3D camera, in Matrix4f projection);
 }
 
+/// <summary>Draws the rigid models a title's own player has lying in its level, among the world's geometry.</summary>
+/// <remarks>
+/// The world-pass counterpart of <see cref="ITitleViewModelPresenter"/>, for a player that is also
+/// <see cref="ITitleWorldModels"/>: the same models from the same packs, under the world's projection and depth.
+/// </remarks>
+public interface ITitleWorldModelPresenter
+{
+    /// <summary>Draws the models.</summary>
+    /// <param name="models">The models and where they stand.</param>
+    /// <param name="camera">Where they are seen from, in metres.</param>
+    /// <param name="projection">The world's projection.</param>
+    void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection);
+}
+
 /// <summary>Draws the weapon the player is holding.</summary>
 public interface IHeldWeaponPresenter : IDisposable
 {

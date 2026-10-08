@@ -5189,6 +5189,9 @@ if (retailFog)
 
                 // Dropped guns, grenades and rockets move on their own: their draws stamp their motion,
                 // or the temporal resolve trails them as it trailed every vehicle.
+                // The title's own models lying in its level, at rest among the world's geometry.
+                DrawTitleWorldModels(eye, projection);
+
                 _device.SetObjectMotion(true);
                 _gunPickupRenderer?.Draw(eye, projection);
 
