@@ -2423,8 +2423,8 @@ public sealed class SoldierRenderer : IDisposable
     /// <remarks>
     /// The follow fire has no burst and no aim solve (ai.md §13.7): the trigger is pressed whenever the
     /// target is inside a 16.3° cone about the shooter's forward axis, and the round flies where the BODY
-    /// points. The port's facing has no pitch, so the ray borrows the aim point's height and keeps the
-    /// facing's horizontal error — which is the part that decides the spray's geometric misses.
+    /// points. Only this point's distance is used: <see cref="SpreadRound"/> sends a carried gun's round
+    /// along the view, whose pitch the follow tick steers onto the aim point as it does the heading.
     /// </remarks>
     private static Vector3d SprayTarget(AiSoldier brain, Vector3d enemyFeet, bool enemyCrouching)
     {
