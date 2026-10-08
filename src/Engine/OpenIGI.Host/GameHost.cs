@@ -929,6 +929,7 @@ internal sealed partial class GameHost : IDisposable
         // the command already there.
         RegisterLampCommands(console.System);
         RegisterFlashlightCommands(console.System);
+        RegisterTitlePlayerCommands(console.System);
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
         RegisterRendererSwitchCommand(console.System);

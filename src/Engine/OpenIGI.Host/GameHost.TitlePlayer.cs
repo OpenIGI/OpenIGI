@@ -1,3 +1,4 @@
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Level;
@@ -34,6 +35,7 @@ internal sealed partial class GameHost
     private float _titleMouseX;
     private float _titleMouseY;
     private PlayerAction _titlePressed;
+    private PlayerAction _titleScriptHeld;
 
     /// <summary>Stands the title's own player where the level places it, when the title brings one.</summary>
     /// <param name="loaded">The mission.</param>
@@ -127,6 +129,8 @@ internal sealed partial class GameHost
             }
         }
 
+        held |= _titleScriptHeld;
+
         PlayerProfile? profile = _configuration.Active;
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
@@ -139,6 +143,42 @@ internal sealed partial class GameHost
         _titleMouseY = 0f;
         _titlePressed = default;
         return true;
+    }
+
+    /// <summary>Registers the console's hold on the title player's controls, for a capture to drive it without keys.</summary>
+    /// <param name="console">The console to register with.</param>
+    /// <remarks>
+    /// <c>-runat 60 "title_hold Fire"</c> holds fire from frame 60 until a later <c>title_hold none</c>; several actions
+    /// may be named at once. Only a title's own player reads it; the host's rig never does.
+    /// </remarks>
+    private void RegisterTitlePlayerCommands(ConsoleSystem console)
+    {
+        console.Commands.Add(
+            "title_hold",
+            "Holds the title player's controls as if their keys were down: action names (Fire, Reload, MoveUp, ...) or none. Not in the original.",
+            context =>
+            {
+                PlayerAction held = default;
+                for (int i = 0; i < context.Count; i++)
+                {
+                    if (string.Equals(context[i], "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!Enum.TryParse(context[i], ignoreCase: true, out PlayerAction action))
+                    {
+                        context.Warn($"'{context[i]}' is not a player action.");
+                        return;
+                    }
+
+                    held |= action;
+                }
+
+                _titleScriptHeld = held;
+                context.Print($"Title player holds {held}.");
+            },
+            "<action ...|none>");
     }
 
     /// <summary>Draws what the title's player holds, after the world and over it, as the host's own rig draws its arms.</summary>
