@@ -99,6 +99,90 @@ public sealed class DestructibleObjectRegistryTests
         Assert.False(registry.IsDestroyed(model));
     }
 
+    [Fact]
+    public void ARadioIsAnExplodeObject()
+    {
+        // TASKTYPE_RADIO (0x43AD80) registers under ExplodeObject (word_54097C): a round only arms the
+        // countdown, and the explosion that follows swaps the model and raises isExploded (issue #125).
+        GameLoop loop = new();
+        QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("Radio"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Destroyed model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Damage scale"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(3366),
+                QvmExpression.Text("Radio"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+                QvmExpression.Text("204_01_1"),
+                QvmExpression.Text("204_02_1"),
+                QvmExpression.Real(1f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
+
+        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(3366));
+        WorldPlacement model = Placement(task, "Model");
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(loop.Tasks.Root, [model], loop.Variables);
+        LevelExpressionRuntime expressions = new(loop.Variables);
+
+        DestructibleObject item = Assert.Single(registry.Objects);
+        Assert.True(item.ExplodesOnCountdown);
+        Assert.Null(registry.TryDestroy(task, model));
+        Assert.False(expressions.EvaluateCondition("Radio_3366.isExploded", emptyValue: false));
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(registry, item));
+        Assert.True(registry.IsDestroyed(model));
+        Assert.True(expressions.EvaluateCondition("Radio_3366.isExploded", emptyValue: false));
+    }
+
+    /// <summary>
+    /// The damage sum is x87 arithmetic under chop rounding (<c>sub_498460</c>). Probed on mission 7's
+    /// Radio_3366 with the Glock (0.2 a round): 0.2, 0.400000005, 0.599999964, 0.799999952, 0.99999994 --
+    /// still short of 1 -- and the sixth round arms it.
+    /// </summary>
+    [Fact]
+    public void FiveGlockRoundsLeaveAnExplodeObjectJustShort()
+    {
+        GameLoop loop = new();
+        QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("Radio"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Destroyed model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Damage scale"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(3366),
+                QvmExpression.Text("Radio"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+                QvmExpression.Text("204_01_1"),
+                QvmExpression.Text("204_02_1"),
+                QvmExpression.Real(1f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
+
+        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(3366));
+        WorldPlacement model = Placement(task, "Model");
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(loop.Tasks.Root, [model], loop.Variables);
+        DestructibleObject item = Assert.Single(registry.Objects);
+
+        float[] retail = [0.2f, 0.400000005f, 0.599999964f, 0.799999952f, 0.99999994f];
+        foreach (float expected in retail)
+        {
+            Assert.Null(registry.TryDestroy(task, model, damage: 0.2f));
+            Assert.Equal(expected, item.ExplosionDamageAccumulated);
+            Assert.Equal(-1, item.Countdown);
+        }
+
+        Assert.Null(registry.TryDestroy(task, model, damage: 0.2f));
+        Assert.Equal(0, item.Countdown);
+    }
+
     private static WorldPlacement Placement(GameTask owner, string taskName) => new(
         Position: default,
         Orientation: default,

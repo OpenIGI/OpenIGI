@@ -609,15 +609,20 @@ public sealed class WorldInteractionRegistry
 
     private readonly List<WorldInteraction> _items = [];
     private readonly List<GeneratorPowerState> _generators = [];
+    private readonly List<RadioRuntime> _radios = [];
 
     public IReadOnlyList<WorldInteraction> Items => _items;
+
+    /// <summary>Gets the level's <c>Radio</c> tasks.</summary>
+    public IReadOnlyList<RadioRuntime> Radios => _radios;
 
     public static WorldInteractionRegistry Build(
         GameTask root,
         LoadedMission mission,
         DoorRegistry doors,
         ScriptVarRegistry variables,
-        ElevatorRegistry? elevators = null)
+        ElevatorRegistry? elevators = null,
+        IgiRandom? random = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(mission);
@@ -628,6 +633,7 @@ public sealed class WorldInteractionRegistry
         LevelExpressionRuntime expressions = new(variables);
         WorldInteractionRegistry registry = new();
         CollectGenerators(root, registry, variables, expressions);
+        CollectRadios(root, registry, variables, expressions, random ?? new IgiRandom());
         Collect(root, registry, models, doors, variables, expressions, elevators);
         return registry;
     }
@@ -638,6 +644,20 @@ public sealed class WorldInteractionRegistry
         foreach (GeneratorPowerState generator in _generators)
         {
             generator.Settle();
+        }
+    }
+
+    /// <summary>Runs every radio's own update, <c>0x43AF90</c>.</summary>
+    /// <param name="sounds">Where their sounds go, or <see langword="null"/> when nothing can play.</param>
+    /// <remarks>
+    /// After the destructibles have ticked: a Radio's update calls the ExplodeObject update first, so an
+    /// explosion and the radio going quiet share a tick.
+    /// </remarks>
+    public void TickRadios(IRadioSoundPlayer? sounds)
+    {
+        foreach (RadioRuntime radio in _radios)
+        {
+            radio.Tick(sounds);
         }
     }
 
@@ -970,6 +990,31 @@ public sealed class WorldInteractionRegistry
         foreach (GameTask child in task.Children)
         {
             CollectGenerators(child, registry, variables, expressions);
+        }
+    }
+
+    private static void CollectRadios(
+        GameTask task,
+        WorldInteractionRegistry registry,
+        ScriptVarRegistry variables,
+        LevelExpressionRuntime expressions,
+        IgiRandom random)
+    {
+        if (ConditionalContainerGate.IsDormant(task))
+        {
+            return;
+        }
+
+        if (task is DeclaredTask declared && string.Equals(task.Type.Name, "Radio", StringComparison.Ordinal))
+        {
+            RadioRuntime radio = RadioRuntime.Create(declared, expressions, variables, random);
+            registry._radios.Add(radio);
+            variables.BindBool(declared, "isOn", () => radio.IsOn, value => radio.IsOn = value);
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            CollectRadios(child, registry, variables, expressions, random);
         }
     }
 

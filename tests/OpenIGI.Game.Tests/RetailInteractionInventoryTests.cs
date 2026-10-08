@@ -9,6 +9,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -302,6 +303,50 @@ public sealed class RetailInteractionInventoryTests
         Assert.False(interaction.IsPlayerUsingStationaryGun);
 
         stationaryGun.Dismount(aiOwner);
+    }
+
+    /// <summary>
+    /// Issue #125: mission 7's Radio_3366 is an ExplodeObject (<c>0x43AD80</c> registers it under
+    /// <c>word_54097C</c>). Shooting it explodes it on the family's countdown, swaps in 204_02_1, raises
+    /// <c>isExploded</c> -- which AnimTask 306's Run expression negates -- and its own update
+    /// (<c>0x43AF90</c>) turns <c>isOn</c> off.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void MissionSevenRadioFallsSilentWhenItIsShot()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(7);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(root, scene.Placements, variables);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables);
+        LevelExpressionRuntime expressions = new(variables);
+
+        DestructibleObject radio = Assert.Single(destructibles.Objects, item => item.Owner.Id == 3366);
+        Assert.Equal("Radio", radio.TypeName);
+        Assert.True(radio.ExplodesOnCountdown);
+        Assert.Equal("204_02_1", radio.DestroyedModelName);
+        Assert.Equal(3366, Assert.Single(interactions.Radios).Task.Id);
+
+        // Off from its constructor (0x43AF20) until its first update reads On expression "1".
+        Assert.True(variables.TryRead("Radio_3366.isOn", out QvmValue before));
+        Assert.Equal(0, before.ToInt32());
+        interactions.TickRadios(null);
+        Assert.True(variables.TryRead("Radio_3366.isOn", out QvmValue lit));
+        Assert.Equal(1, lit.ToInt32());
+        Assert.True(expressions.EvaluateCondition("!Radio_3366.isExploded", emptyValue: false));
+
+        WorldPlacement model = Assert.Single(scene.Placements, placement => ReferenceEquals(placement.Owner, radio.Owner));
+        Assert.Null(destructibles.TryDestroy(radio.Owner, model));
+        Assert.False(radio.IsDestroyed);
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(destructibles, radio));
+        interactions.TickRadios(null);
+
+        Assert.True(destructibles.IsDestroyed(model));
+        Assert.True(variables.TryRead("Radio_3366.isOn", out QvmValue after));
+        Assert.Equal(0, after.ToInt32());
+        Assert.False(expressions.EvaluateCondition(
+            "!Radio_3366.isExploded && AlarmControl_97.isAlarm && EditVariable_4001.nValue",
+            emptyValue: false));
     }
 
     [RequiresGameDataFact]

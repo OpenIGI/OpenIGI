@@ -3291,6 +3291,10 @@ internal sealed partial class GameHost : IDisposable
                         // (0x43B500) sees its own explosion before it reads the On expression.
                         _interactions?.SettleGenerators();
                     }
+
+                    // The radios after the destructibles: a Radio's update (0x43AF90) runs the
+                    // ExplodeObject update first, so one that blew up this tick is already off.
+                    TickRadios();
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();
 

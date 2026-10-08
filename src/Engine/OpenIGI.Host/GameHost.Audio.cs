@@ -1768,6 +1768,37 @@ internal sealed partial class GameHost
     /// </para>
     /// <para>A destroyed task is removed immediately and its renderer selects the authored wreck model.</para>
     /// </remarks>
+    private void TickRadios() => _interactions?.TickRadios(_radioSounds ??= new RadioSoundPlayer(this));
+
+    private RadioSoundPlayer? _radioSounds;
+
+    // A radio's voices: 0x43AF90 resolves the authored name (sub_4E6B00) and plays it at the task
+    // (sub_4E6C30). A name with no definition starts nothing, and the radio carries on regardless.
+    private sealed class RadioSoundPlayer(GameHost host) : IRadioSoundPlayer
+    {
+        public object? Play(string sound, Vector3d positionUnits)
+        {
+            if (host._sounds is not { } sounds || sound.Length == 0)
+            {
+                return null;
+            }
+
+            AudioVoiceHandle voice = sounds.PlayDefinition(sound, positionUnits);
+            return voice.IsValidHandle ? voice : null;
+        }
+
+        public bool IsPlaying(object voice) =>
+            voice is AudioVoiceHandle handle && host._sounds?.IsPlaying(handle) == true;
+
+        public void Silence(object voice)
+        {
+            if (voice is AudioVoiceHandle handle)
+            {
+                host._sounds?.Stop(handle);
+            }
+        }
+    }
+
     private void TickAlarmSpeakers()
     {
         if (_sounds is null || _alarmSpeakers is null)

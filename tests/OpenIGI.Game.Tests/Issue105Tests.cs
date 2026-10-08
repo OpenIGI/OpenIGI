@@ -435,7 +435,8 @@ public sealed class Issue105Tests
         Assert.Null(destructibles.TryDestroy(hit.Owner, hit.Placement, damage: 0.3f));
         Assert.Equal(0.3f, Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, tank))
             .ExplosionDamageAccumulated, precision: 3);
-        Assert.Null(destructibles.TryDestroy(hit.Owner, hit.Placement, damage: 99.7f));
+        // Not 99.7: under the original's chop rounding 0.3 + 99.7 sums to 99.999997, just short of 100.
+        Assert.Null(destructibles.TryDestroy(hit.Owner, hit.Placement, damage: 99.8f));
         DestructibleObject destroyed = Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, tank));
         Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(destructibles, destroyed));
     }
