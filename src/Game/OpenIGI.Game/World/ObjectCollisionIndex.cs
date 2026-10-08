@@ -296,7 +296,7 @@ public sealed class ObjectCollisionIndex
             foreach (Entry entry in set)
             {
                 if (!IsSelfOrDescendant(entry.Owner, ancestor)
-                    || Destructibles?.IsDestroyed(entry.Placement) == true
+                    || IsRetired(entry)
                     || _passable.Contains(entry.Owner)
                     || !ConditionalContainerGate.IsTaskActive(entry.Owner)
                     || entry.Radius <= 0.0)
@@ -439,7 +439,7 @@ public sealed class ObjectCollisionIndex
         foreach (Entry entry in _entries)
         {
             if (!entry.IsDynamic
-                || Destructibles?.IsDestroyed(entry.Placement) == true
+                || IsRetired(entry)
                 || _passable.Contains(entry.Owner)
                 || (!includeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner))
                 || entry.Radius <= 0.0)
@@ -628,6 +628,39 @@ public sealed class ObjectCollisionIndex
                     playerMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
                     placement.Owner, placement, isPlayerSet: true));
             }
+
+            // The destroyed model's own collision, on the same placement and under the same instance name, so
+            // whatever moves the intact model (a car's pose, a camera head's) moves its wreck with it; it is
+            // solid only once the placement is destroyed (IsRetired).
+            if (placement.DestroyedReplacement is { } wreck && !IsCharacterPlacement(placement))
+            {
+                if (!cache.TryGetValue(wreck.Model, out var wreckMeshes))
+                {
+                    wreckMeshes = (
+                        MefCollisionMesh.TryRead(wreck.Model.Container, meshIndex: 0, out MefCollisionMesh? readWreckDefault, collision)
+                            ? readWreckDefault
+                            : null,
+                        MefCollisionMesh.TryRead(wreck.Model.Container, meshIndex: 1, out MefCollisionMesh? readWreckPlayer, collision)
+                            ? readWreckPlayer
+                            : null);
+                    cache[wreck.Model] = wreckMeshes;
+                }
+
+                string wreckLabel = $"{label} (destroyed: {wreck.Instance.Name})";
+                if (wreckMeshes.Default is { Faces.Length: > 0 } wreckDefault)
+                {
+                    entries.Add(Entry.Create(
+                        wreckDefault, origin, placement.Orientation, placement.Instance.Name, wreckLabel, placement.TaskName,
+                        placement.Owner, placement, isDestroyedModel: true));
+                }
+
+                if (wreckMeshes.Player is { Faces.Length: > 0 } wreckPlayer)
+                {
+                    playerEntries.Add(Entry.Create(
+                        wreckPlayer, origin, placement.Orientation, placement.Instance.Name, wreckLabel, placement.TaskName,
+                        placement.Owner, placement, isPlayerSet: true, isDestroyedModel: true));
+                }
+            }
         }
 
         return new ObjectCollisionIndex([.. entries], [.. playerEntries]);
@@ -802,7 +835,7 @@ public sealed class ObjectCollisionIndex
     private void CollectEntry(Entry entry, Vector3d min, Vector3d max, List<CollisionTriangle> into)
     {
         if (GenericPickups?.IsCollected(entry.Owner) == true
-            || Destructibles?.IsDestroyed(entry.Placement) == true
+            || IsRetired(entry)
             || _passable.Contains(entry.Owner)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
         {
@@ -1185,7 +1218,7 @@ public sealed class ObjectCollisionIndex
                 || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
                 || (request.IgnoredPlacement is not null && ReferenceEquals(entry.Placement, request.IgnoredPlacement))
                 || index.GenericPickups?.IsCollected(entry.Owner) == true
-                || index.Destructibles?.IsDestroyed(entry.Placement) == true
+                || index.IsRetired(entry)
                 || index._passable.Contains(entry.Owner)
                 || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
             {
@@ -1228,7 +1261,7 @@ public sealed class ObjectCollisionIndex
         Vector3d? retailEnd = null)
     {
         if (GenericPickups?.IsCollected(entry.Owner) == true
-            || Destructibles?.IsDestroyed(entry.Placement) == true
+            || IsRetired(entry)
             || _passable.Contains(entry.Owner)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
         {
@@ -1282,7 +1315,7 @@ public sealed class ObjectCollisionIndex
         foreach (Entry entry in entries)
         {
             if (GenericPickups?.IsCollected(entry.Owner) == true
-                || Destructibles?.IsDestroyed(entry.Placement) == true
+                || IsRetired(entry)
                 || (honourPassable
                     && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
             {
@@ -1371,6 +1404,16 @@ public sealed class ObjectCollisionIndex
 
     /// <summary>Gets or sets the live destructible placement states removed after retail destruction.</summary>
     public DestructibleObjectRegistry? Destructibles { get; set; }
+
+    /// <summary>Whether an entry is out of the world: an intact model once destroyed, a wreck until then.</summary>
+    /// <remarks>
+    /// A car's last countdown tick (<c>0x42E5A0</c>) removes the car from the world and creates its wreck there
+    /// in its place (<c>0x4F3390</c>), and the wreck's initializer (<c>0x4F2B90</c>) commits it to the world like
+    /// any placed object (<c>0x4C6940</c>) -- so the wreck blocks where the car did. An ExplodeObject's model swap
+    /// (<c>0x481A60</c>) likewise changes what its own object collides with.
+    /// </remarks>
+    private bool IsRetired(Entry entry) =>
+        (Destructibles?.IsDestroyed(entry.Placement) == true) != entry.IsDestroyedModel;
     /// <summary>Gets the rich trace delegate bound to this index.</summary>
     public WorldTraceCast Tracer() => TryTrace;
 
@@ -1428,7 +1471,7 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (Destructibles?.IsDestroyed(entry.Placement) == true
+            if (IsRetired(entry)
                 || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
                 continue;
@@ -1488,7 +1531,7 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _playerEntries)
         {
-            if (Destructibles?.IsDestroyed(entry.Placement) == true
+            if (IsRetired(entry)
                 || _passable.Contains(entry.Owner)
                 || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
@@ -1720,6 +1763,9 @@ public sealed class ObjectCollisionIndex
         /// <summary>Gets whether this entry belongs to the human (level-one) trace set.</summary>
         public bool IsPlayerSet { get; init; }
 
+        /// <summary>Gets whether this entry is the placement's destroyed model, solid only once it is destroyed.</summary>
+        public bool IsDestroyedModel { get; init; }
+
         /// <summary>Gets or sets whether the entry has been moved to its set's dynamic list.</summary>
         public bool InDynamicList { get; set; }
 
@@ -1807,7 +1853,8 @@ public sealed class ObjectCollisionIndex
             string taskName,
             GameTask owner,
             WorldPlacement placement,
-            bool isPlayerSet = false)
+            bool isPlayerSet = false,
+            bool isDestroyedModel = false)
         {
             // Local-to-world is the COLUMN-vector product M·v — the renderer's `uModelView * v`, and
             // the convention the original itself uses for a placement's Real32x9 (it reads elements
@@ -1856,6 +1903,7 @@ public sealed class ObjectCollisionIndex
                 placement, origin, orientation)
             {
                 IsPlayerSet = isPlayerSet,
+                IsDestroyedModel = isDestroyedModel,
             };
         }
 

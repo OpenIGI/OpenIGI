@@ -739,6 +739,32 @@ public sealed class WorldRenderer : IWorldPresenter
         return largest > OcclusionSettleOrientation;
     }
 
+    /// <summary>What the last prepared frame decided for every placement a task owns, for scenario runs.</summary>
+    /// <param name="owner">The task whose placements, its own and its attachments', are described.</param>
+    /// <returns>One line per placement: skipped or drawn, the model shown, and where, in engine units.</returns>
+    internal IEnumerable<string> DescribeFrameForTesting(Engine.Tasks.GameTask owner)
+    {
+        if (_frameScene is not { } scene || _frame.Length != scene.Placements.Count)
+        {
+            yield break;
+        }
+
+        for (int i = 0; i < _frame.Length; i++)
+        {
+            WorldPlacement placement = scene.Placements[i];
+            if (!ReferenceEquals(placement.Owner, owner))
+            {
+                continue;
+            }
+
+            FrameEntry entry = _frame[i];
+            Vector3d at = entry.Position * WorldScene.UnitsPerMetre;
+            yield return entry.Skip
+                ? $"{placement.Instance.Name} SKIPPED destroyed={entry.WasDestroyed} model={(entry.Model is null ? "null" : "set")}"
+                : $"{placement.Instance.Name} drawn as {entry.Displayed?.Instance.Name} at ({at.X:0},{at.Y:0},{at.Z:0}) destroyed={entry.WasDestroyed}";
+        }
+    }
+
     /// <summary>Resolves everything camera-independent about the frame, once, for every pass to share.</summary>
     private void PrepareFrame(WorldScene scene)
     {

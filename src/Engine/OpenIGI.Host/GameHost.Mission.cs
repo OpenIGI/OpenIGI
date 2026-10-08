@@ -766,8 +766,12 @@ internal sealed partial class GameHost
         }
         else
         {
+            // The vehicle table is what binds each car's wreck: a CAR record's last value names the model
+            // 0x42E5A0 puts in the car's place when it blows up (601_08_1 for the APC, 614_08_1 for the T80).
+            // Without it every placement went unbound, and the renderer drops a destroyed placement that has
+            // nothing to swap in -- so a LAW'd tank simply vanished where retail leaves its wreck.
             WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger));
+                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, _vehiclePhysics));
             scene = built.Scene;
             _scene = scene;
             _ground = built.Ground;

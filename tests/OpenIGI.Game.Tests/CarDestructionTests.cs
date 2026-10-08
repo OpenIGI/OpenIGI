@@ -143,6 +143,58 @@ public sealed class CarDestructionTests
             emptyValue: false));
     }
 
+    [RequiresGameDataFact]
+    public void ADestroyedTankLeavesItsWreckWhereItStoodAndTheWreckBlocks()
+    {
+        // Mission 7's T80 Car_354. Measured in retail (probe vehicle hooks): thirty ticks after the LAW's blast
+        // the countdown's last tick creates 614_08_1 at the tank's own position (0x4F3390), deletes the tank's
+        // children (0x401780) and takes the tank out of the world (message 0x4CEA20); the wreck's initializer
+        // (0x4F2B90) commits it to the world like any placed object, so it collides.
+        (LevelTask root, WorldScene world, ScriptVarRegistry variables, VehiclePhysicsRegistry physics) = LoadMission(7);
+        DeclaredTask tankTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(354));
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
+            root, world.Placements, variables, physics, new IgiRandom());
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
+        solids.Destructibles = destructibles;
+
+        DestructibleObject tank = Assert.Single(
+            destructibles.Objects,
+            item => ReferenceEquals(item.Owner, tankTask) && item.Kind == DestructibleObjectKind.Vehicle);
+        WorldPlacement body = Assert.IsType<WorldPlacement>(tank.Placement);
+        Assert.Equal("614_01_1", body.Instance.Name);
+        Assert.Equal("614_08_1", Assert.IsType<WorldModelBinding>(body.DestroyedReplacement).Instance.Name);
+
+        Vector3d above = tank.PositionUnits + new Vector3d(0d, 0d, 5d * 4096d);
+        Vector3d below = tank.PositionUnits - new Vector3d(0d, 0d, 3d * 4096d);
+        Assert.True(solids.TryIdentify(above, below, out string intact, out _));
+        Assert.DoesNotContain("destroyed", intact, StringComparison.Ordinal);
+
+        _ = destructibles.ApplyExplosionHits(
+            null,
+            tank.PositionUnits,
+            radiusUnits: 10240f,
+            falloffUnits: 7168f,
+            damageFactor: 5f,
+            sourceWeaponId: DestructibleObjectRegistry.CarDestroyingWeaponId);
+        for (int tick = 0; tick <= DestructibleObjectRegistry.CarPointBlastTicks && !tank.IsDestroyed; tick++)
+        {
+            destructibles.Tick();
+            _ = destructibles.ConsumeVehicleBlasts();
+        }
+
+        Assert.True(tank.IsDestroyed);
+
+        // The hull stands in for its wreck rather than leaving the world with its turret, guns and tracks.
+        Assert.True(destructibles.IsDestroyed(body));
+        Assert.All(
+            world.Placements.Where(placement => ReferenceEquals(placement.Owner, tankTask) && !ReferenceEquals(placement, body)),
+            part => Assert.True(destructibles.IsDestroyed(part), $"{part.Instance.Name} outlived the tank"));
+
+        // And it is the wreck that a ray now meets where the tank stood.
+        Assert.True(solids.TryIdentify(above, below, out string wreck, out _));
+        Assert.Contains("destroyed: 614_08_1", wreck, StringComparison.Ordinal);
+    }
+
     private static bool IsOwnedBy(GameTask? task, GameTask ancestor)
     {
         for (GameTask? current = task; current is not null; current = current.Parent)
@@ -166,7 +218,10 @@ public sealed class CarDestructionTests
         return physics;
     }
 
-    private static (LevelTask Root, WorldScene World, ScriptVarRegistry Variables, VehiclePhysicsRegistry Physics) LoadMissionOne()
+    private static (LevelTask Root, WorldScene World, ScriptVarRegistry Variables, VehiclePhysicsRegistry Physics) LoadMissionOne() =>
+        LoadMission(1);
+
+    private static (LevelTask Root, WorldScene World, ScriptVarRegistry Variables, VehiclePhysicsRegistry Physics) LoadMission(int missionId)
     {
         VirtualFileSystem fs = new();
         fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -189,8 +244,8 @@ public sealed class CarDestructionTests
             fs,
             resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
-            terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(1);
-        WorldScene world = WorldScene.Build(mission, root, magic);
+            terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(missionId);
+        WorldScene world = WorldScene.Build(mission, root, magic, vehiclePhysics: physics);
         return (root, world, loop.Variables, physics);
     }
 }
