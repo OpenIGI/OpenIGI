@@ -53,7 +53,7 @@ public sealed partial class Igi2HumanPlayer
             return;
         }
 
-        if (Weapon.GetAnim(Igi2WeaponAnimRequest.FirstReloadLoop, View.ObjectRig) is null)
+        if (Weapon.GetAnim(Igi2WeaponAnimRequest.FirstReloadLoop, View.ObjectRig, FireType) is null)
         {
             Weapon.Firing?.Reload();
             GoAction(Igi2PlayerActionState.Idle);

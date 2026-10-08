@@ -29,7 +29,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Igi2AnimController arms = View.ObjectAnimation;
-        if (Weapon.GetAnim(request, View.ObjectRig) is { } anim)
+        if (Weapon.GetAnim(request, View.ObjectRig, FireType) is { } anim)
         {
             float rate = reverse ? ((Fpu)anim.TimeScale * -1.0).F : anim.TimeScale;
             arms.SetAnimationAndTime(anim.Clip, rate < 0f ? anim.Clip.TotalTime - time : time);

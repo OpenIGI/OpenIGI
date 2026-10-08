@@ -199,7 +199,7 @@ internal static class Igi2PlayerFakes
 
         public Dictionary<Weapons.Igi2WeaponAnimRequest, Weapons.Igi2WeaponAnim> Anims { get; } = [];
 
-        public Weapons.Igi2WeaponAnim? GetAnim(Weapons.Igi2WeaponAnimRequest request, Formats.Animation.Igi2BoneHierarchy? rig) =>
+        public Weapons.Igi2WeaponAnim? GetAnim(Weapons.Igi2WeaponAnimRequest request, Formats.Animation.Igi2BoneHierarchy? rig, int fireType) =>
             Anims.TryGetValue(request, out Weapons.Igi2WeaponAnim anim) ? anim : null;
 
         public bool ActiveIsZoom => false;

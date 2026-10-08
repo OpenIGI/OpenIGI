@@ -118,8 +118,8 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     }
 
     /// <inheritdoc/>
-    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig) =>
-        Held is { } held ? Igi2WeaponTypeAnim.Get(held, request, rig, _clips, BodyClips(rig)) : null;
+    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig, int fireType) =>
+        Held is { } held ? Igi2WeaponTypeAnim.Get(held, request, rig, _clips, BodyClips(rig), fireType) : null;
 
     /// <inheritdoc/>
     public void ClearAllWeapons() => _inventory.ClearAll();

@@ -46,8 +46,9 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Asks the weapon in hand for a clip (<c>WeaponType_GetAnimHandler</c>, <c>igi2 0x4360F0</c>).</summary>
     /// <param name="request">What is asked for.</param>
     /// <param name="rig">The asking rig: the first-person model's for a first-person request, the body's otherwise.</param>
+    /// <param name="fireType">The asker's fire type, <c>nFireType</c>: whose fire type answers what the weapon does not.</param>
     /// <returns>The clip and its rate, or <see langword="null"/> when there is none or nothing is held.</returns>
-    Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig);
+    Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig, int fireType);
 
     /// <summary>Gets a value indicating whether the held weapon type's task is a <c>Zoom</c>.</summary>
     bool ActiveIsZoom { get; }
@@ -107,7 +108,7 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
     public Igi2Inventory? Inventory => null;
 
     /// <inheritdoc/>
-    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig) => null;
+    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig, int fireType) => null;
 
     /// <inheritdoc/>
     public bool ActiveIsZoom => false;

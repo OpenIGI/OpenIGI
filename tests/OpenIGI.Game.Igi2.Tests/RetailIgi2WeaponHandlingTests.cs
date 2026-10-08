@@ -81,12 +81,12 @@ public sealed class RetailIgi2WeaponHandlingTests
         Igi2WeaponTypeTask ak47 = m.Weapons.Tables.WeaponTypes.Single(static w => w.WeaponId == "WEAPON_ID_AK47");
         Igi2AnimationClip?[] body = Igi2WeaponTypeAnims.BuildTable(m.Library, m.Rig, ak47.WeaponAnimationName, (Igi2WeaponAnimFamily)ak47.WeaponType);
 
-        Igi2WeaponAnim draw = Igi2WeaponTypeAnim.Get(ak47, Igi2WeaponAnimRequest.FirstActivate, m.Arms, m.Library, null)!.Value;
+        Igi2WeaponAnim draw = Igi2WeaponTypeAnim.Get(ak47, Igi2WeaponAnimRequest.FirstActivate, m.Arms, m.Library, null, 0)!.Value;
         Assert.Equal(ak47.FirstPersonActivateAnim, draw.Clip.Name);
         Assert.Equal((new Fpu(draw.Clip.TotalTime) * 0.00020833334f / ak47.DeActivateTime).F, draw.TimeScale);
-        Assert.Null(Igi2WeaponTypeAnim.Get(ak47, Igi2WeaponAnimRequest.FirstDeactivate, m.Arms, m.Library, null));
+        Assert.Null(Igi2WeaponTypeAnim.Get(ak47, Igi2WeaponAnimRequest.FirstDeactivate, m.Arms, m.Library, null, 0));
 
-        Igi2WeaponAnim putAway = Igi2WeaponTypeAnim.Get(ak47, Igi2WeaponAnimRequest.ThirdDeactivate, m.Rig, m.Library, body)!.Value;
+        Igi2WeaponAnim putAway = Igi2WeaponTypeAnim.Get(ak47, Igi2WeaponAnimRequest.ThirdDeactivate, m.Rig, m.Library, body, 0)!.Value;
         Assert.Same(body[234], putAway.Clip);
         Assert.StartsWith("weaponraise", putAway.Clip.Name, StringComparison.Ordinal);
     }
@@ -106,7 +106,7 @@ public sealed class RetailIgi2WeaponHandlingTests
 
         player.SetWeaponTypeAnim(Igi2WeaponAnimRequest.FirstActivate, 0, reverse: true);
         Igi2AnimController arms = player.View.ObjectAnimation;
-        Igi2WeaponAnim draw = weapons.GetAnim(Igi2WeaponAnimRequest.FirstActivate, m.Arms)!.Value;
+        Igi2WeaponAnim draw = weapons.GetAnim(Igi2WeaponAnimRequest.FirstActivate, m.Arms, 0)!.Value;
         Assert.Equal(draw.Clip.TotalTime, arms.Time);
         Assert.Equal(Fpu.ToInt32(new Fpu(Igi2AnimController.TicksPerFrame) * -draw.TimeScale), arms.TimeStep);
         Assert.Equal(Igi2PlayerSignal.None, player.ActionSignal & Igi2PlayerSignal.AnimationEnded);

@@ -115,8 +115,9 @@ public readonly record struct Igi2WeaponAnim(Igi2AnimationClip Clip, float TimeS
 /// lying <c>weaponraise</c>, scaled the same way unless the time is zero.
 /// </para>
 /// <para>
-/// Everything else is the fire type's to answer, as is any request this finds no clip for; the fire types' handlers
-/// (<c>Gun_GetAnimHandler</c>, <c>0x4822E0</c>, and the rest) arrive with firing, so for now those find none.
+/// Everything else is the fire type's to answer, as is any request this finds no clip for: the request goes on to the
+/// handler of the fire type in the asker's fire-type slot, when there is one. The gun's is <see cref="GunAnim"/>; the
+/// other fire types' handlers are not yet ported and find none.
 /// </para>
 /// </remarks>
 public static class Igi2WeaponTypeAnim
@@ -130,16 +131,18 @@ public static class Igi2WeaponTypeAnim
     /// <param name="rig">The asking rig: the first-person model's for a first-person request, the body's otherwise.</param>
     /// <param name="library">The level's clips.</param>
     /// <param name="bodyTable">The weapon's table for <paramref name="rig"/>, or <see langword="null"/> for none.</param>
+    /// <param name="fireType">The asker's fire type, <c>nFireType</c>, whose handler answers what this does not; -1 for none.</param>
     /// <returns>The clip and its rate, or <see langword="null"/> when there is none.</returns>
     public static Igi2WeaponAnim? Get(
         Igi2WeaponTypeTask weaponType,
         Igi2WeaponAnimRequest request,
         Igi2BoneHierarchy? rig,
         Igi2AnimationLibrary? library,
-        IReadOnlyList<Igi2AnimationClip?>? bodyTable)
+        IReadOnlyList<Igi2AnimationClip?>? bodyTable,
+        int fireType)
     {
         ArgumentNullException.ThrowIfNull(weaponType);
-        return request switch
+        Igi2WeaponAnim? own = request switch
         {
             Igi2WeaponAnimRequest.FirstStand => Named(weaponType.FirstPersonStandAnim),
             Igi2WeaponAnimRequest.FirstMove => Named(weaponType.FirstPersonMoveAnim),
@@ -157,12 +160,117 @@ public static class Igi2WeaponTypeAnim
             _ => null,
         };
 
+        if (own is not null || fireType == -1 || weaponType.FireTaskType(fireType) == Igi2WeaponConstants.NoTaskType)
+        {
+            return own;
+        }
+
+        return weaponType.FireType(fireType) is Igi2GunTask gun ? GunAnim(gun, request, Find, Row) : null;
+
         Igi2AnimationClip? Find(string name) =>
             rig is null || library is null || name.Length == 0 ? null : library.Find(rig, name);
 
         Igi2WeaponAnim? Named(string name) => Find(name) is { } clip ? new Igi2WeaponAnim(clip, 1f) : null;
 
         Igi2AnimationClip? Row(int row) => bodyTable is not null && (uint)row < (uint)bodyTable.Count ? bodyTable[row] : null;
+    }
+
+    /// <summary>
+    /// A gun's answer, <c>Gun_GetAnimHandler</c> (<c>igi2 0x4822E0</c>): its named shot, held shot and release at their
+    /// own speed, and its reload's three steps all at one rate, the one at which the whole reload (the start, a loop for
+    /// every round of the clip but one, and the end) lasts the gun's <c>Reload Time</c>.
+    /// </summary>
+    /// <remarks>
+    /// The first-person steps are the gun's named clips; the start counts the loop and the end only when the gun names a
+    /// first-person loop. The third-person steps are the body table's reload rows (<c>0x4F</c> to <c>0x51</c>, lying
+    /// <c>0x7A</c> to <c>0x7C</c>), the start again counting the rest only for a named first-person loop. A missing step
+    /// adds nothing. Each clip's ticks become seconds by the float <c>1/4800</c>, the loop's times the rounds less one,
+    /// summed in the handler's order and divided by the reload time at the FPU's precision.
+    /// </remarks>
+    private static Igi2WeaponAnim? GunAnim(
+        Igi2GunTask gun,
+        Igi2WeaponAnimRequest request,
+        Func<string, Igi2AnimationClip?> find,
+        Func<int, Igi2AnimationClip?> row)
+    {
+        bool namesLoop = gun.FirstPersonReloadHoldAnim.Length != 0;
+        int flat = request is Igi2WeaponAnimRequest.ThirdReloadStartFlat or Igi2WeaponAnimRequest.ThirdReloadLoopFlat
+            or Igi2WeaponAnimRequest.ThirdReloadEndFlat ? FlatReloadRows : 0;
+        return request switch
+        {
+            Igi2WeaponAnimRequest.FirstFire => AtOwnSpeed(find(gun.FirstPersonFireAnim)),
+            Igi2WeaponAnimRequest.FirstFireHold => AtOwnSpeed(find(gun.FirstPersonFireHoldAnim)),
+            Igi2WeaponAnimRequest.FirstFireRelease => AtOwnSpeed(find(gun.FirstPersonFireReleaseAnim)),
+            Igi2WeaponAnimRequest.FirstReloadStart or Igi2WeaponAnimRequest.FirstReloadLoop or Igi2WeaponAnimRequest.FirstReloadEnd =>
+                Reload(gun, Step(request), namesLoop, find(gun.FirstPersonReloadStartAnim), find(gun.FirstPersonReloadHoldAnim), find(gun.FirstPersonReloadEndAnim)),
+            Igi2WeaponAnimRequest.ThirdFire => AtOwnSpeed(find(gun.ThirdPersonFireAnim)),
+            Igi2WeaponAnimRequest.ThirdFireHold => AtOwnSpeed(find(gun.ThirdPersonFireHoldAnim)),
+            Igi2WeaponAnimRequest.ThirdFireRelease => AtOwnSpeed(find(gun.ThirdPersonFireReleaseAnim)),
+            >= Igi2WeaponAnimRequest.ThirdReloadStart and <= Igi2WeaponAnimRequest.ThirdReloadEndFlat =>
+                Reload(gun, Step(request), namesLoop, row(ReloadStartRow + flat), row(ReloadStartRow + 1 + flat), row(ReloadStartRow + 2 + flat)),
+            _ => null,
+        };
+
+        static Igi2WeaponAnim? AtOwnSpeed(Igi2AnimationClip? clip) => clip is null ? null : new Igi2WeaponAnim(clip, 1f);
+
+        static ReloadStep Step(Igi2WeaponAnimRequest request) => request switch
+        {
+            Igi2WeaponAnimRequest.FirstReloadStart or Igi2WeaponAnimRequest.ThirdReloadStart or Igi2WeaponAnimRequest.ThirdReloadStartFlat => ReloadStep.Start,
+            Igi2WeaponAnimRequest.FirstReloadLoop or Igi2WeaponAnimRequest.ThirdReloadLoop or Igi2WeaponAnimRequest.ThirdReloadLoopFlat => ReloadStep.Loop,
+            _ => ReloadStep.End,
+        };
+    }
+
+    /// <summary>One reload step at the rate the whole reload takes, summed as the handler sums it for that step.</summary>
+    private static Igi2WeaponAnim? Reload(
+        Igi2GunTask gun,
+        ReloadStep step,
+        bool namesLoop,
+        Igi2AnimationClip? start,
+        Igi2AnimationClip? loop,
+        Igi2AnimationClip? end)
+    {
+        int loops = gun.RoundsPerClip - 1;
+        Fpu seconds = 0.0;
+        Igi2AnimationClip? played;
+        switch (step)
+        {
+            case ReloadStep.Start:
+                if (namesLoop)
+                {
+                    seconds = Add(Add(seconds, loop, loops), end, 1);
+                }
+
+                seconds = Add(seconds, start, 1);
+                played = start;
+                break;
+            case ReloadStep.Loop:
+                seconds = Add(Add(Add(seconds, end, 1), start, 1), loop, loops);
+                played = loop;
+                break;
+            default:
+                seconds = Add(Add(Add(seconds, start, 1), loop, loops), end, 1);
+                played = end;
+                break;
+        }
+
+        return played is null ? null : new Igi2WeaponAnim(played, (seconds / gun.ReloadTimeSeconds).F);
+
+        static Fpu Add(Fpu sum, Igi2AnimationClip? clip, int times) =>
+            clip is null ? sum : sum + ((new Fpu(clip.TotalTime) * SecondsPerTick) * (double)times);
+    }
+
+    /// <summary>The body table's standing reload start, <c>0x4F</c>; the loop and the end follow it.</summary>
+    private const int ReloadStartRow = 0x4F;
+
+    /// <summary>How far past the standing reload rows the lying ones are, <c>0x2B</c>.</summary>
+    private const int FlatReloadRows = 0x2B;
+
+    private enum ReloadStep
+    {
+        Start,
+        Loop,
+        End,
     }
 
     /// <summary>The table row of the standing third-person draw, <c>0xE9</c>; the put-away and the lying pair follow it.</summary>

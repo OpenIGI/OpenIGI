@@ -263,7 +263,7 @@ public sealed partial class Igi2HumanPlayer
                 9 => Igi2WeaponAnimRequest.ThirdReloadLoopFlat,
                 _ => Igi2WeaponAnimRequest.ThirdReloadEndFlat,
             };
-            if (Weapon.GetAnim(request, Animation.Rig) is { } anim)
+            if (Weapon.GetAnim(request, Animation.Rig, FireType) is { } anim)
             {
                 Animation.PlayClip(anim.Clip, 0, 0f, state);
                 Animation.MainTimeStep = anim.TimeStep;
@@ -280,14 +280,14 @@ public sealed partial class Igi2HumanPlayer
 
         Animation.LastUpperBodyState = state;
         Igi2WeaponAnimRequest drawRequest = mode == 11 ? Igi2WeaponAnimRequest.ThirdDeactivateFlat : Igi2WeaponAnimRequest.ThirdActivateFlat;
-        PlayWeaponUpperBody(Weapon.GetAnim(drawRequest, Animation.Rig), backwards: mode == 12);
+        PlayWeaponUpperBody(Weapon.GetAnim(drawRequest, Animation.Rig, FireType), backwards: mode == 12);
     }
 
     private void SetStandingUpperBody(int mode, int state, bool secondaryFire)
     {
         if (secondaryFire)
         {
-            if (Weapon.GetAnim(Igi2WeaponAnimRequest.ThirdFire, Animation.Rig) is { } fire)
+            if (Weapon.GetAnim(Igi2WeaponAnimRequest.ThirdFire, Animation.Rig, FireType) is { } fire)
             {
                 Animation.LastUpperBodyState = 83;
                 Animation.SetUpperBody(fire.Clip, 0, 0f);
@@ -316,7 +316,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Animation.LastUpperBodyState = state;
-        PlayWeaponUpperBody(Weapon.GetAnim(asked, Animation.Rig), backwards: mode == 12);
+        PlayWeaponUpperBody(Weapon.GetAnim(asked, Animation.Rig, FireType), backwards: mode == 12);
     }
 
     /// <summary>Plays a weapon's clip on the upper body at its rate, a draw from its end backwards; none clears the upper body.</summary>

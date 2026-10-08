@@ -228,6 +228,28 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(0, clips.Count);
     }
 
+    /// <summary>
+    /// The MP5SD's own clips come from its gun (<c>Gun_GetAnimHandler</c>, asked by <c>WeaponType_GetAnimHandler</c> for
+    /// what the weapon type does not name): <c>fire_mp5_1st</c> at its own speed, and <c>reload_mp5_1st</c> at the rate
+    /// that makes it last the gun's reload time, the gun naming no reload loop or end.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_mp5sd_gives_its_guns_fire_and_reload_clips()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2GunTask gun = (Igi2GunTask)weapons.Inventory.Current!.WeaponType.FireType(0)!;
+
+        Igi2WeaponAnim fire = weapons.GetAnim(Igi2WeaponAnimRequest.FirstFire, player.View.ObjectRig, 0)!.Value;
+        Igi2WeaponAnim reload = weapons.GetAnim(Igi2WeaponAnimRequest.FirstReloadStart, player.View.ObjectRig, 0)!.Value;
+
+        Assert.Equal("fire_mp5_1st", fire.Clip.Name);
+        Assert.Equal(1f, fire.TimeScale);
+        Assert.Equal("reload_mp5_1st", reload.Clip.Name);
+        Assert.Equal((((Fpu)0.0 + ((new Fpu(reload.Clip.TotalTime) * 0.00020833334f) * 1.0)) / gun.ReloadTimeSeconds).F, reload.TimeScale);
+        Assert.Null(weapons.GetAnim(Igi2WeaponAnimRequest.FirstReloadLoop, player.View.ObjectRig, 0));
+        Assert.Null(weapons.GetAnim(Igi2WeaponAnimRequest.FirstFire, player.View.ObjectRig, -1));
+    }
+
     /// <summary>The three angles of an orientation give it back (<c>Real32x9_GetAngles</c> against <c>Real32x9_Create</c>).</summary>
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()
