@@ -1152,7 +1152,7 @@ public sealed class AiScenarioHarness : IDisposable
                             ? FormattableString.Invariant($" riding=({riding.X * Metre:0},{riding.Y * Metre:0},{riding.Z * Metre:0})")
                             : string.Empty;
                         log.AppendLine(CultureInfo.InvariantCulture,
-                            $"[human] scene={sceneTick} id={view.Soldier.Id} staged={staged} drawn=({where.X:0.000},{where.Y:0.000},{where.Z:0.000}) anim={view.CurrentAnimation}{attached} m=[{o.M11:0.000000} {o.M12:0.000000} {o.M13:0.000000}; {o.M21:0.000000} {o.M22:0.000000} {o.M23:0.000000}; {o.M31:0.000000} {o.M32:0.000000} {o.M33:0.000000}]");
+                            $"[human] scene={sceneTick} id={view.Soldier.Id} staged={staged} drawn=({where.X:0.000},{where.Y:0.000},{where.Z:0.000}) anim={view.CurrentAnimation}{attached} m=[{o.M11:0.000000} {o.M12:0.000000} {o.M13:0.000000}; {o.M21:0.000000} {o.M22:0.000000} {o.M23:0.000000}; {o.M31:0.000000} {o.M32:0.000000} {o.M33:0.000000}] sample=({view.RootSample.X:0.0},{view.RootSample.Y:0.0},{view.RootSample.Z:0.0}) feet=({view.Position.X:0.0},{view.Position.Y:0.0},{view.Position.Z:0.0})");
                     }
                 }
             }
