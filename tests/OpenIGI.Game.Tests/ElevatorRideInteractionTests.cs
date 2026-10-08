@@ -138,8 +138,9 @@ public sealed class ElevatorRideInteractionTests
         }
     }
 
+    /// <summary>A lift asked for a floor goes there whoever is aboard -- <c>0x43D280</c> has no occupancy test.</summary>
     [RequiresGameDataFact]
-    public void LiftWaitsForThePlayerToEnterTheSpecificCab()
+    public void LiftStartsWithNobodyAboard()
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(5);
         DoorRegistry doors = DoorRegistry.Build(root);
@@ -159,11 +160,7 @@ public sealed class ElevatorRideInteractionTests
         elevators.SetPlayerPositionProvider(() => elevator.State.Position + new Vector3d(100000, 0, 0));
         elevator.State.RequestFloor(1);
         elevators.Tick();
-        Assert.False(elevator.State.IsMoving, "the Level 5 elevator started while the player was outside its cab");
-
-        elevators.SetPlayerPositionProvider(() => elevator.State.Position);
-        elevators.Tick();
-        Assert.True(elevator.State.IsMoving, "the Level 5 elevator did not start after the player entered its cab");
+        Assert.True(elevator.State.IsMoving, "the Level 5 elevator waited for a passenger the original never asks for");
     }
 
     [RequiresGameDataFact]

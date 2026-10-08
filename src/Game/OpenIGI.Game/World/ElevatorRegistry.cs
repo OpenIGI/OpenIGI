@@ -59,6 +59,7 @@ public sealed class ElevatorRegistry
     private readonly List<ElevatorCommand> _commands = [];
     private Action<PlacedElevator, ElevatorSoundEvent>? _sounds;
     private Func<Vector3d>? _playerPositionProvider;
+    private readonly HashSet<PlacedElevator> _collisionPlaced = new(ReferenceEqualityComparer.Instance);
 
     public ElevatorRegistry()
     {
@@ -120,10 +121,13 @@ public sealed class ElevatorRegistry
 
     public void Tick()
     {
-        // The retail elevator start path is evaluated against the live human's ground-hit owner. A
-        // caller that wires a player provider must therefore be inside the specific cab being started;
-        // keeping the null-provider fallback preserves the registry's data-only test contract.
-        Vector3d? playerPosition = _playerPositionProvider?.Invoke();
+        // NOBODY HAS TO BE ABOARD. 0x43D280 reads "Can start" (true when the level leaves it empty) and, when
+        // it holds, moves the car (0x43D6E0) -- there is no occupancy test anywhere in the Elevator's tick.
+        // Every lift the levels build gates itself in its own script instead: "Can start" wants its doors
+        // closed, and only a switch asks for a floor. A car told to move by nothing but its script -- mission
+        // 12's cutscene gondola ("Floor up" is the constant 1), mission 11's (CutScene_114.isRun), mission
+        // 14's hacked cage -- used to stand still here until the player climbed in, which in a cutscene is
+        // never.
         foreach (ElevatorCommand command in _commands)
         {
             bool wasMoving = command.Elevator.State.HasMovementRequest;
@@ -139,11 +143,8 @@ public sealed class ElevatorRegistry
                 }
             }
 
-            bool playerInside = !playerPosition.HasValue
-                || (IsPlayerInsideElevator(playerPosition.Value, out PlacedElevator? containing)
-                    && ReferenceEquals(containing, command.Elevator));
             command.Elevator.State.Tick(
-                command.CanStart() && (playerInside || command.HasExteriorRequest),
+                command.CanStart(),
                 command.FloorUp(),
                 command.FloorDown(),
                 wantedFloor);
@@ -226,7 +227,10 @@ public sealed class ElevatorRegistry
         int updated = 0;
         foreach (PlacedElevator elevator in _elevators)
         {
-            if (!elevator.State.TransformChangedThisTick)
+            // The first pass places every car's solid at the orientation it is drawn with, which a car its
+            // spline turns does not share with its authored one -- mission 12's gondola stood a quarter turn
+            // out until it first moved, and the soldier standing in it found no floor to be parented to.
+            if (!elevator.State.TransformChangedThisTick && !_collisionPlaced.Add(elevator))
             {
                 continue;
             }

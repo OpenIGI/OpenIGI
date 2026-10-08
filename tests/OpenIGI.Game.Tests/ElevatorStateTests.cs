@@ -18,7 +18,7 @@ public sealed class ElevatorStateTests
                 new ElevatorFloor(30, new Vector3d(0, 0, 20)),
             ],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.Tick(canStart: true, floorUp: true, floorDown: false);
         Assert.True(elevator.IsMoving);
@@ -48,7 +48,7 @@ public sealed class ElevatorStateTests
                 new ElevatorFloor(20, new Vector3d(0, 0, 10)),
             ],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30,
+            speedInertiaUnitsPerSecondPerTick: 30,
             startFloorTaskId: 20);
 
         elevator.Tick(canStart: false, floorUp: false, floorDown: true);
@@ -66,7 +66,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 10))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.Tick(canStart: true, floorUp: true, floorDown: false);
         elevator.Tick(canStart: true, floorUp: true, floorDown: false);
@@ -82,7 +82,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 10))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(1);
         elevator.Tick(canStart: false, floorUp: false, floorDown: false);
@@ -108,7 +108,7 @@ public sealed class ElevatorStateTests
                 new ElevatorFloor(30, new Vector3d(20, 0, 0)),
             ],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(2);
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
@@ -145,7 +145,7 @@ public sealed class ElevatorStateTests
             new Vector3d(0, 0, 0),
             [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 10))],
             maxSpeedUnitsPerSecond: 0,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(1);
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
@@ -166,7 +166,7 @@ public sealed class ElevatorStateTests
                 new ElevatorFloor(30, new Vector3d(0, 0, 20)),
             ],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(2);
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
@@ -188,7 +188,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 10))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(0);
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
@@ -205,7 +205,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
         ElevatorState movingState = new(
             startPosition: new Vector3d(0, 0, 0),
             floors: [
@@ -213,7 +213,7 @@ public sealed class ElevatorStateTests
                 new ElevatorFloor(30, new Vector3d(0, 0, 100)),
             ],
             maxSpeedUnitsPerSecond: 300,
-            speedInertiaUnitsPerSecondSquared: 300);
+            speedInertiaUnitsPerSecondPerTick: 300);
         movingState.RequestFloor(1);
         movingState.Tick(canStart: true, floorUp: false, floorDown: false);
 
@@ -237,7 +237,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 100))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(1);
         Assert.Equal(0.0, elevator.FloorPosition);
@@ -262,7 +262,7 @@ public sealed class ElevatorStateTests
             startPosition: Vector3d.Zero,
             floors: [new ElevatorFloor(10, Vector3d.Zero)],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
         PlacedElevator elevator = new(
             new OpenIGI.Engine.Tasks.LevelTask(),
             state,
@@ -291,7 +291,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 100))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.Tick(canStart: true, floorUp: false, floorDown: false, wantedFloor: 1);
         Assert.True(elevator.IsStart);
@@ -322,7 +322,7 @@ public sealed class ElevatorStateTests
             startPosition: new Vector3d(0, 0, 0),
             floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 100))],
             maxSpeedUnitsPerSecond: 30,
-            speedInertiaUnitsPerSecondSquared: 30);
+            speedInertiaUnitsPerSecondPerTick: 30);
 
         elevator.RequestFloor(1);
         elevator.Tick(canStart: false, floorUp: false, floorDown: false);
@@ -344,7 +344,7 @@ public sealed class ElevatorStateTests
                 new ElevatorFloor(30, new Vector3d(0, 0, 100)),
             ],
             maxSpeedUnitsPerSecond: 300,
-            speedInertiaUnitsPerSecondSquared: 300);
+            speedInertiaUnitsPerSecondPerTick: 300);
         movingState.RequestFloor(1);
         movingState.Tick(canStart: true, floorUp: false, floorDown: false);
 

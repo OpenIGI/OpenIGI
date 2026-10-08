@@ -324,6 +324,38 @@ public sealed class RetailElevatorTests
         AssertMatrix(retail, drawn, 1e-4f);
     }
 
+    /// <summary>
+    /// Mission 12's empty cutscene gondola leaves on the first tick and is at its full 1.5 m/s on the second, where
+    /// the original puts it.
+    /// </summary>
+    /// <remarks>
+    /// The positions are the retail game's own, read by the probe's <c>elevator</c> hook set on the first three
+    /// moves of the intro. Nobody is aboard -- <c>0x43D280</c> has no occupancy test -- and <c>0x43D6E0</c> adds
+    /// Speed inertia (0.99) to the speed every tick, in metres a second, so the steps are 0.99 then 1.5 m/s.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void Mission12CutsceneGondolaLeavesEmptyAtTheOriginalsSpeed()
+    {
+        (LevelTask root, ScriptVarRegistry variables, _) = Load(12);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        PlacedElevator gondola = Assert.Single(elevators.Elevators, item => item.Task.Id == 1667);
+        elevators.SetPlayerPositionProvider(() => new Vector3d(0, 0, 0));
+
+        Vector3d[] retail =
+        [
+            new(112260205.343, -42471830.656, 179499686.058),
+            new(112260201.318, -42471628.640, 179499719.480),
+            new(112260197.292, -42471426.640, 179499752.900),
+        ];
+        foreach (Vector3d expected in retail)
+        {
+            elevators.Tick();
+            Assert.True(
+                Vector3d.Distance(expected, gondola.State.Position) <= 1.0,
+                $"expected {expected}, got {gondola.State.Position}");
+        }
+    }
+
     /// <summary>Every other Elevator keeps its authored orientation, as every lift in the game is drawn.</summary>
     /// <remarks>
     /// Only an unforced, non-<c>Linear</c> car takes a spline frame. Of those, mission 14's 1706 rides a vertical
