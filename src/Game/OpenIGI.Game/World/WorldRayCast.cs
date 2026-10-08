@@ -142,6 +142,10 @@ public readonly record struct WorldTraceRequest(
 /// <param name="Owner">The exact task owning a placed collision mesh, when applicable.</param>
 /// <param name="Label">A stable diagnostic name for the blocker.</param>
 /// <param name="Placement">The exact rendered placement hit, including an attached magic object.</param>
+/// <param name="IsExit">
+/// Whether the ray crossed the surface's back face, as <see cref="WorldRayHit.IsExit"/>. Carried through so
+/// a shot march sees the exit crossings <c>0x47B750</c> branches on.
+/// </param>
 public readonly record struct WorldTraceHit(
     Vector3d Position,
     Vector3f Normal,
@@ -151,10 +155,11 @@ public readonly record struct WorldTraceHit(
     WorldTraceHitKind Kind,
     GameTask? Owner = null,
     string Label = "",
-    WorldPlacement? Placement = null)
+    WorldPlacement? Placement = null,
+    bool IsExit = false)
 {
     /// <summary>Projects this rich contact into the legacy cast result.</summary>
-    public WorldRayHit RayHit => new(Position, Normal, Distance, Material);
+    public WorldRayHit RayHit => new(Position, Normal, Distance, Material, IsExit);
 
     /// <summary>Builds a rich contact from a legacy result.</summary>
     public static WorldTraceHit FromRayHit(
@@ -168,7 +173,7 @@ public readonly record struct WorldTraceHit(
         double length = request.Length;
         double fraction = length > 0.0 ? Math.Clamp(hit.Distance / length, 0.0, 1.0) : 0.0;
         return new WorldTraceHit(
-            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label, placement);
+            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label, placement, hit.IsExit);
     }
 }
 

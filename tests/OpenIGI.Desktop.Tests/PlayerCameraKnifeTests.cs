@@ -33,7 +33,7 @@ public sealed class PlayerCameraKnifeTests
         // Only the third blade angle reaches the body, so the stab must sweep all three to land.
         int callbackCount = 0;
         List<double> reaches = [];
-        camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory category, out HumanHit hit) =>
+        camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory category, double _, bool _, out HumanHit hit) =>
         {
             callbackCount++;
             reaches.Add((end - origin).Length);

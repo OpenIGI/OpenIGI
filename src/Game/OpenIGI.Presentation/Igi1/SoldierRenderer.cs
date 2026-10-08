@@ -6355,6 +6355,31 @@ public sealed class SoldierRenderer : IDisposable
         Vector3d end,
         float damageFactor,
         WeaponCategory category,
+        out HumanHit hit) =>
+        TryShoot(origin, end, damageFactor, category, double.PositiveInfinity, alreadyHeard: false, out hit);
+
+    /// <summary>Offers a round to every soldier short of the surface that stops it.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
+    /// <param name="category">The firing weapon's category, which decides how a body it kills falls.</param>
+    /// <param name="stopDistance">
+    /// The distance to the surface the caller's trace met first; a soldier at or beyond it is behind
+    /// that surface. See <see cref="HumanShot"/>.
+    /// </param>
+    /// <param name="alreadyHeard">Whether this round's near miss was already offered. See <see cref="HumanShot"/>.</param>
+    /// <param name="hit">
+    /// The nearest crossing of a soldier's skin. An exit — the round leaving a body it went into — is
+    /// reported without damage.
+    /// </param>
+    /// <returns><see langword="false"/> when the round meets nobody short of the stop.</returns>
+    public bool TryShoot(
+        Vector3d origin,
+        Vector3d end,
+        float damageFactor,
+        WeaponCategory category,
+        double stopDistance,
+        bool alreadyHeard,
         out HumanHit hit)
     {
         hit = default;
@@ -6379,6 +6404,14 @@ public sealed class SoldierRenderer : IDisposable
                 HumanHealth health = HealthOf(soldier);
 
                 if (health.IsDead)
+                {
+                    continue;
+                }
+
+                // A soldier on the player's own side is not there for the player's round: the trace's
+                // evaluate (0x45E3E0) rejects a human sharing the shooter's team (Human+252), and the
+                // narrow test never runs (0x4D76E6). The round goes on to whatever is behind it.
+                if (soldier.Soldier.Team == _playerTeam)
                 {
                     continue;
                 }
@@ -6486,14 +6519,34 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        // The nearest body behind the surface the caller's trace stopped at is no contact at all: retail's
+        // trace hands the gunshot handler its nearest contact only (0x47BA54), and that was the wall.
+        if (struck is not null && hit.Distance >= stopDistance)
+        {
+            hit = default;
+            struck = null;
+            struckView = null;
+        }
+
         // Human_EvaluateGunShotHandler evaluates each live projectile segment independently of ordinary
         // shot audibility. Do this after choosing the nearest collision so the struck guard gets the
-        // TAKINGDAMAGE path while nearby guards get GUNSHOTMISS.
-        NotifyGunshotMiss(origin, end, struckView, origin);
+        // TAKINGDAMAGE path while nearby guards get GUNSHOTMISS. The segment is the whole one, not the part
+        // short of the wall: 0x47B290 reads each round's full remaining range before the march runs, once.
+        if (!alreadyHeard)
+        {
+            NotifyGunshotMiss(origin, end, hit.IsExit ? null : struckView, origin);
+        }
 
         if (struck is null)
         {
             return false;
+        }
+
+        // Leaving a body the round went into. 0x47B750 runs no handler for an exit crossing: no blood, no
+        // damage; the march only remembers it happened.
+        if (hit.IsExit)
+        {
+            return true;
         }
 
         // 0x45F94A, before anything else the damage handler does.
@@ -6516,12 +6569,15 @@ public sealed class SoldierRenderer : IDisposable
         // multiplier. Both default off, so an ordinary guard is unaffected.
         AiSoldier? brain = struckView is not null && _brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
 
-        // Friendly fire: the player's round cannot hurt a soldier on the player's own team. Retail disables
-        // same-team damage (the round still meets the body and the hit registers, but it does nothing), so
-        // a friendly stands where the round landed without a scratch. Same mechanism as invulnerability:
-        // the whole damage block is skipped, and the death branch never runs.
-        bool friendlyFire = struckView is not null && struckView.Soldier.Team == _playerTeam;
-        bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
+        bool invulnerable = brain?.IsInvulnerable ?? false;
+
+        // KnifeStab (0x46DFB0) replaces the blade's damage factor with 1000.0 when the stabbed soldier has no
+        // fight on (sub_4528F0: HumanAI+15016 clear) -- the silent kill from behind.
+        if (category == WeaponCategory.Knife && brain is { HasCombatRecord: false })
+        {
+            damageFactor = KnifeUnawareDamageFactor;
+        }
+
         if (!invulnerable)
         {
             float dealt = struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
@@ -6550,7 +6606,7 @@ public sealed class SoldierRenderer : IDisposable
         _logger.Information(LogCategory + ".Damage",
             $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
             + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
-            + $"friendly={(friendlyFire ? 1 : 0)} accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
+            + $"accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
 
         return true;
     }
@@ -6776,13 +6832,16 @@ public sealed class SoldierRenderer : IDisposable
         return carried + push + new Vector3d(0.0, 0.0, lift);
     }
 
+    /// <summary>The damage factor a knife stab carries into a soldier with no fight on (<c>0x46DFB0</c>: <c>0x447A0000</c>).</summary>
+    public const float KnifeUnawareDamageFactor = 1000f;
+
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>
     /// <returns>The delegate the player takes.</returns>
     public HumanShot Shooter() => TryShoot;
 
     /// <summary>
     /// Offers an AI-fired round to the soldiers and scores it against the nearest one it meets.
-    /// This is the NPC-vs-NPC counterpart to <see cref="TryShoot"/>: a guard's round can strike a
+    /// This is the NPC-vs-NPC counterpart to <see cref="TryShoot(Vector3d, Vector3d, float, WeaponCategory, double, bool, out HumanHit)"/>: a guard's round can strike a
     /// friendly, and a friendly's can strike a guard, so Harrison's team at the gate trades fire with
     /// the guards instead of only ever being aimed at the player.
     /// </summary>
@@ -6804,7 +6863,7 @@ public sealed class SoldierRenderer : IDisposable
     /// body the round met and stopped at); <see langword="false"/> when it met nobody and flies on.
     /// </returns>
     /// <remarks>
-    /// <b>The damage is applied here</b>, exactly as in <see cref="TryShoot"/>. The Human's evaluate
+    /// <b>The damage is applied here</b>, exactly as in <see cref="TryShoot(Vector3d, Vector3d, float, WeaponCategory, double, bool, out HumanHit)"/>. The Human's evaluate
     /// (<c>0x45E3E0</c>) decides each body the round meets, nearest first: one on the shooter's own side
     /// (<c>Human+252</c>) lets it pass through to the next, any other takes it -- with no probability roll,
     /// which retail makes only for the player. Scripted invulnerability (500.qvm sets

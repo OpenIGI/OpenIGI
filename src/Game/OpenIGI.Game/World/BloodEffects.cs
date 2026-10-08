@@ -183,11 +183,9 @@ public static class BloodEffects
     /// <para>
     /// <see cref="WorldRayHit.Normal"/> has already been turned to oppose the ray so that a decal sits
     /// proud of the surface, which is the opposite vector on an entry. The raw normal is recovered from
-    /// <see cref="WorldRayHit.IsExit"/>, which is the sign the flip was taken from. Note that the rich
-    /// trace's <see cref="WorldTraceHit.RayHit"/> does not carry that flag, so a droplet traced through
-    /// it always reads as an entry and always marks — which is the answer for every droplet that
-    /// reaches a surface from the outside, and is what the shipped <c>hole_blood3</c>/<c>4</c> textures
-    /// are for.
+    /// <see cref="WorldRayHit.IsExit"/>, which is the sign the flip was taken from, and which the rich
+    /// trace's <see cref="WorldTraceHit.RayHit"/> carries too. Every droplet that reaches a surface from
+    /// the outside is an entry and marks — what the shipped <c>hole_blood3</c>/<c>4</c> textures are for.
     /// </para>
     /// </remarks>
     public static bool MarksSurface(Vector3d from, Vector3d to, in WorldRayHit hit)

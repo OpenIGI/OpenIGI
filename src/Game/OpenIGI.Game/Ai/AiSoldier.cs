@@ -1516,6 +1516,13 @@ public sealed class AiSoldier
     /// </remarks>
     public bool IsMovingInCombat => _movingInCombat;
 
+    /// <summary>Gets a value indicating whether a combat action is installed — <c>HumanAI+15016</c> is set.</summary>
+    /// <remarks>
+    /// What <c>sub_4528F0</c> answers. <c>KnifeStab</c> (<c>0x46DFB0</c>) reads it to decide a stab is a silent
+    /// kill: a soldier with no fight on is stabbed at a damage factor of 1000.
+    /// </remarks>
+    public bool HasCombatRecord => _combatInstalled;
+
     /// <summary>Gets the soldier's combat row, once one has been given.</summary>
     public AiCombatParameters? CombatParameters { get; private set; }
 

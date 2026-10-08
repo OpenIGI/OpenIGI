@@ -49,6 +49,9 @@ public sealed class SoldierRendererHitscanTests
 
     private const double PresentationOffsetMetres = 8.0;
 
+    // The global rows a soldier hull names: NormalMetal, Flesh, BloodyFlesh, Runway (material/material.qvm).
+    private static readonly int[] BodyMaterials = [6, 8, 9, 12];
+
     [RequiresGameDataFact]
     public void MissionThreeDisembarkRootTrackConsumesOnlyItsAuthoredDisplacement()
     {
@@ -121,6 +124,41 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(scenario.Renderer.TryShoot(ray.Origin, ray.End, damageFactor: 0.5f, WeaponCategory.Gun, out HumanHit hit));
         Assert.True(hit.Distance > 0.0);
         Assert.InRange(hit.Zone, 0, HumanHitZoneTable.Soldier.Count - 1);
+    }
+
+    /// <summary>
+    /// A round that goes through a body is cast again from just inside it, so the mesh cast must say which
+    /// way it crosses the skin: in from outside, out from inside -- <c>0x47B750</c>'s <c>+76</c> and
+    /// <c>+80</c> slots. The face's own material comes with it, for the round's power to be tested against.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void TheMeshCastTellsAWayInFromAWayOut()
+    {
+        using Scenario scenario = CreateScenario();
+        MeshHitRay ray = FindAnyMeshHitRay(scenario.Renderer);
+        BonePose pose = ray.View.Pose();
+
+        Assert.False(ray.MeshHit.IsExit);
+        Assert.Contains(ray.MeshHit.Material, BodyMaterials);
+
+        IReadOnlyList<HumanBodyCrossing> crossings = HumanHitTest.CastMeshCrossings(
+            ray.Origin, ray.End + ((ray.End - ray.Origin) * 0.5), ray.Feet, ray.Facing, ray.Mesh, pose, ray.View.RootSample.Z);
+        HumanBodyCrossing last = crossings[^1];
+        Assert.False(last.Entering);
+
+        Vector3d heading = (ray.End - ray.Origin) / (ray.End - ray.Origin).Length;
+        Vector3d inside = last.Hit.Position - (heading * GunShotBallistics.PenetrationStepOffUnits);
+        Assert.True(HumanHitTest.TryCastMesh(
+            inside,
+            inside + (heading * Metre),
+            ray.Feet,
+            ray.Facing,
+            ray.Mesh,
+            pose,
+            ray.View.RootSample.Z,
+            out HumanHit way));
+        Assert.True(way.IsExit);
+        Assert.Equal(GunShotBallistics.PenetrationStepOffUnits, way.Distance, 1.0);
     }
 
     [RequiresGameDataFact]

@@ -2910,7 +2910,8 @@ public sealed class PlayerCamera
             Humans,
             GameplayCVars.BallisticsGravity.Value,
             GameplayCVars.BallisticsDrag.Value,
-            _walls?.Tracer());
+            _walls?.Tracer(),
+            BallisticEntryOf);
 
         foreach (BallisticImpact impact in _ballistics.Impacts)
         {
@@ -2949,6 +2950,23 @@ public sealed class PlayerCamera
                 Direction: impact.Direction));
         }
     }
+
+    // A flying round meets a surface or a body under the hit-scan march's own rule: the material row against
+    // the weapon's power, and only an object the trace named can be passed. A glance stops a flying round.
+    private GunShotImpact BallisticEntryOf(
+        BallisticRound round,
+        in WorldRayHit surface,
+        bool namedObject,
+        Vector3d direction) =>
+        _materials is { } rows && rows.TryGet(surface.Material, out GameMaterial row)
+            ? GunShotBallistics.ResolveEntry(
+                round.Weapon.PenetrationPower,
+                row,
+                namedObject,
+                GunShotBallistics.IncidenceRadians(direction, surface.Normal),
+                alreadyDeflected: false,
+                _random.NextSingle)
+            : GunShotImpact.Stopped;
 
     /// <summary>Resolves one round the way <c>0x47B750</c> does — as a march, not a single cast.</summary>
     /// <remarks>
@@ -3010,19 +3028,28 @@ public sealed class PlayerCamera
                     && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
                 WorldRayHit hit = struckWall ? richHit.RayHit : default;
 
-                // Both, then the nearer. A guard in front of a wall takes the round and the wall stays
-                // clean; one behind it does not, and the wall is marked.
+                // The wall first, then the guards short of it. A guard in front of a wall takes the round
+                // and the wall stays clean; one behind it is never offered the damage, and the wall is
+                // marked. The callback damages as it is called, so the stop has to go in with the round.
                 HumanHit human = default;
                 bool struckHuman = Humans is { } humans
-                    && humans(origin, end, damageFactor, category, out human)
+                    && humans(
+                        origin,
+                        end,
+                        damageFactor,
+                        category,
+                        struckWall ? hit.Distance : double.PositiveInfinity,
+                        alreadyHeard: pass > 0,
+                        out human)
                     && (!struckWall || human.Distance < hit.Distance);
+
+                if (struckHuman && ResolveBody(human, travel))
+                {
+                    continue;
+                }
 
                 if (struckHuman)
                 {
-                    HumanHits++;
-                    LastHumanZone = human.Zone;
-                    _impacts.Add(
-                        new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
                     return;
                 }
 
@@ -3114,6 +3141,66 @@ public sealed class PlayerCamera
                 Record(hit, richHit, exitCrossing: false);
                 origin = StepOff(hit.Position, direction);
             }
+        }
+
+        // A body is a surface like any other to 0x47B750: the trace's nearest contact, run through the same
+        // branches as a wall. An entry face takes the hit -- the damage the Humans callback has already
+        // applied -- and then the same graze and bite as a wall, against the face's own material: Flesh and
+        // BloodyFlesh resist 1, so a power-2 or power-3 round goes on through and a power-1 round three times
+        // in five. An exit face is the round leaving the body: no handler, and the latch that stops the round
+        // on the next thing it enters, after that thing has taken the hit. Probed on the guards' rounds
+        // through the player (pairs of hits from one round); the player's rounds take the same march.
+        // Returns whether the march carries on.
+        bool ResolveBody(in HumanHit human, Vector3f travel)
+        {
+            remaining = GunShotBallistics.ConsumeRange(remaining, (float)human.Distance);
+
+            if (human.IsExit)
+            {
+                leftASurface = true;
+                if (remaining <= 0f)
+                {
+                    return false;
+                }
+
+                origin = StepOff(human.Position, direction);
+                return true;
+            }
+
+            HumanHits++;
+            LastHumanZone = human.Zone;
+            _impacts.Add(new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
+
+            if (leftASurface
+                || remaining <= 0f
+                || human.Material < 0
+                || _materials is not { } rows
+                || !rows.TryGet(human.Material, out GameMaterial skin))
+            {
+                return false;
+            }
+
+            GunShotImpact outcome = GunShotBallistics.ResolveEntry(
+                penetrationPower,
+                skin,
+                namedObject: true,
+                GunShotBallistics.IncidenceRadians(direction, human.Normal),
+                deflected,
+                _random.NextSingle);
+            if (outcome == GunShotImpact.Stopped)
+            {
+                return false;
+            }
+
+            if (outcome == GunShotImpact.Deflected)
+            {
+                deflected = true;
+                Deflected?.Invoke(human.Position);
+                direction = Reflect(direction, human.Normal);
+            }
+
+            origin = StepOff(human.Position, direction);
+            return true;
         }
 
         // One recorded impact. The surface decides what it looks like, out of the material its own face
@@ -3213,9 +3300,13 @@ public sealed class PlayerCamera
             bool struckWall = _walls is not null
                 && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out contact);
 
-            // A body behind the wall is out of reach: the blade stops where the wall is.
+            // A body behind the wall is out of reach: the blade stops where the wall is. The stab is no
+            // GunShot round, so nobody hears a near miss (0x4606F0 walks only the round list).
             Vector3d reach = struckWall ? contact.Position : end;
-            if (Humans is { } humans && humans(origin, reach, damageFactor, category, out HumanHit human))
+            if (Humans is { } humans
+                && humans(
+                    origin, reach, damageFactor, category, double.PositiveInfinity, alreadyHeard: true, out HumanHit human)
+                && !human.IsExit)
             {
                 HumanHits++;
                 LastHumanZone = human.Zone;
