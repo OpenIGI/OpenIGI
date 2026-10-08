@@ -662,6 +662,141 @@ public sealed class AiScenarioHarness : IDisposable
     }
 
     /// <summary>
+    /// The port half of the probe's <c>fence</c> capture: the same autopilot script, played headless, with the
+    /// player's origin logged every tick in the probe's terms.
+    /// </summary>
+    /// <remarks>
+    /// Runs only when <c>OPENIGI_FENCE_SCENARIO</c> names the trace file and <c>_SCRIPT</c> the probe script
+    /// (<c>god</c>, <c>teleport x y z [yaw]</c>, <c>look yaw</c>, <c>use</c>, <c>pos</c>, <c>quit</c>; retail
+    /// units and headings), <c>_MISSION</c> the mission (1). Each tick logs the port's task position, where the
+    /// body model is drawn -- which is what the probe's <c>pos</c> (<c>Human+32</c>) is -- and the clip's root
+    /// height, so the two logs line up record by record.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void ScriptedFenceCapture()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_FENCE_SCENARIO");
+        string? scriptPath = Environment.GetEnvironmentVariable("OPENIGI_FENCE_SCENARIO_SCRIPT");
+        if (string.IsNullOrEmpty(output) || string.IsNullOrEmpty(scriptPath))
+        {
+            return;
+        }
+
+        const double OriginAboveFeet = 3877.2;
+        int mission = EnvInt("OPENIGI_FENCE_SCENARIO_MISSION", 1);
+        List<(int Tick, string Op, double[] Args)> script = [];
+        foreach (string raw in File.ReadAllLines(scriptPath))
+        {
+            string[] words = raw.Split('#')[0].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 2)
+            {
+                script.Add((
+                    int.Parse(words[0], CultureInfo.InvariantCulture),
+                    words[1].ToLowerInvariant(),
+                    [.. words.Skip(2).Select(word => double.Parse(word, CultureInfo.InvariantCulture))]));
+            }
+        }
+
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        host.Start();
+        InputState scripted = new();
+        host.ScriptedViewInput = scripted;
+        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        PlayerCamera? player = null;
+        SoldierRenderer? soldiers = null;
+        for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
+        {
+            Assert.True(host.Step());
+            player = playerField.GetValue(host) as PlayerCamera;
+            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+        }
+
+        Assert.NotNull(player);
+        Assert.NotNull(soldiers);
+
+        bool god = false;
+        int useUntil = -1;
+        int last = -1;
+        int tick = -1;
+        bool quit = false;
+        for (int step = 0; step < 4_000_000 && !quit; step++)
+        {
+            if (god)
+            {
+                player.Body.Health.Reset();
+            }
+
+            scripted.Keyboard.SetKey(KeyCode.E, down: tick + 1 < useUntil);
+            if (!host.Step())
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"the host ended at step {step}");
+                break;
+            }
+
+            int engine = (int)tickField.GetValue(soldiers)!;
+            if (engine == last)
+            {
+                continue;
+            }
+
+            last = engine;
+            tick++;
+
+            // The probe's Human+32 is the model origin. Walking, the port keeps the feet, so the origin is
+            // 3877.2 above them; in an interaction it is wherever the body model is drawn.
+            Vector3d feet = player.Body.Position;
+            Vector3d drawn = soldiers.PlayerBodyDrawnOriginForTesting;
+            log.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"[fence] tick={tick} interaction={player.IsInWorldInteraction} state={player.InteractionLocomotionState} "
+                    + $"task=({feet.X:0.0},{feet.Y:0.0},{feet.Z:0.0}) drawn=({drawn.X:0.0},{drawn.Y:0.0},{drawn.Z:0.0}) "
+                    + $"rootSampleZ={soldiers.PlayerBodyRootSampleZForTesting:0.0} walkOrigin=({feet.X:0},{feet.Y:0},{feet.Z + OriginAboveFeet:0}) "
+                    + $"grounded={player.Body.IsGrounded}");
+
+            foreach ((int at, string op, double[] args) in script.Where(command => command.Tick == tick))
+            {
+                switch (op)
+                {
+                    case "god":
+                        god = args.Length == 0 || args[0] != 0.0;
+                        break;
+                    case "teleport":
+                        player.Body.Position = new Vector3d(args[0], args[1], args[2] - OriginAboveFeet);
+                        if (args.Length >= 4)
+                        {
+                            player.Body.Yaw = (float)(-args[3] * Math.PI / 180.0);
+                        }
+
+                        break;
+                    case "look":
+                        player.Body.Yaw = (float)(-args[0] * Math.PI / 180.0);
+                        if (args.Length >= 2)
+                        {
+                            player.Body.Pitch = (float)(args[1] * Math.PI / 180.0);
+                        }
+
+                        break;
+                    case "use":
+                        useUntil = tick + 1 + (args.Length >= 1 ? (int)args[0] : 1);
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} use");
+                        break;
+                    case "quit":
+                        quit = true;
+                        break;
+                }
+            }
+        }
+
+        host.Stop();
+        File.WriteAllText(output, log.ToString());
+    }
+
+    /// <summary>
     /// The port half of the probe's <c>generator</c> capture: the same autopilot script, played headless,
     /// with one Generator's state written in the probe's own record format.
     /// </summary>
@@ -1014,6 +1149,11 @@ public sealed class AiScenarioHarness : IDisposable
         int lastPlaneSteps = -1;
         Dictionary<PlacedDoor, string> doorLines = [];
         List<SoldierSnapshot> soldierSnapshots = [];
+        string destroyState = string.Empty;
+        int vehicleWeaponKey = 0;
+        int vehicleWeaponTick = -1;
+        int vehicleFireUntil = -1;
+        double[]? vehicleAimPoint = null;
 
         // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
         int posEvery = Math.Max(1, EnvInt("OPENIGI_VEH_SCENARIO_POSLOG", 30));
@@ -1051,6 +1191,46 @@ public sealed class AiScenarioHarness : IDisposable
 
             last = engine;
             tick++;
+
+            // OPENIGI_VEH_SCENARIO_DESTROY=1: the port half of the probe's vehicle hook set -- the vehicle's
+            // dying/destroyed state each time it changes, and what the world renderer draws for every placement
+            // it owns on that tick and every 30 after.
+            if (EnvInt("OPENIGI_VEH_SCENARIO_DESTROY", 0) != 0)
+            {
+                DestructibleObjectRegistry? registry = typeof(GameHost)
+                    .GetField("_destructibles", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetValue(host) as DestructibleObjectRegistry;
+                DestructibleObject? target = registry?.Objects.FirstOrDefault(
+                    item => ReferenceEquals(item.Owner, vehicle) && item.Kind == DestructibleObjectKind.Vehicle);
+                string state = target is null ? "none" : $"dying={target.IsDying} destroyed={target.IsDestroyed}";
+                if (state != destroyState || (target?.IsDying == true && tick % 30 == 0))
+                {
+                    destroyState = state;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vehicle] tick={tick} id={vehicleId} {state}");
+                    if (typeof(GameHost).GetField("_world", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)
+                        is OpenIGI.Presentation.Rendering.WorldRenderer world)
+                    {
+                        foreach (string line in world.DescribeFrameForTesting(vehicle))
+                        {
+                            log.AppendLine(CultureInfo.InvariantCulture, $"[vehicle]    {line}");
+                        }
+                    }
+
+                    // What a ray straight down through the vehicle's origin meets: its hull, its wreck, or the ground.
+                    if (target is not null
+                        && typeof(GameHost).GetField("_worldSolids", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)
+                            is ObjectCollisionIndex solids)
+                    {
+                        Vector3d above = target.PositionUnits + new Vector3d(0.0, 0.0, 5.0 * Metre);
+                        Vector3d below = target.PositionUnits - new Vector3d(0.0, 0.0, 3.0 * Metre);
+                        string met = solids.TryIdentify(above, below, out string label, out WorldRayHit struck)
+                            ? $"{label} at z={struck.Position.Z:0}"
+                            : "nothing";
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[vehicle]    collision down through origin: {met}");
+                    }
+                }
+            }
+
             for (int index = 0; index < guns.Count; index++)
             {
                 VehicleGunTurret gun = guns[index];
@@ -1242,10 +1422,44 @@ public sealed class AiScenarioHarness : IDisposable
 
                         log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} teleport ({args[0]:0}, {args[1]:0}, {args[2]:0})");
                         break;
+                    case "weapon":
+                        vehicleWeaponKey = (int)args[0];
+                        vehicleWeaponTick = tick;
+                        break;
+                    case "aimpoint":
+                        vehicleAimPoint = args.Length >= 3 ? args : null;
+                        break;
+                    case "fire":
+                        vehicleFireUntil = tick + (args.Length >= 1 ? (int)args[0] : 1);
+                        break;
                     case "quit":
                         quit = true;
                         break;
                 }
+            }
+
+            // The probe's buttons and aim, as the generator capture plays them: a weapon key for one tick, the
+            // trigger held for the fire command's ticks, and the eye held on the aim point.
+            if (vehicleAimPoint is { } aim)
+            {
+                Vector3d eye = player.Body.Position + new Vector3d(0.0, 0.0, player.Body.EyeHeight);
+                double dx = aim[0] - eye.X;
+                double dy = aim[1] - eye.Y;
+                double dz = aim[2] - eye.Z;
+                player.Body.Yaw = (float)Math.Atan2(dx, dy);
+                player.Body.Pitch = (float)Math.Atan2(dz, Math.Sqrt((dx * dx) + (dy * dy)));
+            }
+
+            InputState vehicleInput = host.ScriptedViewInput!;
+            if (vehicleWeaponKey > 0)
+            {
+                vehicleInput.Keyboard.SetKey(KeyCode.D1 + (byte)(vehicleWeaponKey - 1), down: tick == vehicleWeaponTick);
+            }
+
+            vehicleInput.Mouse.SetButton(MouseButton.Left, down: tick < vehicleFireUntil);
+            if (player.FiredThisTick)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} FIRED {player.HeldWeaponType?.ScriptId}");
             }
         }
 
