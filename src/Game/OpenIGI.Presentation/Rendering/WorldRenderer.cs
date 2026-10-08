@@ -597,11 +597,12 @@ public sealed class WorldRenderer : IWorldPresenter
                         ? camera.CreateModelView(entry.Position, orientation)
                         : baseModelView;
 
-                    // The sun in the placement's own frame. An orientation's rows are the model's axes
-                    // in the world, so dotting a world vector against them -- the transpose, in the
-                    // engine's row-vector convention -- is what takes it into model space.
+                    // The sun in the placement's own frame. The orientation takes the model's frame to the
+                    // world's as M * v (the model view above is built that way, so its COLUMNS are the
+                    // model's axes in the world), and the inverse is its transpose: dotting the world
+                    // vector against each column, which is what the engine's row-vector Transform does.
                     Vector3f sun = !baked && shading.Sun is { } sunlight
-                        ? orientation.Transposed().Transform(sunlight.Direction)
+                        ? orientation.Transform(sunlight.Direction)
                         : Vector3f.Zero;
                     if (sun != appliedSun)
                     {

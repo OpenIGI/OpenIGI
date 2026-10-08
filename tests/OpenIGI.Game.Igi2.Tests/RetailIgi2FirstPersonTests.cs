@@ -114,6 +114,25 @@ public sealed class RetailIgi2FirstPersonTests
         Assert.Equal(127, weights[0]);
     }
 
+    /// <summary>
+    /// The sun is turned into a model's frame by the orientation's transpose: an orientation takes the model to the
+    /// world as M · v, so a normal the model holds, sent to the world and brought back by <see cref="Matrix3f.Transform(Vector3f)"/>,
+    /// comes back where it was. Turned the other way the sun swung with the view, and the arms went black whenever the
+    /// player looked up.
+    /// </summary>
+    [Fact]
+    public void The_sun_turns_into_a_models_frame_by_the_transpose()
+    {
+        float[] o = World.Igi2Pose.Rotation(0.3f, 0f, 2.1f);
+        Matrix3f orientation = new(o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8]);
+        Vector3f local = new(0.6f, -0.8f, 0f);
+
+        Vector3f world = orientation.Transposed().Transform(local);
+        Vector3f back = orientation.Transform(world);
+
+        AssertNear(local, back, 1e-5f);
+    }
+
     /// <summary>After a change to the Glock, the hand holds the Glock's fixed model, <c>139_01_1</c>.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_hand_follows_the_weapon_changed_to()

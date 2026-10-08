@@ -124,8 +124,10 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
                 modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
             }
 
-            // The sun in the model's own frame, as the world pass turns it for an unbaked placement.
-            _device.SetVertexSun(Shading.Sun is { } sun ? orientation.Transposed().Transform(sun.Direction) : Vector3f.Zero);
+            // The sun in the model's own frame, as the world pass turns it for an unbaked placement: the
+            // orientation takes the model to the world as M * v, so the transpose (the row-vector Transform)
+            // takes the world's sun back.
+            _device.SetVertexSun(Shading.Sun is { } sun ? orientation.Transform(sun.Direction) : Vector3f.Zero);
 
             foreach ((MeshSubset subset, TextureHandle texture) in part.Subsets)
             {
