@@ -1166,6 +1166,122 @@ public sealed class AiScenarioHarness : IDisposable
         File.WriteAllText(output, log.ToString());
     }
 
+    /// <summary>
+    /// The port's half of the patrol parity capture: the same <c>[pw]</c> line a probe's <c>patrolwatch</c> hook set
+    /// writes from retail's HumanAI tick, for every soldier, on a change of body state, patrol command, deadline or
+    /// graph node and every 10 level ticks otherwise. <c>OPENIGI_PATROL_CAPTURE=file</c>,
+    /// <c>OPENIGI_PATROL_CAPTURE_MISSION</c> (4) and <c>OPENIGI_PATROL_CAPTURE_TICKS</c> (5400). Positions are the
+    /// port's feet; retail logs the origin, about 0.97 m higher on a standing soldier.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void PatrolParityCapture()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE");
+        if (string.IsNullOrEmpty(output))
+        {
+            return;
+        }
+
+        int mission = EnvInt("OPENIGI_PATROL_CAPTURE_MISSION", 4);
+        int ticks = EnvInt("OPENIGI_PATROL_CAPTURE_TICKS", 5400);
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(),
+            "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        host.Start();
+        host.ScriptedViewInput = new InputState();
+        BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
+        FieldInfo brainsField = typeof(SoldierRenderer).GetField("_brains", hidden)!;
+        Dictionary<AiSoldier, (int Tick, int State, int Index, int Deadline, int Node, int Dest, int Logged)> tracks = [];
+        bool treeDumped = false;
+        HashSet<OpenIGI.Game.World.ConditionalContainerTask> containers = [];
+        Dictionary<OpenIGI.Game.World.ConditionalContainerTask, bool> containerActive = [];
+        int lastTick = int.MinValue;
+        for (int step = 0; step < ticks * 4; step++)
+        {
+            Assert.True(host.Step());
+            if (soldiersField.GetValue(host) is not SoldierRenderer soldiers)
+            {
+                continue;
+            }
+
+            Dictionary<SoldierView, AiSoldier> brains = (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(soldiers)!;
+            if (!treeDumped)
+            {
+                // Each soldier's ancestry, root last: what holds it in the level tree.
+                treeDumped = true;
+                foreach (SoldierView view in brains.Keys)
+                {
+                    List<string> chain = [];
+                    for (OpenIGI.Engine.Tasks.GameTask? at = view.Soldier; at is not null; at = at.Parent)
+                    {
+                        chain.Add(at is OpenIGI.Game.World.ConditionalContainerTask container
+                            ? FormattableString.Invariant($"{at.Type.Name}#{at.Id} '{at.Label}' [{container.Condition}]")
+                            : FormattableString.Invariant($"{at.Type.Name}#{at.Id} '{at.Label}'"));
+                        if (at is OpenIGI.Game.World.ConditionalContainerTask watched)
+                        {
+                            containers.Add(watched);
+                        }
+                    }
+
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[tree] id={view.Soldier.Id} {string.Join(" < ", chain)}");
+                }
+            }
+
+            foreach (OpenIGI.Game.World.ConditionalContainerTask container in containers)
+            {
+                if (!containerActive.TryGetValue(container, out bool was) || was != container.IsActive)
+                {
+                    containerActive[container] = container.IsActive;
+                    log.AppendLine(CultureInfo.InvariantCulture,
+                        $"[cc] step={step} tick={lastTick} id={container.Id} '{container.Label}' active={container.IsActive}");
+                }
+            }
+
+            foreach ((SoldierView view, AiSoldier brain) in brains)
+            {
+                int tick = brain.LastTick;
+                if (!tracks.TryGetValue(brain, out var track))
+                {
+                    track = (-1, -99, -99, -99, -99, -99, -1000);
+                }
+
+                if (track.Tick == tick)
+                {
+                    continue;
+                }
+
+                lastTick = Math.Max(lastTick, tick);
+                AiPatrolRoute? route = brain.Route;
+                int index = route?.CurrentIndex ?? -1;
+                int deadline = route?.Deadline ?? -1;
+                int state = brain.Body.State;
+                bool changed = state != track.State || index != track.Index || deadline != track.Deadline
+                    || brain.CurrentNode != track.Node || brain.DestinationNode != track.Dest;
+                if (!changed && tick - track.Logged < 10)
+                {
+                    tracks[brain] = track with { Tick = tick };
+                    continue;
+                }
+
+                tracks[brain] = (tick, state, index, deadline, brain.CurrentNode, brain.DestinationNode, tick);
+                Matrix3f m = brain.Orientation;
+                Vector3d p = brain.Position;
+                AiPatrolCommand? command = route?.Current;
+                log.AppendLine(CultureInfo.InvariantCulture,
+                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} act={brain.Activity}");
+            }
+
+            if (lastTick >= ticks)
+            {
+                break;
+            }
+        }
+
+        File.WriteAllText(output, log.ToString());
+    }
+
     [RequiresGameDataFact]
     public void ScriptedVehicleCapture()
     {
