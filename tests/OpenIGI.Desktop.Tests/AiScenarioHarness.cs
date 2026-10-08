@@ -532,6 +532,136 @@ public sealed class AiScenarioHarness : IDisposable
     }
 
     /// <summary>
+    /// The probe's "provoke one guard and take its fire": the player stands at a fixed spot, shoots one guard
+    /// once with the Glock so it targets him, then stands still, tracking it, while every guard round is logged.
+    /// </summary>
+    /// <remarks>
+    /// Runs only when <c>OPENIGI_AI_STAND</c> names the trace file. Mirrors the probe script
+    /// <c>god 1 / teleport X Y Z+3877.2 YAW / weapon 2 at 10 / aimat ID 0.2 at 50 / fire 1 at 70</c>:
+    /// <c>OPENIGI_AI_STAND_POS</c> is the port's feet in units ("x,y,z"), <c>_TARGET</c> the guard's task id,
+    /// <c>OPENIGI_AI_SCENARIO_MISSION</c> (1), <c>_TICKS</c> (1800) and <c>_DIFFICULTY</c>. Pair it with
+    /// <c>OPENIGI_AI_SCENARIO_LOG</c> and <c>OPENIGI_AI_SCENARIO_LOGSPEC=Weapon=debug</c> for each round's fate.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void ProvokeOneGuardAndStand()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_AI_STAND");
+        if (string.IsNullOrEmpty(output))
+        {
+            return;
+        }
+
+        double[] at = [.. (Environment.GetEnvironmentVariable("OPENIGI_AI_STAND_POS") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(word => double.Parse(word, CultureInfo.InvariantCulture))];
+        Assert.Equal(3, at.Length);
+        Vector3d stand = new(at[0], at[1], at[2]);
+        int targetId = EnvInt("OPENIGI_AI_STAND_TARGET", -1);
+        int mission = EnvInt("OPENIGI_AI_SCENARIO_MISSION", 1);
+        int ticks = EnvInt("OPENIGI_AI_SCENARIO_TICKS", 1800);
+        // aimat's drop below the guard's head line; OPENIGI_AI_STAND_DROP lowers it to wound rather than kill.
+        double drop = Environment.GetEnvironmentVariable("OPENIGI_AI_STAND_DROP") is { Length: > 0 } standDrop
+            ? double.Parse(standDrop, CultureInfo.InvariantCulture)
+            : 0.2;
+
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        List<string> hostArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000"];
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_DIFFICULTY") is { Length: > 0 } difficultyText)
+        {
+            hostArgs.AddRange(["-difficulty", difficultyText]);
+        }
+
+        GameHost host = Host(device, new HeadlessGameWindow(), [.. hostArgs]);
+        host.Start();
+        InputState scripted = new();
+        host.ScriptedViewInput = scripted;
+        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo roundsField = typeof(GameHost).GetField("_guardRounds", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo hitsField = typeof(GameHost).GetField("_guardHits", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        PlayerCamera? player = null;
+        SoldierRenderer? soldiers = null;
+        for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
+        {
+            Assert.True(host.Step());
+            player = playerField.GetValue(host) as PlayerCamera;
+            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+        }
+
+        Assert.NotNull(player);
+        Assert.NotNull(soldiers);
+
+        KeyValuePair<SoldierView, AiSoldier> target = soldiers.BrainPairsForTesting
+            .FirstOrDefault(pair => pair.Key.Soldier.Id == targetId);
+        Assert.NotNull(target.Key);
+        log.AppendLine(CultureInfo.InvariantCulture, $"stand {Fmt(stand)} target {targetId} at {Fmt(target.Key.Position)}, {Vector3d.Distance(target.Key.Position, stand) / Metre:0.0} m");
+
+        int since = -1;
+        int last = -1;
+        int lastRounds = 0;
+        for (int step = 0; step < ticks * 40 && since < ticks; step++)
+        {
+            // Pinned to the spot and never dies (the probe's teleport and god 1).
+            player.Body.Position = stand;
+            player.Body.Health.Reset();
+
+            if (!host.Step())
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"the host ended at step {step}");
+                break;
+            }
+
+            int engine = (int)tickField.GetValue(soldiers)!;
+            if (engine == last)
+            {
+                continue;
+            }
+
+            last = engine;
+            since++;
+
+            // aimat ID 0.2 from tick 50 on, as the probe holds it: the guard's feet plus eye height less the drop.
+            if (since >= 50)
+            {
+                Vector3d feet = player.Body.Position;
+                double dx = target.Key.Position.X - feet.X;
+                double dy = target.Key.Position.Y - feet.Y;
+                double dz = target.Key.Position.Z - feet.Z - (drop * Metre);
+                player.Body.Yaw = (float)Math.Atan2(dx, dy);  // the port's player faces (sin, cos)
+                player.Body.Pitch = (float)Math.Atan2(dz, Math.Sqrt((dx * dx) + (dy * dy)));
+            }
+
+            // One shot at 70; should it miss (retail's first round did too), another every 12 ticks until the
+            // guard has been hurt -- the point is to be its target, as a hit makes it.
+            bool hurt = soldiers.DamageForTesting(target.Key) > 0f;
+            scripted.Keyboard.SetKey(KeyCode.D2, down: since == 10);
+            scripted.Mouse.SetButton(MouseButton.Left, down: since >= 70 && !hurt && (since - 70) % 12 == 0);
+            if (player.FiredThisTick)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"t{since} player fired");
+            }
+
+            int rounds = (int)roundsField.GetValue(host)!;
+            if (rounds != lastRounds || since % 60 == 0)
+            {
+                lastRounds = rounds;
+                log.AppendLine(
+                    CultureInfo.InvariantCulture,
+                    $"t{since} rounds={rounds} hits={hitsField.GetValue(host)} target {targetId} dmg={soldiers.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
+            }
+        }
+
+        log.AppendLine(
+            CultureInfo.InvariantCulture,
+            $"guard rounds={roundsField.GetValue(host)} hits on player={hitsField.GetValue(host)}");
+        host.Stop();
+        File.WriteAllText(output, log.ToString());
+    }
+
+    /// <summary>
     /// The port half of the probe's <c>generator</c> capture: the same autopilot script, played headless,
     /// with one Generator's state written in the probe's own record format.
     /// </summary>
@@ -1370,7 +1500,15 @@ public sealed class AiScenarioHarness : IDisposable
             return NullLogger.Instance;
         }
 
-        _log = new LogRouter(new LogLevelPolicy(LogLevel.Information)).AddSink(FileSink.Open(logPath));
+        // OPENIGI_AI_SCENARIO_LOGSPEC takes the same spec as OPENIGI_LOG, e.g. "Weapon=debug" for every guard
+        // round's outcome.
+        LogLevelPolicy policy = new(LogLevel.Information);
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_LOGSPEC") is { Length: > 0 } spec)
+        {
+            policy.TryApply(spec);
+        }
+
+        _log = new LogRouter(policy).AddSink(FileSink.Open(logPath));
         return _log;
     }
 
