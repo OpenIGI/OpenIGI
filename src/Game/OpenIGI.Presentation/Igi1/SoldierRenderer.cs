@@ -7123,9 +7123,27 @@ public sealed class SoldierRenderer : IDisposable
     {
         foreach (SoldierView view in _brains.Keys)
         {
-            yield return new HumanOccupant(view.Soldier.Id, view.Soldier.Team, view.Position, view.IsDead);
+            yield return new HumanOccupant(view.Soldier.Id, view.Soldier.Team, OccupantOrigin(view), view.IsDead);
         }
     }
+
+    /// <summary>The point an area counts a soldier at: its origin, <c>Human+32</c>, not its feet.</summary>
+    /// <remarks>
+    /// <para>
+    /// The human criteria callbacks an <c>AreaActivate</c> runs (<c>0x460A10</c> for <c>CRITERIA_HUMAN%d</c>,
+    /// <c>0x460A70</c> for <c>CRITERIA_HUMAN</c>) hand the box test <c>0x5042B0</c> each registered human's
+    /// <c>+32</c>. For a soldier that is the ground its AI stood it on plus the clip's root height (<c>0x462390</c>
+    /// adds <c>Human+1300</c>, <see cref="SoldierView.RootSample"/>): about 0.95 m above the feet standing.
+    /// </para>
+    /// <para>
+    /// Counting the feet dropped mission 4's running squad out of "Team one stop 1" (<c>AreaActivate_150</c>),
+    /// whose floor is 0.25 m above the ground they cross. Retail's squad fills it at tick 3818 and opens the
+    /// med-warehouse guards (<c>ConditionalContainer_302</c>) on them; the port's never did, so the squad reached
+    /// its stops unopposed where retail's is fighting by tick 4548.
+    /// </para>
+    /// </remarks>
+    private static Vector3d OccupantOrigin(SoldierView view) =>
+        new(view.Position.X, view.Position.Y, view.Position.Z + view.RootSample.Z);
 
     /// <summary>Reports every soldier's current presence for mission queries.</summary>
     /// <remarks>
@@ -7147,7 +7165,7 @@ public sealed class SoldierRenderer : IDisposable
             occupants[index++] = new HumanOccupant(
                 view.Soldier.Id,
                 view.Soldier.Team,
-                view.Position,
+                OccupantOrigin(view),
                 view.IsDead);
         }
         return occupants;
