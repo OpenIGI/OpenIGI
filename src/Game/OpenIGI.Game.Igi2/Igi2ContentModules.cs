@@ -21,6 +21,7 @@ public static class Igi2ContentModules
     [
         new Igi2ScriptVocabularyModule(),
         new Igi2WeaponContentModule(),
+        new Igi2MaterialContentModule(),
         new Igi2PlayerContentModule(),
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
@@ -159,6 +160,31 @@ public sealed class Igi2WeaponContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Weapons.Igi2WeaponTables>().Load(context.Resources, context.Natives, context.Tasks);
+    }
+}
+
+/// <summary>The session's materials: what every surface is made of, and what a bullet does to it.</summary>
+/// <remarks>
+/// <c>Flow_CreateHandler</c> (<c>igi2 0x401600</c>) reads them straight after the weapons, through
+/// <c>GameMaterial_LoadParameters</c> (<c>0x433940</c>).
+/// </remarks>
+public sealed class Igi2MaterialContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Materials";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.GetOrProvide(() => new Igi2GameMaterials(context.Logger)).Register(context.Natives, context.Types);
+    }
+
+    /// <inheritdoc/>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Igi2GameMaterials>().Load(context.Resources, context.Natives);
     }
 }
 
