@@ -134,6 +134,29 @@ public sealed class GameHostStepTests : IDisposable
         Assert.All(apcs, apc => Assert.Equal("601_08_1", apc.DestroyedReplacement?.Instance.Name));
     }
 
+    /// <summary>A level decides whether its player has the map computer's map, as the original's input task does.</summary>
+    /// <remarks>
+    /// HumanPlayerInput's "Mapcomputer on expression" (<c>0x45DCF0</c>): empty in mission 1, so the map is there;
+    /// <c>0</c> in mission 7, where the probe sees the computer open on its objectives page with the flag clear.
+    /// The expressions themselves are <c>MapComputerGateTests</c>'; this is the host asking the level it brought up.
+    /// </remarks>
+    [RequiresGameDataTheory]
+    [InlineData(1, true)]
+    [InlineData(7, false)]
+    public void A_levels_own_expression_decides_whether_the_map_computer_has_its_map(int mission, bool expected)
+    {
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "-skipcutscene", "-lockstep", "-frames", "100000");
+
+        host.Start();
+        Assert.True(host.Step());
+        System.Reflection.MethodInfo available = typeof(GameHost)
+            .GetMethod("MapComputerAvailable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Assert.Equal(expected, (bool)available.Invoke(host, null)!);
+        host.Stop();
+    }
+
     /// <summary>The menu's backdrop is a mission too, and is not built until the gate has its files.</summary>
     [RequiresGameDataFact]
     public void The_menu_backdrop_waits_until_the_gate_has_its_mission()

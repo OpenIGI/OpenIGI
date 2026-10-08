@@ -46,6 +46,16 @@ public interface IMapComputerPresenter : IDisposable
     /// <summary>Gets whether the device is currently showing its map page.</summary>
     bool ShowsMap { get; }
 
+    /// <summary>Gets or sets whether the level lets the player have the map page at all.</summary>
+    /// <remarks>
+    /// The level's <c>HumanPlayerInput</c> carries a "Mapcomputer on expression", evaluated every tick
+    /// (<c>0x45DCF0</c>). Without the device the computer still opens, on its objectives page
+    /// (<c>0x46BB10</c> passes mode 2 to <c>0x46AFB0</c>), and neither text page offers a MAP link
+    /// (<c>0x468920</c>, <c>0x468E90</c>). Missions 7 and 14 never have it, mission 8 gains it with
+    /// GenericPickup 860, and mission 13 loses it inside AreaActivate 3999.
+    /// </remarks>
+    bool MapAvailable { get; set; }
+
     /// <summary>Loads the device's screens and strings.</summary>
     /// <param name="fileSystem">The file system the archives are read through.</param>
     /// <returns><see langword="false"/> when the installation ships no such device.</returns>
@@ -110,6 +120,16 @@ public interface ITacticalComputerPresenter : IDisposable
 
     /// <summary>Gets the field of view the world behind the display is framed at.</summary>
     float FieldOfView { get; }
+
+    /// <summary>Gets or sets whether the level lets the player have the map page at all.</summary>
+    /// <remarks>
+    /// The level's <c>HumanPlayerInput</c> carries a "Mapcomputer on expression", evaluated every tick
+    /// (<c>0x45DCF0</c>). Without the device the computer still opens, on its objectives page
+    /// (<c>0x46BB10</c> passes mode 2 to <c>0x46AFB0</c>), and neither text page offers a MAP link
+    /// (<c>0x468920</c>, <c>0x468E90</c>). Missions 7 and 14 never have it, mission 8 gains it with
+    /// GenericPickup 860, and mission 13 loses it inside AreaActivate 3999.
+    /// </remarks>
+    bool MapAvailable { get; set; }
 
     /// <summary>Loads the fonts the display is drawn from.</summary>
     /// <returns><see langword="false"/> when they are unavailable.</returns>

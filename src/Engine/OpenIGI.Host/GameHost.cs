@@ -597,6 +597,25 @@ internal sealed partial class GameHost : IDisposable
     private ITacticalComputerPresenter? TacticalComputer =>
         RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
+    // The map gate of the level last asked about; rebuilt when another level comes up.
+    private MapComputerGate? _mapGate;
+
+    /// <summary>Whether the level lets the player read the map computer's map right now (<see cref="MapComputerGate"/>).</summary>
+    private bool MapComputerAvailable()
+    {
+        if (_activeLevelRoot is not { } root)
+        {
+            return true;
+        }
+
+        if (_mapGate is null || !ReferenceEquals(_mapGate.LevelRoot, root))
+        {
+            _mapGate = new MapComputerGate(root, _loop.Variables);
+        }
+
+        return _mapGate.MapAvailable;
+    }
+
     private bool _missionResultHandled;
     private int _missionFailureTicks;
     private bool _missionFailedMenu;
@@ -2433,6 +2452,9 @@ internal sealed partial class GameHost : IDisposable
                 bool toggleComputer = _player.WasActionPressed(_window.Input, PlayerAction.MapComputer) || automaticOpen;
                 bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
 
+                // The computer always opens; whether its map is there to read is the level's to say.
+                bool mapAvailable = MapComputerAvailable();
+
                 if (TacticalComputer is { } tacticalComputer)
                 {
                     // Real elapsed time, on its own clock. The transition is presentation: it must take
@@ -2452,6 +2474,11 @@ internal sealed partial class GameHost : IDisposable
                         (float)_window.Width / Math.Max(1, _window.Height),
                         HumanView.DefaultTanX);
 
+                    // Without the device there is no map to climb to: the pages come up over the player's own view.
+                    tacticalComputer.MapAvailable = mapAvailable;
+                    CameraPose vantage = mapAvailable ? tacticalComputer.Vantage() : eye;
+                    float vantageFieldOfView = mapAvailable ? tacticalComputer.FieldOfView : gameplayFieldOfView;
+
                     if (!_computerOpen && toggleComputer)
                     {
                         _computerOpen = true;
@@ -2460,8 +2487,8 @@ internal sealed partial class GameHost : IDisposable
                         _computerFlight.BeginOpen(
                             eye,
                             gameplayFieldOfView,
-                            tacticalComputer.Vantage(),
-                            tacticalComputer.FieldOfView);
+                            vantage,
+                            vantageFieldOfView);
 
                         // The interface draws its own pointer, so the platform's would be a second,
                         // unrelated cursor over it.
@@ -2471,8 +2498,8 @@ internal sealed partial class GameHost : IDisposable
                     else if (_computerOpen && (toggleComputer || closeComputer) && _computerFlight.CanClose)
                     {
                         _computerFlight.BeginClose(
-                            tacticalComputer.Vantage(),
-                            tacticalComputer.FieldOfView,
+                            vantage,
+                            vantageFieldOfView,
                             eye,
                             gameplayFieldOfView);
                     }
@@ -2482,8 +2509,8 @@ internal sealed partial class GameHost : IDisposable
                         _computerFlight.Update(
                             computerElapsed,
                             eye,
-                            tacticalComputer.Vantage(),
-                            tacticalComputer.FieldOfView);
+                            vantage,
+                            vantageFieldOfView);
 
                         // Only once the display has settled. A drag or a page change that landed during
                         // the climb would move a map the player cannot read yet.
@@ -2511,6 +2538,7 @@ internal sealed partial class GameHost : IDisposable
                 }
                 else if (_mapComputer is { IsReady: true } retailComputer)
                 {
+                    retailComputer.MapAvailable = mapAvailable;
                     if (toggleComputer || closeComputer)
                     {
                         _computerOpen = toggleComputer ? !_computerOpen : false;
@@ -3961,15 +3989,19 @@ internal sealed partial class GameHost : IDisposable
                 {
                     if (TacticalComputer is { } tacticalView)
                     {
-                        MapSceneView steady = tacticalView.SceneView(
-                            mapPlayer.Body.Position, _window.Width, _window.Height);
-                        mapScene = _computerFlight.IsFlying
-                            ? steady with
-                            {
-                                Camera = _computerFlight.Camera,
-                                FieldOfView = _computerFlight.FieldOfView,
-                            }
-                            : steady;
+                        // No device, no overhead view: the world stays the player's own behind the pages.
+                        if (tacticalView.MapAvailable)
+                        {
+                            MapSceneView steady = tacticalView.SceneView(
+                                mapPlayer.Body.Position, _window.Width, _window.Height);
+                            mapScene = _computerFlight.IsFlying
+                                ? steady with
+                                {
+                                    Camera = _computerFlight.Camera,
+                                    FieldOfView = _computerFlight.FieldOfView,
+                                }
+                                : steady;
+                        }
                     }
                     else if (_mapComputer is { IsReady: true, ShowsMap: true } computerView)
                     {
@@ -6387,7 +6419,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         sight.ViewModelTanX,
                         FarPlane);
 
-                    if (_mapComputerDevice is { IsReady: true } deviceModel)
+                    // 0x46BB10 gives the computer task the mapcomputer model only while the level grants the
+                    // device; without it the pages are drawn with nothing held.
+                    if (_mapComputerDevice is { IsReady: true } deviceModel && _mapComputer is { MapAvailable: true })
                     {
                         Viewport deviceViewport = _mapComputer!.DeviceViewport(_window.Width, _window.Height);
                         float horizontalHalfTangent = sight.ViewModelTanX;
