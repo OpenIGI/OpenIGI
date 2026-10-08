@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -70,6 +71,15 @@ public sealed class Igi2WeaponFiring
     /// <summary>Gets or sets what firing shows and sounds.</summary>
     public IIgi2WeaponEffects Effects { get; set; } = Igi2NoWeaponEffects.Instance;
 
+    /// <summary>Gets the weapon's bullets, the <c>GunShot</c> <c>Weapon_CreateHandler</c> (<c>igi2 0x51C320</c>) makes under it.</summary>
+    public Igi2GunShot GunShot { get; } = new();
+
+    /// <summary>
+    /// Gets or sets how likely the weapon's bullets are to strike the player, <c>Weapon+0x64</c>: one, as
+    /// <c>Weapon_CreateHandler</c> sets it, unless the holder's AI lowers it.
+    /// </summary>
+    public float HitProbability { get; set; } = 1f;
+
     /// <summary>Gets or sets the fire type last fired or let go, <c>nFireType</c> (<c>Weapon+0x34</c>).</summary>
     public int FireType { get; set; }
 
@@ -96,6 +106,26 @@ public sealed class Igi2WeaponFiring
 
     /// <summary>Gets how fast the holder's precision settles after the last shot, <c>vCrossHairDamping</c>.</summary>
     public float CrossHairDamping { get; private set; }
+
+    /// <summary>
+    /// Launches a fire type's projectile, <c>Weapon_eCreateProjectileQTaskEvent</c> sent to the projectile's type: a gun's
+    /// bullets go to the weapon's <see cref="GunShot"/> with the gun's bullet parameters; any other projectile is the
+    /// <see cref="Effects"/>'.
+    /// </summary>
+    /// <param name="launch">The launch.</param>
+    /// <param name="fireTypeParameters">The fire type whose tagged values carry the projectile's parameters.</param>
+    public void CreateProjectile(in Igi2ProjectileLaunch launch, GameTask fireTypeParameters)
+    {
+        ArgumentNullException.ThrowIfNull(fireTypeParameters);
+        if (launch.ProjectileTaskType == _taskTypes.GunShot)
+        {
+            GunShot.CreateProjectile(launch, Igi2GunShotParameters.Of(fireTypeParameters));
+        }
+        else
+        {
+            Effects.CreateProjectile(launch);
+        }
+    }
 
     /// <summary>Gets one fire type's trigger, <c>atFireTypeData[slot]</c>.</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>

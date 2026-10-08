@@ -57,6 +57,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2BoneHierarchy? arms = armsModel is null ? null : models(armsModel)?.BoneHierarchy;
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
+        if (request.Services.TryGet(out Igi2GameMaterials? materials))
+        {
+            player.GunShotWorld = new Igi2LevelGunShotWorld(world, materials);
+        }
+
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         return player;
@@ -195,6 +200,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
     /// <summary>Gets what the player carries, or <see langword="null"/> when the session has no weapons.</summary>
     public Igi2Inventory? Inventory => Weapons?.Inventory;
 
+    /// <summary>Gets or sets the level the player's bullets fly through, or <see langword="null"/> when the session has no materials.</summary>
+    public IIgi2GunShotWorld? GunShotWorld { get; set; }
+
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
 
@@ -293,6 +301,11 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
+        if (Weapons is { } weapons && GunShotWorld is { } shots)
+        {
+            weapons.RunGunShot(shots);
+        }
+
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
@@ -319,6 +332,19 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
 
         return mapped;
     }
+}
+
+/// <summary>The level a bullet flies through: the collision world and the session's materials.</summary>
+/// <remarks>Nothing in the collision world is water or a boned object yet; both arrive with their colliders.</remarks>
+internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2GameMaterials materials) : IIgi2GunShotWorld
+{
+    public IIgi2CollisionQuery Collision { get; } = collision;
+
+    public Igi2GameMaterials Materials { get; } = materials;
+
+    public bool IsWater(IIgi2Collider struck) => false;
+
+    public bool IsBoned(IIgi2Collider struck) => false;
 }
 
 /// <summary>What the player's states ask of the world, answered from the collision world and nothing else yet.</summary>

@@ -57,6 +57,21 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
         set => _firing.Effects = value;
     }
 
+    /// <summary>Gets or sets what the weapon's bullets show and sound.</summary>
+    public IIgi2GunShotEffects GunShotEffects { get; set; } = Igi2NoGunShotEffects.Instance;
+
+    /// <summary>
+    /// Traces the bullets the weapon fired last tick (<c>GunShot_RunHandler</c>, <c>igi2 0x4C76E0</c>).
+    /// </summary>
+    /// <param name="world">The level the bullets fly through.</param>
+    /// <remarks>
+    /// The shot is the weapon's child and runs in the tick's run pass, where the player's and the weapon's own run
+    /// handlers only queue them for the delayed pass (<c>HumanPlayer_RunHandler</c>, <c>0x4B8A30</c>;
+    /// <c>Weapon_RunHandler</c>, <c>0x51C460</c>). So a bullet is fired in one tick's delayed pass and traced at the start
+    /// of the next, before the player moves again.
+    /// </remarks>
+    public void RunGunShot(IIgi2GunShotWorld world) => _firing.GunShot.Run(_firing.Owner, _firing.HitProbability, world, GunShotEffects);
+
     /// <inheritdoc/>
     public int? ActiveCategory => Held?.WeaponCategory;
 

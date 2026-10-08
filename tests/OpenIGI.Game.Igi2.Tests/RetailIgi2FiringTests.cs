@@ -27,8 +27,8 @@ public sealed class RetailIgi2FiringTests
     });
 
     /// <summary>
-    /// A pull fires one round on its first tick: one projectile of the gun's type at its muzzle velocity and range, a
-    /// round off the clip, the delay of 800 rounds a minute (<c>(i32)(60 / 800 × 30 + 0.5)</c> = 2), the looped fire sound,
+    /// A pull fires one round on its first tick: one bullet into the weapon's shot, carrying the gun's damage factor and
+    /// penetration over its range in world units along the view's forward axis, a round off the clip, the delay of 800 rounds a minute (<c>(i32)(60 / 800 × 30 + 0.5)</c> = 2), the looped fire sound,
     /// the three AI events of a loud gun, its holder kept visible for fifteen ticks, and a muzzle flash and a casing from
     /// the weapon the view holds.
     /// </summary>
@@ -41,10 +41,12 @@ public sealed class RetailIgi2FiringTests
 
         Igi2Inventory inventory = weapons.Inventory;
         Assert.Equal("WEAPON_ID_MP5SD", inventory.Current!.WeaponType.WeaponId);
-        Igi2ProjectileLaunch shot = Assert.Single(effects.Projectiles);
-        Assert.Equal(26, shot.ProjectileTaskType);
-        Assert.Equal(400f, shot.Speed);
-        Assert.Equal(260f, shot.EffectiveRange);
+        Igi2GunShotInstant bullet = Assert.Single(weapons.Firing.GunShot.Instants);
+        Assert.Empty(effects.Projectiles);
+        Assert.Equal((new Fpu(260f) * 4096.0).F, bullet.Range);
+        Assert.Equal(0.29f, bullet.DamageFactor);
+        Assert.Equal(5f, bullet.Penetration);
+        Assert.Same(inventory.Current.WeaponType, bullet.WeaponType);
         Assert.Equal(29, inventory.Current.Loaded(0));
         Assert.Equal(1, inventory.TotalBulletsFired);
         Assert.Equal(["0:mp5_loop:loop"], effects.Sounds);
@@ -65,14 +67,14 @@ public sealed class RetailIgi2FiringTests
     [RequiresTitleDataFact("igi2")]
     public void Held_the_mp5sd_fires_every_second_tick_after_the_first_two()
     {
-        (Igi2HumanPlayer player, _, RecordingEffects effects) = ArmedPlayer();
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
         List<int> shotTicks = [];
 
         for (int tick = 0; tick < 10; tick++)
         {
-            int before = effects.Projectiles.Count;
+            int before = weapons.Firing.GunShot.BulletsFired;
             Tick(player, Igi2PlayerAction.Fire);
-            if (effects.Projectiles.Count > before)
+            if (weapons.Firing.GunShot.BulletsFired > before)
             {
                 shotTicks.Add(tick);
             }
@@ -147,13 +149,13 @@ public sealed class RetailIgi2FiringTests
     [RequiresTitleDataFact("igi2")]
     public void A_shot_takes_eight_draws_from_the_run_stream()
     {
-        (Igi2HumanPlayer player, _, RecordingEffects effects) = ArmedPlayer();
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
         player.Random = new IgiRandom(0x1234u);
         IgiRandom reference = new(0x1234u);
 
         player.Weapon.Fire(0);
 
-        Assert.Single(effects.Projectiles);
+        Assert.Single(weapons.Firing.GunShot.Instants);
         for (int i = 0; i < 8; i++)
         {
             reference.NextRaw();

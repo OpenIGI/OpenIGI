@@ -86,9 +86,11 @@ public sealed class Igi2GunFire : IIgi2FireHandler
                 Spread(random, gun.BulletsPerRoundSpreadDegrees, original, fired);
             }
 
-            effects.CreateProjectile(new Igi2ProjectileLaunch(
-                gun.ProjectileTaskType, request.Position, [.. fired], request.ParentSpeed, gun.MuzzleVelocityMps,
-                gun.EffectiveRangeMeters, request.HeldTime, request.WeaponType, ammo));
+            request.Weapon.CreateProjectile(
+                new Igi2ProjectileLaunch(
+                    gun.ProjectileTaskType, request.Position, [.. fired], request.ParentSpeed, gun.MuzzleVelocityMps,
+                    gun.EffectiveRangeMeters, request.HeldTime, request.WeaponType, ammo),
+                gun);
         }
 
         original.CopyTo(fired, 0);

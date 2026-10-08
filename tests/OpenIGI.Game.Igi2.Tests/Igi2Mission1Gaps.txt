@@ -211,11 +211,9 @@ name CutScene_3401.isFinished    # MISSIONS/location1/level1/objects.qvm
 name CutScene_3401.nTick    # MISSIONS/location1/level1/objects.qvm
 name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # config.qvm
 name DefineAnimTrigger    # ANIMTRIGGER/animtrigger.qvm
-name DefineGameMaterial    # MATERIAL/material.qvm
 name DefineGraph    # COMMON/sounds/sounds.qvm
 name DefineGroup    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
 name DefinePhysicsObjType    # PHYSICSOBJ/cars/APC/car.qvm, PHYSICSOBJ/cars/Limo/car.qvm, PHYSICSOBJ/cars/buggy/car.qvm, …
-name DefineQMaterial    # MATERIAL/material.qvm
 name DefineSound    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
 name DefineTriggerOnce    # COMMON/sounds/sounds.qvm
 name Door_3588.nDoorOpenTicks    # MISSIONS/location1/level1/objects.qvm
@@ -485,7 +483,6 @@ name Scores    # config.qvm
 name ScrollListBox_985.nActiveID    # MENUSYSTEM/ingamemenu.qvm
 name ScrollListBox_991.nActiveID    # MENUSYSTEM/ingamemenu.qvm
 name SequenceCommand_SetCommand    # MISSIONS/location1/level1/objects.qvm
-name SetActiveMaterial    # MATERIAL/material.qvm
 name Shop    # config.qvm
 name SlotSelector_Deactivate    # MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_ItemClicked    # MENUSYSTEM/ingamemenu.qvm
@@ -541,7 +538,6 @@ name TASKTYPE_GENERICPHYSICSMAGICOBJ    # PHYSICSOBJ/physicsobj.qvm
 name TASKTYPE_GENERICPHYSICSOBJ    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/physicsobj.qvm, PHYSICSOBJ/weapons/physicsobj.qvm
 name TASKTYPE_GLASS    # magicobjconfig.qvm
 name TASKTYPE_GRENADEPIN    # magicobjconfig.qvm
-name TASKTYPE_GUNSHOTEFFECT    # MATERIAL/material.qvm
 name TASKTYPE_HELI    # PHYSICSOBJ/helis/bell/heli.qvm, PHYSICSOBJ/helis/mil/heli.qvm
 name TASKTYPE_HITZONE    # magicobjconfig.qvm
 name TASKTYPE_HUMAN    # ANIMTRIGGER/animtrigger.qvm
