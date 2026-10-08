@@ -54,6 +54,8 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
     /// </remarks>
     public const int LaserDesignatorCategory = 10;
 
+    private IIgi2PlayerWeaponControl _weapon;
+
     /// <summary>Initializes a new instance of the <see cref="Igi2HumanPlayer"/> class.</summary>
     /// <param name="weapon">The held-weapon controls; <see cref="Igi2NoWeaponControl.Instance"/> for none.</param>
     /// <param name="animation">The animation layer the states drive.</param>
@@ -65,11 +67,21 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
         : base(animation, surroundings, static human => ((Igi2HumanPlayer)human).CreateLocomotion())
     {
         ArgumentNullException.ThrowIfNull(weapon);
-        Weapon = weapon;
+        _weapon = weapon;
+        weapon.Bind(this);
     }
 
-    /// <summary>Gets or sets the held-weapon controls.</summary>
-    public IIgi2PlayerWeaponControl Weapon { get; set; }
+    /// <summary>Gets or sets the held-weapon controls; the player becomes their holder.</summary>
+    public IIgi2PlayerWeaponControl Weapon
+    {
+        get => _weapon;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _weapon = value;
+            value.Bind(this);
+        }
+    }
 
     /// <inheritdoc/>
     protected override IIgi2HumanWeapon HumanWeapon => Weapon;
@@ -161,17 +173,17 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
             {
                 if (!Weapon.IsZoomFireModeActive)
                 {
-                    Weapon.Fire();
+                    Weapon.Fire(1);
                 }
 
-                Weapon.ClearTrigger();
+                Weapon.ClearDelay();
             }
 
             signal |= Igi2PlayerSignal.Fire;
         }
         else if (designator && Weapon.IsZoomFireModeActive)
         {
-            Weapon.Fire();
+            Weapon.Fire(1);
         }
 
         if (channels.IsHeld(Igi2HumanChannel.AlternateFire))

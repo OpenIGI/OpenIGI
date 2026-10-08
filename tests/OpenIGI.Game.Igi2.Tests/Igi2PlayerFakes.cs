@@ -216,9 +216,23 @@ internal static class Igi2PlayerFakes
 
         public bool IsZoomedModeAllowed => true;
 
-        public void Fire() => Calls.Add("Fire");
+        public void Fire(int fireType) => Calls.Add("Fire");
 
-        public void ClearTrigger() => Calls.Add("ClearTrigger");
+        public void ClearDelay() => Calls.Add("ClearDelay");
+
+        public Weapons.Igi2WeaponFiring? Firing => null;
+
+        public void Bind(Weapons.IIgi2WeaponOwner owner)
+        {
+        }
+
+        public void UpdateStatus()
+        {
+        }
+
+        public void RunDelayed()
+        {
+        }
 
         public void Zoom(bool zoomIn) => Calls.Add(zoomIn ? "ZoomIn" : "ZoomOut");
 

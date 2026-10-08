@@ -127,7 +127,7 @@ public sealed class Igi2PlayerInputTests
 
         player.PackSignal();
 
-        Assert.Equal(["Fire", "ClearTrigger"], weapon.Calls);
+        Assert.Equal(["Fire", "ClearDelay"], weapon.Calls);
         Assert.True(player.Signal.HasFlag(Igi2PlayerSignal.Fire));
     }
 

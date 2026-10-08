@@ -23,6 +23,16 @@ public interface IIgi2HumanWeapon
     /// <summary>Takes every weapon away (<c>Weapon_ClearAllWeapons</c>, <c>igi2 0x51DCF0</c>).</summary>
     void ClearAllWeapons();
 
+    /// <summary>Pulls one fire type's trigger (<c>Weapon_Fire</c>, <c>igi2 0x51DE90</c>).</summary>
+    /// <param name="fireType">0 for the primary fire type, 1 for the secondary.</param>
+    void Fire(int fireType);
+
+    /// <summary>Lets go the triggers the tick let go of, at the end of the human's update (<c>Weapon_UpdateStatus</c>, <c>igi2 0x51E370</c>).</summary>
+    void UpdateStatus();
+
+    /// <summary>The weapon's own end of the tick, after the human's (<c>Weapon_RunDelayedHandler</c>, <c>igi2 0x51C480</c>).</summary>
+    void RunDelayed();
+
     /// <summary>Gets the held weapon type's clips for a body's rig, one per base animation.</summary>
     /// <param name="rig">The body's rig.</param>
     /// <returns>The clips, or <see langword="null"/> when nothing is held.</returns>

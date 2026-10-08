@@ -293,6 +293,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
+        Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
         _ticks++;

@@ -35,11 +35,10 @@ public enum Igi2PlayerWeaponStatus
 /// change waits on.
 /// </para>
 /// <para>
-/// Ported: locked (0), idle (1) and the weapon change (6), with the upper-body modes the states set
-/// (<c>HumanPlayer_SetUpperBody</c>, <c>0x4BD2E0</c>) and the weapon selection the update runs before the machines.
-/// Not yet: firing (2, 3, 4), reloading (5), peeking (7), the computer (8), firing empty (9) and throwing (10), and from
-/// the idle state the binoculars, activating objects and dropping the weapon. Where idle would go to one of those it
-/// stays idle.
+/// Ported: locked (0), idle (1), firing (2, 3, 4), the weapon change (6) and firing empty (9), with the upper-body
+/// modes the states set (<c>HumanPlayer_SetUpperBody</c>, <c>0x4BD2E0</c>) and the weapon selection the update runs
+/// before the machines. Not yet: reloading (5), peeking (7), the computer (8) and throwing (10), and from the idle state
+/// the binoculars, activating objects and dropping the weapon. Where idle would go to one of those it stays idle.
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
@@ -102,7 +101,11 @@ public sealed partial class Igi2HumanPlayer
         var states = new TaskStateFunction?[Igi2PlayerActionState.Count];
         states[Igi2PlayerActionState.Lock] = (_, _) => EnterLock();
         states[Igi2PlayerActionState.Idle] = (_, _) => EnterIdle();
+        states[Igi2PlayerActionState.InitFire] = (_, _) => EnterInitFire();
+        states[Igi2PlayerActionState.Fire] = (_, _) => EnterFire();
+        states[Igi2PlayerActionState.FireRelease] = (_, _) => EnterFireRelease();
         states[Igi2PlayerActionState.ChangeWeapon] = (_, _) => EnterChangeWeapon();
+        states[Igi2PlayerActionState.FireEmpty] = (_, _) => EnterFireEmpty();
         return new TaskStateMachine((_, _) => PackActionSignal(), states, Igi2PlayerActionState.Idle, exits: new TaskStateFunction?[Igi2PlayerActionState.Count]);
     }
 
@@ -380,8 +383,11 @@ public sealed partial class Igi2HumanPlayer
     /// forces the next weapon in the cycle. A change asked for starts with the zoom taken off.
     /// </para>
     /// <para>
-    /// Not yet: the binoculars, peeking, the computer and activating objects; the fire branch and the reload, whose states
-    /// are not ported, so a press of either leaves the player idle; and dropping the weapon.
+    /// With a weapon in hand the fire keys fire (<see cref="TryFireFromIdle"/>) and the reload key reloads.
+    /// </para>
+    /// <para>
+    /// Not yet: the binoculars, peeking, the computer and activating objects; reloading and throwing, whose states are not
+    /// ported, so where idle would go to one of them it stays idle; and dropping the weapon.
     /// </para>
     /// </remarks>
     private void RunIdle()
@@ -418,7 +424,7 @@ public sealed partial class Igi2HumanPlayer
             }
         }
 
-        if (held is not null && (Channels.IsHeld(Igi2HumanChannel.Fire) || Channels.IsHeld(Igi2HumanChannel.AlternateFire)))
+        if (held is not null && TryFireFromIdle(held))
         {
             return;
         }
@@ -431,6 +437,80 @@ public sealed partial class Igi2HumanPlayer
 
         View.DisableZoomMode();
         GoAction(Igi2PlayerActionState.ChangeWeapon);
+    }
+
+    /// <summary>The idle state's fire branch, <c>HumanPlayer_RunActionIdle</c> (<c>igi2 0x4B4067</c>…<c>0x4B4347</c>).</summary>
+    /// <param name="held">The weapon in hand.</param>
+    /// <returns><see langword="true"/> when the idle state goes no further this tick.</returns>
+    /// <remarks>
+    /// <para>
+    /// The activate key in a bomb area with the C4 in hand fires it. With neither fire key held the reload is checked.
+    /// Otherwise the alternate key picks the secondary fire type; a fire type that uses ammunition with nothing loaded
+    /// reloads when there is more carried, or fires empty — unless the weapon waits on the server. A slot with no fire
+    /// type, the binoculars and the thermal goggles check the reload instead. A grenade with no delay is thrown when fire
+    /// is held or its pin is still in. Anything else starts firing.
+    /// </para>
+    /// <para>
+    /// The reload check is the primary's: the reload key with less than a load in and more carried, or ammunition that
+    /// never runs out, reloads.
+    /// </para>
+    /// </remarks>
+    private bool TryFireFromIdle(Igi2WeaponItem held)
+    {
+        Igi2WeaponTypeTask weaponType = held.WeaponType;
+        if (string.Equals(weaponType.WeaponId, C4BombWeaponId, StringComparison.Ordinal) && IsInsideBombArea
+            && Channels[Igi2HumanChannel.Activate] > 0f)
+        {
+            Channels[Igi2HumanChannel.Fire] = 1f;
+        }
+
+        if (Channels[Igi2HumanChannel.Fire] == 0f && Channels[Igi2HumanChannel.AlternateFire] == 0f)
+        {
+            return WantsReload(held);
+        }
+
+        FireType = Channels[Igi2HumanChannel.AlternateFire] != 0f ? 1 : 0;
+        Igi2Inventory inventory = Weapon.Inventory!;
+        Igi2FireTypeRounds rounds = inventory.FireTypeRounds(held, FireType);
+        if (rounds.AmmoType is not null && rounds.Loaded == 0 && inventory.Status != Igi2WeaponStatus.Waiting)
+        {
+            if (rounds.Available == 0 && !IsUnlimitedAmmo)
+            {
+                GoAction(Igi2PlayerActionState.FireEmpty);
+            }
+
+            return true;
+        }
+
+        if (weaponType.FireTaskType(FireType) == Igi2WeaponConstants.NoTaskType)
+        {
+            return WantsReload(held);
+        }
+
+        if (weaponType.WeaponType == Igi2WeaponTypeKind.Grenade)
+        {
+            return (inventory.Delay == 0 && (Channels[Igi2HumanChannel.Fire] != 0f || !inventory.IsPinPulled)) || WantsReload(held);
+        }
+
+        if (weaponType.WeaponCategory is Igi2WeaponCategory.Binoculars or Igi2WeaponCategory.ThermoChemical)
+        {
+            return WantsReload(held);
+        }
+
+        GoAction(Igi2PlayerActionState.InitFire);
+        return true;
+    }
+
+    /// <summary>The idle state's reload check, on the primary fire type: whether it would reload, which is not ported, so it stays idle.</summary>
+    private bool WantsReload(Igi2WeaponItem held)
+    {
+        if ((ActionSignal & Igi2PlayerSignal.Reload) == 0)
+        {
+            return false;
+        }
+
+        Igi2FireTypeRounds rounds = Weapon.Inventory!.FireTypeRounds(held, 0);
+        return rounds.Loaded != rounds.RoundsPerClip && (rounds.Available != 0 || IsUnlimitedAmmo);
     }
 
     /// <summary>

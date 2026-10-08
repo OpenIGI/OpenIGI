@@ -73,14 +73,15 @@ public sealed partial class Igi2HumanPlayer
     /// waiting for the network or flying; off the ground or dead the legs add nothing.
     /// </item>
     /// <item>
-    /// Lying, the body is re-noted on its platform. The main clip steps, the eyes are placed, and the view's kicks die
-    /// away.
+    /// Lying, the body is re-noted on its platform. The main clip steps and the eyes are placed. A trigger the fire state
+    /// pulled fires now, unless dead, and the perfect-shot timer starts again; the weapon lets go what the tick let go of
+    /// (<c>Weapon_UpdateStatus</c>). The view's kicks die away.
     /// </item>
     /// </list>
     /// <para>
     /// Not ported yet, and skipped where they fall: activation (<c>Human_UpdateActivate</c>), climbing, the dead body
-    /// rising in water (<c>Human_PopPosition</c>), riding (<c>Human_Attach</c>), the lying body's tilt to the ground (<c>Human_InterpolateZAxisToAveragedGroundNormal</c>), firing and the
-    /// weapon's status, the AI's notice, pickups and the screen flashes. The degraded-copy slowdown is inert: its
+    /// rising in water (<c>Human_PopPosition</c>), riding (<c>Human_Attach</c>), the lying body's tilt to the ground (<c>Human_InterpolateZAxisToAveragedGroundNormal</c>), the AI's notice,
+    /// pickups and the screen flashes. The degraded-copy slowdown is inert: its
     /// factor is one.
     /// </para>
     /// </remarks>
@@ -157,6 +158,18 @@ public sealed partial class Igi2HumanPlayer
 
         Animation.StepMain();
         UpdateViewBody();
+        if (IsFire)
+        {
+            if (!IsDead)
+            {
+                Weapon.Fire(FireType);
+            }
+
+            IsFire = false;
+            PerfectShotTimer = 0;
+        }
+
+        Weapon.UpdateStatus();
         View.DampenOffsets();
     }
 

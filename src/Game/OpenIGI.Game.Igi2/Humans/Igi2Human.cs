@@ -127,8 +127,8 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets a value indicating whether the body's orientation is frozen, <c>Human_s.isLockOrientation</c>.</summary>
     public bool IsLockOrientation { get; protected set; }
 
-    /// <summary>Gets or sets the camera mode, <c>Human_s.eHumanCameraMode</c>; 5 is the death camera.</summary>
-    public int CameraMode { get; protected set; }
+    /// <summary>Gets or sets the camera mode, <c>Human_s.eHumanCameraMode</c>: 1, first person, as every human is made (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>); 5 is the death camera.</summary>
+    public int CameraMode { get; protected set; } = 1;
 
     /// <summary>Gets the weapon the human-level functions act on.</summary>
     protected abstract IIgi2HumanWeapon HumanWeapon { get; }

@@ -32,8 +32,9 @@ public sealed partial class Igi2HumanPlayer
     /// The carried weapons slow the legs by up to half, and to half again while the jump wait runs. The posture's
     /// precision settles seven tenths of the way to its aim and the weapon's by the cross-hair damping. A zoom that may
     /// not be used now is left. The mission score's health is what is left of the maximum, in whole percent. The
-    /// perfect-shot timer counts on, and the collision body is fitted to the posture. Last, the body's animation
-    /// controllers that step themselves do.
+    /// perfect-shot timer counts on, and the collision body is fitted to the posture. Then the body's animation
+    /// controllers that step themselves do, and last the weapon's own end of the tick runs
+    /// (<see cref="Weapons.Igi2WeaponFiring.RunDelayed"/>).
     /// </para>
     /// <para>
     /// Not ported yet: the scope's breathing sway (<c>HumanPlayer_HandleBreathViewOffset</c>, <c>igi2 0x4B4710</c>, a
@@ -63,5 +64,8 @@ public sealed partial class Igi2HumanPlayer
         // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490):
         // the controllers that step themselves step, before the next tick's input runs the update.
         Animation.AutoStep();
+
+        // The weapon's run handler queued its own delayed handler as the children ran, so it runs after this one.
+        Weapon.RunDelayed();
     }
 }

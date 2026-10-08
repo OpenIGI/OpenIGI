@@ -18,8 +18,9 @@ namespace OpenIGI.Game.Igi2.Player;
 /// for one and keeps it.
 /// </para>
 /// <para>
-/// Not yet: firing, zooming and the overlay, the sound slots and the trigger state, which arrive with the weapon's own
-/// update. Until then those requests do nothing, as they do with nothing held.
+/// Firing is the weapon's own (<see cref="Igi2WeaponFiring"/>), its fire types' handlers chosen by
+/// <see cref="Igi2FireHandlers"/>. Not yet: zooming and the overlay, and the sound slots; until then those requests do
+/// nothing, as they do with nothing held.
 /// </para>
 /// </remarks>
 public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
@@ -28,6 +29,7 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     private readonly Igi2FireTaskTypes _taskTypes;
     private readonly Igi2AnimationLibrary? _clips;
     private readonly Dictionary<(Igi2WeaponTypeTask, Igi2BoneHierarchy), Igi2AnimationClip?[]> _bodyClips = [];
+    private readonly Igi2WeaponFiring _firing;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2PlayerWeapons"/> class.</summary>
     /// <param name="inventory">What the player carries.</param>
@@ -39,10 +41,21 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
         _inventory = inventory;
         _taskTypes = taskTypes;
         _clips = clips;
+        _firing = new Igi2WeaponFiring(inventory, inventory.Tables, taskTypes, Igi2FireHandlers.Create(inventory.Tables));
     }
 
     /// <summary>Gets what the player carries.</summary>
     public Igi2Inventory Inventory => _inventory;
+
+    /// <inheritdoc/>
+    public Igi2WeaponFiring Firing => _firing;
+
+    /// <summary>Gets or sets what firing shows and sounds.</summary>
+    public IIgi2WeaponEffects Effects
+    {
+        get => _firing.Effects;
+        set => _firing.Effects = value;
+    }
 
     /// <inheritdoc/>
     public int? ActiveCategory => Held?.WeaponCategory;
@@ -112,14 +125,19 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     public void ClearAllWeapons() => _inventory.ClearAll();
 
     /// <inheritdoc/>
-    public void Fire()
-    {
-    }
+    public void Fire(int fireType) => _firing.Fire(fireType);
 
     /// <inheritdoc/>
-    public void ClearTrigger()
-    {
-    }
+    public void ClearDelay() => _inventory.Delay = 0;
+
+    /// <inheritdoc/>
+    public void Bind(IIgi2WeaponOwner owner) => _firing.Owner = owner;
+
+    /// <inheritdoc/>
+    public void UpdateStatus() => _firing.UpdateStatus();
+
+    /// <inheritdoc/>
+    public void RunDelayed() => _firing.RunDelayed();
 
     /// <inheritdoc/>
     public void Zoom(bool zoomIn)
@@ -147,7 +165,5 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     }
 
     /// <inheritdoc/>
-    public void ReleaseTriggers()
-    {
-    }
+    public void ReleaseTriggers() => _firing.ReleaseTriggers();
 }

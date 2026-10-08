@@ -68,11 +68,15 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Gets a value indicating whether zooming is allowed now (<c>HumanPlayer_IsZoomedModeAllowed</c>).</summary>
     bool IsZoomedModeAllowed { get; }
 
-    /// <summary>Fires the held weapon once (<c>Weapon_Fire(weapon, 1)</c>).</summary>
-    void Fire();
+    /// <summary>Clears the held weapon's delay between shots, <c>nDelay</c> (<c>Weapon+0x48</c>).</summary>
+    void ClearDelay();
 
-    /// <summary>Clears the held weapon's trigger latch (<c>Weapon+0x48</c>).</summary>
-    void ClearTrigger();
+    /// <summary>Gets the weapon's firing half, or <see langword="null"/> when the player has no weapon.</summary>
+    Igi2WeaponFiring? Firing { get; }
+
+    /// <summary>Makes a human the weapon's holder: the parent its task asks where it fires from.</summary>
+    /// <param name="owner">The holder.</param>
+    void Bind(IIgi2WeaponOwner owner);
 
     /// <summary>Steps the held weapon's zoom (<c>Weapon_Zoom</c>).</summary>
     /// <param name="zoomIn"><see langword="true"/> to zoom in, <see langword="false"/> to zoom out.</param>
@@ -124,12 +128,30 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
     public bool IsZoomedModeAllowed => false;
 
     /// <inheritdoc/>
-    public void Fire()
+    public void Fire(int fireType)
     {
     }
 
     /// <inheritdoc/>
-    public void ClearTrigger()
+    public void ClearDelay()
+    {
+    }
+
+    /// <inheritdoc/>
+    public Igi2WeaponFiring? Firing => null;
+
+    /// <inheritdoc/>
+    public void Bind(IIgi2WeaponOwner owner)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void UpdateStatus()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void RunDelayed()
     {
     }
 
