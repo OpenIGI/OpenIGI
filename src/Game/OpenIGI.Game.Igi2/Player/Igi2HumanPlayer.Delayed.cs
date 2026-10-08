@@ -79,6 +79,8 @@ public sealed partial class Igi2HumanPlayer
             Weapon.LeaveZoomAlternateFireMode();
         }
 
+        IsInfraEnabled = Weapon.Inventory?.Current?.WeaponType.WeaponType == Weapons.Igi2WeaponTypeKind.Special;
+
         int lost = Fpu.ToInt32(((Fpu)Damage.Damage / Damage.MaxDamage) * 100.0);
         MissionHealth = Math.Clamp(100 - lost, 0, 100);
         PerfectShotTimer++;

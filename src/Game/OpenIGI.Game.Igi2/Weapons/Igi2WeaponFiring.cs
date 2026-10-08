@@ -147,6 +147,29 @@ public sealed class Igi2WeaponFiring
     }
 
     /// <summary>
+    /// Puts a carried weapon in hand, <c>Weapon_Activate</c> (<c>igi2 0x51E220</c>) as the single-player game sends it to
+    /// <c>Weapon_SingleActivateHandler</c> (<c>0x51D600</c>): the weapon put away takes its zoom down first.
+    /// </summary>
+    /// <param name="item">The weapon.</param>
+    /// <returns><see langword="true"/> when it went in hand; a weapon not carried does not.</returns>
+    /// <remarks>Not yet: the fire types' own deactivate and activate handlers.</remarks>
+    public bool Activate(Igi2WeaponItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (!item.IsActive)
+        {
+            return false;
+        }
+
+        if (_inventory.Current is not null)
+        {
+            SetOverlayStatus(Igi2WeaponOverlayStatus.None);
+        }
+
+        return _inventory.Activate(item);
+    }
+
+    /// <summary>
     /// Marks the weapon's zoom up without touching the view or the overlay, as <c>Zoom_WeaponFireHandler</c> writes it
     /// (<c>igi2 0x525C23</c>, <c>0x525C32</c>).
     /// </summary>

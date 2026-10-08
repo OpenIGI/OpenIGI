@@ -425,6 +425,7 @@ public sealed partial class Igi2HumanPlayer
             }
         }
 
+        CheckBinoculars(forceChangeWeapon: false);
         if (held is not null && TryFireFromIdle(held))
         {
             return;
@@ -562,7 +563,7 @@ public sealed partial class Igi2HumanPlayer
 
         if (WeaponStatus == Igi2PlayerWeaponStatus.Allowed && !IsWeaponActivateRequested)
         {
-            if (next is not null && inventory!.Activate(next))
+            if (next is not null && Weapon.Activate(next))
             {
                 WeaponStatus = Igi2PlayerWeaponStatus.Activated;
             }

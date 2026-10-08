@@ -76,6 +76,11 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <param name="owner">The holder.</param>
     void Bind(IIgi2WeaponOwner owner);
 
+    /// <summary>Puts a carried weapon in hand (<c>Weapon_Activate</c>, <c>igi2 0x51E220</c>).</summary>
+    /// <param name="item">The weapon.</param>
+    /// <returns><see langword="true"/> when it went in hand.</returns>
+    bool Activate(Igi2WeaponItem item);
+
     /// <summary>Steps the held weapon's zoom (<c>Weapon_Zoom</c>).</summary>
     /// <param name="zoomIn"><see langword="true"/> to zoom in, <see langword="false"/> to zoom out.</param>
     void Zoom(bool zoomIn);
@@ -134,6 +139,9 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public Igi2WeaponFiring? Firing => null;
+
+    /// <inheritdoc/>
+    public bool Activate(Igi2WeaponItem item) => false;
 
     /// <inheritdoc/>
     public void Bind(IIgi2WeaponOwner owner)

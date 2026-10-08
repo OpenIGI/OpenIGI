@@ -252,8 +252,8 @@ public sealed class Igi2Inventory
     /// a proximity mine with no rounds carried, or an RPG-18 with none carried and none loaded either.
     /// </para>
     /// <para>
-    /// The new weapon starts ready, with no delay, no pin out, no fuse and no bullets fired. Not yet: the fire types'
-    /// own deactivate and activate handlers, and the overlay, which arrive with firing.
+    /// The new weapon starts ready, with no delay, no pin out, no fuse and no bullets fired. The zoom of the weapon put
+    /// away is the firing's (<see cref="Igi2WeaponFiring.Activate"/>), which comes here.
     /// </para>
     /// </remarks>
     public bool Activate(Igi2WeaponItem item)
@@ -548,6 +548,9 @@ internal static class Igi2WeaponTypeKind
 
     /// <summary><c>WEAPONTYPE_PROXIMITYMINE</c>.</summary>
     public const int ProximityMine = 7;
+
+    /// <summary><c>WEAPONTYPE_SPECIAL</c>: the thermal goggles and the laser designator, which see in infrared.</summary>
+    public const int Special = 9;
 }
 
 /// <summary>The <c>WEAPONCATEGORY_*</c> values the inventory itself tests.</summary>

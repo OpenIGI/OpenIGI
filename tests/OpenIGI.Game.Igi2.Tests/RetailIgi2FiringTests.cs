@@ -331,6 +331,32 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal("overlay:off", effects.Sounds[^1]);
     }
 
+    /// <summary>
+    /// The binoculars' key raises them over the MP5SD (<c>HumanPlayer_CheckBinoculars</c>): they go in hand, their zoom is
+    /// fired at once and the MP5SD is kept to go back to. Pressed again, the zoom comes down and the MP5SD is asked back.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_binoculars_key_raises_them_over_the_weapon_and_lowers_them()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2WeaponItem mp5sd = weapons.Inventory.Current!;
+
+        Tick(player, Igi2PlayerAction.Binoculars);
+
+        Assert.Equal("WEAPON_ID_BINOCULARS", weapons.Inventory.Current!.WeaponType.WeaponId);
+        Assert.Same(mp5sd.WeaponType, player.PreviousWeaponType);
+        Assert.True(player.View.IsZoomMode);
+        Assert.Equal(Igi2WeaponOverlayStatus.WithOverlay, weapons.Firing.OverlayStatus);
+
+        Tick(player, Igi2PlayerAction.None);
+        Tick(player, Igi2PlayerAction.Binoculars);
+
+        Assert.False(player.View.IsZoomMode);
+        Assert.Equal(Igi2WeaponOverlayStatus.None, weapons.Firing.OverlayStatus);
+        Assert.Null(player.PreviousWeaponType);
+        Assert.Equal(mp5sd.Number, player.ChangeWeaponId);
+    }
+
     /// <summary>The three angles of an orientation give it back (<c>Real32x9_GetAngles</c> against <c>Real32x9_Create</c>).</summary>
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()

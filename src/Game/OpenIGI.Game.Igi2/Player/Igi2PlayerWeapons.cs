@@ -160,6 +160,9 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     public void Zoom(bool zoomIn) => _firing.Zoom(zoomIn);
 
     /// <inheritdoc/>
+    public bool Activate(Igi2WeaponItem item) => _firing.Activate(item);
+
+    /// <inheritdoc/>
     /// <remarks>
     /// The single-player half of <c>HumanPlayer_LeaveZoomAlternateFireMode</c> (<c>igi2 0x4BEC80</c>): a zoom that is up
     /// on a weapon whose second slot is a <c>Zoom</c> comes down.
@@ -183,9 +186,7 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     }
 
     /// <inheritdoc/>
-    public void ClearOverlay()
-    {
-    }
+    public void ClearOverlay() => _firing.SetOverlayStatus(Igi2WeaponOverlayStatus.None);
 
     /// <inheritdoc/>
     public void ReleaseTriggers() => _firing.ReleaseTriggers();

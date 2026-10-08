@@ -220,6 +220,8 @@ internal static class Igi2PlayerFakes
 
         public Weapons.Igi2WeaponFiring? Firing => null;
 
+        public bool Activate(Weapons.Igi2WeaponItem item) => false;
+
         public void Bind(Weapons.IIgi2WeaponOwner owner)
         {
         }
