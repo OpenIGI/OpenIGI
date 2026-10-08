@@ -17,7 +17,8 @@ struct GlassPush
 
     // The OBJECT-TO-WORLD rotation, by column, exactly as the G-buffer pass pushes and reads it.
     // Composed on the processor as the view-to-world rotation times the model-view own rotation,
-    // which costs nothing per vertex and saves a second matrix here.
+    // which costs nothing per vertex and saves a second matrix here. The fourth components hold the
+    // object's origin relative to the camera in world axes, so the same columns place a vertex too.
     float4 normal0;
     float4 normal1;
     float4 normal2;
@@ -73,7 +74,24 @@ struct GlassVaryings
     [[vk::location(2)]] float4 color;
     [[vk::location(3)]] float3 worldNormal;
     [[vk::location(4)]] float viewDepth;
+
+    // Where the vertex is relative to the camera, in world axes: the line of sight to the pane.
+    [[vk::location(5)]] float3 fromEye;
 };
+
+/// The alpha below which a glazing texel is a hole rather than glass: no pane there, nothing to see through
+/// or reflect. Both glazing draws make this cut, so the layer and the transmission agree about it.
+static const float GlassHoleAlpha = 0.02;
+
+/// Thin-pane reflectance: a sheet has two faces, and the light that crosses the first and is reflected
+/// back by the second partly escapes too. Summing every bounce, a pane reflects 2R/(1+R) of what reaches
+/// it, R being one face's Schlick reflectance with glass's 0.04 at normal incidence -- 7.7 per cent head-on,
+/// rising to a mirror at a glancing angle -- and lets through (1-R)/(1+R), the rest.
+float GlassPaneReflectance(float cosine)
+{
+    float face = 0.04 + (0.96 * pow(1.0 - saturate(cosine), 5.0));
+    return (2.0 * face) / (1.0 + face);
+}
 
 /// A pane to clip space, with its normal in world axes and its own distance carried on.
 GlassVaryings GlassTransform(GlassVertexInput input)
@@ -114,6 +132,11 @@ GlassVaryings GlassTransform(GlassVertexInput input)
     output.worldNormal = (push.normal0.xyz * input.normal.x)
         + (push.normal1.xyz * input.normal.y)
         + (push.normal2.xyz * input.normal.z);
+
+    output.fromEye = (push.normal0.xyz * input.position.x)
+        + (push.normal1.xyz * input.position.y)
+        + (push.normal2.xyz * input.position.z)
+        + float3(push.normal0.w, push.normal1.w, push.normal2.w);
 
     return output;
 }

@@ -37,10 +37,22 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 /// let one try: a card's box is a slab, so a body standing near a wall sits inside that wall's box and
 /// would be resolved to the wall's baked lighting.
 /// </param>
+/// <param name="Emissive">
+/// How strongly this run glows, as a multiple of its albedo -- the strength the G-buffer gives it; nought
+/// for a surface that does not. A reflection that stops on a lamp shows it lit rather than as the dark
+/// fitting the surface cache photographed round it.
+/// </param>
 internal readonly record struct RayTracedSurface(
     int IndexOffset,
     int IndexCount,
     bool Opaque,
     int MaskLayer,
     int AlbedoLayer = -1,
-    bool Dynamic = false);
+    bool Dynamic = false,
+    float Emissive = 0f)
+{
+    /// <summary>Gets the record's flag word: the dynamic bit, and the glow in sixteenths in bits 8-15.</summary>
+    public uint FlagWord =>
+        (Dynamic ? 1u : 0u)
+        | ((Emissive > 0f ? (uint)Math.Clamp((int)MathF.Round(Emissive * 16f), 1, 255) : 0u) << 8);
+}

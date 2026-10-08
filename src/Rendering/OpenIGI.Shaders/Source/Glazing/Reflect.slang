@@ -253,14 +253,75 @@ static int gRoute = 0;
 
 #if OPENIGI_RAY_QUERY
 
-// Turning a reflected ray into light: the frame first, the cards second, the hit's own material third,
-// the sky last.
+// Turning a reflected ray into light, and the SAME light whichever way the camera happens to be pointing.
 //
-// The order is the point of this whole pass. The lit frame is the real thing at full resolution, with
-// this frame's shadows and every moving object in it -- soldiers, the weapon, the player's hands. A card
-// is one texel per several centimetres of wall and knows nothing about any of that. So a hit the camera
-// can see is read from the frame, and only a hit it cannot see falls through to the cards. Reversing the
-// two would be a window that reflects a static photograph of an empty building.
+// THE LIT FRAME IS NOT CONSULTED. It used to be the first route -- the real thing at full resolution, for
+// a hit the camera can also see -- and that is exactly what made the glass unstable: whether a reflected
+// wall is on screen depends on where the player is looking, not on anything about the wall, so turning the
+// mouse moved hits on and off the frame and each one flipped between the frame's lighting and a card's.
+// The two never agree (one is this frame's shading at full detail, the other a coarse bake), so whole
+// regions of a window changed colour, appeared and vanished as the view swept. A reflection has to be a
+// function of the ray alone; every route below is.
+//
+// A lamp shows its own light, as the G-buffer gives it: its albedo times its strength. Static geometry reads
+// its card -- the surface cache's own lighting, with the sun's shadows, the lamps and the bounce in it, which
+// is what that surface actually looks like. Anything a card cannot describe -- a body, or a static surface
+// too thin or too small for the cache, a monitor, a desk lamp -- is shaded from its own material under the
+// light the CARDS AROUND IT receive: a card holds its surface's outgoing light and the albedo it photographed,
+// and the first over the second is the light arriving there, lamps and bounce included. Only where no card is
+// near does it fall back to the sun (where it can see the sun) and the level's ambient. A hit that nothing can
+// name a material for is a neutral surface under the same light, never a hole.
+
+// Whether a point sees the sun: one ray towards it, stopped by the first solid thing, cut-outs honoured.
+// Without it the material route lit every surface that faced the sun as though it stood in the open, and a
+// wall inside a room came out brighter than the card beside it that had its shadow.
+float SunVisibility(float3 hitRelative, float3 normalW)
+{
+    if (dot(kSunColour, kSunColour) <= 0.0 || dot(normalW, kSunDirection) <= 0.0)
+    {
+        return 0.0;
+    }
+
+    RayDesc ray;
+    ray.Origin = hitRelative + kWorldOrigin + (normalW * 0.05);
+    ray.TMin = 0.01;
+    ray.Direction = kSunDirection;
+    ray.TMax = 4000.0;
+
+    // Everything but the first-person rig, as the reflection's own trace does.
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> query;
+    query.TraceRayInline(uScene, RAY_FLAG_NONE, 0x7F, ray);
+    ProceedWithCutouts(query, kRecords, uCutoutMasks);
+    return query.CommittedStatus() == COMMITTED_NOTHING ? 1.0 : 0.0;
+}
+
+// How far round a hit the cards are asked for the light arriving there. Wide, because the question is no
+// longer which surface this IS but what light falls here, and the desk under a monitor answers it.
+static const float kIrradianceReach = 1.0;
+
+// A hit's own albedo under the light the cards around it receive, or the sun and the ambient where none is.
+float3 LitMaterial(float3 albedo, float3 hitRelative, float3 normalW)
+{
+    float3 nearRadiance;
+    float3 nearAlbedo;
+    if (SampleCardsAndAlbedoWithin(
+            hitRelative + p.cacheOrigin.xyz, normalW, kIrradianceReach, nearRadiance, nearAlbedo))
+    {
+        // The neighbour's outgoing light over its albedo, per channel, is the light reaching it; a surface
+        // of this albedo there sends back that light times its own. Floored, so a near-black card cannot
+        // make the estimate explode.
+        float3 arriving = nearRadiance / max(nearAlbedo, float3(0.08, 0.08, 0.08));
+        return albedo * arriving * p.cacheAtlas.z;
+    }
+
+    float direct = max(dot(normalW, kSunDirection), 0.0) * SunVisibility(hitRelative, normalW);
+    return albedo * (kAmbient + (kSunColour * direct));
+}
+
+// What a surface nobody can identify is taken to reflect: a mid grey, so it reads as a surface in the
+// light around it rather than as a hole punched through the glass.
+static const float3 kNeutralAlbedo = float3(0.3, 0.3, 0.3);
+
 float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
 {
     gRoute = 0;
@@ -282,35 +343,32 @@ float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
         return FallbackSky(rayW);
     }
 
-    float3 radiance;
-    bool resolved = LitAtHit(hitRelative, radiance);
-    if (resolved)
+    // The record could fail to name a normal -- no records at all -- and a hit then faces the ray that
+    // found it, which is the one direction its surface is known to face.
+    float3 hitNormal = dot(gHitNormalW, gHitNormalW) > 0.0 ? gHitNormalW : -rayW;
+
+    float3 radiance = float3(0.0, 0.0, 0.0);
+    bool resolved = false;
+
+    // A lamp is its own light. Checked before the cards, which hold the dark fitting round the tube, and
+    // before the material route, which would light the tube as though it were a panel in the room.
+    if (gHitEmissive > 0.0)
     {
-        gRoute = 1;
+        radiance = (shaded ? gShadeAlbedo : float3(1.0, 1.0, 1.0)) * gHitEmissive;
+        resolved = true;
+        gRoute = 5;
     }
 
-    // A CARD CANNOT DESCRIBE SOMETHING THAT MOVES, so a body never gets to ask for one.
+    // A CARD CANNOT DESCRIBE SOMETHING THAT MOVES, so a body never gets to ask for one: a player standing at
+    // a window is within a hand's breadth of that building's wall, well inside the lookup's tolerance, and
+    // the wall's card would claim them. The record says outright whether the hit was static.
     //
-    // The depth test inside the lookup turns away most wrong cards, but not the case that matters here:
-    // a player standing at a window is within a hand's breadth of that building's wall, well inside the
-    // tolerance, so the wall's card would claim them and the reflection would go flat grey at exactly the
-    // angles where the player is closest to the glass. The cache is a bake of the static level and the
-    // record says outright whether this hit was static, so ask that instead of inferring it from a
-    // distance.
-    //
-    // The cards are sampled BY THE HIT'S NORMAL: the card that photographed a surface is the one that
-    // looked the way the surface faces, every card facing it contributes by how squarely it faced, and
-    // each texel under the footprint is judged against the depth recorded there. The record could fail to
-    // name a normal -- no records at all -- and a hit then faces the ray that found it, which is the one
-    // direction its surface is known to face.
+    // The cards are sampled BY THE HIT'S NORMAL, every card facing it contributing by how squarely it faced,
+    // each texel judged against the depth recorded there -- at exactly the cache's own skin, which is the
+    // right tolerance for an exact triangle hit. Wider would let a floor's card answer for the table top
+    // above it; a surface its card does not reach is the material route's, lit by the same rule.
     if (!resolved && !gHitDynamic)
     {
-        float3 hitNormal = dot(gHitNormalW, gHitNormalW) > 0.0 ? gHitNormalW : -rayW;
-
-        // Into the cache's own space, which measures from its centre rather than from the camera. The
-        // atlas holds outgoing radiance, so it is read straight and scaled only by the one control the
-        // gather also applies, so that a wall's reflection and the indirect light off that same wall
-        // agree about how bright it is.
         float3 cardRadiance;
         if (SampleCardsWithin(hitRelative + p.cacheOrigin.xyz, hitNormal, kCardSkin, cardRadiance))
         {
@@ -320,28 +378,19 @@ float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
         }
     }
 
-    // The hit's OWN material, for what the camera cannot see and the bake never held -- which is every
-    // body in the level, and the whole reason a window could not show the player standing at it. Third
-    // rather than first deliberately: where the frame can answer it answers at full resolution with this
-    // frame's lighting, and where the cards can they carry a real bounce, and neither is improved on by a
-    // flat Lambert term off a 128-square texture.
+    // The hit's OWN material: every body, and what the cache is too coarse to hold.
     if (!resolved && shaded)
     {
-        radiance = shadedRadiance;
+        radiance = LitMaterial(gShadeAlbedo, hitRelative, hitNormal);
         resolved = true;
         gRoute = 4;
     }
 
+    // Struck something solid that nothing can put a material to. A surface still, under the same light.
     if (!resolved)
     {
-        // Struck something solid that none of the three could put a colour to: no record, no albedo
-        // layer, or an array that filled up before this texture reached it.
-        //
-        // Nothing, not the sky. A ray that STRUCK something opaque has established that there is no sky
-        // along it, so painting the brightest thing in the level onto a surface-shaped hole reads as a
-        // window with a hole punched through it.
+        radiance = LitMaterial(kNeutralAlbedo, hitRelative, hitNormal);
         gRoute = 3;
-        return float3(0.0, 0.0, 0.0);
     }
 
     // A ceiling on one ray, so a hit on something brilliant cannot flare. Scaled per channel by the same
@@ -428,14 +477,12 @@ float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
     // both ask "is this hit ON the thing you are describing", and both answer no to a hit floating half a
     // metre in front of a wall -- so held to the traced path's tolerances the march resolves almost
     // nothing and the glass fills with holes.
-    float3 radiance;
-    bool resolved = LitAtHitWithin(hit, voxel, radiance);
-    if (resolved)
-    {
-        gRoute = 1;
-    }
+    // NOT the lit frame, for the reason the traced path no longer reads it: whether a reflected place is
+    // on screen depends on where the camera looks, so a reflection that reads the frame changes as the
+    // mouse moves. The cards are a function of the ray alone.
+    float3 radiance = float3(0.0, 0.0, 0.0);
+    bool resolved = false;
 
-    if (!resolved)
     {
         // The cards, sampled by normal exactly as the traced path samples them, with the field's gradient
         // standing in for the triangle a march does not have -- and, where the field cannot say, the ray
@@ -500,17 +547,20 @@ float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
 // dark would otherwise read the same as a route that never ran.
 float3 RouteColour(int route)
 {
-    // the lit frame: full detail, moving things.
+    // the lit frame. No longer a route: it made the reflection depend on where the camera looks.
     if (route == 1) { return float3(0.0, 1.0, 0.0); }
 
     // a surface-cache card: static, coarse.
     if (route == 2) { return float3(0.0, 0.2, 1.0); }
 
-    // struck something nothing can shade.
+    // struck something nothing can name a material for, shaded as a neutral surface.
     if (route == 3) { return float3(1.0, 0.0, 0.0); }
 
     // the hit's own material: bodies live here.
     if (route == 4) { return float3(1.0, 0.8, 0.0); }
+
+    // a light: the hit glows, and shows its own light.
+    if (route == 5) { return float3(1.0, 1.0, 1.0); }
 
     // the sky, on a clean miss.
     return float3(0.25, 0.25, 0.25);
@@ -561,12 +611,14 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
     float3 rayW = normalize(reflect(toPixel, normalW));
 
-    // Schlick, about the reflectance of glass at normal incidence. This one number is most of what makes
-    // glazing read as glazing: four per cent head-on, where the room behind shows through almost
-    // unimpeded, rising towards a mirror at a glancing angle. A fixed strength cannot produce that, and a
-    // window without it reads as tinted film.
+    // Schlick, about the reflectance of glass at normal incidence, for a PANE: two faces, so 2R/(1+R) --
+    // 7.7 per cent head-on, where the room behind shows through almost unimpeded, rising towards a mirror
+    // at a glancing angle. The transmission draw lets through exactly what this does not take, so the two
+    // add up to the light that reached the glass. A fixed strength cannot produce that, and a window
+    // without it reads as tinted film.
     float cosine = clamp(dot(normalW, -toPixel), 0.0, 1.0);
-    float fresnel = 0.04 + (0.96 * pow(1.0 - cosine, 5.0));
+    float fresnel = 2.0 * (0.04 + (0.96 * pow(1.0 - cosine, 5.0)));
+    fresnel = fresnel / (1.0 + (fresnel * 0.5));
 
     float3 radiance = Resolve(relative, normalW, rayW, viewDepth);
 

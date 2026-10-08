@@ -41,8 +41,7 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None",
-      "sampleType": "Depth"
+      "storageAccess": "None"
     },
     {
       "name": "uSceneDepthSampler",

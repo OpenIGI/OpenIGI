@@ -1859,13 +1859,21 @@ public interface IGraphicsDevice : IDisposable
     /// camera never sees. Every other ray -- the GI's, the shadows' -- passes through it, or an invisible
     /// occluder stands wherever the camera does and darkens whatever the player faces.
     /// </param>
+    /// <param name="material">
+    /// What the run is made of, as it would be drawn -- whether it glows, and whether it occludes. Nothing
+    /// is drawn here, so there is no current material to take it from: reading the device's own left this
+    /// run with whatever the last DRAW set, which recorded a culled monitor with a ceiling lamp's glow and
+    /// could leave a culled wall out of the traced world because the last thing drawn was the sky.
+    /// <see langword="null"/> is an ordinary opaque surface.
+    /// </param>
     void SubmitTracedMesh(
         MeshHandle mesh,
         int indexOffset,
         int indexCount,
         in Matrix4f modelView,
         TextureHandle diffuse,
-        bool firstPersonOnly = false)
+        bool firstPersonOnly = false,
+        SurfaceMaterial? material = null)
     {
     }
 

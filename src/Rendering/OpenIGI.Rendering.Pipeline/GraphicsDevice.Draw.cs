@@ -399,7 +399,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             // to paint over.
             if (CurrentPass is ScenePass.Geometry)
             {
-                ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount);
+                ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount, _material);
                 DrawGeometry(call, modelView, blend);
                 NoteObjectMotion(mesh, call.Mesh, indexOffset, indexCount, modelView, blend);
             }
@@ -413,7 +413,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
                 // only a reflection finds them.
                 if (_firstPerson && blend == BlendMode.Opaque && _depthState == DepthState.TestAndWrite)
                 {
-                    ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount, firstPerson: true);
+                    ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount, _material, firstPerson: true);
                 }
 
                 DrawForward(call, [], modelView, blend, lightmap.IsValid);
@@ -472,7 +472,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             {
                 foreach (MeshDrawRange range in ranges)
                 {
-                    ObserveForTracing(mesh, modelView, diffuse, range.IndexOffset, range.IndexCount);
+                    ObserveForTracing(mesh, modelView, diffuse, range.IndexOffset, range.IndexCount, _material);
                 }
 
                 DrawGeometryRanges(mesh, ranges, modelView, diffuse, lightmap, blend);

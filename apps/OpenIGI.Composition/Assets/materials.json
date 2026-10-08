@@ -240,10 +240,12 @@
 
     "$glass-panes": [
       "Plain sheets: uniform partial alpha, no structure. 716_01_1 is 8x8 and every texel of it is",
-      "alpha 72, which is a pane fill and cannot be anything else."
+      "alpha 72, which is a pane fill and cannot be anything else. 700_28_1_argb8888 (alpha 67 throughout)",
+      "is the same fill on the mission 6 helicopter's canopy."
     ],
     "600_30_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
     "716_01_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
-    "402_10_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true }
+    "402_10_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "700_28_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true }
   }
 }

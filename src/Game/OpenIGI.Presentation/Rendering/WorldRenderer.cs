@@ -1046,10 +1046,21 @@ public sealed class WorldRenderer : IWorldPresenter
         // camera, arrived only once play began, and the lighting crept across the room as they did.
 
         SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, displayed);
+
+        // Each run with the material it would be drawn with -- lamp, switch and all -- because nothing is
+        // drawn here to take one from.
+        float glow = model.LampFixture >= 0 && Switchboard is { } board
+            ? board.LevelOf(model.LampFixture)
+            : 1f;
         foreach (SubsetDraw subset in subsets)
         {
             _device.SubmitTracedMesh(
-                model.Mesh, subset.IndexOffset, subset.IndexCount, modelView, subset.Diffuse);
+                model.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                subset.Diffuse,
+                material: subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
         }
     }
 

@@ -376,10 +376,11 @@ internal sealed class VulkanWorldScene : IDisposable
         if (!moving)
         {
             placement = Placement.From(meshId, worldTransform);
-            if (_placed.ContainsKey(placement))
+            if (KnownPlacement(placement) is { } known)
             {
-                // A place this mesh already stands at, offered again: kept for another frame.
-                _placed[placement] = _frame;
+                // A place this mesh already stands at, offered again: kept for another frame, at the
+                // transform it was admitted with.
+                _placed[known] = _frame;
                 _observedThisPass++;
                 return;
             }
@@ -463,6 +464,53 @@ internal sealed class VulkanWorldScene : IDisposable
         _instancesChanged = true;
     }
 
+    /// <summary>The placement already standing where this one is, if any: the same cell or one beside it.</summary>
+    /// <remarks>
+    /// A draw's world transform is recovered from its CAMERA-RELATIVE model-view and the frame's rotation, in
+    /// single precision, at an absolute position thousands of metres out -- so its last bits depend on which
+    /// way the camera is pointing, by about half a millimetre. Matched exactly, a placement turning the
+    /// camera nudged across a key boundary was a NEW placement: added, the old one expired a frame later,
+    /// and a mesh doing that three builds running was filed as a mover. The traced world was rebuilt
+    /// differently on every frame of a mouse movement, and every reflection, shadow and bounce read off it
+    /// flickered -- a pane's reflection switching patches between the cache's light and the material's as
+    /// the view shook, with the camera standing still. A key a cell either side of an existing one is that
+    /// placement; nothing else of the same mesh stands within two centimetres at the same rotation.
+    /// </remarks>
+    private Placement? KnownPlacement(Placement placement)
+    {
+        if (_placed.ContainsKey(placement))
+        {
+            return placement;
+        }
+
+        for (int dz = -1; dz <= 1; dz++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if ((dx | dy | dz) == 0)
+                    {
+                        continue;
+                    }
+
+                    Placement beside = placement with
+                    {
+                        X = placement.X + dx,
+                        Y = placement.Y + dy,
+                        Z = placement.Z + dz,
+                    };
+                    if (_placed.ContainsKey(beside))
+                    {
+                        return beside;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Files an instance in the static head of the list or the frame's moving tail.</summary>
     /// <param name="moving">Whether the mesh's transform is one this frame supplies rather than remembers.</param>
     /// <param name="meshId">The mesh the instance names, kept parallel to the instance itself.</param>
@@ -517,6 +565,22 @@ internal sealed class VulkanWorldScene : IDisposable
         {
             if (surfaces[i] == entry)
             {
+                grew = false;
+                return surfaces;
+            }
+
+            // The same run with only its glow changed -- a lamp switched, faded, or first seen while its
+            // photocell had it off. Not a new run: its record is rewritten where it stands, or the tube
+            // would reflect the state it happened to be in the first frame it was drawn.
+            if (surfaces[i] with { Emissive = entry.Emissive } == entry)
+            {
+                surfaces[i] = entry;
+                if (_geometries.TryGetValue(meshId, out Geometry built) && i < built.RecordCount)
+                {
+                    ReadOnlySpan<uint> flag = [entry.FlagWord];
+                    _records.WriteAt((ulong)(((built.RecordBase + i) * RecordSize) + (7 * sizeof(uint))), flag);
+                }
+
                 grew = false;
                 return surfaces;
             }
@@ -1006,7 +1070,7 @@ internal sealed class VulkanWorldScene : IDisposable
             record[4] = (uint)s.IndexOffset;
             record[5] = unchecked((uint)s.MaskLayer);
             record[6] = unchecked((uint)s.AlbedoLayer);
-            record[7] = s.Dynamic ? 1u : 0u;
+            record[7] = s.FlagWord;
 
             _records.WriteAt((ulong)((start + i) * RecordSize), (ReadOnlySpan<uint>)record);
         }
@@ -1116,26 +1180,38 @@ internal sealed class VulkanWorldScene : IDisposable
 
     /// <summary>A mesh at a place, quantised so that the same placement is recognised as the same one.</summary>
     /// <remarks>
-    /// The transforms come back bit-identical frame to frame for static geometry, but quantising costs
-    /// nothing and means a placement recomputed through a slightly different route is still recognised
-    /// rather than added twice. A millimetre is far below anything a shadow could show.
+    /// <para>
+    /// NOT bit-identical frame to frame, which is what this once assumed: the transform is recovered from a
+    /// camera-relative model-view through the frame's own rotation, in single precision, so its translation
+    /// wanders by about half a millimetre as the camera turns. See <see cref="KnownPlacement"/>, which
+    /// matches a key a cell either side of an existing one for exactly that reason.
+    /// </para>
+    /// <para>
+    /// The rotation is rounded to a twentieth: its own noise is around a ten-millionth, and the values
+    /// placements actually take -- nought, a half, one, and the arbitrary angles between -- sit nowhere near
+    /// a boundary that fine noise could cross. The position is rounded to two centimetres, coarse enough
+    /// that the neighbour search covers any wander and fine enough that two copies of one mesh never share.
+    /// </para>
     /// </remarks>
-    private readonly record struct Placement(uint MeshId, long A, long B, long C)
+    private readonly record struct Placement(uint MeshId, long Rotation, long X, long Y, long Z)
     {
+        private const float RotationSteps = 20f;
+        private const float CellsPerMetre = 50f;
+
         public static Placement From(uint meshId, in Matrix4f m)
         {
-            const float scale = 1000f;
-            static long Pack(float x, float y, float z, float w) =>
-                ((long)(x * scale) * 73856093)
-                ^ ((long)(y * scale) * 19349663)
-                ^ ((long)(z * scale) * 83492791)
-                ^ ((long)(w * scale) * 32452843);
+            static long Step(float value) => (long)MathF.Round(value * RotationSteps);
+
+            long rotation = (Step(m.M11) * 73856093) ^ (Step(m.M12) * 19349663) ^ (Step(m.M13) * 83492791)
+                ^ (Step(m.M21) * 32452843) ^ (Step(m.M22) * 49979687) ^ (Step(m.M23) * 86028121)
+                ^ (Step(m.M31) * 15485863) ^ (Step(m.M32) * 32452867) ^ (Step(m.M33) * 67867967);
 
             return new Placement(
                 meshId,
-                Pack(m.M11, m.M12, m.M13, m.M14),
-                Pack(m.M21, m.M22, m.M23, m.M24),
-                Pack(m.M31, m.M32, m.M33, m.M34));
+                rotation,
+                (long)MathF.Floor(m.M14 * CellsPerMetre),
+                (long)MathF.Floor(m.M24 * CellsPerMetre),
+                (long)MathF.Floor(m.M34 * CellsPerMetre));
         }
     }
 

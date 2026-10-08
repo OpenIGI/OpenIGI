@@ -1,11 +1,10 @@
-// The glazing transmission draw: what a pane lets through, tinted by the pane and fogged by the air.
+// The glazing transmission draw: how much of the scene behind a clear pane lets through.
 //
 // No ray query, no acceleration structure and no surface cache: this carried all three once and they
 // have moved to the reflection pass, where the lit frame is readable. What is left needs nothing the
 // world pipeline does not already bind.
 
 #include "../Common/GlassVertex.slang"
-#include "../Common/SampledColour.slang"
 
 /// The vertex stage: the shared glazing transform.
 [shader("vertex")]
@@ -14,7 +13,7 @@ GlassVaryings vertexMain(GlassVertexInput input)
     return GlassTransform(input);
 }
 
-/// The fragment stage: the transmission the room behind is seen through.
+/// The fragment stage: the share of the room behind that the pane lets through.
 [shader("fragment")]
 float4 fragmentMain(GlassVaryings input) : SV_Target
 {
@@ -31,6 +30,11 @@ float4 fragmentMain(GlassVaryings input) : SV_Target
         discard;
     }
 
+    if (alpha < GlassHoleAlpha)
+    {
+        discard;
+    }
+
     // NOTHING IS RECORDED HERE, and that is the point of the front-layer pass.
     //
     // This used to write the pane's normal and distance into a layer with an image store, from inside
@@ -40,20 +44,23 @@ float4 fragmentMain(GlassVaryings input) : SV_Target
     // happened to land last won, and it was not the same one from frame to frame. The reflection
     // fizzed with per-pixel noise. The layer is written by a pass that owns a depth buffer now.
 
-    // What the pane itself contributes: its own colour, lit by whatever the level baked onto it.
-    // Glass is nearly all transmission, so this is a tint on the room behind rather than a surface
-    // colour, and the blend below is what applies it.
-    float3 tint = SampledLinear(diffuse.rgb) * DecodeSrgb(input.color.rgb)
-        * SampledLinear(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
+    // CLEAR GLASS ADDS NO LIGHT OF ITS OWN. The texture's colour is the original's painted stand-in for
+    // a reflection -- grey-white streaks -- and it was drawn here at a quarter strength, lit only by the
+    // lightmap: full bright on anything without one, so a truck's windscreen glowed in a dark garage and
+    // every pane looked the same by day and by night. The reflection pass now supplies the real
+    // reflection, lit by the scene, so this draw only decides how much of the room behind gets through.
+    //
+    // That is the pane's transmittance, which depends on the angle it is seen at and nothing else: what
+    // the two faces do not reflect (GlassPaneReflectance), less a little absorbed along the path through
+    // the sheet, which lengthens as the refracted ray leans (Snell, n = 1.5). Head-on that lets through
+    // about ninety per cent; at a glancing angle the pane closes into the mirror the reflection paints.
+    float3 normalW = normalize(input.worldNormal);
+    float cosine = abs(dot(normalW, normalize(input.fromEye)));
+    float sinRefracted = sqrt(saturate(1.0 - (cosine * cosine))) / 1.5;
+    float cosRefracted = sqrt(saturate(1.0 - (sinRefracted * sinRefracted)));
+    float through = (1.0 - GlassPaneReflectance(cosine)) * exp(-0.02 / max(cosRefracted, 0.05));
 
-    // The frame's fog, over the pane's own distance. Glazing is ordinary world geometry as far as the
-    // atmosphere is concerned -- a window across a courtyard has as much air in front of it as the
-    // wall it is set into, and leaving it out makes distant panes read as nearer than their own
-    // frames.
-    float fog = exp(-p.fog.w * max(input.viewDepth, 0.0));
-
-    // Transmission only, at the texture's own alpha. The reflection is added later and takes its own
-    // share of the pixel then; weighting this by a Fresnel term as well would have the two passes
-    // dividing one pixel between them by a number each had computed separately.
-    return float4(lerp(p.fog.rgb * alpha, tint * alpha, fog), alpha);
+    // Premultiplied over the scene: nothing added, the scene behind kept at the share that gets through.
+    // The scene there is already lit and fogged for its own distance, so the pane needs neither.
+    return float4(0.0, 0.0, 0.0, 1.0 - through);
 }
