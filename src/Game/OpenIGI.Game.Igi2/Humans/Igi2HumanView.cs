@@ -81,6 +81,53 @@ public sealed class Igi2HumanView
     /// <summary>Gets or sets the object field of view's scale, <c>vObjectFOV</c>.</summary>
     public float ObjectFieldOfView { get; set; } = DefaultObjectFieldOfView;
 
+    /// <summary>Gets or sets the field of view's scale a zoom steers to, <c>HumanView+0x2A4</c>.</summary>
+    public float IdealFieldOfView { get; set; }
+
+    /// <summary>Gets or sets how far the field of view's scale steps toward <see cref="IdealFieldOfView"/> a tick, <c>HumanView+0x2A8</c>.</summary>
+    public float FieldOfViewSpeed { get; set; }
+
+    /// <summary>
+    /// Steps a zoom's field of view toward its aim, the zoom half of <c>HumanView_RunHandler</c> (<c>igi2 0x4D5C50</c>),
+    /// which runs in the tick's run pass: by its speed, and no further than the aim.
+    /// </summary>
+    public void RunZoom()
+    {
+        if (!IsZoomMode)
+        {
+            return;
+        }
+
+        if (FieldOfView < IdealFieldOfView)
+        {
+            FieldOfView = (new Fpu(FieldOfViewSpeed) + FieldOfView).F;
+            if (FieldOfView > IdealFieldOfView)
+            {
+                FieldOfView = IdealFieldOfView;
+            }
+        }
+        else if (FieldOfView > IdealFieldOfView)
+        {
+            FieldOfView = (new Fpu(FieldOfView) - FieldOfViewSpeed).F;
+            if (FieldOfView < IdealFieldOfView)
+            {
+                FieldOfView = IdealFieldOfView;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Aims the zoom at a field of view's scale, at the speed that closes a third of the gap a tick
+    /// (<c>Zoom_WeaponFireHandler</c>, <c>igi2 0x525B20</c>; <c>Zoom_WeaponZoomHandler</c>, <c>0x525CC0</c>).
+    /// </summary>
+    /// <param name="ideal">The scale to steer to.</param>
+    public void AimZoom(float ideal)
+    {
+        IdealFieldOfView = ideal;
+        float speed = ((new Fpu(FieldOfView) - ideal) * 0.33333334f).F;
+        FieldOfViewSpeed = speed < 0f ? -speed : speed;
+    }
+
     /// <summary>Gets or sets the pitch the view is aimed at, <c>vIdealViewAlpha</c>, in radians, up positive.</summary>
     public float IdealPitch { get; set; }
 

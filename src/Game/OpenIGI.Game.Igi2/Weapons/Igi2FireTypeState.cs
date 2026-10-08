@@ -80,6 +80,21 @@ public readonly record struct Igi2FireResult(int BulletsFired, int Delay, float 
     public static Igi2FireResult Nothing => new(0, 0, 0f, 1f, 0f, 0f);
 }
 
+/// <summary>What a fire type is asked to zoom with, <c>WeaponZoomContext_s.tIn</c> (<c>Weapon_SingleZoomHandler</c>, <c>igi2 0x51D560</c>).</summary>
+/// <param name="Weapon">The weapon.</param>
+/// <param name="Operator">The weapon's holder, its parent.</param>
+/// <param name="ZoomIn">Whether the view narrows (<c>isInOut</c>).</param>
+/// <param name="FireTypeParameters">The fire type's parameters task.</param>
+public readonly record struct Igi2ZoomRequest(Igi2WeaponFiring Weapon, IIgi2WeaponOwner? Operator, bool ZoomIn, object FireTypeParameters);
+
+/// <summary>A fire type that answers the zoom keys, a type with a <c>Weapon_eZoomQTaskEvent</c> handler.</summary>
+public interface IIgi2ZoomHandler
+{
+    /// <summary>Steps the zoom.</summary>
+    /// <param name="request">What it zooms with.</param>
+    void Zoom(in Igi2ZoomRequest request);
+}
+
 /// <summary>One fire type's handlers: what it does when fired, <c>Weapon_eFireQTaskEvent</c>, and let go, <c>Weapon_eReleaseQTaskEvent</c>.</summary>
 public interface IIgi2FireHandler
 {

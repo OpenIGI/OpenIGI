@@ -108,10 +108,12 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
         : null;
 
     /// <inheritdoc/>
-    public bool IsZoomFireModeActive => false;
-
-    /// <inheritdoc/>
-    public bool IsZoomedModeAllowed => false;
+    /// <remarks>
+    /// <c>Human_IsZoomFireModeActive</c> (<c>igi2 0x506450</c>): the weapon's zoom is up and the weapon in hand's second
+    /// slot is a <c>Zoom</c>.
+    /// </remarks>
+    public bool IsZoomFireModeActive =>
+        _firing.OverlayStatus != Igi2WeaponOverlayStatus.None && Held is { } held && held.FireTaskType(1) == _taskTypes.Zoom;
 
     private Igi2WeaponTypeTask? Held => _inventory.Current?.WeaponType;
 
@@ -155,13 +157,19 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     public void RunDelayed() => _firing.RunDelayed();
 
     /// <inheritdoc/>
-    public void Zoom(bool zoomIn)
-    {
-    }
+    public void Zoom(bool zoomIn) => _firing.Zoom(zoomIn);
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The single-player half of <c>HumanPlayer_LeaveZoomAlternateFireMode</c> (<c>igi2 0x4BEC80</c>): a zoom that is up
+    /// on a weapon whose second slot is a <c>Zoom</c> comes down.
+    /// </remarks>
     public void LeaveZoomAlternateFireMode()
     {
+        if (IsZoomFireModeActive)
+        {
+            _firing.SetOverlayStatus(Igi2WeaponOverlayStatus.None);
+        }
     }
 
     /// <inheritdoc/>

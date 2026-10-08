@@ -199,7 +199,7 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
                 signal |= Igi2PlayerSignal.AlternateFire;
             }
 
-            if (Weapon.ActiveIsZoom && !Weapon.IsZoomedModeAllowed)
+            if (Weapon.ActiveIsZoom && !IsZoomedModeAllowed)
             {
                 channels[Igi2HumanChannel.AlternateFire] = 0f;
             }

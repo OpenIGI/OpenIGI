@@ -81,6 +81,17 @@ public interface IIgi2WeaponEffects
 
     /// <summary>Plays the sequence on (<c>Weapon_MaintainSoundSequence</c>, <c>igi2 0x51F6B0</c>), once a tick.</summary>
     void MaintainSoundSequence();
+
+    /// <summary>Puts up a zoom's overlay, the task of its <c>Overlay QTaskType</c> the weapon keeps (<c>Weapon+0xA4</c>).</summary>
+    /// <param name="zoom">The zoom, whose overlay type and parameters make the overlay.</param>
+    void ShowOverlay(Igi2ZoomTask zoom);
+
+    /// <summary>Takes the weapon's overlay down, if it has one.</summary>
+    void RemoveOverlay();
+
+    /// <summary>Makes a sound under the holder's view, at the view (<c>SoundSys_NewSoundFn</c>, <c>SoundSys_SetSoundPosition</c>).</summary>
+    /// <param name="sound">The sound definition's name.</param>
+    void PlayViewSound(string sound);
 }
 
 /// <summary>Effects that show nothing and sound nothing.</summary>
@@ -126,6 +137,21 @@ public sealed class Igi2NoWeaponEffects : IIgi2WeaponEffects
 
     /// <inheritdoc/>
     public void MaintainSoundSequence()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ShowOverlay(Igi2ZoomTask zoom)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void RemoveOverlay()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void PlayViewSound(string sound)
     {
     }
 }

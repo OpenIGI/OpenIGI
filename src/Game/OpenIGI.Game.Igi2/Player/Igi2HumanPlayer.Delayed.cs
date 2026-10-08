@@ -1,3 +1,5 @@
+using OpenIGI.Game.Igi2.Humans;
+
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <content>What the player settles once everything else has run in a tick.</content>
@@ -20,6 +22,27 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Gets or sets how fast the weapon's precision settles, <c>vCrossHairDamping</c>; one when the player is made.</summary>
     public float CrossHairDamping { get; set; } = 1f;
+
+    /// <summary>
+    /// Gets a value indicating whether the player may zoom now, <c>HumanPlayer_IsZoomedModeAllowed</c> (<c>igi2 0x4B8890</c>):
+    /// standing, crouching, lying or in one of the other still or slow postures retail lists, or in posture <c>0x50</c> with
+    /// no move key held; and idle, starting, firing or letting go a shot, or firing empty.
+    /// </summary>
+    public bool IsZoomedModeAllowed
+    {
+        get
+        {
+            bool posture = Locomotion.CurrentState switch
+            {
+                0 or 1 or (>= 0xB and <= 0x12) or 0x17 or 0x18 or (>= 0x1A and <= 0x21) or 0x4B => true,
+                0x50 => Channels[Igi2HumanChannel.MoveLeft] == 0f && Channels[Igi2HumanChannel.MoveRight] == 0f
+                    && Channels[Igi2HumanChannel.MoveForwards] == 0f && Channels[Igi2HumanChannel.MoveBackwards] == 0f,
+                _ => false,
+            };
+            int action = Action.CurrentState;
+            return posture && action > 0 && (action <= Igi2PlayerActionState.FireRelease || action == Igi2PlayerActionState.FireEmpty);
+        }
+    }
 
     /// <summary>Gets the health the mission score shows, <c>tMissionScoreData.nHealth</c>: the percentage left, 0 to 100.</summary>
     public int MissionHealth { get; private set; } = 100;
@@ -51,7 +74,7 @@ public sealed partial class Igi2HumanPlayer
         ActualModifiedPrecision = ((((Fpu)IdealModifiedPrecision - ActualModifiedPrecision) * PrecisionSettling) + ActualModifiedPrecision).F;
         ActualWeaponPrecision = ((((Fpu)IdealWeaponPrecision - ActualWeaponPrecision) * CrossHairDamping) + ActualWeaponPrecision).F;
 
-        if (!Weapon.IsZoomedModeAllowed)
+        if (!IsZoomedModeAllowed)
         {
             Weapon.LeaveZoomAlternateFireMode();
         }

@@ -194,6 +194,18 @@ public sealed partial class Igi2GunTask : GameTask
 /// </remarks>
 public sealed partial class Igi2ZoomTask : GameTask
 {
+    /// <summary>
+    /// Gets the scale of the narrowest view the zoom reaches, <c>Zoom+0x28</c>: the tangent of half its
+    /// <c>Minimum FOV</c> (<c>Zoom_UpdateInternalDataHandler</c>, <c>igi2 0x525A40</c>).
+    /// </summary>
+    public float MinimumFieldOfViewScale => HalfTangent(MinimumFOV);
+
+    /// <summary>Gets the scale of the widest view the zoom reaches, the one it starts at, <c>Zoom+0x2C</c>: the tangent of half its <c>Maximum FOV</c>.</summary>
+    public float MaximumFieldOfViewScale => HalfTangent(MaximumFOV);
+
+    /// <summary>The tangent of half an angle in degrees, at the FPU's precision: <c>(a × 0.5) × 0.017453292</c> through <c>fptan</c>.</summary>
+    private static float HalfTangent(float degrees) => new Fpu(Math.Tan(((new Fpu(degrees) * 0.5f) * 0.017453292f).Value)).F;
+
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "Zoom";
 

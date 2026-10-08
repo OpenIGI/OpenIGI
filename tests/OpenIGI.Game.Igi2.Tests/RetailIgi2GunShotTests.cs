@@ -251,6 +251,8 @@ public sealed class RetailIgi2GunShotTests
     {
         public int Ticks => 0;
 
+        public Humans.Igi2HumanView? ZoomView => null;
+
         public IgiRandom Random { get; } = random;
 
         public bool IsPlayer => true;

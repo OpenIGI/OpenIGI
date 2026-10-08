@@ -66,9 +66,6 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Gets a value indicating whether the held weapon is in its zoomed fire mode (<c>Human_IsZoomFireModeActive</c>).</summary>
     bool IsZoomFireModeActive { get; }
 
-    /// <summary>Gets a value indicating whether zooming is allowed now (<c>HumanPlayer_IsZoomedModeAllowed</c>).</summary>
-    bool IsZoomedModeAllowed { get; }
-
     /// <summary>Clears the held weapon's delay between shots, <c>nDelay</c> (<c>Weapon+0x48</c>).</summary>
     void ClearDelay();
 
@@ -124,9 +121,6 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public bool IsZoomFireModeActive => false;
-
-    /// <inheritdoc/>
-    public bool IsZoomedModeAllowed => false;
 
     /// <inheritdoc/>
     public void Fire(int fireType)

@@ -127,6 +127,55 @@ public sealed class Igi2WeaponFiring
         }
     }
 
+    /// <summary>Gets whether the weapon's zoom is up, and with an overlay, <c>Weapon+0xA0</c>.</summary>
+    public Igi2WeaponOverlayStatus OverlayStatus { get; private set; }
+
+    /// <summary>
+    /// Sets the weapon's overlay status, <c>Weapon_SetOverlayStatus</c> (<c>igi2 0x51F1C0</c>): taking it down takes the
+    /// holder's zoom off and the weapon's overlay with it.
+    /// </summary>
+    /// <param name="status">The status.</param>
+    public void SetOverlayStatus(Igi2WeaponOverlayStatus status)
+    {
+        if (status == Igi2WeaponOverlayStatus.None)
+        {
+            Owner?.ZoomView?.DisableZoomMode();
+            Effects.RemoveOverlay();
+        }
+
+        OverlayStatus = status;
+    }
+
+    /// <summary>
+    /// Marks the weapon's zoom up without touching the view or the overlay, as <c>Zoom_WeaponFireHandler</c> writes it
+    /// (<c>igi2 0x525C23</c>, <c>0x525C32</c>).
+    /// </summary>
+    /// <param name="status">The status.</param>
+    internal void MarkOverlayStatus(Igi2WeaponOverlayStatus status) => OverlayStatus = status;
+
+    /// <summary>
+    /// Steps the zoom of the weapon in hand, <c>Weapon_Zoom</c> (<c>igi2 0x51E140</c>) as the single-player game sends it
+    /// to <c>Weapon_SingleZoomHandler</c> (<c>0x51D560</c>): each fire type, primary first, that answers the zoom keys.
+    /// </summary>
+    /// <param name="zoomIn">Whether the view narrows.</param>
+    public void Zoom(bool zoomIn)
+    {
+        if (_inventory.Current is not { } item)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
+        {
+            if (item.WeaponType.FireTaskType(slot) != Igi2WeaponConstants.NoTaskType
+                && item.WeaponType.FireType(slot) is { } parameters
+                && _handlers(parameters) is IIgi2ZoomHandler handler)
+            {
+                handler.Zoom(new Igi2ZoomRequest(this, Owner, zoomIn, parameters));
+            }
+        }
+    }
+
     /// <summary>Gets one fire type's trigger, <c>atFireTypeData[slot]</c>.</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
     /// <returns>The trigger.</returns>

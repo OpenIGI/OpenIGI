@@ -214,8 +214,6 @@ internal static class Igi2PlayerFakes
 
         public bool IsZoomFireModeActive => false;
 
-        public bool IsZoomedModeAllowed => true;
-
         public void Fire(int fireType) => Calls.Add("Fire");
 
         public void ClearDelay() => Calls.Add("ClearDelay");

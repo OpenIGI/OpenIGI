@@ -18,6 +18,9 @@ public interface IIgi2WeaponOwner
     /// <summary>Gets the game's tick count, <c>Flow_ptFlow-&gt;nTicks</c>.</summary>
     int Ticks { get; }
 
+    /// <summary>Gets the view a zoom narrows, <c>Human+0x540</c>; <see langword="null"/> for a holder that is not a human.</summary>
+    Humans.Igi2HumanView? ZoomView { get; }
+
     /// <summary>Gets the game's run random stream, <c>Game.tRunRandomState</c>.</summary>
     IgiRandom Random { get; }
 

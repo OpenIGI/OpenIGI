@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Igi2.Animation;
+using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
@@ -285,6 +286,51 @@ public sealed class RetailIgi2FiringTests
         Assert.Empty(effects.Sounds);
     }
 
+    /// <summary>
+    /// Fired, the binoculars' zoom (<c>Zoom_WeaponFireHandler</c>) puts the view into zoom mode with its overlay and
+    /// steers it to the zoom's widest scale a third of the gap a tick; the zoom keys step the aim by the zoom's factor,
+    /// within its scales, sounding at the view; fired again, the zoom comes off and the view is back to its default.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_binoculars_zoom_the_view_in_and_out()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, RecordingEffects effects) = ArmedPlayer();
+        Igi2WeaponItem binoculars = weapons.Inventory.Weapons.Single(static w => w.WeaponType.WeaponId == "WEAPON_ID_BINOCULARS");
+        Assert.True(weapons.Inventory.Activate(binoculars));
+        Igi2ZoomTask zoom = (Igi2ZoomTask)binoculars.WeaponType.FireType(0)!;
+        Igi2HumanView view = player.View;
+
+        weapons.Firing.Fire(0);
+
+        Assert.True(view.IsZoomMode);
+        Assert.Equal(Igi2WeaponOverlayStatus.WithOverlay, weapons.Firing.OverlayStatus);
+        Assert.Equal([$"overlay:{zoom.OverlayQTaskType}"], effects.Sounds);
+        Assert.Equal(zoom.MaximumFieldOfViewScale, view.IdealFieldOfView);
+        float speed = ((new Fpu(Igi2HumanView.DefaultFieldOfView) - zoom.MaximumFieldOfViewScale) * 0.33333334f).F;
+        Assert.Equal(Math.Abs(speed), view.FieldOfViewSpeed);
+        for (int tick = 0; tick < 4; tick++)
+        {
+            view.RunZoom();
+        }
+
+        Assert.Equal(zoom.MaximumFieldOfViewScale, view.FieldOfView);
+
+        weapons.Firing.Zoom(zoomIn: true);
+        Assert.Equal((new Fpu(zoom.MaximumFieldOfViewScale) / zoom.ZoomStepFactor).F, view.IdealFieldOfView);
+        Assert.Equal($"view:{zoom.Sound}", effects.Sounds[^1]);
+        weapons.Firing.Zoom(zoomIn: false);
+        weapons.Firing.Zoom(zoomIn: false);
+        Assert.Equal(zoom.MaximumFieldOfViewScale, view.IdealFieldOfView);
+
+        weapons.Firing.UpdateStatus();
+        weapons.Firing.Fire(0);
+
+        Assert.False(view.IsZoomMode);
+        Assert.Equal(Igi2WeaponOverlayStatus.None, weapons.Firing.OverlayStatus);
+        Assert.Equal(Igi2HumanView.DefaultFieldOfView, view.FieldOfView);
+        Assert.Equal("overlay:off", effects.Sounds[^1]);
+    }
+
     /// <summary>The three angles of an orientation give it back (<c>Real32x9_GetAngles</c> against <c>Real32x9_Create</c>).</summary>
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()
@@ -372,6 +418,12 @@ public sealed class RetailIgi2FiringTests
         public void MaintainSoundSequence()
         {
         }
+
+        public void ShowOverlay(Igi2ZoomTask zoom) => Sounds.Add($"overlay:{zoom.OverlayQTaskType}");
+
+        public void RemoveOverlay() => Sounds.Add("overlay:off");
+
+        public void PlayViewSound(string sound) => Sounds.Add($"view:{sound}");
     }
 
     private sealed record Mission1Setup(Igi2Level Level, Igi2HumanPlayerTask Task, Igi2AnimationLibrary Library, Igi2Session Session);

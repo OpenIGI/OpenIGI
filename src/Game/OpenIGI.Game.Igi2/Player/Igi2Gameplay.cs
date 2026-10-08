@@ -306,6 +306,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson
             weapons.RunGunShot(shots);
         }
 
+        Human.View.RunZoom();
+
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();

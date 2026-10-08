@@ -34,6 +34,9 @@ public abstract partial class Igi2Human : IIgi2WeaponOwner
     public bool IsZoomMode => View.IsZoomMode;
 
     /// <inheritdoc/>
+    public Igi2HumanView? ZoomView => View;
+
+    /// <inheritdoc/>
     public abstract bool HasFireFrame { get; }
 
     /// <inheritdoc/>
