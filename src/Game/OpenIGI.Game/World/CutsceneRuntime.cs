@@ -2360,7 +2360,7 @@ public sealed class CutsceneRuntime
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(parent);
 
-        if (!IsVehicle(parent)
+        if (!(IsVehicle(parent) || CinematicActor.IsMovingPlatform(parent))
             || !_taskTransforms.TryGetValue(parent, out TransformState? parentTransform))
         {
             return false;
@@ -2383,7 +2383,39 @@ public sealed class CutsceneRuntime
             state.Orientation = orientation;
         }
 
-        return CaptureAttachment(task, state, parent, parentTransform);
+        // A Human ahead of its car in the tree runs its ground pass before the car moves, so it is parented to
+        // the car where it stood: mission 12's gondola rider is attached (0x463310) against the station frame,
+        // a degree round, before the car's first step turns it to the cable's two -- and so he turns with it.
+        // The host has already stepped the lifts by now, so that is the pose before this tick's step.
+        bool beforeCar = string.Equals(parent.Type.Name, "Elevator", StringComparison.Ordinal)
+            && _taskOrder.TryGetValue(task, out int humanOrder)
+            && humanOrder < parentTransform.LastSimulationOrder;
+        return CaptureAttachment(task, state, parent, parentTransform, beforeCar);
+    }
+
+    /// <summary>Holds a platform this runtime does not move -- an <c>Elevator</c> -- where its own registry put it.</summary>
+    /// <param name="platform">The platform task.</param>
+    /// <param name="position">Where it is, in engine units.</param>
+    /// <param name="orientation">How it is turned.</param>
+    /// <remarks>
+    /// A staged Human standing in a car is parented to it like one standing on a train (<c>Human_SetParent</c>,
+    /// <c>0x463310</c>, from the ground pass): mission 12's intro sets a soldier in the cutscene gondola at load
+    /// and the original carries him up the cable with it. The car's own mover is the elevator registry's, so its
+    /// pose is handed in here each tick, last tick's kept as the previous one, for the attachment to read.
+    /// </remarks>
+    public void SetPlatformPose(GameTask platform, Vector3d position, Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(platform);
+        int order = _taskOrder.TryGetValue(platform, out int placed) ? placed : int.MaxValue;
+        if (!_taskTransforms.TryGetValue(platform, out TransformState? state))
+        {
+            Remember(platform, new TransformState(position, orientation) { LastSimulationOrder = order });
+            return;
+        }
+
+        SnapshotDynamicPose(state, order);
+        state.Position = position;
+        state.Orientation = orientation;
     }
 
     /// <summary>Reads the moving parent a cinematic Human is currently attached to, if any.</summary>
@@ -2897,15 +2929,16 @@ public sealed class CutsceneRuntime
         GameTask task,
         TransformState state,
         GameTask parent,
-        TransformState parentTransform)
+        TransformState parentTransform,
+        bool beforeParentStep = false)
     {
         UpdateDerivedPose(parentTransform);
         AttachmentState attachment = new(
             parent,
             parentTransform,
-            DynamicRevision(parentTransform),
-            parentTransform.Position,
-            parentTransform.Orientation,
+            DynamicRevision(parentTransform) - (beforeParentStep ? 1 : 0),
+            beforeParentStep ? parentTransform.PreviousPosition : parentTransform.Position,
+            beforeParentStep ? parentTransform.PreviousOrientation : parentTransform.Orientation,
             state.Position,
             state.Orientation);
         _attachments[task] = attachment;

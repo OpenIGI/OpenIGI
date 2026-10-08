@@ -3058,11 +3058,21 @@ internal sealed partial class GameHost : IDisposable
                 // the player they carry; they do not yet update at their own place in the tree.
                 if (_elevators is { } elevators)
                 {
-                    // Feed the player's current position to the elevators so their start gate can refuse
-                    // to move an empty car or one with an open door. Provider is read every tick.
+                    // The player's position is for carrying a passenger, not for starting a car: the original
+                    // starts one on its own script alone.
                     elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
                     elevators.Tick();
                     UpdateElevatorSoundPositions();
+
+                    // A staged soldier standing in a car rides it through the cutscene runtime's attachments,
+                    // so the runtime is told where every car now is.
+                    if (_cutscenes is { } platformRuntime)
+                    {
+                        foreach (PlacedElevator lift in elevators.Elevators)
+                        {
+                            platformRuntime.SetPlatformPose(lift.Task, lift.State.Position, lift.Orientation);
+                        }
+                    }
                     if (_worldSolids is { } elevatorSolids)
                     {
                         elevators.ApplyCollision(elevatorSolids);
