@@ -290,6 +290,75 @@ public sealed class RetailElevatorTests
         Assert.Equal(2, elevator.State.CurrentFloorIndex);
     }
 
+    /// <summary>
+    /// Mission 12's cutscene gondola rides side-on: its authored 271 degrees turned by its cable's 91 -- the
+    /// matrix the retail game draws it with.
+    /// </summary>
+    /// <remarks>
+    /// Elevator 1667 is neither <c>Linear</c> nor <c>Force orientation</c>, so <c>0x43D960</c> walks it along
+    /// SplineObj 1666 and draws it with its authored orientation (<c>+288</c>) times the spline's frame, a turn
+    /// about Z to the cable's heading on a <c>Linear Segments</c> spline. The expected matrix is the retail
+    /// game's own, read by the probe's <c>elevator</c> hook set at <c>0x43D8C0</c> on every tick of the ride.
+    /// The port drew the authored 271 degrees, a quarter turn out: issue 220's cable car lying across the shot.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void Mission12CutsceneGondolaTakesItsCableHeading()
+    {
+        (LevelTask root, ScriptVarRegistry variables, _) = Load(12);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        PlacedElevator gondola = Assert.Single(elevators.Elevators, item => item.Task.Id == 1667);
+        Assert.NotNull(gondola.SplineFrame);
+
+        // Its "Floor up" is the constant 1: it leaves the bottom station on the first tick.
+        for (int tick = 0; tick < 30; tick++)
+        {
+            elevators.Tick();
+        }
+
+        Assert.True(gondola.State.FloorPosition > 0.0, "the gondola never left its first waypoint");
+        Matrix3f drawn = gondola.Orientation;
+        Matrix3f retail = new(
+            0.999301f, -0.037361f, 0f,
+            0.037361f, 0.999301f, 0f,
+            0f, 0f, 1f);
+        AssertMatrix(retail, drawn, 1e-4f);
+    }
+
+    /// <summary>Every other Elevator keeps its authored orientation, as every lift in the game is drawn.</summary>
+    /// <remarks>
+    /// Only an unforced, non-<c>Linear</c> car takes a spline frame. Of those, mission 14's 1706 rides a vertical
+    /// spline whose chord has no X, which <c>0x4B2D00</c> gives heading nought: its frame is the identity.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void EveryOtherElevatorKeepsItsAuthoredOrientation()
+    {
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (LevelTask root, ScriptVarRegistry variables, _) = Load(missionId);
+            foreach (PlacedElevator elevator in ElevatorRegistry.Build(root, variables).Elevators)
+            {
+                if (missionId == 12 && elevator.Task.Id == 1667)
+                {
+                    continue;
+                }
+
+                AssertMatrix(elevator.AuthoredOrientation, elevator.Orientation, 1e-6f);
+            }
+        }
+    }
+
+    private static void AssertMatrix(Matrix3f expected, Matrix3f actual, float tolerance)
+    {
+        float[] e = [expected.M11, expected.M12, expected.M13, expected.M21, expected.M22, expected.M23, expected.M31, expected.M32, expected.M33];
+        float[] a = [actual.M11, actual.M12, actual.M13, actual.M21, actual.M22, actual.M23, actual.M31, actual.M32, actual.M33];
+        for (int i = 0; i < 9; i++)
+        {
+            Assert.True(
+                MathF.Abs(e[i] - a[i]) <= tolerance,
+                $"element {i}: expected {e[i]:F6}, got {a[i]:F6} (expected {expected}, got {actual})");
+        }
+    }
+
     private static IEnumerable<GameTask> Descendants(GameTask task)
     {
         foreach (GameTask child in task.Children)
