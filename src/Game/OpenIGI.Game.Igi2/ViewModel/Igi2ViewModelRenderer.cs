@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -15,8 +16,9 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 /// <para>
 /// The view is a boned object drawn after the world under its own projection (<c>HumanView_EnterHandler</c>,
 /// <c>igi2 0x4D5DB0</c>, and <c>vObjectFOV</c>, <c>tan 30°</c>). Its model is skinned (<c>arms1_1</c> in the first
-/// mission, a mesh of format 1), so its vertices are pushed through the posed bones whenever the pose moves; the
-/// skin is built in the model's own frame and the model's position and orientation are applied in the draw.
+/// mission, a mesh of format 1), so its vertices are pushed through the posed bones whenever the pose moves, as the
+/// sequel's renderer weighs them (<see cref="Igi2BoneSkin"/>); the skin is built in the model's own frame and the
+/// model's position and orientation are applied in the draw.
 /// </para>
 /// <para>
 /// The weapon in hand is not part of that model: each weapon's first-person clips carry an attach object named
@@ -167,9 +169,10 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
             return null;
         }
 
-        if (skinned && !MefSkinner.IsSkinned(model))
+        Igi2BoneSkin? skin = null;
+        if (skinned && (skin = Igi2BoneSkin.Create(model)) is null)
         {
-            _logger.Warning(LogCategory, $"'{name}' is {model.Format}, not a skinned model.");
+            _logger.Warning(LogCategory, $"'{name}' is {model.Format}, not a boned model its hierarchy covers.");
             return null;
         }
 
@@ -198,14 +201,14 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
         Vertex3D[] vertices = [.. geometry.Vertices];
         MeshHandle mesh = skinned ? MeshHandle.None : _device.CreateMesh(vertices, geometry.Indices);
         _logger.Information(LogCategory, $"First-person part '{name}': {model.Format}, {subsets.Count} subset(s).");
-        return new Part(model, geometry, vertices, mesh, [.. subsets]);
+        return new Part(skin, geometry, vertices, mesh, [.. subsets]);
     }
 
     private bool Reskin(Part part, TitleViewModelPart wanted)
     {
         try
         {
-            MefSkinner.Skin(part.Model, wanted.Pose!, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
+            part.Skin!.Skin(wanted.Pose!, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
             if (part.Mesh.IsValid)
             {
                 _device.UpdateAnimatedMesh(part.Mesh, part.Vertices);
@@ -241,9 +244,9 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter
         _models = null;
     }
 
-    private sealed class Part(MefModel model, MeshGeometry geometry, Vertex3D[] vertices, MeshHandle mesh, (MeshSubset Subset, TextureHandle Texture)[] subsets)
+    private sealed class Part(Igi2BoneSkin? skin, MeshGeometry geometry, Vertex3D[] vertices, MeshHandle mesh, (MeshSubset Subset, TextureHandle Texture)[] subsets)
     {
-        public MefModel Model { get; } = model;
+        public Igi2BoneSkin? Skin { get; } = skin;
 
         public MeshGeometry Geometry { get; } = geometry;
 

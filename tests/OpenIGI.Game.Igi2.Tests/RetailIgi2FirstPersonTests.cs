@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Player;
@@ -70,6 +71,49 @@ public sealed class RetailIgi2FirstPersonTests
         AssertNear(new Vector3f(0f, 0f, 1f), gun.Column3);
     }
 
+    /// <summary>
+    /// Posed at its bind pose, the arms' skin gives back the rest shape the load built: every slot measures its
+    /// vertex from its own bone's bind position, and the weights sum to one.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_arms_at_their_bind_pose_keep_their_rest_shape()
+    {
+        MefModel arms = Mission1.Value.Level.ModelFor("arms1_1")!;
+        Igi2BoneSkin skin = Igi2BoneSkin.Create(arms)!;
+        Quaternion32[] still = [.. Enumerable.Repeat(new Quaternion32(0f, 0f, 0f, 1f), skin.BoneCount)];
+        BonePose bind = BonePose.Evaluate(arms.BoneHierarchy!.CreateSkeleton(), still, skin.BindPositions[0]);
+
+        Vertex3D[] posed = new Vertex3D[skin.VertexCount];
+        skin.Skin(bind, 1f, posed);
+
+        for (int i = 0; i < posed.Length; i++)
+        {
+            AssertNear(skin.RestPositions[i], posed[i].Position, 0.01f);
+        }
+    }
+
+    /// <summary>
+    /// <c>arms1_1</c>'s third base vertex is on bone 1 at a weight of 0.990052 with one extra influence: the load
+    /// keeps that weight as the byte 252 (<c>(u8)(i64)(w × 255.0)</c>) and adds the extra's bone as a second slot, which
+    /// takes what is left of one.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void An_extra_influence_becomes_a_second_slot_of_its_vertex()
+    {
+        MefModel arms = Mission1.Value.Level.ModelFor("arms1_1")!;
+        Igi2BoneSkin skin = Igi2BoneSkin.Create(arms)!;
+        Span<int> bones = stackalloc int[Igi2BoneSkin.MaximumInfluences];
+        Span<byte> weights = stackalloc byte[Igi2BoneSkin.MaximumInfluences];
+
+        Assert.Equal(1, skin.Influences(0, bones, weights));
+        Assert.Equal(3, bones[0]);
+        Assert.Equal(2, skin.Influences(2, bones, weights));
+        Assert.Equal(1, bones[0]);
+        Assert.Equal(252, weights[0]);
+        Assert.Equal(2, skin.Influences(7, bones, weights));
+        Assert.Equal(127, weights[0]);
+    }
+
     /// <summary>After a change to the Glock, the hand holds the Glock's fixed model, <c>139_01_1</c>.</summary>
     [RequiresTitleDataFact("igi2")]
     public void The_hand_follows_the_weapon_changed_to()
@@ -125,8 +169,9 @@ public sealed class RetailIgi2FirstPersonTests
 
     private static Vector3f SkinnedMean(MefModel model, TitleViewModelPart part)
     {
-        Vertex3D[] skinned = [.. MefMeshBuilder.Build(model, 1f)!.Vertices];
-        int count = MefSkinner.Skin(model, part.Pose!, 1f, skinned);
+        Igi2BoneSkin skin = Igi2BoneSkin.Create(model)!;
+        Vertex3D[] skinned = new Vertex3D[skin.VertexCount];
+        int count = skin.Skin(part.Pose!, 1f, skinned);
         double x = 0, y = 0, z = 0;
         for (int i = 0; i < count; i++)
         {
