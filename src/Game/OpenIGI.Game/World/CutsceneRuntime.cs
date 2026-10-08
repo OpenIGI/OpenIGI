@@ -1500,6 +1500,11 @@ public sealed class CutsceneRuntime
                 scene.IsFinished = true;
             }
 
+            // The camera this tick is set from the tick the scene is ON, not the one it moves to: retail's first
+            // running tick submits time nought (0x4F51D0 -> 0x4F55D0, probed on mission 12), the same level tick
+            // the gondola makes its first move in. Built from the incremented count, the port's camera ran a tick
+            // ahead of everything else in the level.
+            state.FrameTicks = scene.Ticks;
             int delta = string.IsNullOrWhiteSpace(scene.TimeDelta)
                 ? 1
                 : (int)(_expressions.EvaluateSingle(scene.TimeDelta, owner: scene) * Frequency);
@@ -2640,7 +2645,7 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        CutsceneFrame? frame = BuildFrame(state, state.Task.Ticks / (double)Frequency);
+        CutsceneFrame? frame = BuildFrame(state, (state.FrameTicks ?? state.Task.Ticks) / (double)Frequency);
         Frame = frame is null
             ? null
             : frame with { BinocularOverlayVisible = IsBinocularOverlayVisible() };
@@ -4735,6 +4740,10 @@ public sealed class CutsceneRuntime
         public CutSceneTask Task { get; } = task;
         public List<EditCameraShot> Shots { get; } = shots;
         public int LastShotIndex { get; set; } = -1;
+
+        /// <summary>The tick this tick's frame is set from -- the count before its increment; null before the first.</summary>
+        public int? FrameTicks { get; set; }
+
         public Vector3d? LinkedPosition { get; set; }
         public Matrix3f? LinkedOrientation { get; set; }
         public Matrix3f? TargetOrientation { get; set; }
