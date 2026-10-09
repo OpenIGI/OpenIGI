@@ -653,31 +653,25 @@ internal sealed partial class GameHost
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
-        // later. Instead take the exact path Escape takes in retail. The objective flow observes the
-        // break key, closes the intro container, and the cutscene tick applies that transition before
-        // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
-        if (!_options.PlayCutscenes && _cutscenes.IsPlaying)
+        // later. Instead take the exact path Escape takes in retail: the break key is down when the level's
+        // first tick walks, and that walk -- tick 0, not a walk of its own before it -- is where the objective
+        // flow reads it and closes the intro. A pre-walk here had set the skip variable a tick early: mission 4's
+        // LevelTimer_760 (Run "CutScene_1000.isFinished || EditVariable_4000.nValue") counted from tick 0 where
+        // retail's, which reads the variable before the walk sets it, counts from tick 1 -- and the squad that
+        // timer releases, and everything it met, ran a tick ahead. The intro still runs through the ticks that
+        // close it, as retail's does (two on mission 4); what it would show and sound in them is held back
+        // (CutsceneFrameShown) until it stops.
+        // OPENIGI_BREAK_CUTSCENE=1 takes the same edge, for a lockstep run that should skip without a key.
+        if (_cutscenes.IsPlaying
+            && (!_options.PlayCutscenes
+                || string.Equals(
+                    Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
+                    "1",
+                    StringComparison.Ordinal)))
         {
             _cutscenes.RequestBreak();
-            _missionObjectives.TickLevelState();
-            _cutscenes.Tick();
-            _cutscenes.FinishExpressionTick();
             StopCutsceneSounds();
-        }
-
-        // Same native edge as Escape (LevelFlow_GetBreakCutSceneKey). Used by the
-        // agent playtest so lockstep/-frames can skip the intro without a HITL key.
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
-                "1",
-                StringComparison.Ordinal)
-            && _cutscenes.IsPlaying)
-        {
-            _cutscenes.RequestBreak();
-            _missionObjectives.TickLevelState();
-            _cutscenes.Tick();
-            _cutscenes.FinishExpressionTick();
-            StopCutsceneSounds();
+            _introSkipPending = true;
         }
 
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than

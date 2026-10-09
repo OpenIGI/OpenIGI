@@ -652,6 +652,13 @@ internal sealed partial class GameHost : IDisposable
     private bool _soldiersInWalk;
     private bool _playerInWalk;
     private bool _playerTicked;
+
+    // An intro skipped at load (no cinematics, or OPENIGI_BREAK_CUTSCENE) still plays through the ticks whose walk
+    // reads the break and closes it; until it has stopped, nothing of it is drawn or heard.
+    private bool _introSkipPending;
+
+    /// <summary>Gets the cutscene frame to present: none while a skipped intro is still closing.</summary>
+    private CutsceneFrame? CutsceneFrameShown => _introSkipPending ? null : _cutscenes?.Frame;
     private bool _interactionsTickedByPlayer;
     private Func<SoldierEnemy>? _soldierEnemy;
 
@@ -3416,6 +3423,12 @@ internal sealed partial class GameHost : IDisposable
                         QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
                 }
                 _cutscenes?.FinishExpressionTick();
+                if (_introSkipPending)
+                {
+                    StopCutsceneSounds();
+                    _missionObjectives?.ClearCutsceneMessages();
+                    _introSkipPending = _cutscenes?.IsPlaying == true;
+                }
 
                 // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
                 // is a counter, and the renderer turns the transform from it when it draws.
@@ -3983,7 +3996,7 @@ internal sealed partial class GameHost : IDisposable
                 // has no other way to know the lens the frame was actually drawn with.
                 _inspectorTangent = horizontalTangent;
                 _inspectorAspect = aspectRatio;
-                if (_cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
+                if (CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
                 {
                     // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
                     // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
@@ -4357,7 +4370,7 @@ internal sealed partial class GameHost : IDisposable
                 {
                     eye = _entry.Camera;
                 }
-                else if (_cutscenes?.Frame is { } cutsceneView)
+                else if (CutsceneFrameShown is { } cutsceneView)
                 {
                     eye = cutsceneView.Camera;
                 }
@@ -6405,7 +6418,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     batch.End();
                 }
 
-                if (_cutscenes?.Frame is { } cinematicFraming)
+                if (CutsceneFrameShown is { } cinematicFraming)
                 {
                     DrawCutsceneFraming(batch, cinematicFraming);
                 }
