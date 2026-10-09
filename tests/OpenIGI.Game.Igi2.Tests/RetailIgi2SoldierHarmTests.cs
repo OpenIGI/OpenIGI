@@ -214,6 +214,58 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.Equal(root, body.RootTranslation);
     }
 
+    /// <summary>
+    /// A dying soldier drops the weapon in its hand (<c>HumanSoldier_CreateGunPickups</c>, <c>igi2 0x4E8360</c>): a Makarov with nine
+    /// tenths of a clip at normal difficulty, thrown short from its hand along its heading, which falls, lands with a sound and comes to
+    /// rest 122.88 above the ground on its side (<c>GunPickup_RunHandler</c>, <c>0x46A760</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dying_soldier_drops_its_weapon_which_falls_and_lands()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
+        Igi2HumanWeapons armoury = m.Services!.Require<Igi2HumanWeapons>();
+        Pickups.Igi2PickupList pickups = Pickups.Igi2PickupList.Build(m.Tree[0], armoury.Tables, m.Level.ModelFor, m.Collision!, m.Materials);
+        List<string> sounds = [];
+        pickups.Collision = m.Collision;
+        pickups.Random = new IgiRandom();
+        pickups.PlaySound = (name, _) => sounds.Add(name);
+        int placed = pickups.Items.Count;
+        Igi2Gameplay.SpawnSoldiers(
+            m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
+            Game.Ai.AiDifficulty.Normal, pickups);
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2WeaponTypeTask makarov = body.Weapon.Inventory!.Current!.WeaponType;
+
+        body.WeaponHit(Hit(body, Shoot(m.Collision!, body, height: 4096.0, includes: null)!, 100f));
+        body.RunDelayed();
+
+        Pickups.Igi2GunPickup drop = Assert.Single(pickups.Items.Skip(placed));
+        Assert.Same(makarov, drop.WeaponType);
+        int clip = makarov.AmmoInfo(0, armoury.Tables).RoundsPerClip;
+        Assert.Equal(Math.Max(1, (int)(clip * BitConverter.Int32BitsToSingle(0x3F666666))), drop.AmmoInClip);
+        Assert.True(drop.IsMoving);
+        Assert.InRange((drop.Position - body.Position).Length, 0.0, 12288.0);
+
+        for (int tick = 0; tick < 120 && drop.IsMoving; tick++)
+        {
+            pickups.Run();
+        }
+
+        Assert.False(drop.IsMoving);
+        Assert.True(drop.IsLanded);
+        Assert.Single(sounds);
+        Assert.StartsWith("weapondrop_0", sounds[0], StringComparison.Ordinal);
+        Igi2LineTrace ground = new(1);
+        ground.Starts[0] = drop.Position;
+        ground.Ends[0] = new Vector3d(drop.Position.X, drop.Position.Y, drop.Position.Z - 8192.0);
+        m.Collision!.TraceLines(ground, Igi2CollisionWorld.TerrainGroup);
+        Assert.True(ground.Intersections[0].IsHit);
+        Assert.Equal(122.88, drop.Position.Z - ground.Intersections[0].Position.Z, 0.05);
+    }
+
     private static Igi2WeaponHit At(Igi2HumanSoldier body, int bone, Vector3d position, Vector3f shot) =>
         new(new Igi2Intersection { Sector = bone, Position = position, IsHit = true }, 0.01f, shot, null, body.Weapon.Inventory!.Current!.WeaponType, null);
 

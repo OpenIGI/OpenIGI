@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
@@ -45,6 +46,23 @@ public sealed class Igi2PickupList
     /// <summary>Gets the session's materials.</summary>
     public Igi2GameMaterials Materials { get; }
 
+    /// <summary>Gets or sets the level a falling pickup's lines meet, or <see langword="null"/> while nothing falls.</summary>
+    public IIgi2CollisionQuery? Collision { get; set; }
+
+    /// <summary>Gets or sets the run stream a falling pickup's drop sound draws from.</summary>
+    public IgiRandom? Random { get; set; }
+
+    /// <summary>Gets or sets what plays a sound at a point.</summary>
+    public Action<string, Vector3d>? PlaySound { get; set; }
+
+    /// <summary>Puts a pickup made at run time on the list, as <c>GunPickup_CreateHandler</c> (<c>igi2 0x46A729</c>) registers it.</summary>
+    /// <param name="pickup">The pickup.</param>
+    public void Add(Igi2GunPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        _items.Add(pickup);
+    }
+
     /// <summary>Makes the pickups a level places, as <c>GunPickup_CreateHandler</c> and its internal data make each.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="tables">The session's weapon tables.</param>
@@ -86,14 +104,19 @@ public sealed class Igi2PickupList
     }
 
     /// <summary>
-    /// The pickups' run pass, <c>GunPickup_RunHandler</c> (<c>igi2 0x46A760</c>): each taken one is deleted, and leaves the
-    /// list.
+    /// The pickups' run pass, <c>GunPickup_RunHandler</c> (<c>igi2 0x46A760</c>): each falling one falls, and each taken one is
+    /// deleted and leaves the list.
     /// </summary>
     public void Run()
     {
         for (int i = 0; i < _items.Count; i++)
         {
             Igi2GunPickup pickup = _items[i];
+            if (pickup.IsMoving && Collision is { } world && Random is { } random)
+            {
+                pickup.Fall(world, random, PlaySound ?? (static (_, _) => { }));
+            }
+
             if (!pickup.IsDelete)
             {
                 continue;

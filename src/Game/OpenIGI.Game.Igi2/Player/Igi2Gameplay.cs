@@ -92,6 +92,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (request.Services.TryGet(out Igi2HumanWeapons? armoury))
             {
                 player.Human.Pickups = Pickups.Igi2PickupList.Build(request.World.LevelRoot, armoury.Tables, models, world, materials);
+                player.Human.Pickups.Collision = world;
+                player.Human.Pickups.Random = player.Human.Random;
+                player.Human.Pickups.PlaySound = (name, at) => sounds.New(name, at);
             }
         }
 
@@ -113,7 +116,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         player.Soldiers = request.World.LevelRoot is { } levelRoot
-            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty)
+            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty, player.Human.Pickups)
             : null;
         player.Level = LevelRun(request, player);
         return player;
@@ -129,6 +132,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <param name="sounds">The level's sounds.</param>
     /// <param name="random">The session's run stream.</param>
     /// <param name="difficulty">The session's difficulty, which tunes the soldiers' hit points.</param>
+    /// <param name="pickups">The level's pickups, which a dying soldier's weapon joins; <see langword="null"/> for none.</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
@@ -144,7 +148,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2PlayerTuning? tuning,
         Igi2Sounds sounds,
         IgiRandom random,
-        OpenIGI.Game.Ai.AiDifficulty difficulty)
+        OpenIGI.Game.Ai.AiDifficulty difficulty,
+        Pickups.Igi2PickupList? pickups = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(services);
@@ -158,7 +163,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             root,
             (task, rig) =>
             {
-                Igi2LevelSurroundings surroundings = new(world, sounds) { Materials = materials };
+                Igi2LevelSurroundings surroundings = new(world, sounds) { Materials = materials, Pickups = pickups, Models = models };
                 IIgi2PlayerWeaponControl weapon = Igi2NoWeaponControl.Instance;
                 if (armoury is not null)
                 {
@@ -177,6 +182,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
             body.Mind = new Soldiers.Igi2StandingSoldierMind();
+            body.Difficulty = difficulty;
             if (body.Collider is { } collider)
             {
                 world.AddBody(collider);
@@ -829,6 +835,23 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     /// <summary>Gets the collision world itself, whose placed solids the level's moving objects carry.</summary>
     public Igi2CollisionWorld World { get; } = world;
+
+    /// <summary>Gets or sets the level's pickups, which a thrown weapon joins.</summary>
+    public Pickups.Igi2PickupList? Pickups { get; set; }
+
+    /// <summary>Gets or sets what resolves a thrown weapon's fixed model, whose radius the pickup takes.</summary>
+    public Func<string, Formats.World.MefModel?>? Models { get; set; }
+
+    public void ThrowGunPickup(Igi2WeaponTypeTask weaponType, Vector3d position, IReadOnlyList<float> orientation, float throwGamma, int ammoInClip, IReadOnlyList<int> ammoCount)
+    {
+        if (Pickups is not { } pickups || Owner is not Soldiers.Igi2HumanSoldier { Weapon.Inventory.Tables: { } tables })
+        {
+            return;
+        }
+
+        float radius = weaponType.FixedModel.Length > 0 && Models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
+        pickups.Add(OpenIGI.Game.Igi2.Pickups.Igi2GunPickup.Thrown(weaponType, tables, position, orientation, throwGamma, isMoving: true, isThrowShort: true, ammoInClip, ammoCount, radius));
+    }
 
     public bool IsOnElevator => false;
 

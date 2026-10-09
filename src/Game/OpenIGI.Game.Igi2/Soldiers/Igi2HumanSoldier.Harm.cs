@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Soldiers;
@@ -37,7 +38,22 @@ public sealed partial class Igi2HumanSoldier
     /// <summary>The row a kneeling soldier's short flinch to the legs plays, <c>27</c>.</summary>
     public const int KneelHitRow = 27;
 
+    /// <summary>The name of the weapon a dying soldier swaps for an RPG-7, <c>"IR SAM"</c> (<c>igi2 0x619348</c>).</summary>
+    public const string IrSamName = "IR SAM";
+
+    /// <summary>The infrared RPG an IR SAM is, <c>WEAPON_ID_RPG_IR</c>.</summary>
+    public const string RpgIrWeaponId = "WEAPON_ID_RPG_IR";
+
+    /// <summary>The RPG-7 an IR SAM drops as, <c>WEAPON_ID_RPG7</c>.</summary>
+    public const string Rpg7WeaponId = "WEAPON_ID_RPG7";
+
+    /// <summary>The weapon a mind's extra drop never is, <c>WEAPON_ID_FLASHBANG</c>.</summary>
+    public const string FlashbangWeaponId = "WEAPON_ID_FLASHBANG";
+
     private const float OneOverPi = -0.31830987f;
+
+    /// <summary>Gets or sets the session's difficulty, the profile's, which the load a dropped weapon keeps turns on.</summary>
+    public Game.Ai.AiDifficulty Difficulty { get; set; } = Game.Ai.AiDifficulty.Normal;
     private const float Pi = 3.1415927f;
 
     /// <summary>Gets or sets the death clip counter the level's soldiers share.</summary>
@@ -158,11 +174,11 @@ public sealed partial class Igi2HumanSoldier
     /// body shot from behind that did more than two damage throws it back three times in ten. Otherwise it plays the next of the
     /// shared eleven clips, a head shot one of the first three, pushed along the shot by a gun or a pistol.
     /// </para>
-    /// <para>Not yet: the gun pickups it drops (<c>HumanSoldier_CreateGunPickups</c>, <c>0x4E8360</c>).</para>
     /// </remarks>
     private void EnterDie()
     {
         StopWeapon(onlyWhenBusy: true);
+        CreateGunPickups();
         IsDeathSoundPlayed = false;
         Pose = Igi2HumanPose.Standing;
         DeathDirection = Normalised(DeathDirection);
@@ -240,11 +256,11 @@ public sealed partial class Igi2HumanSoldier
     /// A kneeling death, <c>HumanSoldier_InitStateKneelDie</c> (<c>igi2 0x4E8950</c>): the weapon stops, and one of six kneeling
     /// clips is drawn; the body keeps its heading.
     /// </summary>
-    /// <remarks>Not yet: the gun pickups it drops.</remarks>
     private void EnterKneelDie()
     {
         IsDeathSoundPlayed = false;
         StopWeapon(onlyWhenBusy: false);
+        CreateGunPickups();
         Pose = Igi2HumanPose.Crouching;
         uint draw = Random.NextRaw();
         PlayRow(KneelDeathRows[(int)(draw % (uint)KneelDeathRows.Count)], 0f);
@@ -300,6 +316,85 @@ public sealed partial class Igi2HumanSoldier
         }
 
         inventory.Status = default;
+    }
+
+    /// <summary>
+    /// The weapons a dying soldier drops, <c>HumanSoldier_CreateGunPickups</c> (<c>igi2 0x4E8360</c>): the one in hand (an IR SAM is
+    /// swapped for the RPG-7 it fires from, which drops instead), and half the time the mind's extra weapon unless it is a flashbang.
+    /// </summary>
+    private void CreateGunPickups()
+    {
+        if (Weapon.Inventory is not { } inventory)
+        {
+            return;
+        }
+
+        Igi2WeaponTypeTask? held = inventory.Current?.WeaponType;
+        if (held is not null && string.Equals(held.WeaponName, IrSamName, StringComparison.Ordinal)
+            && inventory.FindWeapon(RpgIrWeaponId) is { } infrared && inventory.FindWeapon(Rpg7WeaponId) is { } rpg7)
+        {
+            rpg7.IsActive = true;
+            infrared.IsActive = false;
+            held = rpg7.WeaponType;
+        }
+
+        if (held is not null)
+        {
+            CreateGunPickupFromGameDifficulty(held);
+        }
+
+        if (Mind?.ExtraDropWeaponId is { } extraId && Random.NextDouble() <= 0.5
+            && inventory.Tables.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, extraId, StringComparison.Ordinal)) is { } extra
+            && !string.Equals(extra.WeaponId, FlashbangWeaponId, StringComparison.Ordinal))
+        {
+            CreateGunPickupFromGameDifficulty(extra);
+        }
+    }
+
+    /// <summary>
+    /// A weapon dropped with the load the difficulty leaves in it, <c>Human_CreateGunPickupFromGameDifficulty</c> (<c>igi2 0x4FFE80</c>):
+    /// its first fire type's clip times a whole, nine tenths or four fifths (at least a round), a grenade's one more for its first
+    /// fire type, one for the second; thrown from where the hand holds it (<c>Human_CreateGunPickup</c>, <c>0x4FFDF0</c>) along the
+    /// soldier's heading.
+    /// </summary>
+    private void CreateGunPickupFromGameDifficulty(Igi2WeaponTypeTask weaponType)
+    {
+        if (Weapon.Inventory is not { } inventory)
+        {
+            return;
+        }
+
+        float share = Difficulty switch
+        {
+            Game.Ai.AiDifficulty.Easy => 1f,
+            Game.Ai.AiDifficulty.Normal => BitConverter.Int32BitsToSingle(0x3F666666),
+            Game.Ai.AiDifficulty.Hard => BitConverter.Int32BitsToSingle(0x3F4CCCCD),
+            _ => 0f,
+        };
+        int load = Fpu.ToInt32((Fpu)(double)weaponType.AmmoInfo(0, inventory.Tables).RoundsPerClip * share);
+        load = load < 1 ? 1 : load;
+        int[] counts = [weaponType.WeaponCategory == Igi2WeaponCategory.Grenade ? 1 : 0, 1];
+        (Vector3d position, Matrix3f held) = WeaponPlacement();
+        Matrix3f o = Orientation;
+        (_, _, float gamma) = Igi2Pose.Angles([o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33]);
+        Surroundings.ThrowGunPickup(
+            weaponType, position, [held.M11, held.M12, held.M13, held.M21, held.M22, held.M23, held.M31, held.M32, held.M33], gamma, load, counts);
+    }
+
+    /// <summary>
+    /// Where the weapon in hand stands, <c>HumanAnim_GetWeaponPositionAndOrientation</c> (<c>igi2 0x58FCD0</c>): the active clip's
+    /// <c>weapon</c> attachment placed on its bone as the bones now stand, or a metre above the soldier, turned as it is.
+    /// </summary>
+    private (Vector3d Position, Matrix3f Orientation) WeaponPlacement()
+    {
+        if (BodyPose() is { AttachClip: { } clip } pose
+            && ViewModel.Igi2AttachedParts.TryFind(clip, pose.AttachTime, ViewModel.Igi2AttachedParts.WeaponAttachName, out int bone, out Vector3f relative, out Matrix3f relativeOrientation)
+            && (uint)bone < (uint)pose.Pose.BoneCount)
+        {
+            return ViewModel.Igi2AttachedParts.Place(Position, Orientation, pose.Pose.Positions[bone], pose.Pose.Rotations[bone], relative, relativeOrientation);
+        }
+
+        return (new Vector3d(Position.X, Position.Y, ((Fpu)Position.Z + 4096.0).Value), Orientation);
     }
 
     /// <summary>The camera and body set as a death leaves them: no turning of the upper body, the upper body off, no root motion.</summary>

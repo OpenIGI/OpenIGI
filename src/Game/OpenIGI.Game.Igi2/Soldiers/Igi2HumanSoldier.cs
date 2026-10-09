@@ -41,6 +41,12 @@ public interface IIgi2SoldierMind
 
     /// <summary>Gets how far the mind turns the head, <c>HumanAI+0x100</c>, in radians.</summary>
     float HeadTurn => 0f;
+
+    /// <summary>
+    /// Gets the weapon the soldier may drop besides its own, <c>HumanAI+0x74DC</c> while <c>+0x74D0</c> is set, or
+    /// <see langword="null"/> for none.
+    /// </summary>
+    string? ExtraDropWeaponId => null;
 }
 
 /// <summary>An enemy soldier's body, as I.G.I. 2's <c>HumanSoldier_t</c> runs it.</summary>
@@ -214,6 +220,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         UpdateBody();
         View.UpdateView(Channels);
         Animation.StepMain();
+        TouchPose();
         Move();
         UpdateViewBody();
         Weapon.UpdateStatus();
@@ -240,6 +247,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         MovementSpeedScale = 1f;
         RunHuman();
         Animation.AutoStep();
+        TouchPose();
         Mind?.Run(this);
         Weapon.RunDelayed();
         TouchPose();

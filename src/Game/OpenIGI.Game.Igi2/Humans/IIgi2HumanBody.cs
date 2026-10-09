@@ -168,6 +168,20 @@ public interface IIgi2HumanSurroundings
     /// <param name="key">The message's key in the localised strings.</param>
     void ShowStatusMessage(string key);
 
+    /// <summary>
+    /// Throws a weapon into the level as a pickup, <c>GunPickup_New</c> (<c>igi2 0x46C2F0</c>) moving and thrown short, and puts it on
+    /// the level's pickup list.
+    /// </summary>
+    /// <param name="weaponType">The weapon.</param>
+    /// <param name="position">Where it starts.</param>
+    /// <param name="orientation">How it was held, nine floats row by row.</param>
+    /// <param name="throwGamma">The heading it is thrown along.</param>
+    /// <param name="ammoInClip">The rounds its load holds.</param>
+    /// <param name="ammoCount">The rounds it gives its two fire types.</param>
+    void ThrowGunPickup(Weapons.Igi2WeaponTypeTask weaponType, Vector3d position, IReadOnlyList<float> orientation, float throwGamma, int ammoInClip, IReadOnlyList<int> ammoCount)
+    {
+    }
+
     /// <summary>Raises an event for the AI to perceive, <c>HumanAI_SendEvent</c> (<c>igi2 0x460A90</c>); nothing hears it until the AI's events are ported.</summary>
     /// <param name="aiEvent">The event.</param>
     void SendAiEvent(in Ai.Igi2AiEvent aiEvent)

@@ -116,8 +116,8 @@ public sealed class Igi2BoneCollider(IIgi2BonedBody body, object owner) : IIgi2C
 /// unused, with the shared plane and barycentric test and tie window (<see cref="Igi2MeshSearch"/>).
 /// </para>
 /// <para>
-/// A hit records the struck point, the face's normal (normalised, then turned by the orientation's columns), the face and
-/// material, a light of one, and the bone: the first vertex's, or the second's when the second and third share one the first
+/// A hit records the struck point, the face's normal (normalised; the vertices were turned, so it is the world's), its
+/// turn back by the orientation's columns as the local normal, the face and material, a light of one, and the bone: the first vertex's, or the second's when the second and third share one the first
 /// does not. Portals and an ignored material are not tested for.
 /// </para>
 /// </remarks>
@@ -315,8 +315,8 @@ public static class Igi2BoneTrace
         hit.HitObject = collider;
         hit.Position = new Vector3d(((Fpu)point.X + p.X).Value, ((Fpu)point.Y + p.Y).Value, ((Fpu)point.Z + p.Z).Value);
         hit.LocalPosition = point;
-        hit.LocalNormal = n;
-        hit.Normal = new Vector3f(
+        hit.Normal = n;
+        hit.LocalNormal = new Vector3f(
             ((((Fpu)o.M31 * n.Z) + ((Fpu)o.M21 * n.Y)) + ((Fpu)o.M11 * n.X)).F,
             ((((Fpu)o.M32 * n.Z) + ((Fpu)o.M22 * n.Y)) + ((Fpu)o.M12 * n.X)).F,
             ((((Fpu)o.M33 * n.Z) + ((Fpu)o.M23 * n.Y)) + ((Fpu)o.M13 * n.X)).F);

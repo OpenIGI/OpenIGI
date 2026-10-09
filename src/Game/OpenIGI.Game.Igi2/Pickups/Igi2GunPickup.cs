@@ -40,8 +40,9 @@ public interface IIgi2PickupTaker
 /// </para>
 /// <para>
 /// Each tick <c>GunPickup_RunHandler</c> (<c>0x46A760</c>) lets a pickup still falling fall, and deletes one that was
-/// taken. A pickup the level places starts at rest, so for it the handler is only the deleting. Not yet: the fall, which
-/// only a dropped weapon makes (<c>GunPickup_NewFromWeapon</c>, <c>0x46C5E0</c>), and a multiplayer game's respawn.
+/// taken. A pickup the level places starts at rest, so for it the handler is only the deleting. A thrown one
+/// (<see cref="Thrown"/>, <c>GunPickup_New</c>, <c>0x46C2F0</c>) falls (<see cref="Fall"/>). Not yet: a multiplayer game's
+/// respawn.
 /// </para>
 /// </remarks>
 public sealed class Igi2GunPickup
@@ -96,8 +97,32 @@ public sealed class Igi2GunPickup
     /// <summary>Gets the weapon it gives.</summary>
     public Igi2WeaponTypeTask WeaponType { get; }
 
-    /// <summary>Gets where it lies, <c>tPos</c>.</summary>
-    public Vector3d Position { get; }
+    /// <summary>The weapon a thrown pickup of which lies flat as it was thrown, <c>WEAPON_ID_C4BOMB</c> (<c>zLine</c>, <c>igi2 0x6204C8</c>).</summary>
+    public const string FlatWeaponId = "WEAPON_ID_C4BOMB";
+
+    /// <summary>The query groups a falling pickup's lines meet, <c>Forest_bQTaskGroup | 0xD8000000</c>.</summary>
+    public const uint FallGroups = Igi2CollisionWorld.ForestGroup | 0xD8000000u;
+
+    /// <summary>The collision mesh a falling pickup's lines meet, <c>1</c>.</summary>
+    public const int FallMesh = 1;
+
+    /// <summary>What gravity takes off a falling pickup's height speed a tick, <c>44.600887</c>.</summary>
+    public const float FallGravity = 44.600887f;
+
+    /// <summary>The share of its speed a falling pickup loses to each surface it rubs, <c>0.0083333338</c>.</summary>
+    public const float Friction = 0.0083333338f;
+
+    private static readonly float SpeedLimitDown = -1228.8f;
+    private readonly Igi2LineTrace _fall = new(6) { Mesh = FallMesh, Includes = static owner => !Igi2ObjectCollision.PassesThrough(owner) };
+
+    /// <summary>Gets where it lies, <c>tPos</c> (<c>+0x158</c>).</summary>
+    public Vector3d Position { get; private set; }
+
+    /// <summary>Gets its speed a tick while it falls (<c>+0x188</c>).</summary>
+    public Vector3f Speed { get; private set; }
+
+    /// <summary>Gets the normal of the ground it last fell onto (<c>+0x200</c>): straight up until it has.</summary>
+    public Vector3f GroundNormal { get; private set; } = new(0f, 0f, 1f);
 
     /// <summary>Gets its orientation, <c>tOrientation</c>: nine floats, row by row.</summary>
     public float[] Orientation { get; }
@@ -109,7 +134,7 @@ public sealed class Igi2GunPickup
     public float ModelRadius { get; }
 
     /// <summary>Gets the rounds the load it gives holds, <c>nAmmoInClip</c> (<c>+0x148</c>).</summary>
-    public int AmmoInClip { get; }
+    public int AmmoInClip { get; private set; }
 
     /// <summary>Gets the rounds it gives each fire type, <c>anAmmoForFiretype</c> (<c>+0x14C</c>).</summary>
     public IReadOnlyList<int> AmmoForFireType => _ammoForFireType;
@@ -118,10 +143,308 @@ public sealed class Igi2GunPickup
     public bool IsDelete { get; private set; }
 
     /// <summary>Gets a value indicating whether it is falling, <c>isMoving</c> (<c>+0x1FD</c>): a dropped weapon's.</summary>
-    public bool IsMoving { get; init; }
+    public bool IsMoving { get; private set; }
 
-    /// <summary>Gets a value indicating whether a falling pickup has landed, <c>isLanded</c> (<c>+0x1FE</c>).</summary>
-    public bool IsLanded { get; init; }
+    /// <summary>Gets a value indicating whether a falling pickup has landed, <c>isLanded</c> (<c>+0x1FE</c>): its drop sound has played.</summary>
+    public bool IsLanded { get; private set; }
+
+    /// <summary>
+    /// A weapon thrown into the level, <c>GunPickup_New</c> (<c>igi2 0x46C2F0</c>): lying turned as it was held, about Z as it was
+    /// and on its side (a C4 bomb as it was but flat), moving along a heading at 614.4 a tick and up at 273.07, a short throw a
+    /// quarter as far and 68.27 up.
+    /// </summary>
+    /// <param name="weaponType">The weapon it gives.</param>
+    /// <param name="tables">The session's weapon tables.</param>
+    /// <param name="position">Where it starts.</param>
+    /// <param name="orientation">How it was held, nine floats row by row.</param>
+    /// <param name="throwGamma">The heading it is thrown along.</param>
+    /// <param name="isMoving">Whether it falls.</param>
+    /// <param name="isThrowShort">Whether the throw is a short one.</param>
+    /// <param name="ammoInClip">The rounds its load holds.</param>
+    /// <param name="ammoCount">The rounds it gives its two fire types, or <see langword="null"/> for what its type gives.</param>
+    /// <param name="modelRadius">Its model's radius.</param>
+    /// <returns>The pickup.</returns>
+    /// <remarks>
+    /// The heading's direction is the second column of a turn by it, made unit unless it is nought; a type's own ammunition
+    /// (<c>GunPickup_UpdateInternalDataHandler</c>, <c>0x46BA00</c>) is then replaced by what the thrower gave it.
+    /// </remarks>
+    public static Igi2GunPickup Thrown(
+        Igi2WeaponTypeTask weaponType,
+        Igi2WeaponTables tables,
+        Vector3d position,
+        IReadOnlyList<float> orientation,
+        float throwGamma,
+        bool isMoving,
+        bool isThrowShort,
+        int ammoInClip,
+        IReadOnlyList<int>? ammoCount,
+        float modelRadius)
+    {
+        ArgumentNullException.ThrowIfNull(weaponType);
+        ArgumentNullException.ThrowIfNull(orientation);
+        (float alpha, float beta, float gamma) = Igi2Pose.Angles(orientation);
+        if (string.Equals(weaponType.WeaponId, FlatWeaponId, StringComparison.Ordinal))
+        {
+            beta = 0f;
+        }
+        else
+        {
+            alpha = alpha < -1.5707964f || alpha > 1.5707964f ? 3.1415927f : 0f;
+            beta = beta >= 0f ? 1.5707964f : -1.5707964f;
+        }
+
+        Igi2GunPickup pickup = new(null, weaponType, tables, position, Igi2Pose.Rotation(alpha, beta, gamma), modelRadius)
+        {
+            IsMoving = isMoving,
+        };
+
+        float[] heading = Igi2Pose.Rotation(0f, 0f, throwGamma);
+        float x = heading[1], y = heading[4], z = 0f;
+        if (x != 0f || y != 0f)
+        {
+            Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((Fpu)x * x) + ((Fpu)y * y));
+            (x, y, z) = (((Fpu)x * inverse).F, ((Fpu)y * inverse).F, (inverse * 0.0).F);
+        }
+
+        x = ((Fpu)x * 614.4f).F;
+        y = ((Fpu)y * 614.4f).F;
+        z = BitConverter.Int32BitsToSingle(0x43888889);
+        if (isThrowShort)
+        {
+            z = BitConverter.Int32BitsToSingle(0x42888889);
+            x = ((Fpu)x * 0.25f).F;
+            y = ((Fpu)y * 0.25f).F;
+        }
+
+        pickup.Speed = new Vector3f(x, y, z);
+        pickup.AmmoInClip = ammoInClip;
+        if (ammoCount is not null)
+        {
+            pickup._ammoForFireType[0] = ammoCount[0];
+            pickup._ammoForFireType[1] = ammoCount[1];
+        }
+
+        return pickup;
+    }
+
+    /// <summary>
+    /// A falling pickup's tick, <c>GunPickup_RunHandler</c> (<c>igi2 0x46A9B5</c>): gravity, then six lines from where it is, four
+    /// to points around it on the plane of the ground it last fell on and two straight down and up; what the four strike pushes
+    /// and slows it, what lies below lands it, and its speed carries it on.
+    /// </summary>
+    /// <param name="world">The level.</param>
+    /// <param name="random">The run stream the drop sound draws from.</param>
+    /// <param name="playSound">Plays a sound at a point.</param>
+    /// <remarks>
+    /// <para>
+    /// The four points lie a radius ahead and behind along Y and 819.2 above and below, each with its own component along the ground
+    /// normal taken off, then moved by the speed. A surface other than the ground among them turns the speed away from its face,
+    /// loses a hundred and twentieth of it, and adds where the line struck short of its point to a correction, averaged over them.
+    /// </para>
+    /// <para>
+    /// Below: the ground's normal is kept, and within two metres the fall slows to 409.6 a tick at most. Within 819.2 the pickup
+    /// lands: the drop sound plays the first time (one of two, by a draw); on a slope steeper than about 37 degrees it slides,
+    /// otherwise it stops there, ceases falling if it is the ground, and is turned to lie along it. Its height ends 122.88 above
+    /// what is below. If it fell through, the line up puts it back 2048 above what it struck. It never falls faster than 1228.8 a tick.
+    /// </para>
+    /// <para>Not yet: water, and the building sectors that end a fall as the ground does.</para>
+    /// </remarks>
+    public void Fall(IIgi2CollisionQuery world, IgiRandom random, Action<string, Vector3d> playSound)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(random);
+        ArgumentNullException.ThrowIfNull(playSound);
+        if (!IsMoving)
+        {
+            return;
+        }
+
+        float sx = Speed.X, sy = Speed.Y;
+        float sz = ((Fpu)Speed.Z - FallGravity).F;
+        float larger = Scale.Y <= Scale.Z ? Scale.Z : Scale.Y;
+        float largest = larger >= Scale.X ? larger : Scale.X;
+        float r = ((Fpu)largest * ModelRadius).F;
+        Vector3f n = GroundNormal;
+        float zeroZ = ((Fpu)n.Z * 0f).F, zeroX = ((Fpu)n.X * 0f).F, zeroY = ((Fpu)n.Y * 0f).F;
+
+        Fpu ahead = (((Fpu)r * n.Y) + zeroX) + zeroZ;
+        Fpu up = (((Fpu)n.Z * 819.2f) + zeroY) + zeroX;
+        Fpu behind = (((-(Fpu)r) * n.Y) + zeroX) + zeroZ;
+        Fpu down = ((zeroY - ((Fpu)n.Z * 819.2f)) + zeroX);
+        Vector3d p = Position;
+        Span<(double X, double Y, double Z)> around =
+        [
+            (-((Fpu)n.X * ahead).Value, ((Fpu)r - ((Fpu)n.Y * ahead).F).Value, -((Fpu)n.Z * ahead).F),
+            (-((Fpu)n.X * up).Value, -((Fpu)n.Y * up).F, ((Fpu)819.2f - ((Fpu)n.Z * up).F).Value),
+            (-((Fpu)n.X * behind).Value, (-(Fpu)r - ((Fpu)n.Y * behind).F).Value, -((Fpu)n.Z * behind).F),
+            (-((Fpu)n.X * down).Value, -((Fpu)n.Y * down).F, ((Fpu)(-819.2f) - ((Fpu)n.Z * down).F).Value),
+        ];
+
+        for (int i = 0; i < 4; i++)
+        {
+            _fall.Starts[i] = p;
+            _fall.Ends[i] = new Vector3d(
+                (((Fpu)around[i].X + p.X) + sx).Value,
+                (((Fpu)around[i].Y + p.Y) + sy).Value,
+                (((Fpu)around[i].Z + p.Z) + sz).Value);
+        }
+
+        _fall.Starts[4] = p;
+        _fall.Starts[5] = p;
+        _fall.Ends[4] = new Vector3d(p.X, p.Y, ((Fpu)p.Z - 8192.0).Value);
+        _fall.Ends[5] = new Vector3d(p.X, p.Y, ((Fpu)p.Z + 20480.0).Value);
+        _fall.Evaluator = this;
+        world.TraceLines(_fall, FallGroups);
+
+        Igi2Intersection below = _fall.Intersections[4], above = _fall.Intersections[5];
+        bool anyHit = false;
+        for (int i = 0; i < 6; i++)
+        {
+            anyHit |= _fall.Intersections[i].IsHit;
+        }
+
+        if (anyHit)
+        {
+            Fpu cx = 0f, cy = 0f;
+            float cz = 0f;
+            int hits = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                Igi2Intersection hit = _fall.Intersections[i];
+                if (!hit.IsHit || hit.HitObject is Igi2TerrainCollider)
+                {
+                    continue;
+                }
+
+                Vector3f face = Unit(hit.Normal);
+                hit.Normal = face;
+                Fpu d = (((Fpu)face.X * sx) + ((Fpu)face.Y * sy)) + ((Fpu)sz * face.Z);
+                Vector3f away = d.Value >= 0.0 ? new Vector3f(((Fpu)face.X * -1.0).F, ((Fpu)face.Y * -1.0).F, ((Fpu)face.Z * -1.0).F) : face;
+                (sx, sy, sz) = Rub(sx, sy, sz, away, d);
+                hits++;
+                cx = (cx + hit.Position.X) - _fall.Ends[i].X;
+                cy += ((Fpu)hit.Position.Y - _fall.Ends[i].Y).F;
+                cz = (((Fpu)hit.Position.Z - _fall.Ends[i].Z).F + (Fpu)cz).F;
+            }
+
+            if (hits > 1)
+            {
+                Fpu inverse = (Fpu)1.0 / (double)hits;
+                cx *= inverse;
+                cy *= inverse;
+                cz = (inverse * cz).F;
+            }
+
+            p = new Vector3d((cx + p.X).Value, (cy + p.Y).Value, ((Fpu)cz + p.Z).Value);
+            if (below.IsHit)
+            {
+                GroundNormal = Unit(below.Normal);
+                Fpu height = (Fpu)_fall.Starts[4].Z - below.Position.Z;
+                if (height.Value < 2048.0)
+                {
+                    sz = sz >= -409.60001f ? (sz <= 0f ? sz : 0f) : -409.60001f;
+                }
+
+                if (height.Value <= 819.2000122070312)
+                {
+                    Vector3f ground = Unit(below.Normal);
+                    below.Normal = ground;
+                    if (!IsLanded)
+                    {
+                        uint draw = random.NextRaw();
+                        string sound = (ushort)draw * IgiRandom.Scale <= 0.5 ? "weapondrop_02" : "weapondrop_01";
+                        playSound(sound, p);
+                        IsLanded = true;
+                    }
+
+                    if (ground.Z <= 0.8f)
+                    {
+                        Fpu d = (((Fpu)ground.Z * sz) + ((Fpu)ground.Y * sy)) + ((Fpu)ground.X * sx);
+                        (sx, sy, sz) = Rub(sx, sy, sz, ground, d);
+                    }
+                    else
+                    {
+                        sx = sy = sz = 0f;
+                        if (below.HitObject is Igi2TerrainCollider)
+                        {
+                            IsMoving = false;
+                        }
+
+                        p = new Vector3d(p.X, p.Y, below.Position.Z);
+                    }
+
+                    Fpu settle = ((Fpu)p.Z - below.Position.Z) - 122.879997253418;
+                    p = new Vector3d(p.X, p.Y, ((Fpu)p.Z - settle).Value);
+                    LieAlong(ground);
+                }
+            }
+
+            if (above.IsHit && above.Normal.Z > 0f && (!below.IsHit || !(below.Normal.Z > 0f)))
+            {
+                p = new Vector3d(p.X, p.Y, ((Fpu)above.Position.Z + 2048.0).Value);
+            }
+        }
+
+        sz = sz <= SpeedLimitDown ? SpeedLimitDown : sz;
+        Speed = new Vector3f(sx, sy, sz);
+        Position = new Vector3d(((Fpu)sx + p.X).Value, ((Fpu)sy + p.Y).Value, ((Fpu)sz + p.Z).Value);
+    }
+
+    /// <summary>A speed turned off a face it rubs, <c>s − n(n·s)</c>, then a hundred and twentieth of it lost.</summary>
+    private static (float X, float Y, float Z) Rub(float sx, float sy, float sz, Vector3f n, Fpu d)
+    {
+        float y = ((Fpu)n.Y * d).F, z = ((Fpu)n.Z * d).F;
+        sx = ((Fpu)sx - ((Fpu)n.X * d)).F;
+        sy = ((Fpu)sy - y).F;
+        sz = ((Fpu)sz - z).F;
+        float ly = ((Fpu)sy * Friction).F, lz = ((Fpu)sz * Friction).F;
+        sx = ((Fpu)sx - ((Fpu)sx * Friction)).F;
+        sy = ((Fpu)sy - ly).F;
+        sz = ((Fpu)sz - lz).F;
+        return (sx, sy, sz);
+    }
+
+    /// <summary>A vector made unit, unless it is nought: its length's reciprocal taken once and each part scaled by it.</summary>
+    private static Vector3f Unit(Vector3f v)
+    {
+        if (v.X == 0f && v.Y == 0f && v.Z == 0f)
+        {
+            return v;
+        }
+
+        Fpu length = Fpu.Sqrt((((Fpu)v.X * v.X) + ((Fpu)v.Y * v.Y)) + ((Fpu)v.Z * v.Z));
+        Fpu inverse = (Fpu)1.0 / length.F;
+        return new Vector3f(((Fpu)v.X * inverse).F, ((Fpu)v.Y * inverse).F, ((Fpu)v.Z * inverse).F);
+    }
+
+    /// <summary>
+    /// Turns the pickup to lie along the ground it landed on (<c>igi2 0x46B4EA</c>): the ground's normal in its own frame gives a tilt
+    /// and a turn, and its orientation becomes itself times that; a C4 bomb is turned by nothing.
+    /// </summary>
+    private void LieAlong(Vector3f n)
+    {
+        float[] o = Orientation;
+        float lx = ((((Fpu)n.Y * o[3]) + ((Fpu)n.Z * o[6])) + ((Fpu)n.X * o[0])).F;
+        float ly = ((((Fpu)n.Y * o[4]) + ((Fpu)n.Z * o[7])) + ((Fpu)n.X * o[1])).F;
+        float lz = ((((Fpu)n.Y * o[5]) + ((Fpu)n.Z * o[8])) + ((Fpu)n.X * o[2])).F;
+        float beta = 0f, gamma = 0f;
+        if (!string.Equals(WeaponType.WeaponId, FlatWeaponId, StringComparison.Ordinal) && lx != 0f)
+        {
+            beta = (-(Fpu)Math.Atan(((Fpu)lz / lx).Value)).F;
+            gamma = ((Fpu)Math.Atan(((Fpu)ly / lx).Value)).F;
+        }
+
+        float[] t = Igi2Pose.Rotation(0f, beta, gamma);
+        float[] turned = new float[9];
+        for (int j = 0; j < 3; j++)
+        {
+            turned[j] = (((Fpu)t[6 + j] * o[2]) + ((Fpu)t[3 + j] * o[1]) + ((Fpu)t[j] * o[0])).F;
+            turned[3 + j] = (((Fpu)t[6 + j] * o[5]) + ((Fpu)t[j] * o[3]) + ((Fpu)t[3 + j] * o[4])).F;
+            turned[6 + j] = (((Fpu)t[6 + j] * o[8]) + ((Fpu)t[3 + j] * o[7]) + ((Fpu)t[j] * o[6])).F;
+        }
+
+        Array.Copy(turned, Orientation, 9);
+    }
 
     /// <summary>
     /// Gets how far it reaches: its model's radius scaled by its largest scale, and never under a metre

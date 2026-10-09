@@ -48,16 +48,6 @@ public abstract partial class Igi2Human
         [1024f, 1433.6f, 1638.4f],
     ];
 
-    /// <summary>The types whose objects a body walks through: <c>GameFunctions_ObjectCollisionEvaluateDiscardHandler</c> and its kin.</summary>
-    /// <remarks>
-    /// <c>Wire</c> (<c>Wire_Open</c>, <c>igi2 0x514EF0</c>) and the three pickups (<c>GunPickup</c> <c>0x46BC60</c>,
-    /// <c>AmmoPickup</c> <c>0x5276C0</c>, <c>GenericPickup</c> <c>0x4F7380</c>) answer the sweep's evaluate event with no.
-    /// </remarks>
-    private static readonly HashSet<string> SweepThrough = new(StringComparer.Ordinal)
-    {
-        "Wire", "GunPickup", "AmmoPickup", "GenericPickup",
-    };
-
     /// <summary>The types that derive from <c>Vehicle</c>: <c>Car</c>, <c>Plane</c>, <c>Train</c>, <c>Heli</c> and <c>Missile</c> open on it.</summary>
     private static readonly HashSet<string> VehicleTypes = new(StringComparer.Ordinal)
     {
@@ -362,8 +352,7 @@ public abstract partial class Igi2Human
         return [m0, forwardX.F, 0f, m3, forwardY.F, 0f, m6, forwardZ.F, 1f];
     }
 
-    private static bool IsSweptThrough(object owner) =>
-        owner is Igi2CollisionOwner { Depth: 0 } placed && SweepThrough.Contains(placed.TypeName);
+    private static bool IsSweptThrough(object owner) => Igi2ObjectCollision.PassesThrough(owner);
 
     /// <summary>The move as the sweep reshapes it: what is left of it on the FPU, and the pushes out of walls.</summary>
     private sealed class Sweep(float dx, float dy)
