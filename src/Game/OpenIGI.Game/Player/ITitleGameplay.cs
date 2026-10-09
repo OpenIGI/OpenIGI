@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Player;
 
@@ -32,12 +33,17 @@ public interface ITitleGameplay
 /// <param name="Services">The tables the title's content modules loaded.</param>
 /// <param name="Difficulty">The active profile's difficulty.</param>
 /// <param name="Audio">The host's mixer, or <see langword="null"/> where nothing is heard.</param>
+/// <param name="Natives">
+/// The namespace the level's scripts resolved against, holding its tasks' exported variables, or <see langword="null"/> when
+/// the level runs no scripts of its own.
+/// </param>
 public readonly record struct TitlePlayerRequest(
     WorldBuildRequest World,
     WorldBuildResult Built,
     IServiceCatalog Services,
     AiDifficulty Difficulty,
-    ITitleAudio? Audio = null);
+    ITitleAudio? Audio = null,
+    NativeRegistry? Natives = null);
 
 /// <summary>One tick of the player's input, in the host's vocabulary.</summary>
 /// <param name="MouseX">The relative mouse movement since the last tick, in device counts, right positive.</param>
@@ -46,13 +52,15 @@ public readonly record struct TitlePlayerRequest(
 /// <param name="Pressed">The actions pressed since the last tick.</param>
 /// <param name="MouseSensitivity">The profile's mouse sensitivity.</param>
 /// <param name="InvertMouse">Whether the profile inverts the vertical look.</param>
+/// <param name="BreakCutscene">Whether the cutscene break key is down: Escape, the key retail's level scripts read.</param>
 public readonly record struct TitlePlayerInput(
     float MouseX,
     float MouseY,
     PlayerAction Held,
     PlayerAction Pressed,
     float MouseSensitivity,
-    bool InvertMouse);
+    bool InvertMouse,
+    bool BreakCutscene = false);
 
 /// <summary>A title's own player, as the host steps it and looks through it.</summary>
 public interface ITitlePlayer
@@ -68,6 +76,12 @@ public interface ITitlePlayer
 
     /// <summary>Gets how wide the eyes see, as the tangent of half the view's horizontal angle: one, ninety degrees, unless a zoom narrows it.</summary>
     float FieldOfViewScale => 1f;
+
+    /// <summary>Gets a value indicating whether the title's level played a cutscene on the last tick, which Escape breaks rather than pausing.</summary>
+    bool IsCutscenePlaying => false;
+
+    /// <summary>Gets a value indicating whether the title's level lets the in-game menu open.</summary>
+    bool IsMenuEnabled => true;
 
     /// <summary>Runs one game tick.</summary>
     /// <param name="input">The tick's input.</param>

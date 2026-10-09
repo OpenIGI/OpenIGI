@@ -3,6 +3,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
@@ -111,7 +112,35 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
+        player.Level = LevelRun(request, player);
         return player;
+    }
+
+    /// <summary>The level's tick, with the player bound to its <c>HumanPlayer</c> task, as <c>Flow_RunChildren</c> (<c>igi2 0x401A50</c>) runs it.</summary>
+    /// <param name="request">The level and the session.</param>
+    /// <param name="player">The player.</param>
+    /// <returns>The level's run, or <see langword="null"/> when the level's scripts are not at hand or it places no player in its tree.</returns>
+    public static Igi2LevelRun? LevelRun(in TitlePlayerRequest request, Igi2TitlePlayer player)
+    {
+        ArgumentNullException.ThrowIfNull(request.Services);
+        ArgumentNullException.ThrowIfNull(player);
+        if (request.Natives is not { } natives
+            || request.World.LevelRoot is not { } root
+            || !request.Services.TryGet(out Scripting.Igi2ScriptFunctions? functions)
+            || PlayerSpawn.FindGameplayTask(root) is not { } task)
+        {
+            return null;
+        }
+
+        if (request.Services.TryGet(out Igi2FlowState? flow))
+        {
+            flow.Reset();
+            player.Flow = flow;
+        }
+
+        Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
+        level.Bind(task, player.RunPlayer);
+        return level;
     }
 
     /// <summary>Reads the level's sound definitions and hands them to the host's mixer, as <c>Game_CreateHandler</c> (<c>igi2 0x4070E0</c>) does.</summary>
@@ -279,6 +308,19 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets the level's sounds.</summary>
     public Igi2Sounds Sounds { get; private init; } = new(new Igi2SoundDefinitions(), null);
 
+    /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
+    public Igi2LevelRun? Level { get; set; }
+
+    /// <summary>Gets or sets the game-wide switches the level's scripts flip, or <see langword="null"/> for none.</summary>
+    public Igi2FlowState? Flow { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks><c>CutScene_isRunning</c> as the last tick left it.</remarks>
+    public bool IsCutscenePlaying => Level?.IsCutsceneRunning ?? false;
+
+    /// <inheritdoc/>
+    public bool IsMenuEnabled => Flow?.IsMenuEnabled ?? true;
+
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
 
@@ -410,17 +452,43 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
-        Weapons?.RunGunShot();
-        Dynamic.Run();
+        if (Level is { } level)
+        {
+            Flow?.IsBreakKeyDown = input.BreakCutscene;
+            level.Tick();
+        }
+        else
+        {
+            RunPlayer();
+            Dynamic.Run();
+            RunPlayerDelayed();
+        }
+
         Sounds.Run();
+        _ticks++;
+    }
+
+    /// <summary>
+    /// The player's run handler: the shots its weapon fired last tick are traced, and the rest of its tick is queued for the
+    /// delayed pass (<c>HumanPlayer_RunHandler</c>, <c>igi2 0x4B8A30</c>).
+    /// </summary>
+    internal void RunPlayer()
+    {
+        Weapons?.RunGunShot();
+        if (Level is { } level)
+        {
+            level.Delay(RunPlayerDelayed);
+        }
+    }
+
+    /// <summary>The player's delayed half: its pickups, zoom, update and delayed handler (<c>HumanPlayer_RunDelayedHandler</c>, <c>igi2 0x4B8A50</c>).</summary>
+    private void RunPlayerDelayed()
+    {
         Human.Pickups?.Run();
-
         Human.View.RunZoom();
-
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
-        _ticks++;
     }
 
     /// <summary>Nine floats row by row as a matrix.</summary>

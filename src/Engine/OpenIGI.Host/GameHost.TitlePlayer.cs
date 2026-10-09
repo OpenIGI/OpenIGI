@@ -57,7 +57,8 @@ internal sealed partial class GameHost
             new WorldBuildResult(scene, 0, 0, _ground, _spins),
             _title.Services,
             (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2),
-            _sounds is { } sounds && _soundBank is { } bank ? new TitleAudio(sounds, bank) : null));
+            _sounds is { } sounds && _soundBank is { } bank ? new TitleAudio(sounds, bank) : null,
+            _loop.Natives));
         if (player is null)
         {
             _logger.Warning("Player", "The level places no player for the title to stand.");
@@ -140,12 +141,24 @@ internal sealed partial class GameHost
             held,
             _titlePressed,
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
-            profile?.InvertMouse ?? false));
+            profile?.InvertMouse ?? false,
+            TitleBreakKey()));
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
         return true;
     }
+
+    /// <summary>Whether the title's cutscene break key is down this tick.</summary>
+    /// <remarks>
+    /// Escape, read as the key's state, as retail's <c>LevelFlow_GetBreakCutSceneKey</c> reads it. With cinematics off it is
+    /// held, the same path the host's own intro skip takes: the level's scripts end every cutscene the way the key does.
+    /// <c>OPENIGI_BREAK_CUTSCENE=1</c> holds it too, for a lockstep run.
+    /// </remarks>
+    private bool TitleBreakKey() =>
+        !_options.PlayCutscenes
+        || _window.Input.Keyboard.IsDown(Input.KeyCode.Escape)
+        || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal);
 
     /// <summary>Registers the console's hold on the title player's controls, for a capture to drive it without keys.</summary>
     /// <param name="console">The console to register with.</param>

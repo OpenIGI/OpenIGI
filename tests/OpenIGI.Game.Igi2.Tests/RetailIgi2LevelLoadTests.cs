@@ -69,31 +69,31 @@ public sealed class RetailIgi2LevelLoadTests
         Assert.Contains(tasks, static t => t is DeclaredTask);
     }
 
-    /// <summary>Pre-registering I.G.I. 1's Container costs an I.G.I. 2 level its Container parameters.</summary>
+    /// <summary>An I.G.I. 2 session refuses I.G.I. 1's structural set, whose Container is not its own.</summary>
     /// <remarks>
     /// <para>
     /// The negative half of the structural-type finding, and the reason
     /// <see cref="ITitleDataLayout.StructuralTaskTypes"/> exists. What makes a type structural is that
     /// the title's own editor emits no declaration for it, and I.G.I. 2's does emit one for
-    /// <c>Container</c> — <c>Exclude from lightmaps</c>. Pre-registering it as parameterless does not
-    /// stop the level loading, because a script's declaration and a type's list are allowed to differ in
-    /// length; it makes every one of that level's containers load with the flag dropped.
+    /// <c>Container</c> — <c>Exclude from lightmaps</c>. Pre-registered as parameterless, it would not stop
+    /// a level loading, because a script's declaration and a type's list are allowed to differ in length;
+    /// every one of that level's containers would load with the flag dropped, and silently.
     /// </para>
     /// <para>
-    /// So the assertion is on the containers themselves rather than on a throw. Silent is the point: a
-    /// wrong structural set does not announce itself, which is why the set belongs to the title.
+    /// Now that the sequel's <c>Container</c> is a class of its own (it runs its children, which is the
+    /// level's tick), the mistake can no longer be silent: the session's own registration of the type
+    /// finds it taken and refuses to start.
     /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void The_igi1_structural_set_costs_an_igi2_level_its_container_parameters()
+    public void The_igi1_structural_set_is_refused_by_an_igi2_session()
     {
-        Harness structural = new(LevelScripts()[0], EngineTaskTypes.StructuralNames);
-        structural.Loader.LoadScript(Harness.ScriptName);
+        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
+            static () => new Harness(LevelScripts()[0], EngineTaskTypes.StructuralNames));
+        Assert.Contains("'Container'", refused.Message, StringComparison.Ordinal);
 
         Harness declared = new(LevelScripts()[0]);
         declared.Loader.LoadScript(Harness.ScriptName);
-
-        Assert.Empty(structural.Loop.Types.Get("Container").Parameters);
         Assert.Equal(
             "Exclude from lightmaps",
             Assert.Single(declared.Loop.Types.Get("Container").Parameters).Name);

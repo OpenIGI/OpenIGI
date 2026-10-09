@@ -21,6 +21,7 @@ public static class Igi2ContentModules
     [
         new Igi2ScriptVocabularyModule(),
         new Igi2SoundContentModule(),
+        new Igi2FlowContentModule(),
         new Igi2WeaponContentModule(),
         new Igi2MaterialContentModule(),
         new Igi2PlayerContentModule(),
@@ -164,6 +165,36 @@ public sealed class Igi2WeaponContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Weapons.Igi2WeaponTables>().Load(context.Resources, context.Natives, context.Tasks);
+    }
+}
+
+/// <summary>
+/// The level's flow: the containers its tasks run under, the variables and clocks its scripts read, and the natives those
+/// scripts flip (<see cref="Flow.Igi2LevelRun"/>).
+/// </summary>
+public sealed class Igi2FlowContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Level flow";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Types.Register<Flow.Igi2ContainerTask>(Flow.Igi2ContainerTask.TypeName);
+        context.Types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
+        context.Types.Register<Flow.Igi2EditVariableTask>(Flow.Igi2EditVariableTask.TypeName);
+        context.Types.Register<Flow.Igi2CutSceneTask>(Flow.Igi2CutSceneTask.TypeName);
+        context.Types.Register<Flow.Igi2EditCameraTask>(Flow.Igi2EditCameraTask.TypeName);
+        context.Types.Register<Flow.Igi2LevelFlowTask>(Flow.Igi2LevelFlowTask.TypeName);
+
+        Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
+        context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);
+    }
+
+    /// <inheritdoc/>
+    public void LoadTables(ContentLoadContext context)
+    {
     }
 }
 

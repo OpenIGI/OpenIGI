@@ -73,7 +73,7 @@ public static class Igi2LineScript
             return 0;
         }
 
-        return new ScriptExpressionEvaluator(new Context(natives, functions)).EvaluateInt32(expression);
+        return new ScriptExpressionEvaluator(new Igi2ScriptContext(natives, functions)).EvaluateInt32(expression);
     }
 
     private static int CommentStart(string line)
@@ -102,42 +102,52 @@ public static class Igi2LineScript
         return line.Length;
     }
 
-    private static int? Constant(NativeRegistry natives, string name) =>
+    /// <summary>Resolves a name to an integer constant of the namespace, as the parser folds them.</summary>
+    /// <param name="natives">The namespace.</param>
+    /// <param name="name">The name.</param>
+    /// <returns>Its value, or <see langword="null"/> when it is no integer constant.</returns>
+    internal static int? Constant(NativeRegistry natives, string name) =>
         natives.TryResolve(name, out QvmSymbol? symbol) && symbol.Kind == QvmSymbolKind.Constant && symbol.ValueType == QvmValueKind.Integer
             ? symbol.Read().Integer
             : null;
+}
 
-    /// <summary>What the text's names resolve to: the namespace's readable symbols and the registered natives.</summary>
-    private sealed class Context(NativeRegistry natives, Igi2ScriptFunctions functions) : IScriptExpressionContext
+/// <summary>What script text's names resolve to: the namespace's readable symbols and the registered natives.</summary>
+/// <param name="natives">The namespace.</param>
+/// <param name="functions">The natives the text may call.</param>
+internal sealed class Igi2ScriptContext(NativeRegistry natives, Igi2ScriptFunctions functions) : IScriptExpressionContext
+{
+    /// <inheritdoc/>
+    public bool TryGetValue(string name, out QvmValue value)
     {
-        public bool TryGetValue(string name, out QvmValue value)
+        if (natives.TryResolve(name, out QvmSymbol? symbol) && symbol.IsReadable)
         {
-            if (natives.TryResolve(name, out QvmSymbol? symbol) && symbol.IsReadable)
-            {
-                value = symbol.Read();
-                return true;
-            }
+            value = symbol.Read();
+            return true;
+        }
 
-            value = QvmValue.Zero;
+        value = QvmValue.Zero;
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public QvmValueKind GetValueKind(string name) =>
+        natives.TryResolve(name, out QvmSymbol? symbol) && symbol.IsReadable ? symbol.ValueType : QvmValueKind.None;
+
+    /// <inheritdoc/>
+    public bool TrySetValue(string name, QvmValue value) => false;
+
+    /// <inheritdoc/>
+    public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
+    {
+        if (!functions.TryGet(name, out Igi2ScriptFunction? function))
+        {
+            result = QvmValue.Zero;
             return false;
         }
 
-        public QvmValueKind GetValueKind(string name) =>
-            natives.TryResolve(name, out QvmSymbol? symbol) && symbol.IsReadable ? symbol.ValueType : QvmValueKind.None;
-
-        public bool TrySetValue(string name, QvmValue value) => false;
-
-        public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
-        {
-            if (!functions.TryGet(name, out Igi2ScriptFunction? function))
-            {
-                result = QvmValue.Zero;
-                return false;
-            }
-
-            object? context = natives.TryResolve(name, out QvmSymbol? symbol) ? symbol.Context : null;
-            result = function(new Igi2ScriptCall(arguments, context));
-            return true;
-        }
+        object? context = natives.TryResolve(name, out QvmSymbol? symbol) ? symbol.Context : null;
+        result = function(new Igi2ScriptCall(arguments, context));
+        return true;
     }
 }

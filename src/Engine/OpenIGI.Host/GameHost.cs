@@ -2374,6 +2374,7 @@ internal sealed partial class GameHost : IDisposable
                 && !_computerOpen
                 && !_missionFailedMenu
                 && _cutscenes?.IsPlaying != true
+                && _titlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
                 && shell is not null
                 && _activeMission is not null
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
