@@ -48,15 +48,15 @@ public sealed class Igi2PlacementBindingTests
 
             foreach (GameTask task in Walk(level.Root))
             {
-                if (task is not DeclaredTask task2 || !Igi2WorldScene.Bindings.ContainsKey(task2.Type.Name))
+                if (task is not (DeclaredTask or IIgi2PlacedTask) || !Igi2WorldScene.Bindings.ContainsKey(task.Type.Name))
                 {
                     continue;
                 }
 
-                declared[task2.Type.Name] = declared.GetValueOrDefault(task2.Type.Name) + 1;
-                if (ids.Contains(task2.Id))
+                declared[task.Type.Name] = declared.GetValueOrDefault(task.Type.Name) + 1;
+                if (ids.Contains(task.Id))
                 {
-                    placed[task2.Type.Name] = placed.GetValueOrDefault(task2.Type.Name) + 1;
+                    placed[task.Type.Name] = placed.GetValueOrDefault(task.Type.Name) + 1;
                 }
             }
         }
@@ -132,7 +132,7 @@ public sealed class Igi2PlacementBindingTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (DeclaredTask task in Walk(level.Root).OfType<DeclaredTask>().Where(t => t.Type.Name == "Switch"))
+            foreach (Interaction.Igi2SwitchTask task in Walk(level.Root).OfType<Interaction.Igi2SwitchTask>())
             {
                 Assert.True(task.TryGetValue("Initial on", out object? rawInitial));
                 bool initial = Assert.IsType<bool>(rawInitial);

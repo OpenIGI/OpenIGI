@@ -60,7 +60,11 @@ public sealed class Igi2LevelRun
         Root = root ?? throw new ArgumentNullException(nameof(root));
         Natives = natives ?? throw new ArgumentNullException(nameof(natives));
         Functions = functions ?? throw new ArgumentNullException(nameof(functions));
+        LevelFlow = root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault();
     }
+
+    /// <summary>Gets the level's flow, <c>LevelFlow_ptLevelFlow</c>, whose tick switches time their presses by.</summary>
+    public Igi2LevelFlowTask? LevelFlow { get; }
 
     /// <summary>Gets the level's root task.</summary>
     public GameTask Root { get; }

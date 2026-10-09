@@ -129,6 +129,15 @@ public interface IIgi2HumanSurroundings
     /// <returns>The sound's name.</returns>
     string? LandingSound(int material);
 
+    /// <summary>
+    /// The things a human may activate whose spheres meet its own, in the order the world's stationary tree gives them
+    /// (<c>World_TriggerQTaskEventSphereSpecificTree</c> with <c>WORLD_DYNCUBETREE_STATIONARY</c>).
+    /// </summary>
+    /// <param name="centre">The sphere's centre.</param>
+    /// <param name="radius">Its radius.</param>
+    /// <returns>The things; none when the world holds none.</returns>
+    IEnumerable<Interaction.IIgi2Activatable> FindActivatables(Vector3d centre, float radius) => [];
+
     /// <summary>Plays a named sound at the human's view (<c>SoundSys_NewSoundFn</c>).</summary>
     /// <param name="name">The sound definition's name.</param>
     void PlaySound(string name);

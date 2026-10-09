@@ -49,6 +49,10 @@ public sealed partial class Igi2HumanPlayer
 
         IsWalk = false;
         IsActivateLocked = false;
+        IsActivating = false;
+        IsCheckActivateButton = false;
+        EvaluateTarget = null;
+        ActivatingTarget = null;
         IsSwimming = false;
         MovementSpeedScale = 0f;
         JumpWaitTimer = 0;

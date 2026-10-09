@@ -388,7 +388,10 @@ public sealed partial class Igi2HumanPlayer
     /// With a weapon in hand the fire keys fire (<see cref="TryFireFromIdle"/>) and the reload key reloads.
     /// </para>
     /// <para>
-    /// Not yet: the binoculars, peeking, the computer and activating objects; throwing, whose state is not ported, so
+    /// With nothing to change to, the activate key activates what the view has found (<see cref="TryActivateFromIdle"/>).
+    /// </para>
+    /// <para>
+    /// Not yet: the binoculars, peeking, the computer and activating anything but a switch; throwing, whose state is not ported, so
     /// where idle would throw it stays idle; and dropping the weapon.
     /// </para>
     /// </remarks>
@@ -434,6 +437,7 @@ public sealed partial class Igi2HumanPlayer
 
         if (ChangeWeaponId == -1)
         {
+            TryActivateFromIdle();
             IsInsideBombArea = false;
             return;
         }

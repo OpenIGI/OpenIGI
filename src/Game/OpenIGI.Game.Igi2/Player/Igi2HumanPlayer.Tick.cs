@@ -99,6 +99,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         UpdateDie();
+        UpdateActivate();
         SelectWeaponFromCategory();
         SelectWeapon(forceCycle: false);
         if (IsActivateLocked)

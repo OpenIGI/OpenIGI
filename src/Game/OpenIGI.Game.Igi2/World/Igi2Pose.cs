@@ -242,6 +242,80 @@ public sealed class Igi2Pose
         direction.X == 0f ? 0f : Fpu.Atan2(direction.Y, direction.X).F;
 
     /// <summary>
+    /// The turn of a direction off the Y axis, <c>GameFunctions_CalcGamma</c> (<c>igi2 0x48C7C0</c>): the arc cosine of its
+    /// normalised Y, negative when it points along positive X, and nought for one with neither.
+    /// </summary>
+    /// <param name="x">The direction's X.</param>
+    /// <param name="y">The direction's Y.</param>
+    /// <returns>The turn, in radians.</returns>
+    public static float CalcGamma(double x, double y)
+    {
+        if (x == 0.0 && y == 0.0)
+        {
+            return 0f;
+        }
+
+        Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((Fpu)y * y) + ((Fpu)x * x));
+        Fpu across = (Fpu)x * inverse;
+        float angle = Acos(((Fpu)y * inverse).F);
+        return across.Value > 0.0 ? -angle : angle;
+    }
+
+    /// <summary>
+    /// The arc cosine, <c>Real32_Acos</c> (<c>igi2 0x5612C0</c>): a ratio of two polynomials in x² between ±1/√2, and beyond
+    /// them in 1 − x² times its square root, clamped to ±1.
+    /// </summary>
+    /// <param name="x">The cosine.</param>
+    /// <returns>The angle, in radians, in the FPU's chopped single precision.</returns>
+    public static float Acos(float x)
+    {
+        Fpu v = x;
+        if (v.Value > AcosEdge.Value)
+        {
+            if (v.Value >= 1.0)
+            {
+                v = 1f;
+            }
+
+            return AcosTail((Fpu)1f - (v * v)).F;
+        }
+
+        if (v.Value < -AcosEdge.Value)
+        {
+            if (v.Value <= -1.0)
+            {
+                v = -1f;
+            }
+
+            return (AcosPi - AcosTail((Fpu)1f - (v * v))).F;
+        }
+
+        Fpu x2 = v * v;
+        Fpu x4 = x2 * x2;
+        Fpu numerator = v * (((x2 * AcosA) - (x4 * AcosB)) - AcosC);
+        Fpu denominator = ((((x4 * x2) - (x4 * AcosD)) + (x2 * AcosE)) - AcosC);
+        return (AcosHalfPi - (numerator / denominator)).F;
+    }
+
+    private static readonly Fpu AcosEdge = BitConverter.Int32BitsToSingle(0x3F3504F3);
+    private static readonly Fpu AcosA = BitConverter.Int32BitsToSingle(0x4296F46D);
+    private static readonly Fpu AcosB = BitConverter.Int32BitsToSingle(0x418DE496);
+    private static readonly Fpu AcosC = BitConverter.Int32BitsToSingle(0x4283EC7E);
+    private static readonly Fpu AcosD = BitConverter.Int32BitsToSingle(0x41D99E8B);
+    private static readonly Fpu AcosE = BitConverter.Int32BitsToSingle(0x42ACF135);
+    private static readonly Fpu AcosPi = BitConverter.Int32BitsToSingle(0x40490FDB);
+    private static readonly Fpu AcosHalfPi = BitConverter.Int32BitsToSingle(0x3FC90FDB);
+
+    /// <summary>The outer ratio <c>Real32_Acos</c> takes in t = 1 − x²: √t times its numerator over its denominator.</summary>
+    private static Fpu AcosTail(Fpu t)
+    {
+        Fpu t2 = t * t;
+        Fpu numerator = Fpu.Sqrt(t) * (((t * AcosA) - (t2 * AcosB)) - AcosC);
+        Fpu denominator = ((((t2 * t) - (t2 * AcosD)) + (t * AcosE)) - AcosC);
+        return numerator / denominator;
+    }
+
+    /// <summary>
     /// The inverse of a nine-float matrix, transposed: <c>Real32x9_InvertSafe</c> (<c>igi2 0x563490</c>), which
     /// divides each cofactor by the determinant and stores it where the element it was formed for stands.
     /// </summary>

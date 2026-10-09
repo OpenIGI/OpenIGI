@@ -145,6 +145,17 @@ public sealed class Igi2Gameplay : ITitleGameplay
             generator.Sounds = player.Sounds;
         }
 
+        Func<string, Formats.World.MefModel?> models = Models(request.World);
+        List<Interaction.IIgi2Activatable> activatables = [];
+        foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
+        {
+            button.Models = models;
+            button.Sounds = player.Sounds;
+            activatables.Add(button);
+        }
+
+        player.Activatables.AddRange(activatables);
+
         return level;
     }
 
@@ -298,10 +309,13 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     private TitleWorldModel[] _lying = [];
     private long _lyingTick = -1;
 
-    private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons)
+    private readonly Igi2PlayerSurroundings _surroundings;
+
+    private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons, Igi2PlayerSurroundings surroundings)
     {
         Human = human;
         Weapons = weapons;
+        _surroundings = surroundings;
     }
 
     /// <summary>Gets the ported player.</summary>
@@ -324,6 +338,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets the level's sounds.</summary>
     public Igi2Sounds Sounds { get; private init; } = new(new Igi2SoundDefinitions(), null);
+
+    /// <summary>Gets the things in the level the player may activate, in the order the stationary tree offers them.</summary>
+    public List<Interaction.IIgi2Activatable> Activatables => _surroundings.Activatables;
 
     /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
     public Igi2LevelRun? Level { get; set; }
@@ -458,7 +475,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         // The view would first be placed on the first tick; placing it now gives the host's first frames the eyes
         // rather than the world's origin. It draws nothing from the run stream: a new view does not shake.
         human.UpdateViewBody(updateAnimation: false);
-        return new Igi2TitlePlayer(human, weapons) { Sounds = sounds };
+        return new Igi2TitlePlayer(human, weapons, surroundings) { Sounds = sounds };
     }
 
     /// <inheritdoc/>
@@ -596,6 +613,24 @@ internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world, Igi2Sound
         sounds.New(name, View(), View) ?? (IIgi2SoundInstance)SilentSound.Instance;
 
     private Vector3d View() => Owner?.View.Position ?? default;
+
+    /// <summary>Gets the things the player may activate, in the order the stationary tree offers them.</summary>
+    public List<Interaction.IIgi2Activatable> Activatables { get; } = [];
+
+    /// <inheritdoc/>
+    /// <remarks>Each thing's sphere against the player's: the two meet when their centres are no further apart than their radii added.</remarks>
+    public IEnumerable<Interaction.IIgi2Activatable> FindActivatables(Vector3d centre, float radius)
+    {
+        foreach (Interaction.IIgi2Activatable candidate in Activatables)
+        {
+            Vector3d d = candidate.Centre - centre;
+            double reach = radius + candidate.Radius;
+            if ((d.X * d.X) + (d.Y * d.Y) + (d.Z * d.Z) <= reach * reach)
+            {
+                yield return candidate;
+            }
+        }
+    }
 
     private sealed class SilentSound : IIgi2SoundInstance
     {
