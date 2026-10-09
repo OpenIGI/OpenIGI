@@ -35,6 +35,15 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>The sound a lock makes as it gives.</summary>
     public const string PickedSound = "pickloop_end";
 
+    /// <summary>The state animation slot hacking a terminal plays, <c>0x49</c>.</summary>
+    public const int HackAnimation = 73;
+
+    /// <summary>How far out from a terminal's vertex a hacker kneels, along its Y, <c>2764.8</c> (0.675 m).</summary>
+    public const double HackReach = 2764.8;
+
+    /// <summary>The sound a terminal makes once it is hacked.</summary>
+    public const string HackedSound = "typecomp_end";
+
     // A half turn, the float 0x40490FDB.
     private const float HalfTurn = 3.1415927f;
 
@@ -154,7 +163,7 @@ public sealed partial class Igi2HumanPlayer
                 EndActivate();
                 break;
 
-            case Igi2ActivateKind.GenericTba:
+            case Igi2ActivateKind.GenericTba or Igi2ActivateKind.Terminal:
                 // Only a fresh press starts the work; held from the last tick, the activation ends there.
                 if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
                 {
@@ -162,7 +171,7 @@ public sealed partial class Igi2HumanPlayer
                     break;
                 }
 
-                Go(Igi2PlayerState.ActivateGenericTba);
+                Go(target.Kind == Igi2ActivateKind.Terminal ? Igi2PlayerState.ActivateTerminal : Igi2PlayerState.ActivateGenericTba);
                 break;
         }
     }
@@ -241,25 +250,41 @@ public sealed partial class Igi2HumanPlayer
     // without its turn to the near side, from the second vertex, playing the action's own clip by name.
     private void EnterActivateGenericTba()
     {
-        if (ActivatingTarget is not IIgi2TimedAction action)
+        if (ActivatingTarget is IIgi2TimedAction action)
         {
-            return;
+            BeginWork(action, PickReach, () => Animation.PlayNamed(action.ActivateAnimation, 0, 0f), finishedSound: null);
         }
+    }
 
+    // State 40 -- HumanPlayer_InitStateActivateTerminal 0x4ADF00, RunStateActivateTerminal 0x4AE210: a timed action of its
+    // own clip and reach, which sounds once the hack is done.
+    private void EnterActivateTerminal()
+    {
+        if (ActivatingTarget is IIgi2WorkedActivatable terminal)
+        {
+            BeginWork(terminal, HackReach, () => Animation.PlayState(HackAnimation, 0, 0f), HackedSound);
+        }
+    }
+
+    // What the timed action's and the terminal's states share (HumanPlayer_InitStateActivateGenericTBA 0x4AE910 and
+    // InitStateActivateTerminal 0x4ADF00): standing, the upper body cleared and the aim settled; the clip begun; kneeling the
+    // reach out along its Y from its vertex, facing it; and the timer started on its time, with its sound.
+    private void BeginWork(IIgi2WorkedActivatable action, double reach, Action playClip, string? finishedSound)
+    {
         PreviousStance = Pose;
         Pose = Igi2HumanPose.Standing;
         CurrentUpperBody = 0;
         RequestedUpperBody = 0;
         Animation.ClearUpperBody(0.4f);
         AimPrecision(Igi2PrecisionType.Standing);
-        Animation.PlayNamed(action.ActivateAnimation, 0, 0f);
+        playClip();
         Animation.StepMain();
 
         IReadOnlyList<float> m = action.CurrentOrientation;
         Vector3d vertex = action.MagicVertex;
-        Fpu x = ((((Fpu)m[2] + m[0]) * 0.0) + ((Fpu)m[1] * PickReach)) + vertex.X;
-        Fpu y = ((((Fpu)m[5] + m[3]) * 0.0) + ((Fpu)m[4] * PickReach)) + vertex.Y;
-        Fpu z = (((Fpu)m[8] + m[6]) * 0.0) + ((Fpu)m[7] * PickReach);
+        Fpu x = ((((Fpu)m[2] + m[0]) * 0.0) + ((Fpu)m[1] * reach)) + vertex.X;
+        Fpu y = ((((Fpu)m[5] + m[3]) * 0.0) + ((Fpu)m[4] * reach)) + vertex.Y;
+        Fpu z = (((Fpu)m[8] + m[6]) * 0.0) + ((Fpu)m[7] * reach);
         PopPosition(new Vector3d(x.Value, y.Value, (vertex.Z + z).Value));
         GroundMovementSpeed = default;
         SnapToGround();
@@ -273,10 +298,11 @@ public sealed partial class Igi2HumanPlayer
         _timedActionSound?.Delete();
         _timedActionSound = Surroundings.StartSound(action.ActivateSound);
         TbaTimeout = PickReleaseTicks;
-        Locomotion.Current = (_, _) => RunActivateGenericTba(action);
+        Locomotion.Current = (_, _) => RunWork(action, finishedSound);
     }
 
-    private void RunActivateGenericTba(IIgi2TimedAction action)
+    // HumanPlayer_RunStateActivateGenericTBA 0x4AFD40 and RunStateActivateTerminal 0x4AE210.
+    private void RunWork(IIgi2WorkedActivatable action, string? finishedSound)
     {
         MoveOnGround(0f, GroundAcceleration, 0f, GroundAcceleration);
 
@@ -289,6 +315,10 @@ public sealed partial class Igi2HumanPlayer
         if (finished)
         {
             action.Finish();
+            if (finishedSound is not null)
+            {
+                Surroundings.StartSound(finishedSound);
+            }
         }
 
         EndTimedAction();

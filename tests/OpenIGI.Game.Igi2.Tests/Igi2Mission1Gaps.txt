@@ -403,7 +403,6 @@ name ZoomIn    # config.qvm
 name ZoomOut    # config.qvm
 type AIGraph    # MISSIONS/location1/level1/objects.qvm
 type AISquad    # MISSIONS/location1/level1/objects.qvm
-type AlarmControl    # MISSIONS/location1/level1/objects.qvm
 type AmbientArea    # MISSIONS/location1/level1/objects.qvm
 type Building    # MISSIONS/location1/level1/objects.qvm
 type ColumnView    # MENUSYSTEM/ingamemenu.qvm

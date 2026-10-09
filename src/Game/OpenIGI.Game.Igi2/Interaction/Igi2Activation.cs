@@ -15,6 +15,9 @@ public enum Igi2ActivateKind
     /// <summary>A door is opened or shut (<c>Door_GetActivateHandler</c>, <c>0x537790</c>).</summary>
     Door = 2,
 
+    /// <summary>A terminal is hacked, <c>Terminal_GetActivateHandler</c> (<c>igi2 0x4CB050</c>).</summary>
+    Terminal = 4,
+
     /// <summary>A wire is slid down (<c>Wire_GetActivateHandler</c>, <c>0x514CA0</c>).</summary>
     Wire = 7,
 
@@ -47,6 +50,25 @@ public interface IIgi2Activatable
     void Activate(int activateTime)
     {
     }
+}
+
+/// <summary>Something a human kneels at and works by holding the activate key for a while: a code pad, a padlock, a terminal.</summary>
+public interface IIgi2WorkedActivatable : IIgi2Activatable
+{
+    /// <summary>Gets the seconds the key must be held.</summary>
+    float ActivateTime { get; }
+
+    /// <summary>Gets the sound the human makes at it while it works.</summary>
+    string ActivateSound { get; }
+
+    /// <summary>Gets where the human kneels from, its model's second magic vertex.</summary>
+    Vector3d MagicVertex { get; }
+
+    /// <summary>Gets its frame, row by row.</summary>
+    IReadOnlyList<float> CurrentOrientation { get; }
+
+    /// <summary>Finishes it, from the next tick on.</summary>
+    void Finish();
 }
 
 /// <summary>An activatable that opens and closes, as a door does, and may be locked.</summary>
@@ -137,6 +159,29 @@ public sealed class Igi2EvaluateActivate
 
     /// <summary>Gets the best target found, <c>ptBestQTask</c>.</summary>
     public IIgi2Activatable? Best { get; private set; }
+
+    /// <summary>
+    /// Offers a target worked from a spot on its front, as a timed action and a terminal are: only a view ahead of the spot along
+    /// its frame's Y, and less than a half width to either side of it, resolves it.
+    /// </summary>
+    /// <param name="at">The spot it is worked from.</param>
+    /// <param name="frame">Its frame, row by row.</param>
+    /// <param name="halfWidth">How far to either side of the spot the view may be.</param>
+    /// <param name="target">The target.</param>
+    /// <returns>Whether it was taken.</returns>
+    /// <remarks>
+    /// <c>GenericTBA_EvaluateActivateHandler</c> (<c>igi2 0x4C27B0</c>) and <c>Terminal_EvaluateActivateHandler</c>
+    /// (<c>0x4CAF40</c>) turn the view into the frame alike, each row summed Z, then Y, then X.
+    /// </remarks>
+    public bool OfferFromFront(Vector3d at, IReadOnlyList<float> frame, double halfWidth, IIgi2Activatable target)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        IReadOnlyList<float> m = frame;
+        Fpu dx = (Fpu)ViewPosition.X - at.X, dy = (Fpu)ViewPosition.Y - at.Y, dz = (Fpu)ViewPosition.Z - at.Z;
+        Fpu across = (((Fpu)m[6] * dz) + ((Fpu)m[3] * dy)) + ((Fpu)m[0] * dx);
+        Fpu ahead = (((Fpu)m[7] * dz) + ((Fpu)m[4] * dy)) + ((Fpu)m[1] * dx);
+        return ahead.Value > 0.0 && Math.Abs(across.Value) < halfWidth && Resolve(at, target);
+    }
 
     /// <summary>
     /// Takes a target if it is the best yet, <c>GameFunctions_ResolveEvaluateActivate</c> (<c>igi2 0x48D0E0</c>): nearer than

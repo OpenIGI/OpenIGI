@@ -10,6 +10,10 @@ public sealed partial class Igi2HumanPlayer : IIgi2Detectable
     /// <summary>How far above the feet a detector looks for them, <c>409.6</c> (0.1 m).</summary>
     public const double DetectionFeetLift = 409.6000061035156;
 
+    /// <summary>Gets or sets how many times an alarm has started, <c>nTimesAlarmTriggered</c> (<c>Human_s + 0x200</c>).</summary>
+    /// <remarks>An <c>AlarmControl</c> counts it on the level's task 0, the player (<c>AlarmControl_RunHandler</c>, <c>igi2 0x4D0433</c>).</remarks>
+    public int TimesAlarmTriggered { get; set; }
+
     /// <inheritdoc/>
     public Vector3d DetectablePosition => Position;
 

@@ -223,24 +223,34 @@ public sealed class Igi2Gameplay : ITitleGameplay
         List<Interaction.IIgi2Destructible> destructibles = [];
         foreach (Interaction.Igi2ExplodeObjectTask explosive in Descendants(root).OfType<Interaction.Igi2ExplodeObjectTask>())
         {
-            explosive.Explosive.Models = models;
-            explosive.Explosive.Explosions = player.Explosions;
-            explosive.Explosive.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2ExplodeObjectTask.TypeName, explosive.Id));
-            player.Explosions?.AddTarget(explosive);
-            destructibles.Add(explosive);
+            Arm(explosive, Interaction.Igi2ExplodeObjectTask.TypeName);
         }
 
         foreach (Interaction.Igi2GenericTbaTask action in Descendants(root).OfType<Interaction.Igi2GenericTbaTask>())
         {
-            action.Explosive.Models = models;
-            action.Explosive.Explosions = player.Explosions;
-            action.Explosive.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2GenericTbaTask.TypeName, action.Id));
-            player.Explosions?.AddTarget(action);
-            destructibles.Add(action);
+            Arm(action, Interaction.Igi2GenericTbaTask.TypeName);
             activatables.Add(action);
         }
 
+        foreach (Interaction.Igi2AlarmControlTask alarm in Descendants(root).OfType<Interaction.Igi2AlarmControlTask>())
+        {
+            Arm(alarm, Interaction.Igi2AlarmControlTask.TypeName);
+            alarm.AlarmRaised = () => player.Human.TimesAlarmTriggered++;
+            activatables.Add(alarm);
+        }
+
         player.Destruction = destructibles.Count > 0 ? new Interaction.Igi2PlacementDestruction(destructibles) : null;
+
+        // An ExplodeObject of any kind: its models and blasts, its solids answering bullets, a target for blasts, and drawn
+        // destroyed once it is.
+        void Arm(Interaction.IIgi2ExplodingTask task, string typeName)
+        {
+            task.Explosive.Models = models;
+            task.Explosive.Explosions = player.Explosions;
+            task.Explosive.Bind(player.CollisionWorld.SolidsOf(typeName, task.Id));
+            player.Explosions?.AddTarget(task);
+            destructibles.Add(task);
+        }
 
         foreach (Interaction.Igi2ConveyorBeltTask belt in Descendants(root).OfType<Interaction.Igi2ConveyorBeltTask>())
         {

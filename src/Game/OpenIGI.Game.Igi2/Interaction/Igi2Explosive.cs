@@ -51,6 +51,13 @@ public interface IIgi2ExplosiveParameters
     string ExplosionSound { get; }
 }
 
+/// <summary>A task of a kind that is an <c>ExplodeObject</c>: it blows up with its <see cref="Explosive"/>.</summary>
+public interface IIgi2ExplodingTask : IIgi2Destructible, IIgi2ExplosionTarget
+{
+    /// <summary>Gets what it does when it explodes.</summary>
+    Igi2Explosive Explosive { get; }
+}
+
 /// <summary>
 /// The exploding half of <c>ExplodeObject</c>, which every kind of it shares: its damage, its script, its countdown, and the
 /// swap to its destroyed model with the blast that goes with it.

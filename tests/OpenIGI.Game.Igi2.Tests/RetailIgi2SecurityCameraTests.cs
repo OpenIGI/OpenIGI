@@ -151,7 +151,7 @@ public sealed class RetailIgi2SecurityCameraTests
     }
 
     // The level's cameras readied as gameplay readies them, seeing one another and, where given, the player.
-    private static Igi2SecurityCameraTask[] Arm(RetailIgi2Mission1 m, IIgi2Detectable? player)
+    internal static Igi2SecurityCameraTask[] Arm(RetailIgi2Mission1 m, IIgi2Detectable? player)
     {
         Igi2DetectionWorld world = new(m.Collision, m.Materials)
         {

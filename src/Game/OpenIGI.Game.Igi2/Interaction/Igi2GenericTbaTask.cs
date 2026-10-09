@@ -7,26 +7,11 @@ using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
-/// <summary>Something a human finishes by holding the activate key at it for a while: a code pad, a padlock.</summary>
-public interface IIgi2TimedAction : IIgi2Activatable
+/// <summary>Something a human finishes by holding the activate key at it for a while, playing its own clip: a code pad, a padlock.</summary>
+public interface IIgi2TimedAction : IIgi2WorkedActivatable
 {
     /// <summary>Gets the clip the human plays at it.</summary>
     string ActivateAnimation { get; }
-
-    /// <summary>Gets the seconds the key must be held.</summary>
-    float ActivateTime { get; }
-
-    /// <summary>Gets the sound the human makes at it while it works.</summary>
-    string ActivateSound { get; }
-
-    /// <summary>Gets where the human kneels from, its model's second magic vertex.</summary>
-    Vector3d MagicVertex { get; }
-
-    /// <summary>Gets its frame, row by row.</summary>
-    IReadOnlyList<float> CurrentOrientation { get; }
-
-    /// <summary>Finishes it, from the next tick on.</summary>
-    void Finish();
 }
 
 /// <summary>
@@ -46,8 +31,7 @@ public interface IIgi2TimedAction : IIgi2Activatable
 /// </para>
 /// </remarks>
 public sealed partial class Igi2GenericTbaTask
-    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplosionTarget, IIgi2Destructible,
-        IIgi2TimedAction
+    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2TimedAction
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "GenericTBA";
@@ -277,15 +261,7 @@ public sealed partial class Igi2GenericTbaTask
         Fpu ry = (((Fpu)m[5] * oz) + ((Fpu)m[3] * ox)) + ((Fpu)m[4] * oy);
         Fpu rz = (((Fpu)m[8] * oz) + ((Fpu)m[6] * ox)) + ((Fpu)m[7] * oy);
         Vector3d at = new(((Fpu)vertex.X + rx).Value, ((Fpu)vertex.Y + ry).Value, ((Fpu)vertex.Z + rz).Value);
-
-        Vector3d view = context.ViewPosition;
-        Fpu dx = (Fpu)view.X - at.X, dy = (Fpu)view.Y - at.Y, dz = (Fpu)view.Z - at.Z;
-        Fpu across = (((Fpu)m[6] * dz) + ((Fpu)m[3] * dy)) + ((Fpu)m[0] * dx);
-        Fpu ahead = (((Fpu)m[7] * dz) + ((Fpu)m[4] * dy)) + ((Fpu)m[1] * dx);
-        if (ahead.Value > 0.0 && Math.Abs(across.Value) < ActivateHalfWidth)
-        {
-            context.Resolve(at, this);
-        }
+        context.OfferFromFront(at, m, ActivateHalfWidth, this);
     }
 
     /// <inheritdoc/>
