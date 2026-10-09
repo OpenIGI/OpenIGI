@@ -85,8 +85,8 @@ public sealed class RetailIgi2GrenadeFlightTests
     }
 
     /// <summary>
-    /// Thrown from mission 1's start up and forward, the grenade rises, falls back to the ground, bounces and settles; no
-    /// contact point ends a tick deeper in the ground than one tick's fall, which the next lifts out. When its fuse runs out
+    /// Thrown from mission 1's start up and forward, the grenade rises, falls back to the ground, bounces and settles,
+    /// sounding each bounce and telling the AI of it as of itself every fifth tick of its fuse; no contact point ends a tick deeper in the ground than one tick's fall, which the next lifts out. When its fuse runs out
     /// it explodes where it lies, with the launcher's damage and its radius and falloff in units, and is gone.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
@@ -125,6 +125,12 @@ public sealed class RetailIgi2GrenadeFlightTests
         Assert.True(lowest >= -(Igi2Grenade.Gravity + 1.0), $"a contact point went {-lowest} units into the ground");
         Assert.True(path[^1].Z - Ground(m.World, path[^1]) < 512.0);
         Assert.True(Distance(path[^1], path[^10]) < 256.0);
+
+        Assert.Equal(30, effects.AiEvents.Count(static e => e == (Igi2Grenade.FlightEvent, 1, -1f)));
+        Assert.Contains(Igi2Grenade.BounceSound, effects.Sounds);
+        Assert.Equal(
+            effects.Sounds.Count(static s => s == Igi2Grenade.BounceSound),
+            effects.AiEvents.Count(static e => e == (Igi2Grenade.BounceEvent, 2, Igi2Grenade.BounceRange)));
 
         Igi2GrenadeExplosion explosion = Assert.Single(effects.Explosions);
         Assert.Equal(path[^1], explosion.Position);
@@ -174,7 +180,15 @@ public sealed class RetailIgi2GrenadeFlightTests
     {
         public List<Igi2GrenadeExplosion> Explosions { get; } = [];
 
+        public List<string> Sounds { get; } = [];
+
+        public List<(int Event, int Flags, float Range)> AiEvents { get; } = [];
+
         public void Explode(in Igi2GrenadeExplosion explosion) => Explosions.Add(explosion);
+
+        public void Sound(string sound, Vector3d position) => Sounds.Add(sound);
+
+        public void AiEvent(int aiEvent, int flags, Vector3d position, float range) => AiEvents.Add((aiEvent, flags, range));
     }
 
     private sealed record Mission1Setup(Igi2Level Level, Igi2Session Session, Igi2CollisionWorld World);

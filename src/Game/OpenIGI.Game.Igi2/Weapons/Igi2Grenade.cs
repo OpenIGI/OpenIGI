@@ -45,15 +45,27 @@ public readonly record struct Igi2GrenadeExplosion(
     public const string Sound = "explo_grenade";
 }
 
-/// <summary>What a grenade's end shows and does, behind which its flight does not depend.</summary>
+/// <summary>What a grenade sounds, tells the AI and does at its end, behind which its flight does not depend.</summary>
 public interface IIgi2GrenadeEffects
 {
     /// <summary>A grenade explodes, <c>Explosion0_New</c> (<c>igi2 0x50A4E0</c>).</summary>
     /// <param name="explosion">The explosion.</param>
     void Explode(in Igi2GrenadeExplosion explosion);
+
+    /// <summary>A grenade sounds (<c>SoundSys_NewSoundFn</c> placed at it).</summary>
+    /// <param name="sound">The sound.</param>
+    /// <param name="position">Where.</param>
+    void Sound(string sound, Vector3d position);
+
+    /// <summary>A grenade tells the AI of itself, <c>Grenade_SendDetectionEvent</c> (<c>igi2 0x483EC0</c>).</summary>
+    /// <param name="aiEvent">The event.</param>
+    /// <param name="flags">Its flags.</param>
+    /// <param name="position">Where the grenade is.</param>
+    /// <param name="range">How far it carries.</param>
+    void AiEvent(int aiEvent, int flags, Vector3d position, float range);
 }
 
-/// <summary>A grenade's end that does nothing: the grenade is simply gone.</summary>
+/// <summary>A grenade's effects that do nothing: the grenade is silent, and at its end simply gone.</summary>
 public sealed class Igi2NoGrenadeEffects : IIgi2GrenadeEffects
 {
     /// <summary>Gets the shared instance.</summary>
@@ -61,6 +73,16 @@ public sealed class Igi2NoGrenadeEffects : IIgi2GrenadeEffects
 
     /// <inheritdoc/>
     public void Explode(in Igi2GrenadeExplosion explosion)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void Sound(string sound, Vector3d position)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void AiEvent(int aiEvent, int flags, Vector3d position, float range)
     {
     }
 }
@@ -79,6 +101,21 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
 
     /// <summary>How far down the fuse's end looks for the ground under it: 4096 units (<c>0xC0B0000000000000</c>).</summary>
     public const double GroundProbe = -4096.0;
+
+    /// <summary>The sound a grenade makes when it strikes something, <c>grenade_bnc_1</c>.</summary>
+    public const string BounceSound = "grenade_bnc_1";
+
+    /// <summary>The AI event a flying grenade raises every fifth tick of its fuse.</summary>
+    public const int FlightEvent = 0x10;
+
+    /// <summary>The AI event a grenade's bounce raises.</summary>
+    public const int BounceEvent = 0x11;
+
+    /// <summary>How far a bounce is heard: 20480 units.</summary>
+    public const float BounceRange = 20480f;
+
+    /// <summary>The ticks without a contact after which the next one bounces again.</summary>
+    public const int BounceRest = 10;
 
     private readonly Igi2LineTrace _ground = new(1);
     private readonly Igi2Grenades? _owner;
@@ -114,6 +151,15 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
     /// <summary>Gets the ticks left on its fuse, <c>nExplodeTimer</c>.</summary>
     public int ExplodeTimer { get; private set; }
 
+    /// <summary>Gets a value indicating whether it has bounced since it last went ten ticks without a contact, <c>Grenade_s + 0x774</c>.</summary>
+    public bool HasBounced { get; private set; }
+
+    /// <summary>Gets the ticks it has run, the clock its bounces are timed by.</summary>
+    public int Ticks { get; private set; }
+
+    /// <summary>Gets the tick it last bounced on, <c>Grenade_s + 0x770</c>.</summary>
+    public int BounceTick { get; private set; }
+
     /// <summary>Gets where it is.</summary>
     public Vector3d Position => Body?.Position ?? Throw.Position;
 
@@ -136,18 +182,28 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
     /// object takes a tick under the grenade's gravity and damping.
     /// </para>
     /// <para>
+    /// An ordinary grenade tells the AI of itself on every fifth tick of its fuse. A contact at the last move sounds the
+    /// bounce, which an ordinary grenade tells the AI of too, once until ten ticks go by without one.
+    /// </para>
+    /// <para>
     /// The tick the fuse is out, the ground under it is probed and, for an ordinary grenade, the explosion goes off with the
-    /// launcher's parameters, and the grenade is gone. Flash and smoke grenades, the AI's hearing of a grenade every fifth
-    /// tick and its sounds are not ported yet.
+    /// launcher's parameters, and the grenade is gone. Flash and smoke grenades are not ported yet.
     /// </para>
     /// </remarks>
     public bool Run(Igi2PhysicsWorld world, IIgi2GrenadeEffects effects)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(effects);
+        int tick = Ticks++;
         if (ExplodeTimer != 0)
         {
             ExplodeTimer--;
+            if (ExplodeTimer % 5 == 0 && Kind == Igi2GrenadeKind.Normal)
+            {
+                effects.AiEvent(FlightEvent, 1, Position, -1f);
+            }
+
+            ControlSound(effects, tick);
             if (Body is { } body && !body.IsIdle())
             {
                 body.Update(Gravity, AirResistance, SpinResistance, world);
@@ -172,6 +228,34 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// <c>Grenade_ControlSound</c> (<c>igi2 0x483F20</c>): a contact at the last move bounces, if it has not since it last went
+    /// ten ticks without one.
+    /// </summary>
+    private void ControlSound(IIgi2GrenadeEffects effects, int tick)
+    {
+        if (Body is { ContactCount: not 0 })
+        {
+            if (HasBounced)
+            {
+                return;
+            }
+
+            effects.Sound(BounceSound, Position);
+            if (Kind == Igi2GrenadeKind.Normal)
+            {
+                effects.AiEvent(BounceEvent, 2, Position, BounceRange);
+            }
+
+            HasBounced = true;
+            BounceTick = tick;
+        }
+        else if (tick - BounceTick > BounceRest)
+        {
+            HasBounced = false;
+        }
     }
 }
 

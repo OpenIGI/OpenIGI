@@ -828,6 +828,12 @@ public sealed class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery col
         }
     }
 
+    /// <inheritdoc/>
+    public void Sound(string sound, Vector3d position) => Effects.Sound(sound, position);
+
+    /// <inheritdoc/>
+    public void AiEvent(int aiEvent, int flags, Vector3d position, float range) => Effects.AiEvent(aiEvent, flags, position, range);
+
     /// <summary>The fixed 40.96-unit step past each face the blast's trace makes.</summary>
     private const float StillStep = 40.96f;
 
