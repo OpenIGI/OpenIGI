@@ -36,6 +36,20 @@ public interface IIgi2Activatable
     void EvaluateActivate(Igi2EvaluateActivate context);
 }
 
+/// <summary>An activatable that opens and closes, as a door does, and may be locked.</summary>
+public interface IIgi2Door : IIgi2Activatable
+{
+    /// <summary>Gets a value indicating whether it is locked, <c>Door_IsLocked</c> (<c>igi2 0x5383F0</c>).</summary>
+    bool IsLocked { get; }
+
+    /// <summary>Gets a value indicating whether its lock can be picked now, <c>Door_IsPickable</c> (<c>igi2 0x538400</c>).</summary>
+    bool IsPickable { get; }
+
+    /// <summary>Tells it to open if it is shut or closing, or to close: <c>Door_ToggleOpenDoorEx</c> (<c>igi2 0x5384D0</c>).</summary>
+    /// <param name="from">Where the one opening it stands, which a door that opens both ways swings away from.</param>
+    void ToggleOpen(Vector3d from);
+}
+
 /// <summary>An activatable that a press acts on at once, as a switch is.</summary>
 public interface IIgi2Pressable : IIgi2Activatable
 {

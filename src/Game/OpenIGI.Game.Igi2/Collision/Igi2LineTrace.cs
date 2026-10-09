@@ -76,4 +76,11 @@ public sealed class Igi2LineTrace
 
     /// <summary>Gets or sets the light an unlit hit reads, or <see langword="null"/> for none.</summary>
     public IIgi2SceneLighting? Lighting { get; set; }
+
+    /// <summary>
+    /// Gets or sets who an object-collision trace is run for, <c>CollisionEvaluateContext_s.ptQTask</c> of the
+    /// <c>ObjectCollisionEvaluate</c> event, or <see langword="null"/> for a trace that asks no such event.
+    /// </summary>
+    /// <remarks>A door reads it: a human's lines that strike it while it moves hold it (<c>Door_TraceLinesHandler</c>, <c>igi2 0x536FE0</c>).</remarks>
+    public object? Evaluator { get; set; }
 }

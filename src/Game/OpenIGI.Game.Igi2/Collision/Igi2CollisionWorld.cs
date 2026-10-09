@@ -160,7 +160,26 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
             Igi2Pose pose = placement.Frame is { } frame
                 ? Igi2Pose.FromMatrix(placement.Position, frame)
                 : Igi2Pose.FromAngles(placement.Position, placement.Orientation);
-            Add(placement, placement.Model, pose, depth: 0);
+            Walk(models, placement.Model, pose, depth: 0, (model, modelName, at, depth) =>
+            {
+                if (model.BoneHierarchy is null && Meshes(model) is { } meshes)
+                {
+                    Igi2RigidObject solid = new(
+                        new Igi2CollisionOwner(placement.TypeName, placement.LevelId, modelName, depth),
+                        meshes,
+                        model.NativeMarkerBound,
+                        isBuildingMesh: false)
+                    {
+                        Position = at.Position,
+                    };
+                    for (int i = 0; i < solid.Orientation.Length; i++)
+                    {
+                        solid.Orientation[i] = at.Orientation[i];
+                    }
+
+                    objects.Add(solid);
+                }
+            });
         }
 
         Igi2TerrainCollider? terrain = ground is { IsEmpty: false } ? new Igi2TerrainCollider(ground, terrainOwner) : null;
@@ -204,41 +223,63 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
             }
         }
 
-        void Add(Igi2Placement root, string modelName, Igi2Pose pose, int depth)
-        {
-            MefModel? model = models(modelName);
-            if (model is null)
-            {
-                return;
-            }
+    }
 
-            if (model.BoneHierarchy is null && Meshes(model) is { } meshes)
+    /// <summary>The solids one placement was built as, its own first and then its attachments', in the order they were built.</summary>
+    /// <param name="typeName">The placing task's type.</param>
+    /// <param name="levelId">The placing task's level id.</param>
+    /// <returns>The solids; none for a placement that has no collision.</returns>
+    public IReadOnlyList<Igi2RigidObject> SolidsOf(string typeName, int levelId) =>
+        [.. _objects.Where(o => o.Owner is Igi2CollisionOwner owner && owner.LevelId == levelId && owner.TypeName == typeName)];
+
+    /// <summary>
+    /// Moves the solids one placement was built as to a new pose of that placement, each attachment turned and carried
+    /// with it as it was when the level was built (<c>ModelObj_CreateAttachObject</c>, <c>igi2 0x56D0B0</c>).
+    /// </summary>
+    /// <param name="solids">The placement's solids, as <see cref="SolidsOf"/> gives them.</param>
+    /// <param name="models">Finds a model by name.</param>
+    /// <param name="modelName">The placement's model.</param>
+    /// <param name="pose">The placement's new pose.</param>
+    public static void Repose(IReadOnlyList<Igi2RigidObject> solids, Func<string, MefModel?> models, string modelName, Igi2Pose pose)
+    {
+        ArgumentNullException.ThrowIfNull(solids);
+        ArgumentNullException.ThrowIfNull(models);
+        ArgumentNullException.ThrowIfNull(pose);
+        int next = 0;
+        Walk(models, modelName, pose, depth: 0, (_, name, at, depth) =>
+        {
+            // Build made a solid of only some of the models the walk visits; the next one it made is the next one met
+            // that it could have been made of.
+            if (next < solids.Count && solids[next].Owner is Igi2CollisionOwner owner && owner.Model == name && owner.Depth == depth)
             {
-                Igi2RigidObject solid = new(
-                    new Igi2CollisionOwner(root.TypeName, root.LevelId, modelName, depth),
-                    meshes,
-                    model.NativeMarkerBound,
-                    isBuildingMesh: false)
-                {
-                    Position = pose.Position,
-                };
+                Igi2RigidObject solid = solids[next++];
+                solid.Position = at.Position;
                 for (int i = 0; i < solid.Orientation.Length; i++)
                 {
-                    solid.Orientation[i] = pose.Orientation[i];
+                    solid.Orientation[i] = at.Orientation[i];
                 }
-
-                objects.Add(solid);
             }
+        });
+    }
 
-            if (depth >= MaxAttachmentDepth)
-            {
-                return;
-            }
+    // A placed model and everything hanging off it, depth first: the model, then each of its attachments in turn.
+    private static void Walk(Func<string, MefModel?> models, string modelName, Igi2Pose pose, int depth, Action<MefModel, string, Igi2Pose, int> visit)
+    {
+        MefModel? model = models(modelName);
+        if (model is null)
+        {
+            return;
+        }
 
-            foreach (MefAttachment attachment in model.Attachments)
-            {
-                Add(root, attachment.Name, pose.Attach(attachment), depth + 1);
-            }
+        visit(model, modelName, pose, depth);
+        if (depth >= MaxAttachmentDepth)
+        {
+            return;
+        }
+
+        foreach (MefAttachment attachment in model.Attachments)
+        {
+            Walk(models, attachment.Name, pose.Attach(attachment), depth + 1, visit);
         }
     }
 
@@ -418,6 +459,10 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                 && p.Z - r <= max.Z && min.Z <= r + p.Z)
             {
                 solid.NextZ(trace);
+                if (lines)
+                {
+                    solid.Traced?.Invoke(trace);
+                }
             }
         }
 

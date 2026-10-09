@@ -98,9 +98,7 @@ public sealed class Igi2PlacementBindingTests
     public void A_door_stands_at_its_start_position()
     {
         Igi2Level level = LevelOne();
-        DeclaredTask door = Walk(level.Root)
-            .OfType<DeclaredTask>()
-            .First(t => t.Type.Name == "Door");
+        Interaction.Igi2DoorTask door = Walk(level.Root).OfType<Interaction.Igi2DoorTask>().First();
 
         Assert.True(door.TryGetValue("Position start", out object? rawStart));
         Vector3d start = Assert.IsType<Vector3d>(rawStart);

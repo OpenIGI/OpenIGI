@@ -200,6 +200,9 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public IPlacementSpin? Spins { get; set; }
 
+    /// <inheritdoc/>
+    public IPlacementMotion? Motions { get; set; }
+
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 
@@ -824,6 +827,12 @@ public sealed class WorldRenderer : IWorldPresenter
                 entry.Displayed = entry.Displayed! with { Orientation = spun };
             }
 
+            // A door a title swings: it leaves its spot as well as turning.
+            if (Motions?.TryGetTransform(authored, _frameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
+            {
+                entry.Displayed = entry.Displayed! with { Position = moved, Orientation = movedOrientation };
+            }
+
             if (TryGetStandOrientation(authored, out Matrix3f stand))
             {
                 entry.Displayed = entry.Displayed! with { Orientation = stand };
@@ -1257,6 +1266,11 @@ public sealed class WorldRenderer : IWorldPresenter
         if (Spins?.TryGetOrientation(placement, _frameAlpha, out Matrix3f spun) == true)
         {
             displayed = displayed with { Orientation = spun };
+        }
+
+        if (Motions?.TryGetTransform(placement, _frameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
+        {
+            displayed = displayed with { Position = moved, Orientation = movedOrientation };
         }
 
         if (TryGetStandOrientation(placement, out Matrix3f stand))

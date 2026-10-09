@@ -168,6 +168,7 @@ public static class Igi2DrawableScene
             {
                 LightmapEntry = entry,
                 BentGeometry = bent,
+                LevelId = placementId,
 
                 // The queue this object is drawn in. Every I.G.I. 2 level authors it, and it is what
                 // separates a decal or a pane of glass from the geometry it has to come after.

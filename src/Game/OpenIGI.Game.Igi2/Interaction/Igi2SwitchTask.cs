@@ -194,7 +194,7 @@ public sealed partial class Igi2SwitchTask : GameTask, IIgi2RunTask, IIgi2Pressa
         }
 
         float[] m = Frame();
-        Vector3d vertex = MagicVertex(m);
+        Vector3d vertex = Igi2MagicVertex.Position(Models?.Invoke(Model), 0, m, Position);
         Fpu dx = (Fpu)context.ViewPosition.X - vertex.X;
         Fpu dy = (Fpu)context.ViewPosition.Y - vertex.Y;
         Fpu dz = (Fpu)context.ViewPosition.Z - vertex.Z;
@@ -275,15 +275,4 @@ public sealed partial class Igi2SwitchTask : GameTask, IIgi2RunTask, IIgi2Pressa
     }
 
     private float[] Frame() => Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
-
-    // RigidDynCubeObj_GetMagicVertexPos (igi2 0x58E430): the model's first magic vertex, turned by the frame and added to the
-    // position.
-    private Vector3d MagicVertex(float[] m)
-    {
-        Vector3f v = Models?.Invoke(Model) is { } model && model.TryGetMagicVertex(0, out Vector3f vertex) ? vertex : default;
-        Fpu x = (((Fpu)v.Z * m[2]) + ((Fpu)v.Y * m[1])) + ((Fpu)v.X * m[0]);
-        Fpu y = (((Fpu)v.Z * m[5]) + ((Fpu)v.Y * m[4])) + ((Fpu)v.X * m[3]);
-        Fpu z = (((Fpu)v.Z * m[8]) + ((Fpu)v.Y * m[7])) + ((Fpu)v.X * m[6]);
-        return new Vector3d((x + Position.X).Value, (y + Position.Y).Value, (z + Position.Z).Value);
-    }
 }

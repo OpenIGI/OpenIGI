@@ -124,6 +124,9 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets the placements that turn on the spot, or null when none do.</summary>
     IPlacementSpin? Spins { get; set; }
 
+    /// <summary>Gets or sets the placements a title's own objects move, or null when none do.</summary>
+    IPlacementMotion? Motions { get; set; }
+
     /// <summary>Gets or sets the level's pickups, or null when it has none.</summary>
     GenericPickupRegistry? GenericPickups { get; set; }
 

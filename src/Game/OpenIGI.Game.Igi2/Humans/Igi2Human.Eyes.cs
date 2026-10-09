@@ -150,6 +150,7 @@ public abstract partial class Igi2Human
         Fpu aheadZ = ((((Fpu)o[8] + o[6]) * 0.0) + ((Fpu)o[7] * ObjectReach));
         _objectTrace.Starts[0] = eyes;
         _objectTrace.Ends[0] = new Vector3d((aheadX + eyes.X).Value, (aheadY + eyes.Y).Value, (aheadZ + eyes.Z).Value);
+        _objectTrace.Evaluator = this;
         Surroundings.Collision.TraceLines(_objectTrace, AnyGroup);
         Igi2Intersection hit = _objectTrace.Intersections[0];
         view.RetractIdeal = hit.IsHit ? (-((Fpu)(double)ObjectReach - hit.Distance)).F : 0f;
@@ -238,6 +239,7 @@ public abstract partial class Igi2Human
 
         _eyeTrace.Starts[0] = eyes;
         _eyeTrace.Ends[0] = leaned;
+        _eyeTrace.Evaluator = this;
         Surroundings.Collision.TraceLines(_eyeTrace, AnyGroup);
         Igi2Intersection hit = _eyeTrace.Intersections[0];
         if (!hit.IsHit)

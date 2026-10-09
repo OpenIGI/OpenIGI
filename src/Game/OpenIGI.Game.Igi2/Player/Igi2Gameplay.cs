@@ -154,7 +154,18 @@ public sealed class Igi2Gameplay : ITitleGameplay
             activatables.Add(button);
         }
 
+        List<Interaction.Igi2DoorTask> doors = [];
+        foreach (Interaction.Igi2DoorTask door in Descendants(root).OfType<Interaction.Igi2DoorTask>())
+        {
+            door.Models = models;
+            door.Sounds = player.Sounds;
+            door.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2DoorTask.TypeName, door.Id));
+            activatables.Add(door);
+            doors.Add(door);
+        }
+
         player.Activatables.AddRange(activatables);
+        player.Motions = doors.Count > 0 ? new Interaction.Igi2DoorMotions(doors) : null;
 
         return level;
     }
@@ -341,6 +352,12 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets the things in the level the player may activate, in the order the stationary tree offers them.</summary>
     public List<Interaction.IIgi2Activatable> Activatables => _surroundings.Activatables;
+
+    /// <summary>Gets the collision world the player moves through.</summary>
+    public Igi2CollisionWorld CollisionWorld => _surroundings.World;
+
+    /// <inheritdoc/>
+    public IPlacementMotion? Motions { get; set; }
 
     /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
     public Igi2LevelRun? Level { get; set; }
@@ -572,6 +589,9 @@ internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world, Igi2Sound
     public Igi2Human? Owner { get; set; }
 
     public IIgi2CollisionQuery Collision { get; } = world;
+
+    /// <summary>Gets the collision world itself, whose placed solids the level's moving objects carry.</summary>
+    public Igi2CollisionWorld World { get; } = world;
 
     public bool IsOnElevator => false;
 

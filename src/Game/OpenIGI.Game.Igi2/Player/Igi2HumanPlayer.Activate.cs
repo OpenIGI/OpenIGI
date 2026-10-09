@@ -79,8 +79,13 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>
     /// Starts activating, <c>HumanPlayer_InitActivate</c> (<c>igi2 0x4A06A0</c>): a switch is pressed at once and the activation
-    /// ends there. What else a human activates is not ported; retail leaves an activation of an unknown kind running.
+    /// ends there; an unlocked door is opened or closed, on the tick the activate key goes down, and the activation ends. What
+    /// else a human activates is not ported; retail leaves an activation of an unknown kind running.
     /// </summary>
+    /// <remarks>
+    /// A locked door that can be picked starts the player picking it (state 38), which is not ported yet; one that cannot
+    /// leaves the activation running, as retail does, though the view does not find such a door to begin with.
+    /// </remarks>
     private void InitActivate(IIgi2Activatable target)
     {
         ActivatingTarget = EvaluateTarget;
@@ -90,6 +95,23 @@ public sealed partial class Igi2HumanPlayer
         {
             case Igi2ActivateKind.Switch:
                 (ActivatingTarget as IIgi2Pressable)?.Press(0);
+                EndActivate();
+                break;
+
+            case Igi2ActivateKind.Door when ActivatingTarget is IIgi2Door door:
+                if (door.IsLocked)
+                {
+                    break;
+                }
+
+                // Only a fresh press: held from the last tick, the key does nothing more to the door.
+                if (Channels.Last[(int)Igi2HumanChannel.Activate] == 0f)
+                {
+                    door.ToggleOpen(Position);
+
+                    // Human_SendDoorAIEvent (igi2 0x49F6F0) tells the AI a door was used; the AI's events are not ported.
+                }
+
                 EndActivate();
                 break;
         }

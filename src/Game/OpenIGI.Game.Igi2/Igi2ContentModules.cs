@@ -190,6 +190,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2SequenceCommandTask>(Flow.Igi2SequenceCommandTask.TypeName);
         context.Types.Register<Flow.Igi2SoundGeneratorTask>(Flow.Igi2SoundGeneratorTask.TypeName);
         context.Types.Register<Interaction.Igi2SwitchTask>(Interaction.Igi2SwitchTask.TypeName);
+        context.Types.Register<Interaction.Igi2DoorTask>(Interaction.Igi2DoorTask.TypeName);
 
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);

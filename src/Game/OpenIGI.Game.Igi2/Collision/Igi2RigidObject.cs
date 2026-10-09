@@ -117,4 +117,10 @@ public sealed class Igi2RigidObject : IIgi2Collider
     /// (<c>RigidDynCubeObj_GenericOpen</c>, <c>igi2 0x58E170</c>), so this is <see cref="Igi2RigidTrace"/>.
     /// </remarks>
     public void NextZ(Igi2LineTrace trace) => Igi2RigidTrace.Trace(this, trace);
+
+    /// <summary>
+    /// Gets or sets the placing type's own line handler, run after the solid's in a line trace: the base handler first,
+    /// then the type's, as <c>QTask_TriggerBaseHandler</c> chains them. <see langword="null"/> for a plain solid.
+    /// </summary>
+    public Action<Igi2LineTrace>? Traced { get; set; }
 }

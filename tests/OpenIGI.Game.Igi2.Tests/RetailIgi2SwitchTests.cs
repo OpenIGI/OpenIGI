@@ -53,7 +53,7 @@ public sealed class RetailIgi2SwitchTests
     [RequiresTitleDataFact("igi2")]
     public void Mission1_has_its_switches()
     {
-        Mission1 m = Mission1.Load();
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
         Assert.Equal(19, m.Switches.Count);
         Igi2SwitchTask power = m.Switch(PowerOn);
         Assert.Equal((false, 2, "337_12_1", "button_1"), (power.IsOn, power.ModelSlot, power.Model, power.Sound));
@@ -67,7 +67,7 @@ public sealed class RetailIgi2SwitchTests
     [RequiresTitleDataFact("igi2")]
     public void A_pressed_switch_flips_and_lets_go()
     {
-        Mission1 m = Mission1.Load();
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
         Igi2SwitchTask power = m.Switch(PowerOn);
         Igi2SwitchTask lift = m.Switch(ElevatorUp);
         m.Run.Tick();
@@ -96,7 +96,7 @@ public sealed class RetailIgi2SwitchTests
     [RequiresTitleDataFact("igi2")]
     public void The_power_button_starts_the_generator()
     {
-        Mission1 m = Mission1.Load();
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
         Igi2SoundGeneratorTask generator = m.Tree.OfType<Igi2SoundGeneratorTask>().Single(static g => g.Id == 3510);
         m.Run.Tick();
         Assert.False(generator.IsPlaying);
@@ -115,7 +115,7 @@ public sealed class RetailIgi2SwitchTests
     [RequiresTitleDataFact("igi2")]
     public void A_view_finds_the_switch_in_front_of_it()
     {
-        Mission1 m = Mission1.Load();
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
         Igi2SwitchTask power = m.Switch(PowerOn);
         m.Run.Tick();
         float[] f = Igi2Pose.Rotation(power.Orientation.X, power.Orientation.Y, power.Orientation.Z);
@@ -142,7 +142,7 @@ public sealed class RetailIgi2SwitchTests
     public void The_player_presses_the_button_it_faces()
     {
         Igi2Level level = Igi2Level.Find("location1", "level1");
-        Igi2SwitchTask power = level.Root.Children.SelectMany(Descendants).OfType<Igi2SwitchTask>().Single(static s => s.Id == PowerOn);
+        Igi2SwitchTask power = level.Root.Children.SelectMany(RetailIgi2Mission1.All).OfType<Igi2SwitchTask>().Single(static s => s.Id == PowerOn);
         power.Models = level.ModelFor;
         float[] f = Igi2Pose.Rotation(power.Orientation.X, power.Orientation.Y, power.Orientation.Z);
         Vector3d ahead = new(f[1], f[4], f[7]);
@@ -161,112 +161,15 @@ public sealed class RetailIgi2SwitchTests
         Assert.Null(away.Human.EvaluateTarget);
     }
 
-    private static TitlePlayerInput Idle => new(0f, 0f, default, default, 0.5f, false);
+    private static TitlePlayerInput Idle => RetailIgi2Mission1.Idle;
 
-    private static Igi2TitlePlayer Stand(Igi2Level level, Igi2SwitchTask button, Vector3d at, float gamma)
-    {
-        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), Igi2Gameplay.TerrainOwner);
-        Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
-        Formats.World.MefModel body = level.ModelFor(point.Model)!;
-        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(
-            world, Igi2Session.Start().Require<Igi2PlayerTuning>().General, at, gamma, AiDifficulty.Easy, null, body.BoneHierarchy);
-        player.Human.ModelRadius = body.NativeMarkerBound;
-        player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
-        player.Activatables.Add(button);
-        for (int tick = 0; tick < 60; tick++)
-        {
-            player.Tick(Idle);
-        }
-
-        return player;
-    }
-
-    private static IEnumerable<GameTask> Descendants(GameTask task)
-    {
-        yield return task;
-        foreach (GameTask child in task.Children)
-        {
-            foreach (GameTask inner in Descendants(child))
-            {
-                yield return inner;
-            }
-        }
-    }
+    private static Igi2TitlePlayer Stand(Igi2Level level, Igi2SwitchTask button, Vector3d at, float gamma) =>
+        RetailIgi2Mission1.Stand(Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), Igi2Gameplay.TerrainOwner), level, button, at, gamma);
 
     private static IIgi2Activatable? Find(Igi2SwitchTask target, Vector3d view, float[] orientation)
     {
         Igi2EvaluateActivate context = new(view, orientation, isPlayer: true);
         target.EvaluateActivate(context);
         return context.Best;
-    }
-
-    private sealed record Mission1(Igi2Level Level, Igi2LevelRun Run, Igi2Sounds Sounds, IReadOnlyList<GameTask> Tree)
-    {
-        public IReadOnlyList<Igi2SwitchTask> Switches => [.. Tree.OfType<Igi2SwitchTask>()];
-
-        public static Mission1 Load()
-        {
-            Igi2Level level = Igi2Level.Find("location1", "level1");
-            RetailIgi2LevelLoadTests.Harness harness = new(Path.Combine(level.Directory, "objects.qvm"), loadTables: true);
-            harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
-            harness.Session.Services.Require<Igi2FlowState>().Reset();
-            Igi2LevelRun run = new(harness.LevelRoot, harness.Loop.Natives, harness.Session.Services.Require<Igi2ScriptFunctions>());
-
-            VirtualFileSystem files = new();
-            files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
-            files.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
-            Igi2SoundDefinitions definitions = new();
-            definitions.Load(new ResourceRegistry(files), ["LOCAL:common/sounds", "LOCAL:missions/location1/common/sounds", "MISSION:sounds"]);
-            Igi2Sounds sounds = new(definitions, new Audible());
-
-            List<GameTask> tree = [.. All(harness.LevelRoot)];
-            foreach (Igi2SwitchTask button in tree.OfType<Igi2SwitchTask>())
-            {
-                button.Models = level.ModelFor;
-                button.Sounds = sounds;
-            }
-
-            foreach (Igi2SoundGeneratorTask generator in tree.OfType<Igi2SoundGeneratorTask>())
-            {
-                generator.Sounds = sounds;
-            }
-
-            return new Mission1(level, run, sounds, tree);
-        }
-
-        public Igi2SwitchTask Switch(int id) => Switches.Single(s => s.Id == id);
-
-        private static IEnumerable<GameTask> All(GameTask task)
-        {
-            yield return task;
-            foreach (GameTask child in task.Children)
-            {
-                foreach (GameTask inner in All(child))
-                {
-                    yield return inner;
-                }
-            }
-        }
-    }
-
-    /// <summary>A mixer whose voices sound until stopped, so a made sound stays among the level's playing ones.</summary>
-    private sealed class Audible : Game.Player.ITitleAudio
-    {
-        public void UseDefinitions(Engine.Audio.ISoundDefinitionLookup definitions, IReadOnlyList<string> bankDirectories)
-        {
-        }
-
-        public Game.Player.ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null) => new Voice();
-
-        private sealed class Voice : Game.Player.ITitleVoice
-        {
-            public bool IsPlaying { get; private set; } = true;
-
-            public void MoveTo(Vector3d positionInUnits)
-            {
-            }
-
-            public void Silence() => IsPlaying = false;
-        }
     }
 }

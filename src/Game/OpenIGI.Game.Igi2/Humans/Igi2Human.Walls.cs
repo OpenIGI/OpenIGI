@@ -198,6 +198,7 @@ public abstract partial class Igi2Human
         }
 
         _sweep.Count = n;
+        _sweep.Evaluator = this;
         Surroundings.Collision.TraceLines(_sweep, SweepGroups);
 
         Sweep move = new(dx, dy);
