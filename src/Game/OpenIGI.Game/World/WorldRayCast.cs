@@ -30,12 +30,17 @@ namespace OpenIGI.Game.World;
 /// <param name="IsExit">
 /// Whether the ray crossed the surface's BACK face — leaving solid rather than entering it.
 /// </param>
+/// <param name="OnTerrain">
+/// Whether the surface is the level's terrain, which is no object: nothing on it takes a decal message, so a blood
+/// droplet that lands there (0x4640B0) draws nothing and marks nothing.
+/// </param>
 public readonly record struct WorldRayHit(
     Vector3d Position,
     Vector3f Normal,
     double Distance,
     int Material = 0,
-    bool IsExit = false);
+    bool IsExit = false,
+    bool OnTerrain = false);
 
 /// <summary>Casts a ray at the world and reports the nearest surface it meets.</summary>
 /// <param name="origin">Where the ray starts, in world units.</param>
@@ -109,6 +114,11 @@ public enum WorldTraceHitKind
 /// portal polygons mark openings rather than physical cover.
 /// </param>
 /// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
+/// <param name="RetailArithmetic">
+/// Whether each placed model is tested with the original's own ray (<c>0x4C1840</c>): single precision in the
+/// model's frame, and its own front/back test for the entry and exit sides, which a mirrored placement does not
+/// turn over the way a winding test on the placed vertices does.
+/// </param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
@@ -117,7 +127,8 @@ public readonly record struct WorldTraceRequest(
     GameTask? IgnoredSubject = null,
     bool IncludeInactiveOwners = false,
     bool TracePortals = false,
-    WorldPlacement? IgnoredPlacement = null)
+    WorldPlacement? IgnoredPlacement = null,
+    bool RetailArithmetic = false)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length

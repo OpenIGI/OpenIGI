@@ -140,6 +140,76 @@ public static class GunFiring
         return ((forward * MathF.Cos(radius)) + lateral).Normalized();
     }
 
+    /// <summary>Turns a direction by a sampled cone offset exactly as <c>0x478BA0</c> does.</summary>
+    /// <param name="forward">The view's forward, the column the fire message carries.</param>
+    /// <param name="radius">The offset angle from <see cref="SampleCone"/>.</param>
+    /// <param name="bearing">The bearing from <see cref="SampleCone"/>.</param>
+    /// <returns>The round's direction: the forward column of <c>basis(forward) · E(radius, bearing, 0)</c>.</returns>
+    /// <remarks>
+    /// <c>0x414A60</c> builds the basis with the forward as its middle column, a side axis from <c>(y, -x, 0)</c> and
+    /// an up axis from their cross product (from <c>(0, -z, y)</c> first when the forward is within 0.95 of
+    /// vertical). <c>0x4B38E0</c> is <see cref="Matrix3f.FromEngineEulerAngles"/>.
+    /// </remarks>
+    public static Vector3f RetailConeDirection(Vector3f forward, float radius, float bearing)
+    {
+        float x = forward.X;
+        float y = forward.Y;
+        float z = forward.Z;
+        float rx, ry, rz, ux, uy, uz;
+        if (Math.Abs(z) <= 0.94999999)
+        {
+            rx = y;
+            ry = -x;
+            rz = 0f;
+            if (rx != 0f || ry != 0f)
+            {
+                double inverse = 1.0 / Math.Sqrt((rx * (double)rx) + (ry * (double)ry));
+                rx = (float)(rx * inverse);
+                ry = (float)(ry * inverse);
+                rz = (float)(0.0 * inverse);
+            }
+
+            ux = (z * ry) - (y * rz);
+            uy = -((z * rx) - (x * rz));
+            uz = (y * rx) - (x * ry);
+            if (ux != 0f || uy != 0f || uz != 0f)
+            {
+                double inverse = 1.0 / Math.Sqrt((ux * (double)ux) + (uy * (double)uy) + (uz * (double)uz));
+                ux = (float)(ux * inverse);
+                uy = (float)(uy * inverse);
+                uz = (float)(uz * inverse);
+            }
+        }
+        else
+        {
+            ux = 0f;
+            uy = -z;
+            uz = y;
+            if (uy != 0f || uz != 0f)
+            {
+                double inverse = 1.0 / Math.Sqrt((uy * (double)uy) + (uz * (double)uz));
+                ux = (float)(0.0 * inverse);
+                uy = (float)(uy * inverse);
+                uz = (float)(uz * inverse);
+            }
+
+            rx = (y * uz) - (z * uy);
+            ry = -((x * uz) - (z * ux));
+            rz = (x * uy) - (y * ux);
+            if (rx != 0f || ry != 0f || rz != 0f)
+            {
+                double inverse = 1.0 / Math.Sqrt((rx * (double)rx) + (ry * (double)ry) + (rz * (double)rz));
+                rx = (float)(rx * inverse);
+                ry = (float)(ry * inverse);
+                rz = (float)(rz * inverse);
+            }
+        }
+
+        Matrix3f basis = new(rx, x, ux, ry, y, uy, rz, z, uz);
+        Matrix3f turned = basis * Matrix3f.FromEngineEulerAngles(radius, bearing, 0f);
+        return new Vector3f(turned.M12, turned.M22, turned.M32);
+    }
+
     /// <summary>Samples one projectile's offset within the cone.</summary>
     /// <param name="coneAngle">The half-angle from <see cref="ConeAngle"/>.</param>
     /// <param name="uniformSamples">

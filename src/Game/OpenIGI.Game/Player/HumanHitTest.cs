@@ -166,8 +166,8 @@ public static class HumanHitTest
             // took several rounds to the head. Closest approach is the faithful quantity: it is what
             // "the round passed through the head" means, and it agrees with the mesh cast wherever the
             // mesh cast is the one that would have hit.
-            Vector3f head = posed.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d boneWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            // 0x489C60's bone lookup (0x414F40 -> 0x4D0930) returns zeros: the point is the origin itself.
+            Vector3d boneWorld = boneOrigin;
             double distance = DistanceToSegment(origin, direction, boneWorld);
 
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
@@ -255,14 +255,13 @@ public static class HumanHitTest
 
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
 
-        // The head promotion, on the actual posed bone 4 — a front hit whose CONTACT lands within 15 cm of
-        // it is lethal (0x489C60 measures the hit record's point, not the ray). The ray's closest approach
-        // made a forearm raised in front of the face a headshot: the round struck the arm, but its line
-        // ran on through the head.
+        // Zone 15's promotion: a front hit whose CONTACT lands within 15 cm of the point 0x489C60 measures from
+        // (the hit record's point, not the ray). That point is meant to be bone 4 of 000_01_1, but the lookup
+        // (0x414F40) ends in 0x4D0930, which writes zeros -- so it is the origin (Human+32) itself, the pelvis, and
+        // a round to the head scores the neck's zone (16), never 15.
         if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
         {
-            Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            Vector3d headWorld = boneOrigin;
             double distance = Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
@@ -497,8 +496,8 @@ public static class HumanHitTest
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
         if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
         {
-            Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            // The origin itself: 0x489C60's bone lookup returns zeros (see TryCastMesh).
+            Vector3d headWorld = boneOrigin;
             if (HumanDamage.TakesProximityZone((float)Distance(contact, headWorld), localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -580,15 +579,8 @@ public static class HumanHitTest
         if (HumanDamage.ProximityBoneIndex < currentPose.BoneCount
             && HumanDamage.ProximityBoneIndex < previousPose.BoneCount)
         {
-            int head = HumanDamage.ProximityBoneIndex;
-            Vector3f current = currentPose.Positions[head];
-            Vector3f previous = previousPose.Positions[head];
-            Vector3f local = new(
-                current.X + (share * (previous.X - current.X)),
-                current.Y + (share * (previous.Y - current.Y)),
-                current.Z + (share * (previous.Z - current.Z)));
-            Vector3f turned = orientation.Transposed().Transform(local);
-            Vector3d headWorld = new(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
+            // The origin itself: 0x489C60's bone lookup returns zeros (see TryCastMesh).
+            Vector3d headWorld = root;
 
             // From the contact, as 0x489C60 measures it (see TryCastMesh).
             double distance = Distance(contact, headWorld);

@@ -83,6 +83,9 @@ public sealed class AiPatrolRoute
     /// </remarks>
     public bool HasStopped { get; private set; }
 
+    /// <summary>Gets whether this tick is an animation command's first, when the clip is handed to the body.</summary>
+    public bool AnimationRequested { get; private set; }
+
     /// <summary>Gets the command the cursor would move to next, without moving it — <c>sub_453730</c>.</summary>
     public AiPatrolCommand? Next => Peek() is var next and >= 0 ? Path.Commands[next] : null;
 
@@ -283,6 +286,17 @@ public sealed class AiPatrolRoute
 
                 // The walker advances on strictly greater, so a delay of n occupies n + 1 ticks.
                 return tick > Deadline;
+
+            case AiPatrolCommandKind.Animation:
+                // 0x48E920's stand action finds the word at -1 only on its first tick, when it writes the clip to the
+                // body and sets the word to 0.
+                AnimationRequested = Deadline == NoDeadline;
+                if (AnimationRequested)
+                {
+                    Deadline = 0;
+                }
+
+                return false;
 
             default:
                 return false;

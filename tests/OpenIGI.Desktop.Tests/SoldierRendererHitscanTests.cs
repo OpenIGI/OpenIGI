@@ -843,26 +843,24 @@ public sealed class SoldierRendererHitscanTests
     }
 
     /// <summary>
-    /// A headshot is decided by where the round STRUCK: 0x489C60 promotes a front hit to zone 15 only
-    /// when the hit record's point is within 15 cm of bone 4. Measuring the ray's closest approach
-    /// instead made a round that struck a forearm raised in front of the face (every aiming guard) a
-    /// headshot, because its line ran on through the head -- guards died to the second arm hit.
+    /// Zone 15 is decided by where the round STRUCK, about the ORIGIN: 0x489C60 promotes a front hit only when the hit
+    /// record's point is within 15 cm of the point its bone-4 lookup returns -- and that lookup (0x414F40 -> 0x4D0930)
+    /// writes zeros, so the point is Human+32 itself. A round to the head is never promoted.
     /// </summary>
     [RequiresGameDataFact]
-    public void AHeadshotIsScoredWhereTheRoundStruckNotWhereItsLineRan()
+    public void ZoneFifteenIsScoredAboutTheOriginNotTheHead()
     {
         using Scenario scenario = CreateScenario();
-        int heads = 0;
+        int promoted = 0;
         foreach ((SoldierView soldier, MefCollisionMesh mesh) in MeshBackedSoldiers(scenario.Renderer))
         {
             Vector3d feet = FeetOnGround(scenario.Renderer, soldier);
             Matrix3f orientation = soldier.Orientation;
             Vector3f facing = new(orientation.M12, orientation.M22, orientation.M32);
             BonePose pose = soldier.Pose();
-            Vector3f bone = pose.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d head = new(feet.X + bone.X, feet.Y + bone.Y, feet.Z + soldier.RootSample.Z + bone.Z);
+            Vector3d origin = new(feet.X, feet.Y, feet.Z + soldier.RootSample.Z);
 
-            for (double height = 1.1; height <= 1.9; height += 0.05)
+            for (double height = 0.6; height <= 1.9; height += 0.05)
             {
                 for (double across = -0.4; across <= 0.4; across += 0.05)
                 {
@@ -870,27 +868,28 @@ public sealed class SoldierRendererHitscanTests
                         feet.X + (facing.Y * across * Metre),
                         feet.Y - (facing.X * across * Metre),
                         feet.Z + (height * Metre));
-                    Vector3d origin = new(
+                    Vector3d from = new(
                         aim.X + (facing.X * 12.0 * Metre), aim.Y + (facing.Y * 12.0 * Metre), aim.Z);
                     Vector3d end = new(
                         aim.X - (facing.X * 2.0 * Metre), aim.Y - (facing.Y * 2.0 * Metre), aim.Z);
                     if (!HumanHitTest.TryCastMesh(
-                            origin, end, feet, facing, mesh, pose, soldier.RootSample.Z, out HumanHit hit)
+                            from, end, feet, facing, mesh, pose, soldier.RootSample.Z, out HumanHit hit)
                         || hit.Zone != HumanDamage.ProximityZone)
                     {
                         continue;
                     }
 
-                    heads++;
+                    promoted++;
                     Assert.True(
-                        (hit.Position - head).Length < HumanDamage.HeadProximityUnits,
-                        $"{soldier.Soldier.Name}: a head hit struck bone {hit.Bone} "
-                            + $"{(hit.Position - head).Length / Metre:0.00} m from the head");
+                        (hit.Position - origin).Length < HumanDamage.HeadProximityUnits,
+                        $"{soldier.Soldier.Name}: a zone-15 hit struck bone {hit.Bone} "
+                            + $"{(hit.Position - origin).Length / Metre:0.00} m from the origin");
+                    Assert.True(height < 1.4, $"{soldier.Soldier.Name}: a round at {height:0.00} m was promoted");
                 }
             }
         }
 
-        Assert.True(heads > 0, "no ray reached any soldier's head, so the rule was never exercised");
+        Assert.True(promoted > 0, "no ray reached any soldier's origin, so the rule was never exercised");
     }
 
     [RequiresGameDataFact]

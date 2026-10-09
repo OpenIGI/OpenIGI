@@ -1192,8 +1192,15 @@ public sealed class AiScenarioHarness : IDisposable
             .Select(parts => (int.Parse(parts[0], CultureInfo.InvariantCulture), int.Parse(parts[1], CultureInfo.InvariantCulture)))];
         StringBuilder log = new();
         using RecordingGraphicsDevice device = new();
-        GameHost host = Host(device, new HeadlessGameWindow(),
-            "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        // OPENIGI_PATROL_CAPTURE_DIFFICULTY: the difficulty the probe's profile played at (the probe logs it at START).
+        // A dropped gun falls the original's way: the realistic body lands, and draws its clatter, on other ticks.
+        List<string> captureArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000", "+g_realistic_drops", "0"];
+        if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_DIFFICULTY") is { Length: > 0 } captureDifficulty)
+        {
+            captureArgs.AddRange(["-difficulty", captureDifficulty]);
+        }
+
+        GameHost host = Host(device, new HeadlessGameWindow(), [.. captureArgs]);
         BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
         FieldInfo brainsField = typeof(SoldierRenderer).GetField("_brains", hidden)!;
@@ -1220,7 +1227,84 @@ public sealed class AiScenarioHarness : IDisposable
                     }
                 }
 
-                log.AppendLine(CultureInfo.InvariantCulture, $"[rng] lt={counter} site={site}");
+                log.AppendLine(CultureInfo.InvariantCulture, $"[rng] lt={counter} site={site} who={SoldierRenderer.TickingSoldierId}");
+            };
+
+            // The probe's [free]: every node a claiming free-position search tests, and its verdict.
+            OpenIGI.Game.Ai.AiFreePosition.Tested = (claimant, node, toward, verdict) =>
+            {
+                if (claimant is not AiSoldier who || soldiersField.GetValue(host) is not SoldierRenderer r)
+                {
+                    return;
+                }
+
+                int counter = (int)counterField.GetValue(r)! - 1;
+                int id = -1;
+                foreach ((SoldierView v, AiSoldier b) in (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(r)!)
+                {
+                    if (ReferenceEquals(b, who))
+                    {
+                        id = v.Soldier.Id;
+                    }
+                }
+
+                log.AppendLine(FormattableString.Invariant($"[free] lt={counter} id={id} node={node} toward={(toward ? 1 : 0)} {verdict}"));
+            };
+
+            // Which casts rebuilt whose palette, for the eye-matrix comparison.
+            SoldierRenderer.PaletteRebuildTraced = (id, why, from, to) =>
+            {
+                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                log.AppendLine(FormattableString.Invariant($"[rebuild] lt={counter} id={id} by={why} who={SoldierRenderer.TickingSoldierId} from=({from.X:0},{from.Y:0},{from.Z:0}) to=({to.X:0},{to.Y:0},{to.Z:0})"));
+            };
+
+            // The probe's [drop]: where a dying soldier's gun starts falling.
+            SoldierRenderer.WeaponDropTraced = (id, at, feet, root) =>
+            {
+                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                log.AppendLine(FormattableString.Invariant($"[drop] lt={counter} id={id} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}) feet=({feet.X:0.0},{feet.Y:0.0},{feet.Z:0.0}) root={root:0.0}"));
+            };
+
+            // The probe's [dmg]: every round a soldier takes.
+            SoldierRenderer.DamageTraced = (id, zone, bone, factor, accum, max) =>
+            {
+                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                log.AppendLine(FormattableString.Invariant($"[dmg] lt={counter} id={id} zone={zone} bone={bone} factor={factor:0.000} accum={accum:0.000} max={max:0.000}"));
+            };
+
+            // The probe's [fire]: each round's base forward and the gun's rounds this pull.
+            SoldierRenderer.RoundSpreadTraced = (who, pull, forward) =>
+            {
+                if (soldiersField.GetValue(host) is not SoldierRenderer r)
+                {
+                    return;
+                }
+
+                int counter = (int)counterField.GetValue(r)! - 1;
+                int id = -1;
+                foreach ((SoldierView v, AiSoldier b) in (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(r)!)
+                {
+                    if (ReferenceEquals(b, who))
+                    {
+                        id = v.Soldier.Id;
+                    }
+                }
+
+                log.AppendLine(FormattableString.Invariant($"[fire] lt={counter} id={id} pull={pull} fwd=({forward.X:0.000000},{forward.Y:0.000000},{forward.Z:0.000000}) yaw={who.Facing:0.000000} ryaw={who.RecoilYaw:0.000000} pitch={who.ViewPitch:0.000000} rpitch={who.RecoilPitch:0.000000}"));
+            };
+
+            // The probe's [march]: every pass of a soldier's round, its segment and what the cast met.
+            OpenIGI.Game.Weapons.GunShotTask.PassCast = (round, from, to, remaining, contact) =>
+            {
+                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                int shooter = round.Shooter is SoldierView v ? v.Soldier.Id : -1;
+                string what = contact is not { } c
+                    ? "hit=0"
+                    : FormattableString.Invariant(
+                        $"hit=1 obj={c.Payload?.GetType().Name ?? "-"} human={(c.StruckHuman ? 1 : 0)} hasobj={(c.HasObject ? 1 : 0)} entry='{c.Entry?.Name ?? "-"}' exit='{c.Exit?.Name ?? "-"}' pos=({c.Position.X:0.0},{c.Position.Y:0.0},{c.Position.Z:0.0}) n=({c.Normal.X:0.0000},{c.Normal.Y:0.0000},{c.Normal.Z:0.0000}) dist={c.Distance:0.00}");
+                log.AppendLine(
+                    FormattableString.Invariant(
+                        $"[march] lt={counter} shooter={shooter} rem={remaining:0.0} defl={(round.Deflected ? 1 : 0)} from=({from.X:0.0},{from.Y:0.0},{from.Z:0.0}) to=({to.X:0.0},{to.Y:0.0},{to.Z:0.0}) {what}"));
             };
         }
 
@@ -1324,6 +1408,14 @@ public sealed class AiScenarioHarness : IDisposable
                     };
                 }
 
+                if (brain.Activity == AiSoldierActivity.Dead)
+                {
+                    // A corpse's origin each tick (retail keeps logging its dead): the level counter, feet + root.
+                    int deadTick = (int)renderTickField.GetValue(soldiers)! - 1;
+                    log.AppendLine(CultureInfo.InvariantCulture,
+                        $"[pwdead] lt={deadTick} id={view.Soldier.Id} pos=({brain.Position.X:0.0},{brain.Position.Y:0.0},{brain.Position.Z + view.RootSample.Z:0.0}) clip={view.CurrentAnimation} facing={brain.Facing:0.00000} fall=({brain.DeathFallVelocity.X:0.00},{brain.DeathFallVelocity.Y:0.00})");
+                }
+
                 int tick = brain.LastTick;
                 if (!tracks.TryGetValue(brain, out var track))
                 {
@@ -1368,11 +1460,12 @@ public sealed class AiScenarioHarness : IDisposable
                 Matrix3f em = brain.Eye.Orientation;
                 log.AppendLine(CultureInfo.InvariantCulture,
                     $"[pweye] tick={tick} id={view.Soldier.Id} eye=({eyeAt.X:0},{eyeAt.Y:0},{eyeAt.Z:0}) m=[{em.M11:0.0000} {em.M12:0.0000} {em.M13:0.0000} | {em.M21:0.0000} {em.M22:0.0000} {em.M23:0.0000} | {em.M31:0.0000} {em.M32:0.0000} {em.M33:0.0000}] bone={BoneText(view)} clip={view.CurrentAnimation}");
+                log.AppendLine(CultureInfo.InvariantCulture, $"[pwgun] tick={tick} id={view.Soldier.Id} {HandText(view)}");
                 Matrix3f m = brain.Orientation;
                 Vector3d p = brain.Position;
                 AiPatrolCommand? command = route?.Current;
                 log.AppendLine(CultureInfo.InvariantCulture,
-                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase} clip={view.CurrentAnimation} ct={view.Bones.SourceOf(0)?.Time ?? -1f:0.0000} dur={view.Bones.SourceOf(0)?.Animation.Duration ?? -1f:0.0000} root={RootText(view)}");
+                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase} clip={view.CurrentAnimation} ct={view.Bones.SourceOf(0)?.Time ?? -1f:0.0000} dur={view.Bones.SourceOf(0)?.Animation.Duration ?? -1f:0.0000} root={RootText(view)} nvis={brain.PatrolNotVisibleTicks} aim={brain.AimText} claim={brain.ClaimedNodeId} cpos={brain.ClaimedPositionText} wp={(brain.DebugWaypoint is { } w ? FormattableString.Invariant($"({w.X:0.0},{w.Y:0.0})") : "-")} lfs={brain.LastFreeSearch}");
             }
 
             if (lastTick >= ticks)
@@ -1391,6 +1484,24 @@ public sealed class AiScenarioHarness : IDisposable
         : "-";
 
     // The eye bone's rotation in the unrotated pose, for the [pweye] comparison against retail's palette entry.
+    // The hand the gun hangs from, from the origin (feet + root), in the pose now and in the pose a tick on.
+    private static string HandText(SoldierView view)
+    {
+        string Of(OpenIGI.Formats.Animation.BonePose pose)
+        {
+            if (HumanAttachPoints.ThirdPersonWeapon >= pose.BoneCount)
+            {
+                return "-";
+            }
+
+            Vector3f hand = view.Orientation.Transposed().Transform(pose.Positions[HumanAttachPoints.ThirdPersonWeapon]);
+            return FormattableString.Invariant(
+                $"({view.Position.X + hand.X:0.0},{view.Position.Y + hand.Y:0.0},{view.Position.Z + view.RootSample.Z + hand.Z:0.0})");
+        }
+
+        return $"pos={Of(view.UnrotatedPose())} ahead={Of(view.UnrotatedPoseAhead())}";
+    }
+
     private static string BoneText(SoldierView view)
     {
         OpenIGI.Formats.Animation.BonePose pose = view.UnrotatedPose();

@@ -1460,6 +1460,14 @@ internal sealed partial class GameHost
                         return;
                     }
 
+                    // A soldier's round is already in its gun's GunShot task, to be marched after the walk; all
+                    // that is left here is the streak it draws.
+                    if (shooter is not null && _soldiers.MarchesRounds)
+                    {
+                        SpawnSoldierStreak(from, at, weapon);
+                        return;
+                    }
+
                     // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
                     // extended past the target, exactly as the retail round is a cast from the muzzle to
                     // the end of its remaining range (GunShot per-tick 0x47B750). A moving player walks
@@ -1925,6 +1933,9 @@ internal sealed partial class GameHost
             _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
         }
 
+        // The soldiers' guns march their rounds through the same world the soldiers see.
+        AttachGunShotWorld(worldTrace);
+
         // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
         AttachActorsToLevelWalk(levelRoot);
 
@@ -2089,7 +2100,7 @@ internal sealed partial class GameHost
                     return false;
                 }
 
-                hit = rich.RayHit;
+                hit = rich.RayHit with { OnTerrain = rich.Kind == WorldTraceHitKind.Terrain };
                 if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
                 {
                     hit = hit with { Material = ground };
@@ -2253,6 +2264,7 @@ internal sealed partial class GameHost
 
                 _gunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
                 GunPickupRegistry gunPickups = _gunPickups;
+                gunPickups.Landed = PlayWeaponDropSound;
                 candidate.UseGunPickups(gunPickups);
                 candidate.GunPickedUp += pickup =>
                 {
@@ -3007,6 +3019,7 @@ internal sealed partial class GameHost
         _playerTerrain = null;
         _ground = null;
         _effectWalls = null;
+        _dropletWalls = null;
         _worldSolids = null;
         _destructibles = null;
         _worldMaterials = null;

@@ -1232,16 +1232,27 @@ public sealed class ObjectCollisionIndex
                 ? WorldTraceMask.DynamicObjects
                 : WorldTraceMask.StaticObjects;
             bool includePortals = request.TracePortals;
-            if ((request.Mask & category) == 0
-                || !MeetsSphere(origin, direction, entry.Centre, entry.Radius)
-                || !entry.TryCast(
-                    origin,
-                    direction,
-                    ref nearest,
-                    useClosedTransform: false,
-                    includePortals,
-                    portalIsOpening: includePortals ? index.PortalIsSightOpening : null,
-                    out WorldRayHit candidate))
+            if ((request.Mask & category) == 0 || !MeetsSphere(origin, direction, entry.Centre, entry.Radius))
+            {
+                return false;
+            }
+
+            WorldRayHit candidate;
+            if (request.RetailArithmetic && !includePortals && entry.SupportsRetailRay)
+            {
+                if (!entry.TryCastRetail(origin, request.End, ref nearest, out candidate))
+                {
+                    return false;
+                }
+            }
+            else if (!entry.TryCast(
+                origin,
+                direction,
+                ref nearest,
+                useClosedTransform: false,
+                includePortals,
+                portalIsOpening: includePortals ? index.PortalIsSightOpening : null,
+                out candidate))
             {
                 return false;
             }

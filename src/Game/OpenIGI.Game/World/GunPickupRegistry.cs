@@ -315,11 +315,19 @@ public sealed class GunPickupRegistry
                 pickup.Tick(world);
                 if (pickup.TryTakeImpact(out Vector3d at, out double speed))
                 {
-                    _impacts.Add(new GunPickupImpact(pickup, at, speed));
+                    GunPickupImpact impact = new(pickup, at, speed);
+                    _impacts.Add(impact);
+                    Landed?.Invoke(impact);
                 }
             }
         }
     }
+
+    /// <summary>
+    /// Gets or sets what is told of each landing as the gun makes it: <c>0x46CEA0</c> draws its clatter in the
+    /// pickup's own tick, so whoever plays it draws there too.
+    /// </summary>
+    public Action<GunPickupImpact>? Landed { get; set; }
 
     /// <summary>Gets the landings dropped guns made on the last tick, for their sound.</summary>
     public IReadOnlyList<GunPickupImpact> Impacts => _impacts;

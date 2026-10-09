@@ -460,10 +460,11 @@ public sealed class AiSoldier
         Route = route;
         RequestedAnimation = -1;
         _animationFinished = false;
-        _route.Clear();
-        DestinationNode = -1;
 
-        // 0x48E8C0, the patrol's start: the walk setter, before the cursor's first command.
+        // 0x48E8C0, the patrol's start: the walk setter, before the cursor's first command. It leaves the movement
+        // queue and its destination alone, so a patrol taken up again after a fight plans its first leg from the walk
+        // it was on (0x4518E0's start rule reads the old queue) -- clearing them sent mission 4's squad member 404
+        // back into the node it had left.
         SetGait(walking: true);
         return true;
     }
@@ -994,6 +995,39 @@ public sealed class AiSoldier
         return true;
     }
 
+    /// <summary>Takes a round's near-miss point, as <c>0x4606F0</c> broadcasts it before the round is marched.</summary>
+    /// <param name="point">The nearest point on the round's line to the human it passed, in world units.</param>
+    /// <param name="fromOtherSide">Whether the shooter is on another side from this soldier (filter <c>0x40</c>).</param>
+    /// <param name="source">The shooter's id.</param>
+    /// <param name="shooterPosition">The shooter's position, for the actions that read the event's source.</param>
+    /// <returns>Whether the event was admitted.</returns>
+    /// <remarks>
+    /// The broadcast carries radius 8192 and filter <c>0x46</c>; <c>0x450110</c> measures the radius from the
+    /// AI's own position (<c>+32</c>), inclusive.
+    /// </remarks>
+    public bool ReceiveRoundPassing(Vector3d point, bool fromOtherSide, int source, Vector3d shooterPosition)
+    {
+        if (Activity == AiSoldierActivity.Dead || !fromOtherSide)
+        {
+            return false;
+        }
+
+        double distance = Distance(Position, point);
+        if (distance > GunshotMissRadiusInUnits)
+        {
+            return false;
+        }
+
+        LastEventDistance = distance;
+        _playerEventSourcePosition = shooterPosition;
+        RefreshBelievedTarget(source);
+        Events.Post(
+            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, point, source, source),
+            owner: RuntimeId,
+            worldTests: null);
+        return true;
+    }
+
     // The source a player-originated record carries -- the renderer's sentinel for "the player".
     private const int PlayerSource = -1;
 
@@ -1387,10 +1421,42 @@ public sealed class AiSoldier
 
     /// <summary>Gets the view's orientation — the body's heading tipped by <see cref="ViewPitch"/>.</summary>
     /// <remarks>What the eye snapshot (<c>0x489960</c>) tests its cones against: the view matrix at <c>+120</c>.</remarks>
-    public Matrix3f ViewOrientation => Matrix3f.FromEngineEulerAngles(ViewPitch, 0f, Facing);
+    public Matrix3f ViewOrientation => Matrix3f.FromEngineEulerAngles(ViewPitch + RecoilPitch, 0f, Facing + RecoilYaw);
 
     /// <summary>Gets the orientation matrix a renderer should draw it with.</summary>
-    public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing);
+    public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing + RecoilYaw);
+
+    /// <summary>Gets the yaw the weapon's kick still holds the body off its heading by -- the view's <c>+308</c>.</summary>
+    /// <remarks>
+    /// 0x4610C0 builds the body's matrix from the heading plus this (<c>Human+1288 = +1292 + view+308</c>), so the
+    /// kick turns the body, its movement and its eye, and the AI's next turn measures against it.
+    /// </remarks>
+    public float RecoilYaw { get; private set; }
+
+    /// <summary>Gets the pitch the weapon's kick still holds the view off -- the view's <c>+296</c>, added in 0x464800.</summary>
+    public float RecoilPitch { get; private set; }
+
+    /// <summary>Folds the last round's kick into the recoil the view carries -- 0x462E50, every tick, after the turn and move.</summary>
+    /// <remarks>
+    /// Each offset becomes (kick + offset) x 0.9, so a burst climbs and a pause lets it settle. The kick is the one the
+    /// weapon returned on the PREVIOUS tick: the gun fires after this, and its kick waits in the fire message for the
+    /// next tick's pass. So a soldier's AI, which runs before its body, measures its turn against the recoil as it was
+    /// when it last fired. Fitted on mission 4's squad member 405 to a millionth of a radian over a whole burst.
+    /// </remarks>
+    public void SettleRecoil()
+    {
+        RecoilPitch = (float)((_pendingKick.Pitch + (double)RecoilPitch) * 0.89999998);
+        RecoilYaw = (float)((_pendingKick.Yaw + (double)RecoilYaw) * 0.89999998);
+        _pendingKick = default;
+    }
+
+    /// <summary>Keeps the kick the weapon returned for a round, for the next tick's <see cref="SettleRecoil"/>.</summary>
+    /// <param name="pitchKick">The round's pitch kick (the fire message's <c>+32</c>).</param>
+    /// <param name="yawKick">Its yaw kick (<c>+36</c>).</param>
+    public void TakeWeaponKick(float pitchKick, float yawKick) => _pendingKick = (pitchKick, yawKick);
+
+    // The kick of the round fired last tick, waiting for this tick's SettleRecoil.
+    private (float Pitch, float Yaw) _pendingKick;
 
     /// <summary>Diagnostic: the steering frame's Forward from the last Advance.</summary>
     public float LastSteeringForward { get; private set; } = -1f;
@@ -1512,7 +1578,12 @@ public sealed class AiSoldier
         // differs, which is the split ai.md 13.10 asks for.
         _combat = Arm == AiCombatArm.None
             ? null
-            : new AiGuardCombat(parameters, _random.NextDouble);
+            : new AiGuardCombat(parameters, _random.NextDouble)
+            {
+                // Only GuardCombatStand (0x48D080) draws the dead-store shot delay; the patrol arm's Fire installs the
+                // shared fire child with its burst and nothing else.
+                DrawsStandDelay = Arm == AiCombatArm.Guard,
+            };
         _patrol = Arm is AiCombatArm.Patrol or AiCombatArm.NamedCharacter
             ? new AiPatrolCombat(parameters, _random.NextDouble, closeQuarters: Arm == AiCombatArm.Patrol)
             : null;
@@ -1645,7 +1716,10 @@ public sealed class AiSoldier
             Flinch: _flinchZone >= 0,
             Dead: Activity == AiSoldierActivity.Dead,
             MovingForward: IsMovingInCombat,
-            HitZone: _flinchZone));
+            Running: _runByte,
+            HitZone: _flinchZone,
+            TenseRun: _tenseRunThisTick,
+            Forward: WalksForward));
 
         // 0x45D080 clears the flinch bit straight after the machine's tick: it is a one-tick pulse, and a
         // state that does not test it on that tick loses it.
@@ -2210,7 +2284,7 @@ public sealed class AiSoldier
         _patrolRollChild = null;
         _patrolProne = false;
         _patrolKneeling = false;
-        _occupancy?.Release(this);
+        _deadClaimsReleased = false;
         _combatFreePosition = null;
         _gunnerCombat?.End();
 
@@ -2222,10 +2296,8 @@ public sealed class AiSoldier
         // nothing, until the level was restarted.
         SetTarget(null);
 
-        // And death frees the alarm panel: 0x44F410's cleanup releases the claim handles at
-        // ai+15024/+15028, so a guard shot on its way to the alarm leaves it for the next one. The same
-        // branch ends every action on the stack.
-        ReleaseActivateClaims();
+        // Death ends every action on the stack. The claims -- the alarm panel's handles at ai+15024/+15028 and
+        // the node cell at +16032 -- are kept until the death clip has run (see TickDeadAi).
         _pendingActions.Clear();
         if (facing is { } heading)
         {
@@ -2299,6 +2371,26 @@ public sealed class AiSoldier
     private bool _deathClipEnded;
 
     /// <summary>
+    /// A dead soldier's HumanAI tick, before its body's: once the death clip has run (Human+828, set by
+    /// <c>0x45C740</c> the tick after the clip ends), <c>0x44F410</c> lets go of the alarm panel's claim handles and
+    /// its node cell, so a guard shot on its way to the alarm leaves it for the next one only once the body lies still.
+    /// </summary>
+    public void TickDeadAi()
+    {
+        if (Activity != AiSoldierActivity.Dead || !_deathClipEnded || _deadClaimsReleased)
+        {
+            return;
+        }
+
+        _deadClaimsReleased = true;
+        ReleaseActivateClaims();
+        _occupancy?.ReleaseDead(this);
+    }
+
+    // Whether TickDeadAi has let go of the dead soldier's claims.
+    private bool _deadClaimsReleased;
+
+    /// <summary>
     /// Steps a dead body for one tick — the death state's per-tick (<c>0x45C700</c>) joined to the soldier
     /// update's ordinary root-motion move and ground query (<c>0x45D080</c>).
     /// </summary>
@@ -2332,9 +2424,9 @@ public sealed class AiSoldier
         Vector3d world = SoldierDeathFall.RotateAboutZ(local, Facing);
 
         // 0x45C700 adds the fall solver's velocity until the death clip ends, then hands the corpse to
-        // 0x45C740, which adds nothing more.
-        _deathClipEnded |= deathClipEnded;
+        // 0x45C740, which adds nothing more -- from the tick after: the tick the clip ends still slides.
         Vector3d slide = _deathClipEnded ? default : DeathFallVelocity;
+        _deathClipEnded |= deathClipEnded;
         double x = Position.X + world.X + slide.X;
         double y = Position.Y + world.Y + slide.Y;
         double z = Position.Z + world.Z + slide.Z;
@@ -2454,6 +2546,7 @@ public sealed class AiSoldier
         _channelWrites.Clear();
         _gaitPress = false;
         WalksForward = false;
+        _tenseRunThisTick = false;
         Combat = new AiCombatCommand();
         DetectionShoutRequestedThisTick = false;
         AlertPingDueThisTick = false;
@@ -2504,6 +2597,28 @@ public sealed class AiSoldier
             return;
         }
 
+        // 0x44F410: the first tick the AI finds its Human dead (0x451330) ends every action on the stack (0x450FF0 for
+        // each), hands AIEVENT_DEAD to the script there and then (0x44FC90), and latches +15034. A dead Human is never
+        // scanned again.
+        if (HumanDead)
+        {
+            if (!_deathDispatched)
+            {
+                _deathDispatched = true;
+                foreach (AiPendingAction action in _pendingActions.Actions.ToArray())
+                {
+                    FinishAction(action);
+                }
+
+                if (HasScript)
+                {
+                    Dispatch(AiEvent.Dead, PriorityPositionOf(AiEvent.Dead));
+                }
+            }
+
+            return;
+        }
+
         // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.
         if (_nextAnimationTick >= 0 && tick >= _nextAnimationTick)
         {
@@ -2546,10 +2661,12 @@ public sealed class AiSoldier
 
         // 0x44F410 posts ENEMYDETECTION for every enemy in sight and FRIENDLYDETECTION for every fallen
         // friend in sight, every tick, each naming its human -- which is who a SetCombat it triggers fights.
-        // No shipped script declares FRIENDLYDETECTION, so admission drops those, as in the original.
+        // No shipped script declares FRIENDLYDETECTION, so admission drops those, as in the original. Each post
+        // reads the human's life as it is now (0x463170), not as the last sweep registered it: an enemy killed since
+        // stays in the list, and in sight, until the next sweep, but is no longer posted.
         foreach (TrackedHuman enemy in _enemies)
         {
-            if (enemy.Slot.IsVisible)
+            if (enemy.Slot.IsVisible && enemy.Candidate.Alive)
             {
                 PostDetection(AiEvent.EnemyDetection, enemy);
             }
@@ -2557,7 +2674,7 @@ public sealed class AiSoldier
 
         foreach (TrackedHuman friend in _fallenFriends)
         {
-            if (friend.Slot.IsVisible)
+            if (friend.Slot.IsVisible && !friend.Candidate.Alive)
             {
                 PostDetection(AiEvent.FriendlyDetection, friend);
             }
@@ -2799,10 +2916,17 @@ public sealed class AiSoldier
     {
         // The target is dead: leave combat outright rather than keep firing at where it fell. The
         // unregister (0x4894E0) is immediate, and 0x44F410 releases the combat record whose target the
-        // scan no longer registers, so this is too.
+        // scan no longer registers, so this is too. The body is left as it is: the end (0x48D7D0) releases the
+        // record and nothing else, and a soldier caught mid-burst runs its fire clip out. Follow, RePosition and
+        // LookForTarget hold the tense run (slot 26) before they find the target gone, so a chaser stands up from
+        // the run as its fight ends.
         if (!_enemyAlive)
         {
-            Body.Reset();
+            if (IsPatrolMovementInstalled)
+            {
+                _tenseRunThisTick = true;
+            }
+
             EndCombat();
             return;
         }
@@ -2931,9 +3055,22 @@ public sealed class AiSoldier
         switch (command.Kind)
         {
             case AiPatrolCommandKind.Animation:
+                // 0x48E920's stand action: the clip goes to the body through channel 3 once, which puts it in the
+                // play-animation state (35) until the clip ends, and the command is done when the body is back in
+                // its stand state -- its kneel, under a Crouch.
                 Activity = AiSoldierActivity.Idle;
-                RequestedAnimation = command.Operand;
-                finished = _animationFinished;
+                RequestedAnimation = -1;
+                if (route.AnimationRequested)
+                {
+                    WriteChannel(AiCombatChannel.PlayAnimation, command.Operand);
+                    finished = false;
+                }
+                else
+                {
+                    finished = AiCombatChannels.IsInStance(
+                        _type, route.IsCrouching ? AiStanceChannel.Kneeling : AiStanceChannel.Standing, CombatState);
+                }
+
                 break;
 
             case AiPatrolCommandKind.Delay:
@@ -3218,6 +3355,7 @@ public sealed class AiSoldier
         _patrolProne = false;
         _patrolKneeling = false;
         _repositionLatched = false;
+        _lookForTargetLatched = false;
 
         // The node claim outlives the fight: nothing in IGI.exe releases HumanAI+16032 when combat ends --
         // only death (0x44F410), a claiming walk (0x4518E0) or a search that claims elsewhere replaces it.
@@ -3751,7 +3889,7 @@ public sealed class AiSoldier
         // The clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked
         // for: the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back.
         Vector3d world = SoldierDeathFall.RotateAboutZ(
-            new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing);
+            new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing + RecoilYaw);
         double x = Position.X + world.X;
         double y = Position.Y + world.Y;
         if (world.X != 0.0 || world.Y != 0.0)
@@ -3856,6 +3994,10 @@ public sealed class AiSoldier
             _alertPingCounter = 0;
             _patrolProne = prone && Arm == AiCombatArm.Patrol;
             _repositionLatched = false;
+            _lookForTargetLatched = false;
+
+            // The run function is the stance's entry, so no movement behaviour of an earlier fight is installed.
+            PatrolAction = default;
             _patrolKneeling = crouched && !_patrolProne && Arm == AiCombatArm.Patrol;
 
             // SetCombat's start (0x44D160) is 0x48ABA0 for the patrol types, which installs a stance ENTRY as the
@@ -3869,8 +4011,10 @@ public sealed class AiSoldier
         _combatInstalled = true;
         Activity = AiSoldierActivity.Engaging;
         RequestedAnimation = -1;
-        _route.Clear();
-        DestinationNode = -1;
+
+        // The movement queue and its destination (+15920) outlive the action that planned them: SetCombat
+        // (0x44D160) touches neither, so a patrol caught mid-leg that repositions to the node it claimed for the
+        // leg (0x4518E0 sees the same destination) carries on along the queue it already had.
     }
 
     /// <summary>Runs one tick of the combat behaviour and applies what it asks for.</summary>
@@ -4084,7 +4228,7 @@ public sealed class AiSoldier
     private void FightAsPatrol(int tick, Vector3d enemy)
     {
         AiCombatWeaponState weapon = _weapon!();
-        TrackTargetNode(LiveTargetFeet(enemy));
+        TrackTargetNode(LiveTargetNodePoint() ?? LiveTargetFeet(enemy));
 
         // 0x48BC00 asks 0x48BE30 before it runs an already-installed child and before its ordinary
         // chooser. The drained event counters are the exact three words the original tests. Follow,
@@ -4193,6 +4337,7 @@ public sealed class AiSoldier
         {
             _channelWrites.Clear();
             Combat = default;
+            _tenseRunThisTick = true;
 
             // 0x48C860 runs: the run setter, every tick of the leg.
             SetGait(walking: false);
@@ -4220,20 +4365,37 @@ public sealed class AiSoldier
         // true and 0x48AE70 reinstalls the parent). The node the soldier stands on changes along the way
         // without ending it, so a patrol caught mid-leg runs the whole leg -- re-asking the chooser each tick
         // stopped it at the first node it crossed.
+        // 0x48CAB0, the tick after the stand arm chose it: one turn toward where the target is (0x451380's point,
+        // to within 2 degrees), and the parent per-tick is reinstalled for the next tick. It walks nowhere.
+        if (_lookForTargetLatched)
+        {
+            _lookForTargetLatched = false;
+            _channelWrites.Clear();
+            Combat = default;
+            _tenseRunThisTick = true;
+            TurnTowards(LiveTargetNodePoint() ?? AimPointOf(enemy, TargetCrouching), 0.034906585f);
+            return;
+        }
+
         if (_repositionLatched && PatrolAction == AiPatrolAction.RePosition)
         {
             _channelWrites.Clear();
             Combat = default;
+            _tenseRunThisTick = true;
             // The walk was planned when RePosition was installed; the latch only follows it. Re-planning
             // here would hand an arrived soldier a fresh one-point route every tick, and it would never end.
             if (_route.Count > 0)
             {
                 AdvanceInCombat();
-                return;
             }
 
-            // Arrived (or nowhere left to walk): the parent per-tick runs again from the next tick.
-            _repositionLatched = false;
+            // Arrived (or nowhere left to walk): 0x4522A0 reports it on the tick the queue empties, and 0x48AE70
+            // reinstalls the parent per-tick for the next one.
+            if (_route.Count == 0)
+            {
+                _repositionLatched = false;
+            }
+
             return;
         }
 
@@ -4273,6 +4435,13 @@ public sealed class AiSoldier
         {
             _channelWrites.Clear();
             Combat = default;
+
+            // ...and an animation the patrol was playing is stopped: channel 3 at -1 (0x48BC00).
+            if (AiCombatChannels.IsInStance(_type, AiStanceChannel.AnimationPlaying, CombatState))
+            {
+                WriteChannel(AiCombatChannel.PlayAnimation, -1f);
+            }
+
             return;
         }
 
@@ -4351,7 +4520,7 @@ public sealed class AiSoldier
         // starts on the next tick, from the latched branches above. Probed on mission 4: patrol 411 chose Follow on
         // tick 4385, wrote its first forward on 4386 (the body entering run state 17 then) and moved from 4387.
         bool standArmInstallsMove = !_patrolProne && !_patrolKneeling
-            && action is AiPatrolAction.RePosition or AiPatrolAction.Follow;
+            && action is AiPatrolAction.RePosition or AiPatrolAction.Follow or AiPatrolAction.LookForTarget;
         if ((_patrolProne || _patrolKneeling)
             && action is AiPatrolAction.RePosition or AiPatrolAction.Follow or AiPatrolAction.LookForTarget)
         {
@@ -4409,18 +4578,15 @@ public sealed class AiSoldier
             case AiPatrolAction.LookForTarget:
                 Target?.Aim(this, AiAimMode.Crowded);
 
-                // The original walks to its destination EVERY tick and the action is only the upper body,
-                // so a soldier hunting a target it has lost keeps moving to the search node while it
-                // watches. Reproduced by continuing the walk whenever a combat route is set (the search's
-                // one-in-sixteen Follow ticks set it); with no route it is the crowded-out case and only
-                // turns to watch.
-                if (_route.Count > 0)
+                // 0x48AE70 with the entry 0x48CAA0: the stand arm installs 0x48CAB0, which runs on the next tick;
+                // the kneel and prone arms answer with the stand arm and the turn on this one.
+                if (standArmInstallsMove)
                 {
-                    AdvanceInCombat();
+                    _lookForTargetLatched = true;
                 }
                 else
                 {
-                    TurnTowards(AimPointOf(enemy, TargetCrouching), (float)AiGuardCombat.AimToleranceRadians);
+                    TurnTowards(LiveTargetNodePoint() ?? AimPointOf(enemy, TargetCrouching), 0.034906585f);
                 }
 
                 return;
@@ -4477,8 +4643,8 @@ public sealed class AiSoldier
     /// <summary>Whether a movement behaviour — Follow, RePosition or a walking LookForTarget — owns the tick.</summary>
     private bool IsPatrolMovementInstalled =>
         (PatrolAction == AiPatrolAction.Follow && _patrol!.DestinationNodeId >= 0)
-        || PatrolAction == AiPatrolAction.RePosition
-        || (PatrolAction == AiPatrolAction.LookForTarget && _route.Count > 0);
+        || (PatrolAction == AiPatrolAction.RePosition && _repositionLatched)
+        || _lookForTargetLatched;
 
     /// <summary>Holds the posture channel the kneel and prone arms, and their children, write every tick.</summary>
     private void HoldPosture()
@@ -4542,13 +4708,6 @@ public sealed class AiSoldier
 
         WriteChannel(AiCombatChannel.Stand, 1f);
 
-        if (CurrentNode == destination)
-        {
-            _patrol.ArrivedAtDestination();
-            Target?.Aim(this, AiAimMode.None);
-            return;
-        }
-
         if (!HeadFor(destination))
         {
             // A stale or unreachable combat node cannot remain an installed Follow action. Retail's
@@ -4567,6 +4726,15 @@ public sealed class AiSoldier
         }
 
         AdvanceInCombat();
+
+        // 0x4522A0 to the claimed cell: the leg ends on the tick its queue empties -- standing on the destination
+        // node is not enough while the cell inside it is still ahead -- and 0x48AE70 reinstalls the parent.
+        if (_route.Count == 0)
+        {
+            _patrol.ArrivedAtDestination();
+            Target?.Aim(this, AiAimMode.None);
+            return;
+        }
 
         if (!TargetSlot.IsVisible)
         {
@@ -4605,7 +4773,8 @@ public sealed class AiSoldier
     /// (0.5 m up, 0.25 m crouched), not the shared record the rest of combat reads; only the distance, and a
     /// knife guard's turn, use the record.
     /// </remarks>
-    private Vector3d TrueAimPoint() => AimPointOf(TargetFeet, TargetCrouching);
+    // 0x451380 reads the target's own origin (Human+32, the pose's root above the feet), not a fixed standing height.
+    private Vector3d TrueAimPoint() => TargetHuman?.Candidate.NodeQueryPoint ?? AimPointOf(TargetFeet, TargetCrouching);
 
     /// <summary>The fire and reload sub-actions the two arms share.</summary>
     /// <param name="enemy">Where the target is.</param>
@@ -4829,7 +4998,7 @@ public sealed class AiSoldier
     /// <returns>A node id, or <see langword="null"/>.</returns>
     private int? FindFreePosition(Vector3d enemy, bool towardTarget, bool claim = true)
     {
-        int targetNode = NearestNode(enemy);
+        int targetNode = NearestNode(LiveTargetNodePoint() ?? enemy);
         int? found = FindFreePositionFrom(targetNode, enemy, towardTarget, claim);
         if (claim)
         {
@@ -4838,6 +5007,39 @@ public sealed class AiSoldier
 
         return found;
     }
+
+    /// <summary>Diagnostics: the patrol chooser's out-of-sight count (the stand block's <c>+24</c>), or -1.</summary>
+    public int PatrolNotVisibleTicks => _patrol?.NotVisibleTicks ?? -1;
+
+    /// <summary>Gets or sets whether the soldier's Human is dead (<c>0x451330</c>), which the AI reads at the top of its tick.</summary>
+    public bool HumanDead { get; set; }
+
+    // +15034: AIEVENT_DEAD has been dispatched.
+    private bool _deathDispatched;
+
+    /// <summary>Gets or sets where the soldier's view stands (the view's <c>+224</c>, copied to <c>HumanAI+56</c>).</summary>
+    public Func<Vector3d>? ViewPositionProvider { get; set; }
+
+    /// <summary>Diagnostics: the node this soldier holds a claim on (<c>HumanAI+16032</c>), or -1.</summary>
+    public int ClaimedNodeId => _occupancy?.ClaimedNode(this) ?? -1;
+
+    /// <summary>Diagnostics: the eye the turn measures from, the tracked aim and the target point, for the probe's diff.</summary>
+    public string AimText
+    {
+        get
+        {
+            Vector3d eye = ViewPositionProvider?.Invoke() ?? EyePosition();
+            Vector3d trk = _combat?.TrackedAim ?? default;
+            Vector3d tgt = TargetHuman is null ? default : TrueAimPoint();
+            return FormattableString.Invariant(
+                $"eye=({eye.X:0.0},{eye.Y:0.0},{eye.Z:0.0}) trk=({trk.X:0.0},{trk.Y:0.0},{trk.Z:0.0}) tgt=({tgt.X:0.0},{tgt.Y:0.0},{tgt.Z:0.0}) vp={ViewPitch:0.000000}");
+        }
+    }
+
+    /// <summary>Diagnostics: the claimed cell's position (<c>HumanAI+16048</c>), x and y.</summary>
+    public string ClaimedPositionText => _combatFreePosition is { } p
+        ? FormattableString.Invariant($"({p.X:0.0},{p.Y:0.0})")
+        : "-";
 
     /// <summary>The last claiming free-position search, for scenario traces.</summary>
     public string LastFreeSearch { get; private set; } = "-";
@@ -4857,7 +5059,8 @@ public sealed class AiSoldier
                             node.Position.X,
                             node.Position.Y,
                             node.Position.Z + FreePositionRayHeightOf(_graph)),
-                        AimPointOf(enemy))),
+                        // 0x48B6E0 aims the can-shoot ray at 0x451380's point, the target's origin raised.
+                        LiveTargetNodePoint() ?? AimPointOf(enemy))),
                 occupancy: claim ? _occupancy : null,
                 claimant: claim ? this : null,
                 claimedPosition: claim ? position => _combatFreePosition = position : null);
@@ -4877,6 +5080,13 @@ public sealed class AiSoldier
 
     // Whether RePosition (0x48C760) owns the per-tick until its walk arrives.
     private bool _repositionLatched;
+
+    // Whether LookForTarget (0x48CAB0) is the run function: installed by the stand arm, it runs one tick.
+    private bool _lookForTargetLatched;
+
+    // Slot 26, the tense run, which RePosition, Follow and LookForTarget write first thing on every tick they run
+    // (HumanAI+15580 = 1.0).
+    private bool _tenseRunThisTick;
 
     /// <summary>Whether the soldier is standing inside a node.</summary>
     /// <param name="nodeId">The node to test.</param>
@@ -4955,7 +5165,7 @@ public sealed class AiSoldier
         float yawError = 0f;
         if ((dx * dx) + (dy * dy) >= 1.0)
         {
-            yawError = Wrap((float)Math.Atan2(-dx, dy) - Facing);
+            yawError = Wrap((float)Math.Atan2(-dx, dy) - (Facing + RecoilYaw));
         }
 
         float yawLimit = _steering.YawClamp;
@@ -4964,13 +5174,15 @@ public sealed class AiSoldier
         float elevation = 0f;
         if (!level)
         {
-            Vector3d eye = EyePosition();
+            // 0x4522D0 measures from the AI's frame (+56), which is the view's position: the origin raised 0.7 m, or
+            // 0.35 m with the crouch byte set -- not the eye bone.
+            Vector3d eye = ViewPositionProvider?.Invoke() ?? EyePosition();
             double ex = target.X - eye.X;
             double ey = target.Y - eye.Y;
             elevation = (float)Math.Atan2(target.Z - eye.Z, Math.Sqrt((ex * ex) + (ey * ey)));
         }
 
-        float pitchError = elevation - ViewPitch;
+        float pitchError = elevation - (ViewPitch + RecoilPitch);
         float pitchLimit = _steering.PitchClamp;
         _pitchInput = Math.Clamp(pitchError, -pitchLimit, pitchLimit) / MathF.PI;
         return Math.Abs(yawError) <= tolerance && Math.Abs(pitchError) <= tolerance;
@@ -4985,6 +5197,9 @@ public sealed class AiSoldier
     /// 36 ticks and its node still moved from 13 to 14 halfway through.
     /// </remarks>
     private Vector3d LiveTargetFeet(Vector3d fallback) => TargetHuman is null ? fallback : TargetFeet;
+
+    // 0x451380's point for a node search: the target's origin raised half a metre (0x4530A0, 0x48B050).
+    private Vector3d? LiveTargetNodePoint() => TargetHuman?.Candidate.NodeQueryPoint;
 
     /// <summary>0x48A920's tracking of the node nearest the target -- <c>HumanAI+15852</c> and <c>+15856</c>.</summary>
     /// <param name="enemy">Where the target is.</param>

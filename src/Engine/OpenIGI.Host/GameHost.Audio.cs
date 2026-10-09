@@ -929,24 +929,18 @@ internal sealed partial class GameHost
         }
     }
 
-    /// <summary>Plays the clatter of every dropped gun that landed this tick.</summary>
+    /// <summary>Plays the clatter of a dropped gun that has just landed.</summary>
+    /// <param name="impact">The landing.</param>
     /// <remarks>
     /// <c>GunPickup</c>'s tick (<c>0x46CEA0</c>) plays <c>weapondrop_01</c> or <c>weapondrop_02</c>, a coin
-    /// toss between them, at every bounce. The realistic drop reports a landing once per contact, so a gun
-    /// that tumbles and bounces twice clatters twice.
+    /// toss between them, at every bounce -- drawn there, in the pickup's tick, whether or not anything can be
+    /// heard. The realistic drop reports a landing once per contact, so a gun that tumbles and bounces twice
+    /// clatters twice.
     /// </remarks>
-    private void PlayWeaponDropSounds()
+    private void PlayWeaponDropSound(GunPickupImpact impact)
     {
-        if (_sounds is null || _gunPickups is not { } pickups)
-        {
-            return;
-        }
-
-        foreach (GunPickupImpact impact in pickups.Impacts)
-        {
-            string sound = _soundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
-            _sounds.PlayDefinition(sound, impact.Position, priority: 50);
-        }
+        string sound = _soundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
+        _sounds?.PlayDefinition(sound, impact.Position, priority: 50);
     }
 
     /// <summary>Plays one player or AI bullet contact through the retail sound definitions.</summary>

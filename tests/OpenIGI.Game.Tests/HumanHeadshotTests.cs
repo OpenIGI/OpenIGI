@@ -17,23 +17,34 @@ public sealed class HumanHeadshotTests
     private static readonly Vector3f FacingNorth = new(0f, 1f, 0f);
 
     /// <summary>
-    /// A round passing through the reference bone takes the head zone. Under the old reading the proximity
-    /// was measured from the <em>cylinder contact</em>, which for a side-on shot is at least the body radius
-    /// (0.55 m) from the bone on the axis — always more than the 15 cm the test allows, so zone 15 was
-    /// unreachable no matter where the shot went.
+    /// A round passing through the head bone is NOT promoted: 0x489C60's lookup of bone 4 (0x414F40) ends in
+    /// 0x4D0930, which writes zeros, so the 15 cm test is made about the origin (Human+32), not the head.
     /// </summary>
     [Fact]
-    public void AShotThroughTheHeadBoneTakesTheHeadZone()
+    public void AShotThroughTheHeadBoneIsNotPromoted()
     {
         Vector3d feet = default;
         BonePose pose = HeadAt(new Vector3f(0f, 0f, 6900f));
 
         // Straight through the head, from in FRONT: the human faces +Y, so the round must travel -Y.
-        // A shot from behind can never take the head zone however close it lands (localForward >= 0).
         Vector3d origin = new(0, 40_000, 6900);
         Vector3d end = new(0, -40_000, 6900);
 
         Assert.True(HumanHitTest.TryCast(origin, end, feet, FacingNorth, pose, out HumanHit hit));
+        Assert.NotEqual(HumanDamage.ProximityZone, hit.Zone);
+    }
+
+    /// <summary>A front round through the origin itself is what takes zone 15.</summary>
+    [Fact]
+    public void AFrontShotThroughTheOriginTakesTheProximityZone()
+    {
+        BonePose pose = HeadAt(new Vector3f(0f, 0f, 6900f));
+
+        // The origin is the feet lifted by the root height; at a metre up the round passes straight through it.
+        Vector3d origin = new(0, 40_000, 4096);
+        Vector3d end = new(0, -40_000, 4096);
+
+        Assert.True(HumanHitTest.TryCast(origin, end, default, FacingNorth, pose, out HumanHit hit, rootHeight: 4096));
         Assert.Equal(HumanDamage.ProximityZone, hit.Zone);
     }
 

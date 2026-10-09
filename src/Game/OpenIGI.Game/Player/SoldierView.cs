@@ -516,4 +516,12 @@ public sealed class SoldierView
     /// </remarks>
     public BonePose UnrotatedPose() => _unrotatedPose ??= _bones.Pose();
 
+    /// <summary>Gets the pose the clocks will reach on the next tick -- what a cast re-posing the body between ticks sees.</summary>
+    /// <returns>The posed rig under <see cref="Orientation"/>, one tick on; not cached.</returns>
+    public BonePose PoseAhead() => _bones.PoseAhead(Orientation);
+
+    /// <summary>Gets <see cref="PoseAhead"/> built with an identity root.</summary>
+    /// <returns>The posed rig, unrotated, one tick on; not cached.</returns>
+    public BonePose UnrotatedPoseAhead() => _bones.PoseAhead();
+
 }

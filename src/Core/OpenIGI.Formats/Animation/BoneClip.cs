@@ -371,6 +371,23 @@ public sealed class BoneClip
     /// <param name="time">The new time.</param>
     public void SetTime(float time) => Time = time;
 
+    /// <summary>Where the next <see cref="Tick"/> will leave the clock, without moving it.</summary>
+    /// <returns>The clock after one more tick, wrapped or clamped as <see cref="Tick"/> would.</returns>
+    public float TimeAfterTick()
+    {
+        float duration = _animation.Duration;
+        bool playingBackwards = Rate < 0f || (Rate == 0f && Backwards);
+        float time = Time + Rate;
+        if ((!playingBackwards && time >= duration) || (playingBackwards && time <= 0f))
+        {
+            time = Loops
+                ? time + (playingBackwards ? duration : -duration)
+                : playingBackwards ? 0f : duration;
+        }
+
+        return time;
+    }
+
     /// <summary>Samples the root track at a time.</summary>
     /// <param name="time">The clip time.</param>
     /// <returns>The root's translation there.</returns>

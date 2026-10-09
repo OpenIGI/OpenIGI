@@ -212,6 +212,9 @@ public sealed class AiGuardCombat
     /// </remarks>
     public bool FirstFirePending => _firstFire;
 
+    /// <summary>Gets or sets whether the stand phase draws 0x48D1D1's dead-store delay, as only the guard arm's own stand does.</summary>
+    public bool DrawsStandDelay { get; init; } = true;
+
     /// <summary>Runs one tick.</summary>
     /// <param name="sense">What the body looks like this tick.</param>
     /// <param name="standing">Whether the body is in its standing stance.</param>
@@ -281,7 +284,10 @@ public sealed class AiGuardCombat
         // level's one stream, so it is taken here, on every tick that reaches this point: before the burst, and on
         // each tick the target sits in the cone unseen or the aimers are full. Probed on mission 4: 403's first
         // engagement drew here, then 0x48B9C0's burst factor, on tick 4551.
-        _ = _random();
+        if (DrawsStandDelay)
+        {
+            _ = _random();
+        }
 
         if (!sense.Visible)
         {

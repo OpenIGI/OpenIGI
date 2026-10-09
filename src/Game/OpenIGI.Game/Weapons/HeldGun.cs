@@ -237,7 +237,7 @@ public sealed class HeldGun
                 ];
 
                 (float radius, float bearing) = GunFiring.SampleCone(cone, samples);
-                direction = GunFiring.OffsetInCone(forward, right, up, radius, bearing);
+                direction = GunFiring.RetailConeDirection(forward, radius, bearing);
             }
 
             _projectiles.Add(new GunProjectile(

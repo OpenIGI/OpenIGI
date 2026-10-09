@@ -1294,7 +1294,7 @@ public sealed class CutsceneRuntime
             Vector3f side = Vector3f.Cross(barrel, Vector3f.UnitZ);
             side = side.Length > 1e-6f ? side.Normalized() : Vector3f.UnitX;
             Vector3f up = Vector3f.Cross(side, barrel).Normalized();
-            barrel = GunFiring.OffsetInCone(barrel, side, up, radius, bearing);
+            barrel = GunFiring.RetailConeDirection(barrel, radius, bearing);
         }
 
         double range = (shotTarget - origin).Length;
