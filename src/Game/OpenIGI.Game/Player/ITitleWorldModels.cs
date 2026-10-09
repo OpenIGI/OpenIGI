@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 
 namespace OpenIGI.Game.Player;
 
@@ -14,8 +15,17 @@ public interface ITitleWorldModels
     IReadOnlyList<TitleWorldModel> WorldModels { get; }
 }
 
-/// <summary>One rigid model a title player's level draws in the world.</summary>
+/// <summary>One model a title player's level draws in the world: rigid, or a skinned body posed by its skeleton.</summary>
 /// <param name="Model">The model's name, as the title's packs resolve it.</param>
 /// <param name="Position">Where it stands, in world units.</param>
 /// <param name="Orientation">Its orientation, as the world's placements carry theirs.</param>
-public sealed record TitleWorldModel(string Model, Vector3d Position, Matrix3f Orientation);
+/// <param name="Pose">The skeleton a skinned model is posed by, in the model's frame and units; null for a rigid one.</param>
+/// <param name="Instance">Which body a skinned model is, so bodies of one model keep a mesh each; null for a rigid one.</param>
+/// <param name="Tick">The tick a skinned model's pose is for: a body is skinned once a tick.</param>
+public sealed record TitleWorldModel(
+    string Model,
+    Vector3d Position,
+    Matrix3f Orientation,
+    BonePose? Pose = null,
+    object? Instance = null,
+    long Tick = 0);

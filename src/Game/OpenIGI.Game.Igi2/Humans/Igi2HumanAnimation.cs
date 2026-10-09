@@ -50,6 +50,9 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     private readonly Igi2AnimController _second = new() { Flags = Igi2AnimControllerBits.NoClip };
     private readonly Igi2AnimController _third = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
     private readonly Igi2AnimController _fourth = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
+    private readonly Igi2AnimBlend _mainBlend = new();
+    private readonly Igi2AnimBlend _upperSwapBlend = new();
+    private readonly Igi2AnimBlend _upperBlend = new();
 
     /// <summary>Initializes a new instance of the <see cref="Igi2HumanAnimation"/> class.</summary>
     /// <param name="library">The level's clips, or <see langword="null"/> for none.</param>
@@ -171,6 +174,16 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     public bool UpperBodyEnded => UpperBody?.IsEnded ?? false;
 
     /// <inheritdoc/>
+    public int? UpperBodyTotalTime => UpperBody is { } upper ? upper.Clip?.TotalTime ?? 0 : null;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>HumanAnim_IsBlendFinished</c> (<c>igi2 0x58FD40</c>): the main blend, the upper body's swap and its mix over the main
+    /// clip have all finished.
+    /// </remarks>
+    public bool IsBlendFinished => _mainBlend.IsFinished && _upperSwapBlend.IsFinished && _upperBlend.IsFinished;
+
+    /// <inheritdoc/>
     public int UpperBodyTimeStep
     {
         get => UpperBody?.TimeStep ?? 0;
@@ -189,6 +202,7 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         if (UpperBody is not null)
         {
             UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
+            _upperBlend.Blend(UpperBodyBlendTicks);
             UpperBody = null;
         }
     }
@@ -202,14 +216,20 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
             UpperBody.Flags |= Igi2AnimControllerBits.SuppressTriggers;
             next.SetAnimationAndTime(clip, time);
             UpperBody = next;
+            UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
+            _upperSwapBlend.Blend(UpperBodyBlendTicks);
         }
         else
         {
+            // HumanAnim_SetUpperBodyAnimationFromHeader (igi2 0x58F300): from no upper body the swap is made at once and the
+            // upper body is blended in over the main clip.
             _third.SetAnimationAndTime(clip, time);
             UpperBody = _third;
+            UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
+            _upperSwapBlend.Blend(0);
+            _upperBlend.Blend(UpperBodyBlendTicks);
         }
 
-        UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
         UpperBody.Flags = ReferenceEquals(Main.Clip, clip)
             ? UpperBody.Flags | Igi2AnimControllerBits.SuppressTriggers
             : UpperBody.Flags & ~Igi2AnimControllerBits.SuppressTriggers;
@@ -246,8 +266,11 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     {
         _first.AutoStep();
         _second.AutoStep();
+        _mainBlend.Run();
         _third.AutoStep();
         _fourth.AutoStep();
+        _upperSwapBlend.Run();
+        _upperBlend.Run();
     }
 
     /// <inheritdoc/>
@@ -283,10 +306,55 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         next.Flags &= ~Igi2AnimControllerBits.SuppressTriggers;
         next.SetAnimationAndTime(clip, time);
         BlendTicks = BlendTicksFor(blendSeconds);
+        _mainBlend.Blend(BlendTicks);
         Main = next;
         Main.Flags &= ~Igi2AnimControllerBits.AutoStep;
     }
 
     /// <summary>A blend time in ticks, <c>(int)(seconds × 4800)</c> truncated.</summary>
     private static int BlendTicksFor(float blendSeconds) => Fpu.ToInt32((Fpu)blendSeconds * BlendTicksPerSecond);
+}
+
+/// <summary>A blend between two clips, <c>AnimBlender_t</c>, as far as it is timed.</summary>
+/// <remarks>
+/// <c>AnimBlender_Blend</c> (<c>igi2 0x5D9DB0</c>) starts it over a length in clip ticks, finished at once if that is nought;
+/// each run (<c>AnimBlender_RunHandler</c>, <c>0x5D9630</c>) adds a frame's 160 ticks while it is short of its length, and
+/// on the run after it reaches it the blend is finished. A body's blends are made finished (<c>HumanAnim_Init</c>,
+/// <c>0x58F650</c>). The mix of poses it makes is not run.
+/// </remarks>
+public sealed class Igi2AnimBlend
+{
+    /// <summary>The ticks a run adds, <c>AnimBlender_nTicksPerFrame</c>.</summary>
+    public const int TicksPerFrame = 160;
+
+    /// <summary>Gets the ticks the blend has run.</summary>
+    public int Elapsed { get; private set; }
+
+    /// <summary>Gets the blend's length in ticks.</summary>
+    public int Length { get; private set; }
+
+    /// <summary>Gets a value indicating whether the blend has finished, the blender's bit 4.</summary>
+    public bool IsFinished { get; private set; } = true;
+
+    /// <summary>Starts the blend over a length.</summary>
+    /// <param name="length">The length in ticks.</param>
+    public void Blend(int length)
+    {
+        Elapsed = 0;
+        Length = length;
+        IsFinished = length == 0;
+    }
+
+    /// <summary>Runs the blend one tick.</summary>
+    public void Run()
+    {
+        if (Elapsed < Length)
+        {
+            Elapsed += TicksPerFrame;
+        }
+        else
+        {
+            IsFinished = true;
+        }
+    }
 }

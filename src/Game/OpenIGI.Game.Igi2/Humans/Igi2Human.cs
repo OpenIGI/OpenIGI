@@ -74,6 +74,15 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets the turning speed, <c>Human_s.vTurningSpeed</c>.</summary>
     public float TurningSpeed { get; set; }
 
+    /// <summary>
+    /// Gets or sets the translation of the model's root bone, <c>tRootTranslation</c> (<c>BoneDynCubeObj + 0x130</c>): its rig's
+    /// first bind translation, which <c>BoneDynCubeObj_SetLODVirModel</c> (<c>igi2 0x567BE0</c>) copies.
+    /// </summary>
+    public Vector3f RootTranslation { get; set; }
+
+    /// <summary>Gets or sets the model's bounding radius, <c>vRadius</c> (<c>BoneDynCubeObj + 0x148</c>): its mesh's <c>+0x78</c>.</summary>
+    public float ModelRadius { get; set; } = 1f;
+
     /// <summary>Gets the view the states kick, <c>Human_s.ptHumanViewQTask</c>.</summary>
     public Igi2HumanView View { get; } = new();
 

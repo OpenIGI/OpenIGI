@@ -66,6 +66,12 @@ public interface IIgi2HumanAnimation
     /// <summary>Gets a value indicating whether the upper-body clip has reached an end; false with none playing.</summary>
     bool UpperBodyEnded { get; }
 
+    /// <summary>Gets the upper-body clip's length in ticks, or <see langword="null"/> with no upper-body clip on.</summary>
+    int? UpperBodyTotalTime => null;
+
+    /// <summary>Gets a value indicating whether every blend between clips has finished (<c>HumanAnim_IsBlendFinished</c>).</summary>
+    bool IsBlendFinished => true;
+
     /// <summary>Gets or sets the upper-body clip's step a tick; setting it with none playing does nothing.</summary>
     int UpperBodyTimeStep { get; set; }
 

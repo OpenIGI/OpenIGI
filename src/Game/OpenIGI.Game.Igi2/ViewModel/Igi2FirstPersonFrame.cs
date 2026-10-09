@@ -15,13 +15,8 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 /// (<c>BoneDynCubeObj_UpdateHierarchy</c>, <c>0x564B50</c>).
 /// </para>
 /// <para>
-/// The clip's attach objects stand on their bones at their relative positions, moved by every re-link the clip has
-/// passed. A record's matrix turns its object as <c>ModelObj_CreateAttachObject</c> (<c>0x56D0B0</c>) reads it, its
-/// first two columns as rows and the third row their cross product; a re-link's matrix is taken whole and transposed
-/// (<c>AnimController_Step</c>, <c>0x5549A0</c>). The object then stands at the bone's orientation times that
-/// (<c>ModelObj_UpdateAttachment</c>, <c>0x56CB40</c>: parent · bone · relative). One named <c>weapon</c> draws the weapon in hand's <c>Fixed Model</c>, as <c>WeaponMagicObj_GetModelName</c>
-/// (<c>0x4733B0</c>) finds it through the human that owns the view, and nothing when nothing is held; any other draws
-/// the model it names.
+/// The clip's attach objects hang their models on the pose (<see cref="Igi2AttachedParts"/>), the <c>weapon</c> one the weapon in
+/// hand.
 /// </para>
 /// <para>
 /// Nothing is drawn while the view is zoomed or its owner is dead, as <c>HumanView_EnterHandler</c> (<c>0x4D5DB0</c>)
@@ -32,7 +27,7 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 public sealed class Igi2FirstPersonFrame
 {
     /// <summary>The name of the attach object that draws the weapon in hand.</summary>
-    public const string WeaponAttachName = "weapon";
+    public const string WeaponAttachName = Igi2AttachedParts.WeaponAttachName;
 
     private readonly Dictionary<Igi2BoneHierarchy, BoneSkeleton> _skeletons = new(ReferenceEqualityComparer.Instance);
     private Quaternion32[] _rotations = [];
@@ -63,53 +58,13 @@ public sealed class Igi2FirstPersonFrame
             _rotations = new Quaternion32[clip.BoneCount];
         }
 
-        int time = view.ObjectAnimation.Time;
-        Vector3f root = Igi2ClipSampler.Sample(clip, time, squad: true, _rotations);
+        Vector3f root = Igi2ClipSampler.Sample(clip, view.ObjectAnimation.Time, squad: true, _rotations);
         BonePose pose = BonePose.Evaluate(skeleton, _rotations, root);
 
         List<TitleViewModelPart> parts = [new TitleViewModelPart(view.ObjectModel, pose, default, Matrix3f.Identity)];
-        for (int i = 0; i < clip.AttachObjects.Count; i++)
+        foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, view.ObjectAnimation.Time, pose, heldModel))
         {
-            Igi2AnimationAttachObject attached = clip.AttachObjects[i];
-            string? model = string.Equals(attached.Name, WeaponAttachName, StringComparison.OrdinalIgnoreCase)
-                ? heldModel
-                : attached.Name;
-            if (string.IsNullOrEmpty(model))
-            {
-                continue;
-            }
-
-            int bone = attached.Bone;
-            Vector3f position = attached.Position;
-            Matrix3f orientation = Igi2Pose.RelativeOrientation(attached.Orientation);
-            foreach (Igi2AnimationLink link in clip.Links)
-            {
-                if (link.Time > time)
-                {
-                    break;
-                }
-
-                if (link.AttachObject == i)
-                {
-                    bone = link.Bone;
-                    position = link.Translation;
-                    orientation = link.Orientation.Transposed();
-                }
-            }
-
-            if ((uint)bone >= (uint)pose.BoneCount)
-            {
-                continue;
-            }
-
-            Matrix3f boneRotation = pose.Rotations[bone];
-            Vector3f turned = boneRotation.Transposed().Transform(position);
-            Vector3f bonePosition = pose.Positions[bone];
-            parts.Add(new TitleViewModelPart(
-                model,
-                null,
-                new Vector3f(turned.X + bonePosition.X, turned.Y + bonePosition.Y, turned.Z + bonePosition.Z),
-                boneRotation * orientation));
+            parts.Add(new TitleViewModelPart(part.Model, null, part.Position, part.Orientation));
         }
 
         return new TitleFirstPersonView(view.ObjectPosition, view.ObjectOrientation, view.ObjectFieldOfView, tick, parts);

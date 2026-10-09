@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
+using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Runtime;
 
@@ -8,7 +10,7 @@ namespace OpenIGI.Game.Igi2.Ai;
 
 /// <summary>An enemy soldier's body as level data places it, I.G.I. 2's <c>HumanSoldier</c>.</summary>
 /// <remarks>Its parameters are the <c>Human</c> ones it inherits; its <c>HumanAI</c> is a child.</remarks>
-public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask
+public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask, IIgi2RunTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
@@ -41,6 +43,9 @@ public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask
     [ScriptParam(ScriptParamType.Int32, "Stand Animation")]
     public int StandAnimation { get; set; }
 
+    /// <summary>Gets or sets the soldier's body, or <see langword="null"/> before the level's gameplay made one.</summary>
+    public Igi2HumanSoldier? Body { get; set; }
+
     /// <summary>Gets the soldier's mind, its <c>HumanAI</c> child.</summary>
     public Igi2HumanAiTask? Ai => Children.OfType<Igi2HumanAiTask>().FirstOrDefault();
 
@@ -59,6 +64,20 @@ public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask
             _ => null,
         };
         return value is not null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>HumanSoldier_RunHandler</c> (<c>igi2 0x4EA190</c>) only queues the soldier for the delayed pass, where its body runs and
+    /// its children with it (<see cref="Igi2HumanSoldier.RunDelayed"/>).
+    /// </remarks>
+    public void Run(Igi2LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (Body is { } body)
+        {
+            level.Delay(body.RunDelayed);
+        }
     }
 }
 
@@ -116,7 +135,7 @@ public sealed partial class Igi2HumanAiTask : GameTask
 /// sixty to calm down, two metres between soldiers and thirty to run to an alarm. Its formation distance is held to [0, 10]
 /// and its script is <c>MISSION:AI/Squad_&lt;id&gt;.qsc</c> (<c>AISquad_UpdateInternalDataHandler</c>, <c>0x4990E0</c>).
 /// </remarks>
-public sealed partial class Igi2AiSquadTask : GameTask
+public sealed partial class Igi2AiSquadTask : GameTask, IIgi2RunTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AISquad";
@@ -158,6 +177,17 @@ public sealed partial class Igi2AiSquadTask : GameTask
 
     /// <summary>Gets the squad's soldiers, the <c>HumanSoldier</c> tasks under it, in order.</summary>
     public IEnumerable<Igi2HumanSoldierTask> Soldiers => Igi2TaskTree.Descendants(this).OfType<Igi2HumanSoldierTask>();
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>AISquad_RunHandler</c> (<c>igi2 0x498E80</c>) runs its soldiers every tick, after its own action stack; the squad's own
+    /// part (its members, sounds, targets, fire orders and actions) is not ported yet.
+    /// </remarks>
+    public void Run(Igi2LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        level.RunChildren(this);
+    }
 
     /// <inheritdoc/>
     protected override void OnParsed()

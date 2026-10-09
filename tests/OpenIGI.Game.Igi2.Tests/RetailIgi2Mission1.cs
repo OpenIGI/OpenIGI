@@ -29,6 +29,9 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
     /// <summary>Gets the session's materials, loaded with its tables.</summary>
     public Igi2GameMaterials Materials { get; init; } = new();
 
+    /// <summary>Gets the session's tables, with the AI's tuning, the weapons and the player's tuning loaded.</summary>
+    public Engine.Titles.IServiceCatalog? Services { get; init; }
+
     /// <summary>Gets the screen the level's status messages print on, which <see cref="Step"/> runs after the level.</summary>
     public Igi2StatusMessageScreen Screen { get; init; } = new();
 
@@ -112,6 +115,7 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
         return new RetailIgi2Mission1(level, run, sounds, tree, world)
         {
             Materials = harness.Session.Services.Require<Igi2GameMaterials>(),
+            Services = harness.Session.Services,
             Screen = screen,
             Strings = strings,
         };

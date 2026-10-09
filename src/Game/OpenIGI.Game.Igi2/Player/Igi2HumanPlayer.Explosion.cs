@@ -16,15 +16,6 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
     /// <summary>Gets the difficulty the player was created at.</summary>
     public AiDifficulty Difficulty { get; private set; }
 
-    /// <summary>
-    /// Gets or sets the translation of the player model's root bone, <c>tRootTranslation</c> (<c>BoneDynCubeObj + 0x130</c>):
-    /// its rig's first bind translation, which <c>BoneDynCubeObj_SetLODVirModel</c> (<c>igi2 0x567BE0</c>) copies.
-    /// </summary>
-    public Vector3f RootTranslation { get; set; }
-
-    /// <summary>Gets or sets the player model's bounding radius, <c>vRadius</c> (<c>BoneDynCubeObj + 0x148</c>): its mesh's <c>+0x78</c>.</summary>
-    public float ModelRadius { get; set; } = 1f;
-
     /// <summary>Gets the red flash a blast throws over the view, <c>avDamageFlash</c>: four shares, each 0.4 to 0.8.</summary>
     public IReadOnlyList<float> DamageFlash => _damageFlash;
 

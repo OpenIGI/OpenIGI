@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.World;
@@ -43,6 +44,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, Part?> _parts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<object, Part?> _bodies = new(ReferenceEqualityComparer.Instance);
     private Igi2TextureLoader? _textures;
     private Igi2ModelTable? _table;
     private Func<string, MefModel?>? _models;
@@ -111,7 +113,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
             Matrix3f orientation;
             if (wanted.Pose is not null)
             {
-                if (part.Tick != view.Tick && !Reskin(part, wanted))
+                if (part.Tick != view.Tick && !Reskin(part, wanted.Pose, wanted.Model, () => _parts[wanted.Model] = null))
                 {
                     continue;
                 }
@@ -151,7 +153,29 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         _device.SetMaterialOverride(SurfaceMaterial.Default);
         foreach (TitleWorldModel wanted in models)
         {
-            if (Resolve(wanted.Model, skinned: false) is { } part)
+            Part? part;
+            if (wanted is { Pose: { } pose, Instance: { } instance })
+            {
+                // A body of its own: one model may stand many times over, each posed its own way, so each keeps its own mesh.
+                if (!_bodies.TryGetValue(instance, out part))
+                {
+                    part = Build(wanted.Model, skinned: true);
+                    _bodies[instance] = part;
+                }
+
+                if (part is null || (part.Tick != wanted.Tick && !Reskin(part, pose, wanted.Model, () => _bodies[instance] = null)))
+                {
+                    continue;
+                }
+
+                part.Tick = wanted.Tick;
+            }
+            else
+            {
+                part = Resolve(wanted.Model, skinned: false);
+            }
+
+            if (part is not null)
             {
                 DrawPart(part, camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation), wanted.Orientation);
             }
@@ -241,11 +265,11 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         return new Part(skin, geometry, vertices, mesh, [.. subsets]);
     }
 
-    private bool Reskin(Part part, TitleViewModelPart wanted)
+    private bool Reskin(Part part, BonePose pose, string model, Action drop)
     {
         try
         {
-            part.Skin!.Skin(wanted.Pose!, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
+            part.Skin!.Skin(pose, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
             if (part.Mesh.IsValid)
             {
                 _device.UpdateAnimatedMesh(part.Mesh, part.Vertices);
@@ -259,15 +283,15 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
         {
-            _logger.Warning(LogCategory, $"'{wanted.Model}' could not be posed: {ex.Message}");
-            _parts[wanted.Model] = null;
+            _logger.Warning(LogCategory, $"'{model}' could not be posed: {ex.Message}");
+            drop();
             return false;
         }
     }
 
     private void Release()
     {
-        foreach (Part? part in _parts.Values)
+        foreach (Part? part in _parts.Values.Concat(_bodies.Values))
         {
             if (part is { Mesh.IsValid: true })
             {
@@ -276,6 +300,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         }
 
         _parts.Clear();
+        _bodies.Clear();
         _textures = null;
         _table = null;
         _models = null;

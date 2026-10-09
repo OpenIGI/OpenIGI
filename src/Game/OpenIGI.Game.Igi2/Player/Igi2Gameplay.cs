@@ -112,8 +112,72 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
+        player.Soldiers = request.World.LevelRoot is { } levelRoot
+            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random)
+            : null;
         player.Level = LevelRun(request, player);
         return player;
+    }
+
+    /// <summary>Makes the level's soldiers over its collision, each armed by its own weapon script.</summary>
+    /// <param name="root">The level.</param>
+    /// <param name="services">The session's tables.</param>
+    /// <param name="world">The level's collision.</param>
+    /// <param name="clips">The level's clips.</param>
+    /// <param name="models">Resolves a placed model to its mesh.</param>
+    /// <param name="tuning">The player tuning, whose ammunition limits bound every human's inventory, or <see langword="null"/>.</param>
+    /// <param name="sounds">The level's sounds.</param>
+    /// <param name="random">The session's run stream.</param>
+    /// <returns>The soldiers.</returns>
+    /// <remarks>
+    /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
+    /// its <c>Weapon</c> script once loaded (<c>Human_UpdateInternalDataAfterCarryoverHandler</c>, <c>0x4FF440</c>). Until the AI's
+    /// mind is ported each soldier stands (<see cref="Soldiers.Igi2StandingSoldierMind"/>).
+    /// </remarks>
+    public static Soldiers.Igi2Soldiers SpawnSoldiers(
+        Engine.Tasks.GameTask root,
+        Engine.Titles.IServiceCatalog services,
+        Igi2CollisionWorld world,
+        Igi2AnimationLibrary? clips,
+        Func<string, Formats.World.MefModel?> models,
+        Igi2PlayerTuning? tuning,
+        Igi2Sounds sounds,
+        IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(models);
+        ArgumentNullException.ThrowIfNull(sounds);
+        ArgumentNullException.ThrowIfNull(random);
+        services.TryGet(out Igi2HumanWeapons? armoury);
+        services.TryGet(out Igi2GameMaterials? materials);
+        Soldiers.Igi2Soldiers soldiers = Soldiers.Igi2Soldiers.Spawn(
+            root,
+            (task, rig) =>
+            {
+                Igi2LevelSurroundings surroundings = new(world, sounds) { Materials = materials };
+                IIgi2PlayerWeaponControl weapon = Igi2NoWeaponControl.Instance;
+                if (armoury is not null)
+                {
+                    Igi2Inventory inventory = armoury.CreateInventory(tuning?.AmmoLimits ?? []);
+                    armoury.RunWeaponScript(inventory, task.WeaponScript);
+                    weapon = new Igi2PlayerWeapons(inventory, armoury.FireTaskTypes, clips);
+                }
+
+                IIgi2PlayerWeaponControl held = weapon;
+                Igi2HumanAnimation animation = new(clips, rig, Soldiers.Igi2SoldierStateAnimations.Table, () => held.BodyClips(rig));
+                return (surroundings, weapon, animation);
+            },
+            models,
+            random);
+        foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies)
+        {
+            ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
+            body.Mind = new Soldiers.Igi2StandingSoldierMind();
+        }
+
+        return soldiers;
     }
 
     /// <summary>The level's tick, with the player bound to its <c>HumanPlayer</c> task, as <c>Flow_RunChildren</c> (<c>igi2 0x401A50</c>) runs it.</summary>
@@ -439,9 +503,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     private TitleWorldModel[] _lying = [];
     private long _lyingTick = -1;
 
-    private readonly Igi2PlayerSurroundings _surroundings;
+    private readonly Igi2LevelSurroundings _surroundings;
 
-    private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons, Igi2PlayerSurroundings surroundings)
+    private Igi2TitlePlayer(Igi2HumanPlayer human, Igi2PlayerWeapons? weapons, Igi2LevelSurroundings surroundings)
     {
         Human = human;
         Weapons = weapons;
@@ -465,6 +529,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>: the grenades, explosions and what they leave.</summary>
     public World.Igi2DynamicTasks Dynamic { get; } = new();
+
+    /// <summary>Gets or sets the level's soldiers, or <see langword="null"/> before the level made them.</summary>
+    public Soldiers.Igi2Soldiers? Soldiers { get; set; }
 
     /// <summary>Gets the level's sounds.</summary>
     public Igi2Sounds Sounds { get; private init; } = new(new Igi2SoundDefinitions(), null);
@@ -572,7 +639,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <inheritdoc/>
     /// <remarks>
     /// The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies, then the grenades in flight, each
-    /// its <c>ProjectileModel</c>; built once a tick.
+    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand; built once a tick.
     /// </remarks>
     public IReadOnlyList<TitleWorldModel> WorldModels
     {
@@ -586,7 +653,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
                 IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
                     ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
                     : [];
-                _lying = [.. pickups, .. flying];
+                IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
+                _lying = [.. pickups, .. flying, .. soldiers];
                 _lyingTick = _ticks;
             }
 
@@ -622,7 +690,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         ArgumentNullException.ThrowIfNull(general);
 
         sounds ??= new Igi2Sounds(new Igi2SoundDefinitions(), null);
-        Igi2PlayerSurroundings surroundings = new(world, sounds);
+        Igi2LevelSurroundings surroundings = new(world, sounds);
         IIgi2PlayerWeaponControl weapon = weapons ?? (IIgi2PlayerWeaponControl)Igi2NoWeaponControl.Instance;
         Igi2HumanAnimation animation = new(clips, rig, Igi2PlayerStateAnimations.Table, () => weapon.BodyClips(rig));
         Igi2HumanPlayer human = new(weapon, animation, surroundings)
@@ -741,7 +809,7 @@ internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2G
 }
 
 /// <summary>What the player's states ask of the world, answered from the collision world and the level's sounds.</summary>
-internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world, Igi2Sounds sounds) : IIgi2HumanSurroundings
+internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds sounds) : IIgi2HumanSurroundings
 {
     /// <summary>Gets or sets the body these surroundings are asked about.</summary>
     public Igi2Human? Owner { get; set; }
