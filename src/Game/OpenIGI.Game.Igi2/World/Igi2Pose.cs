@@ -351,6 +351,13 @@ public sealed class Igi2Pose
         ];
     }
 
+    // Quat32_SLERP's cut-over to a straight blend, 0x3F7FFF58, and its arc cosine's coefficients.
+    private static readonly float SlerpStraight = BitConverter.Int32BitsToSingle(0x3F7FFF58);
+    private static readonly float SlerpAcos0 = BitConverter.Int32BitsToSingle(unchecked((int)0xBC996E30));
+    private static readonly float SlerpAcos1 = BitConverter.Int32BitsToSingle(0x3D981627);
+    private static readonly float SlerpAcos2 = BitConverter.Int32BitsToSingle(0x3E593484);
+    private static readonly float SlerpAcos3 = BitConverter.Int32BitsToSingle(0x3FC90DA4);
+
     /// <summary>
     /// A rotation as a quaternion, the way <c>Lift_UpdatePosition</c> (<c>igi2 0x46D6C3</c>) converts each floor's frame inline:
     /// from the trace when it is positive, otherwise from the largest diagonal term.
@@ -397,6 +404,65 @@ public sealed class Igi2Pose
         q[k] = (((Fpu)m[(3 * k) + i] + m[(3 * i) + k]) * scale).F;
         q[3] = (-(((Fpu)m[(3 * j) + k] - m[(3 * k) + j]) * scale)).F;
         return new Quaternion32(q[0], q[1], q[2], q[3]);
+    }
+
+    /// <summary>
+    /// The sequel's quaternion slerp, <c>Quat32_SLERP</c> (<c>igi2 0x5635D0</c>), in the FPU's chopped single precision and the
+    /// order its instructions take.
+    /// </summary>
+    /// <param name="from">The rotation at nought.</param>
+    /// <param name="to">The rotation at one.</param>
+    /// <param name="t">How far from one to the other.</param>
+    /// <returns>The rotation between.</returns>
+    /// <remarks>
+    /// <para>
+    /// Above a dot product of <c>0.99999</c> it blends straight, and below its negative straight toward the opposite of the end;
+    /// neither is renormalised. Between, the angle is the polynomial arc cosine of the dot's magnitude, and the start's weight is
+    /// negated when the dot is below nought.
+    /// </para>
+    /// <para>The angle's sines are taken at full precision, as <c>fsin</c> is; everything else is chopped to 24 bits.</para>
+    /// </remarks>
+    public static Quaternion32 Slerp(Quaternion32 from, Quaternion32 to, float t)
+    {
+        Fpu dot = ((((Fpu)from.X * to.X) + ((Fpu)from.Z * to.Z)) + ((Fpu)from.Y * to.Y)) + ((Fpu)to.W * from.W);
+        float storedDot = dot.F;
+        Fpu rest = (Fpu)1f - t;
+        if (dot.Value > SlerpStraight)
+        {
+            return new Quaternion32(
+                (((Fpu)t * to.X) + (rest * from.X)).F,
+                ((rest * from.Y) + ((Fpu)t * to.Y)).F,
+                ((rest * from.Z) + ((Fpu)t * to.Z)).F,
+                ((rest * from.W) + ((Fpu)t * to.W)).F);
+        }
+
+        if (storedDot < -SlerpStraight)
+        {
+            return new Quaternion32(
+                ((rest * from.X) - ((Fpu)t * to.X)).F,
+                ((rest * from.Y) - ((Fpu)t * to.Y)).F,
+                ((rest * from.Z) - ((Fpu)t * to.Z)).F,
+                ((rest * from.W) - ((Fpu)t * to.W)).F);
+        }
+
+        // Real32_Acos's polynomial, inline: sqrt(1 - d) * (((c0 d + c1) d - c2) d + c3), for the dot's magnitude d.
+        bool behind = storedDot < 0f;
+        Fpu d = behind ? -(Fpu)storedDot : (Fpu)storedDot;
+        Fpu root = Fpu.Sqrt((Fpu)1f - d);
+        Fpu angle = root * (((((d * SlerpAcos0) + SlerpAcos1) * d) - SlerpAcos2) * d + SlerpAcos3);
+        Fpu weightFrom = Fpu.Sin(rest * angle);
+        if (behind)
+        {
+            weightFrom = -weightFrom;
+        }
+
+        Fpu weightTo = Fpu.Sin(angle * t);
+        Fpu inverse = (Fpu)1f / Fpu.Sin(angle);
+        return new Quaternion32(
+            (((weightFrom * from.X) + (weightTo * to.X)) * inverse).F,
+            (((weightFrom * from.Y) + (weightTo * to.Y)) * inverse).F,
+            (((weightFrom * from.Z) + (weightTo * to.Z)) * inverse).F,
+            (((weightTo * to.W) + (weightFrom * from.W)) * inverse).F);
     }
 
     /// <summary>

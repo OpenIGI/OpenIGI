@@ -45,9 +45,6 @@ public sealed class Igi2LevelRun
     /// <summary>A building's type, <c>SectorObject</c>'s run handler (<c>SectorObject_RunHandler</c>, <c>igi2 0x589630</c>).</summary>
     public const string BuildingType = "Building";
 
-    /// <summary>A placed object's type (<c>EditRigidObj_RunHandler</c>, <c>igi2 0x5B4860</c>).</summary>
-    public const string EditRigidObjType = "EditRigidObj";
-
     private readonly Dictionary<GameTask, Action> _bound = [];
     private readonly List<Action> _delayed = [];
 
@@ -151,11 +148,9 @@ public sealed class Igi2LevelRun
                 RunDelayed();
                 break;
 
-            // Still placeholders, being the world scene's placements; their run handlers run their children. A building's
-            // then runs its attached objects' and its interiors' children, and a placed object's runs its attachment
-            // first: neither is a task here.
+            // Still a placeholder, being the world scene's placements; its run handler runs its children, then its attached
+            // objects' and its interiors' children, which are no tasks here.
             case BuildingType:
-            case EditRigidObjType:
                 RunChildren(task);
                 break;
         }

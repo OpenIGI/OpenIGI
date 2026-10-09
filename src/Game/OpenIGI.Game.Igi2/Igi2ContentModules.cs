@@ -200,6 +200,10 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2ExplodeObjectTask>(Interaction.Igi2ExplodeObjectTask.TypeName);
         context.Types.Register<Interaction.Igi2GenericTbaTask>(Interaction.Igi2GenericTbaTask.TypeName);
         context.Types.Register<Interaction.Igi2AlarmControlTask>(Interaction.Igi2AlarmControlTask.TypeName);
+        context.Types.Register<Interaction.Igi2EditRigidObjTask>(Interaction.Igi2EditRigidObjTask.TypeName);
+        context.Types.Register<Paths.Igi2SplinePathNodeTask>(Paths.Igi2SplinePathNodeTask.TypeName);
+        context.Types.Register<Paths.Igi2SplinePathTask>(Paths.Igi2SplinePathTask.TypeName);
+        context.Types.Register<Paths.Igi2SplinePathGuideTask>(Paths.Igi2SplinePathGuideTask.TypeName);
         context.Types.Register<Flow.Igi2StatusMessageTask>(Flow.Igi2StatusMessageTask.TypeName);
         context.Types.Register<Flow.Igi2AreaActivateTask>(Flow.Igi2AreaActivateTask.TypeName);
         context.Types.Register<Flow.Igi2LevelTimerTask>(Flow.Igi2LevelTimerTask.TypeName);
@@ -208,6 +212,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);
         Flow.Igi2SequenceCommandTask.Register(context.Natives, functions);
+        Paths.Igi2SplinePathGuideTask.Register(context.Natives, functions);
         Interaction.Igi2ConveyorBeltTask.Register(context.Natives, functions);
         Flow.Igi2SoundGeneratorTask.Register(context.Natives, functions);
     }

@@ -364,7 +364,7 @@ public sealed class Igi2WorldScene
         && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal);
 
     /// <summary>Reads one task's placement, if it declares the three parameters that make one.</summary>
-    /// <param name="task">The placeholder task.</param>
+    /// <param name="task">The placeholder task, or a typed task that says it is placed.</param>
     /// <param name="placement">Receives the placement.</param>
     /// <returns><see langword="false"/> when the task places no model.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
@@ -373,7 +373,7 @@ public sealed class Igi2WorldScene
     /// needs the task it hangs under — has to walk the tree itself, and would otherwise reimplement the
     /// parameter reading this already does.
     /// </remarks>
-    public static bool TryPlace(DeclaredTask task, out Igi2Placement placement)
+    public static bool TryPlace(GameTask task, out Igi2Placement placement)
     {
         ArgumentNullException.ThrowIfNull(task);
 
@@ -404,7 +404,7 @@ public sealed class Igi2WorldScene
 
         for (int slot = 0; slot < enumerated.Count; slot++)
         {
-            if (TryGetValue(task, enumerated[slot], out object? raw)
+            if (TryGetParameter(task, enumerated[slot], out object? raw)
                 && raw is string name
                 && string.Equals(name, model, StringComparison.OrdinalIgnoreCase))
             {
@@ -416,7 +416,11 @@ public sealed class Igi2WorldScene
     }
 
     /// <summary>A parameter's value by name, from a placeholder or from a typed task that says it is placed.</summary>
-    private static bool TryGetValue(GameTask task, string name, out object? value)
+    /// <param name="task">The task.</param>
+    /// <param name="name">The parameter's name, as level data declares it.</param>
+    /// <param name="value">Receives the value.</param>
+    /// <returns><see langword="true"/> when the task has the parameter.</returns>
+    internal static bool TryGetParameter(GameTask task, string name, out object? value)
     {
         switch (task)
         {
@@ -440,13 +444,13 @@ public sealed class Igi2WorldScene
 
         // A type with two models says which it is wearing at rest with a flag of its own.
         string modelParameter = binding.AlternateWhen.Length > 0
-            && TryGetValue(task, binding.AlternateWhen, out object? rawAlternate)
+            && TryGetParameter(task, binding.AlternateWhen, out object? rawAlternate)
             && rawAlternate is bool alternate
             && alternate
                 ? binding.AlternateModel
                 : binding.Model;
 
-        if (!TryGetValue(task, modelParameter, out object? rawModel)
+        if (!TryGetParameter(task, modelParameter, out object? rawModel)
             || rawModel is not string model
             || string.IsNullOrWhiteSpace(model))
         {
@@ -470,7 +474,7 @@ public sealed class Igi2WorldScene
             frame = wire.Orientation;
             geometry = new Igi2WireGeometry(wire.ScaleY);
         }
-        else if (TryGetValue(task, binding.Position, out object? rawPosition) && rawPosition is Vector3d authored)
+        else if (TryGetParameter(task, binding.Position, out object? rawPosition) && rawPosition is Vector3d authored)
         {
             position = authored;
         }
@@ -483,19 +487,19 @@ public sealed class Igi2WorldScene
         // axis -- where it carries one. A type that carries neither faces down the world's X axis.
         Vector3f orientation = default;
         if (binding.Orientation.Length > 0
-            && TryGetValue(task, binding.Orientation, out object? rawOrientation)
+            && TryGetParameter(task, binding.Orientation, out object? rawOrientation)
             && rawOrientation is Vector3f angles)
         {
             orientation = angles;
         }
         else if (binding.Gamma.Length > 0
-            && TryGetValue(task, binding.Gamma, out object? rawGamma)
+            && TryGetParameter(task, binding.Gamma, out object? rawGamma)
             && rawGamma is float gamma)
         {
             orientation = new Vector3f(0f, 0f, gamma);
         }
 
-        int group = TryGetValue(task, RenderGroupParameter, out object? rawGroup) && rawGroup is int value
+        int group = TryGetParameter(task, RenderGroupParameter, out object? rawGroup) && rawGroup is int value
             ? value
             : 0;
 
@@ -504,7 +508,7 @@ public sealed class Igi2WorldScene
         // camera body: one angle about the up axis summed with the bracket's, and one about the long
         // axis for the downward look. A mounted model that names neither simply faces as its host does.
         string mounted = binding.MountedModel.Length > 0
-            && TryGetValue(task, binding.MountedModel, out object? rawMounted)
+            && TryGetParameter(task, binding.MountedModel, out object? rawMounted)
             && rawMounted is string mountedName
             && !string.IsNullOrWhiteSpace(mountedName)
                 ? mountedName
@@ -513,12 +517,12 @@ public sealed class Igi2WorldScene
         Vector3f mountedOrientation = orientation;
         if (mounted.Length > 0 && (binding.MountedAlpha.Length > 0 || binding.MountedGamma.Length > 0))
         {
-            float alpha = TryGetValue(task, binding.MountedAlpha, out object? rawAlpha) && rawAlpha is float a ? a : 0f;
-            float gamma = TryGetValue(task, binding.MountedGamma, out object? rawGamma2) && rawGamma2 is float g ? g : 0f;
+            float alpha = TryGetParameter(task, binding.MountedAlpha, out object? rawAlpha) && rawAlpha is float a ? a : 0f;
+            float gamma = TryGetParameter(task, binding.MountedGamma, out object? rawGamma2) && rawGamma2 is float g ? g : 0f;
             mountedOrientation = new Vector3f(alpha, 0f, orientation.Z + gamma);
         }
 
-        string destroyed = TryGetValue(task, DestroyedModelParameter, out object? rawDestroyed)
+        string destroyed = TryGetParameter(task, DestroyedModelParameter, out object? rawDestroyed)
             && rawDestroyed is string destroyedName
             && !string.IsNullOrWhiteSpace(destroyedName)
                 ? destroyedName

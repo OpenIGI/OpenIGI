@@ -370,7 +370,6 @@ name SlotSelector_isCategorySelected    # MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isSlotEnabled    # MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isSlotVisible    # MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isThisCategorySelected    # MENUSYSTEM/ingamemenu.qvm
-name SplinePathGuide_SetRunning    # MISSIONS/location1/level1/objects.qvm
 name SquadRadio    # config.qvm
 name TASKTYPE_AISTATIONARYGUN    # magicobjconfig.qvm
 name TASKTYPE_BOMBBACKPACK    # magicobjconfig.qvm
@@ -415,7 +414,6 @@ type DialogWindow    # MENUSYSTEM/ingamemenu.qvm
 type Dirlight    # MISSIONS/location1/level1/objects.qvm
 type DirlightKeyframe    # MISSIONS/location1/level1/objects.qvm
 type EditBoneObj    # MISSIONS/location1/level1/objects.qvm
-type EditRigidObj    # MISSIONS/location1/level1/objects.qvm
 type GlobalLight    # MISSIONS/location1/level1/objects.qvm
 type GlobalLightKeyframe    # MISSIONS/location1/level1/objects.qvm
 type HumanAI    # MISSIONS/location1/level1/objects.qvm
@@ -444,7 +442,4 @@ type SlideBar    # MENUSYSTEM/ingamemenu.qvm
 type Smoke    # MISSIONS/location1/level1/objects.qvm
 type SplineObj    # MISSIONS/location1/level1/objects.qvm
 type SplineObjWaypoint    # MISSIONS/location1/level1/objects.qvm
-type SplinePathDynCubeObj    # MISSIONS/location1/level1/objects.qvm
-type SplinePathGuideQTask    # MISSIONS/location1/level1/objects.qvm
-type SplinePathNodeQTask    # MISSIONS/location1/level1/objects.qvm
 type ToggleBox    # MENUSYSTEM/ingamemenu.qvm

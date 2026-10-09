@@ -220,6 +220,22 @@ public sealed class Igi2Gameplay : ITitleGameplay
             movers.Add(door);
         }
 
+        // Spline path guides connect to the models they move once the level is loaded; those models move, and are drawn moving.
+        foreach (Paths.Igi2SplinePathGuideTask guide in Descendants(root).OfType<Paths.Igi2SplinePathGuideTask>())
+        {
+            guide.Connect();
+        }
+
+        foreach (Interaction.Igi2EditRigidObjTask prop in Descendants(root).OfType<Interaction.Igi2EditRigidObjTask>())
+        {
+            if (prop.Guide is not null)
+            {
+                prop.Models = models;
+                prop.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2EditRigidObjTask.TypeName, prop.Id));
+                movers.Add(prop);
+            }
+        }
+
         List<Interaction.IIgi2Destructible> destructibles = [];
         foreach (Interaction.Igi2ExplodeObjectTask explosive in Descendants(root).OfType<Interaction.Igi2ExplodeObjectTask>())
         {
