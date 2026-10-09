@@ -125,6 +125,9 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     public void LoopMain() => Main.Flags |= Igi2AnimControllerBits.Loop;
 
     /// <inheritdoc/>
+    public void SetMainFlags(Igi2AnimControllerBits raise, Igi2AnimControllerBits clear) => Main.Flags = (Main.Flags & ~clear) | raise;
+
+    /// <inheritdoc/>
     public void StepMain() => Main.Step(Main.Time + Main.TimeStep);
 
     /// <inheritdoc/>

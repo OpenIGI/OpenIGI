@@ -90,7 +90,7 @@ public abstract partial class Igi2Human
     public Igi2HumanDamage Damage { get; } = new();
 
     /// <summary>Gets a value indicating whether the human has died, <c>Human_s.isDead</c>.</summary>
-    public bool IsDead { get; private set; }
+    public bool IsDead { get; protected set; }
 
     /// <summary>Gets or sets the body's own speed in the air, <c>Human_s.tSpeed</c>.</summary>
     public Vector3f Speed { get; set; }

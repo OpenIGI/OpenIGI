@@ -113,7 +113,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         player.Soldiers = request.World.LevelRoot is { } levelRoot
-            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random)
+            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty)
             : null;
         player.Level = LevelRun(request, player);
         return player;
@@ -128,6 +128,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <param name="tuning">The player tuning, whose ammunition limits bound every human's inventory, or <see langword="null"/>.</param>
     /// <param name="sounds">The level's sounds.</param>
     /// <param name="random">The session's run stream.</param>
+    /// <param name="difficulty">The session's difficulty, which tunes the soldiers' hit points.</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
@@ -142,7 +143,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Func<string, Formats.World.MefModel?> models,
         Igi2PlayerTuning? tuning,
         Igi2Sounds sounds,
-        IgiRandom random)
+        IgiRandom random,
+        OpenIGI.Game.Ai.AiDifficulty difficulty)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(services);
@@ -175,6 +177,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
             body.Mind = new Soldiers.Igi2StandingSoldierMind();
+            if (body.Collider is { } collider)
+            {
+                world.AddBody(collider);
+            }
+        }
+
+        if (services.TryGet(out Ai.Igi2HumanAiConfig? config))
+        {
+            Soldiers.Igi2Soldiers.AfterLoad(root, config, (int)difficulty);
         }
 
         return soldiers;
@@ -794,7 +805,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 }
 
 /// <summary>The level a bullet flies through: the collision world and the session's materials.</summary>
-/// <remarks>Nothing in the collision world is water or a boned object yet; both arrive with their colliders.</remarks>
+/// <remarks>Nothing in the collision world is water yet; the boned objects are its humans.</remarks>
 internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2GameMaterials materials) : IIgi2GunShotWorld
 {
     public IIgi2CollisionQuery Collision { get; } = collision;
@@ -803,9 +814,9 @@ internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2G
 
     public bool IsWater(IIgi2Collider struck) => false;
 
-    public bool IsBoned(IIgi2Collider struck) => false;
+    public bool IsBoned(IIgi2Collider struck) => struck is Igi2BoneCollider;
 
-    public bool IsHuman(IIgi2Collider struck) => false;
+    public bool IsHuman(IIgi2Collider struck) => struck is Igi2BoneCollider { Owner: Humans.Igi2Human };
 }
 
 /// <summary>What the player's states ask of the world, answered from the collision world and the level's sounds.</summary>

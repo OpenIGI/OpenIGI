@@ -27,6 +27,9 @@ public enum Igi2AnimControllerBits
 
     /// <summary>The clip's events are not triggered.</summary>
     SuppressTriggers = 0x20,
+
+    /// <summary>Set on a dying soldier's main clip by its death entries (<c>HumanSoldier_InitStateDie</c>, <c>igi2 0x4E8924</c>).</summary>
+    Dying = 0x40,
 }
 
 /// <summary>What a controller's clip fires its anim triggers on: the object the clip plays on.</summary>

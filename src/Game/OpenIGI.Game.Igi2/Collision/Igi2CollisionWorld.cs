@@ -79,6 +79,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     private readonly Igi2RigidObject[] _objects;
     private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
+    private readonly List<Igi2BoneCollider> _bodies = [];
     private readonly Igi2TerrainCollider? _terrain;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CollisionWorld"/> class.</summary>
@@ -107,6 +108,17 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
 
     /// <summary>Gets the stands of trees.</summary>
     public IReadOnlyList<Igi2ForestCollider> Forests => _forests;
+
+    /// <summary>Gets the boned objects in the world, the humans: line traces meet them as they stand.</summary>
+    public IReadOnlyList<Igi2BoneCollider> Bodies => _bodies;
+
+    /// <summary>Puts a boned object in the world, as <c>BoneDynCubeObj_RegisterHandler</c> (<c>igi2 0x567710</c>) registers a body.</summary>
+    /// <param name="body">The object.</param>
+    public void AddBody(Igi2BoneCollider body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        _bodies.Add(body);
+    }
 
     /// <summary>Gets the ground, or <see langword="null"/> for a level with none.</summary>
     public Igi2TerrainCollider? Terrain => _terrain;
@@ -543,6 +555,18 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                 else
                 {
                     forest.NextZ(trace);
+                }
+            }
+        }
+
+        // A boned object answers only line traces, and tests its own sphere against each line.
+        if (lines)
+        {
+            foreach (Igi2BoneCollider body in _bodies)
+            {
+                if ((groups & (body.Group | EveryTypeGroup)) != 0)
+                {
+                    body.TraceLines(trace);
                 }
             }
         }

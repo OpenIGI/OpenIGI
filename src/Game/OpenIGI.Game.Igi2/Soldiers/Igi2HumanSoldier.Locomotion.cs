@@ -39,14 +39,29 @@ public sealed partial class Igi2HumanSoldier
         states[Igi2SoldierState.KneelToStand] = (_, _) => EnterKneelToStand();
         states[Igi2SoldierState.Kneel] = (_, _) => EnterKneel();
         states[Igi2SoldierState.KneelTurn] = (_, _) => EnterKneelTurn();
+        states[Igi2SoldierState.Hit] = (_, _) => EnterHit();
+        states[Igi2SoldierState.Die] = (_, _) => EnterDie();
+        states[Igi2SoldierState.KneelDie] = (_, _) => EnterKneelDie();
         return new TaskStateMachine((_, _) => PackSignal(), states, Igi2SoldierState.Stand, exits: new TaskStateFunction?[Igi2SoldierState.Count]);
     }
 
     /// <summary>Leaves the current state for another and runs its entry.</summary>
     private void Go(int state) => Locomotion.Enter(state, this);
 
-    /// <summary>Plays the clip the current state's row names.</summary>
-    private void PlayCurrentState(float blendSeconds) => Animation.PlayState(Locomotion.CurrentState, 0, blendSeconds);
+    /// <summary>The animation row a tense stand plays, <c>103</c>.</summary>
+    public const int TenseStandRow = 103;
+
+    /// <summary>The animation row a walk plays, <c>7</c>: not its own slot's.</summary>
+    public const int WalkRow = 7;
+
+    /// <summary>The animation row a kneel plays, <c>28</c>: not its own slot's.</summary>
+    public const int KneelRow = 28;
+
+    /// <summary>Plays the clip the current state's row names, as the entries that pass their own slot do.</summary>
+    private void PlayCurrentState(float blendSeconds) => PlayRow(Locomotion.CurrentState, blendSeconds);
+
+    /// <summary>Plays the clip an animation row names (<c>HumanAnim_SetAnimationAndTimeFromState</c>, the row in <c>ebx</c>).</summary>
+    private void PlayRow(int row, float blendSeconds) => Animation.PlayState(row, 0, blendSeconds);
 
     /// <summary>Lets the upper body play again if a gait had kept it off.</summary>
     private void ReleaseUpperBody()
@@ -61,7 +76,7 @@ public sealed partial class Igi2HumanSoldier
     /// <summary>
     /// Standing, <c>HumanSoldier_InitStateStand</c> (<c>igi2 0x4E42E0</c>): upright, not running, the upper body free, and still.
     /// </summary>
-    /// <remarks>A tense soldier plays its row at once and stands tense; otherwise it blends in over half a second once its mind has started.</remarks>
+    /// <remarks>A tense soldier plays row 103 at once and stands tense; otherwise row 0, blended in over half a second once its mind has started.</remarks>
     private void EnterStand()
     {
         Pose = Igi2HumanPose.Standing;
@@ -69,12 +84,12 @@ public sealed partial class Igi2HumanSoldier
         ReleaseUpperBody();
         if ((Signal & Igi2SoldierSignal.Tense) != 0)
         {
-            PlayCurrentState(0f);
+            PlayRow(TenseStandRow, 0f);
             Locomotion.Current = (_, _) => RunStandTense();
         }
         else
         {
-            PlayCurrentState(Mind is { HasStarted: true } ? 0.5f : 0f);
+            PlayRow(Igi2SoldierState.Stand, Mind is { HasStarted: true } ? 0.5f : 0f);
             Locomotion.Current = (_, _) => RunStand();
         }
 
@@ -265,13 +280,13 @@ public sealed partial class Igi2HumanSoldier
     }
 
     /// <summary>
-    /// Walking forward, <c>HumanSoldier_InitStateWalkForward</c> (<c>igi2 0x4E5F90</c>): its row plays at once, and if the weapon's
+    /// Walking forward, <c>HumanSoldier_InitStateWalkForward</c> (<c>igi2 0x4E5F90</c>): row 7 plays at once, and if the weapon's
     /// walk is one of its own (the clip named for the weapon) the upper body is kept off.
     /// </summary>
     private void EnterWalkForward()
     {
         bool own = IsWeaponsOwnGait(WalkWeaponAnim);
-        PlayCurrentState(0f);
+        PlayRow(WalkRow, 0f);
         if (own)
         {
             UpperBodyFlags |= 1;
@@ -474,11 +489,11 @@ public sealed partial class Igi2HumanSoldier
         }
     }
 
-    /// <summary>Kneeling, <c>HumanSoldier_InitStateKneel</c> (<c>igi2 0x4E6D80</c>): crouched, its row at once, still.</summary>
+    /// <summary>Kneeling, <c>HumanSoldier_InitStateKneel</c> (<c>igi2 0x4E6D80</c>): crouched, row 28 at once, still.</summary>
     private void EnterKneel()
     {
         Pose = Igi2HumanPose.Crouching;
-        PlayCurrentState(0f);
+        PlayRow(KneelRow, 0f);
         Locomotion.Current = (_, _) => RunKneel();
         IsDisableDeltaTranslation = true;
         DeltaTranslation = default;

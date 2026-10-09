@@ -92,6 +92,13 @@ public interface IIgi2HumanAnimation
 
     /// <summary>Steps every controller that steps itself, as the body's children run each tick.</summary>
     void AutoStep();
+
+    /// <summary>Sets and clears bits of the active main controller's flags, as a death's entry does to the clip it played.</summary>
+    /// <param name="raise">The bits to set.</param>
+    /// <param name="clear">The bits to clear, before setting.</param>
+    void SetMainFlags(Animation.Igi2AnimControllerBits raise, Animation.Igi2AnimControllerBits clear)
+    {
+    }
 }
 
 /// <summary>The questions a human's states ask of the world around it.</summary>
@@ -160,6 +167,12 @@ public interface IIgi2HumanSurroundings
     /// <summary>Shows the player a message on the status line, <c>StatusMessage_New</c> (<c>igi2 0x510200</c>), localised.</summary>
     /// <param name="key">The message's key in the localised strings.</param>
     void ShowStatusMessage(string key);
+
+    /// <summary>Raises an event for the AI to perceive, <c>HumanAI_SendEvent</c> (<c>igi2 0x460A90</c>); nothing hears it until the AI's events are ported.</summary>
+    /// <param name="aiEvent">The event.</param>
+    void SendAiEvent(in Ai.Igi2AiEvent aiEvent)
+    {
+    }
 
     /// <summary>Plays a named sound at the human's view and keeps hold of it, as a state holding a loop does.</summary>
     /// <param name="name">The sound definition's name.</param>

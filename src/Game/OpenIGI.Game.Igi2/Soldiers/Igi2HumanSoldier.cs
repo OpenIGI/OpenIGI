@@ -19,6 +19,22 @@ public interface IIgi2SoldierMind
     /// <summary>Runs the mind one tick, as a child of the soldier's body; it sends the body its update (<see cref="Igi2HumanSoldier.Update(ReadOnlySpan{float})"/>).</summary>
     /// <param name="soldier">The body.</param>
     void Run(Igi2HumanSoldier soldier);
+
+    /// <summary>Gets a value indicating whether hits do the soldier no harm, <c>HumanAI+0x1165</c>.</summary>
+    bool IsInvulnerable => false;
+
+    /// <summary>Gets a value indicating whether a hit to the head or groin takes no zone multiplier, <c>HumanAI+0x1166</c>.</summary>
+    bool IsInstantDeathDisabled => false;
+
+    /// <summary>
+    /// Says a line at the mind's position, <c>HumanAI_PlaySoundAtPosition</c> (<c>igi2 0x464600</c>) not queued: nothing while a
+    /// line it said is still timing out (<c>HumanAI+0x1154</c>), else the line, which times out in sixty ticks.
+    /// </summary>
+    /// <param name="soldier">The body.</param>
+    /// <param name="sound">The sound's name.</param>
+    void Say(Igi2HumanSoldier soldier, string sound)
+    {
+    }
 }
 
 /// <summary>An enemy soldier's body, as I.G.I. 2's <c>HumanSoldier_t</c> runs it.</summary>
@@ -220,6 +236,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         Animation.AutoStep();
         Mind?.Run(this);
         Weapon.RunDelayed();
+        TouchPose();
     }
 
     /// <summary>The main controller's step back to a frame a tick.</summary>

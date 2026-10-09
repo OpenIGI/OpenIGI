@@ -100,7 +100,7 @@ public sealed class Igi2HumanSoldierTests
     }
 
     /// <summary>
-    /// The forward channel walks it: the walk row plays at once and from the next tick the body steps 204.8 a tick along its
+    /// The forward channel walks it: row 7 plays at once and from the next tick the body steps 204.8 a tick along its
     /// heading (the step <c>Human_Move</c> takes and clears).
     /// </summary>
     [Fact]
@@ -112,7 +112,7 @@ public sealed class Igi2HumanSoldierTests
 
         soldier.RunDelayed();
         Assert.Equal(Igi2SoldierState.WalkForward, soldier.Locomotion.CurrentState);
-        Assert.Equal((Igi2SoldierState.WalkForward, 0, 0f), animation.Played[^1]);
+        Assert.Equal((Igi2HumanSoldier.WalkRow, 0, 0f), animation.Played[^1]);
         Assert.False(soldier.IsDisableDeltaTranslation);
         double y = soldier.Position.Y;
 

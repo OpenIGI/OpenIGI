@@ -421,6 +421,32 @@ public sealed class MefModel
         return true;
     }
 
+    /// <summary>Gets the bone a boned model's magic vertex hangs on: the record's fourth word.</summary>
+    /// <param name="index">The magic-vertex index.</param>
+    /// <param name="bone">Receives the bone.</param>
+    /// <returns><see langword="false"/> when the model has no magic vertex at that index.</returns>
+    /// <remarks>
+    /// A boned model places a magic vertex by its bone's pose, the point being in the bone's frame
+    /// (<c>BoneDynCubeObj_GetMagicVertexLocalPos</c>, <c>igi2 0x5683E0</c>); a rigid one leaves the word zero.
+    /// </remarks>
+    public bool TryGetMagicVertexBone(int index, out int bone)
+    {
+        bone = 0;
+        if (index < 0 || !TryGetRawChunk(MefTags.LegacyVertices, out ReadOnlyMemory<byte> payload))
+        {
+            return false;
+        }
+
+        int offset = (index * MagicVertexStride) + 12;
+        if (offset + 4 > payload.Length)
+        {
+            return false;
+        }
+
+        bone = BinaryPrimitives.ReadInt32LittleEndian(payload.Span[offset..]);
+        return true;
+    }
+
     /// <inheritdoc/>
     public override string ToString() =>
         $"MEF {Format} model: {_vertices.Length} vertices, {TriangleCount} triangles, {DrawRecords.Count} records";

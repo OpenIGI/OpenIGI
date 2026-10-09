@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Animation;
+using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
@@ -16,15 +17,12 @@ namespace OpenIGI.Game.Igi2.Soldiers;
 public sealed class Igi2Soldiers
 {
     private readonly List<Igi2HumanSoldier> _bodies;
-    private readonly List<Igi2SoldierLook> _looks;
-    private readonly Igi2BodyFrame _frame = new();
     private TitleWorldModel[] _drawn = [];
     private long _drawnTick = -1;
 
-    private Igi2Soldiers(List<Igi2HumanSoldier> bodies, List<Igi2SoldierLook> looks)
+    private Igi2Soldiers(List<Igi2HumanSoldier> bodies)
     {
         _bodies = bodies;
-        _looks = looks;
     }
 
     /// <summary>Gets the bodies, in the order the level makes them.</summary>
@@ -38,12 +36,11 @@ public sealed class Igi2Soldiers
         if (_drawnTick != tick)
         {
             List<TitleWorldModel> models = [];
-            for (int i = 0; i < _bodies.Count; i++)
+            foreach (Igi2HumanSoldier body in _bodies)
             {
-                Igi2HumanSoldier body = _bodies[i];
-                if (body.Animation is Igi2HumanAnimation animation)
+                if (body.Model is { } model)
                 {
-                    models.AddRange(_frame.Build(body, animation, _looks[i].Model, _looks[i].BoneNames, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick));
+                    models.AddRange(Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick));
                 }
             }
 
@@ -65,7 +62,8 @@ public sealed class Igi2Soldiers
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Each stands where the level puts it, turned by its <c>Gamma</c> and upright; its weapon script arms it. Its task runs it
-    /// from then on (<see cref="Igi2HumanSoldierTask.Body"/>).
+    /// from then on (<see cref="Igi2HumanSoldierTask.Body"/>). Every soldier gets a collider over its model's posed mesh
+    /// (<see cref="Igi2HumanSoldier.Collider"/>), and they share one poser and one death clip counter.
     /// </remarks>
     public static Igi2Soldiers Spawn(
         GameTask levelRoot,
@@ -78,7 +76,9 @@ public sealed class Igi2Soldiers
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(random);
         List<Igi2HumanSoldier> bodies = [];
-        List<Igi2SoldierLook> looks = [];
+        Dictionary<string, Igi2SoldierModel> looks = new(StringComparer.OrdinalIgnoreCase);
+        Igi2BodyPoser poser = new();
+        Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(levelRoot).OfType<Igi2HumanSoldierTask>())
         {
             Formats.World.MefModel? model = models(task.Model);
@@ -91,6 +91,8 @@ public sealed class Igi2Soldiers
                 Gamma = task.Gamma,
                 IdealGamma = task.Gamma,
                 Team = task.Team,
+                Poser = poser,
+                DeathCycle = cycle,
             };
             soldier.Create();
             soldier.BoneHierarchy = task.BoneHierarchy;
@@ -110,34 +112,91 @@ public sealed class Igi2Soldiers
                 }
             }
 
+            if (!looks.TryGetValue(task.Model, out Igi2SoldierModel? look))
+            {
+                look = Igi2SoldierModel.From(task.Model, model);
+                looks[task.Model] = look;
+            }
+
+            soldier.Model = look;
+            soldier.Collider = new Igi2BoneCollider(soldier, soldier);
             task.Body = soldier;
             bodies.Add(soldier);
-            looks.Add(new Igi2SoldierLook(task.Model, model?.BoneNames ?? []));
         }
 
-        return new Igi2Soldiers(bodies, looks);
+        return new Igi2Soldiers(bodies);
     }
 
-    /// <summary>What a soldier is drawn as: its model, and its bones' names.</summary>
-    private readonly record struct Igi2SoldierLook(string Model, IReadOnlyList<string> BoneNames);
+    /// <summary>
+    /// Readies each soldier's damage after load as its type and the difficulty tune it: the soldier's own after-load
+    /// (<see cref="Igi2HumanSoldier.AfterLoad"/>), then its <c>HumanAI</c>'s (<c>HumanAI_UpdateInternalDataAfterLoadHandler</c>,
+    /// <c>igi2 0x460120</c>), a child's after its parent's (<c>QTask_TriggerQTaskEventRecursivelyNoContext</c>, <c>0x40B040</c>).
+    /// </summary>
+    /// <param name="levelRoot">The level.</param>
+    /// <param name="config">The AI's tuning.</param>
+    /// <param name="difficulty">The session's difficulty, nought to two.</param>
+    /// <remarks>A soldier with no <c>HumanAI</c> keeps the damage it was made with.</remarks>
+    public static void AfterLoad(GameTask levelRoot, Igi2HumanAiConfig config, int difficulty)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(config);
+        foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(levelRoot).OfType<Igi2HumanSoldierTask>())
+        {
+            if (task.Body is not { } soldier || task.Ai is not { } ai || (uint)ai.AiType >= (uint)config.BaseRows.Count)
+            {
+                continue;
+            }
+
+            soldier.AfterLoad(config.BaseRows[ai.AiType].DamageMultipliers);
+            if (config.Tweaks(ai.AiType, difficulty) is { } tweaks)
+            {
+                soldier.ApplyTweaks(tweaks);
+            }
+        }
+    }
 }
 
 /// <summary>
 /// A soldier's mind until the AI's is ported: it starts at once and sends the body an update with nothing on any channel each
-/// tick, so the soldier stands where it was put.
+/// tick, so the soldier stands where it was put. It says its lines as a <c>HumanAI</c> does.
 /// </summary>
 public sealed class Igi2StandingSoldierMind : IIgi2SoldierMind
 {
+    /// <summary>How long a line said keeps the mind from saying another, in ticks: <c>60</c>.</summary>
+    public const int SayTimeout = 60;
+
     private readonly float[] _frame = new float[Igi2HumanChannels.Count];
 
     /// <inheritdoc/>
     public bool HasStarted { get; private set; }
 
+    /// <summary>Gets the ticks before the mind may say another line, <c>HumanAI+0x1154</c>.</summary>
+    public int SayTimer { get; private set; }
+
     /// <inheritdoc/>
+    /// <remarks>The line timer counts down first, as <c>HumanAI_RunHandler</c> (<c>igi2 0x45F575</c>) does.</remarks>
     public void Run(Igi2HumanSoldier soldier)
     {
         ArgumentNullException.ThrowIfNull(soldier);
+        if (SayTimer != 0)
+        {
+            SayTimer--;
+        }
+
         soldier.Update(_frame);
         HasStarted = true;
+    }
+
+    /// <inheritdoc/>
+    public void Say(Igi2HumanSoldier soldier, string sound)
+    {
+        ArgumentNullException.ThrowIfNull(soldier);
+        if (SayTimer != 0)
+        {
+            return;
+        }
+
+        SayTimer = SayTimeout;
+        soldier.Surroundings.PlaySound(sound);
     }
 }

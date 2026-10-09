@@ -131,7 +131,7 @@ public sealed class RetailIgi2SoldierTests
         (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
         Igi2Soldiers soldiers = Igi2Gameplay.SpawnSoldiers(
-            m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom());
+            m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(), Game.Ai.AiDifficulty.Normal);
         return (m, soldiers);
     }
 }
