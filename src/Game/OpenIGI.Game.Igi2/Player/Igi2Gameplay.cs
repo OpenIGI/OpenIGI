@@ -64,9 +64,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 weapons.World = new Igi2LevelGunShotWorld(world, materials);
                 if (request.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? physicsTypes))
                 {
-                    Weapons.Igi2Grenades grenades = new(physicsTypes, models, new Physics.Igi2PhysicsWorld(world, materials));
+                    Weapons.Igi2ExplosionWorld explosions = new(player.Human.Random, world, materials, player.Dynamic);
+                    explosions.AddTarget(player.Human);
+                    Weapons.Igi2Grenades grenades = new(physicsTypes, models, new Physics.Igi2PhysicsWorld(world, materials), player.Dynamic)
+                    {
+                        Effects = explosions,
+                    };
                     weapons.Grenades = grenades;
                     player.Grenades = grenades;
+                    player.Explosions = explosions;
                 }
             }
 
@@ -79,6 +85,16 @@ public sealed class Igi2Gameplay : ITitleGameplay
         if (request.Services.TryGet(out Igi2AnimTriggers? triggers))
         {
             player.Human.AnimTriggers = triggers;
+        }
+
+        if (models(spawn.Model) is { } body)
+        {
+            // BoneDynCubeObj_SetLODVirModel (igi2 0x567BE0): the root's bind translation and the mesh's radius.
+            player.Human.ModelRadius = body.NativeMarkerBound;
+            if (body.BoneHierarchy is { BoneCount: > 0 } bones)
+            {
+                player.Human.RootTranslation = bones.Translations[0];
+            }
         }
 
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
@@ -224,6 +240,12 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets or sets the grenades the player has thrown that are still in flight, or <see langword="null"/> for none.</summary>
     public Weapons.Igi2Grenades? Grenades { get; set; }
 
+    /// <summary>Gets or sets the explosions the level's blasts go off in, or <see langword="null"/> for none.</summary>
+    public Weapons.Igi2ExplosionWorld? Explosions { get; set; }
+
+    /// <summary>Gets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>: the grenades, explosions and what they leave.</summary>
+    public World.Igi2DynamicTasks Dynamic { get; } = new();
+
 
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
@@ -354,7 +376,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         _reader.InvertMouse = input.InvertMouse;
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
         Weapons?.RunGunShot();
-        Grenades?.Run();
+        Dynamic.Run();
         Human.Pickups?.Run();
 
         Human.View.RunZoom();

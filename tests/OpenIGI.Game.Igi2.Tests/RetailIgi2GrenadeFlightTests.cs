@@ -97,7 +97,8 @@ public sealed class RetailIgi2GrenadeFlightTests
         Igi2WeaponTypeTask weapon = WeaponType();
         Igi2GrenadeParameters parameters = Igi2GrenadeParameters.Of(Assert.IsType<Igi2ProjectileLauncherTask>(weapon.FireType(0)));
         Igi2PhysicsWorld world = new(m.World, m.Session.Require<Igi2GameMaterials>());
-        Igi2Grenades grenades = new(m.Session.Require<Igi2PhysicsObjectTypes>(), m.Level.ModelFor, world);
+        Igi2DynamicTasks dynamic = new();
+        Igi2Grenades grenades = new(m.Session.Require<Igi2PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic);
         Recording effects = new();
         grenades.Effects = effects;
 
@@ -109,12 +110,12 @@ public sealed class RetailIgi2GrenadeFlightTests
 
         List<Vector3d> path = [];
         double lowest = double.PositiveInfinity;
-        while (grenades.Flying.Count > 0)
+        while (grenades.Flying.Any())
         {
-            Igi2PhysicsObject body = grenades.Flying[0].Body!;
+            Igi2PhysicsObject body = grenades.Flying.First().Body!;
             path.Add(body.Position);
             lowest = Math.Min(lowest, LowestPointAboveGround(m.World, body));
-            grenades.Run();
+            dynamic.Run();
         }
 
         Assert.Equal(151, path.Count);

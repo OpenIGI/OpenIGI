@@ -29,6 +29,7 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     public void Create(AiDifficulty difficulty)
     {
+        Difficulty = difficulty;
         IsGroundCollision = true;
         IsObjectCollision = true;
         IsHumanCollision = true;

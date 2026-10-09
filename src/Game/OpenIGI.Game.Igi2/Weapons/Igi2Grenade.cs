@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
+using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -65,7 +66,7 @@ public sealed class Igi2NoGrenadeEffects : IIgi2GrenadeEffects
 }
 
 /// <summary>A thrown grenade in flight, <c>Grenade_s</c>: a physics object with a fuse.</summary>
-public sealed class Igi2Grenade
+public sealed class Igi2Grenade : IIgi2DynamicTask
 {
     /// <summary>The gravity a grenade falls by, <c>Grenade_Move</c> (<c>igi2 0x483FE0</c>): units a tick squared.</summary>
     public const float Gravity = 44.600887f;
@@ -80,14 +81,17 @@ public sealed class Igi2Grenade
     public const double GroundProbe = -4096.0;
 
     private readonly Igi2LineTrace _ground = new(1);
+    private readonly Igi2Grenades? _owner;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2Grenade"/> class.</summary>
     /// <param name="thrown">The throw it leaves the hand with.</param>
     /// <param name="model">The model it is drawn as.</param>
     /// <param name="body">Its physics object, or <see langword="null"/> when its weapon names no physics type: it does not move.</param>
     /// <param name="kind">What it does when its fuse runs out, <see cref="Igi2GrenadeKind"/>.</param>
-    public Igi2Grenade(in Igi2GrenadeThrow thrown, string model, Igi2PhysicsObject? body, int kind)
+    /// <param name="owner">The grenade world whose world and effects its ticks use, or <see langword="null"/> for one only run by hand.</param>
+    public Igi2Grenade(in Igi2GrenadeThrow thrown, string model, Igi2PhysicsObject? body, int kind, Igi2Grenades? owner = null)
     {
+        _owner = owner;
         Throw = thrown;
         Model = model ?? throw new ArgumentNullException(nameof(model));
         Body = body;
@@ -115,6 +119,12 @@ public sealed class Igi2Grenade
 
     /// <summary>Gets its orientation, nine floats row by row.</summary>
     public float[] Orientation => Body?.Orientation ?? Throw.Orientation;
+
+    /// <inheritdoc/>
+    /// <remarks>Run in the level's dynamic tasks, with its grenade world's world and effects.</remarks>
+    /// <exception cref="InvalidOperationException">The grenade belongs to no grenade world.</exception>
+    public bool Run() =>
+        _owner is { } owner ? Run(owner.World, owner.Effects) : throw new InvalidOperationException("The grenade belongs to no grenade world.");
 
     /// <summary>A tick of the grenade, <c>Grenade_RunHandler</c> (<c>igi2 0x484260</c>).</summary>
     /// <param name="world">What it flies through.</param>
@@ -165,25 +175,35 @@ public sealed class Igi2Grenade
     }
 }
 
-/// <summary>The level's grenades in flight, <c>Grenade_ptQTaskList</c>: thrown into it, flown each tick, and gone when spent.</summary>
+/// <summary>
+/// The level's grenades, <c>Grenade_ptQTaskList</c>: each thrown into the level's dynamic tasks, flown each tick there, and
+/// gone when spent.
+/// </summary>
 /// <param name="types">The physics object types, which a grenade's weapon's <c>Fixed Model</c> names.</param>
 /// <param name="models">The level's models, by name.</param>
 /// <param name="world">What the grenades fly through.</param>
+/// <param name="dynamic">The level's dynamic tasks the grenades run in.</param>
 /// <param name="logger">Where a grenade with no physics type is reported.</param>
 public sealed class Igi2Grenades(
     Igi2PhysicsObjectTypes types,
     Func<string, MefModel?> models,
     Igi2PhysicsWorld world,
+    Igi2DynamicTasks dynamic,
     IOpenIgiLogger? logger = null) : IIgi2GrenadeWorld
 {
     /// <summary>The weapon tag that names a grenade's model, <c>ProjectileModel</c>.</summary>
     public const string ProjectileModelTag = "ProjectileModel";
 
-    private readonly List<Igi2Grenade> _flying = [];
     private readonly IOpenIgiLogger _logger = logger ?? NullLogger.Instance;
 
+    /// <summary>Gets what the grenades fly through.</summary>
+    public Igi2PhysicsWorld World { get; } = world;
+
+    /// <summary>Gets the level's dynamic tasks the grenades run in.</summary>
+    public Igi2DynamicTasks Dynamic { get; } = dynamic;
+
     /// <summary>Gets the grenades in flight, in the order they were thrown.</summary>
-    public IReadOnlyList<Igi2Grenade> Flying => _flying;
+    public IEnumerable<Igi2Grenade> Flying => Dynamic.Tasks.OfType<Igi2Grenade>();
 
     /// <summary>Gets or sets what a grenade's end shows and does.</summary>
     public IIgi2GrenadeEffects Effects { get; set; } = Igi2NoGrenadeEffects.Instance;
@@ -228,23 +248,6 @@ public sealed class Igi2Grenades(
             _logger.Warning("Grenade", $"No physics object type for {weapon.FixedModel}: the grenade does not fly.");
         }
 
-        _flying.Add(new Igi2Grenade(grenade, model, body, kind));
-    }
-
-    /// <summary>A tick of every grenade in flight thrown before it; those that are spent are gone.</summary>
-    public void Run()
-    {
-        int count = _flying.Count;
-        int kept = 0;
-        for (int i = 0; i < count; i++)
-        {
-            Igi2Grenade grenade = _flying[i];
-            if (grenade.Run(world, Effects))
-            {
-                _flying[kept++] = grenade;
-            }
-        }
-
-        _flying.RemoveRange(kept, count - kept);
+        Dynamic.Add(new Igi2Grenade(grenade, model, body, kind, this));
     }
 }
