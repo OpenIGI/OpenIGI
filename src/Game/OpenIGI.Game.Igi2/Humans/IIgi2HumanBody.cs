@@ -54,6 +54,15 @@ public interface IIgi2HumanAnimation
     /// <param name="state">The state, <c>iStateLastUsedToSetMainAnimation</c>.</param>
     void PlayClip(Igi2AnimationClip? clip, int time, float blendSeconds, int state);
 
+    /// <summary>
+    /// Plays the clip of a name on the body's rig, noting the state that plays it (<c>HumanAnim_SetAnimation</c>,
+    /// <c>igi2 0x58F110</c>, with <c>HumanPlayer_GetAnimStateFromAnimName</c>, <c>0x49E230</c>).
+    /// </summary>
+    /// <param name="name">The clip's name.</param>
+    /// <param name="time">The time to play it from, in clip ticks.</param>
+    /// <param name="blendSeconds">How long to blend it in.</param>
+    void PlayNamed(string name, int time, float blendSeconds);
+
     /// <summary>Gets a value indicating whether the upper-body clip has reached an end; false with none playing.</summary>
     bool UpperBodyEnded { get; }
 

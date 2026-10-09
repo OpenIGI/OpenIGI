@@ -39,6 +39,9 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     /// <summary>The clip a body holding no weapon plays.</summary>
     public const string UnarmedClip = "stand";
 
+    /// <summary>The state a named clip stands for when no state plays it, <c>2</c>.</summary>
+    public const int NamedStateFallback = 2;
+
     private readonly Igi2AnimationLibrary? _library;
     private readonly Igi2BoneHierarchy? _rig;
     private readonly IReadOnlyList<int> _stateAnimations;
@@ -126,6 +129,42 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     {
         SetAnimation(clip, time, blendSeconds);
         LastState = state;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The state is the first whose base animation is the first of the held weapon's whose clip has the same name
+    /// (<c>WeaponTypeAnim_GetWeaponTypeAnimFromName</c>, <c>igi2 0x4FA060</c>, which falls back to the first base); with no
+    /// weapon's table, or no state playing it, it is state 2.
+    /// </remarks>
+    public void PlayNamed(string name, int time, float blendSeconds)
+    {
+        Igi2AnimationClip? clip = _rig is null ? null : _library?.Find(_rig, name);
+        SetAnimation(clip, time, blendSeconds);
+        LastState = NamedStateFallback;
+        if (clip is null || _weaponClips() is not { } clips)
+        {
+            return;
+        }
+
+        int animation = 0;
+        for (int i = 0; i < clips.Count && i < Igi2WeaponTypeAnims.Count; i++)
+        {
+            if (clips[i] is { } candidate && string.Equals(candidate.Name, clip.Name, StringComparison.Ordinal))
+            {
+                animation = i;
+                break;
+            }
+        }
+
+        for (int state = 0; state < _stateAnimations.Count; state++)
+        {
+            if (_stateAnimations[state] == animation)
+            {
+                LastState = state;
+                return;
+            }
+        }
     }
 
     /// <inheritdoc/>

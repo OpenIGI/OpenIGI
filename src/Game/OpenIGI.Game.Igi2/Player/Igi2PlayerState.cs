@@ -127,6 +127,9 @@ public static class Igi2PlayerState
     /// <summary>Picking a door's lock, kneeling at it until the lock gives or the key is let go.</summary>
     public const int ActivateDoor = 38;
 
+    /// <summary>Working at a timed action, a code pad or a padlock, until it finishes or the key is let go.</summary>
+    public const int ActivateGenericTba = 42;
+
     /// <summary>Flinching from a hit.</summary>
     public const int Hit = 54;
 

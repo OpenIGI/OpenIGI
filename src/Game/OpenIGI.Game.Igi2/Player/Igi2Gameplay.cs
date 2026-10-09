@@ -182,6 +182,16 @@ public sealed class Igi2Gameplay : ITitleGameplay
             destructibles.Add(explosive);
         }
 
+        foreach (Interaction.Igi2GenericTbaTask action in Descendants(root).OfType<Interaction.Igi2GenericTbaTask>())
+        {
+            action.Explosive.Models = models;
+            action.Explosive.Explosions = player.Explosions;
+            action.Explosive.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2GenericTbaTask.TypeName, action.Id));
+            player.Explosions?.AddTarget(action);
+            destructibles.Add(action);
+            activatables.Add(action);
+        }
+
         player.Destruction = destructibles.Count > 0 ? new Interaction.Igi2PlacementDestruction(destructibles) : null;
 
         foreach (Interaction.Igi2ConveyorBeltTask belt in Descendants(root).OfType<Interaction.Igi2ConveyorBeltTask>())

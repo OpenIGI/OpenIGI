@@ -17,6 +17,9 @@ public enum Igi2ActivateKind
 
     /// <summary>A wire is slid down (<c>Wire_GetActivateHandler</c>, <c>0x514CA0</c>).</summary>
     Wire = 7,
+
+    /// <summary>A timed action at a code pad or a padlock, <c>GenericTBA_GetActivateHandler</c> (<c>igi2 0x4C2940</c>).</summary>
+    GenericTba = 10,
 }
 
 /// <summary>Something a human may activate: it says whether a human's view finds it, and what activating it does.</summary>
@@ -34,6 +37,16 @@ public interface IIgi2Activatable
     /// <summary>Offers itself to a human's view, its <c>GameFunctions_eEvaluateActivateQTaskEvent</c> handler.</summary>
     /// <param name="context">The view and the best found so far.</param>
     void EvaluateActivate(Igi2EvaluateActivate context);
+
+    /// <summary>
+    /// A tick of being activated, <c>GameFunctions_eActivateQTaskEvent</c>, sent by <c>Human_UpdateActivate</c>
+    /// (<c>igi2 0x500D10</c>) to what a human is activating before it counts the tick. A door's and a switch's handlers
+    /// (<c>Door_ActivateHandler</c> <c>0x5377A0</c>, <c>Switch_ActivateHandler</c> <c>0x4DADD0</c>) do nothing.
+    /// </summary>
+    /// <param name="activateTime">The ticks the activation has run, before this one.</param>
+    void Activate(int activateTime)
+    {
+    }
 }
 
 /// <summary>An activatable that opens and closes, as a door does, and may be locked.</summary>

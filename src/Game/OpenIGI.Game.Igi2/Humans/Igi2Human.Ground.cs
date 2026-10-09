@@ -272,7 +272,7 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>Drops hold of the ground, if any is held, and the rigid flag with it.</summary>
-    private void DropGround()
+    protected void DropGround()
     {
         if (GroundCollider is null)
         {

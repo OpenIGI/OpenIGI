@@ -115,6 +115,9 @@ public sealed class Igi2Explosive
     /// <summary>Gets the ticks before it explodes, <c>nDelay</c>; less than nought while nothing has set it off.</summary>
     public int Delay => _delay;
 
+    /// <summary>Gets its frame, row by row, as its parameters turn it.</summary>
+    public IReadOnlyList<float> Frame => _frame;
+
     /// <summary>Gets the model it wears now.</summary>
     public string Model { get; private set; } = string.Empty;
 
@@ -262,8 +265,11 @@ public sealed class Igi2Explosive
             Igi2ExplosionFalloff.Linear);
     }
 
-    // ExplodeObject_SetExploded (igi2 0x49D010): a destroyed model that exists is worn, its collision with it.
-    private void SetExploded()
+    /// <summary>
+    /// Wears its destroyed model, if that model exists, and is exploded from then on, without a blast
+    /// (<c>ExplodeObject_SetExploded</c>, <c>igi2 0x49D010</c>).
+    /// </summary>
+    public void SetExploded()
     {
         if (Models?.Invoke(_parameters.DestroyedModel) is { } destroyed)
         {

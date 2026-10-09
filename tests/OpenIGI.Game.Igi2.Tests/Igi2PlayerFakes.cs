@@ -94,6 +94,10 @@ internal static class Igi2PlayerFakes
 
         public void PlayClip(Igi2AnimationClip? clip, int time, float blendSeconds, int state) => ClipsPlayed.Add((clip, time, blendSeconds, state));
 
+        public List<string> NamedPlayed { get; } = [];
+
+        public void PlayNamed(string name, int time, float blendSeconds) => NamedPlayed.Add(name);
+
         public int UpperBodyTimeStep { get; set; }
 
         public int AutoSteps { get; private set; }
