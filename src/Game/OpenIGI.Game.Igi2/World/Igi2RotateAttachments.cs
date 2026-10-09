@@ -164,8 +164,7 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
         // same task and needs no list of which types derive from what.
         for (GameTask? owner = task.Parent; owner is not null; owner = owner.Parent)
         {
-            if (owner is not DeclaredTask declared
-                || !parts.TryGetValue((declared.Id, model), out List<WorldPlacement>? candidates))
+            if (!parts.TryGetValue((owner.Id, model), out List<WorldPlacement>? candidates))
             {
                 continue;
             }

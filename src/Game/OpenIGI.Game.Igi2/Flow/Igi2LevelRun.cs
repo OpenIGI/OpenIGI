@@ -61,6 +61,7 @@ public sealed class Igi2LevelRun
         Natives = natives ?? throw new ArgumentNullException(nameof(natives));
         Functions = functions ?? throw new ArgumentNullException(nameof(functions));
         LevelFlow = root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault();
+        functions.Level = root.Tree;
     }
 
     /// <summary>Gets the level's flow, <c>LevelFlow_ptLevelFlow</c>, whose tick switches time their presses by.</summary>

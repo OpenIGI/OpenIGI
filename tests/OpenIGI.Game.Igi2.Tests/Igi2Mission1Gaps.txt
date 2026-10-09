@@ -182,7 +182,6 @@ name ControlsMenu_987.isReset    # MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_987.nOffset    # MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertFloatFromOffset    # MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertOffsetFromFloat    # MENUSYSTEM/ingamemenu.qvm
-name ConveyorBelt_SetSpeed    # MISSIONS/location1/level1/objects.qvm
 name Crouch    # config.qvm
 name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # config.qvm
 name DropWeapon    # config.qvm
@@ -468,7 +467,6 @@ type ColumnView    # MENUSYSTEM/ingamemenu.qvm
 type ColumnViewColumn    # MENUSYSTEM/ingamemenu.qvm
 type ComputerHilight    # MISSIONS/location1/level1/objects.qvm
 type ControlsMenu    # MENUSYSTEM/ingamemenu.qvm
-type ConveyorBelt    # MISSIONS/location1/level1/objects.qvm
 type DefineComputerLimit    # MISSIONS/location1/level1/objects.qvm
 type DefineComputerObjective    # MISSIONS/location1/level1/objects.qvm
 type DialogWindow    # MENUSYSTEM/ingamemenu.qvm

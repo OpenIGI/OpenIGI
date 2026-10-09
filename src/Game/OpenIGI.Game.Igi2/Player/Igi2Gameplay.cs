@@ -172,6 +172,16 @@ public sealed class Igi2Gameplay : ITitleGameplay
             movers.Add(door);
         }
 
+        foreach (Interaction.Igi2ConveyorBeltTask belt in Descendants(root).OfType<Interaction.Igi2ConveyorBeltTask>())
+        {
+            player.Conveyors[belt.Id] = belt;
+        }
+
+        if (request.Services.TryGet(out Igi2GameMaterials? materials))
+        {
+            player.Materials = materials;
+        }
+
         player.Activatables.AddRange(activatables);
         player.Motions = movers.Count > 0 ? new Interaction.Igi2MoverMotions(movers) : null;
 
@@ -363,6 +373,16 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets the collision world the player moves through.</summary>
     public Igi2CollisionWorld CollisionWorld => _surroundings.World;
+
+    /// <summary>Gets the level's conveyor belts the player may stand on, by level id.</summary>
+    public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors => _surroundings.Conveyors;
+
+    /// <summary>Gets or sets the session's materials, which name what the player stands on.</summary>
+    public Igi2GameMaterials? Materials
+    {
+        get => _surroundings.Materials;
+        set => _surroundings.Materials = value;
+    }
 
     /// <inheritdoc/>
     public IPlacementMotion? Motions { get; set; }
@@ -623,7 +643,29 @@ internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world, Igi2Sound
     {
     }
 
-    public Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing) => null;
+    /// <summary>Gets the level's conveyor belts, by level id.</summary>
+    public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors { get; } = [];
+
+    /// <summary>Gets or sets the session's materials, which name a footing's material, or <see langword="null"/> for none.</summary>
+    public Igi2GameMaterials? Materials { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Human_Move</c> (<c>igi2 0x501685</c>) asks whatever stands underfoot, and whatever does not answer pushes nothing: only a
+    /// belt's own solid does (<see cref="Interaction.Igi2ConveyorBeltTask.Push"/>).
+    /// </remarks>
+    public Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing)
+    {
+        ArgumentNullException.ThrowIfNull(footing);
+        if (ground is Igi2RigidObject { Owner: Igi2CollisionOwner { Depth: 0 } owner }
+            && owner.TypeName == Interaction.Igi2ConveyorBeltTask.TypeName
+            && Conveyors.TryGetValue(owner.LevelId, out Interaction.Igi2ConveyorBeltTask? belt))
+        {
+            return belt.Push(footing.EnterMaterial is int row ? Materials?[row]?.Name : null);
+        }
+
+        return default(Vector3f);
+    }
 
     public void BumpHumans(Vector3d start, Vector3d destination)
     {

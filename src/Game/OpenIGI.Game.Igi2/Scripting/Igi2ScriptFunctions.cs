@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
@@ -53,6 +54,11 @@ public sealed class Igi2ScriptCall
     /// <returns>The integer, or zero.</returns>
     public int GetInt32(int index) => _compiled?.GetInt32(index) ?? _expression!.GetInt32(index);
 
+    /// <summary>Evaluates an argument as a real number, <c>Script_EvalArgFloat</c> (<c>igi2 0x40DE00</c>).</summary>
+    /// <param name="index">The zero-based argument position.</param>
+    /// <returns>The number, or zero.</returns>
+    public double GetReal(int index) => _compiled?.GetSingle(index) ?? _expression!.GetReal(index);
+
     /// <summary>Evaluates an argument as text.</summary>
     /// <param name="index">The zero-based argument position.</param>
     /// <returns>The text, or empty.</returns>
@@ -68,6 +74,12 @@ public sealed class Igi2ScriptCall
 public sealed class Igi2ScriptFunctions
 {
     private readonly Dictionary<string, Igi2ScriptFunction> _functions = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets or sets the level whose tasks the natives find by their level id, <c>Level_atLevelQTaskID</c>, or
+    /// <see langword="null"/> before a level runs.
+    /// </summary>
+    public TaskTree? Level { get; set; }
 
     /// <summary>Registers a native for both kinds of caller.</summary>
     /// <param name="natives">The script namespace.</param>

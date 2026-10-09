@@ -193,10 +193,12 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2DoorTask>(Interaction.Igi2DoorTask.TypeName);
         context.Types.Register<Interaction.Igi2LiftTask>(Interaction.Igi2LiftTask.TypeName);
         context.Types.Register<Interaction.Igi2FloorTask>(Interaction.Igi2FloorTask.TypeName);
+        context.Types.Register<Interaction.Igi2ConveyorBeltTask>(Interaction.Igi2ConveyorBeltTask.TypeName);
 
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);
         Flow.Igi2SequenceCommandTask.Register(context.Natives, functions);
+        Interaction.Igi2ConveyorBeltTask.Register(context.Natives, functions);
         Flow.Igi2SoundGeneratorTask.Register(context.Natives, functions);
     }
 

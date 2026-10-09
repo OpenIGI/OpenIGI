@@ -26,6 +26,9 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
 
     public IReadOnlyList<Igi2DoorTask> Doors => [.. Tree.OfType<Igi2DoorTask>()];
 
+    /// <summary>Gets the session's materials, loaded with its tables.</summary>
+    public Igi2GameMaterials Materials { get; init; } = new();
+
     public static RetailIgi2Mission1 Load(bool collision = false)
     {
         Igi2Level level = Igi2Level.Find("location1", "level1");
@@ -66,14 +69,14 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
             }
         }
 
-        return new RetailIgi2Mission1(level, run, sounds, tree, world);
+        return new RetailIgi2Mission1(level, run, sounds, tree, world) { Materials = harness.Session.Services.Require<Igi2GameMaterials>() };
     }
 
     /// <summary>Gets a tick's input with nothing pressed.</summary>
     public static TitlePlayerInput Idle => new(0f, 0f, default, default, 0.5f, false);
 
     /// <summary>Stands the level's player at a spot, turned to a heading, with one thing to activate, and lets it settle for two seconds.</summary>
-    public static Igi2TitlePlayer Stand(Igi2CollisionWorld world, Igi2Level level, IIgi2Activatable target, Vector3d at, float gamma, Igi2Sounds? sounds = null)
+    public static Igi2TitlePlayer Stand(Igi2CollisionWorld world, Igi2Level level, IIgi2Activatable? target, Vector3d at, float gamma, Igi2Sounds? sounds = null)
     {
         Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
         Formats.World.MefModel body = level.ModelFor(point.Model)!;
@@ -81,7 +84,10 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
             world, Igi2Session.Start().Require<Igi2PlayerTuning>().General, at, gamma, AiDifficulty.Easy, null, body.BoneHierarchy, sounds: sounds);
         player.Human.ModelRadius = body.NativeMarkerBound;
         player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
-        player.Activatables.Add(target);
+        if (target is not null)
+        {
+            player.Activatables.Add(target);
+        }
         for (int tick = 0; tick < 60; tick++)
         {
             player.Tick(Idle);
