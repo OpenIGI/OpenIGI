@@ -35,6 +35,12 @@ public interface IIgi2SoldierMind
     void Say(Igi2HumanSoldier soldier, string sound)
     {
     }
+
+    /// <summary>Gets where the mind's target is, <c>HumanAI_GetTargetPosition</c> (<c>igi2 0x460EF0</c>), or <see langword="null"/> for none.</summary>
+    Vector3d? TargetPosition => null;
+
+    /// <summary>Gets how far the mind turns the head, <c>HumanAI+0x100</c>, in radians.</summary>
+    float HeadTurn => 0f;
 }
 
 /// <summary>An enemy soldier's body, as I.G.I. 2's <c>HumanSoldier_t</c> runs it.</summary>

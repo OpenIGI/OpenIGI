@@ -27,8 +27,15 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// over from, while it blends out, and both upper-body ones always.
 /// </para>
 /// <para>
-/// Not yet run: the blend itself and the pose it makes. The clip's root translation does not move the body — only
-/// the states' own movement and <see cref="Igi2Human.DeltaTranslation"/> do.
+/// The controllers sit under three blenders as <c>HumanAnim_Init</c> wires them: the main blend between the two main
+/// controllers, the upper body's swap between its two, and over both the mix of the upper body into the main clip, the one
+/// the body's pose is taken from (<see cref="Pose"/>). The main controllers animate every bone; the upper body's, and its swap,
+/// the <c>lower body</c> branch, which in these rigs holds the spine, arms and head; the main blend and the mix the
+/// <c>center</c> branch. Both main and swap blends take a finished blend's old clip away.
+/// </para>
+/// <para>
+/// The clip's root translation does not move the body — only the states' own movement and
+/// <see cref="Igi2Human.DeltaTranslation"/> do; it places the root bone.
 /// </para>
 /// </remarks>
 public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
@@ -50,8 +57,8 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     private readonly Igi2AnimController _second = new() { Flags = Igi2AnimControllerBits.NoClip };
     private readonly Igi2AnimController _third = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
     private readonly Igi2AnimController _fourth = new() { Flags = Igi2AnimControllerBits.AutoStep | Igi2AnimControllerBits.NoClip };
-    private readonly Igi2AnimBlend _mainBlend = new();
-    private readonly Igi2AnimBlend _upperSwapBlend = new();
+    private readonly Igi2AnimBlend _mainBlend = new() { DropsOldSource = true };
+    private readonly Igi2AnimBlend _upperSwapBlend = new() { DropsOldSource = true };
     private readonly Igi2AnimBlend _upperBlend = new();
 
     /// <summary>Initializes a new instance of the <see cref="Igi2HumanAnimation"/> class.</summary>
@@ -69,8 +76,57 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         _rig = rig;
         _stateAnimations = stateAnimations ?? throw new ArgumentNullException(nameof(stateAnimations));
         _weaponClips = weaponClips ?? throw new ArgumentNullException(nameof(weaponClips));
-        Main = _first;
+
+        // HumanAnim_Init (igi2 0x58F650): the second main controller is the active one, and every blend starts finished.
+        Main = _second;
+        _mainBlend.Create(_first, _second);
+        _upperSwapBlend.Create(_third, _fourth);
+        _upperBlend.Create(_upperSwapBlend, _mainBlend);
     }
+
+    /// <summary>
+    /// Marks the branches the controllers and blenders animate, as <c>HumanAnim_Init</c> (<c>igi2 0x58F650</c>) builds the rig's
+    /// animated info: the <c>center</c> branch for the main blend and the mix, the <c>lower body</c> branch for the upper body.
+    /// </summary>
+    /// <param name="boneNames">The model's bone names, in bone order.</param>
+    public void SetBranches(IReadOnlyList<string> boneNames)
+    {
+        ArgumentNullException.ThrowIfNull(boneNames);
+        if (_rig is null)
+        {
+            return;
+        }
+
+        bool[] all = Igi2BoneBranches.Mark(_rig, Igi2BoneBranches.IndexOf(boneNames, Igi2BoneBranches.CenterBone), include: true);
+        bool[] upper = Igi2BoneBranches.Mark(_rig, Igi2BoneBranches.IndexOf(boneNames, Igi2BoneBranches.LowerBodyBone), include: true);
+        _mainBlend.Mask = all;
+        _upperBlend.Mask = all;
+        _upperSwapBlend.Mask = upper;
+        _third.Mask = upper;
+        _fourth.Mask = upper;
+    }
+
+    /// <summary>
+    /// The body's pose: the mix's interpolation into the bones (<c>BoneDynCubeObj_eInterpolateQTaskEvent</c>), then the
+    /// hierarchy composed with the bones' callbacks (<c>BoneDynCubeObj_UpdateHierarchy</c>, <c>igi2 0x564B50</c>).
+    /// </summary>
+    /// <param name="bones">The body's bones, written in place; their root translation is the body's.</param>
+    /// <param name="callbacks">The bones' callbacks, or <see langword="null"/> for none.</param>
+    public void Pose(Igi2BoneBuffer bones, IIgi2BoneCallbacks? callbacks)
+    {
+        ArgumentNullException.ThrowIfNull(bones);
+        if (_rig is null)
+        {
+            return;
+        }
+
+        _upperBlend.Interpolate(bones, _upperBlend.Mask);
+        Igi2BoneMath.UpdateHierarchy(_rig, bones, callbacks);
+    }
+
+    /// <summary>Gets the clip and time the body's attach objects hang from: the upper body's while it plays, else the main one's.</summary>
+    public (Igi2AnimationClip? Clip, int Time) AttachSource =>
+        UpperBody is { Clip: { } upper } upperController ? (upper, upperController.Time) : (Main.Clip, Main.Time);
 
     /// <summary>Gets the active main controller.</summary>
     public Igi2AnimController Main { get; private set; }
@@ -205,7 +261,7 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         if (UpperBody is not null)
         {
             UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
-            _upperBlend.Blend(UpperBodyBlendTicks);
+            _upperBlend.Blend(UpperBodyBlendTicks, _mainBlend, _upperSwapBlend);
             UpperBody = null;
         }
     }
@@ -215,12 +271,13 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     {
         if (ReferenceEquals(UpperBody, _third) || ReferenceEquals(UpperBody, _fourth))
         {
-            Igi2AnimController next = ReferenceEquals(UpperBody, _third) ? _fourth : _third;
-            UpperBody.Flags |= Igi2AnimControllerBits.SuppressTriggers;
+            Igi2AnimController old = UpperBody;
+            Igi2AnimController next = ReferenceEquals(old, _third) ? _fourth : _third;
+            old.Flags |= Igi2AnimControllerBits.SuppressTriggers;
             next.SetAnimationAndTime(clip, time);
             UpperBody = next;
             UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
-            _upperSwapBlend.Blend(UpperBodyBlendTicks);
+            _upperSwapBlend.Blend(UpperBodyBlendTicks, next, old);
         }
         else
         {
@@ -229,8 +286,8 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
             _third.SetAnimationAndTime(clip, time);
             UpperBody = _third;
             UpperBodyBlendTicks = BlendTicksFor(blendSeconds);
-            _upperSwapBlend.Blend(0);
-            _upperBlend.Blend(UpperBodyBlendTicks);
+            _upperSwapBlend.Blend(0, _third, _fourth);
+            _upperBlend.Blend(UpperBodyBlendTicks, _upperSwapBlend, _mainBlend);
         }
 
         UpperBody.Flags = ReferenceEquals(Main.Clip, clip)
@@ -264,16 +321,20 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     }
 
     /// <inheritdoc/>
-    /// <remarks>In the order the controllers were made, which is the order the body's children run in.</remarks>
+    /// <remarks>
+    /// In the order the body's children run: the mix, then its sources each before their own sources, the upper body's swap
+    /// before the main blend (<c>AnimBlender_RunHandler</c>, <c>igi2 0x5D9630</c>, runs itself and then its children, which
+    /// <c>AnimBlender_New</c>, <c>0x5D9E80</c>, appends old source first).
+    /// </remarks>
     public void AutoStep()
     {
-        _first.AutoStep();
-        _second.AutoStep();
-        _mainBlend.Run();
+        _upperBlend.Run();
+        _upperSwapBlend.Run();
         _third.AutoStep();
         _fourth.AutoStep();
-        _upperSwapBlend.Run();
-        _upperBlend.Run();
+        _mainBlend.Run();
+        _first.AutoStep();
+        _second.AutoStep();
     }
 
     /// <inheritdoc/>
@@ -309,55 +370,11 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         next.Flags &= ~Igi2AnimControllerBits.SuppressTriggers;
         next.SetAnimationAndTime(clip, time);
         BlendTicks = BlendTicksFor(blendSeconds);
-        _mainBlend.Blend(BlendTicks);
+        _mainBlend.Blend(BlendTicks, next, Main);
         Main = next;
         Main.Flags &= ~Igi2AnimControllerBits.AutoStep;
     }
 
     /// <summary>A blend time in ticks, <c>(int)(seconds × 4800)</c> truncated.</summary>
     private static int BlendTicksFor(float blendSeconds) => Fpu.ToInt32((Fpu)blendSeconds * BlendTicksPerSecond);
-}
-
-/// <summary>A blend between two clips, <c>AnimBlender_t</c>, as far as it is timed.</summary>
-/// <remarks>
-/// <c>AnimBlender_Blend</c> (<c>igi2 0x5D9DB0</c>) starts it over a length in clip ticks, finished at once if that is nought;
-/// each run (<c>AnimBlender_RunHandler</c>, <c>0x5D9630</c>) adds a frame's 160 ticks while it is short of its length, and
-/// on the run after it reaches it the blend is finished. A body's blends are made finished (<c>HumanAnim_Init</c>,
-/// <c>0x58F650</c>). The mix of poses it makes is not run.
-/// </remarks>
-public sealed class Igi2AnimBlend
-{
-    /// <summary>The ticks a run adds, <c>AnimBlender_nTicksPerFrame</c>.</summary>
-    public const int TicksPerFrame = 160;
-
-    /// <summary>Gets the ticks the blend has run.</summary>
-    public int Elapsed { get; private set; }
-
-    /// <summary>Gets the blend's length in ticks.</summary>
-    public int Length { get; private set; }
-
-    /// <summary>Gets a value indicating whether the blend has finished, the blender's bit 4.</summary>
-    public bool IsFinished { get; private set; } = true;
-
-    /// <summary>Starts the blend over a length.</summary>
-    /// <param name="length">The length in ticks.</param>
-    public void Blend(int length)
-    {
-        Elapsed = 0;
-        Length = length;
-        IsFinished = length == 0;
-    }
-
-    /// <summary>Runs the blend one tick.</summary>
-    public void Run()
-    {
-        if (Elapsed < Length)
-        {
-            Elapsed += TicksPerFrame;
-        }
-        else
-        {
-            IsFinished = true;
-        }
-    }
 }

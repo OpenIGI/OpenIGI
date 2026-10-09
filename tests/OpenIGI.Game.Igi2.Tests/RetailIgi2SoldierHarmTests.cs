@@ -144,6 +144,76 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.Equal(Igi2DamagePart.Back, body.DamagePartOf(At(body, torso, groin, ahead)));
     }
 
+    /// <summary>
+    /// A dead soldier's bones are its death clip alone: the upper body cleared, the aim callbacks off, the root held at nought. The
+    /// bones' 24-bit composition (<c>BoneDynCubeObj_UpdateHierarchy</c>, <c>igi2 0x564B50</c>) lands within a hundredth of a unit of
+    /// the same clip sampled and composed in double precision, and the root bone stands at the root.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dead_soldier_is_posed_by_its_death_clip_alone()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        body.WeaponHit(Hit(body, Shoot(m.Collision!, body, height: 4096.0, includes: null)!, 100f));
+        Run(body, 20);
+
+        Igi2HumanAnimation animation = Assert.IsType<Igi2HumanAnimation>(body.Animation);
+        Assert.Null(animation.UpperBody);
+        Formats.Animation.BonePose exact = body.CurrentPose()!;
+        Formats.Animation.Igi2AnimationClip clip = animation.Main.Clip!;
+        Formats.Animation.Igi2BoneHierarchy rig = animation.Rig!;
+        Quaternion32[] local = new Quaternion32[rig.BoneCount];
+        Formats.Animation.Igi2ClipSampler.Sample(clip, animation.Main.Time, squad: false, local);
+        Formats.Animation.BonePose reference = Formats.Animation.BonePose.Evaluate(rig.CreateSkeleton(), local, default);
+
+        Assert.Equal(default, body.RootTranslation);
+        Assert.Equal(default, exact.Positions[0]);
+        for (int bone = 0; bone < rig.BoneCount; bone++)
+        {
+            Vector3f a = exact.Positions[bone], b = reference.Positions[bone];
+            Assert.True(Math.Abs(a.X - b.X) < 0.01f && Math.Abs(a.Y - b.Y) < 0.01f && Math.Abs(a.Z - b.Z) < 0.01f, $"bone {bone}: {a} against {b}");
+            Matrix3f r = exact.Rotations[bone], s = reference.Rotations[bone];
+            Assert.True(Math.Abs(r.M12 - s.M12) < 1e-4f && Math.Abs(r.M23 - s.M23) < 1e-4f && Math.Abs(r.M31 - s.M31) < 1e-4f, $"bone {bone} turns otherwise");
+        }
+    }
+
+    /// <summary>
+    /// A standing soldier's idle arms play on the <c>lower body</c> branch, its spine, arms and head (<c>HumanAnim_Init</c>,
+    /// <c>igi2 0x58F930</c>); its legs stay on the main clip, within a hundredth of a unit of that clip sampled in double precision.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_standing_soldier_keeps_its_legs_on_the_main_clip()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2HumanAnimation animation = Assert.IsType<Igi2HumanAnimation>(body.Animation);
+        Assert.NotNull(animation.UpperBody);
+        Formats.Animation.Igi2BoneHierarchy rig = animation.Rig!;
+        bool[] upper = Igi2BoneBranches.Mark(rig, body.Model!.LowerBodyBone, include: true);
+        Formats.Animation.BonePose exact = body.CurrentPose()!;
+        Quaternion32[] local = new Quaternion32[rig.BoneCount];
+        Vector3f root = Formats.Animation.Igi2ClipSampler.Sample(animation.Main.Clip!, animation.Main.Time, squad: false, local);
+        Formats.Animation.BonePose reference = Formats.Animation.BonePose.Evaluate(rig.CreateSkeleton(), local, root);
+
+        int legs = 0;
+        for (int bone = 0; bone < rig.BoneCount; bone++)
+        {
+            if (upper[bone])
+            {
+                continue;
+            }
+
+            legs++;
+            Vector3f a = exact.Positions[bone], b = reference.Positions[bone];
+            Assert.True(Math.Abs(a.X - b.X) < 0.01f && Math.Abs(a.Y - b.Y) < 0.01f && Math.Abs(a.Z - b.Z) < 0.01f, $"bone {bone}: {a} against {b}");
+        }
+
+        Assert.Equal(11, legs);
+        Assert.Equal(root, body.RootTranslation);
+    }
+
     private static Igi2WeaponHit At(Igi2HumanSoldier body, int bone, Vector3d position, Vector3f shot) =>
         new(new Igi2Intersection { Sector = bone, Position = position, IsHit = true }, 0.01f, shot, null, body.Weapon.Inventory!.Current!.WeaponType, null);
 

@@ -21,13 +21,11 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
     public const double GroinReach = 614.4;
 
     private Igi2BodyPose? _pose;
+    private Igi2BoneBuffer? _bones;
     private bool _isPoseStale = true;
 
     /// <summary>Gets or sets what the soldier's model gives its body: bone names, collision, damage zones.</summary>
     public Igi2SoldierModel? Model { get; set; }
-
-    /// <summary>Gets or sets what poses the body for its collision and its drawing.</summary>
-    public Igi2BodyPoser? Poser { get; set; }
 
     /// <summary>Gets or sets the soldier's collider in the level's collision world, or <see langword="null"/> when not placed in one.</summary>
     public Igi2BoneCollider? Collider { get; set; }
@@ -44,15 +42,33 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
     /// <summary>Gets or sets a value indicating whether the soldier has played its long flinch, <c>isLongHitAnimPlayed</c> (<c>+0xBDC</c>).</summary>
     public bool IsLongHitAnimPlayed { get; set; }
 
-    /// <summary>Gets the pose the body last stood in, which its collision is traced against and which it is drawn in.</summary>
-    /// <returns>The pose, or <see langword="null"/> when the body has none.</returns>
+    /// <summary>
+    /// Gets the pose the body stands in, which its collision is traced against and which it is drawn in: the bones brought up to
+    /// date when the clips have moved since (<c>BoneDynCubeObj_UpdateHierarchy</c>, <c>igi2 0x564B50</c>, while <c>isTouched</c>).
+    /// </summary>
+    /// <returns>The pose, or <see langword="null"/> when the body has no rig.</returns>
+    /// <remarks>
+    /// The bones persist from one update to the next, as <c>patBone</c> does. The animation writes the root translation too, so the
+    /// body's <see cref="Igi2Human.RootTranslation"/> follows it.
+    /// </remarks>
     public Igi2BodyPose? BodyPose()
     {
         if (_isPoseStale)
         {
-            _pose = Poser is { } poser && Model is { } model && Animation is Igi2HumanAnimation animation
-                ? poser.Pose(animation, model.BoneNames)
-                : null;
+            _pose = null;
+            if (Animation is Igi2HumanAnimation { Rig: { } rig } animation)
+            {
+                if (_bones is null || _bones.BoneCount != rig.BoneCount)
+                {
+                    _bones = new Igi2BoneBuffer(rig.BoneCount) { Root = RootTranslation };
+                }
+
+                animation.Pose(_bones, this);
+                RootTranslation = _bones.Root;
+                (Formats.Animation.Igi2AnimationClip? clip, int time) = animation.AttachSource;
+                _pose = new Igi2BodyPose(_bones.ToPose(rig.Parents), clip, time);
+            }
+
             _isPoseStale = false;
         }
 

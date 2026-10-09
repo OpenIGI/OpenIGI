@@ -41,6 +41,10 @@ public sealed class Igi2SoldierModel
     {
         Name = name;
         BoneNames = boneNames;
+        LowerBodyBone = Igi2BoneBranches.IndexOf(boneNames, Igi2BoneBranches.LowerBodyBone);
+        UpperBodyBone = Igi2BoneBranches.IndexOf(boneNames, Igi2BoneBranches.UpperBodyBone);
+        ShouldersBone = Igi2BoneBranches.IndexOf(boneNames, Igi2BoneBranches.ShouldersBone);
+        HeadBone = Igi2BoneBranches.IndexOf(boneNames, Igi2BoneBranches.HeadBone);
         _meshes = meshes;
         DamageParts = parts;
         Groin = groin;
@@ -52,6 +56,18 @@ public sealed class Igi2SoldierModel
 
     /// <summary>Gets its bones' names, in bone order.</summary>
     public IReadOnlyList<string> BoneNames { get; }
+
+    /// <summary>Gets the <c>lower body</c> bone, the lower back's callback's; <c>-1</c> for none.</summary>
+    public int LowerBodyBone { get; }
+
+    /// <summary>Gets the <c>upper body</c> bone, the upper back's callback's.</summary>
+    public int UpperBodyBone { get; }
+
+    /// <summary>Gets the <c>shoulders</c> bone.</summary>
+    public int ShouldersBone { get; }
+
+    /// <summary>Gets the <c>head</c> bone.</summary>
+    public int HeadBone { get; }
 
     /// <summary>Gets each bone's damage zone, <c>AnimatedInfo_t.anDamagePart</c>; a bone no branch marks is the right foot's, nought.</summary>
     public IReadOnlyList<Igi2DamagePart> DamageParts { get; }
@@ -86,7 +102,7 @@ public sealed class Igi2SoldierModel
         {
             foreach ((string bone, Igi2DamagePart part) in DamageBranches)
             {
-                bool[] marked = Igi2BodyPoser.Mark(rig, Igi2BodyPoser.IndexOf(names, bone), include: true);
+                bool[] marked = Igi2BoneBranches.Mark(rig, Igi2BoneBranches.IndexOf(names, bone), include: true);
                 for (int i = 0; i < parts.Length; i++)
                 {
                     if (marked[i])

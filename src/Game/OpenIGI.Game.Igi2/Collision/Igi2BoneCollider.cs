@@ -136,6 +136,8 @@ public static class Igi2BoneTrace
             return;
         }
 
+        // The bones are brought up to date first, and with them the root the sphere is centred on.
+        BonePose? pose = body.CurrentPose();
         if (trace.Includes is { } includes && !includes(collider.Owner))
         {
             return;
@@ -152,7 +154,7 @@ public static class Igi2BoneTrace
 
             if (posed is null)
             {
-                if (body.CurrentPose() is not { } pose)
+                if (pose is null)
                 {
                     return;
                 }

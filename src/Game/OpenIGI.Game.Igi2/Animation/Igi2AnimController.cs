@@ -1,6 +1,26 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Animation;
+
+/// <summary>
+/// What a blender takes a pose from, <c>AnimControllerBase_t</c>: a controller or another blender, each answering the
+/// interpolate event (<c>BoneDynCubeObj_eInterpolateQTaskEvent</c>) into the bones a blender hands it.
+/// </summary>
+public interface IIgi2PoseSource
+{
+    /// <summary>Gets the bones it animates, <c>pisAnimated</c>; sources that share one share the array.</summary>
+    bool[] Mask { get; }
+
+    /// <summary>Gets a value indicating whether it has no clip, bit <c>0x10</c> of its flags.</summary>
+    bool IsNoClip { get; }
+
+    /// <summary>Writes its pose into some bones.</summary>
+    /// <param name="bones">The bones, and the root translation it writes.</param>
+    /// <param name="mask">The bones to write, in place of its own while a blender narrows it.</param>
+    void Interpolate(Igi2BoneBuffer bones, bool[] mask);
+}
 
 /// <summary>The state bits of a controller, <c>AnimControllerBase_t.nFlags</c>.</summary>
 [Flags]
@@ -22,14 +42,20 @@ public enum Igi2AnimControllerBits
     /// <summary>The time has reached or passed an end of the clip.</summary>
     Ended = 0x4,
 
+    /// <summary>Rotations are SQUAD-interpolated through their keys' tangents (<c>AnimController_InterpolateHandler</c>, <c>igi2 0x5541A1</c>).</summary>
+    Spline = 0x8,
+
     /// <summary>No clip is set.</summary>
     NoClip = 0x10,
 
     /// <summary>The clip's events are not triggered.</summary>
     SuppressTriggers = 0x20,
 
-    /// <summary>Set on a dying soldier's main clip by its death entries (<c>HumanSoldier_InitStateDie</c>, <c>igi2 0x4E8924</c>).</summary>
-    Dying = 0x40,
+    /// <summary>
+    /// The clip's root translation is held at nought (<c>AnimController_InterpolateHandler</c>, <c>igi2 0x55410E</c>): set on a
+    /// dying soldier's main clip by its death entries (<c>HumanSoldier_InitStateDie</c>, <c>0x4E8924</c>).
+    /// </summary>
+    NoRootTranslation = 0x40,
 }
 
 /// <summary>What a controller's clip fires its anim triggers on: the object the clip plays on.</summary>
@@ -66,10 +92,136 @@ public interface IIgi2AnimTriggerTarget
 /// playing the whole body.
 /// </para>
 /// </remarks>
-public sealed class Igi2AnimController
+public sealed class Igi2AnimController : IIgi2PoseSource
 {
     /// <summary>The ticks a frame advances a clip by, <c>AnimController_nTicksPerFrame</c>.</summary>
     public const int TicksPerFrame = 160;
+
+    /// <summary>The mask a controller animates by unless given one, <c>AnimController_aisAnimated</c>: every bone (<c>AnimController_Open</c>, <c>igi2 0x5546E0</c>).</summary>
+    public static bool[] EveryBone { get; } = [.. Enumerable.Repeat(true, 256)];
+
+    /// <inheritdoc/>
+    public bool[] Mask { get; set; } = EveryBone;
+
+    /// <inheritdoc/>
+    public bool IsNoClip => (Flags & Igi2AnimControllerBits.NoClip) != 0;
+
+    /// <summary>
+    /// Takes the clip away as a blend that finished from this controller does (<c>AnimBlender_Blend</c>, <c>igi2 0x5D9DE6</c>, and
+    /// <c>AnimBlender_RunHandler</c>, <c>0x5D9653</c>): no clip, and the bit that says so.
+    /// </summary>
+    public void DropClip()
+    {
+        Flags |= Igi2AnimControllerBits.NoClip;
+        Clip = null;
+    }
+
+    /// <summary>
+    /// The clip's pose at the controller's time, <c>AnimController_InterpolateHandler</c> (<c>igi2 0x5540F0</c>): the root translation
+    /// linear between its keys (nought while <see cref="Igi2AnimControllerBits.NoRootTranslation"/> is set), and each masked bone's
+    /// orientation slerped from its active key toward the next, or through the tangents when the controller is a spline one.
+    /// </summary>
+    /// <param name="bones">The bones to write.</param>
+    /// <param name="mask">The bones to write.</param>
+    /// <remarks>
+    /// A key with no next is copied, its operation count with it (nought in every clip read); a slerp leaves the count as the
+    /// bones held it. The parameter is the time since the key over the segment, divided at 24 bits and stored.
+    /// </remarks>
+    public void Interpolate(Igi2BoneBuffer bones, bool[] mask)
+    {
+        ArgumentNullException.ThrowIfNull(bones);
+        ArgumentNullException.ThrowIfNull(mask);
+        if (Clip is not { } clip)
+        {
+            return;
+        }
+
+        if ((Flags & Igi2AnimControllerBits.NoRootTranslation) != 0)
+        {
+            bones.Root = default;
+        }
+        else if (Active(clip.Translation, static k => k.Time) is int key)
+        {
+            Igi2TranslationKey from = clip.Translation[key];
+            if (key + 1 < clip.Translation.Count)
+            {
+                Igi2TranslationKey to = clip.Translation[key + 1];
+                Fpu t = (Fpu)(double)(Time - from.Time) / (to.Time - from.Time);
+                bones.Root = new Vector3f(
+                    ((((Fpu)to.Translation.X - from.Translation.X) * t) + from.Translation.X).F,
+                    ((((Fpu)to.Translation.Y - from.Translation.Y) * t) + from.Translation.Y).F,
+                    ((((Fpu)to.Translation.Z - from.Translation.Z) * t) + from.Translation.Z).F);
+            }
+            else
+            {
+                bones.Root = from.Translation;
+            }
+        }
+
+        int count = Math.Min(bones.BoneCount, clip.BoneCount);
+        bool spline = (Flags & Igi2AnimControllerBits.Spline) != 0;
+        for (int bone = 0; bone < count && bone < mask.Length; bone++)
+        {
+            if (!mask[bone])
+            {
+                continue;
+            }
+
+            IReadOnlyList<Igi2RotationKey> track = clip.Rotations(bone);
+            if (Active(track, static k => k.Time) is not int key)
+            {
+                continue;
+            }
+
+            Igi2RotationKey from = track[key];
+            if (key + 1 >= track.Count)
+            {
+                bones.Orientations[bone] = from.Rotation;
+                bones.Ops[bone] = 0;
+                continue;
+            }
+
+            Igi2RotationKey to = track[key + 1];
+            float t = ((Fpu)(double)(Time - from.Time) / (to.Time - from.Time)).F;
+            Quaternion32 rotation = Igi2Pose.Slerp(from.Rotation, to.Rotation, t);
+            if (spline)
+            {
+                Quaternion32 tangent = Igi2Pose.Slerp(from.OutgoingTangent, to.IncomingTangent, t);
+                Fpu share = ((Fpu)1f - t) * t;
+                rotation = Igi2Pose.Slerp(rotation, tangent, (share + share).F);
+            }
+
+            bones.Orientations[bone] = rotation;
+        }
+    }
+
+    /// <summary>
+    /// A bone's active rotation key as it stands, unblended, <c>pptActiveRotationKeys[bone]</c>: the last the controller has reached.
+    /// </summary>
+    /// <param name="bone">The bone.</param>
+    /// <returns>The key's orientation, or <see langword="null"/> with no clip or key.</returns>
+    public Quaternion32? ActiveRotation(int bone)
+    {
+        if (Clip is not { } clip || (uint)bone >= (uint)clip.BoneCount)
+        {
+            return null;
+        }
+
+        IReadOnlyList<Igi2RotationKey> track = clip.Rotations(bone);
+        return Active(track, static k => k.Time) is int key ? track[key].Rotation : null;
+    }
+
+    /// <summary>The active key: the last whose time the controller has reached.</summary>
+    private int? Active<TKey>(IReadOnlyList<TKey> track, Func<TKey, int> timeOf)
+    {
+        int? key = null;
+        for (int i = 0; i < track.Count && timeOf(track[i]) <= Time; i++)
+        {
+            key = i;
+        }
+
+        return key;
+    }
 
     /// <summary>Gets the clip, or <see langword="null"/>.</summary>
     public Igi2AnimationClip? Clip { get; private set; }

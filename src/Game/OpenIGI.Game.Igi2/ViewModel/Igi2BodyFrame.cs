@@ -6,7 +6,7 @@ using OpenIGI.Game.Player;
 namespace OpenIGI.Game.Igi2.ViewModel;
 
 /// <summary>A human body as one tick left it, for drawing: its skinned model posed by its clips, and what its clips hang on it.</summary>
-/// <remarks>The pose is <see cref="Igi2BodyPoser"/>'s, the one the body's collision is traced against.</remarks>
+/// <remarks>The pose is the body's own (<see cref="Igi2HumanAnimation.Pose"/>), the one its collision is traced against.</remarks>
 public static class Igi2BodyFrame
 {
     /// <summary>Builds the models a body draws as this tick.</summary>
@@ -26,7 +26,12 @@ public static class Igi2BodyFrame
 
         Matrix3f orientation = human.Orientation;
         List<TitleWorldModel> models = [new TitleWorldModel(model, human.Position, orientation, pose.Pose, human, tick)];
-        foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(pose.AttachClip, pose.AttachTime, pose.Pose, heldModel))
+        if (pose.AttachClip is not { } attachClip)
+        {
+            return models;
+        }
+
+        foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(attachClip, pose.AttachTime, pose.Pose, heldModel))
         {
             Vector3f local = orientation.Transposed().Transform(part.Position);
             Vector3d at = new(human.Position.X + local.X, human.Position.Y + local.Y, human.Position.Z + local.Z);

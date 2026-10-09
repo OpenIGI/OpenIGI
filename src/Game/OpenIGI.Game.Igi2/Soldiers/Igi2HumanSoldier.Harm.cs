@@ -201,7 +201,7 @@ public sealed partial class Igi2HumanSoldier
         Animation.SetMainFlags(raise: Igi2AnimControllerBits.None, clear: Igi2AnimControllerBits.Loop);
         LieStill(lockOrientation: false);
         GroundTolerance = 8192f;
-        Animation.SetMainFlags(raise: Igi2AnimControllerBits.Dying, clear: Igi2AnimControllerBits.None);
+        Animation.SetMainFlags(raise: Igi2AnimControllerBits.NoRootTranslation, clear: Igi2AnimControllerBits.None);
         Locomotion.Current = (_, _) => RunDie();
     }
 
@@ -250,7 +250,7 @@ public sealed partial class Igi2HumanSoldier
         PlayRow(KneelDeathRows[(int)(draw % (uint)KneelDeathRows.Count)], 0f);
         LieStill(lockOrientation: true);
         GroundTolerance = 8192f;
-        Animation.SetMainFlags(raise: Igi2AnimControllerBits.Dying, clear: Igi2AnimControllerBits.None);
+        Animation.SetMainFlags(raise: Igi2AnimControllerBits.NoRootTranslation, clear: Igi2AnimControllerBits.None);
         Locomotion.Current = (_, _) => RunDie();
     }
 
