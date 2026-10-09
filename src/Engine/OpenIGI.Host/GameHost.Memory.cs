@@ -32,8 +32,10 @@ internal sealed partial class GameHost
         var text = new StringBuilder();
         CultureInfo invariant = CultureInfo.InvariantCulture;
 
-        using (Process self = Process.GetCurrentProcess())
+        // A browser has no process to ask.
+        if (!OperatingSystem.IsBrowser())
         {
+            using Process self = Process.GetCurrentProcess();
             text.Append(invariant, $"Process: {Mib(self.PrivateMemorySize64)} private, {Mib(self.WorkingSet64)} working set.\n");
         }
 
@@ -53,12 +55,18 @@ internal sealed partial class GameHost
     /// <remarks>
     /// Called under the held frame of a backdrop swap, where a collection's pause is not seen. A level's
     /// worth of decoded pictures has just gone through the large-object heap, which the collector does
-    /// not compact unless asked -- the holes they leave are memory the process keeps.
+    /// not compact unless asked -- the holes they leave are memory the process keeps. The browser's runtime
+    /// (Mono) has no such heap and throws PlatformNotSupportedException for any mode but Default, so there
+    /// the collection runs without it.
     /// </remarks>
     private void TrimAfterLoad()
     {
         _device.TrimMemory();
-        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        if (!OperatingSystem.IsBrowser())
+        {
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        }
+
         GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
     }
 
