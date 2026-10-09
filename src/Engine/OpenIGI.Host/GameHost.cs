@@ -3320,8 +3320,9 @@ internal sealed partial class GameHost : IDisposable
                     }
 
                     // The level's ambience, which is keyed off where the ear is rather than where the
-                    // body stands: an area is a box you listen from the inside of.
-                    TickAmbience(_player.EyeUnits);
+                    // body stands: an area is a box you listen from the inside of. The areas ran in the walk;
+                    // this is what they asked the speakers for.
+                    TickAmbience();
 
                 }
                 else if (_playerDead)
@@ -3423,6 +3424,13 @@ internal sealed partial class GameHost : IDisposable
                         QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
                 }
                 _cutscenes?.FinishExpressionTick();
+
+                // Where the ear is for the next tick's ambient areas: the camera as this tick left it (0x416D40's
+                // view, +96) -- the cinematic's while one plays, the player's eye otherwise. On the probe the areas
+                // were outside on tick 0, before any camera was placed, and inside from tick 1, while the skipped
+                // intro was still closing.
+                _ambienceListener = _cutscenes?.Frame?.Camera.Position * WorldScene.UnitsPerMetre
+                    ?? (_player is { } ear ? ear.EyeUnits : _ambienceListener);
                 if (_introSkipPending)
                 {
                     StopCutsceneSounds();

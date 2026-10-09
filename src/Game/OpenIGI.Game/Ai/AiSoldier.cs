@@ -91,6 +91,17 @@ public sealed class AiSoldier
 
     // This tick's inputs, for the action the stack runs.
     private double _rootMotionThisTick;
+
+    /// <summary>Gets or sets whether the body's turn and move wait for <see cref="StepBodyAfterClip"/>.</summary>
+    /// <remarks>
+    /// The original runs a soldier's HumanAI as a child of its Human, and the Human's own update (<c>0x45D080</c>)
+    /// after it: the body machine, which may start a new clip, then the turn and the move by the delta of the clip
+    /// that is playing NOW. A renderer that picks the clip after the brain sets this, and steps the body once it
+    /// knows the clip.
+    /// </remarks>
+    public bool StepsBodyAfterClip { get; set; }
+
+    private bool _bodyStepPending;
     private bool _enemyAlive = true;
 
     // Floats 0 and 1 of this tick's input frame: the turn and the pitch, each over pi.
@@ -2489,7 +2500,7 @@ public sealed class AiSoldier
                 RunWithoutAction();
             }
 
-            StepBody();
+            StepBodyOrWait();
             return;
         }
 
@@ -2589,7 +2600,7 @@ public sealed class AiSoldier
             RunWithoutAction();
         }
 
-        StepBody();
+        StepBodyOrWait();
     }
 
     /// <summary>Takes this tick's humans: their descriptions update, and anyone gone from the list is dropped.</summary>
@@ -2797,8 +2808,17 @@ public sealed class AiSoldier
         }
 
         Activity = AiSoldierActivity.Engaging;
+        if (_combatEntryTick)
+        {
+            _combatEntryTick = false;
+            return;
+        }
+
         Fight(tick, _lastSeenFeet);
     }
+
+    // The patrol arm's stance entry still to run: a tick that only installs the stance per-tick.
+    private bool _combatEntryTick;
 
     /// <summary>
     /// The LookAtEvent per-tick (<c>0x48E0A0</c>): sets its deadline on its first tick, turns to the event
@@ -3683,6 +3703,33 @@ public sealed class AiSoldier
     /// last two waypoints, which by construction lie on the ground the graph was authored against.
     /// </para>
     /// </remarks>
+    private void StepBodyOrWait()
+    {
+        if (StepsBodyAfterClip)
+        {
+            _bodyStepPending = true;
+            return;
+        }
+
+        StepBody();
+    }
+
+    /// <summary>Turns and moves the body by the delta of the clip that is playing after this tick's machine.</summary>
+    /// <param name="rootMotion">The clip's delta along the body's forward axis, in units.</param>
+    /// <param name="rootMotionLateral">Its delta along the body's right axis, in units.</param>
+    public void StepBodyAfterClip(double rootMotion, double rootMotionLateral)
+    {
+        if (!_bodyStepPending)
+        {
+            return;
+        }
+
+        _bodyStepPending = false;
+        _rootMotionThisTick = rootMotion;
+        _rootLateralThisTick = rootMotionLateral;
+        StepBody();
+    }
+
     private void StepBody()
     {
         float turn = _turnInput;
@@ -3810,6 +3857,13 @@ public sealed class AiSoldier
             _patrolProne = prone && Arm == AiCombatArm.Patrol;
             _repositionLatched = false;
             _patrolKneeling = crouched && !_patrolProne && Arm == AiCombatArm.Patrol;
+
+            // SetCombat's start (0x44D160) is 0x48ABA0 for the patrol types, which installs a stance ENTRY as the
+            // run function -- 0x48BBD0, 0x48C250 or 0x48C510 -- and that entry's whole tick is to install the stance's
+            // per-tick (CombatStand 0x48BC00, Kneel 0x48C280, LieDown 0x48C540) for the next. The guards' start
+            // (0x48D000) installs GuardCombatStand itself, which runs at once. Probed on mission 4: patrol 411 took
+            // combat on tick 4384 and drew its first evasion roll (0x48BE30, from CombatStand) on 4385.
+            _combatEntryTick = (int)_type is >= 7 and <= 10 or >= 15 and <= 19 or >= 23 and <= 25;
         }
 
         _combatInstalled = true;
@@ -4291,6 +4345,13 @@ public sealed class AiSoldier
         // The kneel and prone arms answer a move with the stand arm (0x48BBD0) and the move's own per-tick
         // on the same tick, writing the posture channel 0: the soldier sets off as it rises, with no
         // wait for the stand state and no second decision.
+        //
+        // The STAND arm only installs it: 0x48BC00 hands Follow and RePosition to 0x48AE70 with their entries
+        // (0x48C850, 0x48C750), which set the run function to the movement's per-tick and return -- so the walk
+        // starts on the next tick, from the latched branches above. Probed on mission 4: patrol 411 chose Follow on
+        // tick 4385, wrote its first forward on 4386 (the body entering run state 17 then) and moved from 4387.
+        bool standArmInstallsMove = !_patrolProne && !_patrolKneeling
+            && action is AiPatrolAction.RePosition or AiPatrolAction.Follow;
         if ((_patrolProne || _patrolKneeling)
             && action is AiPatrolAction.RePosition or AiPatrolAction.Follow or AiPatrolAction.LookForTarget)
         {
@@ -4371,13 +4432,21 @@ public sealed class AiSoldier
                 if (_occupancy is null)
                 {
                     HeadFor(CurrentNode);
-                    AdvanceInCombat();
+                    if (!standArmInstallsMove)
+                    {
+                        AdvanceInCombat();
+                    }
+
                     _repositionLatched = _route.Count > 0;
                 }
                 else if (_occupancy.ClaimedNode(this) is int claimed)
                 {
                     HeadFor(claimed);
-                    AdvanceInCombat();
+                    if (!standArmInstallsMove)
+                    {
+                        AdvanceInCombat();
+                    }
+
                     _repositionLatched = _route.Count > 0;
                 }
 
@@ -4390,7 +4459,11 @@ public sealed class AiSoldier
                     _followResearch = false;
                 }
 
-                FollowTarget(enemy);
+                if (!standArmInstallsMove)
+                {
+                    FollowTarget(enemy);
+                }
+
                 return;
 
             case AiPatrolAction.Fire:

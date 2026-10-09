@@ -122,6 +122,9 @@ internal sealed partial class GameHost
     /// <summary>The level's authored ambience boxes. Null until a mission is up.</summary>
     private AmbientAreaRegistry? _ambience;
 
+    // The camera's position as the player's update last left it, which the ambient areas test against.
+    private Vector3d? _ambienceListener;
+
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
 
@@ -589,21 +592,18 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
-    /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
     /// <remarks>
     /// The beds are played <b>flat</b>, not positionally, because that is what the original does with
     /// them: it sets the sound's position to the listener's every tick, which is a wash around the
     /// player rather than a source in the world. Gain is the area's fade, so walking into a machine
     /// room brings its hum up over twenty ticks instead of switching it on at the doorway.
     /// </remarks>
-    private void TickAmbience(Vector3d listenerInUnits)
+    private void TickAmbience()
     {
         if (_ambience is not { } ambience || _sounds is null)
         {
             return;
         }
-
-        ambience.Tick(listenerInUnits);
 
         foreach (PlacedAmbientArea area in ambience.Areas)
         {
@@ -637,8 +637,8 @@ internal sealed partial class GameHost
                 }
                 else
                 {
-                    // A one-shot bed that has run out. Letting go of it here is what allows the gap to
-                    // rearm and the area to speak again.
+                    // A one-shot bed that has run out: the speakers let it go. The area keeps its instance until a
+                    // silent fade releases it (AmbientAreaRegistry), as the original's did on the probe.
                     _ambientVoices.Remove(area);
                     area.IsSounding = false;
                 }

@@ -225,6 +225,66 @@ public sealed class BoneClip
             || TryFind(eventId, EventSpan.AfterSeam, out time);
     }
 
+    /// <summary>Whether an event of the type is authored exactly where the clock stands.</summary>
+    /// <param name="eventId">The event id stored in the animation.</param>
+    /// <returns><see langword="true"/> when such an event sits at the current time.</returns>
+    /// <remarks>
+    /// A clip started this tick has no interval yet, but the original's point query on a new node (flag
+    /// <c>0x8000</c>, <c>0x4D4B60</c>) dispatches what is authored at its start -- a walk cycle's first footstep.
+    /// </remarks>
+    public bool HasEventAtCurrentTime(int eventId)
+    {
+        foreach (BoneAnimationEvent animationEvent in _animation.Events)
+        {
+            if (animationEvent.EventId == eventId && animationEvent.Time == Time)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the clock's next step will cross an event of the type -- the interval the original has
+    /// already dispatched when this clock stands where it does.</summary>
+    /// <param name="eventId">The event id stored in the animation.</param>
+    /// <returns><see langword="true"/> when such an event lies in (time, time + rate], wrapping as a looping clip does.</returns>
+    /// <remarks>
+    /// The original advances a clip on the tick the clip is started, with a point query at its start (flag
+    /// <c>0x8000</c>), and drops that first step's root motion; this clock starts a step later and samples its root
+    /// motion a step ahead, so the two travel identically while this clock reads one step behind. Probed on mission
+    /// 4: patrol 411's walk (clip 57) read 160 on the original after the tick it set off, 0 here, at the same
+    /// position, and its footsteps fell on ticks 1, 17, 34 where reading the interval behind gave 2, 18, 35.
+    /// </remarks>
+    public bool UpcomingEvent(int eventId)
+    {
+        float duration = _animation.Duration;
+        float from = Time;
+        float to = Time + Rate;
+        foreach (BoneAnimationEvent animationEvent in _animation.Events)
+        {
+            if (animationEvent.EventId != eventId)
+            {
+                continue;
+            }
+
+            float at = animationEvent.Time;
+            if (Rate > 0f)
+            {
+                if ((at > from && at <= to) || (Loops && to >= duration && at > -1f && at <= to - duration))
+                {
+                    return true;
+                }
+            }
+            else if (Rate < 0f && ((at < from && at >= to) || (Loops && to <= 0f && at >= to + duration)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private enum EventSpan
     {
         AtStart,
@@ -307,7 +367,14 @@ public sealed class BoneClip
     /// <returns>The root's position, or zero when the clip has no translation track.</returns>
     public Vector3f SampleRoot() => SampleRoot(Time);
 
-    private Vector3f SampleRoot(float time) =>
+    /// <summary>Sets the clock, as <c>0x4D65B0</c> does -- the gait entries' phase carry.</summary>
+    /// <param name="time">The new time.</param>
+    public void SetTime(float time) => Time = time;
+
+    /// <summary>Samples the root track at a time.</summary>
+    /// <param name="time">The clip time.</param>
+    /// <returns>The root's translation there.</returns>
+    public Vector3f SampleRoot(float time) =>
         _animation.Translation.Length == 0
             ? default
             : BoneTrackSampler.Sample(_animation.Translation, time);

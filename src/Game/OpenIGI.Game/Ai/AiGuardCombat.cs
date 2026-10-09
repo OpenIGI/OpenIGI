@@ -277,6 +277,12 @@ public sealed class AiGuardCombat
             return new AiCombatCommand { Aim = AiAimMode.Reloading };
         }
 
+        // 0x48D1D1: (int)(rand * random + minimum) into HumanAI+15828, which nothing reads -- but the draw is from the
+        // level's one stream, so it is taken here, on every tick that reaches this point: before the burst, and on
+        // each tick the target sits in the cone unseen or the aimers are full. Probed on mission 4: 403's first
+        // engagement drew here, then 0x48B9C0's burst factor, on tick 4551.
+        _ = _random();
+
         if (!sense.Visible)
         {
             return new AiCombatCommand { Aim = AiAimMode.None };

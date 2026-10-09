@@ -99,7 +99,11 @@ public sealed class SoldierRenderer : IDisposable
     // at model+0x78. This is the exact value used by the retail detector; the derived vertex radius is
     // not a substitute because it is materially smaller for the retail soldier models.
     private readonly Dictionary<SoldierView, float> _detectorMarkerScaleMetres = [];
-    private readonly IgiRandom _aiRandom = new();
+    private IgiRandom _aiRandom = new();
+
+    /// <summary>Sets the stream the soldiers draw from -- the level's one global stream -- before they are animated.</summary>
+    /// <param name="random">The stream.</param>
+    public void UseRandom(IgiRandom random) => _aiRandom = random ?? throw new ArgumentNullException(nameof(random));
 
     // Each soldier's combat row, resolved from its own AIType at the difficulty in force. It is what
     // gives a guard its maximum health -- sub_406F70 writes the row's "Damage scale" over Human+600,
@@ -319,6 +323,28 @@ public sealed class SoldierRenderer : IDisposable
 
         _hitQuietUntil[view] = _tick + _hitCooldown();
         _hitSound(prefix, variants, view.Position);
+    }
+
+    /// <summary>Whether a gait entry carries the clip phase across: state 2 from 1, 3 or 17, state 3 from 1 or 2.</summary>
+    /// <param name="brain">The soldier.</param>
+    /// <param name="fromAnimation">The clip it played before this tick's entry.</param>
+    /// <param name="toAnimation">The clip the entry started.</param>
+    /// <returns><see langword="true"/> for the gait pairs <c>0x45ACA0</c>, <c>0x4581E0</c> and <c>0x458250</c> carry.</returns>
+    private static bool CarriesGaitPhase(AiSoldier brain, int fromAnimation, int toAnimation)
+    {
+        if (brain.Body is not HumanSoldierBodyMachine)
+        {
+            return false;
+        }
+
+        HumanBodyStateTable table = brain.Body.StateTable;
+        bool Plays(int animation, int state) => table.AnimationOf(state) == animation;
+        bool fromWalk = Plays(fromAnimation, HumanSoldierStates.WalkState);
+        bool fromForward = Plays(fromAnimation, HumanSoldierStates.ForwardState);
+        bool fromFast = Plays(fromAnimation, HumanSoldierStates.FastForwardState);
+        bool fromRun = Plays(fromAnimation, HumanSoldierStates.RunState);
+        return (Plays(toAnimation, HumanSoldierStates.ForwardState) && (fromWalk || fromFast || fromRun))
+            || (Plays(toAnimation, HumanSoldierStates.FastForwardState) && (fromWalk || fromForward));
     }
 
     /// <summary>Resolves what a soldier's step landed on and hands the footstep out.</summary>
@@ -1705,7 +1731,10 @@ public sealed class SoldierRenderer : IDisposable
                 int phase = brainTask is not null && visionPhases.TryGetValue(brainTask, out int assigned)
                     ? assigned
                     : index & 3;
-                AiSoldier brain = new(graph, initialPosition, GammaOf(view), phase, index, _aiRandom, view.Soldier.Class);
+                AiSoldier brain = new(graph, initialPosition, GammaOf(view), phase, index, _aiRandom, view.Soldier.Class)
+                {
+                    StepsBodyAfterClip = true,
+                };
                 // A soldier on the player's own team must not engage the player. The brain's noise and
                 // vision gates read this: detection and every player-origin gunshot/impact/walk event are
                 // refused for a same-team player, so the friendly patrol stands down instead of shooting us.
@@ -4121,13 +4150,14 @@ public sealed class SoldierRenderer : IDisposable
 
         // Read here, not after the clip selection below: the event belongs to the interval this
         // Tick just advanced, and SetMoving may replace the clip further down. A fresh BoneClip has
-        // no interval yet, so asking afterwards would quietly swallow the step.
+        // no interval yet, so asking afterwards would quietly swallow the step. It is REPORTED after the
+        // brain, though: the HumanAI is a child the HumanSoldier's update runs first, and the step's pitch
+        // (0x45A7F0, at the end of the Human's own 0x45D080) is drawn from the level's stream after
+        // whatever that AI drew -- on the probe each walker's draws went action delay, then step.
+        BoneClip? clipBefore = view.Bones.SourceOf(0);
+        int animationBefore = view.CurrentAnimation;
         if (!view.IsDead && view.Bones.SourceOf(0) is { } bone0)
         {
-            if (bone0.CrossedEvent(FootstepSounds.EventId))
-            {
-                ReportFootstep(view);
-            }
 
             // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
             // event 1040 plays "bodyfall_9", etc.
@@ -4167,12 +4197,12 @@ public sealed class SoldierRenderer : IDisposable
             AttachStagedActor(member);
         }
 
-        // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
-        if (brain.RequestedAnimation >= 0
-            && view.Bones.SourceOf(0)?.EndedThisTick == true)
-        {
-            brain.ReportAnimationFinished();
-        }
+        // The AI runs second, so the root motion it is handed is this tick's, not last tick's. A clip that ran out in
+        // this advance is told to the brain only after it has run, though: the original's body machine leaves the
+        // animation state in the Human's update, after its AI, so the AI sees it on the next tick. On the probe mission
+        // 4's patrol 411 stood one tick after its clip 50 ended before taking its next command; telling the brain at
+        // once had it walk off a tick early.
+        bool requestedClipEnded = brain.RequestedAnimation >= 0 && view.Bones.SourceOf(0)?.EndedThisTick == true;
 
         if (member is { IsCutsceneActor: true })
         {
@@ -4552,6 +4582,50 @@ public sealed class SoldierRenderer : IDisposable
             // The body walks while the walker writes forward, and stands while it holds -- at a door,
             // on arrival, or turning on the spot.
             view.SetMoving(brain.WalksForward, walkAnimation);
+        }
+
+        // The body turns and moves now, after the clip this tick chose (0x45D080: machine, then turn, then move), by
+        // that clip's delta: the advance of a clip that played on; nothing for one started this tick -- its first tick's
+        // delta is dropped -- except the jump a gait entry makes when it carries the phase across (0x4D65B0). On the
+        // probe mission 4's patrol 420 stood still on the tick it reached node 117, where taking the walk's advance first
+        // carried it a step past; and squad member 400 moved 68 units on its walk-to-run tick, root(30.13) - root(0).
+        BoneClip? clipAfter = view.Bones.SourceOf(0);
+        double stepForward = travel;
+        double stepLateral = lateral;
+        if (clipAfter is not null && !ReferenceEquals(clipAfter, clipBefore))
+        {
+            Vector3f jump = default;
+            if (clipBefore is not null && CarriesGaitPhase(brain, animationBefore, view.CurrentAnimation))
+            {
+                // 0x45ACA0/0x4581E0 (state 2) and 0x458250 (state 3): the new clip starts at the old one's phase, read
+                // before this tick's advance on the original's clock -- where this clock already is after its advance.
+                float phase = clipBefore.Time / clipBefore.Animation.Duration;
+                clipAfter.SetTime(clipAfter.Animation.Duration * phase);
+                Vector3f start = clipAfter.SampleRoot();
+                Vector3f zero = clipAfter.SampleRoot(0f);
+                jump = new Vector3f(start.X - zero.X, start.Y - zero.Y, start.Z - zero.Z);
+            }
+
+            stepForward = jump.Y;
+            stepLateral = jump.X;
+        }
+
+        brain.StepBodyAfterClip(stepForward, stepLateral);
+        if (requestedClipEnded)
+        {
+            brain.ReportAnimationFinished();
+        }
+
+        // The step, after the brain and after the clip this tick chose, from the clip playing now (0x45A7F0 takes only
+        // an event of the current animation): the interval the original's clock has just covered, which this clock
+        // covers next (BoneClip.UpcomingEvent) -- and on the tick a clip starts, its start too. On the probe mission
+        // 4's patrols stepped on the tick they set off (tick 1) and every 17 ticks after.
+        if (!view.IsDead
+            && view.Bones.SourceOf(0) is { } clipNow
+            && (clipNow.UpcomingEvent(FootstepSounds.EventId)
+                || (!ReferenceEquals(clipNow, clipBefore) && clipNow.HasEventAtCurrentTime(FootstepSounds.EventId))))
+        {
+            ReportFootstep(view);
         }
 
         view.PlaceAt(brain.Position, brain.Orientation);

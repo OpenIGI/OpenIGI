@@ -850,6 +850,10 @@ internal sealed partial class GameHost
                 name => _magic?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
         }
 
+        // The level's one global stream, seeded as LevelFlow's start seeds it (0x416D90), before the first draw:
+        // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
+        _soundRandom.SeedForLevel();
+
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
         _destructibles = DestructibleObjectRegistry.Build(
@@ -912,6 +916,7 @@ internal sealed partial class GameHost
         }
 
         EndStage("the soldiers' meshes and textures");
+        _soldiers.UseRandom(_soundRandom);
         _soldiers.Cutscenes = _cutscenes;
 
         // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
@@ -945,7 +950,18 @@ internal sealed partial class GameHost
             HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
+        // Each area draws its first gap at load (0x44C740) and updates where the tree places it, against the camera
+        // as the player's update last left it -- nowhere on the first tick, so every area starts silent and draws.
         _ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
+        _ambienceListener = null;
+        if (_cutscenes is { } walked)
+        {
+            _ambience.AttachTo(
+                walked.Walker,
+                () => _ambienceListener,
+                name => _sounds?.Definitions?.TryResolve(name, out SoundDefinition? found) == true
+                    && found is { IsPlayable: true });
+        }
         _ambientVoices.Clear();
         if (_ambience.Areas.Count > 0)
         {
