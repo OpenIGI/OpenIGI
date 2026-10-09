@@ -149,6 +149,22 @@ public sealed class Igi2HumanView
     /// <summary>Gets or sets what kicks the sideways turn for a while, <c>vOffsetViewGamma</c>.</summary>
     public float YawOffset { get; set; }
 
+    /// <summary>
+    /// Looks straight ahead of the body: the pitch, the sideways turn, what they are aimed at, their kicks and the breathing
+    /// sway all zero, as <c>HumanPlayer_InitStateActivateDoor</c> (<c>igi2 0x4AD4CD</c>) leaves the view.
+    /// </summary>
+    /// <remarks>The original zeroes the shoulders' pitch with them, which this view does not keep.</remarks>
+    public void LookAhead()
+    {
+        Pitch = 0f;
+        IdealPitch = 0f;
+        PitchOffset = 0f;
+        BreathPitchOffset = 0f;
+        Yaw = 0f;
+        IdealYaw = 0f;
+        YawOffset = 0f;
+    }
+
     /// <summary>Gets or sets how fast a kick to the view dies away each tick, <c>vDampenOffsetView</c>; zero when the view is made.</summary>
     public float OffsetDamping { get; set; }
 

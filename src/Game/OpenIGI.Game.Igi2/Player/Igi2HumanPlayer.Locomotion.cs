@@ -32,6 +32,7 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.Die] = (_, _) => EnterDie();
         states[Igi2PlayerState.DieAlternate] = (_, _) => EnterDie();
         states[Igi2PlayerState.FlatCrawl] = (_, _) => EnterFlatCrawl();
+        states[Igi2PlayerState.ActivateDoor] = (_, _) => EnterActivateDoor();
         foreach (Gait gait in Gaits)
         {
             states[gait.State] = (_, _) => EnterGait(gait);

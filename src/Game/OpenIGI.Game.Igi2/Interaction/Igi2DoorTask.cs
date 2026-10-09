@@ -204,6 +204,10 @@ public sealed partial class Igi2DoorTask : GameTask, IIgi2RunTask, IIgi2Door, II
     /// <summary>Gets which way it faces now, row by row.</summary>
     public IReadOnlyList<float> CurrentOrientation => _orientation;
 
+    /// <inheritdoc/>
+    /// <remarks><c>GameFunctions_GetMagicVertex</c> (<c>igi2 0x48CCD0</c>) at vertex 0, from its pose as it stands.</remarks>
+    public Vector3d MagicVertex => Igi2MagicVertex.Position(Models?.Invoke(Model), 0, _orientation, _position);
+
     /// <summary>Gets where it stood at the start of the tick, <c>tLastPosition</c>.</summary>
     public Vector3d LastPosition => _lastPosition;
 
@@ -364,7 +368,7 @@ public sealed partial class Igi2DoorTask : GameTask, IIgi2RunTask, IIgi2Door, II
         }
 
         float[] m = _orientation;
-        Vector3d vertex = Igi2MagicVertex.Position(Models?.Invoke(Model), 0, m, _position);
+        Vector3d vertex = MagicVertex;
         Fpu dx = (Fpu)context.ViewPosition.X - vertex.X;
         Fpu dy = (Fpu)context.ViewPosition.Y - vertex.Y;
         Fpu dz = (Fpu)context.ViewPosition.Z - vertex.Z;

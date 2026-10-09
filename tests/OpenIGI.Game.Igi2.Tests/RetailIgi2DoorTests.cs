@@ -26,6 +26,9 @@ public sealed class RetailIgi2DoorTests
     /// <summary>The cargo blockhouse's switch, <c>Switch_170</c>.</summary>
     private const int BlockhouseSwitch = 170;
 
+    /// <summary>The large building's upper door, <c>Door_3733</c>: locked until its lock is picked, which takes four seconds.</summary>
+    private const int Picked = 3733;
+
     /// <summary>A door of the large building, <c>Door_3697</c>: never locked, though its lock could be picked, and it swings −90°.</summary>
     private const int LargeBuilding = 3697;
 
@@ -221,6 +224,82 @@ public sealed class RetailIgi2DoorTests
         m.Run.Tick();
         Assert.Equal((0f, Igi2DoorTask.HoldTicks - 1), (door.Slider, door.HoldTimer));
     }
+
+    /// <summary>
+    /// The player facing a locked door whose lock can be picked kneels at it, facing it, and picks it while the key is held: the
+    /// lock sounds until, once the pick time is out, the lock is picked, the door opens and the player stands again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_player_picks_a_locked_door()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        m.Run.Tick();
+        Igi2DoorTask door = m.Door(Picked);
+        Assert.Equal((true, true, 4f), (door.IsLocked, door.IsPickable, door.PickLockTime));
+        Igi2TitlePlayer player = Before(m, door);
+        Assert.Same(door, player.Human.EvaluateTarget);
+
+        Hold(player, pressed: true);
+        Igi2HumanPlayer human = player.Human;
+        Assert.Equal(Igi2PlayerState.ActivateDoor, human.Locomotion.CurrentState);
+        Assert.Equal((4 * 30, 3, true, true), (human.TimedActionTime, human.CameraMode, human.IsProgressBar, human.IsActivating));
+        Assert.Contains(m.Sounds.Playing, static s => s.Name == "tba_picklock");
+        Vector3d vertex = door.MagicVertex;
+        double reach = Math.Sqrt(Math.Pow(human.Position.X - vertex.X, 2) + Math.Pow(human.Position.Y - vertex.Y, 2));
+        Assert.Equal(Igi2HumanPlayer.PickReach, reach, 1.0);
+
+        for (int tick = 1; tick < 4 * 30; tick++)
+        {
+            Hold(player);
+            Assert.False(door.IsPicked);
+        }
+
+        Hold(player);
+        Assert.Equal((true, true), (door.IsPicked, door.IsOpenDoor));
+        Assert.Equal((false, false, 1), (human.IsActivating, human.IsProgressBar, human.CameraMode));
+        Assert.Equal(Igi2PlayerState.Stand, human.Locomotion.CurrentState);
+        // pickloop_end is asked for, but no sound script defines it, so nothing sounds.
+        Assert.DoesNotContain(m.Sounds.Playing, static s => s.Name == "pickloop_end");
+        Assert.DoesNotContain(m.Sounds.Playing, static s => s.Name == "tba_picklock" && s.IsAlive);
+
+        m.Run.Tick();
+        Assert.False(door.IsLocked);
+    }
+
+    /// <summary>
+    /// Letting go of the key stops the picking, but not in the first twenty ticks; the lock stays locked and the player stands.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Letting_go_stops_the_picking_after_twenty_ticks()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        m.Run.Tick();
+        Igi2DoorTask door = m.Door(Picked);
+        Igi2TitlePlayer player = Before(m, door);
+        Hold(player, pressed: true);
+        for (int tick = 0; tick < Igi2HumanPlayer.PickReleaseTicks; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle);
+            Assert.Equal(Igi2PlayerState.ActivateDoor, player.Human.Locomotion.CurrentState);
+        }
+
+        player.Tick(RetailIgi2Mission1.Idle);
+        Assert.Equal(Igi2PlayerState.Stand, player.Human.Locomotion.CurrentState);
+        Assert.Equal((false, false), (door.IsPicked, player.Human.IsActivating));
+    }
+
+    // The player 2400 units behind a door's vertex along its Y, facing it.
+    private static Igi2TitlePlayer Before(RetailIgi2Mission1 m, Igi2DoorTask door)
+    {
+        float[] f = Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
+        Vector3d ahead = new(f[1], f[4], f[7]);
+        Vector3d at = Vertex(m, door) - (ahead * 2400.0);
+        float facing = MathF.Atan2(-(float)ahead.X, (float)ahead.Y);
+        return RetailIgi2Mission1.Stand(m.Collision!, m.Level, door, new Vector3d(at.X, at.Y, door.Position.Z), facing, m.Sounds);
+    }
+
+    private static void Hold(Igi2TitlePlayer player, bool pressed = false) =>
+        player.Tick(RetailIgi2Mission1.Idle with { Held = PlayerAction.Activate, Pressed = pressed ? PlayerAction.Activate : default });
 
     private static Vector3d Vertex(RetailIgi2Mission1 m, Igi2DoorTask door)
     {

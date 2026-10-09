@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
+using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -21,6 +22,38 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Gets the ticks the current activation has run, <c>Human_s + 0x754</c>.</summary>
     public int ActivateTime { get; private set; }
+
+    /// <summary>The state animation slot picking a lock plays, <c>0x45</c>.</summary>
+    public const int PickLockAnimation = 69;
+
+    /// <summary>How far out from a door's vertex a picker kneels, along the door's Y, <c>3481.6</c> (0.85 m).</summary>
+    public const double PickReach = 3481.6;
+
+    /// <summary>The ticks at the start of picking during which letting go of the key does not stop it, <c>nTBATimeout</c>.</summary>
+    public const int PickReleaseTicks = 20;
+
+    /// <summary>The sound a lock makes as it gives.</summary>
+    public const string PickedSound = "pickloop_end";
+
+    // A half turn, the float 0x40490FDB.
+    private const float HalfTurn = 3.1415927f;
+
+    private IIgi2SoundInstance? _timedActionSound;
+
+    /// <summary>Gets the ticks a timed action takes, <c>nActivateTime</c> (<c>HumanPlayer_t + 0xC34</c>): a lock's pick time.</summary>
+    public int TimedActionTime { get; private set; }
+
+    /// <summary>Gets the ticks a timed action has run, <c>nActivateTimer</c> (<c>HumanPlayer_t + 0xC38</c>).</summary>
+    public int TimedActionTimer { get; private set; }
+
+    /// <summary>Gets a value indicating whether the status screen shows a timed action's progress, <c>isProgressBar</c>.</summary>
+    public bool IsProgressBar { get; private set; }
+
+    /// <summary>Gets the ticks left before letting go of the key stops a timed action, <c>nTBATimeout</c>.</summary>
+    public int TbaTimeout { get; private set; }
+
+    /// <summary>Gets the posture a timed action was started from, which it returns to, <c>tActivateContext.ePrevStance</c>.</summary>
+    public Igi2HumanPose PreviousStance { get; private set; }
 
     /// <summary>
     /// Looks for something to activate, <c>Human_UpdateActivate</c> (<c>igi2 0x500D10</c>), once a tick in the update after the
@@ -83,8 +116,8 @@ public sealed partial class Igi2HumanPlayer
     /// else a human activates is not ported; retail leaves an activation of an unknown kind running.
     /// </summary>
     /// <remarks>
-    /// A locked door that can be picked starts the player picking it (state 38), which is not ported yet; one that cannot
-    /// leaves the activation running, as retail does, though the view does not find such a door to begin with.
+    /// A locked door that can be picked starts the player picking it (<see cref="Igi2PlayerState.ActivateDoor"/>); one that
+    /// cannot leaves the activation running, as retail does, though the view does not find such a door to begin with.
     /// </remarks>
     private void InitActivate(IIgi2Activatable target)
     {
@@ -101,6 +134,11 @@ public sealed partial class Igi2HumanPlayer
             case Igi2ActivateKind.Door when ActivatingTarget is IIgi2Door door:
                 if (door.IsLocked)
                 {
+                    if (door.IsPickable)
+                    {
+                        Go(Igi2PlayerState.ActivateDoor);
+                    }
+
                     break;
                 }
 
@@ -114,6 +152,125 @@ public sealed partial class Igi2HumanPlayer
 
                 EndActivate();
                 break;
+        }
+    }
+
+    // State 38 -- HumanPlayer_InitStateActivateDoor 0x4AD2D0, RunStateActivateDoor 0x4AD620.
+    private void EnterActivateDoor()
+    {
+        if (ActivatingTarget is not IIgi2Door door)
+        {
+            return;
+        }
+
+        PreviousStance = Pose;
+        Pose = Igi2HumanPose.Standing;
+        CurrentUpperBody = 0;
+        RequestedUpperBody = 0;
+        Animation.ClearUpperBody(0.4f);
+        Animation.PlayState(PickLockAnimation, 0, 0f);
+        Animation.StepMain();
+
+        // Kneeling at the door's vertex, a metre and a bit out along its Y, on the side the player stands, and facing it.
+        float[] m = [.. door.CurrentOrientation];
+        Vector3d vertex = door.MagicVertex;
+        Fpu dx = (Fpu)Position.X - vertex.X;
+        Fpu dy = (Fpu)Position.Y - vertex.Y;
+        Fpu dz = (Fpu)Position.Z - vertex.Z;
+        if (((((Fpu)m[7] * dz) + ((Fpu)m[4] * dy)) + ((Fpu)m[1] * dx)).Value < 0.0)
+        {
+            m = Igi2Pose.RotateGamma(m, HalfTurn);
+        }
+
+        Fpu x = ((((Fpu)m[2] + m[0]) * 0.0) + ((Fpu)m[1] * PickReach)) + vertex.X;
+        Fpu y = ((((Fpu)m[5] + m[3]) * 0.0) + ((Fpu)m[4] * PickReach)) + vertex.Y;
+        Fpu z = (((Fpu)m[8] + m[6]) * 0.0) + ((Fpu)m[7] * PickReach);
+        PopPosition(new Vector3d(x.Value, y.Value, (z + vertex.Z).Value));
+        GroundMovementSpeed = default;
+        SnapToGround();
+        PopOrientation(((Fpu)Igi2Pose.Gamma(m[0], m[3]) + HalfTurn).F);
+
+        TimedActionTime = Fpu.ToInt32((Fpu)door.PickLockTime * Igi2DoorTask.TicksPerSecond);
+        TimedActionTimer = 0;
+        CameraMode = 3;
+        IsProgressBar = true;
+        IsDisableDeltaTranslationScale = true;
+        View.LookAhead();
+        View.IsLockOrientation = true;
+        IsLockOrientation = true;
+        IsLockAction = true;
+
+        // Its sound plays only while the door stands still, open or shut.
+        if (door.Status is 0 or 1)
+        {
+            _timedActionSound?.Delete();
+            _timedActionSound = Surroundings.StartSound(door.ActivateSound);
+        }
+
+        AimPrecision(Igi2PrecisionType.Standing);
+        TbaTimeout = PickReleaseTicks;
+        Locomotion.Current = (_, _) => RunActivateDoor(door);
+    }
+
+    private void RunActivateDoor(IIgi2Door door)
+    {
+        MoveOnGround(0f, GroundAcceleration, 0f, GroundAcceleration);
+
+        // Let go of the key once the first two thirds of a second are out, or hit, or dead, the picking stops.
+        bool stop = false;
+        if (TbaTimeout != 0)
+        {
+            TbaTimeout--;
+        }
+        else
+        {
+            stop = Channels[Igi2HumanChannel.Activate] == 0f;
+        }
+
+        stop |= Has(Igi2PlayerSignal.Dead) || Has(Igi2PlayerSignal.Hit);
+        int time = TimedActionTime;
+        if (TimedActionTimer < time)
+        {
+            TimedActionTimer++;
+        }
+
+        if (TimedActionTimer == time && !stop)
+        {
+            door.IsPicked = true;
+            door.ToggleOpen(Position);
+
+            // Human_SendDoorAIEvent (igi2 0x49F6F0) tells the AI a door was used; the AI's events are not ported.
+            Surroundings.StartSound(PickedSound);
+        }
+        else if (!stop)
+        {
+            return;
+        }
+
+        View.IsLockOrientation = false;
+        IsLockOrientation = false;
+        IsActivating = false;
+        IsCheckActivateButton = true;
+        IsLockAction = false;
+        ActivatingTarget = null;
+        CameraMode = 1;
+        IsDisableDeltaTranslationScale = false;
+        IsProgressBar = false;
+        _timedActionSound?.Delete();
+        _timedActionSound = null;
+
+        if (Has(Igi2PlayerSignal.Hit))
+        {
+            Go(Igi2PlayerState.Hit);
+        }
+        else
+        {
+            Go(PreviousStance switch
+            {
+                Igi2HumanPose.Crouching => Igi2PlayerState.Crouch,
+                Igi2HumanPose.LyingFlat => Igi2PlayerState.Flat,
+                _ => Igi2PlayerState.Stand,
+            });
         }
     }
 

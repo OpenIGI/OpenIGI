@@ -73,12 +73,12 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
     public static TitlePlayerInput Idle => new(0f, 0f, default, default, 0.5f, false);
 
     /// <summary>Stands the level's player at a spot, turned to a heading, with one thing to activate, and lets it settle for two seconds.</summary>
-    public static Igi2TitlePlayer Stand(Igi2CollisionWorld world, Igi2Level level, IIgi2Activatable target, Vector3d at, float gamma)
+    public static Igi2TitlePlayer Stand(Igi2CollisionWorld world, Igi2Level level, IIgi2Activatable target, Vector3d at, float gamma, Igi2Sounds? sounds = null)
     {
         Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint point));
         Formats.World.MefModel body = level.ModelFor(point.Model)!;
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(
-            world, Igi2Session.Start().Require<Igi2PlayerTuning>().General, at, gamma, AiDifficulty.Easy, null, body.BoneHierarchy);
+            world, Igi2Session.Start().Require<Igi2PlayerTuning>().General, at, gamma, AiDifficulty.Easy, null, body.BoneHierarchy, sounds: sounds);
         player.Human.ModelRadius = body.NativeMarkerBound;
         player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
         player.Activatables.Add(target);

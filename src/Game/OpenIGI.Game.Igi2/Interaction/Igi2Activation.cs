@@ -45,6 +45,24 @@ public interface IIgi2Door : IIgi2Activatable
     /// <summary>Gets a value indicating whether its lock can be picked now, <c>Door_IsPickable</c> (<c>igi2 0x538400</c>).</summary>
     bool IsPickable { get; }
 
+    /// <summary>Gets or sets a value indicating whether its lock has been picked, which unlocks it for good.</summary>
+    bool IsPicked { get; set; }
+
+    /// <summary>Gets its state: 0 open, 2 told to open, 1 shut, 3 closing (<c>Door_GetDoorStatus</c>, <c>igi2 0x538460</c>).</summary>
+    int Status { get; }
+
+    /// <summary>Gets the seconds picking its lock takes.</summary>
+    float PickLockTime { get; }
+
+    /// <summary>Gets the sound picking its lock makes.</summary>
+    string ActivateSound { get; }
+
+    /// <summary>Gets its model's first magic vertex where it stands now, the spot a picker kneels at.</summary>
+    Vector3d MagicVertex { get; }
+
+    /// <summary>Gets which way it faces now, row by row.</summary>
+    IReadOnlyList<float> CurrentOrientation { get; }
+
     /// <summary>Tells it to open if it is shut or closing, or to close: <c>Door_ToggleOpenDoorEx</c> (<c>igi2 0x5384D0</c>).</summary>
     /// <param name="from">Where the one opening it stands, which a door that opens both ways swings away from.</param>
     void ToggleOpen(Vector3d from);

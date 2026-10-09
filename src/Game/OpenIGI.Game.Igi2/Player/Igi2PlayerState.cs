@@ -124,6 +124,9 @@ public static class Igi2PlayerState
     /// <summary>Falling.</summary>
     public const int Fall = 37;
 
+    /// <summary>Picking a door's lock, kneeling at it until the lock gives or the key is let go.</summary>
+    public const int ActivateDoor = 38;
+
     /// <summary>Flinching from a hit.</summary>
     public const int Hit = 54;
 
