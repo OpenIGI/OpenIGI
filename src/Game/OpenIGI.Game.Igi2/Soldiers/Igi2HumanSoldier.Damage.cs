@@ -9,8 +9,10 @@ using OpenIGI.Game.Igi2.Weapons;
 namespace OpenIGI.Game.Igi2.Soldiers;
 
 /// <content>How a soldier is struck: its collision, the zone a bullet finds, and the damage it takes.</content>
-public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTarget, IIgi2WeaponCollisionTarget
+public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTarget, IIgi2WeaponCollisionTarget, IIgi2ExplosionTarget
 {
+    /// <summary>How far a blast at full share tilts a soldier's view, <c>0.02617994</c> radians.</summary>
+    private const float SoldierShakeAngle = 0.02617994f;
     /// <summary>The cries a soldier hurt but alive gives, <c>Human_HitSound</c>'s four.</summary>
     public static IReadOnlyList<string> HurtSounds { get; } = ["GV_69_03", "GV_70_03", "GV_71_03", "GV_72_03"];
 
@@ -200,6 +202,105 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
         {
             Say(HitLines);
         }
+    }
+
+    /// <summary>
+    /// A blast reaching the soldier, <c>HumanSoldier_ExplosionHitHandler</c> (<c>igi2 0x4EB8E0</c>): none while its mind keeps harm off
+    /// it or a human of its own side set it off; otherwise its view shakes with the blast's nearness to its eyes, and the blast lands
+    /// on its chest at the chest's multiplier, measured from its eyes. It counts toward a flinch; at the limit the soldier dies of it
+    /// (how it died nought, the shot's direction from the blast), else it cries out and flinches.
+    /// </summary>
+    /// <param name="hit">The blast.</param>
+    /// <remarks>
+    /// The soldier's size for the blast is a third of its model's radius and its root's distance from its origin, the root as the
+    /// animation last left it. Not yet: the player's tally of kills, and the soldier's <c>isActive</c> (<c>Human+0x4A5</c>), taken
+    /// as set.
+    /// </remarks>
+    public void ExplosionHit(in Igi2ExplosionHit hit)
+    {
+        if (Mind is { IsInvulnerable: true } || (hit.Owner is Igi2Human && hit.Team == Team))
+        {
+            return;
+        }
+
+        Vector3d eyes = View.Position;
+        ShakeView(hit, SoldierShakeAngle);
+        Damage.LastPart = Igi2DamagePart.Chest;
+        Vector3f root = RootTranslation;
+        float radius = ((Fpu.Sqrt((((Fpu)root.X * root.X) + ((Fpu)root.Y * root.Y)) + ((Fpu)root.Z * root.Z)) + ModelRadius) * 0.33333334f).F;
+        Fpu blast = hit.Resolve(eyes, radius);
+        if (blast.Value == 0.0)
+        {
+            return;
+        }
+
+        float damage = (blast * Damage.Multiplier(Igi2DamagePart.Chest)).F;
+        Damage.Add(Igi2DamagePart.Chest, damage);
+        RecoilMeter = ((Fpu)damage + RecoilMeter).F;
+        if (Damage.IsFatal)
+        {
+            DeathByType = 0;
+            DeathDirection = new Vector3f(
+                ((Fpu)Position.X - hit.Position.X).F, ((Fpu)Position.Y - hit.Position.Y).F, ((Fpu)Position.Z - hit.Position.Z).F);
+            DeathDamage = hit.Damage;
+            IsDead = true;
+            Signal |= Igi2SoldierSignal.Dead;
+        }
+        else
+        {
+            PlayHitSound(HurtSounds);
+            Signal |= Igi2SoldierSignal.Hit;
+        }
+    }
+
+    /// <summary>
+    /// A blow in close combat, <c>HumanSoldier_CloseCombatDamageHandler</c> (<c>igi2 0x4EBCD0</c>): to the chest when the soldier faces
+    /// its attacker, else to the back, at that zone's multiplier. At the limit the soldier dies of it (how it died 4, the direction
+    /// from the attacker); else it cries out and flinches. Unless its mind keeps harm off it.
+    /// </summary>
+    /// <param name="damage">The blow's damage.</param>
+    /// <param name="attacker">Who struck.</param>
+    /// <remarks>
+    /// Harmed or not, its friends hear a wounded cry from it, and its own mind is told the same (event 31, team 1, the attacker its
+    /// reference and originator); the event's direction is left as the stack held it, so none is given.
+    /// </remarks>
+    public void CloseCombatDamage(float damage, Igi2Human attacker)
+    {
+        ArgumentNullException.ThrowIfNull(attacker);
+        if (Mind is not { IsInvulnerable: true })
+        {
+            Matrix3f o = Orientation;
+            Fpu fx = (((Fpu)o.M13 + o.M11) * 0.0) + ((Fpu)o.M12 * 4096.0);
+            Fpu fy = (((Fpu)o.M23 + o.M21) * 0.0) + ((Fpu)o.M22 * 4096.0);
+            Fpu fz = (((Fpu)o.M33 + o.M31) * 0.0) + ((Fpu)o.M32 * 4096.0);
+            Fpu dx = (Fpu)Position.X - attacker.Position.X;
+            Fpu dy = (Fpu)Position.Y - attacker.Position.Y;
+            Fpu dz = (Fpu)Position.Z - attacker.Position.Z;
+            Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((dy * dy) + (dz * dz)) + (dx * dx));
+            Fpu nx = inverse * dx, ny = dy * inverse, nz = inverse * dz;
+            Igi2DamagePart part = (((fz * nz) + (ny * fy)) + (nx * fx)).Value < 0.0 ? Igi2DamagePart.Chest : Igi2DamagePart.Back;
+            Damage.LastPart = part;
+            float taken = ((Fpu)Damage.Multiplier(part) * damage).F;
+            Damage.Add(part, taken);
+            RecoilMeter = ((Fpu)taken + RecoilMeter).F;
+            if (Damage.IsFatal)
+            {
+                DeathByType = 4;
+                DeathDirection = new Vector3f(nx.F, ny.F, nz.F);
+                DeathDamage = damage;
+                IsDead = true;
+                Signal |= Igi2SoldierSignal.Dead;
+            }
+            else
+            {
+                PlayHitSound(HurtSounds);
+                Signal |= Igi2SoldierSignal.Hit;
+            }
+        }
+
+        Igi2AiEvent cry = new(Igi2AiEvent.WoundedCry, 1, 1314, 61440f, Position, default, attacker, attacker);
+        SendAiEvent(cry);
+        Mind?.Perceive(this, cry);
     }
 
     /// <summary>

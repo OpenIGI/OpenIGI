@@ -118,6 +118,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Soldiers = request.World.LevelRoot is { } levelRoot
             ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty, player.Human.Pickups)
             : null;
+        if (player.Soldiers is { } soldiers && player.Explosions is { } blasts)
+        {
+            foreach (Soldiers.Igi2HumanSoldier soldier in soldiers.Bodies)
+            {
+                blasts.AddTarget(soldier);
+            }
+        }
+
         player.Level = LevelRun(request, player);
         return player;
     }

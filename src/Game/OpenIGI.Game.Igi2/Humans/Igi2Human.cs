@@ -177,6 +177,38 @@ public abstract partial class Igi2Human
         Locomotion.Flags |= DeadSignal;
     }
 
+    /// <summary>
+    /// A blast's shake on the view, by the eyes' distance from it: full within three times its full range, gone at nine, run out
+    /// over its ticks, as both the player's and a soldier's explosion handlers set it.
+    /// </summary>
+    /// <param name="hit">The blast.</param>
+    /// <param name="angleScale">How far a full shake tilts the view, in radians: the player's and a soldier's differ.</param>
+    protected void ShakeView(in Weapons.Igi2ExplosionHit hit, float angleScale)
+    {
+        Vector3d eyes = View.Position, at = hit.Position;
+        Fpu dx = (Fpu)eyes.X - at.X, dy = (Fpu)eyes.Y - at.Y, dz = (Fpu)eyes.Z - at.Z;
+        Fpu distance = Fpu.Sqrt(((dy * dy) + (dz * dz)) + (dx * dx));
+        Fpu past = distance - ((Fpu)hit.FullRange * 3f);
+        Fpu share;
+        if (past.Value < 0.0)
+        {
+            share = 1f;
+        }
+        else
+        {
+            share = (Fpu)1f - (past / ((Fpu)hit.FullRange * 6f));
+            if (share.Value < 0.0 || share.Value == 0.0)
+            {
+                return;
+            }
+        }
+
+        View.ShakeFactor = 1f;
+        View.ShakeRange = ((Fpu)204.8f * share).F;
+        View.ShakeAngle = (share * angleScale).F;
+        View.ShakeTime = ((Fpu)1.0 / (double)hit.ExplosionTime).F;
+    }
+
     /// <summary>Cuts off the pain sound and plays one of a set of death cries (<c>Human_PlayDeathSound</c>, <c>igi2 0x503280</c>).</summary>
     /// <param name="prefix">The cries' common name; a draw below <paramref name="count"/> is appended.</param>
     /// <param name="count">How many cries there are.</param>

@@ -51,7 +51,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
             Damage.Add(Igi2DamagePart.Chest, damage.F);
         }
 
-        Shake(hit);
+        ShakeView(hit, PlayerShakeAngle);
         if (damage.Value == 0.0)
         {
             return;
@@ -68,30 +68,6 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
         }
     }
 
-    /// <summary>The blast's shake on the view, by the eyes' distance from it.</summary>
-    private void Shake(in Igi2ExplosionHit hit)
-    {
-        Vector3d eyes = View.Position, at = hit.Position;
-        Fpu dx = (Fpu)eyes.X - at.X, dy = (Fpu)eyes.Y - at.Y, dz = (Fpu)eyes.Z - at.Z;
-        Fpu distance = Fpu.Sqrt(((dy * dy) + (dz * dz)) + (dx * dx));
-        Fpu past = distance - ((Fpu)hit.FullRange * 3f);
-        Fpu share;
-        if (past.Value < 0.0)
-        {
-            share = 1f;
-        }
-        else
-        {
-            share = (Fpu)1f - (past / ((Fpu)hit.FullRange * 6f));
-            if (share.Value < 0.0 || share.Value == 0.0)
-            {
-                return;
-            }
-        }
-
-        View.ShakeFactor = 1f;
-        View.ShakeRange = ((Fpu)204.8f * share).F;
-        View.ShakeAngle = (share * 0.01308997f).F;
-        View.ShakeTime = ((Fpu)1.0 / (double)hit.ExplosionTime).F;
-    }
+    /// <summary>How far a blast at full share tilts the player's view, <c>0.01308997</c> radians.</summary>
+    private const float PlayerShakeAngle = 0.01308997f;
 }

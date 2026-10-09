@@ -266,6 +266,73 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.Equal(122.88, drop.Position.Z - ground.Intersections[0].Position.Z, 0.05);
     }
 
+    /// <summary>
+    /// A blast reaches a soldier's eyes and lands on its chest (<c>HumanSoldier_ExplosionHitHandler</c>, <c>igi2 0x4EB8E0</c>): a weak
+    /// one hurts and flinches it and shakes its view, a strong one kills it, how it died nought; one set off by its own side, or one
+    /// too far away, does nothing.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_blast_lands_on_the_chest_and_spares_the_soldiers_own_side()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2ExplosionWorld world = new(new IgiRandom(), m.Collision!, m.Materials, new World.Igi2DynamicTasks());
+        Vector3d near = new(body.Position.X + 4096.0, body.Position.Y, body.Position.Z + 4096.0);
+        Igi2ExplosionHit Blast(Vector3d at, float damage, IIgi2WeaponOwner? owner, int team) =>
+            new(world, at, team, damage, 2048f, 8192f, Igi2ExplosionWorld.ShakeTime, null, owner, Igi2ExplosionFalloff.Linear);
+
+        Igi2HumanSoldier friend = soldiers.Bodies.First(b => !ReferenceEquals(b, body) && b.Team == body.Team);
+        body.ExplosionHit(Blast(near, 100f, friend, body.Team));
+        Assert.Equal(0f, body.Damage.Damage);
+
+        body.ExplosionHit(Blast(new Vector3d(body.Position.X + 409600.0, body.Position.Y, body.Position.Z), 100f, null, -1));
+        Assert.Equal(0f, body.Damage.Damage);
+
+        body.ExplosionHit(Blast(near, 0.01f, null, -1));
+        Assert.Equal(Igi2DamagePart.Chest, body.Damage.LastPart);
+        Assert.True(body.Damage.PartDamage(Igi2DamagePart.Chest) > 0f);
+        Assert.True((body.Signal & Igi2SoldierSignal.Hit) != 0);
+        Assert.False(body.IsDead);
+        Assert.True(body.View.ShakeRange > 0f);
+
+        body.ExplosionHit(Blast(near, 100f, null, -1));
+        Assert.True(body.IsDead);
+        Assert.Equal(0, body.DeathByType);
+        Assert.Equal(100f, body.DeathDamage);
+        Assert.Equal((float)(body.Position.X - near.X), body.DeathDirection.X, 1f);
+    }
+
+    /// <summary>
+    /// A blow from in front lands on the chest and one from behind on the back (<c>HumanSoldier_CloseCombatDamageHandler</c>,
+    /// <c>igi2 0x4EBCD0</c>), each at its zone's multiplier; enough of them kill, how it died 4.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_blow_lands_on_the_side_the_attacker_struck_from()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2HumanSoldier attacker = soldiers.Bodies.First(b => !ReferenceEquals(b, body));
+        Matrix3f o = body.Orientation;
+        Vector3d ahead = new(body.Position.X + (o.M12 * 4096f), body.Position.Y + (o.M22 * 4096f), body.Position.Z);
+        Vector3d behind = new(body.Position.X - (o.M12 * 4096f), body.Position.Y - (o.M22 * 4096f), body.Position.Z);
+
+        attacker.Position = ahead;
+        body.CloseCombatDamage(0.01f, attacker);
+        Assert.Equal(Igi2DamagePart.Chest, body.Damage.LastPart);
+        Assert.Equal(((Fpu)body.Damage.Multiplier(Igi2DamagePart.Chest) * 0.01f).F, body.Damage.PartDamage(Igi2DamagePart.Chest));
+        Assert.True((body.Signal & Igi2SoldierSignal.Hit) != 0);
+
+        attacker.Position = behind;
+        body.CloseCombatDamage(0.01f, attacker);
+        Assert.Equal(Igi2DamagePart.Back, body.Damage.LastPart);
+
+        body.CloseCombatDamage(100f, attacker);
+        Assert.True(body.IsDead);
+        Assert.Equal(4, body.DeathByType);
+    }
+
     private static Igi2WeaponHit At(Igi2HumanSoldier body, int bone, Vector3d position, Vector3f shot) =>
         new(new Igi2Intersection { Sector = bone, Position = position, IsHit = true }, 0.01f, shot, null, body.Weapon.Inventory!.Current!.WeaponType, null);
 

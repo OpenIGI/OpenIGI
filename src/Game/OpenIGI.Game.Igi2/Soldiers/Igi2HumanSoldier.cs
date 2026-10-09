@@ -39,6 +39,13 @@ public interface IIgi2SoldierMind
     /// <summary>Gets where the mind's target is, <c>HumanAI_GetTargetPosition</c> (<c>igi2 0x460EF0</c>), or <see langword="null"/> for none.</summary>
     Vector3d? TargetPosition => null;
 
+    /// <summary>Hands the mind an event meant for it alone, its <c>HumanAISendEvent</c> handler.</summary>
+    /// <param name="soldier">The body.</param>
+    /// <param name="aiEvent">The event.</param>
+    void Perceive(Igi2HumanSoldier soldier, in Ai.Igi2AiEvent aiEvent)
+    {
+    }
+
     /// <summary>Gets how far the mind turns the head, <c>HumanAI+0x100</c>, in radians.</summary>
     float HeadTurn => 0f;
 
