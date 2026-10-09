@@ -305,8 +305,6 @@ name KEY_X    # config.qvm
 name KEY_Y    # config.qvm
 name KEY_Z    # config.qvm
 name LevelFlow_LevelFailed    # MENUSYSTEM/ingamemenu.qvm
-name LevelTimer_104.nTick    # MISSIONS/location1/level1/objects.qvm
-name LevelTimer_2701.nTick    # MISSIONS/location1/level1/ai/Squad_711.qvm
 name LowerStance    # config.qvm
 name MENUMANAGER_IDLE    # MENUSYSTEM/ingamemenu.qvm
 name MENUMANAGER_QUITTOMAINMENU    # MENUSYSTEM/ingamemenu.qvm
@@ -439,7 +437,6 @@ type HumanPlayerInput    # MISSIONS/location1/level1/objects.qvm
 type HumanSoldier    # MISSIONS/location1/level1/objects.qvm
 type InputBox    # MENUSYSTEM/ingamemenu.qvm
 type LevelInfo    # MISSIONS/location1/level1/objects.qvm
-type LevelTimer    # MISSIONS/location1/level1/objects.qvm
 type LightmapInfo    # MISSIONS/location1/level1/objects.qvm
 type ListBox    # MENUSYSTEM/ingamemenu.qvm
 type MagicObjConfig    # magicobjconfig.qvm
