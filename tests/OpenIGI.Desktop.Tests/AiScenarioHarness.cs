@@ -1194,11 +1194,38 @@ public sealed class AiScenarioHarness : IDisposable
         using RecordingGraphicsDevice device = new();
         GameHost host = Host(device, new HeadlessGameWindow(),
             "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
-        host.Start();
-        host.ScriptedViewInput = new InputState();
         BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
         FieldInfo brainsField = typeof(SoldierRenderer).GetField("_brains", hidden)!;
+
+        // OPENIGI_PATROL_CAPTURE_RNG=1: every draw from the level's global stream, for the diff against the
+        // probe's [rng]: the level counter during the tick (-1 at load) and the first caller outside the generator.
+        if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_RNG") == "1"
+            && typeof(GameHost).GetField("_soundRandom", hidden)?.GetValue(host) is OpenIGI.Core.Numerics.IgiRandom stream)
+        {
+            FieldInfo counterField = typeof(SoldierRenderer).GetField("_tick", hidden)!;
+            stream.Drew = _ =>
+            {
+                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                string site = "?";
+                foreach (System.Diagnostics.StackFrame frame in new System.Diagnostics.StackTrace(1, false).GetFrames())
+                {
+                    if (frame.GetMethod() is { DeclaringType: { } type } method
+                        && type != typeof(OpenIGI.Core.Numerics.IgiRandom)
+                        && !type.Name.Contains("<>", StringComparison.Ordinal)
+                        && !method.Name.Contains('<', StringComparison.Ordinal))
+                    {
+                        site = $"{type.Name}.{method.Name}";
+                        break;
+                    }
+                }
+
+                log.AppendLine(CultureInfo.InvariantCulture, $"[rng] lt={counter} site={site}");
+            };
+        }
+
+        host.Start();
+        host.ScriptedViewInput = new InputState();
         Dictionary<AiSoldier, (int Tick, int State, int Index, int Deadline, int Node, int Dest, int Logged, int Alert, int Sight)> tracks = [];
         Dictionary<AiSoldier, AiEventQueues> observed = [];
         Dictionary<AiSoldier, string> lastFollow = [];
@@ -1345,7 +1372,7 @@ public sealed class AiScenarioHarness : IDisposable
                 Vector3d p = brain.Position;
                 AiPatrolCommand? command = route?.Current;
                 log.AppendLine(CultureInfo.InvariantCulture,
-                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase}");
+                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase} clip={view.CurrentAnimation} ct={view.Bones.SourceOf(0)?.Time ?? -1f:0.0000} dur={view.Bones.SourceOf(0)?.Animation.Duration ?? -1f:0.0000} root={RootText(view)}");
             }
 
             if (lastTick >= ticks)
@@ -1356,6 +1383,12 @@ public sealed class AiScenarioHarness : IDisposable
 
         File.WriteAllText(output, log.ToString());
     }
+
+    // The playing clip's sampled root and its last delta, against the probe's nref/nd.
+    private static string RootText(SoldierView view) => view.Bones.SourceOf(0) is { } clip
+        ? FormattableString.Invariant(
+            $"({clip.SampleRoot().X:0.00},{clip.SampleRoot().Y:0.00},{clip.SampleRoot().Z:0.00}) d=({clip.RootDelta.X:0.00},{clip.RootDelta.Y:0.00},{clip.RootDelta.Z:0.00})")
+        : "-";
 
     // The eye bone's rotation in the unrotated pose, for the [pweye] comparison against retail's palette entry.
     private static string BoneText(SoldierView view)
@@ -2109,7 +2142,7 @@ public sealed class AiScenarioHarness : IDisposable
             window,
             device,
             new SilentAudioFactory(),
-            InlineWorkScheduler.Instance,
+            SynchronousParallelWorkScheduler.Instance,
             AlwaysReadyLoadGate.Instance,
             TitleCatalog.Catalog,
             runtime.Title,
