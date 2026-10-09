@@ -322,6 +322,49 @@ public sealed class MissionFourFriendlyActivationTests
         return (loop, root, objectives, runtime);
     }
 
+    /// <summary>
+    /// A patrol that opens on a RunTo walks its first two ticks: the new cursor's walk gait is set on the first
+    /// (0x4537E0, 0x48E920 before the command), the run setter presses slot 20 on the second, and 0x45D080 flips the
+    /// run byte only after the body has read it. Probed on mission 4: squad member 400 went state 3, 3, then 2, the
+    /// press on the second tick and the byte clear from the third.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ARunningPatrolWalksItsFirstTwoTicksWhileTheRunByteFlips()
+    {
+        (_, LevelTask root, _, _) = LoadLevel();
+        AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(root);
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        natives.RegisterConstant("GAME_FREQUENCY", 30);
+        natives.RegisterRealConstant("WORLD_METER", 4096.0);
+        natives.RegisterRealConstant("MATH_PI", Math.PI);
+        int stage = 0;
+        natives.RegisterVariable("EditVariable_752.nValue", new QvmIntegerVariable(() => stage, value => stage = value));
+        AiScriptHost host = new(natives, NullLogger.Instance);
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "missions", "location0", "level4", "graphs", "graph1.dat")));
+        QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "common", "ai", "guard.qvm")));
+        AiSoldier harrison = NewFriendly(
+            graph, paths, host, QvmProgram.Read(File.ReadAllBytes(MissionAiPath(500))), guard, seed: 1);
+        Vector3d far = new(harrison.Position.X, harrison.Position.Y + (500 * 4096.0), harrison.Position.Z);
+
+        // Each tick as the renderer runs it: the brain, then the body (0x45D080).
+        List<bool> gaits = [];
+        for (int tick = 0; tick < 5; tick++)
+        {
+            harrison.Tick(tick, far, rootMotionThisTick: 0.0);
+            harrison.TickCombatState(animationDone: false);
+            gaits.Add(harrison.WalkGait);
+        }
+
+        // Tick 0 creates, tick 1 starts patrol 700 on its RunTo: asked to run from then, walking two ticks.
+        Assert.Equal(AiSoldierActivity.Patrolling, harrison.Activity);
+        Assert.False(harrison.IsWalking);
+        Assert.Equal([true, true, true, false, false], gaits);
+    }
+
     private static string MissionAiPath(int id) => Path.Combine(
         GameData.RequireRoot(), "missions", "location0", "level4", "ai", $"{id}.qvm");
 

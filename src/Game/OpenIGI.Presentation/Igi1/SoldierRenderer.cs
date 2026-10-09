@@ -3457,9 +3457,10 @@ public sealed class SoldierRenderer : IDisposable
                     view.Position.Y + eye.Y,
                     view.Position.Z + originLift + eye.Z);
             },
-            // The attachment supplies the animated eye POSITION only; its local rotation differs by
-            // skeleton and clip. The snapshot (0x489960) tests against the view matrix: the body's heading
-            // tipped by the view's own pitch.
+            // The matrix is the eye bone's, as the palette holds it (0x44F410 copies bone 5's entry, +696): the body's
+            // own matrix times the bone's rotation in the pose the soldier had when the palette was last built.
+            // Probed on mission 4: running squad member 404's refreshed eye, taken back into his body's frame,
+            // matched clip 60's eye bone to the clip phase, pitched 12 degrees down where the body's heading is level.
             //
             // But only when the palette is rebuilt. 0x44F410 copies the eye's matrix out of the bone palette
             // ([Human+0x70]+0x2B8), and 0x45F240 rebuilds it -- while the soldier's dirty byte (+216, set by its
@@ -3477,7 +3478,7 @@ public sealed class SoldierRenderer : IDisposable
 
                 if (member.InView)
                 {
-                    member.EyeOrientation = brain.ViewOrientation;
+                    member.EyeOrientation = PosedEye(view, brain);
                 }
 
                 return member.EyeOrientation ?? placedEye;
@@ -3525,7 +3526,56 @@ public sealed class SoldierRenderer : IDisposable
                     : DefaultHumanBoundMetres) * WorldScene.UnitsPerMetre;
                 if (SegmentMeetsSphere(from, to, OccupantOrigin(view), radius))
                 {
-                    member.EyeOrientation = brain.ViewOrientation;
+                    member.EyeOrientation = PosedEye(view, brain);
+                }
+            }
+        }
+    }
+
+    /// <summary>The eye matrix a palette rebuilt now would hold: the body's matrix times the eye bone's posed rotation.</summary>
+    /// <param name="view">The soldier's rig.</param>
+    /// <param name="brain">Its brain, whose matrix is the body's (Human+120).</param>
+    /// <returns>The eye's orientation, or the view's own when the rig has no eye bone.</returns>
+    private static Matrix3f PosedEye(SoldierView view, AiSoldier brain)
+    {
+        BonePose pose = view.UnrotatedPose();
+        return HumanAttachPoints.AiEye < pose.BoneCount
+            ? brain.Orientation * pose.Rotations[HumanAttachPoints.AiEye]
+            : brain.ViewOrientation;
+    }
+
+    /// <summary>What a round does to the humans along its flight: rebuilds their palettes, and so their eyes.</summary>
+    /// <param name="from">Where the round starts, in world units.</param>
+    /// <param name="to">The end of its reach.</param>
+    /// <param name="shooterTeam">The firing human's side (Human+252).</param>
+    /// <param name="shooter">The firing soldier, or <see langword="null"/> for the player.</param>
+    /// <remarks>
+    /// The round's cast (<c>0x47B750</c> -> <c>0x4CC2A0</c>) visits the humans along its remaining path through the
+    /// Human's ray visit <c>0x45F500</c>, which asks the class filter first -- the evaluate <c>0x45E3E0</c>, which
+    /// lets a round pass through its shooter's own side unvisited -- then <c>0x45F580</c>'s sphere test, then rebuilds
+    /// the palette (<c>0x45F240</c>), whether or not the round goes on to strike that body. Probed on mission 4: guard
+    /// 411's eye was rebuilt every three ticks by the squad's rounds from tick 4559.
+    /// </remarks>
+    private void RefreshEyesAlongRound(Vector3d from, Vector3d to, int shooterTeam, SoldierView? shooter)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView view = member.View;
+                if (ReferenceEquals(view, shooter) || view.IsDead || view.Soldier.Team == shooterTeam
+                    || !ConditionalContainerGate.IsTaskActive(view.Soldier)
+                    || !_brains.TryGetValue(view, out AiSoldier? brain))
+                {
+                    continue;
+                }
+
+                double radius = (_detectorMarkerScaleMetres.TryGetValue(view, out float bound) && bound > 0f
+                    ? bound
+                    : DefaultHumanBoundMetres) * WorldScene.UnitsPerMetre;
+                if (SegmentMeetsSphere(from, to, OccupantOrigin(view), radius))
+                {
+                    member.EyeOrientation = PosedEye(view, brain);
                 }
             }
         }
@@ -4229,8 +4279,15 @@ public sealed class SoldierRenderer : IDisposable
 
         // The detection scan is offered every human -- the player and every soldier -- and the brain
         // fights whoever the event that started its fight named; it aims at that human.
+        //
+        // The brain is given the level's counter as the original reads it during a tick (Level+52), which is
+        // incremented AFTER the tick's handlers: 0 on the level's first tick, where this renderer's own count is
+        // already 1. Everything a brain times by the counter's value rather than by a difference -- its sweep
+        // phase (counter mod 4), its first tick's CREATE -- lands on retail's tick only with this. Probed on
+        // mission 4: level-start patrols dispatched CREATE on counter 0, and the squad's casts ran one tick later,
+        // by count, than the port's had.
         brain.TickAmong(
-            _tick,
+            _tick - 1,
             CandidatesFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
             travel,
             alarmOn,
@@ -4476,7 +4533,7 @@ public sealed class SoldierRenderer : IDisposable
                 view.SetMoving(false, walkAnimation);
             }
         }
-        else if (brain.WalksForward && !brain.IsWalking)
+        else if (brain.WalksForward && !brain.WalkGait)
         {
             // The patrol cursor's gait flag (+21) is applied EVERY tick by the retail walker
             // (0x48E920): a RunTo leg installs the run gait and it stays until the next movement
@@ -6548,6 +6605,7 @@ public sealed class SoldierRenderer : IDisposable
         out HumanHit hit)
     {
         hit = default;
+        RefreshEyesAlongRound(origin, end, _playerTeam, shooter: null);
 
         HumanHealth? struck = null;
         SoldierView? struckView = null;
@@ -7045,6 +7103,7 @@ public sealed class SoldierRenderer : IDisposable
         out HumanHit hit)
     {
         hit = default;
+        RefreshEyesAlongRound(origin, end, shooter?.Soldier.Team ?? _playerTeam, shooter);
 
         List<(HumanHealth health, SoldierView view, HumanHit candidate, double distance)> candidates = [];
 

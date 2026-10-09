@@ -96,8 +96,8 @@ public sealed class AiSoldier
     // Floats 0 and 1 of this tick's input frame: the turn and the pitch, each over pi.
     private float _turnInput;
     private float _pitchInput;
-    private readonly HumanBodyTurn _bodyTurn = new();
-    private readonly HumanBodyTurn _viewPitchTurn = new();
+    private readonly HumanBodyTurn _bodyTurn = new(averages: false);
+    private readonly HumanBodyTurn _viewPitchTurn = new(averages: true);
 
     // The clip's sideways root motion this tick, in the body's own frame.
     private double _rootLateralThisTick;
@@ -375,6 +375,34 @@ public sealed class AiSoldier
 
     private bool _scriptedRunGait;
 
+    /// <summary>Gets the gait the body read this tick: the run byte at <c>Human+3328</c>, set for walking.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="IsWalking"/> is what the running action asks for; this is what the body does. The soldier's
+    /// create (<c>0x45CC50</c>) sets the byte, and only a press of input slot 20 -- the AI's channel 0 -- flips it,
+    /// in <c>0x45D080</c> AFTER the body machine (<c>0x4EC1E0</c>) has read it. The walk and run setters
+    /// (<c>0x4525E0</c>, <c>0x452660</c>) press it when it is wrong for the gait. Their callers: the patrol's start
+    /// (<c>0x48E8C0</c>, walk), the patrol runner (<c>0x48E920</c>, from the cursor's gait flag BEFORE the command
+    /// runs -- the flag a new cursor starts with is walk, <c>0x4537E0</c>), Activate (<c>0x48E7D0</c>), Move To
+    /// Event (<c>0x48E020</c>), Walk/Run To Node (<c>0x48EBF0</c>/<c>0x48EC50</c>) and Combat - Follow
+    /// (<c>0x48C860</c>, run).
+    /// </para>
+    /// <para>
+    /// So a patrol that opens on a RunTo walks two ticks first: its first tick sets the walk gait from the new
+    /// cursor, its second presses for the run, and the body reads the old byte on that tick too. Probed on
+    /// mission 4: squad member 400 went state 3 (walk), 3, then 2 (run), slot 20 set on the second tick and the
+    /// byte clear from the third; walking patrols, whose byte was right from the start, never pressed.
+    /// </para>
+    /// </remarks>
+    public bool WalkGait { get; private set; } = true;
+
+    // Human+3328 as the next body tick will read it, and whether this tick's frame presses slot 20.
+    private bool _runByte = true;
+    private bool _gaitPress;
+
+    // The walk (0x4525E0) and run (0x452660) setters: channel 0 is written non-zero when the byte is wrong.
+    private void SetGait(bool walking) => _gaitPress = walking != _runByte;
+
     /// <summary>Gets a value indicating whether the soldier is crouching.</summary>
     /// <remarks>
     /// The patrol walker (<c>0x48E920</c>) writes the crouch channel on every tick it runs, and the channel
@@ -423,6 +451,9 @@ public sealed class AiSoldier
         _animationFinished = false;
         _route.Clear();
         DestinationNode = -1;
+
+        // 0x48E8C0, the patrol's start: the walk setter, before the cursor's first command.
+        SetGait(walking: true);
         return true;
     }
 
@@ -573,6 +604,14 @@ public sealed class AiSoldier
     /// <summary>Diagnostics: <c>+15852/+15856/+15848</c> -- the tracked target node, the re-search flag, the Follow node.</summary>
     public string FollowState => FormattableString.Invariant(
         $"{_followTargetNode}/{(_followResearch ? 1 : 0)}/{_patrol?.DestinationNodeId ?? -1}");
+
+    /// <summary>Diagnostics: this soldier's detection slot for one human -- retail's slot +16/+20/+40/+41/+42.</summary>
+    /// <param name="target">The human's task id.</param>
+    /// <returns>The cooldowns and flags, or <c>-</c> when the human is not tracked.</returns>
+    public string SlotState(int target) => _tracked.TryGetValue(target, out TrackedHuman? human)
+        ? FormattableString.Invariant(
+            $"cone={human.Slot.ConeCooldown} ray={human.Slot.RayCooldown} incone={(human.Slot.IsInCone ? 1 : 0)} visible={(human.Slot.IsVisible ? 1 : 0)} registered={(human.Slot.IsRegistered ? 1 : 0)}")
+        : "-";
 
     // sub_48A920's squad-ping counter, argBlock+28 of the running combat action.
     private int _alertPingCounter;
@@ -1600,6 +1639,15 @@ public sealed class AiSoldier
         // 0x45D080 clears the flinch bit straight after the machine's tick: it is a one-tick pulse, and a
         // state that does not test it on that tick loses it.
         _flinchZone = -1;
+
+        // ...and flips the run byte on a slot-20 press, after the machine has read it (see WalkGait).
+        WalkGait = _runByte;
+        if (_gaitPress)
+        {
+            _runByte = !_runByte;
+            _gaitPress = false;
+        }
+
         return state;
     }
 
@@ -2393,6 +2441,7 @@ public sealed class AiSoldier
         // action that runs this tick writes to it, so a suspended one leaves nothing behind.
         _rawInputWrites.Clear();
         _channelWrites.Clear();
+        _gaitPress = false;
         WalksForward = false;
         Combat = new AiCombatCommand();
         DetectionShoutRequestedThisTick = false;
@@ -2651,6 +2700,8 @@ public sealed class AiSoldier
                 break;
 
             case ActionActivate:
+                // 0x48E7D0 sets the gait from its run argument every tick.
+                SetGait(walking: _activate is not { Run: true });
                 RunActivate();
                 break;
 
@@ -2679,6 +2730,8 @@ public sealed class AiSoldier
             case "AIAction_WalkToNode":
             case "AIAction_RunToNode":
             case "AIAction_MoveToEvent":
+                // 0x48EBF0 / 0x48EC50 / 0x48E020 set their gait every tick.
+                SetGait(walking: !_scriptedRunGait);
                 if (StepTowardsNode(_goToNode))
                 {
                     _goToNode = -1;
@@ -2836,6 +2889,10 @@ public sealed class AiSoldier
     private void RunPatrolCommand(int tick)
     {
         AiPatrolRoute route = Route!;
+
+        // 0x48E920 sets the gait from the cursor's flag before it looks at the command, so a RunTo changes it from
+        // the tick after: the flag is the one the last movement command left, or a new cursor's walk.
+        SetGait(route.IsWalking);
         if (route.Current is not { } command)
         {
             Activity = AiSoldierActivity.Idle;
@@ -3507,6 +3564,9 @@ public sealed class AiSoldier
 
     private Matrix3f EyeOrientation() => _eyeOrientation?.Invoke() ?? Orientation;
 
+    /// <summary>Diagnostics: the eye matrix a sweep run now would test against -- the bound eye, or the body's.</summary>
+    public Matrix3f CurrentEyeOrientation => EyeOrientation();
+
     /// <summary>The eye height fallback for a soldier with no attached body rig.</summary>
     public const double HumanSeparationEyeHeight = 1.8 * 4096.0;
 
@@ -4079,6 +4139,9 @@ public sealed class AiSoldier
         {
             _channelWrites.Clear();
             Combat = default;
+
+            // 0x48C860 runs: the run setter, every tick of the leg.
+            SetGait(walking: false);
 
             // 0x48C860: the flag 0x48A920 raised buys one search, toward the target only while it is seen
             // (sub_48B050's third argument is the target record's visible byte, +41), and the walk is redirected
