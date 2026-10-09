@@ -404,15 +404,6 @@ name SlotSelector_isSlotVisible    # MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isThisCategorySelected    # MENUSYSTEM/ingamemenu.qvm
 name SplinePathGuide_SetRunning    # MISSIONS/location1/level1/objects.qvm
 name SquadRadio    # config.qvm
-name StatusMessage_2906.isFinishedDisplay    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_2991.isSendt    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_2992.isSendt    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_2994.isFinishedDisplay    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_352.isSendt    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_353.isSendt    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_354.isSendt    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_354.nTicksSinceFinishedDisplay    # MISSIONS/location1/level1/objects.qvm
-name StatusMessage_356.nTicksSinceFinishedDisplay    # MISSIONS/location1/level1/objects.qvm
 name TASKTYPE_AISTATIONARYGUN    # magicobjconfig.qvm
 name TASKTYPE_BOMBBACKPACK    # magicobjconfig.qvm
 name TASKTYPE_CARDOOR    # magicobjconfig.qvm
@@ -492,5 +483,4 @@ type SplineObjWaypoint    # MISSIONS/location1/level1/objects.qvm
 type SplinePathDynCubeObj    # MISSIONS/location1/level1/objects.qvm
 type SplinePathGuideQTask    # MISSIONS/location1/level1/objects.qvm
 type SplinePathNodeQTask    # MISSIONS/location1/level1/objects.qvm
-type StatusMessage    # MISSIONS/location1/level1/objects.qvm
 type ToggleBox    # MENUSYSTEM/ingamemenu.qvm

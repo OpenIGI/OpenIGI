@@ -28,6 +28,14 @@ public interface ITitleAudio
     /// <param name="looping">Whether it loops, or <see langword="null"/> for as the definition says.</param>
     /// <returns>The voice, or <see langword="null"/> when nothing could be played.</returns>
     ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null);
+
+    /// <summary>
+    /// Gets how long a bank's sound lasts, in seconds, from its data rather than from any device: its frames over its rate,
+    /// as <c>Sound_GetSampleDuration</c> (<c>igi2ed 0x55E0E0</c>) reads them from the sample's header.
+    /// </summary>
+    /// <param name="bankKey">The sound's name in the bank.</param>
+    /// <returns>Its length, or nought for a sound the bank does not hold.</returns>
+    double SampleSeconds(string bankKey) => 0.0;
 }
 
 /// <summary>A sound the host is playing for a title.</summary>

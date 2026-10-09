@@ -145,6 +145,17 @@ public sealed class Igi2Gameplay : ITitleGameplay
             generator.Sounds = player.Sounds;
         }
 
+        // Each line's pieces are counted once its parameters are read, in the language the screens load.
+        Igi2Strings strings = new(request.World.Resources);
+        foreach (Igi2StatusMessageTask message in Descendants(root).OfType<Igi2StatusMessageTask>())
+        {
+            message.Strings = strings;
+            message.Screen = player.StatusMessages;
+            message.Sounds = player.Sounds;
+            message.Listener = () => player.Human.View.Position;
+            message.InitText();
+        }
+
         Func<string, Formats.World.MefModel?> models = Models(request.World);
         List<Interaction.IIgi2Activatable> activatables = [];
         foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
@@ -390,6 +401,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets the level's sounds.</summary>
     public Igi2Sounds Sounds { get; private init; } = new(new Igi2SoundDefinitions(), null);
 
+    /// <summary>Gets the screen the level's status messages are printed on, which runs after the level each tick.</summary>
+    public Igi2StatusMessageScreen StatusMessages { get; } = new();
+
     /// <summary>Gets the things in the level the player may activate, in the order the stationary tree offers them.</summary>
     public List<Interaction.IIgi2Activatable> Activatables => _surroundings.Activatables;
 
@@ -560,6 +574,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         {
             Flow?.IsBreakKeyDown = input.BreakCutscene;
             level.Tick();
+            StatusMessages.Run();
         }
         else
         {

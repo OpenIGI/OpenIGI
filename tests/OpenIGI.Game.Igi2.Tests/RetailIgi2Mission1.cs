@@ -29,7 +29,20 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
     /// <summary>Gets the session's materials, loaded with its tables.</summary>
     public Igi2GameMaterials Materials { get; init; } = new();
 
-    public static RetailIgi2Mission1 Load(bool collision = false)
+    /// <summary>Gets the screen the level's status messages print on, which <see cref="Step"/> runs after the level.</summary>
+    public Igi2StatusMessageScreen Screen { get; init; } = new();
+
+    /// <summary>Gets the language the level's status messages are looked up in.</summary>
+    public Igi2Strings? Strings { get; init; }
+
+    /// <summary>A tick of the level and then of the status message screen, the order gameplay runs them in.</summary>
+    public void Step()
+    {
+        Run.Tick();
+        Screen.Run();
+    }
+
+    public static RetailIgi2Mission1 Load(bool collision = false, bool soundLengths = false)
     {
         Igi2Level level = Igi2Level.Find("location1", "level1");
         RetailIgi2LevelLoadTests.Harness harness = new(Path.Combine(level.Directory, "objects.qvm"), loadTables: true);
@@ -42,7 +55,18 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
         files.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
         Igi2SoundDefinitions definitions = new();
         definitions.Load(new ResourceRegistry(files), ["LOCAL:common/sounds", "LOCAL:missions/location1/common/sounds", "MISSION:sounds"]);
-        Igi2Sounds sounds = new(definitions, new Audible());
+        Engine.Audio.SoundBank? bank = null;
+        if (soundLengths)
+        {
+            bank = new Engine.Audio.SoundBank(files);
+            foreach (string directory in (string[])["LOCAL:common/sounds", "LOCAL:missions/location1/common/sounds", "MISSION:sounds"])
+            {
+                bank.MountDirectory(directory);
+                bank.MountDirectory(directory + "/" + Igi2SoundDefinitions.DefaultLanguage);
+            }
+        }
+
+        Igi2Sounds sounds = new(definitions, new Audible(bank));
 
         List<GameTask> tree = [.. All(harness.LevelRoot)];
         foreach (Igi2SwitchTask button in tree.OfType<Igi2SwitchTask>())
@@ -69,7 +93,28 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
             }
         }
 
-        return new RetailIgi2Mission1(level, run, sounds, tree, world) { Materials = harness.Session.Services.Require<Igi2GameMaterials>() };
+        ResourceRegistry resources = new(files);
+        foreach (string archive in Igi2Strings.Archives)
+        {
+            resources.Register(archive, files.ReadAllBytes(archive));
+        }
+
+        Igi2Strings strings = new(resources);
+        Igi2StatusMessageScreen screen = new();
+        foreach (Igi2StatusMessageTask message in tree.OfType<Igi2StatusMessageTask>())
+        {
+            message.Strings = strings;
+            message.Screen = screen;
+            message.Sounds = sounds;
+            message.InitText();
+        }
+
+        return new RetailIgi2Mission1(level, run, sounds, tree, world)
+        {
+            Materials = harness.Session.Services.Require<Igi2GameMaterials>(),
+            Screen = screen,
+            Strings = strings,
+        };
     }
 
     /// <summary>Gets a tick's input with nothing pressed.</summary>
@@ -113,8 +158,12 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
     }
 
     /// <summary>A mixer whose voices sound until stopped, so a made sound stays among the level's playing ones.</summary>
-    internal sealed class Audible : ITitleAudio
+    /// <param name="bank">The bank sounds' lengths are read from, or <see langword="null"/> for none.</param>
+    internal sealed class Audible(Engine.Audio.SoundBank? bank = null) : ITitleAudio
     {
+        public double SampleSeconds(string bankKey) =>
+            bank is not null && bank.TryGet(bankKey, out Engine.Audio.SoundEntry entry) ? entry.SampleSeconds : 0.0;
+
         public void UseDefinitions(Engine.Audio.ISoundDefinitionLookup definitions, IReadOnlyList<string> bankDirectories)
         {
         }

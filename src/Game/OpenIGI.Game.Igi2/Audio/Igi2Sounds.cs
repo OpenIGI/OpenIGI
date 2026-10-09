@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Audio;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Player;
 
@@ -20,6 +21,9 @@ namespace OpenIGI.Game.Igi2.Audio;
 /// <param name="audio">The mixer, or <see langword="null"/> where nothing is heard.</param>
 public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? audio)
 {
+    /// <summary>The ticks a second the sound system counts in, <c>SoundSys_nFrequency</c>, which <c>Flow_SetFrequency</c> sets to the game's.</summary>
+    public const int Frequency = 30;
+
     private readonly List<Igi2Sound> _playing = [];
 
     /// <summary>Gets the level's definitions.</summary>
@@ -46,6 +50,18 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
         return sound;
     }
 
+    /// <summary>
+    /// How long a definition sounds, in ticks, <c>SoundSys_GetSoundLength</c> (<c>igi2 0x42F870</c>): the longest of its sounds,
+    /// each its sample's length times the game's frequency, cut to a whole tick (<c>SoundDefSound_GetSoundLengthHandler</c>,
+    /// <c>igi2ed 0x431930</c>, and the trigger's and the graph's alike), a group's the longest of its children's
+    /// (<c>SoundDefGroup_GetSoundLengthHandler</c>, <c>0x4348D0</c>).
+    /// </summary>
+    /// <param name="name">The definition's name.</param>
+    /// <returns>The ticks, or nought for a name nothing defines.</returns>
+    /// <remarks>The dedicated server's handlers multiply by nought, having no samples; this is the client's answer.</remarks>
+    public int LengthTicks(string name) =>
+        Definitions.TryResolve(name, out SoundDefinition? definition) && definition is not null ? LengthTicks(definition, 0) : 0;
+
     /// <summary>Runs the sounds one tick: each follows what it hangs off, and counts the time it has played.</summary>
     /// <remarks>One ended or deleted is let go.</remarks>
     public void Run()
@@ -61,6 +77,24 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
 
             sound.Tick();
         }
+    }
+
+    private int LengthTicks(SoundDefinition definition, int longest)
+    {
+        if (definition.Kind == SoundDefinitionKind.Group)
+        {
+            foreach (SoundDefinition child in definition.Children)
+            {
+                longest = LengthTicks(child, longest);
+            }
+
+            return longest;
+        }
+
+        // The sample's length is taken as a float, then by the frequency, and cut.
+        float seconds = (float)(audio?.SampleSeconds(definition.BankKey) ?? 0.0);
+        int ticks = Fpu.ToInt32((Fpu)(double)Frequency * seconds);
+        return ticks > longest ? ticks : longest;
     }
 
     /// <summary>Lets go of a deleted sound.</summary>

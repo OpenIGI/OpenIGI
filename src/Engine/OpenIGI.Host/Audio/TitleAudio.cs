@@ -37,6 +37,12 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank) : ITitleAud
         return voice == AudioVoiceHandle.None ? null : new Voice(sounds, definition, voice, looping);
     }
 
+    /// <inheritdoc/>
+    public double SampleSeconds(string bankKey)
+    {
+        return bank.TryGet(bankKey, out SoundEntry entry) ? entry.SampleSeconds : 0.0;
+    }
+
     /// <summary>A voice the title holds.</summary>
     private sealed class Voice(SoundSystem sounds, string definition, AudioVoiceHandle voice, bool? looping) : ITitleVoice
     {

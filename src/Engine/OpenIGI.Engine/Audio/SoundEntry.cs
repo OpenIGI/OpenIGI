@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Sound;
 
 namespace OpenIGI.Engine.Audio;
@@ -92,6 +93,19 @@ public sealed class SoundEntry
     /// <summary>Gets how long the sound plays for.</summary>
     public TimeSpan Duration => _duration;
 
+    /// <summary>
+    /// Gets how long I.G.I. 2 reckons the sound to last, in seconds, <c>Sound_GetSampleDuration</c> (<c>igi2ed 0x55E0E0</c>) on the
+    /// x87 at single precision: an ILSF sound's frames over its rate; an MPEG track inside an archive its milliseconds, which
+    /// <c>mpgsize</c> (<c>igi2ed 0x55E140</c>) reckons from the bitrate of whatever its first four bytes say and its size, times a
+    /// thousandth; a loose track its size over a rate of nought.
+    /// </summary>
+    /// <remarks>Retail times a loose ILSF file the same way as a loose track, its size over nought; I.G.I. 2's sounds are all in archives.</remarks>
+    public double SampleSeconds => Codec == SoundCodec.Ilsf
+        ? ((X87Single)(double)(uint)Header.FrameCount / (double)Header.SampleRate).Value
+        : !Data.IsEmpty
+            ? ((X87Single)(double)(uint)MpegMilliseconds(Data.Span) * 0.001).Value
+            : double.PositiveInfinity;
+
     /// <summary>Creates an entry for an MPEG audio track.</summary>
     /// <param name="name">The lookup key, from <see cref="SoundName.ToKey"/>.</param>
     /// <param name="origin">The virtual file system path the track was found at.</param>
@@ -119,6 +133,48 @@ public sealed class SoundEntry
             header.Channels,
             header.EstimateDuration(encodedByteCount),
             data);
+
+    // mpgsize's table of rates, indexed by sixteen times the layer plus three times the version, plus the header's bitrate field;
+    // its first row is the rates and constants it sits beside, which a header with no layer reads.
+    private static readonly int[] MpegBitrates =
+    [
+        0, 0, 22050, 24000, 16000, 44100, 48000, 32000, 0, 1074003968, 0, 0, 0, 1073741824, 0, 1072693248,
+        0, 32000, 48000, 56000, 64000, 80000, 96000, 112000, 128000, 144000, 160000, 176000, 192000, 224000, 256000, 0,
+        0, 8000, 16000, 24000, 32000, 40000, 48000, 56000, 64000, 80000, 96000, 112000, 128000, 144000, 160000, 0,
+        0, 8000, 16000, 24000, 32000, 40000, 48000, 56000, 64000, 80000, 96000, 112000, 128000, 144000, 160000, 0,
+        0, 32000, 64000, 96000, 128000, 160000, 192000, 224000, 256000, 288000, 320000, 352000, 384000, 416000, 448000, 0,
+        0, 32000, 48000, 56000, 64000, 80000, 96000, 112000, 128000, 160000, 192000, 224000, 256000, 320000, 384000, 0,
+        0, 32000, 40000, 48000, 56000, 64000, 80000, 96000, 112000, 128000, 160000, 192000, 224000, 256000, 320000, 0,
+    ];
+
+    // mpgsize: the stream's length in bytes, times eight thousand, over the bitrate its first header names, cut to a whole
+    // millisecond. A version-2.5 header always reads the ninth rate of the version-1 rows; a rate of nought is the x87's
+    // integer indefinite.
+    private static int MpegMilliseconds(ReadOnlySpan<byte> data)
+    {
+        uint header = data.Length >= 4 ? (uint)((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) : 0u;
+        int layer = (int)(-(header >> 17) & 3);
+        int version = (int)((header >> 19) & 3);
+        int rate = (int)((header >> 12) & 0xF);
+        int row;
+        if (version == 2)
+        {
+            row = 0;
+        }
+        else
+        {
+            if (version == 0)
+            {
+                rate = 8;
+            }
+
+            row = 1;
+        }
+
+        double milliseconds = (((X87Single)(double)(long)data.Length * 8000.0) / (double)MpegBitrates[(16 * (layer + (3 * row))) + rate]).Value;
+        double whole = Math.Truncate(milliseconds);
+        return double.IsNaN(whole) || whole < int.MinValue || whole > int.MaxValue ? int.MinValue : (int)whole;
+    }
 
     /// <inheritdoc/>
     public override string ToString() => Codec == SoundCodec.Ilsf
