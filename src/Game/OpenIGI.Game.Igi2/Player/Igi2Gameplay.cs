@@ -145,6 +145,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
             generator.Sounds = player.Sounds;
         }
 
+        // The level's humans, in Human_ptQTaskList's order, are the player alone until the AI's soldiers are its own.
+        IIgi2AreaOccupant[] humans = [player.Human];
+        foreach (Igi2AreaActivateTask area in Descendants(root).OfType<Igi2AreaActivateTask>())
+        {
+            area.Humans = humans;
+            area.Player = player.Human;
+        }
+
         // Each line's pieces are counted once its parameters are read, in the language the screens load.
         Igi2Strings strings = new(request.World.Resources);
         foreach (Igi2StatusMessageTask message in Descendants(root).OfType<Igi2StatusMessageTask>())

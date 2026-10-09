@@ -66,6 +66,9 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
 
         context.Natives.RegisterConstant("OVERLAY_BINOCULAR", 0);
         context.Natives.RegisterConstant("OVERLAY_SNIPER", 2);
+
+        // The criteria an AreaActivate is written in, each the bit its module registers (AreaActivateQTask_RegisterCriteria).
+        Flow.Igi2AreaCriteria.Register(context.Natives);
     }
 
     /// <inheritdoc/>
@@ -197,6 +200,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2ExplodeObjectTask>(Interaction.Igi2ExplodeObjectTask.TypeName);
         context.Types.Register<Interaction.Igi2GenericTbaTask>(Interaction.Igi2GenericTbaTask.TypeName);
         context.Types.Register<Flow.Igi2StatusMessageTask>(Flow.Igi2StatusMessageTask.TypeName);
+        context.Types.Register<Flow.Igi2AreaActivateTask>(Flow.Igi2AreaActivateTask.TypeName);
 
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);
