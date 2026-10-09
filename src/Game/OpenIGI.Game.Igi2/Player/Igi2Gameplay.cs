@@ -172,6 +172,18 @@ public sealed class Igi2Gameplay : ITitleGameplay
             movers.Add(door);
         }
 
+        List<Interaction.IIgi2Destructible> destructibles = [];
+        foreach (Interaction.Igi2ExplodeObjectTask explosive in Descendants(root).OfType<Interaction.Igi2ExplodeObjectTask>())
+        {
+            explosive.Explosive.Models = models;
+            explosive.Explosive.Explosions = player.Explosions;
+            explosive.Explosive.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2ExplodeObjectTask.TypeName, explosive.Id));
+            player.Explosions?.AddTarget(explosive);
+            destructibles.Add(explosive);
+        }
+
+        player.Destruction = destructibles.Count > 0 ? new Interaction.Igi2PlacementDestruction(destructibles) : null;
+
         foreach (Interaction.Igi2ConveyorBeltTask belt in Descendants(root).OfType<Interaction.Igi2ConveyorBeltTask>())
         {
             player.Conveyors[belt.Id] = belt;
@@ -386,6 +398,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <inheritdoc/>
     public IPlacementMotion? Motions { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementDestruction? Destruction { get; set; }
 
     /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
     public Igi2LevelRun? Level { get; set; }

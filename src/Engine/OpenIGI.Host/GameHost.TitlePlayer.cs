@@ -68,6 +68,7 @@ internal sealed partial class GameHost
         _titlePlayer = player;
         _player = null;
         _world?.Motions = player.Motions;
+        _world?.Destruction = player.Destruction;
 
         // What the title's player holds in front of its eyes, drawn from the title's own packs.
         if (player is ITitleFirstPerson)

@@ -113,7 +113,7 @@ public sealed class Igi2KnifeFire : IIgi2FireHandler
             request.Weapon.ImpactEffects.NewSound(sound, hit.Position);
         }
 
-        if (struck.Owner is IIgi2WeaponHitTarget target)
+        if ((struck.Handler ?? struck.Owner) is IIgi2WeaponHitTarget target)
         {
             target.WeaponHit(new Igi2WeaponHit(hit, knife.DamageFactor, direction, request.Operator, request.WeaponType, null));
         }

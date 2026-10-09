@@ -11,6 +11,12 @@ public interface IIgi2Collider
     /// <summary>Gets what the collider stands for in the level: the placing task, or the terrain.</summary>
     object Owner { get; }
 
+    /// <summary>
+    /// Gets the task that answers the events sent to what a line struck, as a weapon's hit is, or <see langword="null"/> when
+    /// <see cref="Owner"/> answers them itself.
+    /// </summary>
+    object? Handler => null;
+
     /// <summary>Traces vertical lines against this collider alone, the object's handler for the ground-query event.</summary>
     /// <param name="trace">The lines and their running results.</param>
     void NextZ(Igi2LineTrace trace);

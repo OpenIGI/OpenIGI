@@ -194,6 +194,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2LiftTask>(Interaction.Igi2LiftTask.TypeName);
         context.Types.Register<Interaction.Igi2FloorTask>(Interaction.Igi2FloorTask.TypeName);
         context.Types.Register<Interaction.Igi2ConveyorBeltTask>(Interaction.Igi2ConveyorBeltTask.TypeName);
+        context.Types.Register<Interaction.Igi2ExplodeObjectTask>(Interaction.Igi2ExplodeObjectTask.TypeName);
 
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);

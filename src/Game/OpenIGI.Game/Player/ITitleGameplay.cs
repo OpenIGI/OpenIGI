@@ -86,6 +86,9 @@ public interface ITitlePlayer
     /// <summary>Gets where the title's own objects move what they placed, or <see langword="null"/> when nothing it placed moves.</summary>
     IPlacementMotion? Motions => null;
 
+    /// <summary>Gets which of the title's own placements are destroyed, or <see langword="null"/> when nothing it placed can be.</summary>
+    IPlacementDestruction? Destruction => null;
+
     /// <summary>Runs one game tick.</summary>
     /// <param name="input">The tick's input.</param>
     void Tick(in TitlePlayerInput input);

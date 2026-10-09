@@ -127,6 +127,9 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets the placements a title's own objects move, or null when none do.</summary>
     IPlacementMotion? Motions { get; set; }
 
+    /// <summary>Gets or sets which placements a title's own objects have destroyed, or null when none can be.</summary>
+    IPlacementDestruction? Destruction { get; set; }
+
     /// <summary>Gets or sets the level's pickups, or null when it has none.</summary>
     GenericPickupRegistry? GenericPickups { get; set; }
 

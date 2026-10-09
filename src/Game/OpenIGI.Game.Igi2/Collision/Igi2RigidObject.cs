@@ -50,7 +50,7 @@ public sealed class Igi2CollisionMesh
 /// <summary>A placed solid model, <c>RigidDynCubeObj</c>, as the collision sees it: a pose, a scale, and its meshes.</summary>
 public sealed class Igi2RigidObject : IIgi2Collider
 {
-    private readonly IReadOnlyList<Igi2CollisionMesh?> _meshes;
+    private IReadOnlyList<Igi2CollisionMesh?> _meshes;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2RigidObject"/> class.</summary>
     /// <param name="owner">What a hit reports as struck.</param>
@@ -81,7 +81,7 @@ public sealed class Igi2RigidObject : IIgi2Collider
     public const uint RigidGroup = 0x08000000;
 
     /// <summary>Gets the model's radius.</summary>
-    public float Radius { get; }
+    public float Radius { get; private set; }
 
     /// <summary>Gets the collision group of the object's type; queries name the groups they reach.</summary>
     public uint Group { get; init; } = RigidGroup;
@@ -123,4 +123,17 @@ public sealed class Igi2RigidObject : IIgi2Collider
     /// then the type's, as <c>QTask_TriggerBaseHandler</c> chains them. <see langword="null"/> for a plain solid.
     /// </summary>
     public Action<Igi2LineTrace>? Traced { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>The placed task, for one whose events a struck solid passes on, as an <c>ExplodeObject</c>'s weapon hits.</remarks>
+    public object? Handler { get; set; }
+
+    /// <summary>Wears another model's collision, as an object swapping its model does (<c>ModelObj_SetLODVirModel</c>).</summary>
+    /// <param name="meshes">The new model's collision mesh levels, by <c>iMesh</c>.</param>
+    /// <param name="radius">The new model's radius.</param>
+    public void ChangeModel(IReadOnlyList<Igi2CollisionMesh?> meshes, float radius)
+    {
+        _meshes = meshes ?? throw new ArgumentNullException(nameof(meshes));
+        Radius = radius;
+    }
 }

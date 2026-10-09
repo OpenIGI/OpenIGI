@@ -203,6 +203,9 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public IPlacementMotion? Motions { get; set; }
 
+    /// <inheritdoc/>
+    public IPlacementDestruction? Destruction { get; set; }
+
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 
@@ -1285,7 +1288,8 @@ public sealed class WorldRenderer : IWorldPresenter
     private bool UsesDestroyedReplacement(WorldPlacement placement) =>
         placement.DestroyedReplacement is not null
         && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
-            || Destructibles?.IsDestroyed(placement) == true);
+            || Destructibles?.IsDestroyed(placement) == true
+            || Destruction?.IsDestroyed(placement) == true);
 
     /// <inheritdoc/>
     public void Dispose()

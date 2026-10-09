@@ -40,6 +40,10 @@ namespace OpenIGI.Game.Igi2.World;
 /// it as it ships — a wire stretched down its span, a spline segment bent along its curve. Null for
 /// everything drawn as authored, which is nearly everything.
 /// </param>
+/// <param name="DestroyedModel">
+/// The model the object wears once destroyed, its <c>Destroyed model</c>, or empty for a type that has none: what an
+/// <c>ExplodeObject</c> swaps to when it explodes (<c>ExplodeObject_SetExploded</c>, <c>igi2 0x49D010</c>).
+/// </param>
 /// <param name="ModelVariant">
 /// Which of the owning task's model SLOTS this is wearing, counted from one, or zero when the type has
 /// a single slot or the port has not established its enumeration. It is the group letter in the name of
@@ -59,7 +63,8 @@ public readonly record struct Igi2Placement(
     string MountedModel = "",
     Vector3f MountedOrientation = default,
     Matrix3f? Frame = null,
-    IIgi2PlacementGeometry? Geometry = null);
+    IIgi2PlacementGeometry? Geometry = null,
+    string DestroyedModel = "");
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -101,6 +106,9 @@ public sealed class Igi2WorldScene
 
     /// <summary>The parameter a placeable task names its draw queue with, when it has one.</summary>
     public const string RenderGroupParameter = "RenderGroup";
+
+    /// <summary>The parameter a destructible type names its destroyed model with.</summary>
+    public const string DestroyedModelParameter = "Destroyed model";
 
     /// <summary>What a type that names its parameters the usual way is read with.</summary>
     public static Igi2PlacementBinding DefaultBinding { get; } =
@@ -510,6 +518,12 @@ public sealed class Igi2WorldScene
             mountedOrientation = new Vector3f(alpha, 0f, orientation.Z + gamma);
         }
 
+        string destroyed = TryGetValue(task, DestroyedModelParameter, out object? rawDestroyed)
+            && rawDestroyed is string destroyedName
+            && !string.IsNullOrWhiteSpace(destroyedName)
+                ? destroyedName
+                : string.Empty;
+
         placement = new Igi2Placement(
             task.Id,
             task.Type.Name,
@@ -521,7 +535,8 @@ public sealed class Igi2WorldScene
             mounted,
             mountedOrientation,
             frame,
-            geometry);
+            geometry,
+            destroyed);
         return true;
     }
 }

@@ -80,6 +80,7 @@ public static class Igi2DrawableScene
         int placementId = 0;
         string placementType = string.Empty;
         int placementGroup = WorldPlacement.DefaultRenderGroup;
+        string placementDestroyed = string.Empty;
 
         int attached = 0;
         int attachmentsUnresolved = 0;
@@ -173,6 +174,10 @@ public static class Igi2DrawableScene
                 // The queue this object is drawn in. Every I.G.I. 2 level authors it, and it is what
                 // separates a decal or a pane of glass from the geometry it has to come after.
                 RenderGroup = placementGroup,
+
+                // What the object is drawn as once it is destroyed. Only the object's own model is swapped; its parts
+                // hang on as they were.
+                DestroyedReplacement = depth == 0 ? Replacement(placementDestroyed) : null,
             });
 
             // A model that attaches something whose model attaches it back would recurse forever. The
@@ -263,6 +268,7 @@ public static class Igi2DrawableScene
                 ? placement.TypeName
                 : $"{placement.TypeName}:{placement.LevelId}";
             placementGroup = placement.RenderGroup;
+            placementDestroyed = placement.DestroyedModel;
 
             int index = 0;
             if (!Emit(
@@ -280,6 +286,14 @@ public static class Igi2DrawableScene
                 unresolved++;
             }
         }
+
+        WorldModelBinding? Replacement(string modelName) =>
+            modelName.Length > 0
+            && table.TryResolveMesh(modelName, out string? mesh)
+            && TryFind(packs, mesh, out LoadedPack? pack, out MefModel? model)
+            && table.TryGetInstance(modelName, out MtpInstance instance)
+                ? new WorldModelBinding(instance, pack, model)
+                : null;
 
         log.Information(
             LogCategory,

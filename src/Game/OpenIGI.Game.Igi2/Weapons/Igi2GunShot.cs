@@ -342,7 +342,7 @@ public sealed class Igi2GunShot
         Fpu falloff = 1.0f - ((new Fpu(travelled) / bullet.Range) * 0.30000001f);
         float damage = ((falloff * bullet.DamageFactor) * left).F;
         Vector3f shot = new((new Fpu(end.X) - start.X).F, (new Fpu(end.Y) - start.Y).F, (new Fpu(end.Z) - start.Z).F);
-        if (hit.HitObject?.Owner is IIgi2WeaponHitTarget target)
+        if ((hit.HitObject?.Handler ?? hit.HitObject?.Owner) is IIgi2WeaponHitTarget target)
         {
             target.WeaponHit(new Igi2WeaponHit(hit, damage, shot, shooter, bullet.WeaponType, bullet.AmmoType));
         }

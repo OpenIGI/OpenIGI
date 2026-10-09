@@ -185,7 +185,6 @@ name ControlsMenu_ConvertOffsetFromFloat    # MENUSYSTEM/ingamemenu.qvm
 name Crouch    # config.qvm
 name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # config.qvm
 name DropWeapon    # config.qvm
-name ExplodeObject_3830.isExploded    # MISSIONS/location1/level1/objects.qvm
 name Fire    # config.qvm
 name GAME_GAMEMODE_SINGLEPLAYER    # MENUSYSTEM/ingamemenu.qvm
 name GD_2    # config.qvm
@@ -474,7 +473,6 @@ type Dirlight    # MISSIONS/location1/level1/objects.qvm
 type DirlightKeyframe    # MISSIONS/location1/level1/objects.qvm
 type EditBoneObj    # MISSIONS/location1/level1/objects.qvm
 type EditRigidObj    # MISSIONS/location1/level1/objects.qvm
-type ExplodeObject    # MISSIONS/location1/level1/objects.qvm
 type GenericTBA    # MISSIONS/location1/level1/objects.qvm
 type GlobalLight    # MISSIONS/location1/level1/objects.qvm
 type GlobalLightKeyframe    # MISSIONS/location1/level1/objects.qvm
