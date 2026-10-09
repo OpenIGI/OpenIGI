@@ -172,9 +172,9 @@ public sealed class Igi2PlacementBindingTests
     public void A_camera_holder_turns_by_its_lone_gamma()
     {
         Igi2Level level = LevelOne();
-        DeclaredTask camera = Walk(level.Root)
-            .OfType<DeclaredTask>()
-            .First(t => t.Type.Name == "SCamera");
+        Interaction.Igi2SecurityCameraTask camera = Walk(level.Root)
+            .OfType<Interaction.Igi2SecurityCameraTask>()
+            .First();
 
         Assert.True(camera.TryGetValue("Holder Model", out object? rawModel));
         Assert.True(camera.TryGetValue("Holder Position", out object? rawPosition));

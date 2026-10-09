@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
@@ -67,6 +68,9 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// <c>EditorRigidObj</c> (<c>0x580890</c>), <c>EditCamera</c> (<c>0x580E10</c>) and <c>Origo</c> (<c>0x5C9A50</c>).
     /// The other two pickups keep the handler they inherit, and block it.
     /// </summary>
+    // The type whose mounted model is a solid of its own, a security camera's lens.
+    private const string LensType = "SCamera";
+
     private static readonly HashSet<string> SightThrough = new(StringComparer.Ordinal)
     {
         "GunPickup", "SCamera", "Wire", "EditorRigidObj", "EditCamera", "Origo",
@@ -180,6 +184,39 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                     objects.Add(solid);
                 }
             });
+
+            // A security camera's lens is a task of its own, SCameraLens, its model at the holder's first vertex turned by its own
+            // tilt and turn; it is a moving object, which bullets strike and sight never meets.
+            if (string.Equals(placement.TypeName, LensType, StringComparison.Ordinal)
+                && placement.MountedModel.Length > 0
+                && models(placement.MountedModel) is { BoneHierarchy: null } lens
+                && Meshes(lens) is { } lensMeshes)
+            {
+                // At rest it stands where the world draws it; its own tick turns it from then on.
+                Matrix3f holder = WorldScene.ToOrientation(placement.Orientation);
+                Vector3d at = placement.Position;
+                if (models(placement.Model)?.TryGetMagicVertex(0, out Vector3f mount) == true)
+                {
+                    Vector3f offset = holder.Transposed().Transform(mount);
+                    at = new Vector3d(at.X + offset.X, at.Y + offset.Y, at.Z + offset.Z);
+                }
+
+                IReadOnlyList<float> lensFrame = Igi2Pose.FromMatrix(at, WorldScene.ToOrientation(placement.MountedOrientation)).Orientation;
+                Igi2RigidObject solid = new(
+                    new Igi2CollisionOwner(placement.TypeName, placement.LevelId, placement.MountedModel, 1),
+                    lensMeshes,
+                    lens.NativeMarkerBound,
+                    isBuildingMesh: false)
+                {
+                    Position = at,
+                };
+                for (int i = 0; i < solid.Orientation.Length; i++)
+                {
+                    solid.Orientation[i] = lensFrame[i];
+                }
+
+                objects.Add(solid);
+            }
         }
 
         Igi2TerrainCollider? terrain = ground is { IsEmpty: false } ? new Igi2TerrainCollider(ground, terrainOwner) : null;
@@ -424,7 +461,8 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
 
     /// <summary>Whether a placed object's type has no line-of-sight handler; an attachment is a magic object of its own and has one.</summary>
     private static bool PassesSight(object owner) =>
-        owner is Igi2CollisionOwner { Depth: 0 } placed && SightThrough.Contains(placed.TypeName);
+        owner is Igi2CollisionOwner placed
+        && ((placed.Depth == 0 && SightThrough.Contains(placed.TypeName)) || string.Equals(placed.TypeName, LensType, StringComparison.Ordinal));
 
     /// <summary>
     /// The object half of a line trace, <c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>): every result is reset

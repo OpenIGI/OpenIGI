@@ -166,6 +166,35 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         Func<string, Formats.World.MefModel?> models = Models(request.World);
         List<Interaction.IIgi2Activatable> activatables = [];
+
+        // What detectors see, in the order the tree makes them (AIDetection_ptDetectionQTaskList): the cameras and the player.
+        if (request.Services.TryGet(out Igi2GameMaterials? sightMaterials))
+        {
+            Detection.Igi2DetectionWorld detection = new(player.CollisionWorld, sightMaterials)
+            {
+                FlowTicks = () => level.Ticks,
+                LevelTick = () => level.LevelFlow?.Tick ?? 0,
+            };
+            foreach (Engine.Tasks.GameTask node in Descendants(root))
+            {
+                if (node is Interaction.Igi2SecurityCameraTask camera)
+                {
+                    camera.Models = models;
+                    camera.Sounds = player.Sounds;
+                    camera.Explosions = player.Explosions;
+                    camera.Difficulty = player.Human.Difficulty;
+                    camera.Prepare();
+                    camera.Bind(detection, player.CollisionWorld.SolidsOf(Interaction.Igi2SecurityCameraTask.TypeName, camera.Id));
+                    player.Explosions?.AddTarget(camera);
+                    detection.Detectables.Add(camera);
+                }
+                else if (ReferenceEquals(node, task))
+                {
+                    detection.Detectables.Add(player.Human);
+                }
+            }
+        }
+
         foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
         {
             button.Models = models;

@@ -355,18 +355,6 @@ name Radio    # config.qvm
 name RadioCom_Activate    # MENUSYSTEM/ingamemenu.qvm
 name RaiseStance    # config.qvm
 name Reload    # config.qvm
-name SCamera_106.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_106.isExploded    # MISSIONS/location1/level1/ai/511.qvm
-name SCamera_107.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_108.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_109.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_113.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_114.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_116.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_118.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_119.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_121.isDetection    # MISSIONS/location1/level1/objects.qvm
-name SCamera_124.isDetection    # MISSIONS/location1/level1/objects.qvm
 name Say    # config.qvm
 name Scores    # config.qvm
 name ScrollListBox_985.nActiveID    # MENUSYSTEM/ingamemenu.qvm
@@ -452,7 +440,6 @@ type PatrolPath    # MISSIONS/location1/level1/objects.qvm
 type PatrolPathCommand    # MISSIONS/location1/level1/objects.qvm
 type PictureBox    # MENUSYSTEM/ingamemenu.qvm
 type RotateAttachment    # MISSIONS/location1/level1/objects.qvm
-type SCamera    # MISSIONS/location1/level1/objects.qvm
 type ScrollListBox    # MENUSYSTEM/ingamemenu.qvm
 type SlideBar    # MENUSYSTEM/ingamemenu.qvm
 type Smoke    # MISSIONS/location1/level1/objects.qvm
