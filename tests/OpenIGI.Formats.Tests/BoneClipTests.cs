@@ -95,6 +95,40 @@ public sealed class BoneClipTests
     }
 
     [Fact]
+    public void AnArmedClipReportsTheEventAtItsStartOnItsFirstTickOnly()
+    {
+        // 0x4D47D0 gives every new clip node flag 0x8000; 0x4D4B60's first tick then also asks for the
+        // events lying exactly at the old clock, which a forward interval (open at the start) never would.
+        BoneAnimation animation = BoneAnimation.Create(
+            2,
+            320f,
+            [[Key(0f, 0f), Key(320f, 0f)]],
+            events:
+            [
+                new BoneAnimationEvent(8, BoneAnimationEvent.NoBone, 0f, default),
+                new BoneAnimationEvent(8, BoneAnimationEvent.NoBone, 160f, default),
+            ]);
+
+        BoneClip unarmed = new(animation, bone: 0, loops: true) { Rate = 0f };
+        unarmed.Tick();
+        Assert.False(unarmed.CrossedEvent(8));
+
+        BoneClip held = new(animation, bone: 0, loops: true) { Rate = 0f };
+        held.ArmStartEvents();
+        held.Tick();
+        Assert.True(held.TryGetCrossedEvent(8, out float mountTime));
+        Assert.Equal(0f, mountTime);
+        held.Tick();
+        Assert.False(held.CrossedEvent(8)); // the flag is spent; a held clip is silent again
+
+        BoneClip moving = new(animation, bone: 0, loops: true);
+        moving.ArmStartEvents();
+        moving.Tick();
+        Assert.True(moving.TryGetCrossedEvent(8, out float first));
+        Assert.Equal(0f, first); // the start point is dispatched before the interval's own 160
+    }
+
+    [Fact]
     public void EveryBoneSamplesItsOwnTrack()
     {
         // One clip drives a whole rig because the sampler indexes by the ASKING bone, not by the bone

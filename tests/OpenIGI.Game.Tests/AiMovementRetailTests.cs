@@ -11,40 +11,54 @@ namespace OpenIGI.Game.Tests;
 public sealed class AiMovementRetailTests
 {
     [Fact]
-    public void ATurnTakesHalfOnItsFirstTickAndAllOnTheNext()
+    public void TheBodyTakesALargeTurnWholeOnItsFirstTick()
     {
-        // With the clamp at pi the input is the whole error over pi; the unzoomed body averages it with the
-        // last tick's, so a 90-degree turn from rest takes 45 degrees, then 90.
-        HumanBodyTurn turn = new();
+        // With the clamp at pi the input is the whole error over pi, and 0x4610C0's averaging never applies
+        // (its tangent is compared unrounded): probed, patrol 411 turned 62 degrees in one tick.
+        HumanBodyTurn turn = new(averages: false);
+
+        Assert.Equal(Math.PI / 2.0, turn.Step(0.5f), 6);
+        Assert.Equal(62.0 * Math.PI / 180.0, turn.Step(62f / 180f), 5);
+    }
+
+    [Fact]
+    public void TheViewPitchTakesHalfOnItsFirstTickAndAllOnTheNext()
+    {
+        // 0x464800 rounds tan(pi/4) to the float 1.0 an unzoomed view's scale is, so the pitch does average.
+        HumanBodyTurn turn = new(averages: true);
 
         Assert.Equal(Math.PI / 4.0, turn.Step(0.5f), 6);
         Assert.Equal(Math.PI / 2.0, turn.Step(0.5f), 6);
     }
 
     [Fact]
+    public void AnEightAndAHalfDegreeErrorTurnsSevenOnTheFirstTick()
+    {
+        // Probed: 411's heading went from 7.82 to 0.74 degrees toward a node 8.5 degrees round, 8.5 / (2 - 16.67 s).
+        HumanBodyTurn turn = new(averages: false);
+        float input = 8.5f / 180f;
+
+        Assert.Equal(8.5 / (2.0 - (input * 16.666666666666668)), turn.Step(input) * 180.0 / Math.PI, 3);
+    }
+
+    [Fact]
     public void ALookAtNodeTurnsAtTheClampedRate()
     {
         // 0x452580 clamps the angle to 0.025925925 rad: s = 0.0082525, below the 0.06 threshold, so each
-        // steady tick turns s * pi / (2 - 16.67 s) = 0.0139203 rad, about 24 degrees a second.
-        HumanBodyTurn turn = new();
+        // tick turns s * pi / (2 - 16.67 s) = 0.0139203 rad, about 24 degrees a second, from the first.
+        HumanBodyTurn turn = new(averages: false);
         float input = 0.025925925f / MathF.PI;
 
-        double first = turn.Step(input);
-        double steady = turn.Step(input);
-
-        Assert.Equal(0.0139203 / 2.0, first, 3);
-        Assert.Equal(0.0139203, steady, 6);
+        Assert.Equal(0.0139203, turn.Step(input), 6);
+        Assert.Equal(0.0139203, turn.Step(input), 6);
     }
 
     [Fact]
     public void ASmallErrorHalvesEachTick()
     {
-        HumanBodyTurn turn = new();
-        turn.Step(0.01f / MathF.PI);
+        HumanBodyTurn turn = new(averages: false);
 
-        double second = turn.Step(0.01f / MathF.PI);
-
-        Assert.Equal(0.01 / (2.0 - (0.01 / Math.PI * 16.666666666666668)), second, 6);
+        Assert.Equal(0.01 / (2.0 - (0.01 / Math.PI * 16.666666666666668)), turn.Step(0.01f / MathF.PI), 6);
     }
 
     [Theory]

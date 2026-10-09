@@ -45,11 +45,13 @@ public static class HumanDamage
     /// <summary>The zone a hit from the front resolves to.</summary>
     public const int FrontZone = 13;
 
-    /// <summary>The zone a hit close enough to the reference bone resolves to.</summary>
+    /// <summary>The zone a hit close enough to the reference point resolves to.</summary>
     /// <remarks>
-    /// Almost certainly the head: it is decided by proximity to a single bone rather than by geometry,
-    /// and <see cref="HeadProximityUnits"/> is a 15-centimetre radius. Named for what it does rather
-    /// than what it probably is, since the bone is only known by index.
+    /// Meant as the head: <c>0x489C60</c> asks for bone 4 of <c>000_01_1</c>. But the lookup (<c>0x414F40</c>) ends in
+    /// <c>0x4D0930</c>, which only writes zeros, so the point is the human's origin (<c>Human+32</c>, the pelvis) and the
+    /// zone goes to a front hit within <see cref="HeadProximityUnits"/> of it. A round to the head scores the neck's
+    /// zone (<see cref="NeckZone"/>). Probed on mission 4: squad members 404 and 405, each killed by a round to part 4,
+    /// fell with the neck row's clip.
     /// </remarks>
     public const int ProximityZone = 15;
 
@@ -57,10 +59,10 @@ public static class HumanDamage
     /// <remarks><c>614.4</c> world units — 15 centimetres.</remarks>
     public const float HeadProximityUnits = 614.4f;
 
-    /// <summary>The bone the proximity test measures from — the head.</summary>
+    /// <summary>The bone the proximity test names -- bone 4 of <c>000_01_1</c>, whose lookup returns the origin.</summary>
     /// <remarks>
-    /// The original names it as bone 4 of model <c>000_01_1</c>, and <see cref="ZoneOfBone"/> puts bone
-    /// 4 at the head of the four-bone chain that maps to <see cref="NeckZone"/>. The two readings agree.
+    /// Kept as the gate a pose must pass (one with this many bones is a human's); the distance itself is measured from
+    /// the origin. See <see cref="ProximityZone"/>.
     /// </remarks>
     public const int ProximityBoneIndex = 4;
 

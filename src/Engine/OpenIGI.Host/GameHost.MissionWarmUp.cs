@@ -210,13 +210,13 @@ internal sealed partial class GameHost
         }
 
         // How long the level has been the player's: reset by anything that takes it from them.
-        bool playerHasLevel = !PresentationHoldsLevel && !_loadSequence.IsActive && _cutscenes?.Frame is null;
+        bool playerHasLevel = !PresentationHoldsLevel && !_loadSequence.IsActive && CutsceneFrameShown is null;
         _controlSeconds = playerHasLevel ? _controlSeconds + (1f / 60f) : 0f;
 
         // An intro that starts AFTER the notice went up takes it down again, to be posted fresh when the
         // intro lets go: a level's intro can begin a second or two into play, and a notice that ran its
         // few seconds behind the intro's camera was one nobody saw.
-        if (_cutscenes?.Frame is not null && _briefingPost is { HasTitle: true } hidden)
+        if (CutsceneFrameShown is not null && _briefingPost is { HasTitle: true } hidden)
         {
             hidden.Clear();
             _briefingPosted = false;

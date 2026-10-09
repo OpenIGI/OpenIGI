@@ -597,6 +597,25 @@ internal sealed partial class GameHost : IDisposable
     private ITacticalComputerPresenter? TacticalComputer =>
         RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
+    // The map gate of the level last asked about; rebuilt when another level comes up.
+    private MapComputerGate? _mapGate;
+
+    /// <summary>Whether the level lets the player read the map computer's map right now (<see cref="MapComputerGate"/>).</summary>
+    private bool MapComputerAvailable()
+    {
+        if (_activeLevelRoot is not { } root)
+        {
+            return true;
+        }
+
+        if (_mapGate is null || !ReferenceEquals(_mapGate.LevelRoot, root))
+        {
+            _mapGate = new MapComputerGate(root, _loop.Variables);
+        }
+
+        return _mapGate.MapAvailable;
+    }
+
     private bool _missionResultHandled;
     private int _missionFailureTicks;
     private bool _missionFailedMenu;
@@ -633,6 +652,13 @@ internal sealed partial class GameHost : IDisposable
     private bool _soldiersInWalk;
     private bool _playerInWalk;
     private bool _playerTicked;
+
+    // An intro skipped at load (no cinematics, or OPENIGI_BREAK_CUTSCENE) still plays through the ticks whose walk
+    // reads the break and closes it; until it has stopped, nothing of it is drawn or heard.
+    private bool _introSkipPending;
+
+    /// <summary>Gets the cutscene frame to present: none while a skipped intro is still closing.</summary>
+    private CutsceneFrame? CutsceneFrameShown => _introSkipPending ? null : _cutscenes?.Frame;
     private bool _interactionsTickedByPlayer;
     private Func<SoldierEnemy>? _soldierEnemy;
 
@@ -2433,6 +2459,9 @@ internal sealed partial class GameHost : IDisposable
                 bool toggleComputer = _player.WasActionPressed(_window.Input, PlayerAction.MapComputer) || automaticOpen;
                 bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
 
+                // The computer always opens; whether its map is there to read is the level's to say.
+                bool mapAvailable = MapComputerAvailable();
+
                 if (TacticalComputer is { } tacticalComputer)
                 {
                     // Real elapsed time, on its own clock. The transition is presentation: it must take
@@ -2452,6 +2481,11 @@ internal sealed partial class GameHost : IDisposable
                         (float)_window.Width / Math.Max(1, _window.Height),
                         HumanView.DefaultTanX);
 
+                    // Without the device there is no map to climb to: the pages come up over the player's own view.
+                    tacticalComputer.MapAvailable = mapAvailable;
+                    CameraPose vantage = mapAvailable ? tacticalComputer.Vantage() : eye;
+                    float vantageFieldOfView = mapAvailable ? tacticalComputer.FieldOfView : gameplayFieldOfView;
+
                     if (!_computerOpen && toggleComputer)
                     {
                         _computerOpen = true;
@@ -2460,8 +2494,8 @@ internal sealed partial class GameHost : IDisposable
                         _computerFlight.BeginOpen(
                             eye,
                             gameplayFieldOfView,
-                            tacticalComputer.Vantage(),
-                            tacticalComputer.FieldOfView);
+                            vantage,
+                            vantageFieldOfView);
 
                         // The interface draws its own pointer, so the platform's would be a second,
                         // unrelated cursor over it.
@@ -2471,8 +2505,8 @@ internal sealed partial class GameHost : IDisposable
                     else if (_computerOpen && (toggleComputer || closeComputer) && _computerFlight.CanClose)
                     {
                         _computerFlight.BeginClose(
-                            tacticalComputer.Vantage(),
-                            tacticalComputer.FieldOfView,
+                            vantage,
+                            vantageFieldOfView,
                             eye,
                             gameplayFieldOfView);
                     }
@@ -2482,8 +2516,8 @@ internal sealed partial class GameHost : IDisposable
                         _computerFlight.Update(
                             computerElapsed,
                             eye,
-                            tacticalComputer.Vantage(),
-                            tacticalComputer.FieldOfView);
+                            vantage,
+                            vantageFieldOfView);
 
                         // Only once the display has settled. A drag or a page change that landed during
                         // the climb would move a map the player cannot read yet.
@@ -2511,6 +2545,7 @@ internal sealed partial class GameHost : IDisposable
                 }
                 else if (_mapComputer is { IsReady: true } retailComputer)
                 {
+                    retailComputer.MapAvailable = mapAvailable;
                     if (toggleComputer || closeComputer)
                     {
                         _computerOpen = toggleComputer ? !_computerOpen : false;
@@ -3030,11 +3065,21 @@ internal sealed partial class GameHost : IDisposable
                 // the player they carry; they do not yet update at their own place in the tree.
                 if (_elevators is { } elevators)
                 {
-                    // Feed the player's current position to the elevators so their start gate can refuse
-                    // to move an empty car or one with an open door. Provider is read every tick.
+                    // The player's position is for carrying a passenger, not for starting a car: the original
+                    // starts one on its own script alone.
                     elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
                     elevators.Tick();
                     UpdateElevatorSoundPositions();
+
+                    // A staged soldier standing in a car rides it through the cutscene runtime's attachments,
+                    // so the runtime is told where every car now is.
+                    if (_cutscenes is { } platformRuntime)
+                    {
+                        foreach (PlacedElevator lift in elevators.Elevators)
+                        {
+                            platformRuntime.SetPlatformPose(lift.Task, lift.State.Position, lift.Orientation);
+                        }
+                    }
                     if (_worldSolids is { } elevatorSolids)
                     {
                         elevators.ApplyCollision(elevatorSolids);
@@ -3202,7 +3247,6 @@ internal sealed partial class GameHost : IDisposable
                     // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
                     // material table, where the round arrived rather than where it was fired.
                     PlayBulletImpactSounds();
-                    PlayWeaponDropSounds();
 
                     // The same impacts, seen: sparks and dust composed from the struck material.
                     // Ticked before spawning so a new burst draws its birth frame unmoved.
@@ -3226,7 +3270,6 @@ internal sealed partial class GameHost : IDisposable
                     // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
                     // and the casualties.
                     ResolveGrenadeDetonations();
-                    ResolveGenericTbaExplosions();
                     ResolveMissileDetonations();
                     ResolveM203Detonations();
                     PlayGrenadeBounces();
@@ -3253,6 +3296,10 @@ internal sealed partial class GameHost : IDisposable
                         // (0x43B500) sees its own explosion before it reads the On expression.
                         _interactions?.SettleGenerators();
                     }
+
+                    // The radios after the destructibles: a Radio's update (0x43AF90) runs the
+                    // ExplodeObject update first, so one that blew up this tick is already off.
+                    TickRadios();
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();
 
@@ -3272,8 +3319,9 @@ internal sealed partial class GameHost : IDisposable
                     }
 
                     // The level's ambience, which is keyed off where the ear is rather than where the
-                    // body stands: an area is a box you listen from the inside of.
-                    TickAmbience(_player.EyeUnits);
+                    // body stands: an area is a box you listen from the inside of. The areas ran in the walk;
+                    // this is what they asked the speakers for.
+                    TickAmbience();
 
                 }
                 else if (_playerDead)
@@ -3376,6 +3424,19 @@ internal sealed partial class GameHost : IDisposable
                 }
                 _cutscenes?.FinishExpressionTick();
 
+                // Where the ear is for the next tick's ambient areas: the camera as this tick left it (0x416D40's
+                // view, +96) -- the cinematic's while one plays, the player's eye otherwise. On the probe the areas
+                // were outside on tick 0, before any camera was placed, and inside from tick 1, while the skipped
+                // intro was still closing.
+                _ambienceListener = _cutscenes?.Frame?.Camera.Position * WorldScene.UnitsPerMetre
+                    ?? (_player is { } ear ? ear.EyeUnits : _ambienceListener);
+                if (_introSkipPending)
+                {
+                    StopCutsceneSounds();
+                    _missionObjectives?.ClearCutsceneMessages();
+                    _introSkipPending = _cutscenes?.IsPlaying == true;
+                }
+
                 // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
                 // is a counter, and the renderer turns the transform from it when it draws.
                 _spins?.Advance();
@@ -3466,8 +3527,7 @@ internal sealed partial class GameHost : IDisposable
                         }
                         else
                         {
-                            _soldiers?.StartPlayerLadderAnimation(
-                                PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                            StartLadderClimbAnimation();
                         }
                     }
 
@@ -3505,10 +3565,10 @@ internal sealed partial class GameHost : IDisposable
                                 _soldiers.AdvancePlayerLadderAnimation(
                                     _player.LadderFacing,
                                     out Vector3d climbDelta,
-                                    out bool rungBoundary,
+                                    out float? rungEventTime,
                                     out _);
                                 _player.MoveLadder(climbDelta);
-                                if (rungBoundary)
+                                if (TakeLadderRungEvent(rungEventTime))
                                 {
                                     _player.CompleteLadderStep();
                                     _soldiers.SetPlayerLadderPlaybackDirection(0);
@@ -3521,16 +3581,17 @@ internal sealed partial class GameHost : IDisposable
                                 _soldiers.AdvancePlayerLadderAnimation(
                                     _player.LadderFacing,
                                     out Vector3d topDelta,
-                                    out _,
+                                    out float? topEventTime,
                                     out bool topAnimationEnded);
                                 _player.MoveLadder(topDelta);
+                                TakeLadderRungEvent(topEventTime);
+
                                 if (topAnimationEnded)
                                 {
                                     _player.CompleteLadderTopTransition(_ground!);
                                     if (_player.LadderPhase == LadderTraversalPhase.Climbing)
                                     {
-                                        _soldiers.StartPlayerLadderAnimation(
-                                            PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                                        StartLadderClimbAnimation();
                                     }
                                 }
 
@@ -3581,6 +3642,10 @@ internal sealed partial class GameHost : IDisposable
                     }
                 }
 
+                // Outside the ladder block on purpose: the tick the slide reaches the ground has already
+                // left the ladder, and that tick is the one that must stop the sound.
+                TickLadderSlideSound();
+
                 if (_player is { IsInWorldInteraction: true } interacting)
                 {
                     if (!worldInteractionActive)
@@ -3606,8 +3671,8 @@ internal sealed partial class GameHost : IDisposable
                             interacting.InteractionFacing,
                             out Vector3d interactionRootDelta,
                             out _,
-                            out _);
-                        interacting.ApplyInteractionRootMotion(interactionRootDelta);
+                            out bool interactionClipEnded);
+                        interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded);
                         _soldiers.PlacePlayerBodyClimbing(
                             interacting.InteractionFeet, interacting.InteractionFacing);
                     }
@@ -3938,7 +4003,7 @@ internal sealed partial class GameHost : IDisposable
                 // has no other way to know the lens the frame was actually drawn with.
                 _inspectorTangent = horizontalTangent;
                 _inspectorAspect = aspectRatio;
-                if (_cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
+                if (CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
                 {
                     // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
                     // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
@@ -3957,15 +4022,19 @@ internal sealed partial class GameHost : IDisposable
                 {
                     if (TacticalComputer is { } tacticalView)
                     {
-                        MapSceneView steady = tacticalView.SceneView(
-                            mapPlayer.Body.Position, _window.Width, _window.Height);
-                        mapScene = _computerFlight.IsFlying
-                            ? steady with
-                            {
-                                Camera = _computerFlight.Camera,
-                                FieldOfView = _computerFlight.FieldOfView,
-                            }
-                            : steady;
+                        // No device, no overhead view: the world stays the player's own behind the pages.
+                        if (tacticalView.MapAvailable)
+                        {
+                            MapSceneView steady = tacticalView.SceneView(
+                                mapPlayer.Body.Position, _window.Width, _window.Height);
+                            mapScene = _computerFlight.IsFlying
+                                ? steady with
+                                {
+                                    Camera = _computerFlight.Camera,
+                                    FieldOfView = _computerFlight.FieldOfView,
+                                }
+                                : steady;
+                        }
                     }
                     else if (_mapComputer is { IsReady: true, ShowsMap: true } computerView)
                     {
@@ -4308,7 +4377,7 @@ internal sealed partial class GameHost : IDisposable
                 {
                     eye = _entry.Camera;
                 }
-                else if (_cutscenes?.Frame is { } cutsceneView)
+                else if (CutsceneFrameShown is { } cutsceneView)
                 {
                     eye = cutsceneView.Camera;
                 }
@@ -6356,7 +6425,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     batch.End();
                 }
 
-                if (_cutscenes?.Frame is { } cinematicFraming)
+                if (CutsceneFrameShown is { } cinematicFraming)
                 {
                     DrawCutsceneFraming(batch, cinematicFraming);
                 }
@@ -6383,7 +6452,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         sight.ViewModelTanX,
                         FarPlane);
 
-                    if (_mapComputerDevice is { IsReady: true } deviceModel)
+                    // 0x46BB10 gives the computer task the mapcomputer model only while the level grants the
+                    // device; without it the pages are drawn with nothing held.
+                    if (_mapComputerDevice is { IsReady: true } deviceModel && _mapComputer is { MapAvailable: true })
                     {
                         Viewport deviceViewport = _mapComputer!.DeviceViewport(_window.Width, _window.Height);
                         float horizontalHalfTangent = sight.ViewModelTanX;

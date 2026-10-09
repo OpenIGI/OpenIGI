@@ -108,6 +108,55 @@ public sealed class GameHostStepTests : IDisposable
         Assert.True(device.SwapCount - before >= Steps - 1, $"{device.SwapCount - before} frame(s) in {Steps} step(s).");
     }
 
+    /// <summary>A played mission's armoured cars carry the wreck their CAR record names.</summary>
+    /// <remarks>
+    /// The host's scene walk was handed no vehicle table, so no car was ever bound to its wreck and the renderer
+    /// dropped a destroyed APC or T80 outright, where retail's countdown (<c>0x42E5A0</c>) leaves 601_08_1 or
+    /// 614_08_1 in its place. Mission 6's two APCs, cars 800 and 803.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void A_played_missions_armoured_cars_are_bound_to_their_wrecks()
+    {
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", "6", "-skipcutscene", "-lockstep", "-frames", "100000");
+
+        host.Start();
+        Assert.True(host.Step());
+        var scene = (OpenIGI.Game.World.WorldScene)typeof(GameHost)
+            .GetField("_scene", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(host)!;
+        host.Stop();
+
+        OpenIGI.Game.World.WorldPlacement[] apcs = [.. scene.Placements.Where(placement =>
+            placement.Owner is OpenIGI.Engine.Tasks.DeclaredTask { Type.Name: "Car" }
+            && string.Equals(placement.Instance.Name, "601_01_1", StringComparison.OrdinalIgnoreCase))];
+        Assert.Equal(2, apcs.Length);
+        Assert.All(apcs, apc => Assert.Equal("601_08_1", apc.DestroyedReplacement?.Instance.Name));
+    }
+
+    /// <summary>A level decides whether its player has the map computer's map, as the original's input task does.</summary>
+    /// <remarks>
+    /// HumanPlayerInput's "Mapcomputer on expression" (<c>0x45DCF0</c>): empty in mission 1, so the map is there;
+    /// <c>0</c> in mission 7, where the probe sees the computer open on its objectives page with the flag clear.
+    /// The expressions themselves are <c>MapComputerGateTests</c>'; this is the host asking the level it brought up.
+    /// </remarks>
+    [RequiresGameDataTheory]
+    [InlineData(1, true)]
+    [InlineData(7, false)]
+    public void A_levels_own_expression_decides_whether_the_map_computer_has_its_map(int mission, bool expected)
+    {
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "-skipcutscene", "-lockstep", "-frames", "100000");
+
+        host.Start();
+        Assert.True(host.Step());
+        System.Reflection.MethodInfo available = typeof(GameHost)
+            .GetMethod("MapComputerAvailable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Assert.Equal(expected, (bool)available.Invoke(host, null)!);
+        host.Stop();
+    }
+
     /// <summary>The menu's backdrop is a mission too, and is not built until the gate has its files.</summary>
     [RequiresGameDataFact]
     public void The_menu_backdrop_waits_until_the_gate_has_its_mission()

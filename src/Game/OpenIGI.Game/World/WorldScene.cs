@@ -453,7 +453,6 @@ public sealed class WorldScene
         List<WorldPlacement> placements = [];
         List<LadderPlacement> ladders = [];
         Dictionary<GameTask, TrainPlacementState> trainPlacements = [];
-        Dictionary<GameTask, float> trainTailOffsets = [];
         int unresolved = 0;
         int unplaced = 0;
         int attached = 0;
@@ -493,47 +492,22 @@ public sealed class WorldScene
             if (string.Equals(declared.Type.Name, "Train", StringComparison.Ordinal))
             {
                 (float ownLength, float ownPivot) = TrainGeometry(placedNames);
-                if (task.Parent is DeclaredTask parent
+
+                // A child Train couples behind the cars already on its lead's consist; a lead starts one.
+                RailroadConsist? consist =
+                    task.Parent is DeclaredTask parent
                     && string.Equals(parent.Type.Name, "Train", StringComparison.Ordinal)
-                    && trainPlacements.TryGetValue(parent, out TrainPlacementState? parentTrain))
+                    && trainPlacements.TryGetValue(parent, out TrainPlacementState? parentTrain)
+                        ? parentTrain.Consist
+                        : RailroadPath.FromTrain(declared) is { } railroad ? new RailroadConsist(railroad) : null;
+                if (consist is not null)
                 {
-                    float direction = parentTrain.Railroad.Flipped ? 1f : -1f;
-                    (float parentLength, float parentPivot) = TrainGeometry(PlacedModelNames(parent));
-                    float frontOffset = trainTailOffsets.TryGetValue(parent, out float tail)
-                        ? tail
-                        : parentTrain.Offset + (direction * parentLength * (1f - parentPivot));
-                    float offset = frontOffset + (direction * ownLength * ownPivot);
-                    parentTrain.Railroad.Evaluate(
-                        parentTrain.TrackPosition + offset,
-                        out Vector3d childPosition,
-                        out Matrix3f childOrientation);
-                    trainPlacement = new TrainPlacementState(
-                        parentTrain.Railroad,
-                        parentTrain.TrackPosition,
-                        offset,
-                        childPosition,
-                        childOrientation);
-                    trainPlacements[task] = trainPlacement;
-                    float tailOffset = frontOffset + (direction * ownLength);
-                    trainTailOffsets[parent] = tailOffset;
-                    trainTailOffsets[task] = tailOffset;
-                }
-                else if (RailroadPath.FromTrain(declared) is { } railroad)
-                {
-                    float direction = railroad.Flipped ? 1f : -1f;
-                    float rootOffset = direction * ownLength * ownPivot;
-                    railroad.Evaluate(
-                        railroad.InitialPosition + rootOffset,
-                        out Vector3d rootPosition,
-                        out Matrix3f rootOrientation);
-                    trainPlacement = new TrainPlacementState(
-                        railroad,
-                        railroad.InitialPosition,
-                        rootOffset,
-                        rootPosition,
-                        rootOrientation);
-                    trainPlacements[task] = trainPlacement;
-                    trainTailOffsets[task] = direction * ownLength;
+                    int car = consist.Add(declared, ownLength, ownPivot);
+                    if (consist.TryPlace(consist.Railroad.InitialPosition, car, out Vector3d carPosition, out Matrix3f carOrientation))
+                    {
+                        trainPlacement = new TrainPlacementState(consist, carPosition, carOrientation);
+                        trainPlacements[task] = trainPlacement;
+                    }
                 }
             }
 
@@ -585,14 +559,14 @@ public sealed class WorldScene
                     RailroadPath? railroad = string.Equals(declared.Type.Name, "Train", StringComparison.Ordinal)
                         ? RailroadPath.FromTrain(declared)
                         : null;
-                    if (railroad is null)
+                    Vector3d[] coupler = new Vector3d[1];
+                    if (railroad is null || !railroad.TryWalk(railroad.InitialPosition, [], coupler))
                     {
                         unplaced++;
                         continue;
                     }
 
-                    railroad.Evaluate(railroad.InitialPosition, out Vector3d trainPosition, out _);
-                    position = trainPosition / UnitsPerMetre;
+                    position = coupler[0] / UnitsPerMetre;
                 }
 
                 Matrix3f orientation = trainPlacement?.Orientation ?? PlacementOrientation(declared, modelSlot);
@@ -798,9 +772,7 @@ public sealed class WorldScene
     }
 
     private sealed record TrainPlacementState(
-        RailroadPath Railroad,
-        float TrackPosition,
-        float Offset,
+        RailroadConsist Consist,
         Vector3d Position,
         Matrix3f Orientation);
 
@@ -899,8 +871,15 @@ public sealed class WorldScene
 
         // The tangent direction is the waypoint orientation's local X axis in world space — the
         // matrix's first column, exactly the elements [0], [3], [6] that sub_4E4530 reads.
+        // An automatically oriented spline (0x500EF0) runs on the frame rebuilt from its neighbours instead.
         static Vector3f Tangent(DeclaredTask waypoint)
         {
+            if (RetailWorldObjects.IsAutomaticallyOriented(waypoint))
+            {
+                float[] automatic = RetailWorldObjects.WaypointOrientation(waypoint);
+                return new Vector3f(automatic[0], automatic[3], automatic[6]);
+            }
+
             waypoint.TryGetValue(OrientationParameter, out object? raw);
             Matrix3f m = raw is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
             return new Vector3f(m.M11, m.M21, m.M31);

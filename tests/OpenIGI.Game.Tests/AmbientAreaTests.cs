@@ -104,7 +104,8 @@ public sealed class AmbientAreaTests
             live.Tick(new Vector3d(0, 0, 0));
         }
 
-        area.IsSounding = true;
+        // The bed started at once (no gap authored), so the area holds its instance.
+        Assert.True(area.HasVoice);
         Vector3d outside = new(100_000, 0, 0);
 
         // Fading out, still sounding: the gain falls but the voice is kept.
@@ -112,13 +113,49 @@ public sealed class AmbientAreaTests
         Assert.False(area.WantsStop);
         Assert.True(area.Fade > 0.0);
 
-        for (int tick = 0; tick < 30; tick++)
+        // 0x44C370 lets the instance go on the tick the fade reaches zero, and only then.
+        bool stopped = false;
+        for (int tick = 0; tick < 30 && !stopped; tick++)
         {
             live.Tick(outside);
+            stopped = area.WantsStop;
         }
 
+        Assert.True(stopped);
         Assert.Equal(0.0, area.Fade, 6);
-        Assert.True(area.WantsStop);
+        Assert.False(area.HasVoice);
+        live.Tick(outside);
+        Assert.False(area.WantsStop);
+    }
+
+    [Fact]
+    public void AnAreaWithNoVoiceDrawsAVariantEveryTickUntilItsGapRunsOut()
+    {
+        // 0x44C370: inside and holding no instance, the variant is drawn every tick -- whether or not the gap lets it
+        // start -- and once a sound starts the area holds it and draws nothing more. Mission 4's five gapped areas
+        // drew five a tick from tick 2 until their gaps ran out.
+        PlacedAmbientArea area = new(
+            null!, default, Matrix3f.Identity, new Vector3d(1.0, 1.0, 1.0),
+            MinDelaySeconds: 0.1, RandomWaitSeconds: 0.0, Sounds: ["dog_01", "dog_02", "dog_03"]);
+        IgiRandom stream = new();
+        int draws = 0;
+        stream.Drew = _ => draws++;
+        AmbientAreaRegistry live = new(stream);
+        ((List<PlacedAmbientArea>)live.Areas).Add(area);
+        area.Countdown = 3;
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            live.Tick(default(Vector3d));
+            Assert.False(area.HasVoice);
+        }
+
+        live.Tick(default(Vector3d));
+        Assert.True(area.HasVoice);
+        Assert.Equal(4, draws);
+
+        live.Tick(default(Vector3d));
+        Assert.Equal(4, draws);
     }
 
     private static PlacedAmbientArea Area(

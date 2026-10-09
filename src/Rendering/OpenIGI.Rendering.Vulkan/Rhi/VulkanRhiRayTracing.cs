@@ -222,7 +222,8 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
                 // A miss is common and fine -- the hit then resolves as it would with no array -- so it
                 // is not a reason to keep the run out, as a missing mask is.
                 _albedo.TryGetLayer(surface.TextureId, out int albedoLayer) ? albedoLayer : -1,
-                mesh.Animated),
+                mesh.Animated,
+                surface.Emissive),
             (byte)mask);
     }
 

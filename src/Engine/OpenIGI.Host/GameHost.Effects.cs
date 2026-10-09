@@ -32,8 +32,26 @@ internal sealed partial class GameHost
 
         _impactEffects.BloodEnabled = RenderCVars.ImpactEffects.Value
             && (_configuration.Active?.BloodEnabled ?? true);
-        _impactEffects.Tick(_effectWalls ?? _player.Body.Walls, _player.Marks, _worldMaterials);
+        // The droplets' batch cast (0x4FD660) carries the particle class's own message, which no placed object answers:
+        // they meet the terrain alone, and pass through walls and crates.
+        _dropletWalls ??= _worldTrace is { } trace
+            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            {
+                if (!trace(new WorldTraceRequest(origin, end, WorldTraceMask.Terrain), out WorldTraceHit rich))
+                {
+                    hit = default;
+                    return false;
+                }
+
+                hit = rich.RayHit with { OnTerrain = true };
+                return true;
+            }
+            : null;
+        _impactEffects.Tick(_dropletWalls ?? _effectWalls ?? _player.Body.Walls, _player.Marks, _worldMaterials);
     }
+
+    // The terrain-only cast the blood droplets fall onto.
+    private WorldRayCast? _dropletWalls;
 
     /// <summary>Runs the struck material's own <c>GunShotEffect</c> for whatever landed this tick.</summary>
     /// <remarks>

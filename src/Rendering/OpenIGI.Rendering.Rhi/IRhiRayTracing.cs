@@ -32,7 +32,11 @@ public readonly record struct RhiTracedMesh(
 /// Its diffuse texture, as <see cref="IRhiRayTracing.ObserveTexture"/> named it: whether the run is cut
 /// out, and by which mask, is a question about its texture.
 /// </param>
-public readonly record struct RhiTracedSurface(int IndexOffset, int IndexCount, uint TextureId);
+/// <param name="Emissive">
+/// How strongly the run glows, as a multiple of its albedo -- the strength the G-buffer gives it; nought for
+/// a surface that does not. A reflection that stops on a lamp shows it lit by this.
+/// </param>
+public readonly record struct RhiTracedSurface(int IndexOffset, int IndexCount, uint TextureId, float Emissive = 0f);
 
 /// <summary>Which rays an instance answers.</summary>
 /// <remarks>

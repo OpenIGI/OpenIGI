@@ -82,6 +82,71 @@ public sealed class RetailLadderTraversalTests
         Assert.False(climb.IsOnLadder);
     }
 
+    [RequiresGameDataFact]
+    public void TheMountSoundsOnceAndAReversedRungRunsBackToZeroBeforeItCommits()
+    {
+        BoneAnimationSet set = PlayerAnimations();
+        Assert.True(set.TryGet(168, out BoneAnimation animation));
+
+        HumanLadderClimb climb = new();
+        climb.Mount(Ladder(), atTop: false);
+        double mountZ = climb.Position.Z;
+
+        // State 37's entry: a fresh clip runs its first frame, and that tick reports event 8 at zero
+        // against the latch the entry cleared. That is the mount sound; it pauses the clip one frame in
+        // and commits nothing.
+        BoneClip clip = new(animation, bone: 0, loops: true);
+        clip.ArmStartEvents();
+        clip.Tick();
+        Vector3f entry = clip.RootDelta;
+        climb.MoveEntryFrame(SoldierDeathFall.RotateAboutZ(
+            new Vector3d(entry.X, entry.Y, entry.Z), climb.Facing));
+        Assert.True(clip.TryGetCrossedEvent(8, out float mount));
+        Assert.Equal(0f, mount);
+        Assert.True(climb.AcceptRungEvent(mount));
+        Assert.False(climb.CompleteStep());
+        Assert.Equal(0, climb.Step);
+        clip.Rate = 0f;
+
+        // So the first rung runs from 160 rather than zero, and crosses 1737 a tick sooner.
+        Assert.Equal(LadderStepResult.SteppingUp, climb.Decide(up: true, down: false, slide: false));
+        clip.Rate = BoneAnimation.FrameStep;
+        Assert.Equal(10, RunToAcceptedEvent(climb, clip, out float up));
+        Assert.Equal(1737f, up);
+        Assert.True(climb.CompleteStep());
+        Assert.Equal(1, climb.Step);
+
+        // Back down from 1760: the first tick re-crosses 1737, the latched time, and is ignored; the
+        // rung only commits at the event at zero, a whole half-cycle later, back where it started.
+        Assert.Equal(LadderStepResult.SteppingDown, climb.Decide(up: false, down: true, slide: false));
+        clip.Rate = -BoneAnimation.FrameStep;
+        Assert.Equal(11, RunToAcceptedEvent(climb, clip, out float down));
+        Assert.Equal(0f, down);
+        Assert.True(climb.CompleteStep());
+        Assert.Equal(0, climb.Step);
+        Assert.Equal(mountZ, climb.Position.Z, 1.0);
+    }
+
+    private static int RunToAcceptedEvent(HumanLadderClimb climb, BoneClip clip, out float time)
+    {
+        time = 0f;
+        int ticks = 0;
+        bool accepted;
+        do
+        {
+            clip.Tick();
+            Vector3f root = clip.RootDelta;
+            climb.Move(SoldierDeathFall.RotateAboutZ(
+                new Vector3d(root.X, root.Y, root.Z), climb.Facing));
+            ticks++;
+            accepted = clip.TryGetCrossedEvent(8, out time) && climb.AcceptRungEvent(time);
+        }
+        while (!accepted && ticks < 100);
+
+        Assert.True(accepted);
+        return ticks;
+    }
+
     private static void PlayToEnd(HumanLadderClimb climb, BoneClip clip)
     {
         int ticks = 0;

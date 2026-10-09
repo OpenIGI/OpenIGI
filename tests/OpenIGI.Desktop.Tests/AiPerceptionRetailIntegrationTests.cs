@@ -20,35 +20,40 @@ public sealed class AiPerceptionRetailIntegrationTests
 {
     private const double Metre = 4096.0;
 
+    /// <summary>
+    /// A drawn guard looks along its eye bone as the clip poses it -- the body's matrix times bone 5, what the camera
+    /// pass rebuilds the palette with (probed on mission 4's running 404) -- and a standing target ahead of that eye is
+    /// detected. A guard whose clip holds its head down looks at the floor, as mission 14's 1111 does in clip 87, so
+    /// the test takes, in every level, the first hostile guard whose drawn eye is roughly level, and puts the target
+    /// along that eye's own heading.
+    /// </summary>
     [RequiresGameDataFact]
-    public void ARepresentativeLiveBrainInEveryLevelDetectsAStandingTargetAlongItsForwardAxis()
+    public void ARepresentativeLiveBrainInEveryLevelDetectsAStandingTargetAlongItsEye()
     {
         List<string> failures = [];
         for (int level = 1; level <= 14; level++)
         {
             using Fixture fixture = Fixture.Load(level);
-            AiSoldier? soldier = fixture.Renderer.BrainsForTesting.FirstOrDefault(brain => brain.PlayerIsEnemy);
+            fixture.Renderer.ObserveAllForTesting();
+            AiSoldier? soldier = fixture.Renderer.BrainsForTesting.FirstOrDefault(brain =>
+                brain.PlayerIsEnemy && Math.Abs(brain.CurrentEyeOrientation.M32) < 0.5f);
             if (soldier is null)
             {
-                failures.Add($"Level {level} has no hostile live brain");
+                failures.Add($"Level {level} has no hostile live brain with a level eye");
                 continue;
             }
 
-            // The eye follows the body only while the soldier is drawn close up (see the next test).
-            fixture.Renderer.ObserveAllForTesting();
-
-            // AiEyeSnapshot converts world deltas into local eye space with delta * orientation.
-            // Therefore a local +Y target is transformed back to world space with the transpose.
-            Vector3d forward = soldier.Orientation.Transposed().Transform(new Vector3d(0.0, 5.0 * Metre, 0.0));
+            // The eye's forward is its matrix's second column (AiEyeSnapshot: local = delta * M); level it.
+            Matrix3f eye = soldier.CurrentEyeOrientation;
+            double length = Math.Sqrt((eye.M12 * eye.M12) + (eye.M22 * eye.M22));
             Vector3d mark = new(
-                soldier.Position.X + forward.X,
-                soldier.Position.Y + forward.Y,
+                soldier.Position.X + (eye.M12 / length * 5.0 * Metre),
+                soldier.Position.Y + (eye.M22 / length * 5.0 * Metre),
                 soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
             (double distance, bool inCone, _, _, _) = soldier.ProbeDetection(mark);
             if (!inCone)
             {
-                failures.Add(
-                    $"Level {level}'s live bone-5 eye rejected a body mark {distance / Metre:0.00} m along body +Y");
+                failures.Add($"Level {level}'s drawn eye rejected a mark {distance / Metre:0.00} m along its own heading");
                 continue;
             }
 
@@ -70,35 +75,54 @@ public sealed class AiPerceptionRetailIntegrationTests
     }
 
     /// <summary>
-    /// A guard the player has never drawn looks along its eye bone's rest orientation, whatever its body
-    /// faces -- measured on the retail game, where seventeen of mission 1's twenty-one guards shared that
-    /// exact matrix until the view turned onto them.
+    /// A guard nothing has drawn looks along the rest eye turned by the heading it was placed with, B * R, however
+    /// it turns afterwards. Probed on mission 4: thirteen undrawn soldiers placed at 0, 24, -54, -78, 96 and 108
+    /// degrees, each B * R to 1e-4. Mission 1's level-start guards are all placed at 0, which is why the first
+    /// measurement there saw R itself on every one of them.
     /// </summary>
     [RequiresGameDataFact]
-    public void AnUndrawnGuardLooksAlongTheRestPoseNotItsBody()
+    public void AnUndrawnGuardLooksAlongItsPlacedHeadingNotWorldNorth()
     {
         using Fixture fixture = Fixture.Load(1);
         AiSoldier soldier = fixture.Renderer.BrainsForTesting.First(brain =>
             brain.PlayerIsEnemy && Math.Abs(Math.Sin(brain.Facing)) > 0.9);
 
-        // Five metres along the body's own forward: to the side of the rest-pose eye, so out of its cone.
+        // Five metres along the heading it was placed with: where the placed rest eye looks.
         Vector3d forward = soldier.Orientation.Transposed().Transform(new Vector3d(0.0, 5.0 * Metre, 0.0));
         Vector3d bodyAhead = new(
             soldier.Position.X + forward.X,
             soldier.Position.Y + forward.Y,
             soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
-        Assert.False(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye followed its body");
+        Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye missed its placed heading");
 
-        // Five metres along world +Y: where the rest-pose eye looks.
+        // Five metres along world +Y, a quarter turn off that heading: outside the cone.
         Vector3d northAhead = new(
             soldier.Position.X,
             soldier.Position.Y + (5.0 * Metre),
             soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
-        Assert.True(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye missed its rest direction");
+        Assert.False(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye ignored its placed heading");
 
         // Once drawn close up, the eye follows the body.
         fixture.Renderer.ObserveAllForTesting();
         Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "a drawn guard's eye did not follow its body");
+    }
+
+    /// <summary>
+    /// A brain is given the level's counter as the original reads it during a tick -- 0 on the level's first, where
+    /// the counter is incremented after the tick's handlers -- so a level-start soldier creates on counter 0, as
+    /// mission 4's patrols did on the probe, and its sweep phase (counter mod 4) lines up with the original's.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ALevelsSecondTickReachesItsSoldiersAsCounterOne()
+    {
+        using Fixture fixture = Fixture.Load(4);
+
+        fixture.Renderer.Tick();
+        fixture.Renderer.Tick();
+
+        IReadOnlyList<AiSoldier> brains = fixture.Renderer.BrainsForTesting;
+        Assert.Contains(brains, brain => brain.LastTick == 1);
+        Assert.All(brains, brain => Assert.InRange(brain.LastTick, 0, 1));
     }
 
     private sealed class Fixture(SoldierRenderer renderer) : IDisposable

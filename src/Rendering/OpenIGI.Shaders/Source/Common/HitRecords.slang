@@ -38,6 +38,12 @@ static const uint kHitAlbedoLayerWord = 6u;
 // Non-zero where the geometry moves, which no surface-cache card can describe.
 static const uint kHitDynamicWord = 7u;
 
+// That word's layout: bit 0 says the run moves; bits 8-15 hold how strongly it glows, in sixteenths of its
+// albedo, nought for a surface that does not -- the strength the G-buffer gives the same run.
+static const uint kHitDynamicBit = 1u;
+static const uint kHitEmissiveShift = 8u;
+static const float kHitEmissiveSteps = 16.0;
+
 ConstBufferPointer<uint> HitWordsAt(uint low, uint high)
 {
     return ConstBufferPointer<uint>.fromUInt((uint64_t(high) << 32) | uint64_t(low));

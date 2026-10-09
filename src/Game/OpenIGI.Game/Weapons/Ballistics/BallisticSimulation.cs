@@ -28,6 +28,18 @@ public readonly record struct BallisticImpact(
     GameTask? Owner = null,
     WorldPlacement? Placement = null);
 
+/// <summary>Decides what a flying round does at a surface or body it enters.</summary>
+/// <param name="round">The round.</param>
+/// <param name="surface">The face entered, with its material and its normal turned to oppose the round.</param>
+/// <param name="namedObject">Whether the trace named the object it struck; a body always is one.</param>
+/// <param name="direction">The round's heading, unit length.</param>
+/// <returns>Whether the round stops, goes through, or glances off.</returns>
+public delegate GunShotImpact BallisticEntry(
+    BallisticRound round,
+    in WorldRayHit surface,
+    bool namedObject,
+    Vector3d direction);
+
 /// <summary>
 /// The rounds in flight under the tactical-ballistics option, stepped once per game tick.
 /// </summary>
@@ -46,8 +58,8 @@ public readonly record struct BallisticImpact(
 /// millimetres, and one cast keeps a full magazine's worth of rounds no dearer than the hit-scan it
 /// replaces. The cast uses the same two delegates the hit-scan path does, in the same both-then-nearer
 /// order, so a guard in front of a wall still takes the round and the wall stays clean. Like that
-/// path, the first surface stops the round — penetration and ricochet need the per-surface data the
-/// collision index does not carry (see <see cref="GunImpact"/>'s divergence note).
+/// path, a surface or body the round's power beats is passed (<see cref="BallisticEntry"/>), an exit
+/// crossing passes and arms the stop-at-the-next-entry latch, and anything else stops the round.
 /// </para>
 /// </remarks>
 public sealed class BallisticSimulation
@@ -205,12 +217,18 @@ public sealed class BallisticSimulation
     /// <param name="gravityScale">What fraction of real gravity to drop at (<c>g_ballistics_gravity</c>).</param>
     /// <param name="dragScale">What fraction of profile drag to fly against (<c>g_ballistics_drag</c>).</param>
     /// <param name="richWalls">The identity-preserving world trace used for live object-hit callbacks.</param>
+    /// <param name="entry">
+    /// What a round does at a surface it enters, or <see langword="null"/> to stop at every surface. Only a
+    /// <see cref="GunShotImpact.Penetrated"/> answer lets the round on; a glance ends it here, as it ends a
+    /// guard's round, because a reflected leg would need a second flight.
+    /// </param>
     public void Tick(
         WorldRayCast? walls,
         HumanShot? humans,
         float gravityScale = 1f,
         float dragScale = 1f,
-        WorldTraceCast? richWalls = null)
+        WorldTraceCast? richWalls = null,
+        BallisticEntry? entry = null)
     {
         _impacts.Clear();
 
@@ -295,60 +313,114 @@ public sealed class BallisticSimulation
             bool stopped = spent;
             if (!round.IsVisualOnly)
             {
-                // Both, then the nearer -- exactly the hit-scan path's order, so a guard in front of
-                // a wall takes the round and the wall stays clean.
-                WorldRayHit wallHit = default;
-                WorldTraceHit richWallHit = default;
-                bool struckWall = richWalls is not null
-                    && richWalls(
-                        new WorldTraceRequest(start, position, WorldTraceMask.World),
-                        out richWallHit);
-                if (struckWall)
-                {
-                    wallHit = richWallHit.RayHit;
-                }
-
-                // The rich trace supplies placement identity for static objects, but does not own
-                // terrain.  Keep the body's world cast in the query so an object-free ground hit
-                // remains a collision, and discard rich identity if terrain is the nearer surface.
-                if (walls is not null
-                    && walls(start, position, out WorldRayHit plainWallHit)
-                    && (!struckWall || plainWallHit.Distance < wallHit.Distance))
-                {
-                    struckWall = true;
-                    wallHit = plainWallHit;
-                    richWallHit = default;
-                }
-
-                HumanHit humanHit = default;
-                bool struckHuman = humans is not null
-                    && humans(start, position, round.DamageFactor, round.Category, out humanHit)
-                    && (!struckWall || humanHit.Distance < wallHit.Distance);
-
                 // The round's own heading over this tick's chord, which the struck material's effect
                 // needs as the axis its chips fly along.
                 Vector3d step = position - start;
                 double stepDistance = step.Length;
-                Vector3f travel = stepDistance > 1e-9
-                    ? new Vector3f(
-                        (float)(step.X / stepDistance),
-                        (float)(step.Y / stepDistance),
-                        (float)(step.Z / stepDistance))
-                    : default;
+                Vector3d heading = stepDistance > 1e-9 ? step / stepDistance : default;
+                Vector3f travel = new((float)heading.X, (float)heading.Y, (float)heading.Z);
 
-                if (struckHuman || struckWall)
+                // The chord is walked like the hit-scan march: each surface or body the round's power beats
+                // is passed, an exit crossing passes freely and arms the latch, and the guards beyond are
+                // offered the rest of the chord.
+                Vector3d from = start;
+                bool landed = false;
+                for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts; pass++)
                 {
-                    position = struckHuman ? humanHit.Position : wallHit.Position;
-                    _impacts.Add(new BallisticImpact(
-                        position,
-                        struckHuman,
-                        humanHit,
-                        !struckHuman && struckWall,
-                        wallHit,
-                        RangeOf(round),
-                        travel,
-                        struckHuman ? null : richWallHit.Owner,
-                        struckHuman ? null : richWallHit.Placement));
+                    WorldRayHit wallHit = default;
+                    WorldTraceHit richWallHit = default;
+                    bool struckWall = richWalls is not null
+                        && richWalls(
+                            new WorldTraceRequest(from, position, WorldTraceMask.World),
+                            out richWallHit);
+                    if (struckWall)
+                    {
+                        wallHit = richWallHit.RayHit;
+                    }
+
+                    // The rich trace supplies placement identity for static objects, but does not own
+                    // terrain.  Keep the body's world cast in the query so an object-free ground hit
+                    // remains a collision, and discard rich identity if terrain is the nearer surface.
+                    if (walls is not null
+                        && walls(from, position, out WorldRayHit plainWallHit)
+                        && (!struckWall || plainWallHit.Distance < wallHit.Distance))
+                    {
+                        struckWall = true;
+                        wallHit = plainWallHit;
+                        richWallHit = default;
+                    }
+
+                    // The wall's distance goes in with the round: the callback damages as it is called,
+                    // so a guard behind the wall must never be offered the hit in the first place.
+                    HumanHit humanHit = default;
+                    bool struckHuman = humans is not null
+                        && humans(
+                            from,
+                            position,
+                            round.DamageFactor,
+                            round.Category,
+                            struckWall ? wallHit.Distance : double.PositiveInfinity,
+                            alreadyHeard: pass > 0,
+                            out humanHit)
+                        && (!struckWall || humanHit.Distance < wallHit.Distance);
+
+                    if (!struckHuman && !struckWall)
+                    {
+                        break;
+                    }
+
+                    Vector3d contact = struckHuman ? humanHit.Position : wallHit.Position;
+                    bool exit = struckHuman ? humanHit.IsExit : wallHit.IsExit;
+                    bool passes;
+                    if (exit)
+                    {
+                        // Coming out of something: no hit, no test, only the latch.
+                        round.HasLeftASurface = true;
+                        passes = true;
+                    }
+                    else
+                    {
+                        WorldRayHit surface = struckHuman
+                            ? new WorldRayHit(humanHit.Position, humanHit.Normal, humanHit.Distance, humanHit.Material)
+                            : wallHit;
+                        passes = !round.HasLeftASurface
+                            && entry is not null
+                            && (!struckHuman || humanHit.Material >= 0)
+                            && entry(round, surface, namedObject: struckHuman || richWallHit.Owner is not null, heading)
+                                == GunShotImpact.Penetrated;
+                    }
+
+                    // An exit off a body is no impact at all; a wall's exit still leaves its far-side mark.
+                    if (!(struckHuman && exit))
+                    {
+                        _impacts.Add(new BallisticImpact(
+                            contact,
+                            struckHuman,
+                            humanHit,
+                            !struckHuman,
+                            wallHit,
+                            RangeOf(round),
+                            travel,
+                            struckHuman ? null : richWallHit.Owner,
+                            struckHuman ? null : richWallHit.Placement));
+                    }
+
+                    if (!passes)
+                    {
+                        position = contact;
+                        landed = true;
+                        break;
+                    }
+
+                    from = contact + (heading * GunShotBallistics.PenetrationStepOffUnits);
+                    if (Vector3d.Dot(position - from, heading) <= 0.0)
+                    {
+                        break;
+                    }
+                }
+
+                if (landed)
+                {
                     stopped = true;
                 }
                 else if (spent)

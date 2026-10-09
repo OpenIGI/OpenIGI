@@ -206,7 +206,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
 
-    /// <summary>Gets or sets GenericTBA destruction state for authored interaction placements.</summary>
+    /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
     public WorldInteractionRegistry? Interactions { get; set; }
 
     /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
@@ -739,6 +739,32 @@ public sealed class WorldRenderer : IWorldPresenter
         return largest > OcclusionSettleOrientation;
     }
 
+    /// <summary>What the last prepared frame decided for every placement a task owns, for scenario runs.</summary>
+    /// <param name="owner">The task whose placements, its own and its attachments', are described.</param>
+    /// <returns>One line per placement: skipped or drawn, the model shown, and where, in engine units.</returns>
+    internal IEnumerable<string> DescribeFrameForTesting(Engine.Tasks.GameTask owner)
+    {
+        if (_frameScene is not { } scene || _frame.Length != scene.Placements.Count)
+        {
+            yield break;
+        }
+
+        for (int i = 0; i < _frame.Length; i++)
+        {
+            WorldPlacement placement = scene.Placements[i];
+            if (!ReferenceEquals(placement.Owner, owner))
+            {
+                continue;
+            }
+
+            FrameEntry entry = _frame[i];
+            Vector3d at = entry.Position * WorldScene.UnitsPerMetre;
+            yield return entry.Skip
+                ? $"{placement.Instance.Name} SKIPPED destroyed={entry.WasDestroyed} model={(entry.Model is null ? "null" : "set")}"
+                : $"{placement.Instance.Name} drawn as {entry.Displayed?.Instance.Name} at ({at.X:0},{at.Y:0},{at.Z:0}) destroyed={entry.WasDestroyed}";
+        }
+    }
+
     /// <summary>Resolves everything camera-independent about the frame, once, for every pass to share.</summary>
     private void PrepareFrame(WorldScene scene)
     {
@@ -1020,10 +1046,21 @@ public sealed class WorldRenderer : IWorldPresenter
         // camera, arrived only once play began, and the lighting crept across the room as they did.
 
         SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, displayed);
+
+        // Each run with the material it would be drawn with -- lamp, switch and all -- because nothing is
+        // drawn here to take one from.
+        float glow = model.LampFixture >= 0 && Switchboard is { } board
+            ? board.LevelOf(model.LampFixture)
+            : 1f;
         foreach (SubsetDraw subset in subsets)
         {
             _device.SubmitTracedMesh(
-                model.Mesh, subset.IndexOffset, subset.IndexCount, modelView, subset.Diffuse);
+                model.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                subset.Diffuse,
+                material: subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
         }
     }
 
@@ -1234,14 +1271,6 @@ public sealed class WorldRenderer : IWorldPresenter
                 Pack = replacement.Pack,
                 Model = replacement.Model,
             };
-        }
-
-        if (Interactions?.TryGet(placement.Owner, out WorldInteraction? interaction) == true
-            && interaction is { IsDestroyed: true })
-        {
-            displayed = placement.DestroyedReplacement is { } genericReplacement
-                ? placement with { Instance = genericReplacement.Instance, Pack = genericReplacement.Pack, Model = genericReplacement.Model }
-                : placement with { IsSuppressed = true };
         }
 
         if (SecurityCameras?.TryGetHeadOrientation(
@@ -1501,6 +1530,15 @@ public sealed class WorldRenderer : IWorldPresenter
         {
             drawPosition = rotatingPosition;
             drawOrientation = rotatingOrientation;
+        }
+        else if (Interactions?.TryGetPlacedPose(
+            placement.Owner,
+            out Vector3d placedUnits,
+            out Matrix3f placedOrientation) == true)
+        {
+            // A planted charge: state 36 moved its EditRigidObj to where the plant's trace struck.
+            drawPosition = placedUnits / WorldScene.UnitsPerMetre;
+            drawOrientation = placedOrientation;
         }
     }
 

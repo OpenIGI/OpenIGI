@@ -224,6 +224,16 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
             s |= Signal.Forward | Signal.TenseRun;
         }
 
+        if (input.TenseRun)
+        {
+            s |= Signal.TenseRun;
+        }
+
+        if (input.Forward)
+        {
+            s |= Signal.Forward;
+        }
+
         return s;
     }
 
@@ -482,6 +492,16 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
         if (state == ProneFlinchState)
         {
             _proneFlinchTicks = 0;
+        }
+
+        // The entries in off_53EC10 each write Human+829: these set it, these clear it, the rest leave it.
+        if (state is 4 or 5 or 6 or 18 or 19 or 20 or 21 or 25)
+        {
+            CrouchByte = true;
+        }
+        else if (state is >= 0 and <= 3 or >= 10 and <= 17 or 26 or >= 29 and <= 34)
+        {
+            CrouchByte = false;
         }
     }
 

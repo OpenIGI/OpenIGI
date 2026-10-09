@@ -18,6 +18,10 @@ namespace OpenIGI.Game.Ai;
 /// <param name="Feet">Its position — the feet, which combat aims at and events report.</param>
 /// <param name="Crouching">Whether it is crouching, which halves the aim raise.</param>
 /// <param name="Record">The shared target record every AI fighting it holds, or <see langword="null"/>.</param>
+/// <param name="Origin">
+/// Its origin, <c>Human+32</c>: the feet raised by the pose's root height. <see langword="null"/> takes the
+/// standing or crouched origin above the feet.
+/// </param>
 /// <remarks>
 /// The scan registers a candidate that is on the other side and alive into the AI's enemy list
 /// (<c>+5648</c>), and one on its own side and dead into its list of fallen friends (<c>+5660</c>); anything
@@ -31,8 +35,25 @@ public readonly record struct AiDetectionCandidate(
     Vector3d Mark,
     Vector3d Feet,
     bool Crouching,
-    AiCombatTarget? Record)
+    AiCombatTarget? Record,
+    Vector3d? Origin = null)
 {
+    /// <summary>
+    /// Gets the point <c>0x451380</c> hands the graph's nearest-node search: the origin raised half a metre, a
+    /// quarter when crouching.
+    /// </summary>
+    public Vector3d NodeQueryPoint
+    {
+        get
+        {
+            Vector3d origin = Origin ?? new Vector3d(
+                Feet.X,
+                Feet.Y,
+                Feet.Z + (Crouching ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits));
+            return new Vector3d(origin.X, origin.Y, origin.Z + (Crouching ? 1024.0 : 2048.0));
+        }
+    }
+
     /// <summary>The id the player goes by in candidates and event records.</summary>
     public const int PlayerId = -1;
 

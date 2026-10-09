@@ -309,9 +309,16 @@ public sealed class SoldierView
 
         CurrentAnimation = animation;
         BoneClip? clip = _bones.Play(0, animation, loops, backwards);
-        if (paused && clip is not null)
+        if (clip is not null)
         {
-            clip.Rate = 0f;
+            // A new retail clip node carries flag 0x8000, so its first tick also reports an event at the
+            // start time. Animation 168's event 8 at zero is what sounds the mount, and 170's is the first
+            // rung of a climb onto the roof.
+            clip.ArmStartEvents();
+            if (paused)
+            {
+                clip.Rate = 0f;
+            }
         }
 
         _pose = null;
@@ -329,8 +336,13 @@ public sealed class SoldierView
         }
     }
 
-    /// <summary>Gets whether the last tick crossed animation 168's authored rung boundary.</summary>
-    public bool CrossedLadderBoundary => _bones.SourceOf(0)?.CrossedEvent(8) ?? false;
+    /// <summary>Gets the authored time of the rung event (8) the last tick crossed, if it crossed one.</summary>
+    /// <remarks>
+    /// The time, not just the crossing: the ladder states latch it and ignore a crossing of the time they
+    /// last took, which is what lets a rung reverse without committing on its first tick back.
+    /// </remarks>
+    public float? LadderBoundaryTime =>
+        _bones.SourceOf(0) is { } clip && clip.TryGetCrossedEvent(8, out float time) ? time : null;
 
     /// <summary>Gets how far through the clip on bone 0 the rig is, 0 at the start of the rung and 1 at its end.</summary>
     /// <remarks>Counts up whichever way the clip plays, so a backward (down) rung still runs 0 → 1.</remarks>
@@ -503,5 +515,13 @@ public sealed class SoldierView
     /// so that a shared pose skins once and turns per soldier (see <c>ViewModelRenderer</c>).
     /// </remarks>
     public BonePose UnrotatedPose() => _unrotatedPose ??= _bones.Pose();
+
+    /// <summary>Gets the pose the clocks will reach on the next tick -- what a cast re-posing the body between ticks sees.</summary>
+    /// <returns>The posed rig under <see cref="Orientation"/>, one tick on; not cached.</returns>
+    public BonePose PoseAhead() => _bones.PoseAhead(Orientation);
+
+    /// <summary>Gets <see cref="PoseAhead"/> built with an identity root.</summary>
+    /// <returns>The posed rig, unrotated, one tick on; not cached.</returns>
+    public BonePose UnrotatedPoseAhead() => _bones.PoseAhead();
 
 }

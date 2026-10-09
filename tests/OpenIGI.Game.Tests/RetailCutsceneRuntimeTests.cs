@@ -609,7 +609,10 @@ public sealed class RetailCutsceneRuntimeTests
         physics.Load(resources);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics);
-        for (int tick = 0; tick < 190; tick++)
+        // The retail camera recorded at scene tick N is the one set on the level's (N+1)th tick: a running
+        // scene sets its camera from the tick it is on and counts on afterwards, so its first tick shows time
+        // nought. One runtime tick more than the scene tick, then.
+        for (int tick = 0; tick < 191; tick++)
         {
             runtime.Tick();
         }
@@ -621,8 +624,9 @@ public sealed class RetailCutsceneRuntimeTests
             174_759_830.653 / WorldScene.UnitsPerMetre);
         // The rigid body is float-state and the linked camera compounds its tiny attitude difference
         // over 190 steps. Keep the complete shot within one vehicle length while the tick-30 force/pose
-        // test above pins the integrator itself to centimetres.
-        Assert.True((frame.Camera.Position - expected).Length <= 6d,
+        // test above pins the integrator itself to centimetres. 6.5 m with the camera on the retail tick: it
+        // read 5.5 while the port's camera ran a tick ahead of the level, the drift growing a metre a tick.
+        Assert.True((frame.Camera.Position - expected).Length <= 7d,
             $"retail={expected}, runtime={frame.Camera.Position}, delta={(frame.Camera.Position - expected).Length:F6}m");
         Assert.Equal(1.00868344f, frame.FieldOfView, precision: 5);
     }
@@ -646,7 +650,10 @@ public sealed class RetailCutsceneRuntimeTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics);
 
-        for (int tick = 0; tick < 561; tick++)
+        // The retail camera recorded at scene tick N is the one set on the level's (N+1)th tick: a running
+        // scene sets its camera from the tick it is on and counts on afterwards, so its first tick shows time
+        // nought. One runtime tick more than the scene tick, then.
+        for (int tick = 0; tick < 562; tick++)
         {
             runtime.Tick();
         }
@@ -786,8 +793,16 @@ public sealed class RetailCutsceneRuntimeTests
 
     }
 
+    /// <summary>Landing-scene Jones (1666) rides wagon 1888 from load through the jump-off, and nothing else.</summary>
+    /// <remarks>
+    /// He is an AI human standing on 1888's own graph, so the AI branch of the ground query (<c>0x462390</c>) parents
+    /// him to the wagon on his first pass -- no ray, no contact -- and never detaches him while that graph is his.
+    /// The probe reads parent 1888 on every record of his from load through scene 1203, at the offset below on the
+    /// wagon, with 1888 where its consist stands. Modelling the parent as a downward-ray contact that drops an
+    /// unregistered owner latched train 1999 instead once the landing consist unregistered.
+    /// </remarks>
     [RequiresGameDataFact]
-    public void MissionOneIntroFollowsLiveContactParentsToScene1203()
+    public void MissionOneLandingJonesRidesWagon1888FromLoadThroughTheJumpOff()
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -798,240 +813,67 @@ public sealed class RetailCutsceneRuntimeTests
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fileSystem, resources, loop.Natives);
-        MagicObjectRegistry magic = new();
-        magic.Register(loop.Natives);
-        magic.Load(resources, loop.Natives);
         LoadedMission loaded = new MissionLoader(missions, fileSystem, resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
-        WorldScene world = WorldScene.Build(loaded, root, magic);
-        new ConditionalContainerGate(loop.Variables).Prepare(root);
-        CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
-        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
-        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
-        RefreshCutsceneCollision(solids, world, runtime);
-
         float Length(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
             ? WorldScene.TrainCouplingDistance(model)
             : 0f;
         float Pivot(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
             ? WorldScene.TrainCouplingPivotFraction(model)
             : 0f;
-
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
         HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1666));
-        DeclaredTask heli = Assert.IsType<DeclaredTask>(root.Tree.FromId(1508));
-        Assert.Contains("Heli", heli.Label, StringComparison.Ordinal);
-        DeclaredTask train = Assert.IsType<DeclaredTask>(root.Tree.FromId(1507));
-        Assert.Contains("Train", train.Label, StringComparison.Ordinal);
-        GameTask? introContainerOrNull = root.Tree.FromId(4001);
-        Assert.NotNull(introContainerOrNull);
-        GameTask introContainer = introContainerOrNull;
         GameTask car1888 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
-        GameTask train1999 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1999));
-        GameTask wagon2333 = Assert.IsType<DeclaredTask>(root.Tree.FromId(2333));
+        GameTask introContainer = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(4001));
 
-        // The renderer probes from the actor's current drawn base, attaches only to a
-        // moving-platform contact (retail task+0x64), and never supplies an expected owner.
-        // Reproduce that order here so the test observes the selection instead of assuming it.
-        // The jump ballistics themselves (clip 242 root motion steered by AiSoldier through
-        // SoldierView, a Desktop-side sampler) cannot run in this harness: once the authored
-        // landing tick arrives, the probe is placed over the passing wagon exactly where the
-        // jump delivers Jones, and from there the ride is fully simulated.
-        Vector3d probeBase = jones.Position;
-        List<string> timeline = new();
-        int scene1200Ticks = 0;
-        int scene1200AttachedTicks = 0;
-        int heliAttachedTicks = 0;
+        // The wagon where its consist stands at load (the probe's Human_SetParent packet), and Jones on it.
+        Assert.True(runtime.TryGetDrawTransform(car1888, out Vector3d wagonAtLoad, out _));
+        Vector3d retailWagon = new Vector3d(22_198_857.489, -57_650_405.618, 174_504_640.000) / WorldScene.UnitsPerMetre;
+        Assert.True((wagonAtLoad - retailWagon).Length <= 0.001d,
+            $"retail={retailWagon}, port={wagonAtLoad}, delta={(wagonAtLoad - retailWagon).Length:F6}m");
+        Assert.True(runtime.TryAttachActorToTask(jones, car1888, jones.Position, Matrix3f.FromEngineEulerAngles(0f, 0f, jones.Gamma)));
+
+        Vector3d retailLocal = new(-5_095.0, -9_810.5, 24_239.9);
+        Assert.True((LocalOnWagon() - retailLocal).Length <= 2d, $"retail local={retailLocal}, port={LocalOnWagon()}");
+
         int wrongParentTicks = 0;
+        double maxDrift = 0d;
         bool sawScene1203 = false;
-        bool landingSimulated = false;
-        Vector3d? frozenBase = null;
-        double maxFrozenDeviationMetres = 0d;
-        Vector3d? wagonOffset = null;
-        double maxOffsetDeviationMetres = 0d;
-        int wagonRidingTicks = 0;
         int tick = 0;
         while (tick++ < 6_000 && ConditionalContainerGate.IsTaskActive(introContainer))
         {
             objectives.TickLevelState();
             runtime.Tick();
-            RefreshCutsceneCollision(solids, world, runtime);
             objectives.TickAfterLevelState();
             runtime.FinishExpressionTick();
 
-            int scene = runtime.ActiveScene?.Id ?? -1;
-            int sceneTicks = runtime.ActiveScene?.Ticks ?? -1;
-
-            // Authored landing: land_ground_2 at CutScene_1201.nTick > 0.25*GAME_FREQUENCY.
-            // From that tick the jump has delivered Jones above the passing wagon roof.
-            if (!landingSimulated && scene == 1201 && sceneTicks > 0.25d * CutsceneRuntime.Frequency
-                && runtime.TryGetDrawTransform(car1888, out Vector3d wagonAbove, out _))
-            {
-                probeBase = (wagonAbove * WorldScene.UnitsPerMetre)
-                    + new Vector3d(0d, 0d, 3d * WorldScene.UnitsPerMetre);
-                landingSimulated = true;
-            }
-
-            if (!runtime.TryDetachInactiveAttachment(jones))
-            {
-                if (!runtime.TryGetAttachedDrawTransform(jones, out Vector3d attachedMetres, out _))
-                {
-                    Vector3d origin = new(
-                        probeBase.X,
-                        probeBase.Y,
-                        probeBase.Z + (5d * WorldScene.UnitsPerMetre));
-                    Vector3d end = new(
-                        probeBase.X,
-                        probeBase.Y,
-                        probeBase.Z - (10d * WorldScene.UnitsPerMetre));
-                    WorldTraceRequest request = new(
-                        origin,
-                        end,
-                        WorldTraceMask.DynamicObjects,
-                        IgnoredOwner: jones,
-                        IncludeInactiveOwners: false);
-                    if (solids.TryTrace(request, out WorldTraceHit hit)
-                        && hit.Owner is not null
-                        && CinematicActor.IsMovingPlatform(hit.Owner))
-                    {
-                        runtime.TryAttachActorToTask(
-                            jones,
-                            hit.Owner,
-                            probeBase,
-                            Matrix3f.FromEngineEulerAngles(0f, 0f, jones.Gamma));
-                    }
-                }
-                else
-                {
-                    probeBase = attachedMetres * WorldScene.UnitsPerMetre;
-                }
-            }
-
-            bool attached = runtime.TryGetAttachmentParent(jones, out GameTask? parent);
-            if ((scene == 1201 || scene == 1202) && timeline.Count < 400)
-            {
-                runtime.TryGetDrawTransform(train, out Vector3d trainPos, out _);
-                runtime.TryGetDrawTransform(heli, out Vector3d heliPos, out _);
-                runtime.TryGetDrawTransform(jones, out Vector3d jonesPos, out _);
-                runtime.TryGetDrawTransform(car1888, out Vector3d car1888Pos, out _);
-                runtime.TryGetDrawTransform(train1999, out Vector3d train1999Pos, out _);
-                runtime.TryGetDrawTransform(wagon2333, out Vector3d wagon2333Pos, out _);
-                timeline.Add(
-                    $"t={tick} scene={scene} ntick={runtime.ActiveScene?.Ticks} "
-                    + $"parent={(attached && parent is not null ? parent.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) : "none")} "
-                    + $"jones=({jonesPos.X:F2},{jonesPos.Y:F2},{jonesPos.Z:F2}) "
-                    + $"t1507=({trainPos.X:F2},{trainPos.Y:F2},{trainPos.Z:F2}) "
-                    + $"c1888=({car1888Pos.X:F2},{car1888Pos.Y:F2},{car1888Pos.Z:F2}) "
-                    + $"t1999=({train1999Pos.X:F2},{train1999Pos.Y:F2},{train1999Pos.Z:F2}) "
-                    + $"w2333=({wagon2333Pos.X:F2},{wagon2333Pos.Y:F2},{wagon2333Pos.Z:F2}) "
-                    + $"heli=({heliPos.X:F2},{heliPos.Y:F2},{heliPos.Z:F2}) "
-                    + $"heliActive={ConditionalContainerGate.IsTaskActive(heli)} "
-                    + $"trainActive={ConditionalContainerGate.IsTaskActive(train)} "
-                    + $"c1888Active={ConditionalContainerGate.IsTaskActive(car1888)} "
-                    + $"t1999Active={ConditionalContainerGate.IsTaskActive(train1999)} "
-                    + $"w2333Active={ConditionalContainerGate.IsTaskActive(wagon2333)}");
-            }
-
-            if (scene == 1200)
-            {
-                scene1200Ticks++;
-                if (attached)
-                {
-                    scene1200AttachedTicks++;
-                }
-            }
-
-            if (attached && parent is not null && parent.Id == 1508)
-            {
-                heliAttachedTicks++;
-            }
-
-            if (attached && (parent is null || parent.Id != 1888))
+            if (!runtime.TryGetAttachmentParent(jones, out GameTask? parent) || !ReferenceEquals(parent, car1888))
             {
                 wrongParentTicks++;
             }
-
-            if (scene == 1202 && !attached
-                && runtime.TryGetDrawTransform(jones, out Vector3d frozenNow, out _))
+            else
             {
-                if (frozenBase is null)
-                {
-                    frozenBase = frozenNow;
-                }
-                else
-                {
-                    double deviation = (frozenNow - frozenBase.Value).Length;
-                    if (deviation > maxFrozenDeviationMetres)
-                    {
-                        maxFrozenDeviationMetres = deviation;
-                    }
-                }
+                maxDrift = Math.Max(maxDrift, (LocalOnWagon() - retailLocal).Length);
             }
 
-            if (attached && parent is not null && parent.Id == 1888
-                && runtime.TryGetDrawTransform(jones, out Vector3d jonesMetres, out _)
-                && runtime.TryGetDrawTransform(car1888, out Vector3d wagonMetres, out _))
-            {
-                Vector3d offset = jonesMetres - wagonMetres;
-                if (wagonOffset is null)
-                {
-                    wagonOffset = offset;
-                }
-                else
-                {
-                    double deviation = (offset - wagonOffset.Value).Length;
-                    if (deviation > maxOffsetDeviationMetres)
-                    {
-                        maxOffsetDeviationMetres = deviation;
-                    }
-                }
-
-                wagonRidingTicks++;
-            }
-
-            if (scene == 1203)
-            {
-                sawScene1203 = true;
-            }
+            sawScene1203 |= runtime.ActiveScene?.Id == 1203;
         }
 
-        // Jones waits unattached through the opening-heli scene: the eager
-        // containing-sphere guess used to latch the opening train here and carry him
-        // ~349 m before the jump.
-        foreach (string row in timeline)
-        {
-            _output.WriteLine(row);
-        }
-
-        Assert.True(scene1200Ticks > 0, "scene 1200 was never observed");
-        Assert.Equal(0, scene1200AttachedTicks);
-
-        // The hovering insertion heli is not a moving platform (retail task+0x64): ground
-        // contact with it must never capture Jones. Capturing it rode him 90 m past the
-        // landing wagon and stranded him when scene 1201 ended.
-        Assert.Equal(0, heliAttachedTicks);
-
-        // Riding the landing wagon means a stable local offset: the world position may
-        // travel with the consist, but Jones must not drift relative to it. The 1201 ride
-        // only spans the landing tick to the scene boundary, so a few dozen stable ticks
-        // here plus the desktop no-drift trace cover it; the 200-tick FlakTower-style ride
-        // belongs to sequences whose vehicle stays registered.
-        Assert.True(landingSimulated, "the authored landing tick was never reached");
-        Assert.True(wagonRidingTicks >= 30,
-            $"Jones rode wagon1888 for only {wagonRidingTicks} ticks");
-        Assert.True(maxOffsetDeviationMetres <= 0.5d,
-            $"Jones drifted {maxOffsetDeviationMetres:F3} m relative to wagon1888");
-
-        // Past the 1201 boundary the landing consist unregisters: Jones must never latch a
-        // wrong vehicle (the opening train, the jump heli, the far driveby consist), and his
-        // world position must stay where the ride left it. Root-motion drift after the
-        // boundary is covered by the desktop trace (retained clip 242 yields zero delta).
+        // No clip plays here (the jumps are the renderer's root motion), so the offset holds while the consist moves.
         Assert.Equal(0, wrongParentTicks);
-        Assert.True(maxFrozenDeviationMetres <= 2d,
-            $"Jones moved {maxFrozenDeviationMetres:F3} m after the landing consist unregistered");
-
-        // The full chain plays through the jump-off scene and closes the container.
+        Assert.True(maxDrift <= 2d, $"Jones drifted {maxDrift:F1} units on wagon 1888");
         Assert.True(sawScene1203, "scene 1203 was never reached");
         Assert.False(ConditionalContainerGate.IsTaskActive(introContainer));
+
+        // Human_SetParent's local offset: the wagon's transposed frame applied to Jones less the wagon (0x463310).
+        Vector3d LocalOnWagon()
+        {
+            Assert.True(runtime.TryGetDrawTransform(jones, out Vector3d jonesMetres, out _));
+            Assert.True(runtime.TryGetDrawTransform(car1888, out Vector3d wagonMetres, out Matrix3f wagonFrame));
+            return wagonFrame.Transform((jonesMetres - wagonMetres) * WorldScene.UnitsPerMetre);
+        }
     }
 
     [RequiresGameDataFact]
@@ -1221,7 +1063,10 @@ public sealed class RetailCutsceneRuntimeTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
-        for (int i = 0; i < 782; i++)
+        // The retail camera recorded at scene tick N is the one set on the level's (N+1)th tick: a running
+        // scene sets its camera from the tick it is on and counts on afterwards, so its first tick shows time
+        // nought. One runtime tick more than the scene tick, then.
+        for (int i = 0; i < 783; i++)
         {
             objectives.TickLevelState();
             runtime.Tick();
@@ -1246,6 +1091,152 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True((frame.Camera.Position - retailCamera).Length <= 1d,
             $"retail={retailCamera}, runtime={frame.Camera.Position}, delta={(frame.Camera.Position - retailCamera).Length:R}, fov={frame.FieldOfView:R}, car={carPosition}, train={trainPosition}, trainM={trainOrientation}");
         Assert.Equal(0.991028547f, frame.FieldOfView, precision: 5);
+    }
+
+    /// <summary>A car sits on the chord between its couplers on the rail's polyline, where the original puts it.</summary>
+    /// <remarks>
+    /// The intro consist's first car, 607_01_1 behind lead 2099, stands at the foot of the hill into the valley.
+    /// Evaluating the curve at its pivot put it 0.57 m below the original there, and Jones (3031), welded to it at
+    /// that moment, was drawn 0.64 m high for the rest of the ride -- inside the crate he leans on. The retail pose
+    /// is the probe's <c>Human_SetParent</c> (<c>0x463310</c>) packet for 3031.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void MissionOneIntroWagonStandsOnItsCouplerChord()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission loaded = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        WorldScene world = WorldScene.Build(loaded, root, magic);
+        float Length(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingDistance(model)
+            : 0f;
+        float Pivot(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingPivotFraction(model)
+            : 0f;
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
+
+        DeclaredTask wagon = IntroWagonUnderJones(root, runtime);
+        Vector3d retail = new Vector3d(24_319_753.157, -55_777_038.666, 174_420_202.524) / WorldScene.UnitsPerMetre;
+        float[] retailOrientation =
+        [
+            0.982984423f, 0.0016115799f, 0.1836818f,
+            -0.00158416002f, 0.999998688f, -0.000296018319f,
+            -0.183682039f, 1.50080468e-11f, 0.982985675f,
+        ];
+
+        WorldPlacement placement = world.Placements.First(placement => ReferenceEquals(placement.Owner, wagon));
+        Assert.True((placement.Position - retail).Length <= 0.001d,
+            $"retail={retail}, port={placement.Position}, delta={(placement.Position - retail).Length:F6}m");
+        Matrix3f m = placement.Orientation;
+        float[] port = [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33];
+        for (int i = 0; i < 9; i++)
+        {
+            Assert.True(MathF.Abs(port[i] - retailOrientation[i]) <= 1e-5f, $"M[{i}]: retail={retailOrientation[i]}, port={port[i]}");
+        }
+
+        Assert.True(runtime.TryGetDrawTransform(wagon, out Vector3d live, out _));
+        Assert.InRange((live - placement.Position).Length, 0d, 0.0001d);
+    }
+
+    /// <summary>A Human attached to a pitched parent leans the way the original's conjugated frame leans him.</summary>
+    /// <remarks>
+    /// Human_SetParent (<c>0x463310</c>) keeps <c>H0 * P0^T</c> and <c>0x4610C0</c> rebuilds the Human as <c>P * that</c>
+    /// every tick. Attached to wagon 607_01_1 while it is pitched 10.6 degrees down the hill, Jones (3031) leans 21
+    /// degrees at once, which the probe reads at scene 1. Composing parent-relative (<c>P * P0^T * H0</c>) kept him
+    /// upright there and leaning the wrong way on the flat, which turned his climb-down clip's root steps.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void MissionOneIntroJonesLeansWithTheWagonHeIsAttachedTo()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        LoadedMission loaded = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        float Length(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingDistance(model)
+            : 0f;
+        float Pivot(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingPivotFraction(model)
+            : 0f;
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
+
+        HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(3031));
+        DeclaredTask wagon = IntroWagonUnderJones(root, runtime);
+        Assert.True(runtime.TryAttachActorToTask(jones, wagon, jones.Position, Matrix3f.FromEngineEulerAngles(0f, 0f, jones.Gamma)));
+        Assert.True(runtime.TryGetAttachedDrawTransform(jones, out _, out Matrix3f leaning));
+
+        float[] retail =
+        [
+            -0.91030f, 0.20949f, 0.35702f,
+            -0.20970f, -0.97700f, 0.03859f,
+            0.35689f, -0.03974f, 0.93329f,
+        ];
+        float[] port = [leaning.M11, leaning.M12, leaning.M13, leaning.M21, leaning.M22, leaning.M23, leaning.M31, leaning.M32, leaning.M33];
+        for (int i = 0; i < 9; i++)
+        {
+            Assert.True(MathF.Abs(port[i] - retail[i]) <= 1e-4f, $"M[{i}]: retail={retail[i]}, port={port[i]}");
+        }
+    }
+
+    /// <summary>Mission 10's two parked consists stand where the original settles them, car by car.</summary>
+    /// <remarks>
+    /// The probe's <c>train</c> hook set reads each car's committed pose at Train::UpdateConsist's world commit
+    /// (<c>0x42A66B</c> for a lead, <c>0x42AAB3</c> behind it) once every car has initialised. Its rail (870) is
+    /// automatically oriented (<c>0x500EF0</c>) and climbs and turns under the second consist, so it exercises the
+    /// polyline walk, the chord frames and the waypoint frames together.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void MissionTenConsistsStandWhereTheOriginalSettlesThem()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission loaded = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(10);
+        WorldScene world = WorldScene.Build(loaded, root, magic);
+
+        (int Lead, string Model, Vector3d Position, float[] Orientation)[] retail =
+        [
+            (666, "605_01_1", new(6_962_140.833, 152_980_859.470, 174_503_575.711), [0.725996f, -0.687540f, -0.014760f, 0.687398f, 0.726146f, -0.013975f, 0.020326f, 0f, 0.999793f]),
+            (666, "613_01_1", new(6_915_451.728, 152_930_135.191, 174_502_796.289), [0.625440f, -0.780270f, -0.001426f, 0.780268f, 0.625442f, -0.001779f, 0.002280f, 0f, 0.999997f]),
+            (666, "608_01_1", new(6_874_934.224, 152_874_249.336, 174_503_017.088), [0.547329f, -0.836903f, 0.004728f, 0.836872f, 0.547350f, 0.007230f, -0.008639f, 0f, 0.999962f]),
+            (666, "606_01_1", new(6_838_411.555, 152_815_603.859, 174_503_803.981), [0.509719f, -0.860310f, 0.007196f, 0.860225f, 0.509769f, 0.012145f, -0.014117f, 0f, 0.999900f]),
+            (666, "607_01_1", new(6_803_872.076, 152_755_758.847, 174_504_912.865), [0.489879f, -0.871745f, 0.008800f, 0.871605f, 0.489958f, 0.015657f, -0.017961f, 0f, 0.999838f]),
+            (666, "609_01_1", new(6_769_986.940, 152_695_539.566, 174_506_216.651), [0.490724f, -0.871260f, 0.009700f, 0.871090f, 0.490820f, 0.017219f, -0.019763f, 0f, 0.999804f]),
+            (300, "605_01_1", new(9_127_879.197, 152_980_582.059, 174_438_968.451), [0.057859f, 0.998295f, 0.007579f, -0.989839f, 0.058353f, -0.129666f, -0.129887f, 0f, 0.991528f]),
+            (300, "606_01_1", new(9_110_593.178, 153_184_865.032, 174_469_449.411), [0.127097f, 0.991686f, 0.020109f, -0.979501f, 0.128678f, -0.154977f, -0.156276f, 0f, 0.987713f]),
+            (300, "609_01_1", new(9_081_494.642, 153_316_715.159, 174_496_749.894), [0.332743f, 0.940300f, 0.071530f, -0.919299f, 0.340344f, -0.197622f, -0.210169f, 0f, 0.977664f]),
+        ];
+
+        foreach ((int lead, string model, Vector3d position, float[] orientation) in retail)
+        {
+            WorldPlacement car = world.Placements.Single(placement =>
+                placement.Owner is DeclaredTask { Type.Name: "Train" } train
+                && (train.Id == lead || train.Parent?.Id == lead)
+                && string.Equals(placement.Instance.Name, model, StringComparison.OrdinalIgnoreCase));
+            Vector3d expected = position / WorldScene.UnitsPerMetre;
+            Assert.True((car.Position - expected).Length <= 0.002d,
+                $"{lead}/{model}: retail={expected}, port={car.Position}, delta={(car.Position - expected).Length:F6}m");
+            Matrix3f m = car.Orientation;
+            float[] port = [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33];
+            for (int i = 0; i < 9; i++)
+            {
+                Assert.True(MathF.Abs(port[i] - orientation[i]) <= 2e-5f, $"{lead}/{model} M[{i}]: retail={orientation[i]}, port={port[i]}");
+            }
+        }
     }
 
     [RequiresGameDataFact]
@@ -1366,6 +1357,18 @@ public sealed class RetailCutsceneRuntimeTests
             }
             return false;
         }
+    }
+
+    /// <summary>The 607_01_1 wagon seated Jones (3031) is on, behind lead 2099: the level has a dozen such cars.</summary>
+    private static DeclaredTask IntroWagonUnderJones(GameTask root, CutsceneRuntime runtime)
+    {
+        HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(3031));
+        Vector3d seat = jones.Position / WorldScene.UnitsPerMetre;
+        return Walk(root).OfType<DeclaredTask>()
+            .Where(task => task.Type.Name == "Train" && task.TryGetValue("Model", out object? model) && model is "607_01_1")
+            .MinBy(task => runtime.TryGetDrawTransform(task, out Vector3d at, out _)
+                ? ((at.X - seat.X) * (at.X - seat.X)) + ((at.Y - seat.Y) * (at.Y - seat.Y))
+                : double.MaxValue)!;
     }
 
     private static IEnumerable<GameTask> Walk(GameTask root)

@@ -105,6 +105,13 @@ public sealed class BallisticRound
     /// <summary>Gets or sets whether the round is still flying.</summary>
     public bool Alive { get; set; } = true;
 
+    /// <summary>Gets or sets a value indicating whether the round has come out of something it went into.</summary>
+    /// <remarks>
+    /// The latch <c>0x47B750</c> keeps per round (its <c>v83</c>): the next surface or body the round enters
+    /// takes the hit and stops it.
+    /// </remarks>
+    public bool HasLeftASurface { get; set; }
+
     /// <summary>Gets or sets the ticks of trail fade left once the round is dead.</summary>
     public int FadeTicks { get; set; } = BallisticSimulation.FadeLifetimeTicks;
 

@@ -13,6 +13,7 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
 using OpenIGI.Host.Audio;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
@@ -49,6 +50,12 @@ internal sealed partial class GameHost
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
     private AudioVoiceHandle _binocularZoomVoice;
+
+    /// <summary>The voice ladder state 40 started — retail's <c>Human+3508</c>.</summary>
+    private AudioVoiceHandle _ladderSlideVoice;
+
+    /// <summary>Whether the current slide has already started its sound.</summary>
+    private bool _ladderSliding;
 
     private void SetCutsceneSound(CutsceneSoundEvent sound)
     {
@@ -115,19 +122,11 @@ internal sealed partial class GameHost
     /// <summary>The level's authored ambience boxes. Null until a mission is up.</summary>
     private AmbientAreaRegistry? _ambience;
 
+    // The camera's position as the player's update last left it, which the ambient areas test against.
+    private Vector3d? _ambienceListener;
+
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
-
-    private readonly List<PendingGenericTbaExplosion> _pendingGenericTbaExplosions = [];
-
-    private sealed class PendingGenericTbaExplosion(
-        WorldInteraction interaction, Vector3d position, GenericTbaExplosionParameters parameters, int remainingTicks)
-    {
-        public WorldInteraction Interaction { get; } = interaction;
-        public Vector3d Position { get; } = position;
-        public GenericTbaExplosionParameters Parameters { get; } = parameters;
-        public int RemainingTicks { get; set; } = remainingTicks;
-    }
 
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
@@ -478,6 +477,7 @@ internal sealed partial class GameHost
     private void ResetSoundsForMission()
     {
         StopBinocularTransitionSound();
+        StopLadderSlideSound();
         StopGrenadeCook();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
@@ -592,21 +592,18 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
-    /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
     /// <remarks>
     /// The beds are played <b>flat</b>, not positionally, because that is what the original does with
     /// them: it sets the sound's position to the listener's every tick, which is a wash around the
     /// player rather than a source in the world. Gain is the area's fade, so walking into a machine
     /// room brings its hum up over twenty ticks instead of switching it on at the doorway.
     /// </remarks>
-    private void TickAmbience(Vector3d listenerInUnits)
+    private void TickAmbience()
     {
         if (_ambience is not { } ambience || _sounds is null)
         {
             return;
         }
-
-        ambience.Tick(listenerInUnits);
 
         foreach (PlacedAmbientArea area in ambience.Areas)
         {
@@ -640,8 +637,8 @@ internal sealed partial class GameHost
                 }
                 else
                 {
-                    // A one-shot bed that has run out. Letting go of it here is what allows the gap to
-                    // rearm and the area to speak again.
+                    // A one-shot bed that has run out: the speakers let it go. The area keeps its instance until a
+                    // silent fade releases it (AmbientAreaRegistry), as the original's did on the probe.
                     _ambientVoices.Remove(area);
                     area.IsSounding = false;
                 }
@@ -658,6 +655,119 @@ internal sealed partial class GameHost
     private void PlayJumpSound()
     {
         _sounds?.PlayDefinition(PlayerBody.JumpSoundName, priority: 200);
+    }
+
+    /// <summary>Enters state 37's clip: animation 168's first frame, then held at the mount event.</summary>
+    /// <remarks>
+    /// <para>
+    /// The entry <c>0x40D660</c> starts animation 168 as a new clip node: a full frame step forward
+    /// (<c>0x4D4F60</c>), flagged <c>0x8000</c> so its first tick also reports the event at its start
+    /// time (<c>0x4D4B60</c>). <c>HumanPlayer_Update</c> ticks that clip and moves the human by it in
+    /// the same update, and the next update's state 37 finds event 8 at zero against the latch its entry
+    /// cleared: it pauses the clip, commits nothing, and plays a rung sound. That is the sound of getting
+    /// on — from the foot, or at the end of the top mount.
+    /// </para>
+    /// <para>
+    /// The port takes all of it here, in one go, so the pause is in place before any input can start a
+    /// rung; otherwise the mount event would land on the first rung's tick and commit it.
+    /// </para>
+    /// </remarks>
+    private void StartLadderClimbAnimation()
+    {
+        if (_soldiers is null || _player is null)
+        {
+            return;
+        }
+
+        _soldiers.StartPlayerLadderAnimation(PlayerCamera.LadderClimbAnimation, loops: true);
+        _soldiers.AdvancePlayerLadderAnimation(
+            _player.LadderFacing, out Vector3d entryDelta, out float? mountEventTime, out _);
+        _player.MoveLadderEntryFrame(entryDelta);
+        TakeLadderRungEvent(mountEventTime);
+        _soldiers.SetPlayerLadderPlaybackDirection(0);
+    }
+
+    /// <summary>Sounds a ladder state's crossing of event 8, when the latch lets it count.</summary>
+    /// <param name="eventTime">The crossed event's time, or null when the clip crossed none.</param>
+    /// <returns><see langword="true"/> when the crossing counted, so state 37 should commit its rung.</returns>
+    private bool TakeLadderRungEvent(float? eventTime)
+    {
+        if (_player is null || eventTime is not { } time || !_player.AcceptLadderRungEvent(time))
+        {
+            return false;
+        }
+
+        PlayLadderStepSound(_player.TakeLadderStep());
+        return true;
+    }
+
+    /// <summary>Plays the rung sound of a ladder state's event 8 at the climbing human.</summary>
+    /// <param name="sound">The definition name the climb took from its cycle.</param>
+    /// <remarks>
+    /// <c>0x40D6B0</c> starts it under the sound root and then moves the voice to <c>Human+32</c>
+    /// (<c>0x4E6C30</c>) -- a positional one-shot, with neither the pitch spread nor the crouch scale a
+    /// footstep gets.
+    /// </remarks>
+    private void PlayLadderStepSound(string sound)
+    {
+        if (_player is not { } player)
+        {
+            return;
+        }
+
+        _sounds?.PlayDefinition(sound, player.LadderFeet, priority: 40);
+    }
+
+    /// <summary>Starts, carries and stops the slide-down sound of ladder state 40.</summary>
+    /// <remarks>
+    /// <para>
+    /// The entry <c>0x40DBA0</c> starts <c>wire_slide_1</c> as a child of the human itself and keeps the
+    /// voice at <c>Human+3508</c>; the per-tick <c>0x40DBF0</c> stops it on the ground signal, in the
+    /// same block that detaches from the ladder. Being the human's child, the voice falls with it, so
+    /// here its position is moved every tick.
+    /// </para>
+    /// <para>
+    /// It is started once per slide, not whenever nothing is playing: should the definition be a
+    /// one-shot that runs out before the ground, the original stays silent rather than starting it
+    /// again.
+    /// </para>
+    /// </remarks>
+    private void TickLadderSlideSound()
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        if (_player is not { LadderPhase: LadderTraversalPhase.SlidingDown } player)
+        {
+            StopLadderSlideSound();
+            return;
+        }
+
+        if (!_ladderSliding)
+        {
+            _ladderSliding = true;
+            _ladderSlideVoice = _sounds.PlayDefinition(
+                HumanLadderClimb.SlideSoundName, player.LadderFeet, priority: 60);
+        }
+        else if (_ladderSlideVoice.IsValidHandle && _sounds.IsPlaying(_ladderSlideVoice))
+        {
+            _sounds.SetDefinitionVoicePosition(
+                HumanLadderClimb.SlideSoundName, _ladderSlideVoice, player.LadderFeet, priority: 60);
+        }
+    }
+
+    /// <summary>Stops the ladder slide's voice, at the ground or at a lifecycle boundary.</summary>
+    private void StopLadderSlideSound()
+    {
+        if (_ladderSlideVoice.IsValidHandle)
+        {
+            _sounds?.Stop(_ladderSlideVoice);
+            _ladderSlideVoice = AudioVoiceHandle.None;
+        }
+
+        _ladderSliding = false;
     }
 
     /// <summary>Plays a footstep where it landed.</summary>
@@ -819,24 +929,18 @@ internal sealed partial class GameHost
         }
     }
 
-    /// <summary>Plays the clatter of every dropped gun that landed this tick.</summary>
+    /// <summary>Plays the clatter of a dropped gun that has just landed.</summary>
+    /// <param name="impact">The landing.</param>
     /// <remarks>
     /// <c>GunPickup</c>'s tick (<c>0x46CEA0</c>) plays <c>weapondrop_01</c> or <c>weapondrop_02</c>, a coin
-    /// toss between them, at every bounce. The realistic drop reports a landing once per contact, so a gun
-    /// that tumbles and bounces twice clatters twice.
+    /// toss between them, at every bounce -- drawn there, in the pickup's tick, whether or not anything can be
+    /// heard. The realistic drop reports a landing once per contact, so a gun that tumbles and bounces twice
+    /// clatters twice.
     /// </remarks>
-    private void PlayWeaponDropSounds()
+    private void PlayWeaponDropSound(GunPickupImpact impact)
     {
-        if (_sounds is null || _gunPickups is not { } pickups)
-        {
-            return;
-        }
-
-        foreach (GunPickupImpact impact in pickups.Impacts)
-        {
-            string sound = _soundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
-            _sounds.PlayDefinition(sound, impact.Position, priority: 50);
-        }
+        string sound = _soundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
+        _sounds?.PlayDefinition(sound, impact.Position, priority: 50);
     }
 
     /// <summary>Plays one player or AI bullet contact through the retail sound definitions.</summary>
@@ -1260,88 +1364,6 @@ internal sealed partial class GameHost
         }
     }
 
-    /// <summary>Consumes and presents authored GenericTBA explosions once per completed interaction.</summary>
-    private void ResolveGenericTbaExplosions()
-    {
-        if (_interactions is { } interactions)
-        {
-            foreach ((WorldInteraction interaction, GenericTbaExplosionParameters parameters) in interactions.ConsumeExplosions())
-            {
-                int delayTicks = Math.Max(0, (int)MathF.Round(
-                    Math.Max(0f, parameters.ExplosionDelaySeconds) * GameClock.DefaultTickRate));
-                _pendingGenericTbaExplosions.Add(
-                    new PendingGenericTbaExplosion(interaction, interaction.Anchor, parameters, delayTicks));
-            }
-        }
-
-        for (int i = _pendingGenericTbaExplosions.Count - 1; i >= 0; i--)
-        {
-            PendingGenericTbaExplosion pending = _pendingGenericTbaExplosions[i];
-            if (pending.RemainingTicks > 0)
-            {
-                pending.RemainingTicks--;
-                continue;
-            }
-
-            pending.Interaction.MarkExplosionPresented(_worldSolids);
-            PresentGenericTbaExplosion(pending.Position, pending.Parameters);
-            _pendingGenericTbaExplosions.RemoveAt(i);
-        }
-    }
-
-    private void PresentGenericTbaExplosion(Vector3d position, GenericTbaExplosionParameters parameters)
-    {
-        string sound = parameters.ExplosionSound.Length > 0 ? parameters.ExplosionSound : "explo_02_m";
-        _sounds?.PlayDefinition(sound, position, priority: 90);
-        // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
-        // at presentation time as the other world blasts, including after an authored delay.
-        _soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
-        _impactParticles?.SpawnRetailExplosion(
-            position,
-            new RetailExplosionShape(
-                parameters.ExplosionRadiusUnits,
-                parameters.FireballCount,
-                parameters.FragmentCount));
-
-        if (parameters.ExplosionExpression.Length > 0)
-        {
-            _ = new LevelExpressionRuntime(_loop.Variables).Execute(parameters.ExplosionExpression);
-        }
-
-        float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
-        _soldiers?.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-        HandleDestructibleBlast(
-            source: null,
-            originUnits: position,
-            radiusUnits: parameters.ExplosionRadiusUnits,
-            falloffUnits: parameters.ExplosionFalloffUnits,
-            damageFactor: damageFactor);
-        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-
-        if (_player is null)
-        {
-            return;
-        }
-
-        ReachPlayerWithBlast(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits);
-        float playerDistance = (float)(_player.Body.Position - position).Length;
-        float dose = ExplosionDamage.Dose(
-            playerDistance,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-            parameters.ExplosionRadiusUnits,
-            parameters.ExplosionFalloffUnits,
-            damageFactor);
-        if (dose > 0f && !_playerHealth.IsDead)
-        {
-            _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            FlashPlayerForBlast();
-            if (_playerHealth.IsDead)
-            {
-                BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
-            }
-        }
-    }
-
     /// <summary>Hands one round's contact to the exact object it struck, the way retail does.</summary>
     /// <param name="impactUnits">Where the round landed, in world units.</param>
     /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
@@ -1647,6 +1669,37 @@ internal sealed partial class GameHost
     /// </para>
     /// <para>A destroyed task is removed immediately and its renderer selects the authored wreck model.</para>
     /// </remarks>
+    private void TickRadios() => _interactions?.TickRadios(_radioSounds ??= new RadioSoundPlayer(this));
+
+    private RadioSoundPlayer? _radioSounds;
+
+    // A radio's voices: 0x43AF90 resolves the authored name (sub_4E6B00) and plays it at the task
+    // (sub_4E6C30). A name with no definition starts nothing, and the radio carries on regardless.
+    private sealed class RadioSoundPlayer(GameHost host) : IRadioSoundPlayer
+    {
+        public object? Play(string sound, Vector3d positionUnits)
+        {
+            if (host._sounds is not { } sounds || sound.Length == 0)
+            {
+                return null;
+            }
+
+            AudioVoiceHandle voice = sounds.PlayDefinition(sound, positionUnits);
+            return voice.IsValidHandle ? voice : null;
+        }
+
+        public bool IsPlaying(object voice) =>
+            voice is AudioVoiceHandle handle && host._sounds?.IsPlaying(handle) == true;
+
+        public void Silence(object voice)
+        {
+            if (voice is AudioVoiceHandle handle)
+            {
+                host._sounds?.Stop(handle);
+            }
+        }
+    }
+
     private void TickAlarmSpeakers()
     {
         if (_sounds is null || _alarmSpeakers is null)

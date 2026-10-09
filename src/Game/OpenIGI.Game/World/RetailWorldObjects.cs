@@ -447,12 +447,145 @@ public sealed class RetailWorldObjects
             levels,
             p0,
             p1,
-            RetailSplineSegment.AnglesToMatrix(a0.X, a0.Y, a0.Z),
-            RetailSplineSegment.AnglesToMatrix(a1.X, a1.Y, a1.Z),
+            WaypointOrientation(previous),
+            WaypointOrientation(waypoint),
             count,
             x0,
             x1,
             reverse: Value(waypoint, "Flip") is true);
+    }
+
+    /// <summary>A waypoint's orientation as the original leaves it, row-major: authored, or rebuilt from its neighbours.</summary>
+    /// <param name="waypoint">The <c>SplineObjWaypoint</c>.</param>
+    /// <returns>The 3x3 its segments are built from.</returns>
+    /// <remarks>
+    /// The waypoint update (<c>0x500EF0</c>) replaces the authored frame when the SplineObj's or the waypoint's own
+    /// "Automatic Orientation" is set (and the SplineObj's Snap Length is not): the direction is
+    /// <c>(p - previous) + (next - p)</c>, the side its horizontal perpendicular, the frame rebuilt by cross products
+    /// and transposed, so the direction is the first column -- the tangent <c>0x4E4530</c> reads. Mission 10's rail
+    /// (870) is laid this way; its authored orientations are not what the original runs on.
+    /// </remarks>
+    public static float[] WaypointOrientation(DeclaredTask waypoint)
+    {
+        ArgumentNullException.ThrowIfNull(waypoint);
+        Vector3f angles = Value(waypoint, "Orientation") is Vector3f authored ? authored : default;
+        if (!IsAutomaticallyOriented(waypoint)
+            || waypoint.Parent is not DeclaredTask spline
+            || Value(waypoint, "Position") is not Vector3d position)
+        {
+            return RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z);
+        }
+
+        DeclaredTask? previous = null, next = null;
+        bool passed = false;
+        foreach (GameTask child in spline.Children)
+        {
+            if (child is not DeclaredTask sibling || !string.Equals(sibling.Type.Name, waypoint.Type.Name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (ReferenceEquals(sibling, waypoint))
+            {
+                passed = true;
+            }
+            else if (!passed)
+            {
+                previous = sibling;
+            }
+            else
+            {
+                next = sibling;
+                break;
+            }
+        }
+
+        Vector3d? before = previous is not null && Value(previous, "Position") is Vector3d p0 ? p0 : null;
+        Vector3d? after = next is not null && Value(next, "Position") is Vector3d p1 ? p1 : null;
+        if (before is null && after is null)
+        {
+            return RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z);
+        }
+
+        float dx = 0f, dy = 0f, dz = 0f;
+        if (before is { } b)
+        {
+            dx = (float)(position.X - b.X);
+            dy = (float)(position.Y - b.Y);
+            dz = (float)(position.Z - b.Z);
+        }
+
+        if (after is { } n)
+        {
+            dx = (float)((n.X - position.X) + dx);
+            dy = (float)((n.Y - position.Y) + dy);
+            dz = (float)((n.Z - position.Z) + dz);
+        }
+
+        // Row 0 is the direction, row 1 its horizontal perpendicular, row 2 = row1 x row0.
+        float r0x = dx, r0y = dy, r0z = dz;
+        if (r0x == 0f && r0y == 0f && r0z == 0f)
+        {
+            r0x = 1f;
+        }
+
+        float r1x, r1y;
+        if (r0x == 0f && r0y == 0f)
+        {
+            r1x = 0f;
+            r1y = 1f;
+        }
+        else
+        {
+            r1x = r0y;
+            r1y = -r0x;
+            if (r1x != 0f || r1y != 0f)
+            {
+                double inverse = 1.0 / Math.Sqrt(((double)r1x * r1x) + ((double)r1y * r1y));
+                r1x = (float)(r1x * inverse);
+                r1y = (float)(r1y * inverse);
+            }
+        }
+
+        float r2x = (float)((double)r1y * r0z);
+        float r2y = (float)-((double)r1x * r0z);
+        float r2z = (float)(((double)r1x * r0y) - ((double)r1y * r0x));
+
+        // Then row0 normalised, row1 = row2 x row0, row2 = row0 x row1 -- each from the unnormalised one before.
+        (float n0x, float n0y, float n0z) = Normalised(r0x, r0y, r0z);
+        float bx = (float)(((double)r0z * r2y) - ((double)r2z * r0y));
+        float by = (float)-(((double)r0z * r2x) - ((double)r2z * r0x));
+        float bz = (float)(((double)r0y * r2x) - ((double)r0x * r2y));
+        float cx = (float)(((double)bz * n0y) - ((double)by * n0z));
+        float cy = (float)-(((double)bz * n0x) - ((double)bx * n0z));
+        float cz = (float)(((double)by * n0x) - ((double)bx * n0y));
+        (float n1x, float n1y, float n1z) = Normalised(bx, by, bz);
+        (float n2x, float n2y, float n2z) = Normalised(cx, cy, cz);
+
+        // Stored transposed: the direction is the first column.
+        return [n0x, n1x, n2x, n0y, n1y, n2y, n0z, n1z, n2z];
+
+        static (float X, float Y, float Z) Normalised(float x, float y, float z)
+        {
+            if (x == 0f && y == 0f && z == 0f)
+            {
+                return (x, y, z);
+            }
+
+            double inverse = 1.0 / Math.Sqrt(((double)x * x) + ((double)y * y) + ((double)z * z));
+            return ((float)(x * inverse), (float)(y * inverse), (float)(z * inverse));
+        }
+    }
+
+    /// <summary>Whether <see cref="WaypointOrientation"/> rebuilds this waypoint's frame rather than keeping the authored one.</summary>
+    /// <param name="waypoint">The <c>SplineObjWaypoint</c>.</param>
+    /// <returns><see langword="true"/> under the SplineObj's or its own "Automatic Orientation", unless the SplineObj snaps.</returns>
+    public static bool IsAutomaticallyOriented(DeclaredTask waypoint)
+    {
+        ArgumentNullException.ThrowIfNull(waypoint);
+        return waypoint.Parent is DeclaredTask spline
+            && Value(spline, "Snap Length") is not true
+            && (Value(spline, "Automatic Orientation") is true || Value(waypoint, "Automatic Orientation") is true);
     }
 
     private static object? Value(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) ? value : null;

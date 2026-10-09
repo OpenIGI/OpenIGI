@@ -66,6 +66,9 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
     /// <summary>Whether the live overhead world pass, rather than a text page, should be drawn.</summary>
     public bool ShowsMap => _page == Page.Map;
 
+    /// <inheritdoc/>
+    public bool MapAvailable { get; set; } = true;
+
     public bool Load(VirtualFileSystem fileSystem)
     {
         try
@@ -95,7 +98,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         _playerUnits = playerUnits;
         _centreUnits = playerUnits;
         _hasCentre = true;
-        _page = Page.Map;
+        _page = MapAvailable ? Page.Map : Page.Objectives;
     }
 
     /// <summary>Handles page links plus direct mouse pan and zoom on the map.</summary>
@@ -114,16 +117,23 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         float logY = LogLinkY(device);
         float objectivesY = ObjectivesLinkY(device);
         bool pageLinkPressed = false;
+        if (!MapAvailable && _page == Page.Map)
+        {
+            _page = Page.Objectives;
+        }
+
         if (leftPressed)
         {
-            if (HitTextLink(linkX, objectivesY, 175f * linkScale, PageLinkHitHeight * linkScale))
+            if (LinkTarget(Page.Objectives) is { } objectivesTarget
+                && HitTextLink(linkX, objectivesY, 175f * linkScale, PageLinkHitHeight * linkScale))
             {
-                _page = _page == Page.Objectives ? Page.Map : Page.Objectives;
+                _page = objectivesTarget;
                 pageLinkPressed = true;
             }
-            else if (HitTextLink(linkX, logY, 100f * linkScale, PageLinkHitHeight * linkScale))
+            else if (LinkTarget(Page.Log) is { } logTarget
+                && HitTextLink(linkX, logY, 100f * linkScale, PageLinkHitHeight * linkScale))
             {
-                _page = _page == Page.Log ? Page.Map : Page.Log;
+                _page = logTarget;
                 pageLinkPressed = true;
             }
         }
@@ -337,12 +347,25 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         float x = device.X + device.Width * 0.1f;
         float logY = LogLinkY(device);
         float objectivesY = ObjectivesLinkY(device);
-        string first = _page == Page.Log ? ComputerString("MAP") : ComputerString("LOG");
-        string second = _page == Page.Objectives ? ComputerString("MAP") : ComputerString("OBJECTIVES");
-        DrawBoldText(batch, "font3.fnt", first, x, logY, scale,
-            HitTextLink(x, logY, 100f * scale, PageLinkHitHeight * scale) ? ScreenBright : ScreenGreen);
-        DrawBoldText(batch, "font3.fnt", second, x, objectivesY, scale,
-            HitTextLink(x, objectivesY, 175f * scale, PageLinkHitHeight * scale) ? ScreenBright : ScreenGreen);
+        if (LinkTarget(Page.Log) is { } first)
+        {
+            DrawBoldText(batch, "font3.fnt", ComputerString(first == Page.Map ? "MAP" : "LOG"), x, logY, scale,
+                HitTextLink(x, logY, 100f * scale, PageLinkHitHeight * scale) ? ScreenBright : ScreenGreen);
+        }
+
+        if (LinkTarget(Page.Objectives) is { } second)
+        {
+            DrawBoldText(batch, "font3.fnt", ComputerString(second == Page.Map ? "MAP" : "OBJECTIVES"), x, objectivesY, scale,
+                HitTextLink(x, objectivesY, 175f * scale, PageLinkHitHeight * scale) ? ScreenBright : ScreenGreen);
+        }
+    }
+
+    /// <summary>Where a page's link leads from the current page: back to the map from that page itself.</summary>
+    /// <remarks>Nothing when that is the map and the level has not given the player the device.</remarks>
+    private Page? LinkTarget(Page link)
+    {
+        Page target = _page == link ? Page.Map : link;
+        return target == Page.Map && !MapAvailable ? null : target;
     }
 
     private void DrawPointer(SpriteBatch batch) => DrawSprite(batch, "pointer.spr", _mouseX, _mouseY);

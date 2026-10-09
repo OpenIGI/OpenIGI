@@ -283,9 +283,29 @@ public sealed class PlayerBody
     /// <summary>Gets the eye's world position — where the view is taken from.</summary>
     public Vector3d Eye => new(Position.X, Position.Y, Position.Z + EyeHeight);
 
+    /// <summary>How far the Human's origin (<c>+32</c>) stands above the feet: 3877.2 units, measured.</summary>
+    public const double StandingOriginHeight = 3877.2;
+
     /// <summary>Gets the Human's origin (<c>+32</c>): 3877.2 units above the feet standing, 1753.8 crouched.</summary>
     /// <remarks>The point AreaActivate's CRITERIA_HUMAN callback (<c>0x460A10</c>) tests against a volume.</remarks>
-    public Vector3d Origin => new(Position.X, Position.Y, Position.Z + (IsCrouched ? 1753.8 : 3877.2));
+    public Vector3d Origin => new(Position.X, Position.Y, Position.Z + (IsCrouched ? 1753.8 : StandingOriginHeight));
+
+    /// <summary>Hands a finished fence vault to the fall, from the origin animation 171 left the human at.</summary>
+    /// <param name="origin">Where the clip's root motion carried the Human's origin (<c>+32</c>).</param>
+    /// <param name="lastRootDelta">The clip's last world-space root step.</param>
+    /// <remarks>
+    /// State 41 leaves on the clip's end bit for state 29 (<c>0x40DD00</c>), whose entry (<c>0x40BDB0</c>) puts
+    /// the last root step into the horizontal velocity and nothing into the vertical. Animation 171 ends with the
+    /// origin 0.94 m above where it began, on the far side, so retail drops the last of the vault: the probe watched
+    /// mission 1's fence land ten ticks later, 0.25 m further on. The port keeps the feet, so the origin comes down
+    /// by its standing height first.
+    /// </remarks>
+    public void BeginFallFromVault(Vector3d origin, Vector3d lastRootDelta)
+    {
+        BeginLadderTraversal();
+        Position = new Vector3d(origin.X, origin.Y, origin.Z - StandingOriginHeight);
+        _pendingWalkOffVelocity = new Vector3f((float)lastRootDelta.X, (float)lastRootDelta.Y, 0f);
+    }
 
     /// <summary>Detaches the ordinary ground mover before a ladder mount is committed.</summary>
     /// <remarks>

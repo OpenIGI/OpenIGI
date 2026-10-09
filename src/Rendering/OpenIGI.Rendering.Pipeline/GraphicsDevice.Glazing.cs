@@ -193,7 +193,7 @@ public sealed partial class GraphicsDevice
         }
     }
 
-    /// <summary>The glazing's block: its transform, and the rotation that turns its normal into the world.</summary>
+    /// <summary>The glazing's block: its transform, the rotation that turns it into the world, and where it sits.</summary>
     private void WriteGlassPush(Span<float> push, in Matrix4f modelView)
     {
         push.Clear();
@@ -215,6 +215,14 @@ public sealed partial class GraphicsDevice
         push[24] = normal.M13;
         push[25] = normal.M23;
         push[26] = normal.M33;
+
+        // The object's origin relative to the camera, in world axes, in the three columns' spare fourth
+        // components: with the rotation above it puts every vertex at its camera-relative world position,
+        // which is all the transmission needs to know the angle the pane is seen at.
+        float tx = modelView.M14, ty = modelView.M24, tz = modelView.M34;
+        push[19] = (_viewToWorld.M11 * tx) + (_viewToWorld.M12 * ty) + (_viewToWorld.M13 * tz);
+        push[23] = (_viewToWorld.M21 * tx) + (_viewToWorld.M22 * ty) + (_viewToWorld.M23 * tz);
+        push[27] = (_viewToWorld.M31 * tx) + (_viewToWorld.M32 * ty) + (_viewToWorld.M33 * tz);
     }
 
     private void DisposeGlazing()

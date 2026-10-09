@@ -17,13 +17,25 @@ namespace OpenIGI.Game.Player;
 /// The bone the round went through, or <c>-1</c> when the human was not posed and no bone could be
 /// named. It is what the zone was read from, so it is worth carrying.
 /// </param>
+/// <param name="Material">
+/// The struck face's global game-material row, or <c>-1</c> when no collision mesh named one. A round that
+/// meets a body tests its power against this row as it would a wall's (<c>0x47BD88</c>).
+/// </param>
+/// <param name="IsExit">
+/// Whether the round crossed the body's skin on its way OUT — the <c>+80</c> slot of <c>0x47B750</c>'s record
+/// rather than <c>+76</c>. An exit is no hit: no handler, no damage.
+/// </param>
+/// <param name="Normal">The struck face's normal, turned to oppose the round, for its arrival angle.</param>
 public readonly record struct HumanHit(
     Vector3d Position,
     double Distance,
     int Zone,
     float LocalForward,
     float LocalSide,
-    int Bone = -1);
+    int Bone = -1,
+    int Material = -1,
+    bool IsExit = false,
+    Vector3f Normal = default);
 
 /// <summary>One face of a human's collision mesh that a round's line crosses.</summary>
 /// <param name="Entering">
@@ -154,8 +166,8 @@ public static class HumanHitTest
             // took several rounds to the head. Closest approach is the faithful quantity: it is what
             // "the round passed through the head" means, and it agrees with the mesh cast wherever the
             // mesh cast is the one that would have hit.
-            Vector3f head = posed.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d boneWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            // 0x489C60's bone lookup (0x414F40 -> 0x4D0930) returns zeros: the point is the origin itself.
+            Vector3d boneWorld = boneOrigin;
             double distance = DistanceToSegment(origin, direction, boneWorld);
 
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
@@ -227,37 +239,14 @@ public static class HumanHitTest
                 boneOrigin.Z + (r.M31 * local.X) + (r.M32 * local.Y) + (r.M33 * local.Z) + t.Z);
         }
 
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double nearest = double.PositiveInfinity;
-        int hitBone = -1;
-        Vector3d contact = default;
-
-        foreach (MefCollisionFace face in mesh.Faces)
-        {
-            if (!RayTriangle.Intersect(origin, direction, world[face.I0], world[face.I1], world[face.I2], out double t)
-                || t >= nearest)
-            {
-                continue;
-            }
-
-            nearest = t;
-
-            // The struck triangle's bone: its first vertex's, unless the other two name a different one
-            // together — the original's rule when a face spans a joint (0x5655A0's v233 read).
-            int b0 = mesh.VertexBones[face.I0];
-            int b1 = mesh.VertexBones[face.I1];
-            hitBone = b1 != b0 && b1 == mesh.VertexBones[face.I2] ? b1 : b0;
-            contact = new Vector3d(
-                origin.X + (direction.X * t), origin.Y + (direction.Y * t), origin.Z + (direction.Z * t));
-        }
-
-        if (hitBone < 0)
+        if (!NearestCrossing(origin, end, world, mesh, out MeshCrossing crossing))
         {
             return false;
         }
 
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        Vector3d contact = crossing.Contact;
+        int hitBone = crossing.Bone;
 
         Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
         Vector3f forward = Normalise(facing);
@@ -266,14 +255,13 @@ public static class HumanHitTest
 
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
 
-        // The head promotion, on the actual posed bone 4 — a front hit whose CONTACT lands within 15 cm of
-        // it is lethal (0x489C60 measures the hit record's point, not the ray). The ray's closest approach
-        // made a forearm raised in front of the face a headshot: the round struck the arm, but its line
-        // ran on through the head.
+        // Zone 15's promotion: a front hit whose CONTACT lands within 15 cm of the point 0x489C60 measures from
+        // (the hit record's point, not the ray). That point is meant to be bone 4 of 000_01_1, but the lookup
+        // (0x414F40) ends in 0x4D0930, which writes zeros -- so it is the origin (Human+32) itself, the pelvis, and
+        // a round to the head scores the neck's zone (16), never 15.
         if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
         {
-            Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            Vector3d headWorld = boneOrigin;
             double distance = Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
@@ -281,7 +269,122 @@ public static class HumanHitTest
             }
         }
 
-        hit = new HumanHit(contact, nearest * length, zone, localForward, localSide, hitBone);
+        hit = new HumanHit(
+            contact, crossing.Distance, zone, localForward, localSide, hitBone,
+            crossing.Material, crossing.IsExit, crossing.Normal);
+        return true;
+    }
+
+    // One face crossing of a skinned body, as the mesh casts report it.
+    private readonly record struct MeshCrossing(
+        Vector3d Contact,
+        double Distance,
+        int Bone,
+        int Material,
+        bool IsExit,
+        Vector3f Normal);
+
+    /// <summary>The nearest face of a skinned body the segment crosses, and which way it crosses it.</summary>
+    /// <remarks>
+    /// <para>
+    /// A round that goes through a body is cast again from just inside it (<c>0x47B750</c> steps 20.48 units
+    /// past each contact), so the segment may START inside the body, and its first crossing is then the way
+    /// out. Which side a face is cannot be read off its winding — a body mesh's is not established — so the
+    /// line is reached back to outside the body's every vertex, where its first crossing must be an entry,
+    /// and every crossing facing the way that one does is an entry too (<see cref="CastMeshCrossings"/>'s
+    /// rule, made independent of where the segment starts).
+    /// </para>
+    /// <para>
+    /// The struck triangle's bone is its first vertex's, unless the other two name a different one together
+    /// — the original's rule when a face spans a joint (<c>0x5655A0</c>'s v233 read).
+    /// </para>
+    /// </remarks>
+    private static bool NearestCrossing(
+        Vector3d origin,
+        Vector3d end,
+        Vector3d[] world,
+        MefCollisionMesh mesh,
+        out MeshCrossing crossing)
+    {
+        crossing = default;
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return false;
+        }
+
+        double reach = 0.0;
+        foreach (Vector3d vertex in world)
+        {
+            reach = Math.Max(reach, Distance(vertex, origin));
+        }
+
+        reach += 1.0;
+        Vector3d unit = new(direction.X / length, direction.Y / length, direction.Z / length);
+        Vector3d back = new(origin.X - (unit.X * reach), origin.Y - (unit.Y * reach), origin.Z - (unit.Z * reach));
+        Vector3d span = new(end.X - back.X, end.Y - back.Y, end.Z - back.Z);
+        double spanLength = reach + length;
+
+        double first = double.PositiveInfinity;
+        bool entrySign = false;
+        double nearest = double.PositiveInfinity;
+        bool nearestSign = false;
+        int nearestFace = -1;
+        Vector3d nearestNormal = default;
+        ReadOnlySpan<MefCollisionFace> faces = mesh.Faces;
+        for (int i = 0; i < faces.Length; i++)
+        {
+            MefCollisionFace face = faces[i];
+            Vector3d a = world[face.I0], b = world[face.I1], c = world[face.I2];
+            if (!RayTriangle.Intersect(back, span, a, b, c, out double t))
+            {
+                continue;
+            }
+
+            Vector3d normal = RayTriangle.Normal(a, b, c);
+            bool sign = ((normal.X * span.X) + (normal.Y * span.Y) + (normal.Z * span.Z)) > 0.0;
+            if (t < first)
+            {
+                first = t;
+                entrySign = sign;
+            }
+
+            double along = (t * spanLength) - reach;
+            if (along < 0.0 || along >= nearest)
+            {
+                continue;
+            }
+
+            nearest = along;
+            nearestSign = sign;
+            nearestFace = i;
+            nearestNormal = sign ? new Vector3d(-normal.X, -normal.Y, -normal.Z) : normal;
+        }
+
+        if (nearestFace < 0)
+        {
+            return false;
+        }
+
+        MefCollisionFace struck = faces[nearestFace];
+        int b0 = mesh.VertexBones[struck.I0];
+        int b1 = mesh.VertexBones[struck.I1];
+        double normalLength = Math.Sqrt(
+            (nearestNormal.X * nearestNormal.X) + (nearestNormal.Y * nearestNormal.Y) + (nearestNormal.Z * nearestNormal.Z));
+        crossing = new MeshCrossing(
+            new Vector3d(origin.X + (unit.X * nearest), origin.Y + (unit.Y * nearest), origin.Z + (unit.Z * nearest)),
+            nearest,
+            b1 != b0 && b1 == mesh.VertexBones[struck.I2] ? b1 : b0,
+            mesh.GlobalMaterial(struck.Material),
+            nearestSign != entrySign,
+            normalLength > 0.0
+                ? new Vector3f(
+                    (float)(nearestNormal.X / normalLength),
+                    (float)(nearestNormal.Y / normalLength),
+                    (float)(nearestNormal.Z / normalLength))
+                : default);
         return true;
     }
 
@@ -393,8 +496,8 @@ public static class HumanHitTest
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
         if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
         {
-            Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            // The origin itself: 0x489C60's bone lookup returns zeros (see TryCastMesh).
+            Vector3d headWorld = boneOrigin;
             if (HumanDamage.TakesProximityZone((float)Distance(contact, headWorld), localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -459,36 +562,14 @@ public static class HumanHitTest
             world[i] = new Vector3d(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
         }
 
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double nearest = double.PositiveInfinity;
-        int hitBone = -1;
-        Vector3d contact = default;
-
-        foreach (MefCollisionFace face in mesh.Faces)
-        {
-            if (!RayTriangle.Intersect(origin, direction, world[face.I0], world[face.I1], world[face.I2], out double t)
-                || t >= nearest)
-            {
-                continue;
-            }
-
-            nearest = t;
-            int b0 = mesh.VertexBones[face.I0];
-            int b1 = mesh.VertexBones[face.I1];
-            hitBone = b1 != b0 && b1 == mesh.VertexBones[face.I2] ? b1 : b0;
-            contact = new Vector3d(
-                origin.X + (direction.X * t),
-                origin.Y + (direction.Y * t),
-                origin.Z + (direction.Z * t));
-        }
-
-        if (hitBone < 0)
+        if (!NearestCrossing(origin, end, world, mesh, out MeshCrossing crossing))
         {
             return false;
         }
 
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        Vector3d contact = crossing.Contact;
+        int hitBone = crossing.Bone;
         Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
         Vector3f forward = Normalise(facing);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
@@ -498,15 +579,8 @@ public static class HumanHitTest
         if (HumanDamage.ProximityBoneIndex < currentPose.BoneCount
             && HumanDamage.ProximityBoneIndex < previousPose.BoneCount)
         {
-            int head = HumanDamage.ProximityBoneIndex;
-            Vector3f current = currentPose.Positions[head];
-            Vector3f previous = previousPose.Positions[head];
-            Vector3f local = new(
-                current.X + (share * (previous.X - current.X)),
-                current.Y + (share * (previous.Y - current.Y)),
-                current.Z + (share * (previous.Z - current.Z)));
-            Vector3f turned = orientation.Transposed().Transform(local);
-            Vector3d headWorld = new(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
+            // The origin itself: 0x489C60's bone lookup returns zeros (see TryCastMesh).
+            Vector3d headWorld = root;
 
             // From the contact, as 0x489C60 measures it (see TryCastMesh).
             double distance = Distance(contact, headWorld);
@@ -516,7 +590,9 @@ public static class HumanHitTest
             }
         }
 
-        hit = new HumanHit(contact, nearest * length, zone, localForward, localSide, hitBone);
+        hit = new HumanHit(
+            contact, crossing.Distance, zone, localForward, localSide, hitBone,
+            crossing.Material, crossing.IsExit, crossing.Normal);
         return true;
     }
 

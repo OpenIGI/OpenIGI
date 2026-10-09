@@ -91,7 +91,25 @@ public sealed class BoneClip
     private float _eventIntervalEnd;
     private bool _eventIntervalBackwards;
     private bool _eventIntervalWrapped;
+    private bool _eventIntervalIncludesStart;
     private bool _hasEventInterval;
+    private bool _startEventsArmed;
+
+    /// <summary>Makes the next <see cref="Tick"/> also report events lying exactly at the clock's start.</summary>
+    /// <remarks>
+    /// <para>
+    /// This is clip flag <c>0x8000</c>, which <c>0x4D47D0</c> sets on every clip node it creates. On the
+    /// first tick <c>0x4D4B60</c> sees it and, before the ordinary interval, dispatches a point query at
+    /// the old clock — the only way an event authored at a clip's very start can fire, since a forward
+    /// interval is open there. The tick then clears it.
+    /// </para>
+    /// <para>
+    /// It is armed by the caller rather than by the constructor: the rule is global in the original, but
+    /// only the traversal clips have been checked against it here. Walk cycles carry their first footstep
+    /// at time zero as well, and arming those changes when a guard's first step is heard.
+    /// </para>
+    /// </remarks>
+    public void ArmStartEvents() => _startEventsArmed = true;
 
     /// <summary>Advances the clock by one tick.</summary>
     /// <remarks>
@@ -141,7 +159,9 @@ public sealed class BoneClip
         _eventIntervalEnd = Time;
         _eventIntervalBackwards = playingBackwards;
         _eventIntervalWrapped = wrapped;
-        _hasEventInterval = Rate != 0f;
+        _eventIntervalIncludesStart = _startEventsArmed;
+        _hasEventInterval = Rate != 0f || _startEventsArmed;
+        _startEventsArmed = false;
 
         // The engine keeps BOTH the sampled root (+16) and the per-tick delta (+28) on a clip instance, and
         // it is the DELTA that moves the body -- the sampled value is an absolute position along the clip's
@@ -172,13 +192,75 @@ public sealed class BoneClip
     /// held at its time-zero boundary does not repeatedly fire that boundary, while wrapping through
     /// zero does fire it once. Reverse playback uses the mirrored rule.
     /// </remarks>
-    public bool CrossedEvent(int eventId)
+    public bool CrossedEvent(int eventId) => TryGetCrossedEvent(eventId, out _);
+
+    /// <summary>Finds the first event of a type the last tick dispatched, and the time it is authored at.</summary>
+    /// <param name="eventId">The event id stored in the animation.</param>
+    /// <param name="time">Receives the event's authored time.</param>
+    /// <returns><see langword="true"/> when such an event was crossed.</returns>
+    /// <remarks>
+    /// "First" is the original's order: <c>0x4D4DC0</c> walks the events in stored order, and a wrapping
+    /// tick dispatches the part before the seam before the part after it. The time matters to the ladder
+    /// states, which latch it (<c>Human+3464</c>) and ignore a crossing of the time they last took.
+    /// </remarks>
+    public bool TryGetCrossedEvent(int eventId, out float time)
     {
+        time = 0f;
         if (!_hasEventInterval)
         {
             return false;
         }
 
+        if (_eventIntervalIncludesStart && TryFind(eventId, EventSpan.AtStart, out time))
+        {
+            return true;
+        }
+
+        if (!_eventIntervalWrapped)
+        {
+            return Rate != 0f && TryFind(eventId, EventSpan.Interval, out time);
+        }
+
+        return TryFind(eventId, EventSpan.BeforeSeam, out time)
+            || TryFind(eventId, EventSpan.AfterSeam, out time);
+    }
+
+    /// <summary>Whether an event of the type is authored exactly where the clock stands.</summary>
+    /// <param name="eventId">The event id stored in the animation.</param>
+    /// <returns><see langword="true"/> when such an event sits at the current time.</returns>
+    /// <remarks>
+    /// A clip started this tick has no interval yet, but the original's point query on a new node (flag
+    /// <c>0x8000</c>, <c>0x4D4B60</c>) dispatches what is authored at its start -- a walk cycle's first footstep.
+    /// </remarks>
+    public bool HasEventAtCurrentTime(int eventId)
+    {
+        foreach (BoneAnimationEvent animationEvent in _animation.Events)
+        {
+            if (animationEvent.EventId == eventId && animationEvent.Time == Time)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the clock's next step will cross an event of the type -- the interval the original has
+    /// already dispatched when this clock stands where it does.</summary>
+    /// <param name="eventId">The event id stored in the animation.</param>
+    /// <returns><see langword="true"/> when such an event lies in (time, time + rate], wrapping as a looping clip does.</returns>
+    /// <remarks>
+    /// The original advances a clip on the tick the clip is started, with a point query at its start (flag
+    /// <c>0x8000</c>), and drops that first step's root motion; this clock starts a step later and samples its root
+    /// motion a step ahead, so the two travel identically while this clock reads one step behind. Probed on mission
+    /// 4: patrol 411's walk (clip 57) read 160 on the original after the tick it set off, 0 here, at the same
+    /// position, and its footsteps fell on ticks 1, 17, 34 where reading the interval behind gave 2, 18, 35.
+    /// </remarks>
+    public bool UpcomingEvent(int eventId)
+    {
+        float duration = _animation.Duration;
+        float from = Time;
+        float to = Time + Rate;
         foreach (BoneAnimationEvent animationEvent in _animation.Events)
         {
             if (animationEvent.EventId != eventId)
@@ -186,17 +268,61 @@ public sealed class BoneClip
                 continue;
             }
 
+            float at = animationEvent.Time;
+            if (Rate > 0f)
+            {
+                if ((at > from && at <= to) || (Loops && to >= duration && at > -1f && at <= to - duration))
+                {
+                    return true;
+                }
+            }
+            else if (Rate < 0f && ((at < from && at >= to) || (Loops && to <= 0f && at >= to + duration)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private enum EventSpan
+    {
+        AtStart,
+        Interval,
+        BeforeSeam,
+        AfterSeam,
+    }
+
+    private bool TryFind(int eventId, EventSpan span, out float time)
+    {
+        time = 0f;
+        foreach (BoneAnimationEvent animationEvent in _animation.Events)
+        {
+            if (animationEvent.EventId != eventId)
+            {
+                continue;
+            }
+
+            // Forward intervals are open at the old clock and closed at the new one; backward ones are
+            // the mirror. So a clip held at a boundary does not keep firing it, and a wrap fires it once.
             float eventTime = animationEvent.Time;
-            bool crossed = _eventIntervalBackwards
-                ? _eventIntervalWrapped
-                    ? eventTime < _eventIntervalStart || eventTime >= _eventIntervalEnd
-                    : eventTime < _eventIntervalStart && eventTime >= _eventIntervalEnd
-                : _eventIntervalWrapped
-                    ? eventTime > _eventIntervalStart || eventTime <= _eventIntervalEnd
-                    : eventTime > _eventIntervalStart && eventTime <= _eventIntervalEnd;
+            bool crossed = span switch
+            {
+                EventSpan.AtStart => eventTime == _eventIntervalStart,
+                EventSpan.BeforeSeam => _eventIntervalBackwards
+                    ? eventTime < _eventIntervalStart
+                    : eventTime > _eventIntervalStart,
+                EventSpan.AfterSeam => _eventIntervalBackwards
+                    ? eventTime >= _eventIntervalEnd
+                    : eventTime <= _eventIntervalEnd,
+                _ => _eventIntervalBackwards
+                    ? eventTime < _eventIntervalStart && eventTime >= _eventIntervalEnd
+                    : eventTime > _eventIntervalStart && eventTime <= _eventIntervalEnd,
+            };
 
             if (crossed)
             {
+                time = eventTime;
                 return true;
             }
         }
@@ -241,7 +367,31 @@ public sealed class BoneClip
     /// <returns>The root's position, or zero when the clip has no translation track.</returns>
     public Vector3f SampleRoot() => SampleRoot(Time);
 
-    private Vector3f SampleRoot(float time) =>
+    /// <summary>Sets the clock, as <c>0x4D65B0</c> does -- the gait entries' phase carry.</summary>
+    /// <param name="time">The new time.</param>
+    public void SetTime(float time) => Time = time;
+
+    /// <summary>Where the next <see cref="Tick"/> will leave the clock, without moving it.</summary>
+    /// <returns>The clock after one more tick, wrapped or clamped as <see cref="Tick"/> would.</returns>
+    public float TimeAfterTick()
+    {
+        float duration = _animation.Duration;
+        bool playingBackwards = Rate < 0f || (Rate == 0f && Backwards);
+        float time = Time + Rate;
+        if ((!playingBackwards && time >= duration) || (playingBackwards && time <= 0f))
+        {
+            time = Loops
+                ? time + (playingBackwards ? duration : -duration)
+                : playingBackwards ? 0f : duration;
+        }
+
+        return time;
+    }
+
+    /// <summary>Samples the root track at a time.</summary>
+    /// <param name="time">The clip time.</param>
+    /// <returns>The root's translation there.</returns>
+    public Vector3f SampleRoot(float time) =>
         _animation.Translation.Length == 0
             ? default
             : BoneTrackSampler.Sample(_animation.Translation, time);

@@ -128,19 +128,25 @@ public sealed class HumanBoneZoneTests
         Assert.Equal(0.5f, HumanHitZoneTable.Soldier[hit.Zone].Multiplier);
     }
 
-    /// <summary>A round through the neck takes the head zone, and kills a soldier outright.</summary>
+    /// <summary>
+    /// A round through the head takes the neck zone -- the head chain's own (16), never 15, whose test retail makes
+    /// about the origin -- and kills a soldier outright all the same.
+    /// </summary>
     [Fact]
-    public void AShotThroughTheNeckTakesTheHeadZone()
+    public void AShotThroughTheHeadTakesTheNeckZone()
     {
         BonePose pose = Figure();
 
-        HumanHit hit = Shoot(pose, height: 1.6f, from: 1);
-        Assert.Equal(HumanDamage.ProximityZone, hit.Zone);
+        HumanHit hit = Shoot(pose, height: HeadHeight, from: 1);
+        Assert.Equal(HumanDamage.NeckZone, hit.Zone);
 
         HumanHealth health = new(HumanHitZoneTable.Soldier);
         health.Apply(hit.Zone, damageFactor: 0.05f);
         Assert.True(health.IsDead);
     }
+
+    // Through the head bones of the figure below, well above the spine's top.
+    private const float HeadHeight = 1.8f;
 
     /// <summary>
     /// <b>A head shot kills a guard in one round at every difficulty</b>, including the hard row where
@@ -158,8 +164,8 @@ public sealed class HumanBoneZoneTests
     public void AHeadShotKillsAGuardAtEveryDifficulty(float maximumHealth)
     {
         BonePose pose = Figure();
-        HumanHit hit = Shoot(pose, height: 1.6f, from: 1);
-        Assert.Equal(HumanDamage.ProximityZone, hit.Zone);
+        HumanHit hit = Shoot(pose, height: HeadHeight, from: 1);
+        Assert.Equal(HumanDamage.NeckZone, hit.Zone);
 
         HumanHealth health = new(HumanHitZoneTable.Soldier, maximumHealth);
         health.Apply(hit.Zone, damageFactor: 0.05f);

@@ -40,13 +40,16 @@ public sealed class HumanPosedHitTests
         Assert.NotEqual(HumanDamage.NeckZone, hit.Zone);
     }
 
-    /// <summary>A shot at the proximity bone still takes the lethal zone — the promotion must work.</summary>
+    /// <summary>
+    /// A shot through the head is not promoted to zone 15: retail's bone lookup returns zeros, so the promotion is
+    /// made about the origin, and the head scores the zone of the part the round went through.
+    /// </summary>
     [Fact]
-    public void AShotThroughTheHeadTakesTheProximityZone()
+    public void AShotThroughTheHeadIsNotPromoted()
     {
         HumanHit hit = ShootHorizontallyAt(1.55);
 
-        Assert.Equal(HumanDamage.ProximityZone, hit.Zone);
+        Assert.NotEqual(HumanDamage.ProximityZone, hit.Zone);
     }
 
     /// <summary>

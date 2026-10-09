@@ -640,6 +640,10 @@ internal sealed partial class GameHost
             difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
             isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
+        // A transmission sounds as it goes up: 0x486650 plays the message's Sound ("message", "fail") at the
+        // listener, like the pickup cue.
+        objectives.MessageSound = sound => _sounds?.PlayDefinition(sound, priority: 180);
+
         // The areas and edit variables update inside the level's one walk, where the tree places them.
         objectives.AttachTo(
             _cutscenes.Walker,
@@ -649,31 +653,25 @@ internal sealed partial class GameHost
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
-        // later. Instead take the exact path Escape takes in retail. The objective flow observes the
-        // break key, closes the intro container, and the cutscene tick applies that transition before
-        // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
-        if (!_options.PlayCutscenes && _cutscenes.IsPlaying)
+        // later. Instead take the exact path Escape takes in retail: the break key is down when the level's
+        // first tick walks, and that walk -- tick 0, not a walk of its own before it -- is where the objective
+        // flow reads it and closes the intro. A pre-walk here had set the skip variable a tick early: mission 4's
+        // LevelTimer_760 (Run "CutScene_1000.isFinished || EditVariable_4000.nValue") counted from tick 0 where
+        // retail's, which reads the variable before the walk sets it, counts from tick 1 -- and the squad that
+        // timer releases, and everything it met, ran a tick ahead. The intro still runs through the ticks that
+        // close it, as retail's does (two on mission 4); what it would show and sound in them is held back
+        // (CutsceneFrameShown) until it stops.
+        // OPENIGI_BREAK_CUTSCENE=1 takes the same edge, for a lockstep run that should skip without a key.
+        if (_cutscenes.IsPlaying
+            && (!_options.PlayCutscenes
+                || string.Equals(
+                    Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
+                    "1",
+                    StringComparison.Ordinal)))
         {
             _cutscenes.RequestBreak();
-            _missionObjectives.TickLevelState();
-            _cutscenes.Tick();
-            _cutscenes.FinishExpressionTick();
             StopCutsceneSounds();
-        }
-
-        // Same native edge as Escape (LevelFlow_GetBreakCutSceneKey). Used by the
-        // agent playtest so lockstep/-frames can skip the intro without a HITL key.
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
-                "1",
-                StringComparison.Ordinal)
-            && _cutscenes.IsPlaying)
-        {
-            _cutscenes.RequestBreak();
-            _missionObjectives.TickLevelState();
-            _cutscenes.Tick();
-            _cutscenes.FinishExpressionTick();
-            StopCutsceneSounds();
+            _introSkipPending = true;
         }
 
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
@@ -766,8 +764,12 @@ internal sealed partial class GameHost
         }
         else
         {
+            // The vehicle table is what binds each car's wreck: a CAR record's last value names the model
+            // 0x42E5A0 puts in the car's place when it blows up (601_08_1 for the APC, 614_08_1 for the T80).
+            // Without it every placement went unbound, and the renderer drops a destroyed placement that has
+            // nothing to swap in -- so a LAW'd tank simply vanished where retail leaves its wreck.
             WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger));
+                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, _vehiclePhysics));
             scene = built.Scene;
             _scene = scene;
             _ground = built.Ground;
@@ -848,6 +850,10 @@ internal sealed partial class GameHost
                 name => _magic?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
         }
 
+        // The level's one global stream, seeded as LevelFlow's start seeds it (0x416D90), before the first draw:
+        // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
+        _soundRandom.SeedForLevel();
+
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
         _destructibles = DestructibleObjectRegistry.Build(
@@ -910,6 +916,7 @@ internal sealed partial class GameHost
         }
 
         EndStage("the soldiers' meshes and textures");
+        _soldiers.UseRandom(_soundRandom);
         _soldiers.Cutscenes = _cutscenes;
 
         // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
@@ -922,8 +929,9 @@ internal sealed partial class GameHost
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         _doors = DoorRegistry.Build(levelRoot);
         _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
-        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
-        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
+        _interactions = WorldInteractionRegistry.Build(
+            levelRoot, loaded, _doors, _loop.Variables, _elevators, random: _soundRandom);
+        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables, scene.Placements);
         world.GenericPickups = _genericPickups;
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
@@ -942,7 +950,18 @@ internal sealed partial class GameHost
             HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
+        // Each area draws its first gap at load (0x44C740) and updates where the tree places it, against the camera
+        // as the player's update last left it -- nowhere on the first tick, so every area starts silent and draws.
         _ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
+        _ambienceListener = null;
+        if (_cutscenes is { } walked)
+        {
+            _ambience.AttachTo(
+                walked.Walker,
+                () => _ambienceListener,
+                name => _sounds?.Definitions?.TryResolve(name, out SoundDefinition? found) == true
+                    && found is { IsPlayable: true });
+        }
         _ambientVoices.Clear();
         if (_ambience.Areas.Count > 0)
         {
@@ -1061,6 +1080,18 @@ internal sealed partial class GameHost
                                 graphPos,
                                 parentPosition,
                                 RetailOrientation.Euler(parentAngles.X, parentAngles.Y, parentAngles.Z));
+                        }
+                        else if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask { Type.Name: "Train" } graphTrain
+                            && scene.Placements.FirstOrDefault(placement => ReferenceEquals(placement.Owner, graphTrain)) is { } trainPlacement)
+                        {
+                            // A Train has no point position -- its "Position" is a scalar along its rail -- so the
+                            // branch above never saw one, and the wagon's graph landed at the world origin. The car
+                            // stands where its consist puts it (0x42A7C0); its graph is in that frame like any other.
+                            Matrix3f m = trainPlacement.Orientation;
+                            graph.ApplyWorldOffset(
+                                graphPos,
+                                trainPlacement.Position * WorldScene.UnitsPerMetre,
+                                [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33]);
                         }
                         else
                         {
@@ -1429,6 +1460,14 @@ internal sealed partial class GameHost
                         return;
                     }
 
+                    // A soldier's round is already in its gun's GunShot task, to be marched after the walk; all
+                    // that is left here is the streak it draws.
+                    if (shooter is not null && _soldiers.MarchesRounds)
+                    {
+                        SpawnSoldierStreak(from, at, weapon);
+                        return;
+                    }
+
                     // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
                     // extended past the target, exactly as the retail round is a cast from the muzzle to
                     // the end of its remaining range (GunShot per-tick 0x47B750). A moving player walks
@@ -1477,16 +1516,64 @@ internal sealed partial class GameHost
                         }
                     }
 
-                    // Where the world stops this ray, over its whole length -- one cast serves cover,
+                    // Where the world stops this ray, over its whole length -- one walk serves cover,
                     // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
                     // the same mark a player's round does. In retail a miss is visible: the round lands
                     // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
                     // are why the guards seemed to hit with every bullet.
                     // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
                     // owner through), so its own hull never stops the round.
-                    bool worldBlocked = worldTrace(
-                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
-                        out WorldTraceHit blocker);
+                    //
+                    // It is a WALK, not one cast: 0x47B750 marches every round, the player's or a guard's,
+                    // through each surface its power beats (GunShotBallistics.ResolveEntry). Stopping at the
+                    // first surface had the mission-1 water-tower sniper empty its rifle into its own
+                    // railing -- Fence, resistance 0, against the Dragunov's power 3. The probe saw all 18 of
+                    // retail's rounds strike that railing 4.3 m out and carry on, 15 of them to hit; the
+                    // port's 37 all stopped there. A glance ends the walk here: the reflected leg is not
+                    // followed. Distances are along the whole round, from the muzzle.
+                    List<WorldTraceHit> passed = [];
+                    bool worldBlocked = false;
+                    bool worldDeflected = false;
+                    WorldTraceHit blocker = default;
+                    {
+                        Vector3d line = to - from;
+                        double length = line.Length;
+                        Vector3d direction = length > 0.0 ? line / length : default;
+                        Vector3d origin = from;
+                        double travelled = 0.0;
+                        for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && travelled < length; pass++)
+                        {
+                            if (!worldTrace(
+                                new WorldTraceRequest(origin, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
+                                out WorldTraceHit surface))
+                            {
+                                break;
+                            }
+
+                            surface = surface with { Distance = travelled + surface.Distance };
+                            GunShotImpact outcome = _worldMaterials is { } faces && faces.TryGet(surface.Material, out GameMaterial face)
+                                ? GunShotBallistics.ResolveEntry(
+                                    weapon.PenetrationPower,
+                                    face,
+                                    namedObject: surface.Owner is not null,
+                                    GunShotBallistics.IncidenceRadians(direction, surface.Normal),
+                                    alreadyDeflected: false,
+                                    () => (float)_shotRandom.NextDouble())
+                                : GunShotImpact.Stopped;
+                            if (outcome != GunShotImpact.Penetrated)
+                            {
+                                worldBlocked = true;
+                                worldDeflected = outcome == GunShotImpact.Deflected;
+                                blocker = surface;
+                                break;
+                            }
+
+                            passed.Add(surface);
+                            travelled = surface.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                            origin = from + (direction * travelled);
+                        }
+                    }
+
                     WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
 
                     // A round that meets no hostile body falls through to the soldiers behind the
@@ -1495,9 +1582,17 @@ internal sealed partial class GameHost
                     // ray, nearest first, and the first one it meets (per its own probability roll)
                     // takes it. True when a soldier consumed the round; false when it flew past them all.
                     bool SoldiersTakeTheRound()
-                        => _soldiers is not null
-                            && _soldiers.TryShootAiRound(
-                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
+                    {
+                        if (_soldiers is null
+                            || !_soldiers.TryShootAiRound(
+                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out HumanHit taken))
+                        {
+                            return false;
+                        }
+
+                        MarkPassed(taken.Distance);
+                        return true;
+                    }
 
                     // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
                     void OfferNearMiss(Vector3d stop)
@@ -1535,34 +1630,60 @@ internal sealed partial class GameHost
                         }
                     }
 
+                    // The surface that ended the round, after every one it went through on the way.
                     void MarkTheImpact()
                     {
+                        MarkPassed(double.MaxValue);
                         if (!worldBlocked)
                         {
                             return;
                         }
 
+                        MarkSurface(blocker);
+                        if (worldDeflected)
+                        {
+                            PlayRicochetSound(blocker.Position);
+                        }
+                    }
+
+                    // The surfaces the round went through before it ended this far from the muzzle.
+                    void MarkPassed(double upTo)
+                    {
+                        foreach (WorldTraceHit surface in passed)
+                        {
+                            if (surface.Distance < upTo)
+                            {
+                                MarkSurface(surface);
+                            }
+                        }
+
+                        passed.RemoveAll(surface => surface.Distance < upTo);
+                    }
+
+                    void MarkSurface(in WorldTraceHit surface)
+                    {
+                        WorldRayHit face = surface.RayHit;
                         if (_worldMaterials is { } table)
                         {
                             _player.Marks.TryAdd(
-                                worldHit,
-                                BulletMarks.SurfaceOf(blocker),
+                                face,
+                                BulletMarks.SurfaceOf(surface),
                                 table,
                                 probe: _player.MarkProbe,
-                                placement: blocker.Placement);
+                                placement: surface.Placement);
                         }
 
                         PlayBulletImpactSound(
-                            worldHit.Position,
+                            face.Position,
                             struckHuman: false,
-                            surfaceMaterial: worldHit.Material);
+                            surfaceMaterial: face.Material);
 
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
                         ApplyRoundContact(
-                            worldHit.Position,
-                            blocker.Owner,
-                            blocker.Placement,
+                            face.Position,
+                            surface.Owner,
+                            surface.Placement,
                             weapon.DamageFactor);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
@@ -1571,12 +1692,12 @@ internal sealed partial class GameHost
                             && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
                         {
                             string material = _worldMaterials is { } names
-                                && names.TryGet(worldHit.Material, out GameMaterial struck)
+                                && names.TryGet(face.Material, out GameMaterial struck)
                                 ? struck.Name
                                 : string.Empty;
                             bursts.SpawnBurst(
-                                worldHit.Position,
-                                worldHit.Normal,
+                                face.Position,
+                                face.Normal,
                                 ImpactParticleRenderer.KindOf(material),
                                 intensity);
                         }
@@ -1584,6 +1705,11 @@ internal sealed partial class GameHost
 
                     if (!met)
                     {
+                        _logger.Debug(
+                            "Weapon",
+                            $"Guard {shooter?.Soldier.Id} round missed the player's body"
+                                + (worldBlocked ? $"; the world stops it at {blocker.Kind} '{blocker.Label}', {worldHit.Distance / WorldScene.UnitsPerMetre:0.0} m." : "."));
+
                         // Geometric miss -- aim lag against a moving target, a running patrol's spray, or
                         // a dead player whose corpse stops nothing. The round flies on: offer it to the
                         // soldiers, and only then does it land where the world says.
@@ -1605,8 +1731,9 @@ internal sealed partial class GameHost
                         MarkTheImpact();
                         _logger.Debug(
                             "Weapon",
-                            $"Guard round blocked by {blocker.Kind} '{blocker.Label}' at "
-                                + $"{blocker.Fraction:P1} before the player body.");
+                            $"Guard {shooter?.Soldier.Id} round blocked by {blocker.Kind} '{blocker.Label}' "
+                                + $"(material {worldHit.Material}) {worldHit.Distance / WorldScene.UnitsPerMetre:0.0} m out, "
+                                + $"before the player body at {hit.Distance / WorldScene.UnitsPerMetre:0.0} m.");
                         return;
                     }
 
@@ -1619,6 +1746,10 @@ internal sealed partial class GameHost
                     // past -- through to whatever stands behind the player, where it marks.
                     if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
                     {
+                        _logger.Debug(
+                            "Weapon",
+                            $"Guard {shooter?.Soldier.Id} round reached the player's body and failed its roll (p {probability:0.000}).");
+
                         // The roll failed against the player -- the round flies past to whoever stands
                         // behind them: an opposing soldier if the shooter is hostile, a guard if the
                         // shooter is a friendly.
@@ -1630,8 +1761,10 @@ internal sealed partial class GameHost
                         return;
                     }
 
-                    // The round stops at the player: the soldiers it passed on the way still hear it go by.
+                    // The round stops at the player: the soldiers it passed on the way still hear it go by,
+                    // and the surfaces it went through on the way keep their marks.
                     OfferNearMiss(hit.Position);
+                    MarkPassed(hit.Distance);
 
                     // The roll connected with the player's body. A friendly's round that meets the
                     // player is consumed there with no damage -- retail's cast collides with a same-team
@@ -1800,6 +1933,9 @@ internal sealed partial class GameHost
             _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
         }
 
+        // The soldiers' guns march their rounds through the same world the soldiers see.
+        AttachGunShotWorld(worldTrace);
+
         // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
         AttachActorsToLevelWalk(levelRoot);
 
@@ -1964,7 +2100,7 @@ internal sealed partial class GameHost
                     return false;
                 }
 
-                hit = rich.RayHit;
+                hit = rich.RayHit with { OnTerrain = rich.Kind == WorldTraceHitKind.Terrain };
                 if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
                 {
                     hit = hit with { Material = ground };
@@ -1975,7 +2111,6 @@ internal sealed partial class GameHost
             : null;
         _player = null;
         _playerMode = false;
-        _pendingGenericTbaExplosions.Clear();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -2129,6 +2264,7 @@ internal sealed partial class GameHost
 
                 _gunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
                 GunPickupRegistry gunPickups = _gunPickups;
+                gunPickups.Landed = PlayWeaponDropSound;
                 candidate.UseGunPickups(gunPickups);
                 candidate.GunPickedUp += pickup =>
                 {
@@ -2883,6 +3019,7 @@ internal sealed partial class GameHost
         _playerTerrain = null;
         _ground = null;
         _effectWalls = null;
+        _dropletWalls = null;
         _worldSolids = null;
         _destructibles = null;
         _worldMaterials = null;
@@ -3225,6 +3362,7 @@ internal sealed partial class GameHost
         _player.ResetOptics();
         _player.StopWeaponsForDeath();
         StopBinocularTransitionSound();
+        StopLadderSlideSound();
 
         // The player receives no further simulation ticks after death, so the weapon sound player
         // cannot observe a quiet tick and retire an automatic loop on its own.
