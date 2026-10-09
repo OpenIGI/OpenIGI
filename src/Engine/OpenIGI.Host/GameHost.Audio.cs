@@ -426,6 +426,13 @@ internal sealed partial class GameHost
     /// </remarks>
     private void UpdateListener()
     {
+        if (_titlePlayer is { } title)
+        {
+            // A title's own player: its eyes as the last tick left them, in the camera's own row order.
+            _audio.Listener = AudioListenerState.FromViewRotation(title.EyePosition / TitleUnitsPerMetre, title.ViewOrientation);
+            return;
+        }
+
         if (_player is not { } player)
         {
             return;

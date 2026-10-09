@@ -31,11 +31,13 @@ public interface ITitleGameplay
 /// <param name="Built">What the scene walk produced: the placements and the ground.</param>
 /// <param name="Services">The tables the title's content modules loaded.</param>
 /// <param name="Difficulty">The active profile's difficulty.</param>
+/// <param name="Audio">The host's mixer, or <see langword="null"/> where nothing is heard.</param>
 public readonly record struct TitlePlayerRequest(
     WorldBuildRequest World,
     WorldBuildResult Built,
     IServiceCatalog Services,
-    AiDifficulty Difficulty);
+    AiDifficulty Difficulty,
+    ITitleAudio? Audio = null);
 
 /// <summary>One tick of the player's input, in the host's vocabulary.</summary>
 /// <param name="MouseX">The relative mouse movement since the last tick, in device counts, right positive.</param>

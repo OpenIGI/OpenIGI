@@ -7,6 +7,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Audio;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
@@ -55,7 +56,8 @@ internal sealed partial class GameHost
             new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger),
             new WorldBuildResult(scene, 0, 0, _ground, _spins),
             _title.Services,
-            (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2)));
+            (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2),
+            _sounds is { } sounds && _soundBank is { } bank ? new TitleAudio(sounds, bank) : null));
         if (player is null)
         {
             _logger.Warning("Player", "The level places no player for the title to stand.");

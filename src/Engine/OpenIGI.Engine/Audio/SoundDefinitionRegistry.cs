@@ -22,7 +22,7 @@ namespace OpenIGI.Engine.Audio;
 /// and the loop flag with it.
 /// </para>
 /// </remarks>
-public sealed class SoundDefinitionRegistry
+public sealed class SoundDefinitionRegistry : ISoundDefinitionLookup
 {
     private const string LogCategory = "Audio";
 
@@ -142,10 +142,7 @@ public sealed class SoundDefinitionRegistry
         return Count;
     }
 
-    /// <summary>Looks a definition up by the name game code says.</summary>
-    /// <param name="name">The definition name, such as <c>ai_death_1</c>.</param>
-    /// <param name="definition">Receives the definition when one answers to the name.</param>
-    /// <returns><see langword="true"/> when the name is defined.</returns>
+    /// <inheritdoc/>
     /// <remarks>
     /// The original broadcasts a lookup message down the whole definition tree and stops at the first
     /// match (<c>0x4E8AA0</c> for a sound, <c>0x4EB670</c> for a group, which recurses over its

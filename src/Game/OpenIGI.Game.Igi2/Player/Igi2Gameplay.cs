@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
+using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.ViewModel;
@@ -22,8 +23,9 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <para>
 /// The body plays the clips the level's packs load, picked by state through the held weapon
 /// (<see cref="Igi2HumanAnimation"/>), and the view carries the level's first-person model with the weapon in hand,
-/// which the host draws through <see cref="ITitleFirstPerson"/>. Not yet behind it: water, sounds, AI events,
-/// conveyors and firing.
+/// which the host draws through <see cref="ITitleFirstPerson"/>. The level's sound definitions are read as the level is,
+/// and what the player and its weapons sound plays through the host's mixer. Not yet behind it: water, AI events and
+/// conveyors.
 /// </para>
 /// </remarks>
 public sealed class Igi2Gameplay : ITitleGameplay
@@ -56,7 +58,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
         string? armsModel = FirstPersonModel(models, PlayerSpawn.FindGameplayTask(request.World.LevelRoot) as Igi2HumanPlayerTask);
         Igi2BoneHierarchy? arms = armsModel is null ? null : models(armsModel)?.BoneHierarchy;
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
-        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms);
+        Igi2Sounds sounds = LevelSounds(request);
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms, sounds);
+        if (weapons is not null)
+        {
+            weapons.Effects = new Igi2LevelWeaponEffects(sounds, () => player.Human.View.Position);
+            weapons.ImpactEffects = new Igi2LevelImpactEffects(sounds);
+        }
+
         if (request.Services.TryGet(out Igi2GameMaterials? materials))
         {
             if (weapons is not null)
@@ -64,7 +73,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 weapons.World = new Igi2LevelGunShotWorld(world, materials);
                 if (request.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? physicsTypes))
                 {
-                    Weapons.Igi2ExplosionWorld explosions = new(player.Human.Random, world, materials, player.Dynamic);
+                    Weapons.Igi2ExplosionWorld explosions = new(player.Human.Random, world, materials, player.Dynamic)
+                    {
+                        Effects = new Igi2LevelExplosionEffects(sounds),
+                    };
                     explosions.AddTarget(player.Human);
                     Weapons.Igi2Grenades grenades = new(physicsTypes, models, new Physics.Igi2PhysicsWorld(world, materials), player.Dynamic)
                     {
@@ -100,6 +112,24 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         return player;
+    }
+
+    /// <summary>Reads the level's sound definitions and hands them to the host's mixer, as <c>Game_CreateHandler</c> (<c>igi2 0x4070E0</c>) does.</summary>
+    /// <param name="request">The level and the session.</param>
+    /// <returns>The level's sounds.</returns>
+    public static Igi2Sounds LevelSounds(in TitlePlayerRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request.Services);
+        ArgumentNullException.ThrowIfNull(request.World.Mission);
+        if (!request.Services.TryGet(out Igi2SoundDefinitions? definitions))
+        {
+            definitions = new Igi2SoundDefinitions(request.World.Logger);
+        }
+
+        IReadOnlyList<string> directories = Igi2SoundDefinitions.Directories(request.World.Mission.Descriptor);
+        definitions.Load(request.World.Resources, directories);
+        request.Audio?.UseDefinitions(definitions, Igi2SoundDefinitions.BankDirectories(request.World.Mission.Descriptor));
+        return new Igi2Sounds(definitions, request.Audio);
     }
 
     /// <summary>The rig of the model the first-person view carries.</summary>
@@ -246,6 +276,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>: the grenades, explosions and what they leave.</summary>
     public World.Igi2DynamicTasks Dynamic { get; } = new();
 
+    /// <summary>Gets the level's sounds.</summary>
+    public Igi2Sounds Sounds { get; private init; } = new(new Igi2SoundDefinitions(), null);
 
     /// <inheritdoc/>
     public Vector3d Position => Human.Position;
@@ -322,6 +354,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <param name="rig">The player model's rig, or <see langword="null"/> for a model without bones.</param>
     /// <param name="weapons">The player's weapons, or <see langword="null"/> for none.</param>
     /// <param name="firstPersonRig">The first-person model's rig, or <see langword="null"/> for none.</param>
+    /// <param name="sounds">The level's sounds, or <see langword="null"/> for a level that defines none.</param>
     /// <returns>The player.</returns>
     public static Igi2TitlePlayer Spawn(
         Igi2CollisionWorld world,
@@ -332,12 +365,14 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         Igi2AnimationLibrary? clips = null,
         Igi2BoneHierarchy? rig = null,
         Igi2PlayerWeapons? weapons = null,
-        Igi2BoneHierarchy? firstPersonRig = null)
+        Igi2BoneHierarchy? firstPersonRig = null,
+        Igi2Sounds? sounds = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(general);
 
-        Igi2PlayerSurroundings surroundings = new(world);
+        sounds ??= new Igi2Sounds(new Igi2SoundDefinitions(), null);
+        Igi2PlayerSurroundings surroundings = new(world, sounds);
         IIgi2PlayerWeaponControl weapon = weapons ?? (IIgi2PlayerWeaponControl)Igi2NoWeaponControl.Instance;
         Igi2HumanAnimation animation = new(clips, rig, Igi2PlayerStateAnimations.Table, () => weapon.BodyClips(rig));
         Igi2HumanPlayer human = new(weapon, animation, surroundings)
@@ -364,7 +399,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         // The view would first be placed on the first tick; placing it now gives the host's first frames the eyes
         // rather than the world's origin. It draws nothing from the run stream: a new view does not shake.
         human.UpdateViewBody(updateAnimation: false);
-        return new Igi2TitlePlayer(human, weapons);
+        return new Igi2TitlePlayer(human, weapons) { Sounds = sounds };
     }
 
     /// <inheritdoc/>
@@ -377,6 +412,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
         Weapons?.RunGunShot();
         Dynamic.Run();
+        Sounds.Run();
         Human.Pickups?.Run();
 
         Human.View.RunZoom();
@@ -427,8 +463,8 @@ internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2G
     public bool IsHuman(IIgi2Collider struck) => false;
 }
 
-/// <summary>What the player's states ask of the world, answered from the collision world and nothing else yet.</summary>
-internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world) : IIgi2HumanSurroundings
+/// <summary>What the player's states ask of the world, answered from the collision world and the level's sounds.</summary>
+internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world, Igi2Sounds sounds) : IIgi2HumanSurroundings
 {
     /// <summary>Gets or sets the body these surroundings are asked about.</summary>
     public Igi2Human? Owner { get; set; }
@@ -465,15 +501,16 @@ internal sealed class Igi2PlayerSurroundings(Igi2CollisionWorld world) : IIgi2Hu
 
     public string? LandingSound(int material) => null;
 
-    public void PlaySound(string name)
-    {
-    }
+    public void PlaySound(string name) => StartSound(name);
 
     public void ShowStatusMessage(string key)
     {
     }
 
-    public IIgi2SoundInstance StartSound(string name) => SilentSound.Instance;
+    public IIgi2SoundInstance StartSound(string name) =>
+        sounds.New(name, View(), View) ?? (IIgi2SoundInstance)SilentSound.Instance;
+
+    private Vector3d View() => Owner?.View.Position ?? default;
 
     private sealed class SilentSound : IIgi2SoundInstance
     {

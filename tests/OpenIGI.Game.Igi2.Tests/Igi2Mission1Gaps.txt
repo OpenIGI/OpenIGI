@@ -210,10 +210,6 @@ name CutScene_3124.nTick    # MISSIONS/location1/level1/objects.qvm
 name CutScene_3401.isFinished    # MISSIONS/location1/level1/objects.qvm
 name CutScene_3401.nTick    # MISSIONS/location1/level1/objects.qvm
 name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # config.qvm
-name DefineGraph    # COMMON/sounds/sounds.qvm
-name DefineGroup    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
-name DefineSound    # COMMON/sounds/sounds.qvm, MISSIONS/location1/level1/sounds/sounds.qvm
-name DefineTriggerOnce    # COMMON/sounds/sounds.qvm
 name Door_3588.nDoorOpenTicks    # MISSIONS/location1/level1/objects.qvm
 name Door_3589.nDoorOpenTicks    # MISSIONS/location1/level1/objects.qvm
 name Door_3733.isPicked    # MISSIONS/location1/level1/objects.qvm

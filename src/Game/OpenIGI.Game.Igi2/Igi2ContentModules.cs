@@ -20,6 +20,7 @@ public static class Igi2ContentModules
     public static IReadOnlyList<IContentModule> All { get; } =
     [
         new Igi2ScriptVocabularyModule(),
+        new Igi2SoundContentModule(),
         new Igi2WeaponContentModule(),
         new Igi2MaterialContentModule(),
         new Igi2PlayerContentModule(),
@@ -163,6 +164,30 @@ public sealed class Igi2WeaponContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Weapons.Igi2WeaponTables>().Load(context.Resources, context.Natives, context.Tasks);
+    }
+}
+
+/// <summary>The sound definitions' four natives, bound to the table each level fills (<see cref="Audio.Igi2SoundDefinitions"/>).</summary>
+/// <remarks>
+/// <c>SoundSys_Open</c> (<c>igi2 0x42E9A0</c>) registers them at start-up; nothing is read until a level is, when
+/// <c>Game_CreateHandler</c> (<c>0x4070E0</c>) runs the game's, the location's and the mission's scripts.
+/// </remarks>
+public sealed class Igi2SoundContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Sound definitions";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.GetOrProvide(() => new Audio.Igi2SoundDefinitions(context.Logger)).Register(context.Natives);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing at start-up: the definitions are a level's.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
     }
 }
 
