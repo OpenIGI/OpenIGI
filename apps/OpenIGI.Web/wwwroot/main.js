@@ -274,6 +274,20 @@ async function start() {
   requestAnimationFrame(frame);
 }
 
+// The macOS and Linux install command, copied by its button. The code is selectable by hand as well, for
+// a browser that refuses the clipboard.
+$('install-copy').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  try {
+    await navigator.clipboard.writeText($('install-command').textContent);
+    button.textContent = 'Copied';
+  } catch {
+    getSelection().selectAllChildren($('install-command'));
+    button.textContent = 'Select';
+  }
+  setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+});
+
 // What the header says about the browser, as soon as it is known.
 adapterReady.then(({ adapter }) => {
   $('gpu').dataset.state = adapter ? 'ok' : 'no';

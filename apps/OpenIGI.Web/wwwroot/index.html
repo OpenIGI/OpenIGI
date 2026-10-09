@@ -158,6 +158,28 @@
     .note span:first-child { color: var(--text); }
     .note span:last-child { color: var(--dim); }
     .note a { color: var(--text); text-underline-offset: 3px; }
+    .note .install { display: flex; flex-direction: column; gap: 4px; color: var(--note); }
+    .note .install > .label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--note); }
+    .note .command {
+      padding: 6px 8px;
+      border: 1px solid rgba(236, 235, 230, 0.12);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.35);
+      color: var(--text);
+      font: inherit;
+      user-select: all;
+    }
+    .note .install button {
+      flex: none;
+      padding: 0 6px;
+      border: 1px solid rgba(236, 235, 230, 0.2);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      cursor: pointer;
+    }
+    .note .install button:hover { color: var(--text); border-color: rgba(236, 235, 230, 0.4); }
 
     footer {
       display: flex;
@@ -209,9 +231,16 @@
         <aside class="note">
           <span>Screenshot from the desktop build. The launcher installs it and keeps it up to date:</span>
           <span class="downloads" id="downloads">
-            <a href="https://api.openigi.com/download/win-x64" data-rid="win-x64">Windows</a> ·
-            <a href="https://api.openigi.com/download/linux-x64" data-rid="linux-x64">Linux</a> ·
-            <a href="https://api.openigi.com/download/osx-arm64" data-rid="osx-arm64">macOS</a>
+            <a href="https://api.openigi.com/download/win-x64" data-rid="win-x64">Download for Windows</a>
+          </span>
+          <!-- macOS and Linux install from a terminal: a browser's download of the ad-hoc signed macOS app
+               is quarantined, which Gatekeeper refuses as "damaged"; install.sh fetches it with curl. -->
+          <span class="install">
+            <span class="label">
+              macOS and Linux, in a terminal:
+              <button type="button" id="install-copy" aria-label="Copy the install command">Copy</button>
+            </span>
+            <code class="command" id="install-command">curl -fsSL https://openigi.com/install.sh | bash</code>
           </span>
           <span>In the browser, only the vanilla graphics preset is available.</span>
         </aside>
