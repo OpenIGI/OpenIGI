@@ -139,6 +139,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
+        if (request.Services.TryGet(out Igi2CutsceneShake? shake))
+        {
+            level.CutsceneShake = shake;
+        }
+
         level.Bind(task, player.RunPlayer);
         foreach (Igi2SoundGeneratorTask generator in Descendants(root).OfType<Igi2SoundGeneratorTask>())
         {
@@ -506,14 +511,28 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     public Vector3d Position => Human.Position;
 
     /// <inheritdoc/>
-    public Vector3d EyePosition => Human.View.Position;
+    /// <remarks>A cutscene's camera, while one is placed, outranks the player's eyes.</remarks>
+    public Vector3d EyePosition => Level?.CutsceneView is { } cut ? cut.Position : Human.View.Position;
 
     /// <inheritdoc/>
-    /// <remarks>The view's columns are its right, forward and up axes; the camera wants them as rows, up before forward.</remarks>
+    /// <remarks>
+    /// The view's columns are its right, forward and up axes; the camera wants them as rows, up before forward. A cutscene
+    /// camera's columns are right, down and forward, the engine camera's own (<c>HumanCamera_FirstPersonSetCamera</c>,
+    /// <c>igi2 0x4D4730</c>, turns the view a quarter about its right to get there).
+    /// </remarks>
     public Matrix3f ViewOrientation
     {
         get
         {
+            if (Level?.CutsceneView is { } cut)
+            {
+                IReadOnlyList<float> c = cut.Orientation;
+                return Matrix3f.FromRows(
+                    new Vector3f(c[0], c[3], c[6]),
+                    new Vector3f(-c[1], -c[4], -c[7]),
+                    new Vector3f(c[2], c[5], c[8]));
+            }
+
             Matrix3f m = Human.View.Orientation;
             return Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
@@ -523,15 +542,23 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     }
 
     /// <inheritdoc/>
-    /// <remarks>The view's <c>vFOV</c>, which a zoom steers.</remarks>
-    public float FieldOfViewScale => Human.View.FieldOfView;
+    /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
+    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView : Human.View.FieldOfView;
 
     /// <inheritdoc/>
-    /// <remarks>Built once a tick, on the first ask after it, from the view as the tick left it.</remarks>
+    /// <remarks>
+    /// Built once a tick, on the first ask after it, from the view as the tick left it; none while a cutscene's camera is placed,
+    /// which is not the player's eyes.
+    /// </remarks>
     public TitleFirstPersonView? FirstPerson
     {
         get
         {
+            if (Level?.CutsceneView is not null)
+            {
+                return null;
+            }
+
             if (_heldTick != _ticks)
             {
                 _held = _firstPerson.Build(Human, Inventory?.Current?.WeaponType.FixedModel, _ticks);

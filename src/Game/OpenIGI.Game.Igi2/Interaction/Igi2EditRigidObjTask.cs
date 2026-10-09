@@ -23,7 +23,8 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// queue as authored.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2EditRigidObjTask : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2Mover, IIgi2AttachParent, IIgi2PathRider
+public sealed partial class Igi2EditRigidObjTask
+    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2Mover, IIgi2AttachParent, IIgi2PathRider, IIgi2CameraTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditRigidObj";
@@ -83,6 +84,13 @@ public sealed partial class Igi2EditRigidObjTask : GameTask, IIgi2RunTask, IIgi2
 
     /// <inheritdoc/>
     public IReadOnlyList<float> LastOrientation => _lastOrientation;
+
+    /// <inheritdoc/>
+    /// <remarks><c>RigidDynCubeObj_GetCameraTargetInfoHandler</c> (<c>igi2 0x58DCE0</c>): where it stands now.</remarks>
+    public Vector3d CameraTargetPosition => _position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> CameraTargetOrientation => _orientation;
 
     /// <inheritdoc/>
     public Vector3d AttachPosition => _position;

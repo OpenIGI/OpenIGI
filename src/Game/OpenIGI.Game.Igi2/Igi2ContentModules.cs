@@ -213,6 +213,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);
         Flow.Igi2SequenceCommandTask.Register(context.Natives, functions);
         Paths.Igi2SplinePathGuideTask.Register(context.Natives, functions);
+        context.Services.GetOrProvide(static () => new Flow.Igi2CutsceneShake());
         Interaction.Igi2ConveyorBeltTask.Register(context.Natives, functions);
         Flow.Igi2SoundGeneratorTask.Register(context.Natives, functions);
     }

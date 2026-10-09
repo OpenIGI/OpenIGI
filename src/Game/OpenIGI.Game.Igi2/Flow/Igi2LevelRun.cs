@@ -109,10 +109,22 @@ public sealed class Igi2LevelRun
     /// <summary>Notes that a cutscene ran this tick (<c>CutScene_isRunning |= isRun</c>).</summary>
     public void MarkCutsceneRunning() => IsCutsceneRunning = true;
 
+    /// <summary>Gets the camera the last cutscene to place one set this tick, or <see langword="null"/> when none did.</summary>
+    /// <remarks>Its <c>QCamera_Set</c> is at a priority of 1000, over the player's 300, so it is what the level shows.</remarks>
+    public Igi2CutsceneView? CutsceneView { get; private set; }
+
+    /// <summary>Gets or sets the random stream cutscene cameras shake by, the session's; none draws nothing.</summary>
+    public Igi2CutsceneShake? CutsceneShake { get; set; }
+
+    /// <summary>Sets the camera a cutscene placed this tick.</summary>
+    /// <param name="view">The camera.</param>
+    public void SetCutsceneView(Igi2CutsceneView view) => CutsceneView = view ?? throw new ArgumentNullException(nameof(view));
+
     /// <summary>Runs one tick from the root.</summary>
     public void Tick()
     {
         IsCutsceneRunning = false;
+        CutsceneView = null;
         Run(Root);
     }
 

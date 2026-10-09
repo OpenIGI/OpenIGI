@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Igi2.Paths;
 /// neighbours.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SplinePathNodeTask : GameTask
+public sealed partial class Igi2SplinePathNodeTask : GameTask, Flow.IIgi2CameraTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SplinePathNodeQTask";
@@ -61,6 +61,13 @@ public sealed partial class Igi2SplinePathNodeTask : GameTask
 
     /// <summary>Gets the frame an object faces here, row by row, <c>tOrientation</c>.</summary>
     public IReadOnlyList<float> Frame => _frame;
+
+    /// <inheritdoc/>
+    /// <remarks><c>SplinePathNodeQTask_GetCameraTargetInfoHandler</c> (<c>igi2 0x547E30</c>): its position and frame.</remarks>
+    public Vector3d CameraTargetPosition => Position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> CameraTargetOrientation => _frame;
 
     /// <summary>Gets the frame as a quaternion, <c>tQuatOrientation</c>.</summary>
     public Quaternion32 Rotation { get; private set; } = new(0f, 0f, 0f, 1f);
