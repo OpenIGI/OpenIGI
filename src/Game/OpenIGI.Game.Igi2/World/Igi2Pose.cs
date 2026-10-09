@@ -351,6 +351,79 @@ public sealed class Igi2Pose
         ];
     }
 
+    /// <summary>
+    /// A rotation as a quaternion, the way <c>Lift_UpdatePosition</c> (<c>igi2 0x46D6C3</c>) converts each floor's frame inline:
+    /// from the trace when it is positive, otherwise from the largest diagonal term.
+    /// </summary>
+    /// <param name="m">The rotation, row by row.</param>
+    /// <returns>The quaternion.</returns>
+    /// <remarks>
+    /// The vector part is negated against the textbook form: the frame is read as its own transpose. When the largest
+    /// term's root is zero the reciprocal is that zero, so the other parts are too.
+    /// </remarks>
+    public static Quaternion32 ToQuaternion(IReadOnlyList<float> m)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+        Fpu trace = ((Fpu)m[8] + m[4]) + m[0];
+        if (trace.Value > 0.0)
+        {
+            Fpu root = Fpu.Sqrt(trace + 1f);
+            float w = ((Fpu)0.5f * root).F;
+            Fpu r = (Fpu)0.5f / root;
+            return new Quaternion32(
+                (-(((Fpu)m[5] - m[7]) * r)).F,
+                (-(((Fpu)m[6] - m[2]) * r)).F,
+                (-(((Fpu)m[1] - m[3]) * r)).F,
+                w);
+        }
+
+        int i = 0;
+        if (m[4] > m[0])
+        {
+            i = 1;
+        }
+
+        if (m[8] > m[4 * i])
+        {
+            i = 2;
+        }
+
+        int j = (i + 1) % 3, k = (j + 1) % 3;
+        Span<float> q = stackalloc float[4];
+        Fpu s = Fpu.Sqrt((((Fpu)m[4 * i] - m[4 * j]) - m[4 * k]) + 1f);
+        q[i] = ((Fpu)0.5f * s).F;
+        Fpu scale = s.Value != 0.0 ? (Fpu)0.5f / s : s;
+        q[j] = (((Fpu)m[(3 * j) + i] + m[(3 * i) + j]) * scale).F;
+        q[k] = (((Fpu)m[(3 * k) + i] + m[(3 * i) + k]) * scale).F;
+        q[3] = (-(((Fpu)m[(3 * j) + k] - m[(3 * k) + j]) * scale)).F;
+        return new Quaternion32(q[0], q[1], q[2], q[3]);
+    }
+
+    /// <summary>
+    /// A quaternion as a rotation, as <c>Lift_UpdatePosition</c> (<c>igi2 0x46D9DB</c>) rebuilds the slerped frame: every product
+    /// doubled by adding it to itself, then each element one sum or difference of them.
+    /// </summary>
+    /// <param name="q">The quaternion.</param>
+    /// <returns>The rotation, row by row.</returns>
+    public static float[] FromQuaternion(Quaternion32 q)
+    {
+        Fpu x = q.X, y = q.Y, z = q.Z, w = q.W;
+        static Fpu Twice(Fpu a, Fpu b)
+        {
+            Fpu p = a * b;
+            return p + p;
+        }
+
+        Fpu xx = Twice(x, x), xy = Twice(y, x), xz = Twice(z, x), xw = Twice(w, x);
+        Fpu yy = Twice(y, y), yz = Twice(z, y), yw = Twice(w, y), zz = Twice(z, z), zw = Twice(w, z);
+        return
+        [
+            (((Fpu)1f - yy) - zz).F, (xy - zw).F, (yw + xz).F,
+            (zw + xy).F, (((Fpu)1f - xx) - zz).F, (yz - xw).F,
+            (xz - yw).F, (yz + xw).F, (((Fpu)1f - xx) - yy).F,
+        ];
+    }
+
     /// <summary>The orientation as a matrix, row for row.</summary>
     /// <returns>The matrix.</returns>
     public Matrix3f ToMatrix()

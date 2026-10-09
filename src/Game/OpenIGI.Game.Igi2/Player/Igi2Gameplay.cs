@@ -154,18 +154,26 @@ public sealed class Igi2Gameplay : ITitleGameplay
             activatables.Add(button);
         }
 
-        List<Interaction.Igi2DoorTask> doors = [];
+        List<Interaction.IIgi2Mover> movers = [];
+        foreach (Interaction.Igi2LiftTask lift in Descendants(root).OfType<Interaction.Igi2LiftTask>())
+        {
+            lift.Models = models;
+            lift.Sounds = player.Sounds;
+            lift.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2LiftTask.TypeName, lift.Id));
+            movers.Add(lift);
+        }
+
         foreach (Interaction.Igi2DoorTask door in Descendants(root).OfType<Interaction.Igi2DoorTask>())
         {
             door.Models = models;
             door.Sounds = player.Sounds;
             door.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2DoorTask.TypeName, door.Id));
             activatables.Add(door);
-            doors.Add(door);
+            movers.Add(door);
         }
 
         player.Activatables.AddRange(activatables);
-        player.Motions = doors.Count > 0 ? new Interaction.Igi2DoorMotions(doors) : null;
+        player.Motions = movers.Count > 0 ? new Interaction.Igi2MoverMotions(movers) : null;
 
         return level;
     }

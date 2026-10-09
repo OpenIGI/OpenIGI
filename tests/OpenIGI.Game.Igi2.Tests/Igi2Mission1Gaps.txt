@@ -341,9 +341,6 @@ name KEY_Z    # config.qvm
 name LevelFlow_LevelFailed    # MENUSYSTEM/ingamemenu.qvm
 name LevelTimer_104.nTick    # MISSIONS/location1/level1/objects.qvm
 name LevelTimer_2701.nTick    # MISSIONS/location1/level1/ai/Squad_711.qvm
-name Lift_3593.isMoving    # MISSIONS/location1/level1/objects.qvm
-name Lift_3597.isMoving    # MISSIONS/location1/level1/objects.qvm
-name Lift_3597.nCurrentFloor    # MISSIONS/location1/level1/objects.qvm
 name LowerStance    # config.qvm
 name MENUMANAGER_IDLE    # MENUSYSTEM/ingamemenu.qvm
 name MENUMANAGER_QUITTOMAINMENU    # MENUSYSTEM/ingamemenu.qvm
@@ -480,7 +477,6 @@ type DirlightKeyframe    # MISSIONS/location1/level1/objects.qvm
 type EditBoneObj    # MISSIONS/location1/level1/objects.qvm
 type EditRigidObj    # MISSIONS/location1/level1/objects.qvm
 type ExplodeObject    # MISSIONS/location1/level1/objects.qvm
-type Floor    # MISSIONS/location1/level1/objects.qvm
 type GenericTBA    # MISSIONS/location1/level1/objects.qvm
 type GlobalLight    # MISSIONS/location1/level1/objects.qvm
 type GlobalLightKeyframe    # MISSIONS/location1/level1/objects.qvm
@@ -491,7 +487,6 @@ type HumanSoldier    # MISSIONS/location1/level1/objects.qvm
 type InputBox    # MENUSYSTEM/ingamemenu.qvm
 type LevelInfo    # MISSIONS/location1/level1/objects.qvm
 type LevelTimer    # MISSIONS/location1/level1/objects.qvm
-type Lift    # MISSIONS/location1/level1/objects.qvm
 type LightmapInfo    # MISSIONS/location1/level1/objects.qvm
 type ListBox    # MENUSYSTEM/ingamemenu.qvm
 type MagicObjConfig    # magicobjconfig.qvm
