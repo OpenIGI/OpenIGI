@@ -1184,6 +1184,7 @@ public sealed class AiScenarioHarness : IDisposable
 
         int mission = EnvInt("OPENIGI_PATROL_CAPTURE_MISSION", 4);
         int ticks = EnvInt("OPENIGI_PATROL_CAPTURE_TICKS", 5400);
+        int every = Math.Max(1, EnvInt("OPENIGI_PATROL_CAPTURE_EVERY", 10));
         StringBuilder log = new();
         using RecordingGraphicsDevice device = new();
         GameHost host = Host(device, new HeadlessGameWindow(),
@@ -1283,7 +1284,7 @@ public sealed class AiScenarioHarness : IDisposable
                     || brain.FollowState != lastFollow.GetValueOrDefault(brain)
                     || brain.CurrentNode != track.Node || brain.DestinationNode != track.Dest
                     || alert != track.Alert || sight != track.Sight;
-                if (!changed && tick - track.Logged < 10)
+                if (!changed && tick - track.Logged < every)
                 {
                     tracks[brain] = track with { Tick = tick };
                     continue;
@@ -1294,7 +1295,7 @@ public sealed class AiScenarioHarness : IDisposable
                 Vector3d eyeAt = brain.Eye.Position;
                 Matrix3f em = brain.Eye.Orientation;
                 log.AppendLine(CultureInfo.InvariantCulture,
-                    $"[pweye] tick={tick} id={view.Soldier.Id} eye=({eyeAt.X:0},{eyeAt.Y:0},{eyeAt.Z:0}) m=[{em.M11:0.0000} {em.M12:0.0000} {em.M13:0.0000} | {em.M21:0.0000} {em.M22:0.0000} {em.M23:0.0000} | {em.M31:0.0000} {em.M32:0.0000} {em.M33:0.0000}]");
+                    $"[pweye] tick={tick} id={view.Soldier.Id} eye=({eyeAt.X:0},{eyeAt.Y:0},{eyeAt.Z:0}) m=[{em.M11:0.0000} {em.M12:0.0000} {em.M13:0.0000} | {em.M21:0.0000} {em.M22:0.0000} {em.M23:0.0000} | {em.M31:0.0000} {em.M32:0.0000} {em.M33:0.0000}] bone={BoneText(view)} clip={view.CurrentAnimation}");
                 Matrix3f m = brain.Orientation;
                 Vector3d p = brain.Position;
                 AiPatrolCommand? command = route?.Current;
@@ -1309,6 +1310,20 @@ public sealed class AiScenarioHarness : IDisposable
         }
 
         File.WriteAllText(output, log.ToString());
+    }
+
+    // The eye bone's rotation in the unrotated pose, for the [pweye] comparison against retail's palette entry.
+    private static string BoneText(SoldierView view)
+    {
+        OpenIGI.Formats.Animation.BonePose pose = view.UnrotatedPose();
+        if (HumanAttachPoints.AiEye >= pose.BoneCount)
+        {
+            return "-";
+        }
+
+        Matrix3f b = pose.Rotations[HumanAttachPoints.AiEye];
+        return FormattableString.Invariant(
+            $"[{b.M11:0.0000} {b.M12:0.0000} {b.M13:0.0000} | {b.M21:0.0000} {b.M22:0.0000} {b.M23:0.0000} | {b.M31:0.0000} {b.M32:0.0000} {b.M33:0.0000}]");
     }
 
     [RequiresGameDataFact]
