@@ -1,7 +1,11 @@
+using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Player;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -133,6 +137,47 @@ public sealed class RetailIgi2LevelFlowTests
         Assert.Equal(4, runs);
         Assert.Equal(4, delayed);
         Assert.Equal(5, m.Level.Ticks);
+    }
+
+    /// <summary>
+    /// The generator in the shed (<c>SoundGenerator_3510</c>, under a building and the object it hangs off) waits on its
+    /// switch: pressed, its first step starts the generator's start-up and moves the sequence on, the next starts the loop and
+    /// stops the sequence for good.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_generator_sounds_its_sequence_when_its_switch_is_pressed()
+    {
+        Mission1 m = Mission1.Load();
+        int pressed = 0;
+        m.Level.Natives.RegisterVariable("Switch_3429.isPressed", new QvmIntegerVariable(() => pressed, value => pressed = value, sizeof(byte)));
+        Igi2SoundGeneratorTask generator = m.Tree.OfType<Igi2SoundGeneratorTask>().Single(static g => g.Id == 3510);
+        generator.Sounds = new Igi2Sounds(Mission1Definitions(), null);
+        Igi2SequenceCommandTask driver = m.Tree.OfType<Igi2SequenceCommandTask>().Single(static c => c.Id == 3509);
+
+        m.Level.Tick();
+        m.Level.Tick();
+        Assert.Equal((false, string.Empty), (generator.IsPlaying, generator.Sound));
+
+        pressed = 1;
+        m.Level.Tick();
+        Assert.Equal((true, "11_gen_start", 3664), (generator.IsPlaying, generator.Sound, driver.Current!.Id));
+
+        m.Level.Tick();
+        Assert.Equal((true, "11_gen_loop", true), (generator.IsPlaying, generator.Sound, driver.IsStopped));
+
+        m.Level.Tick();
+        Assert.Equal("11_gen_loop", generator.Sound);
+    }
+
+    private static Igi2SoundDefinitions Mission1Definitions()
+    {
+        string data = GameDataSource.Igi2.RequireRoot();
+        VirtualFileSystem files = new();
+        files.RegisterDevice(new LocalFileDevice(data));
+        files.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
+        Igi2SoundDefinitions definitions = new();
+        definitions.Load(new ResourceRegistry(files), ["LOCAL:common/sounds", "LOCAL:missions/location1/common/sounds", "MISSION:sounds"]);
+        return definitions;
     }
 
     private sealed record Mission1(GameTask Root, Igi2LevelRun Level, Igi2FlowState Flow, IReadOnlyList<GameTask> Tree)

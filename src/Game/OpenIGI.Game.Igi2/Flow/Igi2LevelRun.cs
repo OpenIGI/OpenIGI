@@ -42,6 +42,12 @@ public sealed class Igi2LevelRun
     /// <summary>The milliseconds a tick lasts, <c>nMilisecondsPerTick</c>.</summary>
     public const int MillisecondsPerTick = 1000 / Frequency;
 
+    /// <summary>A building's type, <c>SectorObject</c>'s run handler (<c>SectorObject_RunHandler</c>, <c>igi2 0x589630</c>).</summary>
+    public const string BuildingType = "Building";
+
+    /// <summary>A placed object's type (<c>EditRigidObj_RunHandler</c>, <c>igi2 0x5B4860</c>).</summary>
+    public const string EditRigidObjType = "EditRigidObj";
+
     private readonly Dictionary<GameTask, Action> _bound = [];
     private readonly List<Action> _delayed = [];
 
@@ -138,6 +144,14 @@ public sealed class Igi2LevelRun
                 RunChildren(task);
                 Dynamic?.Run();
                 RunDelayed();
+                break;
+
+            // Still placeholders, being the world scene's placements; their run handlers run their children. A building's
+            // then runs its attached objects' and its interiors' children, and a placed object's runs its attachment
+            // first: neither is a task here.
+            case BuildingType:
+            case EditRigidObjType:
+                RunChildren(task);
                 break;
         }
     }

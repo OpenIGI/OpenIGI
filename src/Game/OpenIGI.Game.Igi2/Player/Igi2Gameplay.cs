@@ -140,7 +140,24 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
         level.Bind(task, player.RunPlayer);
+        foreach (Igi2SoundGeneratorTask generator in Descendants(root).OfType<Igi2SoundGeneratorTask>())
+        {
+            generator.Sounds = player.Sounds;
+        }
+
         return level;
+    }
+
+    private static IEnumerable<Engine.Tasks.GameTask> Descendants(Engine.Tasks.GameTask task)
+    {
+        foreach (Engine.Tasks.GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (Engine.Tasks.GameTask inner in Descendants(child))
+            {
+                yield return inner;
+            }
+        }
     }
 
     /// <summary>Reads the level's sound definitions and hands them to the host's mixer, as <c>Game_CreateHandler</c> (<c>igi2 0x4070E0</c>) does.</summary>

@@ -187,9 +187,13 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2CutSceneTask>(Flow.Igi2CutSceneTask.TypeName);
         context.Types.Register<Flow.Igi2EditCameraTask>(Flow.Igi2EditCameraTask.TypeName);
         context.Types.Register<Flow.Igi2LevelFlowTask>(Flow.Igi2LevelFlowTask.TypeName);
+        context.Types.Register<Flow.Igi2SequenceCommandTask>(Flow.Igi2SequenceCommandTask.TypeName);
+        context.Types.Register<Flow.Igi2SoundGeneratorTask>(Flow.Igi2SoundGeneratorTask.TypeName);
 
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Flow.Igi2FlowState()).Register(context.Natives, functions);
+        Flow.Igi2SequenceCommandTask.Register(context.Natives, functions);
+        Flow.Igi2SoundGeneratorTask.Register(context.Natives, functions);
     }
 
     /// <inheritdoc/>
