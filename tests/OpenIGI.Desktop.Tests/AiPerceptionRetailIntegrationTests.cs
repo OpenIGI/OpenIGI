@@ -70,31 +70,32 @@ public sealed class AiPerceptionRetailIntegrationTests
     }
 
     /// <summary>
-    /// A guard the player has never drawn looks along its eye bone's rest orientation, whatever its body
-    /// faces -- measured on the retail game, where seventeen of mission 1's twenty-one guards shared that
-    /// exact matrix until the view turned onto them.
+    /// A guard nothing has drawn looks along the rest eye turned by the heading it was placed with, B * R, however
+    /// it turns afterwards. Probed on mission 4: thirteen undrawn soldiers placed at 0, 24, -54, -78, 96 and 108
+    /// degrees, each B * R to 1e-4. Mission 1's level-start guards are all placed at 0, which is why the first
+    /// measurement there saw R itself on every one of them.
     /// </summary>
     [RequiresGameDataFact]
-    public void AnUndrawnGuardLooksAlongTheRestPoseNotItsBody()
+    public void AnUndrawnGuardLooksAlongItsPlacedHeadingNotWorldNorth()
     {
         using Fixture fixture = Fixture.Load(1);
         AiSoldier soldier = fixture.Renderer.BrainsForTesting.First(brain =>
             brain.PlayerIsEnemy && Math.Abs(Math.Sin(brain.Facing)) > 0.9);
 
-        // Five metres along the body's own forward: to the side of the rest-pose eye, so out of its cone.
+        // Five metres along the heading it was placed with: where the placed rest eye looks.
         Vector3d forward = soldier.Orientation.Transposed().Transform(new Vector3d(0.0, 5.0 * Metre, 0.0));
         Vector3d bodyAhead = new(
             soldier.Position.X + forward.X,
             soldier.Position.Y + forward.Y,
             soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
-        Assert.False(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye followed its body");
+        Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye missed its placed heading");
 
-        // Five metres along world +Y: where the rest-pose eye looks.
+        // Five metres along world +Y, a quarter turn off that heading: outside the cone.
         Vector3d northAhead = new(
             soldier.Position.X,
             soldier.Position.Y + (5.0 * Metre),
             soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
-        Assert.True(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye missed its rest direction");
+        Assert.False(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye ignored its placed heading");
 
         // Once drawn close up, the eye follows the body.
         fixture.Renderer.ObserveAllForTesting();

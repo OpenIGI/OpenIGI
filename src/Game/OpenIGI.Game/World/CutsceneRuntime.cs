@@ -344,8 +344,10 @@ public sealed class CutsceneRuntime
         List<CutSceneTask> cutscenes = [];
 
         // Every detection record takes the next value of the global round-robin counter as it initialises: the camera
-        // lenses at construction, then the vehicles in tree order at post-load (VehicleVision).
-        _visionCounter = Walk(levelRoot).Count(static task => string.Equals(task.Type.Name, "SCamera", StringComparison.Ordinal));
+        // lenses at construction, then HumanAIs and vehicles in tree order at post-load (AiVisionPhases). Runtime
+        // re-initialisations carry on from where the load left the counter.
+        (IReadOnlyDictionary<GameTask, int> visionPhases, int visionCounter) = AiVisionPhases.Assign(levelRoot);
+        _visionCounter = visionCounter;
         int taskOrder = 0;
         foreach (GameTask task in Walk(levelRoot))
         {
@@ -353,7 +355,7 @@ public sealed class CutsceneRuntime
             _taskOrder[task] = order;
             if (task.Type.Name is "Car" or "Heli")
             {
-                _visions[task] = new VehicleVision(NextVisionPhase());
+                _visions[task] = new VehicleVision(visionPhases.TryGetValue(task, out int phase) ? phase : NextVisionPhase());
             }
             if (task is ConditionalContainerTask container)
             {

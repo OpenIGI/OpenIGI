@@ -349,6 +349,9 @@ public sealed class AiSoldier
     /// <summary>Diagnostics: the last event type this brain dispatched, or <see langword="null"/>.</summary>
     public AiEvent? LastDispatchedEvent { get; set; }
 
+    /// <summary>Diagnostics: told of every dispatch with its priority position, as retail's <c>0x44FC90</c> runs.</summary>
+    public Action<AiEvent, int>? Dispatched { get; set; }
+
     /// <summary>Gets the live pending-action program used for event interrupt arbitration.</summary>
     public AiPendingActionList PendingActions => _pendingActions;
 
@@ -557,8 +560,19 @@ public sealed class AiSoldier
     private bool _detectionShoutDone;
 
 
-    // The target's node when a running Follow last searched: 0x48A920 flags a re-search when it changes.
+    // HumanAI+15852, the node nearest the target as 0x48A920 last found it (-1 when none), and +15856, the flag it
+    // raises when that node changes from a known one. Every combat per-tick runs 0x48A920 first, so the node is
+    // tracked through the whole fight, seen or not; Follow (0x48C860) spends the flag on a re-search, and the
+    // chooser's out-of-sight move (0x48C212) clears it.
     private int _followTargetNode = -1;
+    private bool _followResearch;
+
+    /// <summary>Gets which of the four ticks this soldier's detection sweep runs on -- its record's <c>+12</c>.</summary>
+    public int SweepPhase => _schedule.Phase;
+
+    /// <summary>Diagnostics: <c>+15852/+15856/+15848</c> -- the tracked target node, the re-search flag, the Follow node.</summary>
+    public string FollowState => FormattableString.Invariant(
+        $"{_followTargetNode}/{(_followResearch ? 1 : 0)}/{_patrol?.DestinationNodeId ?? -1}");
 
     // sub_48A920's squad-ping counter, argBlock+28 of the running combat action.
     private int _alertPingCounter;
@@ -1349,6 +1363,18 @@ public sealed class AiSoldier
     /// <summary>Gives the soldier an occlusion test, so it stops seeing through walls.</summary>
     /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
     public void SetLineOfSight(LineOfSight? sight) => _sight = sight;
+
+    /// <summary>
+    /// Gets or sets what hears of every sight ray this soldier casts: from, to, and the task id of the human it looks
+    /// at (<see cref="AiDetectionCandidate.PlayerId"/> for the player).
+    /// </summary>
+    /// <remarks>
+    /// The sight cast <c>0x489B20</c> -> <c>0x4CE410</c> visits every dynamic object along the whole segment before it
+    /// consults static geometry, and the human filter it passes (<c>0x42FC50</c>) admits every human but the looker
+    /// and the target. A human the segment meets has its bone palette rebuilt (<c>0x45F800</c> -> <c>0x45F240</c>),
+    /// which is where its own eye's matrix comes from -- so being looked past turns a bystander's eye.
+    /// </remarks>
+    public Action<Vector3d, Vector3d, int>? SightCast { get; set; }
 
     /// <summary>Connects detection and gunfire to body-rig bone 5's live world position.</summary>
     public void SetEyeTransform(Func<Vector3d>? eyePosition, Func<Matrix3f>? eyeOrientation)
@@ -2384,19 +2410,18 @@ public sealed class AiSoldier
             _scriptedAnimation = false;
         }
 
-        // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.
-        if (_nextAnimationTick >= 0 && tick >= _nextAnimationTick)
-        {
-            Events.Post(AiEventRecord.Simple(AiEvent.Animation), owner: 0, worldTests: null);
-            _nextAnimationTick = tick + _animationMinTicks
-                + NextBounded(_animationRandomTicks);
-        }
-
         // An AI's FIRST event is always its creation: before initialisation only type 0 passes admission, and
         // the mask is not consulted at all (ai.md 3.3). Never posting it left every archetype script's
         // CREATE branch unrun -- which is where guard.qsc sets its view length, alarm length, alpha and
         // gamma. Guards were therefore seeing through the ENGINE DEFAULTS from 0x44F060 (+/-57.3 degrees
         // vertical, +/-59.5 horizontal, 26 m) instead of the archetype's own 40 m / 50 m / 50 / 45.
+        //
+        // And that is ALL the first tick does. 0x44F410's first pass (+15636 still clear) dispatches CREATE and
+        // jumps straight to the pump and the action runner (0x44FD50, 0x44FEC0): no sweep, no detection, no
+        // alarm or idle-animation check and no IDLE, which the next tick is the first to post. Probed on
+        // mission 4: CREATE on an AI's first tick, IDLE -- and with it the patrol -- one tick later, at level
+        // start and when a container opens alike. The port posted IDLE alongside CREATE, and every soldier ran
+        // a tick ahead of retail's, its sweeps a tick out of phase.
         if (!_created)
         {
             _created = true;
@@ -2407,8 +2432,24 @@ public sealed class AiSoldier
             else
             {
                 Events.Post(AiEventRecord.Simple(AiEvent.Create), owner: 0, worldTests: null);
-                RunScript();
             }
+
+            RunScript();
+            if (_pendingActions.Tick() is null)
+            {
+                RunWithoutAction();
+            }
+
+            StepBody();
+            return;
+        }
+
+        // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.
+        if (_nextAnimationTick >= 0 && tick >= _nextAnimationTick)
+        {
+            Events.Post(AiEventRecord.Simple(AiEvent.Animation), owner: 0, worldTests: null);
+            _nextAnimationTick = tick + _animationMinTicks
+                + NextBounded(_animationRandomTicks);
         }
 
         // The detection scan (0x489750) runs on the soldier's phase tick: it registers each human by the
@@ -2543,10 +2584,15 @@ public sealed class AiSoldier
         foreach (TrackedHuman human in _enemies.Concat(_fallenFriends))
         {
             Vector3d mark = human.Candidate.Mark;
+            int looked = human.Candidate.Id;
             _schedule.Sweep(
                 human.Slot,
                 () => snapshot.IsVisible(mark),
-                () => _sight is null || _sight(eye, mark),
+                () =>
+                {
+                    SightCast?.Invoke(eye, mark, looked);
+                    return _sight is null || _sight(eye, mark);
+                },
                 Distance(eye, mark));
         }
     }
@@ -2968,6 +3014,7 @@ public sealed class AiSoldier
             LastEventDistance = Distance(Position, eventPosition);
         }
 
+        Dispatched?.Invoke(type, slot);
         bool handled = _host!.Run(_script!, this, type, slot, _archetypeScript);
         LastDispatchedEvent = type;
         if (handled)
@@ -3923,6 +3970,7 @@ public sealed class AiSoldier
     private void FightAsPatrol(int tick, Vector3d enemy)
     {
         AiCombatWeaponState weapon = _weapon!();
+        TrackTargetNode(LiveTargetFeet(enemy));
 
         // 0x48BC00 asks 0x48BE30 before it runs an already-installed child and before its ordinary
         // chooser. The drained event counters are the exact three words the original tests. Follow,
@@ -4031,16 +4079,19 @@ public sealed class AiSoldier
         {
             _channelWrites.Clear();
             Combat = default;
-            if (TargetSlot.IsVisible)
+
+            // 0x48C860: the flag 0x48A920 raised buys one search, toward the target only while it is seen
+            // (sub_48B050's third argument is the target record's visible byte, +41), and the walk is redirected
+            // only to a node other than the one it stands on. Searching only while the target was visible, and on
+            // a node change noticed only then, sent mission 4's guard 411 back the way it came the moment it saw
+            // the squad again, where retail's ran its leg out.
+            if (_followResearch)
             {
-                int targetNode = NearestNode(enemy);
-                if (targetNode != _followTargetNode)
+                _followResearch = false;
+                if (FindFreePosition(LiveTargetFeet(enemy), towardTarget: TargetSlot.IsVisible) is int nearer
+                    && nearer != CurrentNode)
                 {
-                    _followTargetNode = targetNode;
-                    if (FindFreePosition(enemy, towardTarget: true) is int nearer && nearer != CurrentNode)
-                    {
-                        _patrol!.RedirectTo(nearer);
-                    }
+                    _patrol!.RedirectTo(nearer);
                 }
             }
 
@@ -4134,8 +4185,11 @@ public sealed class AiSoldier
         // Only the branch that needs a search runs one, as the original's call sites do: a search CLAIMS
         // the node it accepts, so running both every tick moved the soldier's claim about on ticks the
         // chooser never used it -- and, rejecting its own claim next time, flipped between two nodes.
-        Func<int?> toward = () => FindFreePosition(enemy, towardTarget: true);
-        Func<int?> away = () => FindFreePosition(enemy, towardTarget: false);
+        // sub_48B050 places the target with 0x451380 -- the human itself, live -- not the shared record the
+        // aim and the distance read, so a search out of sight still knows where the target went.
+        Vector3d live = LiveTargetFeet(enemy);
+        Func<int?> toward = () => FindFreePosition(live, towardTarget: true);
+        Func<int?> away = () => FindFreePosition(live, towardTarget: false);
 
         // "On its own node" gates the whole chooser: rule (a) walks back before anything else fires.
         // Retail's RePosition (0x48C760) walks the BODY onto the node and completes; the port walks the
@@ -4267,7 +4321,12 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.Follow:
-                _followTargetNode = NearestNode(enemy);
+                // The out-of-sight search that chose this walk spends the re-search flag (0x48C212).
+                if (!visible)
+                {
+                    _followResearch = false;
+                }
+
                 FollowTarget(enemy);
                 return;
 
@@ -4779,6 +4838,36 @@ public sealed class AiSoldier
         float pitchLimit = _steering.PitchClamp;
         _pitchInput = Math.Clamp(pitchError, -pitchLimit, pitchLimit) / MathF.PI;
         return Math.Abs(yawError) <= tolerance && Math.Abs(pitchError) <= tolerance;
+    }
+
+    /// <summary>Where the target human stands now, seen or not -- what <c>0x451380</c> reads (its <c>+32</c>).</summary>
+    /// <param name="fallback">The point to use when no human is tracked as the target.</param>
+    /// <remarks>
+    /// The shared record's copy (<c>+272</c>) is refreshed only while the target is seen or an event arrives
+    /// (<c>0x48A920</c>); the node lookup <c>0x4530A0</c> and the free-position search <c>0x48B050</c> both call
+    /// <c>0x451380</c> instead, which reads the target human itself. Mission 4's guard 411 lost sight of the squad for
+    /// 36 ticks and its node still moved from 13 to 14 halfway through.
+    /// </remarks>
+    private Vector3d LiveTargetFeet(Vector3d fallback) => TargetHuman is null ? fallback : TargetFeet;
+
+    /// <summary>0x48A920's tracking of the node nearest the target -- <c>HumanAI+15852</c> and <c>+15856</c>.</summary>
+    /// <param name="enemy">Where the target is.</param>
+    private void TrackTargetNode(Vector3d enemy)
+    {
+        int node = NearestNode(enemy);
+        if (node < 0)
+        {
+            _followTargetNode = -1;
+        }
+        else if (_followTargetNode == -1)
+        {
+            _followTargetNode = node;
+        }
+        else if (_followTargetNode != node)
+        {
+            _followTargetNode = node;
+            _followResearch = true;
+        }
     }
 
     private int NearestNode(Vector3d from) =>

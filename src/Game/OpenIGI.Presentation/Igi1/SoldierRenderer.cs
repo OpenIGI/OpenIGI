@@ -1622,6 +1622,9 @@ public sealed class SoldierRenderer : IDisposable
         _activatedTasks.Clear();
         _playerTarget = new AiCombatTarget("HumanPlayer");
         _levelRoot = levelRoot;
+        IReadOnlyDictionary<GameTask, int> visionPhases = levelRoot is null
+            ? new Dictionary<GameTask, int>()
+            : AiVisionPhases.Assign(levelRoot).Phases;
         // The player's team decides which brains may fire on it. A same-team human is never an enemy, so
         // a friendly patrol (team 0, the same as the player) is told not to engage. Resolved once per level
         // from the HumanPlayer task the mission declares -- the same source the spawn uses -- and handed to
@@ -1698,7 +1701,11 @@ public sealed class SoldierRenderer : IDisposable
                     }
                 }
 
-                AiSoldier brain = new(graph, initialPosition, GammaOf(view), index & 3, index, _aiRandom, view.Soldier.Class);
+                // The sweep phase is the global counter's value when this HumanAI initialised (AiVisionPhases).
+                int phase = brainTask is not null && visionPhases.TryGetValue(brainTask, out int assigned)
+                    ? assigned
+                    : index & 3;
+                AiSoldier brain = new(graph, initialPosition, GammaOf(view), phase, index, _aiRandom, view.Soldier.Class);
                 // A soldier on the player's own team must not engage the player. The brain's noise and
                 // vision gates read this: detection and every player-origin gunshot/impact/walk event are
                 // refused for a same-team player, so the friendly patrol stands down instead of shooting us.
@@ -3414,6 +3421,20 @@ public sealed class SoldierRenderer : IDisposable
     private void BindViewTracking(AiSoldier brain, SoldierView view)
     {
         brain.SetScriptSound((name, attached) => _scriptSound?.Invoke(name, view.Position, attached));
+
+        // A new human's palette is built once, at its creation, from its authored heading (0x463220 sets the facing
+        // and rebuilds it through 0x4D38C0): the eye of a soldier nobody has drawn or looked past is the rest eye
+        // turned by the heading it was placed with, B * R. Probed on mission 4: thirteen undrawn soldiers placed at
+        // 0, 24, -54, -78, 96 and 108 degrees, B * R to 1e-4 each, constant for as long as nothing refreshed them --
+        // and patrol 408 kept its placed -96 degrees although it turned on its first tick. Every mission-1 guard is
+        // placed at 0, which is why they all shared R itself.
+        Matrix3f placedEye = brain.Orientation * RestEyeOrientation;
+        if (FindMember(view) is { } placed)
+        {
+            placed.EyeOrientation = null;
+        }
+
+        brain.SightCast = (from, to, target) => RefreshEyesAlong(from, to, view.Soldier.Id, target);
         brain.SetEyeTransform(
             () =>
             {
@@ -3440,13 +3461,12 @@ public sealed class SoldierRenderer : IDisposable
             // skeleton and clip. The snapshot (0x489960) tests against the view matrix: the body's heading
             // tipped by the view's own pitch.
             //
-            // But only while the soldier is DRAWN. 0x44F410 copies the eye's matrix out of the bone palette
-            // ([Human+0x70]+0x2B8), and the palette is filled by the skinning in the draw callback
-            // (0x49F700), which runs only for a soldier inside the render camera's frustum (0x4D06C0). A
-            // guard off the player's screen keeps looking the way it last did on it -- and one never drawn
-            // looks along its rest pose, about five degrees off world +Y whatever its body faces. Measured
-            // on the retail game with the probe: seventeen of twenty-one mission-1 guards shared that exact
-            // rest matrix, and turning the view onto one made its eye follow its body within two ticks.
+            // But only when the palette is rebuilt. 0x44F410 copies the eye's matrix out of the bone palette
+            // ([Human+0x70]+0x2B8), and 0x45F240 rebuilds it -- while the soldier's dirty byte (+216, set by its
+            // per-tick 0x45D080) is up -- from two places: the camera pass 0x45F140, for a soldier inside the
+            // render camera's frustum at LOD < 4 (ObserveView), and the ray and segment visits 0x45F500 / 0x45F800,
+            // for a soldier some cast passes (RefreshEyesAlong). A guard nothing refreshes keeps looking the way it
+            // last did -- and one never refreshed along its placed heading's rest eye.
             () =>
             {
                 Member? member = FindMember(view);
@@ -3460,13 +3480,91 @@ public sealed class SoldierRenderer : IDisposable
                     member.EyeOrientation = brain.ViewOrientation;
                 }
 
-                return member.EyeOrientation ?? RestEyeOrientation;
+                return member.EyeOrientation ?? placedEye;
             });
     }
 
     /// <summary>
-    /// The eye matrix of a guard the player has never drawn -- bone 5's rest orientation, unrotated by the
-    /// body, read off every undrawn guard of mission 1 by the probe (the cone test's snapshot, +24).
+    /// What an AI sight ray does to the humans it passes: rebuilds their bone palettes, and so their eyes.
+    /// </summary>
+    /// <param name="from">The ray's start, the looker's eye, in world units.</param>
+    /// <param name="to">The ray's end, the target's mark, in world units.</param>
+    /// <param name="lookerId">The looking soldier's task id.</param>
+    /// <param name="targetId">The looked-at human's id.</param>
+    /// <remarks>
+    /// <para>
+    /// <c>0x489B20</c> casts through <c>0x4CE410</c>, which visits every dynamic object along the whole segment
+    /// (message 8, <c>0x4C8130</c>) before it consults static geometry -- so a wall between does not spare anyone.
+    /// The human filter it hands the visit (<c>0x42FC50</c>) admits every human but the looker and the target. A
+    /// human it admits is tested by <c>0x45F580</c>: the segment against a sphere of the model's bound
+    /// (<c>Human+160</c>) about the origin (<c>Human+32</c>), the perpendicular distance from the line and the two
+    /// boxes' overlap. On a hit <c>0x45F800</c> rebuilds the palette (<c>0x45F240</c>).
+    /// </para>
+    /// <para>
+    /// Probed on mission 4: squad member 404 ran beside 405, and every 12 ticks guard 411's ray to 405 refreshed
+    /// 404 -- never 405 itself. 404's ray to 411 at tick 4544 refreshed bystander 403, whose eye then turned
+    /// south and saw guards 409 and 410 three ticks later.
+    /// </para>
+    /// </remarks>
+    private void RefreshEyesAlong(Vector3d from, Vector3d to, int lookerId, int targetId)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView view = member.View;
+                if (view.Soldier.Id == lookerId || view.Soldier.Id == targetId || view.IsDead
+                    || !ConditionalContainerGate.IsTaskActive(view.Soldier)
+                    || !_brains.TryGetValue(view, out AiSoldier? brain))
+                {
+                    continue;
+                }
+
+                double radius = (_detectorMarkerScaleMetres.TryGetValue(view, out float bound) && bound > 0f
+                    ? bound
+                    : DefaultHumanBoundMetres) * WorldScene.UnitsPerMetre;
+                if (SegmentMeetsSphere(from, to, OccupantOrigin(view), radius))
+                {
+                    member.EyeOrientation = brain.ViewOrientation;
+                }
+            }
+        }
+    }
+
+    // The soldier model's MESH+0x78 bound, Human+160, when the model's own is not to hand.
+    private const float DefaultHumanBoundMetres = 0.94f;
+
+    /// <summary><c>0x45F580</c>'s test of one segment against a human's sphere.</summary>
+    /// <param name="from">The segment's start.</param>
+    /// <param name="to">The segment's end.</param>
+    /// <param name="centre">The sphere's centre.</param>
+    /// <param name="radius">The sphere's radius.</param>
+    /// <returns>Whether the segment meets the sphere.</returns>
+    /// <remarks>
+    /// The squared distance from the sphere's centre to the segment's LINE against the radius squared, and the
+    /// segment's box against the sphere's box: the two tests together, with no clamp to the segment's ends.
+    /// </remarks>
+    internal static bool SegmentMeetsSphere(Vector3d from, Vector3d to, Vector3d centre, double radius)
+    {
+        double ax = from.X - centre.X, ay = from.Y - centre.Y, az = from.Z - centre.Z;
+        double bx = to.X - centre.X, by = to.Y - centre.Y, bz = to.Z - centre.Z;
+        if (Math.Min(ax, bx) > radius || Math.Min(ay, by) > radius || Math.Min(az, bz) > radius
+            || Math.Max(ax, bx) < -radius || Math.Max(ay, by) < -radius || Math.Max(az, bz) < -radius)
+        {
+            return false;
+        }
+
+        double dx = to.X - from.X, dy = to.Y - from.Y, dz = to.Z - from.Z;
+        double length = (dx * dx) + (dy * dy) + (dz * dz);
+        double along = (-ax * dx) + (-ay * dy) + (-az * dz);
+        double offLine = (ax * ax) + (ay * ay) + (az * az) - (length > 0.0 ? along * along / length : 0.0);
+        return radius * radius >= offLine;
+    }
+
+    /// <summary>
+    /// Bone 5's rest orientation in the body's frame -- the eye matrix of an undrawn guard placed at heading 0, read
+    /// off every level-start guard of mission 1 by the probe (the cone test's snapshot, +24). One placed at another
+    /// heading looks along that heading times this (BindViewTracking).
     /// </summary>
     internal static readonly Matrix3f RestEyeOrientation = new(
         0.9956f, -0.0927f, 0.0076f,

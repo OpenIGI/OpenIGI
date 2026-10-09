@@ -211,13 +211,14 @@ public sealed class MissionFourFriendlyActivationTests
 
         // The next friendly state tick reads the live level variable, rather than a disconnected local
         // test value, and dispatches retail 500.qvm's first post-guard patrol. A new brain is the
-        // public simulation seam here: during its first tick AI creation and its no-event IDLE dispatch
-        // run in the same state update.
+        // public simulation seam here: its first tick is the creation alone (0x44F410's first pass), and
+        // the no-event IDLE dispatch is the next tick's.
         AiSoldier firstAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 1);
         Vector3d far = new(
             firstAdvanceFriendly.Position.X,
             firstAdvanceFriendly.Position.Y + (500 * 4096.0),
             firstAdvanceFriendly.Position.Z);
+        firstAdvanceFriendly.Tick(0, far, rootMotionThisTick: 0.0, enemyAlive: false);
         firstAdvanceFriendly.Tick(1, far, rootMotionThisTick: 0.0, enemyAlive: false);
         AiProducedAction firstAdvance = Assert.Single(
             firstAdvanceFriendly.LastActions,
@@ -241,6 +242,7 @@ public sealed class MissionFourFriendlyActivationTests
         // 500.qvm maps stage two to patrol 725. The authored path's first movement is the run toward
         // node 113, so this is the exact rescue-building advance instead of merely checking a counter.
         AiSoldier secondAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 2);
+        secondAdvanceFriendly.Tick(1, far, rootMotionThisTick: 0.0, enemyAlive: false);
         secondAdvanceFriendly.Tick(2, far, rootMotionThisTick: 0.0, enemyAlive: false);
         AiProducedAction secondAdvance = Assert.Single(
             secondAdvanceFriendly.LastActions,

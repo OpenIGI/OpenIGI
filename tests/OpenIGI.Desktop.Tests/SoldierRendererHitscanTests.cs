@@ -192,7 +192,10 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(ray.View.IsDead);
         Assert.Contains(
             scenario.Renderer.Occupants(),
-            occupant => occupant.IsDead && occupant.Position == ray.View.Position);
+            // An area counts a human at its origin (Human+32), straight above where it stands.
+            occupant => occupant.IsDead
+                && occupant.Position.X == ray.View.Position.X
+                && occupant.Position.Y == ray.View.Position.Y);
 
         for (int tick = 0; tick < 180; tick++)
         {
@@ -470,6 +473,8 @@ public sealed class SoldierRendererHitscanTests
             }
         }
 
+        // The squad's first tick is its creation (0x44F410's first pass); IDLE, and with it the patrol, is the next.
+        scenario.Renderer.Tick(enemyAlive: false);
         scenario.Renderer.Tick(enemyAlive: false);
         Assert.Equal(725, brains[harrison].Route?.Path.Id);
         Assert.Equal(726, brains[escortOne].Route?.Path.Id);
