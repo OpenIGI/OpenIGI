@@ -1185,6 +1185,11 @@ public sealed class AiScenarioHarness : IDisposable
         int mission = EnvInt("OPENIGI_PATROL_CAPTURE_MISSION", 4);
         int ticks = EnvInt("OPENIGI_PATROL_CAPTURE_TICKS", 5400);
         int every = Math.Max(1, EnvInt("OPENIGI_PATROL_CAPTURE_EVERY", 10));
+        (int Looker, int Target)[] slotPairs = [.. (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_SLOTS") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split(':'))
+            .Where(parts => parts.Length == 2)
+            .Select(parts => (int.Parse(parts[0], CultureInfo.InvariantCulture), int.Parse(parts[1], CultureInfo.InvariantCulture)))];
         StringBuilder log = new();
         using RecordingGraphicsDevice device = new();
         GameHost host = Host(device, new HeadlessGameWindow(),
@@ -1201,12 +1206,38 @@ public sealed class AiScenarioHarness : IDisposable
         HashSet<OpenIGI.Game.World.ConditionalContainerTask> containers = [];
         Dictionary<OpenIGI.Game.World.ConditionalContainerTask, bool> containerActive = [];
         int lastTick = int.MinValue;
+
+        // OPENIGI_PATROL_CAPTURE_TASKS=AnimTask_850.nTick,ConditionalContainer_300.isRun,...: the probe's [task], the
+        // named script variables logged when they change, at "tick=T" -- the state after T ticks.
+        string[] watchedVariables = (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_TASKS") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries);
+        Dictionary<string, string> watchedValues = [];
+        FieldInfo loopField = typeof(GameHost).GetField("_loop", hidden)!;
+        FieldInfo renderTickField = typeof(SoldierRenderer).GetField("_tick", hidden)!;
         for (int step = 0; step < ticks * 4; step++)
         {
             Assert.True(host.Step());
             if (soldiersField.GetValue(host) is not SoldierRenderer soldiers)
             {
                 continue;
+            }
+
+            if (watchedVariables.Length > 0
+                && loopField.GetValue(host) is { } loop
+                && loop.GetType().GetProperty("Variables")?.GetValue(loop) is OpenIGI.Engine.Tasks.ScriptVarRegistry variables)
+            {
+                int ran = (int)renderTickField.GetValue(soldiers)!;
+                foreach (string name in watchedVariables)
+                {
+                    string value = variables.TryRead(name, out OpenIGI.Scripting.Runtime.QvmValue read)
+                        ? read.ToString() ?? "?"
+                        : "-";
+                    if (watchedValues.GetValueOrDefault(name) != value)
+                    {
+                        watchedValues[name] = value;
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[task] tick={ran} {name}={value}");
+                    }
+                }
             }
 
             Dictionary<SoldierView, AiSoldier> brains = (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(soldiers)!;
@@ -1249,15 +1280,19 @@ public sealed class AiScenarioHarness : IDisposable
                 {
                     observed[brain] = brain.Events;
                     int id = view.Soldier.Id;
-                    AiSoldier owner = brain;
+
+                    // Labelled with the level's counter during the tick, as the probe labels them: a post from a
+                    // soldier earlier in the walk reaches one whose own LastTick is still last tick's.
+                    SoldierRenderer renderer = soldiers;
+                    int Counter() => (int)renderTickField.GetValue(renderer)! - 1;
                     brain.Events.Queued = record => log.AppendLine(CultureInfo.InvariantCulture,
-                        $"[pwq] tick={owner.LastTick} id={id} type={(int)record.Type} filter=0x{(int)record.Filter:X} radius={record.Radius:0} source={record.Source} subject={record.Subject} pos=({record.Position.X:0},{record.Position.Y:0},{record.Position.Z:0})");
+                        $"[pwq] tick={Counter()} id={id} type={(int)record.Type} filter=0x{(int)record.Filter:X} radius={record.Radius:0} source={record.Source} subject={record.Subject} pos=({record.Position.X:0},{record.Position.Y:0},{record.Position.Z:0})");
                     brain.Dispatched = (type, priority) => log.AppendLine(CultureInfo.InvariantCulture,
-                        $"[pwev] tick={owner.LastTick} id={id} type={(int)type} priority={priority}");
+                        $"[pwev] tick={Counter()} id={id} type={(int)type} priority={priority}");
                     Action<Vector3d, Vector3d, int>? cast = brain.SightCast;
                     brain.SightCast = (from, to, target) =>
                     {
-                        log.AppendLine(CultureInfo.InvariantCulture, $"[pwlos] tick={owner.LastTick} looker={id} target={target}");
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[pwlos] tick={Counter()} looker={id} target={target}");
                         cast?.Invoke(from, to, target);
                     };
                 }
@@ -1271,6 +1306,16 @@ public sealed class AiScenarioHarness : IDisposable
                 if (track.Tick == tick)
                 {
                     continue;
+                }
+
+                // OPENIGI_PATROL_CAPTURE_SLOTS=<looker>:<target>[,...]: the probe's [pwslot], at the end of the tick.
+                foreach ((int looker, int target) in slotPairs)
+                {
+                    if (looker == view.Soldier.Id)
+                    {
+                        log.AppendLine(CultureInfo.InvariantCulture,
+                            $"[pwslot] tick={tick} looker={looker} target={target} {brain.SlotState(target)}");
+                    }
                 }
 
                 lastTick = Math.Max(lastTick, tick);
