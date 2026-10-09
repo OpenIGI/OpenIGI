@@ -5,7 +5,6 @@
 #   type X    a spawned task type with no class (loads as a DeclaredTask placeholder)
 #   name X    a native, constant or exported variable a script or VarString expression names
 
-name AIACTIONFLAG_NONE    # COMMON/ai/default.qvm
 name AIAction_CombatIdle    # COMMON/ai/default.qvm
 name AIAction_DelayedEventPassOn    # COMMON/ai/default.qvm
 name AIAction_Idle    # COMMON/ai/default.qvm, MISSIONS/location1/level1/ai/501.qvm, MISSIONS/location1/level1/ai/502.qvm, …
@@ -16,53 +15,6 @@ name AIAction_RunPanicking    # COMMON/ai/default.qvm
 name AIAction_RunToNode    # MISSIONS/location1/level1/ai/511.qvm
 name AIAction_Stunned    # COMMON/ai/default.qvm
 name AIAction_WalkToNode    # MISSIONS/location1/level1/ai/500.qvm, MISSIONS/location1/level1/ai/501.qvm, MISSIONS/location1/level1/ai/505.qvm, …
-name AIEVENT_ALARMOFF    # COMMON/ai/default.qvm
-name AIEVENT_ALARMON    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_ALERT    # COMMON/ai/default.qvm
-name AIEVENT_ALERT_RESPONSE    # COMMON/ai/default.qvm
-name AIEVENT_ANIMATION    # COMMON/ai/default.qvm
-name AIEVENT_BACKUP_REQUEST    # COMMON/ai/default.qvm
-name AIEVENT_BULLETIMPACT    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_CAMERAALARMUPDATE    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_CREATE    # COMMON/ai/default.qvm, MISSIONS/location1/level1/ai/500.qvm, MISSIONS/location1/level1/ai/501.qvm, …
-name AIEVENT_DANGERSTATETIMEOUT    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_DEAD    # COMMON/ai/default.qvm
-name AIEVENT_DEATH_CRY    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_DELETE    # COMMON/ai/default.qvm
-name AIEVENT_DESTROYED_CAMERA    # COMMON/ai/default.qvm
-name AIEVENT_DISTRESSCALL    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_DONELOOKING    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_DOOR    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_ENEMYDETECTION    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_ENEMYDETECTION_NO_LOF    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_EXPLOSION    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_FENCE    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_FLASHBANG    # COMMON/ai/default.qvm
-name AIEVENT_FRIENDLYDETECTION    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_FRIENDLY_DAMAGE_SEEN    # COMMON/ai/default.qvm
-name AIEVENT_FRIENDLY_DYING    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_FRIENDLY_GUNSHOT    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_GRENADELAND    # COMMON/ai/default.qvm
-name AIEVENT_GRENADESHOUT    # COMMON/ai/default.qvm
-name AIEVENT_GRENADETHROWN    # COMMON/ai/default.qvm
-name AIEVENT_GROUNDIMPACT    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_GUNSHOT    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_GUNSHOTMISS    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_HANDLEWEAPON    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_IDLE    # COMMON/ai/default.qvm, MISSIONS/location1/level1/ai/500.qvm, MISSIONS/location1/level1/ai/501.qvm, …
-name AIEVENT_INQUIRETIMEOUT    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_LADDER    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_LOSTSIGHTOFENEMY    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_PATROLCOMMANDPROCESSED    # COMMON/ai/default.qvm
-name AIEVENT_REACTTOSUSPICION    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_SEARCHOVER    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_SEENSOMETHING    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_SQUADCOMBATIDLE    # COMMON/ai/default.qvm
-name AIEVENT_SQUADCOMMAND    # COMMON/ai/default.qvm
-name AIEVENT_TAKINGDAMAGE    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_VISUAL_GUNSHOT    # COMMON/ai/default.qvm
-name AIEVENT_WALK    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
-name AIEVENT_WOUNDED_CRY    # COMMON/ai/default.qvm, COMMON/ai/squaddefault.qvm
 name AIFunction_DefaultHandler    # MISSIONS/location1/level1/ai/500.qvm, MISSIONS/location1/level1/ai/501.qvm, MISSIONS/location1/level1/ai/502.qvm, …
 name AIFunction_GetCurrentEventType    # COMMON/ai/default.qvm, MISSIONS/location1/level1/ai/500.qvm, MISSIONS/location1/level1/ai/501.qvm, …
 name AIFunction_HasTarget    # COMMON/ai/default.qvm
@@ -70,19 +22,6 @@ name AIFunction_PassEventOnToSquad    # COMMON/ai/default.qvm, MISSIONS/location
 name AIFunction_SetEventPriority    # COMMON/ai/default.qvm
 name AIFunction_SetIdleViewCone1Alpha    # MISSIONS/location1/level1/ai/526.qvm
 name AIFunction_UseIdleView    # COMMON/ai/default.qvm
-name AILOOKAROUND_PATTERN_180_CLOCKWISE    # MISSIONS/location1/level1/ai/518.qvm, MISSIONS/location1/level1/ai/519.qvm, MISSIONS/location1/level1/ai/520.qvm, …
-name AILOOKAROUND_PATTERN_180_COUNTERCLOCKWISE    # MISSIONS/location1/level1/ai/529.qvm
-name AILOOKAROUND_PATTERN_360_SLOW    # MISSIONS/location1/level1/ai/531.qvm
-name AISquadState_Danger    # COMMON/ai/squaddefault.qvm
-name AISquadState_HoldArea    # COMMON/ai/squaddefault.qvm
-name AISquadState_Idle    # COMMON/ai/squaddefault.qvm, MISSIONS/location1/level1/ai/Squad_700.qvm, MISSIONS/location1/level1/ai/Squad_701.qvm, …
-name AISquadState_Inquire    # COMMON/ai/squaddefault.qvm
-name AISquadState_Leapfrog    # COMMON/ai/squaddefault.qvm
-name AISquadState_LookSearchInDirection    # COMMON/ai/squaddefault.qvm
-name AISquadState_Move    # COMMON/ai/squaddefault.qvm
-name AISquadState_MoveSearchInDirection    # COMMON/ai/squaddefault.qvm
-name AISquadState_Patrol    # COMMON/ai/squaddefault.qvm
-name AISquadState_SearchArea    # COMMON/ai/squaddefault.qvm
 name AISquad_DefaultHandler    # MISSIONS/location1/level1/ai/Squad_700.qvm, MISSIONS/location1/level1/ai/Squad_701.qvm, MISSIONS/location1/level1/ai/Squad_702.qvm, …
 name AISquad_GetDistanceToEvent    # COMMON/ai/squaddefault.qvm
 name AISquad_GetEvent    # COMMON/ai/squaddefault.qvm, MISSIONS/location1/level1/ai/Squad_700.qvm, MISSIONS/location1/level1/ai/Squad_701.qvm, …
@@ -101,19 +40,6 @@ name AISquad_TriggerAlarm    # COMMON/ai/squaddefault.qvm
 name AISquad_TriggerEvent    # COMMON/ai/squaddefault.qvm
 name AISquad_nEvent    # COMMON/ai/squaddefault.qvm
 name AISquad_nSquadState    # COMMON/ai/squaddefault.qvm
-name AIVoice_EnemyDetected    # COMMON/ai/squaddefault.qvm
-name AIVoice_EnemyFound    # COMMON/ai/squaddefault.qvm
-name AIVoice_EnemySpotted    # COMMON/ai/squaddefault.qvm
-name AIVoice_Engaging    # COMMON/ai/squaddefault.qvm
-name AIVoice_FalseAlarm    # COMMON/ai/squaddefault.qvm
-name AIVoice_GunShotHeard    # COMMON/ai/squaddefault.qvm
-name AIVoice_HoldArea    # COMMON/ai/squaddefault.qvm
-name AIVoice_HurryUp    # COMMON/ai/squaddefault.qvm
-name AIVoice_ManDown    # COMMON/ai/squaddefault.qvm
-name AIVoice_RaiseAlarm    # COMMON/ai/squaddefault.qvm
-name AIVoice_SearchArea    # COMMON/ai/squaddefault.qvm
-name AIVoice_TakeCover    # COMMON/ai/squaddefault.qvm
-name AIVoice_WhatsThat    # COMMON/ai/squaddefault.qvm
 name Activate    # config.qvm
 name AlternateFire    # config.qvm
 name Binoculars    # config.qvm
@@ -400,8 +326,6 @@ name WeaponCategory7    # config.qvm
 name WeaponCategory9    # config.qvm
 name ZoomIn    # config.qvm
 name ZoomOut    # config.qvm
-type AIGraph    # MISSIONS/location1/level1/objects.qvm
-type AISquad    # MISSIONS/location1/level1/objects.qvm
 type AmbientArea    # MISSIONS/location1/level1/objects.qvm
 type Building    # MISSIONS/location1/level1/objects.qvm
 type ColumnView    # MENUSYSTEM/ingamemenu.qvm
@@ -416,10 +340,7 @@ type DirlightKeyframe    # MISSIONS/location1/level1/objects.qvm
 type EditBoneObj    # MISSIONS/location1/level1/objects.qvm
 type GlobalLight    # MISSIONS/location1/level1/objects.qvm
 type GlobalLightKeyframe    # MISSIONS/location1/level1/objects.qvm
-type HumanAI    # MISSIONS/location1/level1/objects.qvm
-type HumanAIConfigItem    # COMMON/ai/settings.qvm
 type HumanPlayerInput    # MISSIONS/location1/level1/objects.qvm
-type HumanSoldier    # MISSIONS/location1/level1/objects.qvm
 type InputBox    # MENUSYSTEM/ingamemenu.qvm
 type LevelInfo    # MISSIONS/location1/level1/objects.qvm
 type LightmapInfo    # MISSIONS/location1/level1/objects.qvm
@@ -433,8 +354,6 @@ type MenuText    # MENUSYSTEM/ingamemenu.qvm
 type MenuTextSelection    # MENUSYSTEM/ingamemenu.qvm
 type MineField    # MISSIONS/location1/level1/objects.qvm
 type MissionScoreSettings    # MISSIONS/location1/level1/objects.qvm
-type PatrolPath    # MISSIONS/location1/level1/objects.qvm
-type PatrolPathCommand    # MISSIONS/location1/level1/objects.qvm
 type PictureBox    # MENUSYSTEM/ingamemenu.qvm
 type RotateAttachment    # MISSIONS/location1/level1/objects.qvm
 type ScrollListBox    # MENUSYSTEM/ingamemenu.qvm

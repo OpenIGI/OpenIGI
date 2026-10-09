@@ -80,7 +80,7 @@ public sealed class Igi2ExplosionTests
             MaxDamageScale = 100f,
             DamageMultipliers = [.. Enumerable.Repeat(1f, Igi2HumanDamage.PartCount)],
         };
-        player.Create(Ai.AiDifficulty.Normal);
+        player.Create(OpenIGI.Game.Ai.AiDifficulty.Normal);
         player.UpdateViewBody(updateAnimation: false);
         Igi2DynamicTasks dynamic = new();
         Igi2ExplosionWorld world = new(player.Random, new OpenGround(), new Igi2GameMaterials(), dynamic);

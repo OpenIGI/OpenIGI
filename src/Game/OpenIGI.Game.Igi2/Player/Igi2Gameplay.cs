@@ -611,7 +611,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         Igi2HumanPlayerGeneral general,
         Vector3d position,
         float gamma,
-        Ai.AiDifficulty difficulty,
+        OpenIGI.Game.Ai.AiDifficulty difficulty,
         Igi2AnimationLibrary? clips = null,
         Igi2BoneHierarchy? rig = null,
         Igi2PlayerWeapons? weapons = null,

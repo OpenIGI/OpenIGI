@@ -24,6 +24,7 @@ public static class Igi2ContentModules
         new Igi2FlowContentModule(),
         new Igi2WeaponContentModule(),
         new Igi2MaterialContentModule(),
+        new Igi2AiContentModule(),
         new Igi2PlayerContentModule(),
         new Igi2AnimTriggerContentModule(),
         new Igi2PhysicsObjectContentModule(),
@@ -270,6 +271,44 @@ public sealed class Igi2MaterialContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Igi2GameMaterials>().Load(context.Resources, context.Natives);
+    }
+}
+
+/// <summary>The AI: its task types, the constants its scripts use, and its tuning out of <c>settings.qvm</c>.</summary>
+/// <remarks>
+/// After the materials and before the player's tuning, the order <c>Flow_CreateHandler</c> (<c>igi2 0x401600</c>) loads the AI's
+/// settings in.
+/// </remarks>
+public sealed class Igi2AiContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "AI";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        context.Types.Register<Ai.Igi2HumanAiConfigTask>(Ai.Igi2HumanAiConfigTask.TypeName);
+        context.Types.Register<Ai.Igi2HumanAiConfigItemTask>(Ai.Igi2HumanAiConfigItemTask.TypeName);
+        context.Types.Register<Ai.Igi2AiGraphTask>(Ai.Igi2AiGraphTask.TypeName);
+        context.Types.Register<Ai.Igi2HumanSoldierTask>(Ai.Igi2HumanSoldierTask.TypeName);
+        context.Types.Register<Ai.Igi2HumanAiTask>(Ai.Igi2HumanAiTask.TypeName);
+        context.Types.Register<Ai.Igi2AiSquadTask>(Ai.Igi2AiSquadTask.TypeName);
+        context.Types.Register<Ai.Igi2PatrolPathTask>(Ai.Igi2PatrolPathTask.TypeName);
+        context.Types.Register<Ai.Igi2PatrolPathCommandTask>(Ai.Igi2PatrolPathCommandTask.TypeName);
+        Ai.Igi2AiConstants.Register(context.Natives);
+        Ai.Igi2PatrolPathCommandTask.RegisterCommands(context.Natives);
+        context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
+        context.Services.GetOrProvide(() => new Ai.Igi2HumanAiConfig());
+    }
+
+    /// <inheritdoc/>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Ai.Igi2HumanAiConfig>().Load(
+            context.Resources, context.Natives, context.Services.Require<Scripting.Igi2ScriptFunctions>(), context.Tasks);
     }
 }
 
