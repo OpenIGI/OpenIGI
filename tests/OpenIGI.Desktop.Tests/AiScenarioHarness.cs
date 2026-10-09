@@ -1193,7 +1193,9 @@ public sealed class AiScenarioHarness : IDisposable
         BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
         FieldInfo brainsField = typeof(SoldierRenderer).GetField("_brains", hidden)!;
-        Dictionary<AiSoldier, (int Tick, int State, int Index, int Deadline, int Node, int Dest, int Logged)> tracks = [];
+        Dictionary<AiSoldier, (int Tick, int State, int Index, int Deadline, int Node, int Dest, int Logged, int Alert, int Sight)> tracks = [];
+        Dictionary<AiSoldier, AiEventQueues> observed = [];
+        Dictionary<AiSoldier, string> lastFollow = [];
         bool treeDumped = false;
         HashSet<OpenIGI.Game.World.ConditionalContainerTask> containers = [];
         Dictionary<OpenIGI.Game.World.ConditionalContainerTask, bool> containerActive = [];
@@ -1241,10 +1243,28 @@ public sealed class AiScenarioHarness : IDisposable
 
             foreach ((SoldierView view, AiSoldier brain) in brains)
             {
+                // The probe's [pwq]/[pwev]: what each AI accepted into its queue and what it dispatched.
+                if (!observed.TryGetValue(brain, out AiEventQueues? queues) || !ReferenceEquals(queues, brain.Events))
+                {
+                    observed[brain] = brain.Events;
+                    int id = view.Soldier.Id;
+                    AiSoldier owner = brain;
+                    brain.Events.Queued = record => log.AppendLine(CultureInfo.InvariantCulture,
+                        $"[pwq] tick={owner.LastTick} id={id} type={(int)record.Type} filter=0x{(int)record.Filter:X} radius={record.Radius:0} source={record.Source} subject={record.Subject} pos=({record.Position.X:0},{record.Position.Y:0},{record.Position.Z:0})");
+                    brain.Dispatched = (type, priority) => log.AppendLine(CultureInfo.InvariantCulture,
+                        $"[pwev] tick={owner.LastTick} id={id} type={(int)type} priority={priority}");
+                    Action<Vector3d, Vector3d, int>? cast = brain.SightCast;
+                    brain.SightCast = (from, to, target) =>
+                    {
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[pwlos] tick={owner.LastTick} looker={id} target={target}");
+                        cast?.Invoke(from, to, target);
+                    };
+                }
+
                 int tick = brain.LastTick;
                 if (!tracks.TryGetValue(brain, out var track))
                 {
-                    track = (-1, -99, -99, -99, -99, -99, -1000);
+                    track = (-1, -99, -99, -99, -99, -99, -1000, -1, -1);
                 }
 
                 if (track.Tick == tick)
@@ -1257,20 +1277,29 @@ public sealed class AiScenarioHarness : IDisposable
                 int index = route?.CurrentIndex ?? -1;
                 int deadline = route?.Deadline ?? -1;
                 int state = brain.Body.State;
+                int alert = brain.Alerted ? 1 : 0;
+                int sight = brain.SeesEnemy ? 1 : 0;
                 bool changed = state != track.State || index != track.Index || deadline != track.Deadline
-                    || brain.CurrentNode != track.Node || brain.DestinationNode != track.Dest;
+                    || brain.FollowState != lastFollow.GetValueOrDefault(brain)
+                    || brain.CurrentNode != track.Node || brain.DestinationNode != track.Dest
+                    || alert != track.Alert || sight != track.Sight;
                 if (!changed && tick - track.Logged < 10)
                 {
                     tracks[brain] = track with { Tick = tick };
                     continue;
                 }
 
-                tracks[brain] = (tick, state, index, deadline, brain.CurrentNode, brain.DestinationNode, tick);
+                tracks[brain] = (tick, state, index, deadline, brain.CurrentNode, brain.DestinationNode, tick, alert, sight);
+                lastFollow[brain] = brain.FollowState;
+                Vector3d eyeAt = brain.Eye.Position;
+                Matrix3f em = brain.Eye.Orientation;
+                log.AppendLine(CultureInfo.InvariantCulture,
+                    $"[pweye] tick={tick} id={view.Soldier.Id} eye=({eyeAt.X:0},{eyeAt.Y:0},{eyeAt.Z:0}) m=[{em.M11:0.0000} {em.M12:0.0000} {em.M13:0.0000} | {em.M21:0.0000} {em.M22:0.0000} {em.M23:0.0000} | {em.M31:0.0000} {em.M32:0.0000} {em.M33:0.0000}]");
                 Matrix3f m = brain.Orientation;
                 Vector3d p = brain.Position;
                 AiPatrolCommand? command = route?.Current;
                 log.AppendLine(CultureInfo.InvariantCulture,
-                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} act={brain.Activity}");
+                    $"[pw] tick={tick} id={view.Soldier.Id} type={brain.Type} pos=({p.X:0.0},{p.Y:0.0},{p.Z:0.0}) f=({m.M11:0.00000},{m.M12:0.00000},{m.M21:0.00000},{m.M22:0.00000}) state={state} patrol={(route is null ? 0 : 1)} path={route?.Path.Id ?? -1} cmd={index} kind={(int)(command?.Kind ?? (AiPatrolCommandKind)(-9))} op={command?.Operand ?? 0} deadline={deadline} crouch={(route?.IsCrouching == true ? 1 : 0)} walk={(route?.IsWalking == true ? 1 : 0)} node={brain.CurrentNode} dest={brain.DestinationNode} alert={alert} sight={sight} act={brain.Activity} combat={brain.PatrolAction} moving={brain.IsMovingInCombat} follow={brain.FollowState} vphase={brain.SweepPhase}");
             }
 
             if (lastTick >= ticks)
