@@ -333,6 +333,32 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.Equal(4, body.DeathByType);
     }
 
+    /// <summary>
+    /// A line of sight through a standing soldier's chest is stopped by its posed mesh (<c>BoneDynCubeObj_LineOfSightHandler</c>,
+    /// <c>igi2 0x566B90</c>) when the query asks for humans, and passes when it does not, or when it runs well clear of it.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_soldier_blocks_a_line_of_sight_that_asks_for_humans()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Vector3d p = body.Position;
+        Igi2LineOfSight Line(double offset) =>
+            new(new Vector3d(p.X - 8192.0, p.Y + offset, p.Z + 4096.0), new Vector3d(p.X + 8192.0, p.Y + offset, p.Z + 4096.0), m.Materials);
+
+        Igi2LineOfSight through = Line(0.0);
+        Assert.False(m.Collision!.LineOfSight(through, Igi2CollisionWorld.HumanGroup));
+        Assert.True(through.IsHit);
+
+        Igi2LineOfSight unasked = Line(0.0);
+        Assert.True(m.Collision.LineOfSight(unasked, Igi2CollisionWorld.SplineGroup));
+
+        Igi2LineOfSight wide = Line(40960.0);
+        Assert.True(m.Collision.LineOfSight(wide, Igi2CollisionWorld.HumanGroup));
+        Assert.Equal(1f, wide.Transparency);
+    }
+
     private static Igi2WeaponHit At(Igi2HumanSoldier body, int bone, Vector3d position, Vector3f shot) =>
         new(new Igi2Intersection { Sector = bone, Position = position, IsHit = true }, 0.01f, shot, null, body.Weapon.Inventory!.Current!.WeaponType, null);
 

@@ -16,6 +16,11 @@ public sealed class Igi2BoneMesh
         ArgumentNullException.ThrowIfNull(mesh);
         Arrays = new RetailRayMesh(mesh);
         Bones = [.. mesh.VertexBones];
+        Rows = new int[Arrays.GlobalMaterial.Length];
+        for (int m = 0; m < Rows.Length; m++)
+        {
+            Rows[m] = mesh.MaterialRow(m);
+        }
     }
 
     /// <summary>Gets the faces, vertices (each in its bone's frame) and material rows.</summary>
@@ -23,6 +28,9 @@ public sealed class Igi2BoneMesh
 
     /// <summary>Gets the bone each vertex is carried by, <c>MultiMesh_Vertex_t</c>'s fourth word.</summary>
     public int[] Bones { get; }
+
+    /// <summary>Gets each material's game-material row as stored, <c>0xFFFF</c> for none, which a line of sight cannot pass.</summary>
+    public int[] Rows { get; }
 
     /// <summary>A model's collision mesh levels, or <see langword="null"/> when it has none.</summary>
     /// <param name="model">The model.</param>

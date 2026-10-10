@@ -414,7 +414,8 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// <para>
     /// The objects of the stationary tree along the line answer first, each with its own handler: the solid models
     /// (<see cref="Igi2RigidLineOfSight"/>), the spline segments (<see cref="Igi2SplineSegmentLineOfSight"/>) and the
-    /// stands of trees (<see cref="Igi2ForestCollider.LineOfSight"/>); a line of no length meets none. Then, if anything
+    /// stands of trees (<see cref="Igi2ForestCollider.LineOfSight"/>) and the boned bodies (<see cref="Igi2BoneLineOfSight"/>); a
+    /// line of no length meets none. Then, if anything
     /// still gets through and the ground is asked for, the line is traced against the ground alone, and striking it
     /// blocks the sight.
     /// </para>
@@ -451,6 +452,14 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                 if ((objectGroups & (forest.Group | EveryTypeGroup)) != 0)
                 {
                     forest.LineOfSight(sight);
+                }
+            }
+
+            foreach (Igi2BoneCollider body in _bodies)
+            {
+                if ((objectGroups & (body.Group | EveryTypeGroup)) != 0)
+                {
+                    Igi2BoneLineOfSight.Meet(body, sight);
                 }
             }
         }
