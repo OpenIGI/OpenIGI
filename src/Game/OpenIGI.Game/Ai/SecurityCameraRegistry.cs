@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Ai;
 
@@ -485,23 +486,38 @@ public sealed class SecurityCamera
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
 public sealed class SecurityCameraRegistry
 {
-    private sealed class Control(DeclaredTask task, string expression)
+    // An SCameraControl (0x440C20) is registered under Terminal (0x443680), so it is a terminal first: one with no
+    // model, standing at the origin, whose On Expression powers the cameras that read its isOn.
+    private sealed class Control(DeclaredTask task, string onExpression, string detectionExpression)
     {
         public DeclaredTask Task { get; } = task;
-        public string Expression { get; } = expression;
+        public string OnExpression { get; } = onExpression;
+        public string Expression { get; } = detectionExpression;
         public bool IsDetection { get; set; }
+
+        // Terminal's constructor (0x443840) sets +576 to one: a control is on before it has ever ticked.
+        public bool IsOn { get; set; } = true;
+        public bool IsHacked { get; set; }
+        public bool IsHackedThisTick { get; set; }
+        public bool IsInUse { get; set; }
+        public bool IsLastInUse { get; set; }
     }
 
     private readonly List<SecurityCamera> _cameras = [];
     private readonly Dictionary<GameTask, SecurityCamera> _byTask = [];
     private readonly List<Control> _controls = [];
+
+    // Every camera and control in the order the level walks them, which is the order they tick in.
+    private readonly List<object> _order = [];
     private readonly List<SecurityCameraSubject> _subjects = [];
     private readonly LevelExpressionRuntime _expressions;
+    private readonly ScriptVarRegistry _variables;
     private readonly WorldTraceCast? _sight;
 
-    private SecurityCameraRegistry(LevelExpressionRuntime expressions, WorldTraceCast? sight)
+    private SecurityCameraRegistry(LevelExpressionRuntime expressions, ScriptVarRegistry variables, WorldTraceCast? sight)
     {
         _expressions = expressions;
+        _variables = variables;
         _sight = sight;
     }
 
@@ -520,7 +536,7 @@ public sealed class SecurityCameraRegistry
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
-        SecurityCameraRegistry registry = new(new LevelExpressionRuntime(variables), sight);
+        SecurityCameraRegistry registry = new(new LevelExpressionRuntime(variables), variables, sight);
         registry.Collect(root, variables);
         return registry;
     }
@@ -546,7 +562,7 @@ public sealed class SecurityCameraRegistry
     public void Tick(Vector3d targetFeet, bool targetCrouching, bool targetAlive) =>
         Tick(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide: false, []);
 
-    /// <summary>Advances all lenses, then the <c>SCameraControl</c> expressions that consume them.</summary>
+    /// <summary>Advances every lens and every <c>SCameraControl</c>, in the order the level walks them.</summary>
     /// <param name="targetFeet">The player's feet, in engine units.</param>
     /// <param name="targetCrouching">Whether the player is crouching, which lowers the mark.</param>
     /// <param name="targetAlive">Whether the player is alive.</param>
@@ -582,16 +598,50 @@ public sealed class SecurityCameraRegistry
                 camera, camera.HolderPositionUnits, CamerasSide: true, Alive: !camera.IsExploded, camera.Task));
         }
 
-        foreach (SecurityCamera camera in _cameras)
+        // In the level's walk order: missions 6 and 8 declare each SCameraControl before the cameras whose On
+        // Expression is its isOn, so a camera reads this tick's power, and a control reads its cameras' last tick.
+        foreach (object entry in _order)
         {
-            bool powered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: true, camera.Task);
-            camera.Tick(powered, _subjects, _sight);
+            if (entry is SecurityCamera camera)
+            {
+                bool powered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: true, camera.Task);
+                camera.Tick(powered, _subjects, _sight);
+            }
+            else if (entry is Control control)
+            {
+                TickControl(control);
+            }
+        }
+    }
+
+    // 0x440D70: the terminal's tick (0x4438E0), then the detection. An exploded control (the ExplodeObject base's
+    // +400) is off and detects nothing; otherwise each expression it declares is evaluated into its byte, and one
+    // it leaves empty leaves the byte alone. Its in-use and hacked-this-tick bytes only ever fall: a control has no
+    // model, so nothing uses or hacks it.
+    private void TickControl(Control control)
+    {
+        // The ExplodeObject base's byte, as the destructible registry exports it (absent where nothing does).
+        bool exploded = _variables.TryRead(control.Task.Name + ".isExploded", out QvmValue value) && value.ToInt32() != 0;
+
+        if (exploded)
+        {
+            control.IsOn = false;
+        }
+        else if (control.OnExpression.Length > 0)
+        {
+            control.IsOn = _expressions.EvaluateCondition(control.OnExpression, emptyValue: true, control.Task);
         }
 
-        foreach (Control control in _controls)
+        control.IsLastInUse = control.IsInUse;
+        control.IsHackedThisTick = false;
+
+        if (exploded)
         {
-            control.IsDetection = _expressions.EvaluateCondition(
-                control.Expression, emptyValue: false, control.Task);
+            control.IsDetection = false;
+        }
+        else if (control.Expression.Length > 0)
+        {
+            control.IsDetection = _expressions.EvaluateCondition(control.Expression, emptyValue: false, control.Task);
         }
     }
 
@@ -638,6 +688,7 @@ public sealed class SecurityCameraRegistry
         {
             SecurityCamera camera = new(declared);
             _cameras.Add(camera);
+            _order.Add(camera);
             _byTask[task] = camera;
             variables.BindBool(task, "isDetection", () => camera.IsDetection, value => camera.IsDetection = value);
             variables.BindBool(task, "isLastDetection", () => camera.IsLastDetection, value => camera.IsLastDetection = value);
@@ -653,9 +704,19 @@ public sealed class SecurityCameraRegistry
         else if (task is DeclaredTask controlTask
             && string.Equals(task.Type.Name, "SCameraControl", StringComparison.Ordinal))
         {
-            Control control = new(controlTask, ReadString(controlTask, "Detection Expression"));
+            Control control = new(
+                controlTask, ReadString(controlTask, "On Expression"), ReadString(controlTask, "Detection Expression"));
             _controls.Add(control);
+            _order.Add(control);
             variables.BindBool(task, "isDetection", () => control.IsDetection, value => control.IsDetection = value);
+
+            // Terminal's exports (0x443A60). The cameras of missions 6 and 8 are powered by the control's isOn; without
+            // it every one of them read an unknown variable and started the mission switched off.
+            variables.BindBool(task, "isOn", () => control.IsOn, value => control.IsOn = value);
+            variables.BindBool(task, "isHacked", () => control.IsHacked, value => control.IsHacked = value);
+            variables.BindBool(task, "isHackedThisTick", () => control.IsHackedThisTick, value => control.IsHackedThisTick = value);
+            variables.BindBool(task, "isInUse", () => control.IsInUse, value => control.IsInUse = value);
+            variables.BindBool(task, "isLastInUse", () => control.IsLastInUse, value => control.IsLastInUse = value);
         }
 
         foreach (GameTask child in task.Children)

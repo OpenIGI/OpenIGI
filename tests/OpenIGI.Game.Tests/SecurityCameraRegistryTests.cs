@@ -259,7 +259,31 @@ public sealed class SecurityCameraRegistryTests
     private static SecurityCameraSubject Soldier(Vector3d feet, bool alive) =>
         new(new object(), new Vector3d(feet.X, feet.Y, feet.Z + 2828.8), CamerasSide: true, alive);
 
-    private static Fixture Build(WorldTraceCast? sight = null)
+    [RequiresGameDataTheory]
+    [InlineData(5, "SCameraControl_98", "Generator_99")]
+    [InlineData(6, "SCameraControl_97", null)]
+    [InlineData(7, "SCameraControl_98", "Generator_99")]
+    [InlineData(8, "SCameraControl_98", null)]
+    [InlineData(9, "SCameraControl_97", null)]
+    public void CamerasPoweredByTheirControlAreOnFromTheStart(int missionId, string control, string? generator)
+    {
+        // Missions 5 to 9 power their cameras with "SCameraControl_N.isOn". SCameraControl is a Terminal (0x440C20
+        // under 0x443680): its constructor (0x443840) starts isOn at one and its tick (0x4438E0) evaluates its own
+        // On Expression into it. Without that export the cameras read an unknown variable and started switched off.
+        // Missions 5 and 7 power the control from a generator, whose isOn the interaction registry exports in the
+        // game; this fixture stands in for a running one.
+        Fixture fixture = Build(missionId: missionId, poweredGenerator: generator);
+        AssertScript(fixture.Variables, control + ".isOn", 1);
+
+        Vector3d farAway = new(0.0, 0.0, -1.0e9);
+        fixture.Registry.Tick(farAway, targetCrouching: false, targetAlive: true);
+
+        Assert.NotEmpty(fixture.Registry.Cameras);
+        Assert.All(fixture.Registry.Cameras, camera => Assert.True(camera.IsActive, $"{camera.Task.Name} is off"));
+        AssertScript(fixture.Variables, control + ".isOn", 1);
+    }
+
+    private static Fixture Build(WorldTraceCast? sight = null, int missionId = 1, string? poweredGenerator = null)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -271,16 +295,38 @@ public sealed class SecurityCameraRegistryTests
         missions.Register(loop.Natives);
         missions.Scan(fileSystem, resources, loop.Natives);
         LevelLoader levels = new(root, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, levels).Load(1);
+        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, levels).Load(missionId);
         WorldScene scene = WorldScene.Build(mission, root);
+
+        if (poweredGenerator is not null)
+        {
+            GameTask generator = Descendants(root).First(task => task.Name == poweredGenerator);
+            loop.Variables.BindBool(generator, "isOn", () => true, _ => { });
+        }
 
         SecurityCameraRegistry registry = SecurityCameraRegistry.Build(root, loop.Variables, sight);
         registry.BindScene(scene.Placements);
-        Assert.Equal(5, registry.Cameras.Count);
-        Assert.Equal(2, registry.ControlCount);
+        if (missionId == 1)
+        {
+            Assert.Equal(5, registry.Cameras.Count);
+            Assert.Equal(2, registry.ControlCount);
+        }
+
         AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(root, loop.Variables);
         speakers.BindScene(scene.Placements);
         return new Fixture(registry, loop.Variables, speakers);
+    }
+
+    private static IEnumerable<GameTask> Descendants(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (GameTask deeper in Descendants(child))
+            {
+                yield return deeper;
+            }
+        }
     }
 
     private static Vector3d TargetStraightAhead(SecurityCamera camera, double metres)
