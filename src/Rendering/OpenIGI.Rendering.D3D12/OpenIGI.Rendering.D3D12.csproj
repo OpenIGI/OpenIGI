@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Direct3D 12 backend: the RHI over D3D12 with enhanced barriers, shader model 6.6 and, where the
+       adapter offers it, DXR 1.1. A translation of the interface and nothing more: the frame, the passes,
+       the traced world and Streamline's session are all above the RHI, written once for every backend.
+
+       The runtime is the Agility SDK's D3D12Core.dll, copied into <app>/D3D12/ and loaded through
+       ID3D12SDKConfiguration1's device factory: a managed apphost cannot export D3D12SDKVersion, which is
+       how a native executable asks for a newer runtime than the one in Windows. -->
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+    <ProjectReference Include="..\OpenIGI.Shaders.Dxil\OpenIGI.Shaders.Dxil.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.Streamline\OpenIGI.Rendering.Streamline.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Rendering.D3D12.Tests" />
+    <InternalsVisibleTo Include="OpenIGI.Rendering.Rhi.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Direct3D12" />
+    <PackageReference Include="Silk.NET.DXGI" />
+    <!-- Only for its binaries: nothing of it is compiled against. -->
+    <PackageReference Include="Microsoft.Direct3D.D3D12" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\D3D12Core.dll" Link="D3D12\D3D12Core.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <!-- The debug layer, which OPENIGI_D3D12_VALIDATION loads. Development only, but small, and the same
+         folder the runtime is loaded from is the only place the factory looks for it. -->
+    <None Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\d3d12SDKLayers.dll" Link="D3D12\d3d12SDKLayers.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+</Project>

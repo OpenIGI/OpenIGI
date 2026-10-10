@@ -44,22 +44,22 @@ OPENIGI_PUSH_CONSTANT(TracerPush, push);
 
 struct TracerVertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
 
     // Declared because the vertex format the renderer uploads has them; a tracer is rebuilt every frame.
-    [[vk::location(5)]] float3 previousPosition;
-    [[vk::location(6)]] float3 previousNormal;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
+    [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
 };
 
 struct TracerVaryings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 strip;
-    [[vk::location(1)]] float4 color;
+    [[vk::location(0)]] float2 strip : TEXCOORD0;
+    [[vk::location(1)]] float4 color : TEXCOORD1;
 };
 
 /// The vertex stage: the world pipeline's transform, character for character (see Rain.slang's).

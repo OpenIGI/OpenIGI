@@ -210,7 +210,10 @@ public sealed class ComputeSeamTests
     {
         // A colour texture left on the unit a depth slot reads: WebGPU refuses it outright. The slot gets a
         // depth stand-in, which a colour one would be refused as too.
-        using RecordingRhiDevice rhi = new() { ShaderTarget = ShaderTarget.Wgsl };
+        using RecordingRhiDevice rhi = new(RhiFeatures.None with { StrictTextureSampleTypes = true })
+        {
+            ShaderTarget = ShaderTarget.Wgsl,
+        };
         using GraphicsDevice device = Open(rhi);
 
         ComputeShaderHandle resolve = device.CreateComputeShader(

@@ -126,6 +126,16 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     public string AdapterName => _context.Report.Name;
 
     /// <inheritdoc/>
+    public string ApiName => "WebGPU";
+
+    /// <inheritdoc/>
+    /// <remarks>One: a resolved WebGPU timestamp is in nanoseconds already.</remarks>
+    public double TimestampPeriodNanoseconds => 1.0;
+
+    /// <inheritdoc/>
+    public string StreamlineUnavailableReason => "NVIDIA's features run on Vulkan only";
+
+    /// <inheritdoc/>
     public RhiFeatures Features => _context.Report.Features;
 
     /// <inheritdoc/>
@@ -150,7 +160,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// fill rather than a thing the backend cannot do — see the adapter report, which already says
     /// whether the feature is there.
     /// </remarks>
-    public IRhiRayTracing? RayTracing => null;
+    public IRhiAccelerationStructures? AccelerationStructures => null;
 
     /// <summary>Gets the context this works through.</summary>
     public WebGpuContext Context => _context;
@@ -1023,7 +1033,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
             case RhiBindingType.AccelerationStructure:
                 throw new InvalidOperationException(
                     "This backend offers no acceleration structure binding yet. A pass that wants one asks "
-                    + "for IRhiRayTracing first and stands down when it is not there.");
+                    + "for IRhiDevice.AccelerationStructures first and stands down when it is not there.");
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(entry), entry.Type, "Not a binding type.");

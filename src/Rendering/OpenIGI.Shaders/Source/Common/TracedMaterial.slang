@@ -74,16 +74,16 @@ bool ShadeHit<let F : int>(inout RayQuery<F> query, float3 rayW, out float3 radi
     // necessarily the hit and after a completed traversal is often nothing at all.
     uint record = uint(query.CommittedInstanceID()) + uint(query.CommittedGeometryIndex());
 
-    ConstBufferPointer<uint> records = HitWordsAt(kRecords.x, kRecords.y);
+    HitWords records = HitWordsAt(kRecords.x, kRecords.y);
     uint at = record * kHitRecordWords;
 
     uint flags = records[at + kHitDynamicWord];
     gHitDynamic = (flags & kHitDynamicBit) != 0u;
     gHitEmissive = float((flags >> kHitEmissiveShift) & 0xFFu) / kHitEmissiveSteps;
 
-    ConstBufferPointer<float> vertices = HitFloatsAt(
+    HitFloats vertices = HitFloatsAt(
         records[at + kHitVertexAddressWord], records[at + kHitVertexAddressWord + 1u]);
-    ConstBufferPointer<uint> indices = HitWordsAt(
+    HitWords indices = HitWordsAt(
         records[at + kHitIndexAddressWord], records[at + kHitIndexAddressWord + 1u]);
 
     // The primitive index counts from the geometry's own first index, which is what the build was given

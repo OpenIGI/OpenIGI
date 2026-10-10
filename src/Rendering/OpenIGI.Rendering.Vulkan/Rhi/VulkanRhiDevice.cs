@@ -21,7 +21,7 @@ namespace OpenIGI.Rendering.Vulkan.Rhi;
 /// because the backend already has them and a second set would be a second set of everything.
 /// </para>
 /// </remarks>
-internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.ISubmissionClock
+internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
 {
     private readonly Vk _vk;
     private readonly VulkanDevice _device;
@@ -72,19 +72,29 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
 
         CreateTimeline();
 
-        // The traced world, where the adapter traces and its lifetimes can follow the timeline.
+        // Acceleration structures, where the adapter traces. The timeline is asked for as well: the traced
+        // world above paces its structures' lifetimes by the submissions it marks, which needs one.
         if (instance is not null && HasTimeline && device.Capabilities.RayQuery && device.Capabilities.AccelerationStructure)
         {
-            _rayTracingApi = new RayTracing.VulkanRayTracingApi(instance, device);
-            _rayTracing = new VulkanRhiRayTracing(vk, _rayTracingApi, device, allocator, commands, this);
+            _accelerationStructures = new VulkanRhiAccelerationStructures(
+                vk, new RayTracing.VulkanRayTracingApi(instance, device), device, allocator);
         }
     }
 
-    private readonly RayTracing.VulkanRayTracingApi? _rayTracingApi;
-    private readonly VulkanRhiRayTracing? _rayTracing;
+    private readonly VulkanRhiAccelerationStructures? _accelerationStructures;
 
     /// <inheritdoc/>
     public string AdapterName { get; }
+
+    /// <inheritdoc/>
+    public string ApiName => "Vulkan";
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Read from the adapter rather than assumed. It differs by an order of magnitude between vendors,
+    /// and a wrong one reports every stage's cost wrong by that factor while looking entirely plausible.
+    /// </remarks>
+    public double TimestampPeriodNanoseconds => _device.Selection.Properties.Limits.TimestampPeriod;
 
     /// <inheritdoc/>
     public RhiFeatures Features { get; }
@@ -96,11 +106,11 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
     public RhiLimits Limits { get; }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The traced world, fed through the interface -- see <see cref="VulkanRhiRayTracing"/>.
-    /// Null on an adapter that does not trace.
-    /// </remarks>
-    public IRhiRayTracing? RayTracing => _rayTracing;
+    /// <remarks>Null on an adapter that does not trace.</remarks>
+    public IRhiAccelerationStructures? AccelerationStructures => _accelerationStructures;
+
+    /// <summary>Gets the acceleration structures as this backend records them.</summary>
+    internal VulkanRhiAccelerationStructures? VulkanAccelerationStructures => _accelerationStructures;
 
     /// <inheritdoc/>
     public ulong LastSubmittedValue => _signalled;
@@ -129,16 +139,20 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
     {
         ThrowIfDisposed();
 
-        MemoryPropertyFlags memory = VulkanRhiTranslation.NeedsHostVisibleMemory(descriptor.Usage)
-            ? MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit
-            : MemoryPropertyFlags.DeviceLocalBit;
-
         // Asking for a build-input buffer on an adapter with no acceleration structures is not merely
         // useless, it is invalid -- the flag names an extension that is not enabled. Dropped here rather
         // than refused, because the caller is a mesh that does not know whether it will ever be traced.
         RhiBufferUsage usage = _device.Capabilities.AccelerationStructure
             ? descriptor.Usage
-            : descriptor.Usage & ~RhiBufferUsage.RayTracingInput;
+            : descriptor.Usage & ~(RhiBufferUsage.RayTracingInput | RhiBufferUsage.AccelerationStructureScratch);
+
+        // What the host writes and a build reads -- a scene's placements, the hit records -- goes where both
+        // reach fastest: device-local memory the host can map, where the adapter offers it.
+        MemoryPropertyFlags memory = !VulkanRhiTranslation.NeedsHostVisibleMemory(usage)
+            ? MemoryPropertyFlags.DeviceLocalBit
+            : usage.HasFlag(RhiBufferUsage.RayTracingInput) && !usage.HasFlag(RhiBufferUsage.MapRead)
+                ? _allocator.UploadMemoryProperties()
+                : MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit;
 
         VulkanBuffer buffer = new(
             _vk,
@@ -149,7 +163,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
             memory,
             persistentlyMapped: VulkanRhiTranslation.NeedsHostVisibleMemory(descriptor.Usage));
 
-        return new VulkanRhiBuffer(buffer, descriptor) { Owner = this };
+        return new VulkanRhiBuffer(buffer, descriptor) { Owner = this, ShaderHandle = usage.HasFlag(RhiBufferUsage.RayTracingInput) ? buffer.DeviceAddress : 0 };
     }
 
     /// <inheritdoc/>
@@ -521,8 +535,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         _disposed = true;
         _vk.DeviceWaitIdle(_device.Device);
 
-        _rayTracing?.Dispose();
-        _rayTracingApi?.Dispose();
+        _accelerationStructures?.Dispose();
         DestroySubmissionState();
         DestroyFrameSync();
 

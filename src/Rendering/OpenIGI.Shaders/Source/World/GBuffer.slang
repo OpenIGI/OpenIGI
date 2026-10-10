@@ -53,35 +53,35 @@ struct SurfaceSettings
 
 struct VertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
-    [[vk::location(5)]] float4 surfaceNormal;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
+    [[vk::location(5)]] float4 surfaceNormal : TEXCOORD5;
 
     // The mesh's PREVIOUS pose, per vertex. A static mesh reports its own buffer as this one, so its
     // delta is exactly zero and no blend of it can move a vertex; a CPU-skinned body keeps the pose
     // it was last given in a second buffer, which is what lets a frame be drawn BETWEEN two
     // simulation ticks rather than snapped onto the last one.
-    [[vk::location(6)]] float3 previousPosition;
-    [[vk::location(7)]] float3 previousNormal;
+    [[vk::location(6)]] float3 previousPosition : TEXCOORD6;
+    [[vk::location(7)]] float3 previousNormal : TEXCOORD7;
 };
 
 struct Varyings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 diffuseUv;
-    [[vk::location(1)]] float2 lightmapUv;
-    [[vk::location(2)]] float4 color;
-    [[vk::location(3)]] float3 worldNormal;
-    [[vk::location(4)]] float fade;
+    [[vk::location(0)]] float2 diffuseUv : TEXCOORD0;
+    [[vk::location(1)]] float2 lightmapUv : TEXCOORD1;
+    [[vk::location(2)]] float4 color : TEXCOORD2;
+    [[vk::location(3)]] float3 worldNormal : TEXCOORD3;
+    [[vk::location(4)]] float fade : TEXCOORD4;
 
     // A position in WORLD AXES, for the tangent frame the detail map is applied through. It is not
     // the world position -- the draw's translation is missing, because the push block carries a
     // rotation and no translation -- and it does not need to be: the frame is built from this
     // value's screen-space DERIVATIVES, and a constant offset over a primitive differs by zero.
-    [[vk::location(5)]] float3 surfacePosition;
+    [[vk::location(5)]] float3 surfacePosition : TEXCOORD5;
 };
 
 /// The four attachments the geometry pass writes.

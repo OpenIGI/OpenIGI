@@ -168,6 +168,10 @@ public enum ShaderSampleType
 /// emitted WGSL for the same reason the comparison flag is, and <see cref="ShaderSampleType.Float"/>
 /// for everything that is not a sampled texture.
 /// </param>
+/// <param name="Hlsl">
+/// Where the DXIL form reaches the same binding: its register class, register and space. Matched to this
+/// binding by name when the variant is compiled for Direct3D 12, and null where it is not.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
@@ -185,7 +189,43 @@ public sealed record ShaderBinding(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Arrayed = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Comparison = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    ShaderSampleType SampleType = ShaderSampleType.Float);
+    ShaderSampleType SampleType = ShaderSampleType.Float,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? Hlsl = null);
+
+/// <summary>Which register a resource binds in under HLSL: what Direct3D 12 calls a descriptor range's type.</summary>
+public enum ShaderHlslClass
+{
+    /// <summary>A <c>t</c> register: a shader resource view -- a sampled texture, a read-only buffer, a scene.</summary>
+    ShaderResource,
+
+    /// <summary>A <c>u</c> register: an unordered-access view -- a storage image or a read-write buffer.</summary>
+    UnorderedAccess,
+
+    /// <summary>A <c>b</c> register: a constant buffer.</summary>
+    ConstantBuffer,
+
+    /// <summary>An <c>s</c> register: a sampler.</summary>
+    Sampler,
+}
+
+/// <summary>Where a resource landed in the HLSL a DXIL form was compiled from.</summary>
+/// <param name="Class">Which kind of register.</param>
+/// <param name="Register">The register number.</param>
+/// <param name="Space">The register space.</param>
+/// <param name="Stride">
+/// The element size of a structured buffer, which a Direct3D 12 view states and the shader's
+/// <c>StructuredBuffer&lt;T&gt;</c> must agree with; nought for anything else, a raw buffer included.
+/// </param>
+/// <remarks>
+/// Slang assigns HLSL registers itself and ignores the Vulkan binding attributes, so the numbers here are
+/// not the SPIR-V ones. A Direct3D 12 root signature is built from these, one range per binding, so the
+/// order a bind group lists its entries in is free of them.
+/// </remarks>
+public sealed record ShaderHlslRegister(
+    ShaderHlslClass Class,
+    int Register,
+    int Space = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int Stride = 0);
 
 /// <summary>How a storage binding may be reached.</summary>
 /// <remarks>
@@ -242,18 +282,37 @@ public sealed record ShaderUniformBlock(
 /// <param name="Size">The block's size in bytes.</param>
 /// <param name="Group">The bind group the WGSL target places it in.</param>
 /// <param name="Binding">The binding index within that group on the WGSL target.</param>
+/// <param name="Hlsl">The constant-buffer register the DXIL form reads it from, as root constants.</param>
 /// <remarks>
 /// The two targets do not lay the block out identically: WGSL receives it as a uniform buffer and so
 /// uses std140, while the SPIR-V push block is std430. The two agree for a block of vectors and
 /// matrices and disagree the moment one holds a bare three-component field or an array, so a block
 /// that grows one must be checked rather than assumed.
 /// </remarks>
-public sealed record ShaderPushBlock(string Name, int Size, int Group, int Binding);
+public sealed record ShaderPushBlock(
+    string Name,
+    int Size,
+    int Group,
+    int Binding,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? Hlsl = null);
 
 /// <summary>A constant fixed when a pipeline is created rather than when the module is compiled.</summary>
 /// <param name="Name">The name the Slang source declares.</param>
 /// <param name="Id">The identifier both targets use: a SPIR-V <c>SpecId</c>, a WGSL <c>@id</c>.</param>
-public sealed record ShaderSpecializationConstant(string Name, int Id);
+/// <param name="Default">
+/// The value the source declares, as thirty-two bits: what a pipeline that does not supply the constant
+/// reads. Written down for Direct3D 12, which fills the constants itself; the other targets carry it.
+/// </param>
+/// <param name="HlslOffset">
+/// Where it sits in the constant buffer the DXIL form reads it from, in bytes. HLSL has no specialisation
+/// constants: Slang gathers them into one constant buffer, <see cref="ShaderReflection.HlslConstants"/>,
+/// which the Direct3D 12 backend fills per pipeline.
+/// </param>
+public sealed record ShaderSpecializationConstant(
+    string Name,
+    int Id,
+    uint Default = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? HlslOffset = null);
 
 /// <summary>One entry point of a module.</summary>
 /// <param name="Name">The function name, which is what a pipeline names to select it.</param>
@@ -272,6 +331,10 @@ public sealed record ShaderEntryPoint(string Name, ShaderStage Stage, IReadOnlyL
 /// The field table of a block the module named <c>Globals</c>, for a host that sets its parameters one
 /// at a time by name, or <see langword="null"/> where the module declares no such block.
 /// </param>
+/// <param name="HlslConstants">
+/// The constant-buffer register the DXIL form reads its specialisation constants from, or
+/// <see langword="null"/> where it has none or no DXIL form.
+/// </param>
 /// <remarks>
 /// Written by <c>OpenIGI.Tools.ShaderBuild</c> from Slang's own reflection and committed beside the
 /// compiled output, so nothing at runtime parses SPIR-V or WGSL to find out how to bind a shader.
@@ -283,7 +346,8 @@ public sealed record ShaderReflection(
     IReadOnlyList<ShaderBinding> Bindings,
     ShaderPushBlock? PushBlock,
     IReadOnlyList<ShaderSpecializationConstant> SpecializationConstants,
-    ShaderUniformBlock? Globals = null)
+    ShaderUniformBlock? Globals = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShaderHlslRegister? HlslConstants = null)
 {
     /// <summary>Finds the entry point for a stage.</summary>
     /// <param name="stage">The stage wanted.</param>

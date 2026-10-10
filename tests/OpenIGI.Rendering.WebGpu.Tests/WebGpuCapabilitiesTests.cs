@@ -20,7 +20,8 @@ public sealed class WebGpuCapabilitiesTests
     {
         RhiFeatures features = WebGpuCapabilities.Features([], rayQuery: false);
 
-        Assert.Equal(RhiFeatures.None, features);
+        // Strict sample types are the API's rule, not an adapter feature: WebGPU always has them.
+        Assert.Equal(RhiFeatures.None with { StrictTextureSampleTypes = true }, features);
     }
 
     [Fact]
@@ -52,7 +53,7 @@ public sealed class WebGpuCapabilitiesTests
             [WGPUFeatureName.ShaderF16, WGPUFeatureName.Subgroups, WGPUFeatureName.ClipDistances],
             rayQuery: false);
 
-        Assert.Equal(RhiFeatures.None, features);
+        Assert.Equal(RhiFeatures.None with { StrictTextureSampleTypes = true }, features);
     }
 
     [Fact]

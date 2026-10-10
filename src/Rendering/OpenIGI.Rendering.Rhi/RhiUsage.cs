@@ -53,10 +53,15 @@ public enum RhiBufferUsage
     /// The one use here that only one backend can honour, and it is stated in the shared vocabulary
     /// anyway: a mesh does not know whether it will be traced, a buffer cannot gain a use later, and a
     /// device that cannot trace can simply ignore the request. Vulkan turns it into the build-input,
-    /// device-address and storage flags where the adapter offers acceleration structures; WebGPU drops
-    /// it, having nothing to build.
+    /// device-address and storage flags where the adapter offers acceleration structures, and Direct3D 12
+    /// into a raw shader view; WebGPU drops it, having nothing to build. A buffer created with it has a
+    /// <see cref="IRhiBuffer.ShaderHandle"/>.
     /// </remarks>
     RayTracingInput = 1 << 10,
+
+    /// <summary>May be the scratch memory an acceleration-structure build works in.</summary>
+    /// <remarks>Device-local and never read by the host. Like <see cref="RayTracingInput"/>, dropped where nothing is built.</remarks>
+    AccelerationStructureScratch = 1 << 11,
 }
 
 /// <summary>

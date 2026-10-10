@@ -18,6 +18,8 @@ public sealed class LayeringTests
     private static readonly string[] Backends =
     [
         "OpenIGI.Rendering.Vulkan",
+        "OpenIGI.Rendering.D3D12",
+        "OpenIGI.Rendering.Streamline",
         "OpenIGI.Audio.OpenAL",
         "OpenIGI.Platform.Desktop",
     ];

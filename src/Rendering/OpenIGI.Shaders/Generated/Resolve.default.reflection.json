@@ -22,7 +22,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uSceneSampler",
@@ -32,7 +37,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uBloom",
@@ -42,7 +52,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uBloomSampler",
@@ -52,7 +67,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uColourLut",
@@ -62,7 +82,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uColourLutSampler",
@@ -72,24 +97,43 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
     }
   ],
   "pushBlock": {
     "name": "resolve",
     "size": 80,
     "group": 3,
-    "binding": 0
+    "binding": 0,
+    "hlsl": {
+      "class": "ConstantBuffer",
+      "register": 1,
+      "space": 0
+    }
   },
   "specializationConstants": [
     {
       "name": "cClipYDown",
-      "id": 64
+      "id": 64,
+      "default": 1,
+      "hlslOffset": 0
     },
     {
       "name": "cTargetEncodes",
-      "id": 65
+      "id": 65,
+      "default": 0,
+      "hlslOffset": 4
     }
   ],
-  "globals": null
+  "globals": null,
+  "hlslConstants": {
+    "class": "ConstantBuffer",
+    "register": 0,
+    "space": 0
+  }
 }

@@ -36,7 +36,7 @@ public sealed class RetailIgi2WorldBuilderTests
     [RequiresTitleDataFact("igi2")]
     public void Every_shipped_level_walks_into_a_scene_through_the_seam()
     {
-        ITitleWorldBuilder builder = Igi2WorldBuilder.Instance;
+        Igi2WorldBuilder builder = Igi2WorldBuilder.Instance;
         int levels = 0;
         int placements = 0;
         int lightmapped = 0;

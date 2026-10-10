@@ -21,7 +21,12 @@
       "dimensions": 3,
       "storageFormat": "R8Unorm",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadWrite"
+      "storageAccess": "ReadWrite",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uValues",
@@ -31,7 +36,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadWrite"
+      "storageAccess": "ReadWrite",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 1,
+        "space": 0,
+        "stride": 4
+      }
     },
     {
       "name": "g",
@@ -41,7 +52,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,

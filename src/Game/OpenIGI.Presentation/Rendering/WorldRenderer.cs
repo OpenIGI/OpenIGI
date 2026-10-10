@@ -1037,7 +1037,7 @@ public sealed class WorldRenderer : IWorldPresenter
         }
 
         // EVERY placement, however far or small, every frame. The traced world keeps a static placement
-        // only for as long as it goes on being offered (VulkanWorldScene), which is what lets an object
+        // only for as long as it goes on being offered (the traced WorldScene), which is what lets an object
         // that moves leave the structure at once instead of leaving a trail -- so anything not offered
         // here disappears from every ray. It used to be culled at three hundred metres and a degree of
         // arc; that rule only works for a scene that caches every static instance up front and culls

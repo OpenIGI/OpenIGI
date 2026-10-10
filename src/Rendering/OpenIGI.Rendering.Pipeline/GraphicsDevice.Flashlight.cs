@@ -64,7 +64,7 @@ public sealed partial class GraphicsDevice
                 new FlashlightShadowFrame(
                     traced ? TracedWorld!.WorldScene : null,
                     traced ? TracedWorld!.CutoutMasks : null,
-                    traced ? TracedWorld!.HitRecordAddress : 0UL,
+                    traced ? TracedWorld!.HitRecordHandle : 0UL,
                     _cameraPosition,
                     _viewToWorld,
                     _unprojection,

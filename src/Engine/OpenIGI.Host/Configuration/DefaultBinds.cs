@@ -36,7 +36,7 @@ public static class DefaultBinds
         ("f8", "toggle r_overrides"),
         ("f9", "toggle r_pbr"),
 
-        // Rebuilds the game over the other graphics API -- Vulkan or WebGPU -- and puts the player back
+        // Rebuilds the game over the next graphics API -- Direct3D 12, Vulkan, WebGPU -- and puts the player back
         // where they stood, so the two can be compared on one view. A command, not a setting: the API is
         // chosen by OPENIGI_RENDERER when the game starts, and nothing is written to settings.cfg.
         ("f10", "r_switch_renderer"),

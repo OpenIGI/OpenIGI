@@ -195,7 +195,10 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         // What frame generation reads when the image is presented goes back into the layout its tag named,
         // whatever the passes after the tag did with it.
-        _streamline?.PrepareForPresent(transition);
+        if (_streamline is { } tagged && _streamlineAdapter is { } adapter)
+        {
+            tagged.PrepareForPresent(texture => adapter.RestoreForPresent(transition, texture));
+        }
 
         if (_frameTextures[_frameSlot] is { } target)
         {

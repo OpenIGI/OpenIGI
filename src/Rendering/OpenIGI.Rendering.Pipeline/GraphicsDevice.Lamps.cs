@@ -145,7 +145,7 @@ public sealed partial class GraphicsDevice
                     LampFrameIndex,
                     LampFilters,
                     TracedWorld.CutoutMasks,
-                    TracedWorld.HitRecordAddress,
+                    TracedWorld.HitRecordHandle,
                     MinimumVisible: minimumVisibleLamp,
                     SunVisibility: sunMask,
                     SunDirection: sunDirection,

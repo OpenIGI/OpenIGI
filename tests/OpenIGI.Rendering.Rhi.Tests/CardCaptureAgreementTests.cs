@@ -3,15 +3,13 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Pipeline.SurfaceCache;
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Rendering.Vulkan.Rhi;
-using OpenIGI.Rendering.WebGpu;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace OpenIGI.Rendering.Rhi.Tests;
 
 /// <summary>
-/// That the card capture — four targets, its own depth, a page at a time — runs the same on both.
+/// That the card capture — four targets, its own depth, a page at a time — runs the same on every backend.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,26 +28,18 @@ public sealed class CardCaptureAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 32;
 
-    [BothBackendsFact]
-    public void Both_backends_capture_the_same_page()
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_captures_the_same_page_as_the_reference(string backend)
     {
-        byte[]? vulkan = TryOnVulkan(out string? vulkanReason);
-        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason);
-
-        if (vulkan is null || webgpu is null)
-        {
-            Assert.Fail(
-                "Both backends are needed to compare them, and one was missing: "
-                + (vulkan is null ? vulkanReason : webgpuReason));
-
-            return;
-        }
+        byte[] vulkan = CaptureOn(RhiBackends.Reference);
+        byte[] other = CaptureOn(backend);
 
         int differing = 0;
 
         for (int i = 0; i < vulkan.Length; i++)
         {
-            if (vulkan[i] != webgpu[i])
+            if (vulkan[i] != other[i])
             {
                 differing++;
             }
@@ -57,7 +47,7 @@ public sealed class CardCaptureAgreementTests(ITestOutputHelper output)
 
         output.WriteLine($"{differing} of {vulkan.Length} bytes differ");
         output.WriteLine($"vulkan page centre {Describe(vulkan)}");
-        output.WriteLine($"webgpu page centre {Describe(webgpu)}");
+        output.WriteLine($"{backend} page centre {Describe(other)}");
 
         Assert.Equal(0, differing);
 
@@ -65,44 +55,17 @@ public sealed class CardCaptureAgreementTests(ITestOutputHelper output)
         // cleared to nought, and the draw is the only thing that could have raised it.
         Assert.True(
             vulkan[Centre + 3] > 0,
-            "Nothing was covered, so the two agreed about a page nothing drew into.");
+            "Nothing was covered, so the backends agreed about a page nothing drew into.");
 
         // And the gutter outside the page is still empty, which is what the scissor is for: a model
         // drawn wider than its own card must not reach the page beside it.
         Assert.Equal(0, vulkan[3]);
     }
 
-    private static byte[]? TryOnVulkan(out string? reason)
+    private static byte[] CaptureOn(string backend)
     {
-        reason = null;
-
-        try
-        {
-            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
-            return Capture(vulkan.Device);
-        }
-        catch (Exception error)
-        {
-            reason = $"No Vulkan device here: {error.Message}";
-            return null;
-        }
-    }
-
-    private static byte[]? TryOnWebGpu(out string? reason)
-    {
-        reason = null;
-
-        try
-        {
-            using WebGpuRhiDevice device = WebGpuRhiDevice.Create();
-            device.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
-            return Capture(device);
-        }
-        catch (Exception error)
-        {
-            reason = $"No WebGPU device here: {error.Message}";
-            return null;
-        }
+        using RhiBackendHost host = RhiBackends.Open(backend, Size);
+        return Capture(host.Device);
     }
 
     /// <summary>Captures one page, the way a level's load does, and brings the albedo back.</summary>

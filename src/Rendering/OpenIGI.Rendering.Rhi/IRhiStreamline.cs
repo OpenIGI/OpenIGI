@@ -5,7 +5,7 @@ namespace OpenIGI.Rendering.Rhi;
 /// <summary>NVIDIA's Streamline features, where the device runs them: DLSS, ray reconstruction, frame generation, Reflex.</summary>
 /// <remarks>
 /// <para>
-/// A capability interface, like <see cref="IRhiRayTracing"/>: only a Vulkan device that started the
+/// A capability interface, like <see cref="IRhiAccelerationStructures"/>: only a Vulkan device that started the
 /// optional Streamline runtime has one, and everything that uses it asks and falls back to the engine's
 /// own path when the answer is null. It speaks RHI types only — the handles, the formats, the layouts and
 /// the command buffer stay inside the backend — so the shared pipeline drives it without knowing which

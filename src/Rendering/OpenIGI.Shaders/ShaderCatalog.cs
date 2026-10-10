@@ -86,6 +86,18 @@ public static class ShaderCatalog
     /// <returns>The reflection.</returns>
     public static ShaderReflection GetReflection(ShaderModuleId id) => GetReflection(id, ShaderVariant.Default);
 
+    /// <summary>The name a stage's compiled form is filed under, where a target compiles each stage apart.</summary>
+    /// <param name="stage">The stage.</param>
+    /// <returns><c>vertex</c>, <c>fragment</c> or <c>compute</c>.</returns>
+    /// <remarks>DXIL is compiled one entry point to a blob: <c>Generated/{Id}.{variant}.{stage}.dxil</c>.</remarks>
+    public static string StageName(ShaderStage stage) => stage switch
+    {
+        ShaderStage.Vertex => "vertex",
+        ShaderStage.Fragment => "fragment",
+        ShaderStage.Compute => "compute",
+        _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, null),
+    };
+
     /// <summary>Builds the resource name one generated artefact is embedded under.</summary>
     /// <param name="id">The module.</param>
     /// <param name="variant">The variant.</param>

@@ -73,7 +73,7 @@ internal sealed partial class GameHost
     private void RegisterRendererSwitchCommand(ConsoleSystem console) =>
         console.Commands.Add(
             "r_switch_renderer",
-            "Rebuilds the game over the other graphics API -- Vulkan or WebGPU -- in the same place.",
+            "Rebuilds the game over the next graphics API -- Direct3D 12, Vulkan, WebGPU -- in the same place.",
             context =>
             {
                 if (_switchPending is not null)
