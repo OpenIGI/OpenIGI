@@ -9,7 +9,7 @@ using OpenIGI.Game.Igi2.Weapons;
 namespace OpenIGI.Game.Igi2.Soldiers;
 
 /// <content>How a soldier is struck: its collision, the zone a bullet finds, and the damage it takes.</content>
-public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTarget, IIgi2WeaponCollisionTarget, IIgi2ExplosionTarget
+public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2WeaponCollisionTarget, IIgi2ExplosionTarget
 {
     /// <summary>How far a blast at full share tilts a soldier's view, <c>0.02617994</c> radians.</summary>
     private const float SoldierShakeAngle = 0.02617994f;
@@ -18,19 +18,6 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
 
     /// <summary>The lines a soldier's mind says when it is hit, one drawn.</summary>
     public static IReadOnlyList<string> HitLines { get; } = ["ai_death_1", "ai_death_2", "ai_death_3", "ai_death_4"];
-
-    /// <summary>How far below which a hit by the groin's mark is to the groin, <c>614.4</c>, a double constant.</summary>
-    public const double GroinReach = 614.4;
-
-    private Igi2BodyPose? _pose;
-    private Igi2BoneBuffer? _bones;
-    private bool _isPoseStale = true;
-
-    /// <summary>Gets or sets what the soldier's model gives its body: bone names, collision, damage zones.</summary>
-    public Igi2SoldierModel? Model { get; set; }
-
-    /// <summary>Gets or sets the soldier's collider in the level's collision world, or <see langword="null"/> when not placed in one.</summary>
-    public Igi2BoneCollider? Collider { get; set; }
 
     /// <summary>Gets or sets which way the killing shot travelled, <c>Human_s.tDeathDirection</c> (<c>+0x7EC</c>); a death normalises it.</summary>
     public Vector3f DeathDirection { get; set; }
@@ -43,45 +30,6 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
 
     /// <summary>Gets or sets a value indicating whether the soldier has played its long flinch, <c>isLongHitAnimPlayed</c> (<c>+0xBDC</c>).</summary>
     public bool IsLongHitAnimPlayed { get; set; }
-
-    /// <summary>
-    /// Gets the pose the body stands in, which its collision is traced against and which it is drawn in: the bones brought up to
-    /// date when the clips have moved since (<c>BoneDynCubeObj_UpdateHierarchy</c>, <c>igi2 0x564B50</c>, while <c>isTouched</c>).
-    /// </summary>
-    /// <returns>The pose, or <see langword="null"/> when the body has no rig.</returns>
-    /// <remarks>
-    /// The bones persist from one update to the next, as <c>patBone</c> does. The animation writes the root translation too, so the
-    /// body's <see cref="Igi2Human.RootTranslation"/> follows it.
-    /// </remarks>
-    public Igi2BodyPose? BodyPose()
-    {
-        if (_isPoseStale)
-        {
-            _pose = null;
-            if (Animation is Igi2HumanAnimation { Rig: { } rig } animation)
-            {
-                if (_bones is null || _bones.BoneCount != rig.BoneCount)
-                {
-                    _bones = new Igi2BoneBuffer(rig.BoneCount) { Root = RootTranslation };
-                }
-
-                animation.Pose(_bones, this);
-                RootTranslation = _bones.Root;
-                (Formats.Animation.Igi2AnimationClip? clip, int time) = animation.AttachSource;
-                _pose = new Igi2BodyPose(_bones.ToPose(rig.Parents), clip, time);
-            }
-
-            _isPoseStale = false;
-        }
-
-        return _pose;
-    }
-
-    /// <inheritdoc/>
-    public BonePose? CurrentPose() => BodyPose()?.Pose;
-
-    /// <inheritdoc/>
-    public Igi2BoneMesh? BoneMesh(int level) => Model?.Mesh(level);
 
     /// <summary>
     /// Readies the soldier's damage after load, <c>HumanSoldier_UpdateInternalDataAfterLoadHandler</c> (<c>igi2 0x4EB190</c>): a
@@ -121,7 +69,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
     /// <remarks>
     /// <para>
     /// A dead soldier takes nothing. A live one takes the hit unless its mind keeps harm off it or its own side fired; then the zone
-    /// is found (<see cref="DamagePartOf"/>) and the damage is the hit's times the zone's multiplier, except a knife's, and a head or
+    /// is found (<see cref="Igi2Human.DamagePartOf"/>) and the damage is the hit's times the zone's multiplier, except a knife's, and a head or
     /// groin hit where the mind keeps instant death off. The zone takes it, the total takes it, and it counts toward a flinch.
     /// </para>
     /// <para>
@@ -302,57 +250,6 @@ public sealed partial class Igi2HumanSoldier : IIgi2BonedBody, IIgi2WeaponHitTar
         SendAiEvent(cry);
         Mind?.Perceive(this, cry);
     }
-
-    /// <summary>
-    /// The zone a hit lands on, <c>HumanDamage_GetDamagePartFromWeaponHit</c> (<c>igi2 0x469980</c>): the struck bone's zone; a hit
-    /// to the upper body is to the back or the chest when the shot came mostly from behind or the front; and any hit taken from
-    /// the front within <see cref="GroinReach"/> of the groin's mark is to the groin.
-    /// </summary>
-    /// <param name="hit">The hit.</param>
-    /// <returns>The zone.</returns>
-    public Igi2DamagePart DamagePartOf(in Igi2WeaponHit hit)
-    {
-        Matrix3f o = Orientation;
-        Vector3f shot = hit.ShotVector;
-        Fpu bx = -(Fpu)shot.X, by = -(Fpu)shot.Y, bz = -(Fpu)shot.Z;
-        float across = (((bz * o.M31) + (by * o.M21)) + (bx * o.M11)).F;
-        float ahead = (((bz * o.M32) + (by * o.M22)) + (bx * o.M12)).F;
-
-        int bone = hit.Intersection.Sector;
-        IReadOnlyList<Igi2DamagePart>? parts = Model?.DamageParts;
-        Igi2DamagePart part = parts is not null && (uint)bone < (uint)parts.Count ? parts[bone] : Igi2DamagePart.RightFoot;
-        if (part == Igi2DamagePart.UpperBody)
-        {
-            if (ahead <= 0f && Math.Abs(ahead) > Math.Abs(across))
-            {
-                part = Igi2DamagePart.Back;
-            }
-
-            if (ahead < 0f)
-            {
-                return part;
-            }
-
-            if (Math.Abs(ahead) > Math.Abs(across))
-            {
-                part = Igi2DamagePart.Chest;
-            }
-        }
-
-        if (ahead < 0f || Model is not { } model)
-        {
-            return part;
-        }
-
-        Vector3d mark = model.GroinPosition(CurrentPose(), o, Position);
-        Vector3d struck = hit.Intersection.Position;
-        Fpu dx = (Fpu)struck.X - mark.X, dy = (Fpu)struck.Y - mark.Y, dz = (Fpu)struck.Z - mark.Z;
-        Fpu reach = Fpu.Sqrt(((dy * dy) + (dz * dz)) + (dx * dx));
-        return reach.Value < GroinReach ? Igi2DamagePart.Groin : part;
-    }
-
-    /// <summary>The body's pose is to be taken again: its clips have stepped or changed.</summary>
-    internal void TouchPose() => _isPoseStale = true;
 
     /// <summary>
     /// The mind's line on a hit, <c>HumanAI_PlayRandomSoundAtPosition</c> (<c>igi2 0x464680</c>): one drawn whatever then happens,

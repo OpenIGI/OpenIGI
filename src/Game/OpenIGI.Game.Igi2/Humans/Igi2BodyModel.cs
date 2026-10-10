@@ -3,12 +3,10 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Igi2.Humans;
+namespace OpenIGI.Game.Igi2.Humans;
 
-namespace OpenIGI.Game.Igi2.Soldiers;
-
-/// <summary>What a soldier's model gives its body: its bones' names, its collision levels, each bone's damage zone and the groin's mark.</summary>
-public sealed class Igi2SoldierModel
+/// <summary>What a human's model gives its body: its bones' names, its collision levels, each bone's damage zone and the groin's mark.</summary>
+public sealed class Igi2BodyModel
 {
     /// <summary>The magic vertex a hit is measured against for the groin, <c>1</c>.</summary>
     public const int GroinMagicVertex = 1;
@@ -37,7 +35,7 @@ public sealed class Igi2SoldierModel
 
     private readonly Igi2BoneMesh?[]? _meshes;
 
-    private Igi2SoldierModel(string name, IReadOnlyList<string> boneNames, Igi2BoneMesh?[]? meshes, Igi2DamagePart[] parts, Vector3f? groin, int groinBone)
+    private Igi2BodyModel(string name, IReadOnlyList<string> boneNames, Igi2BoneMesh?[]? meshes, Igi2DamagePart[] parts, Vector3f? groin, int groinBone)
     {
         Name = name;
         BoneNames = boneNames;
@@ -87,12 +85,12 @@ public sealed class Igi2SoldierModel
     /// <param name="name">The model's name.</param>
     /// <param name="model">The model, or <see langword="null"/> when it is missing.</param>
     /// <returns>The model's data; empty when it is missing.</returns>
-    public static Igi2SoldierModel From(string name, MefModel? model)
+    public static Igi2BodyModel From(string name, MefModel? model)
     {
         ArgumentNullException.ThrowIfNull(name);
         if (model is null)
         {
-            return new Igi2SoldierModel(name, [], null, [], null, 0);
+            return new Igi2BodyModel(name, [], null, [], null, 0);
         }
 
         IReadOnlyList<string> names = model.BoneNames;
@@ -124,7 +122,7 @@ public sealed class Igi2SoldierModel
             groinBone = markBone;
         }
 
-        return new Igi2SoldierModel(name, names, Igi2BoneMesh.Of(model), parts, groin, groinBone);
+        return new Igi2BodyModel(name, names, Igi2BoneMesh.Of(model), parts, groin, groinBone);
     }
 
     /// <summary>

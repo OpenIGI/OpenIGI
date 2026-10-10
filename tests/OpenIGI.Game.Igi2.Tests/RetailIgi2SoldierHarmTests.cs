@@ -128,7 +128,7 @@ public sealed class RetailIgi2SoldierHarmTests
         (RetailIgi2Mission1 m, _) = Spawn();
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
-        Igi2SoldierModel model = body.Model!;
+        Igi2BodyModel model = body.Model!;
         Assert.Null(model.Groin);
         int torso = Enumerable.Range(0, model.DamageParts.Count).First(b => model.DamageParts[b] == Igi2DamagePart.UpperBody);
         Matrix3f o = body.Orientation;

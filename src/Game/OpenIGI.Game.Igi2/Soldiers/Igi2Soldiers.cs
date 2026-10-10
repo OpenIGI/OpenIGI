@@ -63,7 +63,7 @@ public sealed class Igi2Soldiers
     /// <remarks>
     /// Each stands where the level puts it, turned by its <c>Gamma</c> and upright; its weapon script arms it. Its task runs it
     /// from then on (<see cref="Igi2HumanSoldierTask.Body"/>). Every soldier gets a collider over its model's posed mesh
-    /// (<see cref="Igi2HumanSoldier.Collider"/>), and they share one death clip counter.
+    /// (<see cref="Igi2Human.Collider"/>), and they share one death clip counter.
     /// </remarks>
     public static Igi2Soldiers Spawn(
         GameTask levelRoot,
@@ -76,7 +76,7 @@ public sealed class Igi2Soldiers
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(random);
         List<Igi2HumanSoldier> bodies = [];
-        Dictionary<string, Igi2SoldierModel> looks = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, Igi2BodyModel> looks = new(StringComparer.OrdinalIgnoreCase);
         Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(levelRoot).OfType<Igi2HumanSoldierTask>())
         {
@@ -110,9 +110,9 @@ public sealed class Igi2Soldiers
                 }
             }
 
-            if (!looks.TryGetValue(task.Model, out Igi2SoldierModel? look))
+            if (!looks.TryGetValue(task.Model, out Igi2BodyModel? look))
             {
-                look = Igi2SoldierModel.From(task.Model, model);
+                look = Igi2BodyModel.From(task.Model, model);
                 looks[task.Model] = look;
             }
 

@@ -29,6 +29,9 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
     /// <summary>The most the aim's heading turns the body, sixty degrees, <c>1.0471976</c>.</summary>
     public const float AimGammaLimit = 1.0471976f;
 
+    /// <inheritdoc/>
+    protected override IIgi2BoneCallbacks? BoneCallbacks => this;
+
     /// <summary>Gets or sets the aim's heading, <c>vAimGamma</c> (<c>+0xBF4</c>).</summary>
     public float AimGamma { get; set; }
 
