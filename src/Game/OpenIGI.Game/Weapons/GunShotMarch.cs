@@ -44,6 +44,47 @@ public sealed class GunShotRound
     public Vector3d Origin { get; init; }
 }
 
+/// <summary>One visible tracer a gun's <c>GunShot</c> task keeps: a 200-byte slot <c>0x47C4C0</c> fills.</summary>
+/// <remarks>
+/// <para>
+/// A tracer is one PASS of a round's march, muzzle or step-off to contact or the range's end, filed when the
+/// march draws one. It lives until the task's render has drawn it once: <c>0x47ABD0</c> zeroes its life after
+/// the line, and <c>0x47C560</c> frees a zero life on the task's next tick. The thirty ticks it is filed with
+/// only matter while nothing draws it.
+/// </para>
+/// <para>
+/// The two distances are cumulative over the round's DRAWN passes only (the march's running total grows only
+/// when it files one), and both are taken over the round's whole range, which is what the colour and the
+/// brightness run along.
+/// </para>
+/// </remarks>
+public sealed class GunShotTracer
+{
+    /// <summary>Gets where the pass started, in world units (<c>+0</c>).</summary>
+    public required Vector3d Start { get; init; }
+
+    /// <summary>Gets where the pass ended, in world units (<c>+24</c>): the contact, or the end of the range.</summary>
+    public required Vector3d End { get; init; }
+
+    /// <summary>Gets how far along the round's drawn passes the start lies, in world units (<c>+56</c>).</summary>
+    public float StartDistance { get; init; }
+
+    /// <summary>Gets how far along the round's drawn passes the end lies, in world units (<c>+60</c>).</summary>
+    public float EndDistance { get; init; }
+
+    /// <summary>Gets the round's whole range, in world units (<c>+64</c>).</summary>
+    public float Range { get; init; }
+
+    /// <summary>Gets the ammunition, whose two colours the line runs between.</summary>
+    public required AmmoType Ammunition { get; init; }
+
+    /// <summary>Gets whoever fired the round, so a presentation can find the gun it left.</summary>
+    public object? Shooter { get; init; }
+
+    /// <summary>Gets or sets the ticks left (<c>+52</c>); the render sets it to zero once it has drawn the line.</summary>
+    public int Life { get; set; }
+}
+
 /// <summary>The nearest contact one pass of a round's cast returned: <c>0x4CC2A0</c>'s record.</summary>
 /// <param name="Position">The contact point (<c>+8</c>).</param>
 /// <param name="Normal">The struck face's normal (<c>+56</c>).</param>
@@ -105,6 +146,11 @@ public interface IGunShotWorld
     /// <param name="round">The round.</param>
     /// <param name="record">The impact.</param>
     void Effect(GunShotRound round, in GunShotRecord record);
+
+    /// <summary>The ammunition a weapon fires -- the gun's <c>+300</c>, looked up by calibre (<c>0x4789C0</c>).</summary>
+    /// <param name="weapon">The weapon.</param>
+    /// <returns>The ammunition, or <see langword="null"/> when the table has none for its calibre.</returns>
+    AmmoType? AmmunitionOf(WeaponType weapon);
 }
 
 /// <summary>
@@ -201,14 +247,30 @@ public sealed class GunShotTask
     /// <summary>How far past a contact the next pass starts, in world units.</summary>
     public const float StepOffUnits = GunShotBallistics.PenetrationStepOffUnits;
 
+    /// <summary>The tracer slots one task holds (<c>0x47C4C0</c>'s loop over five 200-byte slots).</summary>
+    public const int TracerCapacity = 5;
+
     private readonly List<GunShotRound> _rounds = [];
     private readonly List<GunShotRecord> _records = [];
+    private readonly List<GunShotTracer> _tracers = [];
+
+    // The passes left before the next one draws a tracer (+152): ten at creation (0x47B560), ten again after each.
+    private int _tracerCountdown = GunShotBallistics.TracerInterval;
+
+    /// <summary>
+    /// Diagnostics: told of every tracer a march files, before it takes a slot -- so also of one that finds all five
+    /// taken and is dropped, as every call of <c>0x47C4C0</c> is.
+    /// </summary>
+    public static Action<GunShotTask, GunShotTracer>? TracerFiled { get; set; }
 
     /// <summary>Diagnostics: told of every pass's cast -- the round, the segment, and the contact or none.</summary>
     public static Action<GunShotRound, Vector3d, Vector3d, float, GunShotContact?>? PassCast { get; set; }
 
     /// <summary>Gets the rounds waiting for the next march.</summary>
     public IReadOnlyList<GunShotRound> Rounds => _rounds;
+
+    /// <summary>Gets the tracers waiting to be drawn, or drawn and waiting for the next tick to free them.</summary>
+    public IReadOnlyList<GunShotTracer> Tracers => _tracers;
 
     /// <summary>Gets how many rounds were ever offered, kept or not (<c>+144</c>).</summary>
     public int Fired { get; private set; }
@@ -262,6 +324,22 @@ public sealed class GunShotTask
         }
 
         _rounds.Clear();
+        AgeTracers();
+    }
+
+    /// <summary>Frees the tracers the render has drawn and counts the rest down -- <c>0x47C560</c>.</summary>
+    /// <remarks>
+    /// The task's per-tick (<c>0x47B690</c>) runs this after the march whether or not there was anything to march,
+    /// so a caller that skips an empty task's march still calls this. A drawn tracer's life is zero; one nothing
+    /// drew is freed when its thirty ticks run out.
+    /// </remarks>
+    public void AgeTracers()
+    {
+        _tracers.RemoveAll(static tracer => tracer.Life == 0);
+        foreach (GunShotTracer tracer in _tracers)
+        {
+            tracer.Life--;
+        }
     }
 
     /// <summary>One round's march and its effect pass -- <c>0x47B750</c> for one slot.</summary>
@@ -272,6 +350,11 @@ public sealed class GunShotTask
         float remaining = round.Remaining;
         Vector3f direction = round.Direction;
         Vector3d position = round.Position;
+
+        // The tracer reads the gun's ammunition (0x47C14D: its +300's flag at +32), and the drawn passes' running
+        // distance starts at zero for each round.
+        AmmoType? tracerAmmunition = world.AmmunitionOf(round.Weapon) is { DrawsTracer: true } drawn ? drawn : null;
+        float drawnDistance = 0f;
 
         while (remaining > 0f)
         {
@@ -290,6 +373,7 @@ public sealed class GunShotTask
             {
                 remaining = 0f;
                 round.Penetrated = penetrated;
+                FileTracer(tracerAmmunition, round, start, end, penetrated, ref drawnDistance);
                 break;
             }
 
@@ -383,6 +467,7 @@ public sealed class GunShotTask
                 stepOffY + contact.Position.Y,
                 stepOffZ + contact.Position.Z);
             round.Penetrated = penetrated;
+            FileTracer(tracerAmmunition, round, start, contact.Position, penetrated, ref drawnDistance);
         }
 
         round.Position = position;
@@ -414,6 +499,62 @@ public sealed class GunShotTask
         }
 
         _records.Clear();
+    }
+
+    // 0x47C13A: after every pass, whether it is drawn. A deflected round, or a pass the surface's bite let through,
+    // draws every time; otherwise one pass in eleven -- the counter draws at zero, and filing one puts it back at
+    // ten. A bite that passes the bare level shell still stops the round, and still draws.
+    private void FileTracer(
+        AmmoType? ammunition,
+        GunShotRound round,
+        Vector3d start,
+        Vector3d end,
+        bool penetrated,
+        ref float drawnDistance)
+    {
+        if (ammunition is null)
+        {
+            return;
+        }
+
+        if (_tracerCountdown > 0 && !round.Deflected && !penetrated)
+        {
+            _tracerCountdown--;
+            return;
+        }
+
+        // 0x47C17E: the pass's length, the X and Y differences narrowed to floats first.
+        float dx = (float)(start.X - end.X);
+        float dy = (float)(start.Y - end.Y);
+        double dz = start.Z - end.Z;
+        double length = Math.Sqrt((dx * (double)dx) + (dy * (double)dy) + (dz * dz));
+        if (!(length > 0.0))
+        {
+            return;
+        }
+
+        _tracerCountdown = GunShotBallistics.TracerInterval;
+        float total = (float)(length + drawnDistance);
+
+        // 0x47C4C0: the first free slot of five; with none free the pass is not drawn, though the total still runs.
+        GunShotTracer tracer = new()
+        {
+            Start = start,
+            End = end,
+            StartDistance = drawnDistance,
+            EndDistance = total,
+            Range = round.Remaining,
+            Ammunition = ammunition,
+            Shooter = round.Shooter,
+            Life = GunShotBallistics.TracerLifetimeTicks,
+        };
+        TracerFiled?.Invoke(this, tracer);
+        if (_tracers.Count < TracerCapacity)
+        {
+            _tracers.Add(tracer);
+        }
+
+        drawnDistance = total;
     }
 
     // 0x47BB36: the graze. The chance is how far inside the material's ricochet angle the round arrived; the

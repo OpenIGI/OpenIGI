@@ -623,6 +623,7 @@ internal sealed partial class GameHost : IDisposable
     private TracerTrailRenderer? _tracers;
     private ImpactParticleRenderer? _impactParticles;
     private RetailImpactRenderer? _retailImpacts;
+    private GunShotTracerRenderer? _gunShotTracers;
 
     // The world the blood is traced against: placed objects AND the terrain, because a droplet lands
     // on the ground as readily as on a wall and the player's own movement caster carries neither the
@@ -1362,6 +1363,7 @@ internal sealed partial class GameHost : IDisposable
         _tracers = null;
         _impactParticles = null;
         _retailImpacts = null;
+        _gunShotTracers = null;
         _impactEffects.Clear();
         _explosions = null;
         _missileSmoke = null;
@@ -5995,6 +5997,25 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     }
                 }
 
+                // The rounds' tracers (one pass in eleven, and every pass through a wall): the original's thin
+                // unfogged line under the vanilla preset, the remaster's glowing streak under every other. With the
+                // remaster's ballistic AI streaks on, those stand for the same rounds. Sized against the image they
+                // are rasterised into.
+                if (_gunShotTracers is not null
+                    && _soldiers is { } tracerSoldiers
+                    && !(GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value))
+                {
+                    _gunShotTracers.Draw(
+                        tracerSoldiers.GunShotTracers,
+                        eye,
+                        projection,
+                        captured ? resolution.RenderHeight : _window.Height,
+                        GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla
+                            ? TracerStyle.Retail
+                            : TracerStyle.Remastered,
+                        tracerSoldiers.MuzzleOf);
+                }
+
                 // The soldiers' muzzle flames, for the same reason: drawn from the soldier pass they
                 // landed in the G-buffer and shaded as scenery -- the one-frame black square at a
                 // firing guard's muzzle. Light draws over the lit scene.
@@ -7857,6 +7878,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         _tracers?.Dispose();
         _impactParticles?.Dispose();
         _retailImpacts?.Dispose();
+        _gunShotTracers?.Dispose();
         _explosions?.Dispose();
         _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();

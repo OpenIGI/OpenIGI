@@ -2409,6 +2409,8 @@ internal sealed partial class GameHost
             _impactParticles = null;
             _retailImpacts?.Dispose();
             _retailImpacts = null;
+            _gunShotTracers?.Dispose();
+            _gunShotTracers = null;
             _impactEffects.Clear();
             _explosions?.Dispose();
             _explosions = null;
@@ -2482,6 +2484,8 @@ internal sealed partial class GameHost
                 // it the blood is still thrown and still stamps its splashes, but no drop or mist is seen.
                 _retailImpacts?.Dispose();
                 _retailImpacts = new RetailImpactRenderer(_device, _resources, _fileSystem);
+                _gunShotTracers?.Dispose();
+                _gunShotTracers = new GunShotTracerRenderer(_device);
                 int impactModels = _retailImpacts.Load(loaded);
                 _impactEffects.Clear();
                 _impactEffects.SetMistFrameCount(_retailImpacts.MistFrameCount);
@@ -2979,6 +2983,7 @@ internal sealed partial class GameHost
         _tracers?.Dispose();
         _impactParticles?.Dispose();
         _retailImpacts?.Dispose();
+        _gunShotTracers?.Dispose();
         _explosions?.Dispose();
         _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();
@@ -3006,6 +3011,7 @@ internal sealed partial class GameHost
         _tracers = null;
         _impactParticles = null;
         _retailImpacts = null;
+        _gunShotTracers = null;
         _impactEffects.Clear();
         _explosions = null;
         _missileSmoke = null;

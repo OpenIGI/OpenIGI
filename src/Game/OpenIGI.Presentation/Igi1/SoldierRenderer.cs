@@ -3314,6 +3314,41 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Gets whether rounds are marched by the soldiers' <c>GunShot</c> tasks rather than cast as they leave.</summary>
     public bool MarchesRounds => _gunShotWorld is not null && _gunShotSounds is not null;
 
+    /// <summary>Where a soldier's gun muzzle is drawn this frame, in world units.</summary>
+    /// <param name="shooter">The round's shooter, as the march records it.</param>
+    /// <returns>
+    /// The held weapon's gun-flame part on the hand that holds it -- where the muzzle flash is drawn -- or the hand
+    /// itself for a model without one; <see langword="null"/> for anything that is not a soldier with a drawn gun.
+    /// </returns>
+    public Vector3d? MuzzleOf(object? shooter)
+    {
+        if (shooter is not SoldierView view || FindMember(view) is not { HasWeaponFrameState: true } member)
+        {
+            return null;
+        }
+
+        Vector3d hand = member.DrawnWeaponOrigin;
+        Vector3f offset = member.Weapon?.Presentation?.MuzzleMetres is { } muzzle
+            ? member.DrawnWeaponRotation.Transposed().Transform(muzzle)
+            : default;
+        return new Vector3d(hand.X + offset.X, hand.Y + offset.Y, hand.Z + offset.Z) * WorldScene.UnitsPerMetre;
+    }
+
+    /// <summary>Gets every soldier gun's live tracers, in the order the guns were made, for the tracer draw.</summary>
+    public IEnumerable<GunShotTracer> GunShotTracers
+    {
+        get
+        {
+            foreach ((SoldierView _, GunShotTask task) in _gunShotOrder)
+            {
+                foreach (GunShotTracer tracer in task.Tracers)
+                {
+                    yield return tracer;
+                }
+            }
+        }
+    }
+
     private void AddGunShotTask(SoldierView view)
     {
         if (_gunShots.ContainsKey(view))
@@ -3339,6 +3374,8 @@ public sealed class SoldierRenderer : IDisposable
         {
             if (task.Rounds.Count == 0)
             {
+                // 0x47B690 still runs 0x47C560 with nothing to march: last tick's drawn tracers are freed.
+                task.AgeTracers();
                 continue;
             }
 

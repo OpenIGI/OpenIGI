@@ -216,6 +216,9 @@ internal sealed partial class GameHost
             host._sounds?.PlayDefinition(definition, position, pitch: FootstepSounds.Pitch(host._impactPitchRandom), priority: 45);
         }
 
+        public AmmoType? AmmunitionOf(WeaponType weapon) =>
+            host._ammoTypes is { } table && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found) ? found : null;
+
         public void Effect(GunShotRound round, in GunShotRecord record)
         {
             bool visible = RenderCVars.ImpactEffects.Value;

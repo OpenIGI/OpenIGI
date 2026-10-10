@@ -58,6 +58,10 @@ public sealed class AiScenarioHarness : IDisposable
         double range = EnvInt("OPENIGI_AI_SCENARIO_RANGE", 10) * Metre;
 
         StringBuilder log = new();
+
+        // Every tracer a soldier gun's march files (0x47C4C0), as the probe's [tracer] add.
+        OpenIGI.Game.Weapons.GunShotTask.TracerFiled = (task, tracer) => log.AppendLine(FormattableString.Invariant(
+            $"[tracer] add count={task.Tracers.Count} from=({tracer.Start.X:0},{tracer.Start.Y:0},{tracer.Start.Z:0}) to=({tracer.End.X:0},{tracer.End.Y:0},{tracer.End.Z:0}) head={tracer.StartDistance:0} tail={tracer.EndDistance:0} range={tracer.Range:0}"));
         using RecordingGraphicsDevice device = new();
         HeadlessGameWindow window = new();
         List<string> hostArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000"];
@@ -1305,6 +1309,30 @@ public sealed class AiScenarioHarness : IDisposable
                 log.AppendLine(
                     FormattableString.Invariant(
                         $"[march] lt={counter} shooter={shooter} rem={remaining:0.0} defl={(round.Deflected ? 1 : 0)} from=({from.X:0.0},{from.Y:0.0},{from.Z:0.0}) to=({to.X:0.0},{to.Y:0.0},{to.Z:0.0}) {what}"));
+            };
+        }
+
+        // OPENIGI_PATROL_CAPTURE_TRACER=1: the probe's [tracer] add -- every tracer a soldier gun's march files
+        // (0x47C4C0), with the task's live count before it.
+        if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_TRACER") == "1")
+        {
+            FieldInfo tracerTickField = typeof(SoldierRenderer).GetField("_tick", hidden)!;
+            FieldInfo gunShotsField = typeof(SoldierRenderer).GetField("_gunShots", hidden)!;
+            OpenIGI.Game.Weapons.GunShotTask.TracerFiled = (task, tracer) =>
+            {
+                int counter = -1;
+                int owner = -1;
+                if (soldiersField.GetValue(host) is SoldierRenderer r)
+                {
+                    counter = (int)tracerTickField.GetValue(r)! - 1;
+                    if (gunShotsField.GetValue(r) is Dictionary<SoldierView, OpenIGI.Game.Weapons.GunShotTask> tasks)
+                    {
+                        owner = tasks.FirstOrDefault(pair => ReferenceEquals(pair.Value, task)).Key?.Soldier.Id ?? -1;
+                    }
+                }
+
+                log.AppendLine(FormattableString.Invariant(
+                    $"[tracer] add lt={counter} owner={owner} count={task.Tracers.Count} from=({tracer.Start.X:0.0},{tracer.Start.Y:0.0},{tracer.Start.Z:0.0}) to=({tracer.End.X:0.0},{tracer.End.Y:0.0},{tracer.End.Z:0.0}) head={tracer.StartDistance:0.0} tail={tracer.EndDistance:0.0} range={tracer.Range:0.0} life={tracer.Life}"));
             };
         }
 

@@ -1831,6 +1831,29 @@ public interface IGraphicsDevice : IDisposable
         TextureHandle lightmap,
         BlendMode blend);
 
+    /// <summary>Draws camera-facing tracer strips through the tracer shader.</summary>
+    /// <param name="mesh">The strips: u along each one (0 tail, 1 head), v across it, the vertex colour the tracer's
+    /// colour at the display encoding and its alpha the brightness at that end.</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw.</param>
+    /// <param name="modelView">The strips' transform into view space.</param>
+    /// <param name="style">Which look: the original's line or the remaster's streak.</param>
+    /// <param name="radiance">The remastered streak's radiance at full brightness; the retail line ignores it.</param>
+    /// <remarks>
+    /// Tested against the scene's depth and never writing it, never fogged, and always adding its coverage to the
+    /// target's alpha, which is the marker the temporal resolve reads to keep a one-tick effect out of its history.
+    /// A device without the shader draws the strips as an ordinary blended mesh.
+    /// </remarks>
+    void DrawTracers(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, TracerStyle style, float radiance) =>
+        DrawMesh(
+            mesh,
+            indexOffset,
+            indexCount,
+            modelView,
+            TextureHandle.None,
+            TextureHandle.None,
+            style == TracerStyle.Retail ? BlendMode.AlphaBlend : BlendMode.Additive);
+
     /// <summary>Puts part of a mesh into the traced world without drawing it.</summary>
     /// <param name="mesh">The mesh to admit.</param>
     /// <param name="indexOffset">The first index of the run.</param>

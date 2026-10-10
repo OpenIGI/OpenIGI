@@ -208,4 +208,6 @@ public enum ShaderModuleId
     /// <summary>The flashlight's shadow spread over the penumbra its occluders imply.</summary>
     FlashlightShadowFilter,
 
+    /// <summary>A round's tracer: the original's thin unfogged line, or the remaster's glowing streak.</summary>
+    Tracer,
 }

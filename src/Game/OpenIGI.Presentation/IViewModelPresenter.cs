@@ -72,6 +72,10 @@ public interface IHeldWeaponPresenter : IDisposable
     /// <summary>Gets or sets what each of the weapon's textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
 
+    /// <summary>Gets where the weapon's muzzle is, in metres in the weapon's own frame, or null when it has no gun flame.</summary>
+    /// <remarks>The gun-flame part's place in the magic-object tree: where the original draws the flame.</remarks>
+    Vector3f? MuzzleMetres => null;
+
     /// <summary>Loads one weapon's model.</summary>
     /// <param name="mission">The mission whose packs the model is read from.</param>
     /// <param name="gunModel">The model to load.</param>
