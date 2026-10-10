@@ -179,6 +179,44 @@ public sealed partial class Igi2HumanSoldier
         return new Vector3d((x + Position.X).Value, (y + Position.Y).Value, ((Fpu)rz + Position.Z).Value);
     }
 
+    /// <summary>Gets what the soldier last activated, <c>ptActivateQTaskRef</c>, or <see langword="null"/>.</summary>
+    public Interaction.IIgi2Activatable? ActivateTarget { get; private set; }
+
+    /// <summary>Gets how many times the soldier has activated something, <c>HumanSoldier+0x754</c>.</summary>
+    public int ActivationCount { get; private set; }
+
+    /// <summary>
+    /// The thing the activation channel names, worked, <c>HumanSoldier_HandleActivation</c> (<c>igi2 0x4E3340</c>): a switch is
+    /// pressed; a door opened or shut and the soldier passes it; a mounted gun manned; then the thing is told of a first tick of
+    /// activation, and the count goes up.
+    /// </summary>
+    /// <remarks>An id past the level's 4096 tasks, or one naming nothing, does nothing.</remarks>
+    private void HandleActivation()
+    {
+        if ((uint)ActivateTaskId >= 0x1000 || Surroundings.ActivatableById(ActivateTaskId) is not { } target)
+        {
+            return;
+        }
+
+        ActivateTarget = target;
+        switch (target.Kind)
+        {
+            case Interaction.Igi2ActivateKind.Switch when target is Interaction.IIgi2Pressable button:
+                button.Press(0);
+                break;
+            case Interaction.Igi2ActivateKind.Door when target is Interaction.Igi2DoorTask door:
+                door.ToggleOpenBySoldier();
+                Go(Igi2SoldierState.Door);
+                break;
+            case Interaction.Igi2ActivateKind.StationaryGun:
+                Go(Igi2SoldierState.StationaryGun);
+                break;
+        }
+
+        target.Activate(0);
+        ActivationCount++;
+    }
+
     /// <summary>
     /// A close-combat blow, <c>HumanSoldier_InitStateStandCloseCombat</c> (<c>igi2 0x4E6750</c>): its damage not yet dealt, its row at
     /// once, still.

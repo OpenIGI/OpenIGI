@@ -370,6 +370,54 @@ public sealed class Igi2HumanSoldierTests
         }
     }
 
+    /// <summary>
+    /// The activation channel names a task and the soldier works it (<c>HumanSoldier_HandleActivation</c>, <c>igi2 0x4E3340</c>): a
+    /// switch is pressed by the single player's client, told of a first tick of activation, and counted; an id naming nothing does
+    /// nothing.
+    /// </summary>
+    [Fact]
+    public void Activating_a_switch_presses_it()
+    {
+        (Igi2HumanSoldier soldier, _, FakeSurroundings surroundings, ScriptedMind mind) = OnFloor();
+        Button button = new();
+        surroundings.ById[77] = button;
+        soldier.RunDelayed();
+
+        mind.Frame[(int)Igi2SoldierChannel.Activate] = 76f;
+        soldier.RunDelayed();
+        Assert.Equal(0, soldier.ActivationCount);
+
+        mind.Frame[(int)Igi2SoldierChannel.Activate] = 77f;
+        soldier.RunDelayed();
+        Assert.Equal(77, soldier.ActivateTaskId);
+        Assert.Same(button, soldier.ActivateTarget);
+        Assert.Equal([0], button.Presses);
+        Assert.Equal([0], button.Activations);
+        Assert.Equal(1, soldier.ActivationCount);
+    }
+
+    /// <summary>A switch that records how it is worked.</summary>
+    private sealed class Button : Interaction.IIgi2Pressable
+    {
+        public List<int> Presses { get; } = [];
+
+        public List<int> Activations { get; } = [];
+
+        public Vector3d Centre => default;
+
+        public float Radius => 1f;
+
+        public Interaction.Igi2ActivateKind Kind => Interaction.Igi2ActivateKind.Switch;
+
+        public void EvaluateActivate(Interaction.Igi2EvaluateActivate context)
+        {
+        }
+
+        public void Press(int clientId) => Presses.Add(clientId);
+
+        public void Activate(int activateTime) => Activations.Add(activateTime);
+    }
+
     private static (Igi2HumanSoldier, FakeAnimation, FakeSurroundings, ScriptedMind) Unborn()
     {
         FakeAnimation animation = new();

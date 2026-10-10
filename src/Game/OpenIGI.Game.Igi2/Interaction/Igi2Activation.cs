@@ -18,6 +18,9 @@ public enum Igi2ActivateKind
     /// <summary>A terminal is hacked, <c>Terminal_GetActivateHandler</c> (<c>igi2 0x4CB050</c>).</summary>
     Terminal = 4,
 
+    /// <summary>A mounted gun is manned, which only a soldier does (<c>HumanSoldier_HandleActivation</c>, <c>igi2 0x4E3340</c>).</summary>
+    StationaryGun = 5,
+
     /// <summary>A wire is slid down (<c>Wire_GetActivateHandler</c>, <c>0x514CA0</c>).</summary>
     Wire = 7,
 

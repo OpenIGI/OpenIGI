@@ -402,6 +402,26 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         player.Activatables.AddRange(activatables);
+        if (player.Soldiers is { } soldiers)
+        {
+            Dictionary<int, Interaction.IIgi2Activatable> byId = [];
+            foreach (Interaction.IIgi2Activatable thing in activatables)
+            {
+                if (thing is Engine.Tasks.GameTask { Id: >= 0 } placed)
+                {
+                    byId.TryAdd(placed.Id, thing);
+                }
+            }
+
+            foreach (Soldiers.Igi2HumanSoldier soldier in soldiers.Bodies)
+            {
+                if (soldier.Surroundings is Igi2LevelSurroundings surroundings)
+                {
+                    surroundings.ById = byId;
+                }
+            }
+        }
+
         player.Motions = movers.Count > 0 ? new Interaction.Igi2MoverMotions(movers) : null;
 
         return level;
@@ -975,6 +995,12 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     /// <summary>Gets the things the player may activate, in the order the stationary tree offers them.</summary>
     public List<Interaction.IIgi2Activatable> Activatables { get; } = [];
+
+    /// <summary>Gets or sets the level's things by task id, which a soldier's activation names.</summary>
+    public IReadOnlyDictionary<int, Interaction.IIgi2Activatable>? ById { get; set; }
+
+    public Interaction.IIgi2Activatable? ActivatableById(int id) =>
+        ById is { } byId && byId.TryGetValue(id, out Interaction.IIgi2Activatable? thing) ? thing : null;
 
     /// <inheritdoc/>
     /// <remarks>Each thing's sphere against the player's: the two meet when their centres are no further apart than their radii added.</remarks>

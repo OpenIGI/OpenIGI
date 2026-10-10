@@ -237,6 +237,11 @@ public interface IIgi2HumanSurroundings
     /// <returns>The playing sound, or <see langword="null"/> when none plays.</returns>
     IIgi2SoundInstance? PlaySoundAt(string name, Vector3d position) => StartSound(name);
 
+    /// <summary>Gets the level's thing of a task id a soldier is told to activate, <c>Level_atLevelQTaskID</c>, or <see langword="null"/>.</summary>
+    /// <param name="id">The task id.</param>
+    /// <returns>The thing.</returns>
+    Interaction.IIgi2Activatable? ActivatableById(int id) => null;
+
     /// <summary>Gets a level material row's game material, or <see langword="null"/> for none.</summary>
     /// <param name="row">The row.</param>
     /// <returns>The material.</returns>

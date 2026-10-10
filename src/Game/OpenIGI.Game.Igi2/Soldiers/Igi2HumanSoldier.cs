@@ -338,6 +338,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
             if (Locomotion.CurrentState != Igi2SoldierState.StationaryGun)
             {
                 ActivateTaskId = Fpu.ToInt32(c[Igi2SoldierChannel.Activate]);
+                HandleActivation();
                 c[Igi2SoldierChannel.Activate] = 0f;
             }
         }

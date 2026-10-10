@@ -340,6 +340,16 @@ public sealed partial class Igi2DoorTask : GameTask, IIgi2RunTask, IIgi2Door, II
         // (iPortal1 stays 0xFFFF) and the handler ends here.
     }
 
+    /// <summary>
+    /// A soldier opens or shuts the door, <c>HumanSoldier_HandleActivation</c> (<c>igi2 0x4E3340</c>): the door's open flag flipped
+    /// and marked changed, nothing more.
+    /// </summary>
+    public void ToggleOpenBySoldier()
+    {
+        _isOpenDoor ^= 1;
+        _isOpenDoorChanged = 1;
+    }
+
     /// <inheritdoc/>
     public void ToggleOpen(Vector3d from)
     {

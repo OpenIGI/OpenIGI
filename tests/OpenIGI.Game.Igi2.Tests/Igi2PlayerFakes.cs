@@ -112,6 +112,10 @@ internal static class Igi2PlayerFakes
     /// <summary>Surroundings with a settable fit and a count of walk events.</summary>
     internal sealed class FakeSurroundings : IIgi2HumanSurroundings
     {
+        public Dictionary<int, Interaction.IIgi2Activatable> ById { get; } = [];
+
+        public Interaction.IIgi2Activatable? ActivatableById(int id) => ById.TryGetValue(id, out Interaction.IIgi2Activatable? thing) ? thing : null;
+
         public bool Fits { get; set; } = true;
 
         public int WalkEvents { get; private set; }
