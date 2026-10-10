@@ -255,6 +255,15 @@ public static class Igi2SoldierState
     /// <summary>Lying down from a kneel.</summary>
     public const int KneelToLieDown = 35;
 
+    /// <summary>Lying.</summary>
+    public const int LieDown = 36;
+
+    /// <summary>Firing while lying.</summary>
+    public const int LieDownFire = 37;
+
+    /// <summary>Reloading while lying.</summary>
+    public const int LieDownReload = 38;
+
     /// <summary>Falling.</summary>
     public const int Fall = 39;
 
@@ -266,6 +275,27 @@ public static class Igi2SoldierState
 
     /// <summary>Hit while lying.</summary>
     public const int LieDownHit = 42;
+
+    /// <summary>The first of the slots a lying death runs in, <c>43</c> (<c>HumanSoldier_InitStateFunctions</c>, <c>igi2 0x4E25F0</c>).</summary>
+    public const int FirstLieDownDie = 43;
+
+    /// <summary>The last of the slots a lying death runs in, <c>48</c>.</summary>
+    public const int LastLieDownDie = 48;
+
+    /// <summary>The first of the slots a kneeling death runs in, <c>49</c>.</summary>
+    public const int FirstKneelDie = 49;
+
+    /// <summary>The last of the slots a kneeling death runs in, <c>63</c>.</summary>
+    public const int LastKneelDie = 63;
+
+    /// <summary>The first of the slots a standing death runs in, <c>64</c>.</summary>
+    public const int FirstDie = 64;
+
+    /// <summary>The last of the slots a standing death runs in, <c>83</c>.</summary>
+    public const int LastDie = 83;
+
+    /// <summary>Dying lying, the slot the dead bit sends a lying soldier to.</summary>
+    public const int LieDownDie = 45;
 
     /// <summary>Dying from a kneel, the slot the dead bit sends a kneeling soldier to.</summary>
     public const int KneelDie = 55;

@@ -41,6 +41,14 @@ public interface IIgi2HumanAnimation
     /// <param name="blendSeconds">The blend from the current pose; 0 for a cut.</param>
     void PlayState(int state, int time, float blendSeconds);
 
+    /// <summary>
+    /// Sets the clip a state plays at its end, <c>HumanAnim_SetAnimationAtEndFromState</c> (<c>igi2 0x58FBC0</c>), as a body already
+    /// lying dead is set.
+    /// </summary>
+    /// <param name="state">The locomotion state whose animation to set.</param>
+    /// <param name="blendSeconds">The blend from the current pose; 0 for a cut.</param>
+    void PlayStateAtEnd(int state, float blendSeconds) => PlayState(state, 0, blendSeconds);
+
     /// <summary>Gets the body's rig, or <see langword="null"/> for a model without bones.</summary>
     Igi2BoneHierarchy? Rig { get; }
 
@@ -104,6 +112,15 @@ public interface IIgi2HumanAnimation
 /// <summary>The questions a human's states ask of the world around it.</summary>
 public interface IIgi2HumanSurroundings
 {
+    /// <summary>
+    /// Puts a body on the list detection looks over, <c>AIDetection_ptDetectionQTaskList</c>, unless it is there already: a
+    /// soldier's body is, from the moment it starts to die.
+    /// </summary>
+    /// <param name="body">The body.</param>
+    void RegisterDetectable(Igi2Human body)
+    {
+    }
+
     /// <summary>Gets a value indicating whether the human would fit lying flat where it stands.</summary>
     /// <remarks>
     /// The states test it by setting the posture to lying flat and running the object collision on the

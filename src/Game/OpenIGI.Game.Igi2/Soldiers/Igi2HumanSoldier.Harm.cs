@@ -179,6 +179,7 @@ public sealed partial class Igi2HumanSoldier
     {
         StopWeapon(onlyWhenBusy: true);
         CreateGunPickups();
+        Surroundings.RegisterDetectable(this);
         IsDeathSoundPlayed = false;
         Pose = Igi2HumanPose.Standing;
         DeathDirection = Normalised(DeathDirection);
@@ -258,6 +259,7 @@ public sealed partial class Igi2HumanSoldier
     /// </summary>
     private void EnterKneelDie()
     {
+        Surroundings.RegisterDetectable(this);
         IsDeathSoundPlayed = false;
         StopWeapon(onlyWhenBusy: false);
         CreateGunPickups();

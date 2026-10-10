@@ -35,13 +35,42 @@ public sealed partial class Igi2HumanSoldier
         states[Igi2SoldierState.RunForward] = (_, _) => EnterRunForward();
         states[Igi2SoldierState.WalkForward] = (_, _) => EnterWalkForward();
         states[Igi2SoldierState.Fall] = (_, _) => EnterFall();
+        states[Igi2SoldierState.PanicForward] = (_, _) => EnterPanicForward();
+        states[Igi2SoldierState.TenseRunForward] = (_, _) => EnterTenseRun(RunTenseForward);
+        states[Igi2SoldierState.TenseRunLeft] = (_, _) => EnterTenseRun(RunTenseLeft);
+        states[Igi2SoldierState.TenseRunRight] = (_, _) => EnterTenseRun(RunTenseRight);
+        states[Igi2SoldierState.TenseRunBackward] = (_, _) => EnterTenseRun(RunTenseBackward);
+        states[Igi2SoldierState.StandRollLeft] = (_, _) => EnterStandRoll(QuarterTurn);
+        states[Igi2SoldierState.StandRollRight] = (_, _) => EnterStandRoll(-QuarterTurn);
+        states[Igi2SoldierState.KneelRollLeft] = (_, _) => EnterKneelRoll(QuarterTurn);
+        states[Igi2SoldierState.KneelRollRight] = (_, _) => EnterKneelRoll(-QuarterTurn);
+        states[Igi2SoldierState.StandToLieDown] = (_, _) => EnterPostureChange(Igi2HumanPose.LyingFlat, RunStandToLieDown);
+        states[Igi2SoldierState.LieDownToStand] = (_, _) => EnterPostureChange(Igi2HumanPose.LyingFlat, RunLieDownToStand);
+        states[Igi2SoldierState.KneelToLieDown] = (_, _) => EnterPostureChange(Igi2HumanPose.Crouching, RunKneelToLieDown);
+        states[Igi2SoldierState.LieDown] = (_, _) => EnterLieDown();
+        states[Igi2SoldierState.LieDownFire] = (_, _) => EnterProneAction(RunLieDownFire);
+        states[Igi2SoldierState.LieDownReload] = (_, _) => EnterProneAction(RunLieDownReload);
+        states[Igi2SoldierState.LieDownHit] = (_, _) => EnterLieDownHit();
+        states[Igi2SoldierState.Dead] = (_, _) => EnterDead();
         states[Igi2SoldierState.StandToKneel] = (_, _) => EnterStandToKneel();
         states[Igi2SoldierState.KneelToStand] = (_, _) => EnterKneelToStand();
         states[Igi2SoldierState.Kneel] = (_, _) => EnterKneel();
         states[Igi2SoldierState.KneelTurn] = (_, _) => EnterKneelTurn();
         states[Igi2SoldierState.Hit] = (_, _) => EnterHit();
-        states[Igi2SoldierState.Die] = (_, _) => EnterDie();
-        states[Igi2SoldierState.KneelDie] = (_, _) => EnterKneelDie();
+        for (int slot = Igi2SoldierState.FirstLieDownDie; slot <= Igi2SoldierState.LastLieDownDie; slot++)
+        {
+            states[slot] = (_, _) => EnterLieDownDie();
+        }
+
+        for (int slot = Igi2SoldierState.FirstKneelDie; slot <= Igi2SoldierState.LastKneelDie; slot++)
+        {
+            states[slot] = (_, _) => EnterKneelDie();
+        }
+
+        for (int slot = Igi2SoldierState.FirstDie; slot <= Igi2SoldierState.LastDie; slot++)
+        {
+            states[slot] = (_, _) => EnterDie();
+        }
         return new TaskStateMachine((_, _) => PackSignal(), states, Igi2SoldierState.Stand, exits: new TaskStateFunction?[Igi2SoldierState.Count]);
     }
 

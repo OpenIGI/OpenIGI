@@ -197,6 +197,74 @@ public sealed class Igi2HumanSoldierTests
         Assert.Contains(animation.Played, static p => p.State == Igi2SoldierState.Fall);
     }
 
+    /// <summary>
+    /// The lie channel lays it down (<c>HumanSoldier_InitStateStandToLieDown</c>, <c>igi2 0x4E6B00</c>), it lies once that clip ends,
+    /// and when the channel drops it gets up at twice the clip's speed (<c>RunStateLieDownToStand</c>, <c>0x4E6C90</c>) and stands.
+    /// </summary>
+    [Fact]
+    public void It_lies_down_and_gets_up_again()
+    {
+        (Igi2HumanSoldier soldier, FakeAnimation animation, _, ScriptedMind mind) = OnFloor();
+        soldier.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.LieDown] = 1f;
+
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.StandToLieDown, soldier.Locomotion.CurrentState);
+        Assert.Equal(Igi2HumanPose.LyingFlat, soldier.Pose);
+        Assert.Equal((Igi2SoldierState.StandToLieDown, 0, 0f), animation.Played[^1]);
+
+        animation.MainEnded = true;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.LieDown, soldier.Locomotion.CurrentState);
+        Assert.Equal((Igi2SoldierState.LieDown, 0, 0f), animation.Played[^1]);
+
+        animation.MainEnded = false;
+        mind.Frame[(int)Igi2SoldierChannel.LieDown] = 0f;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.LieDownToStand, soldier.Locomotion.CurrentState);
+        soldier.RunDelayed();
+        Assert.Equal(2 * Animation.Igi2AnimController.TicksPerFrame, animation.MainTimeStep);
+
+        animation.MainEnded = true;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.Stand, soldier.Locomotion.CurrentState);
+    }
+
+    /// <summary>
+    /// Tense and strafing left it runs aside at 267.6 a tick (<c>HumanSoldier_RunStateTenseRunLeft</c>, <c>igi2 0x4E54E0</c>); asked to
+    /// roll it rolls left crouched (<c>InitStateStandRollLeft</c>, <c>0x4E61D0</c>) and kneels when the roll's clip ends.
+    /// </summary>
+    [Fact]
+    public void Tense_it_strafes_and_rolls_into_a_kneel()
+    {
+        (Igi2HumanSoldier soldier, FakeAnimation animation, _, ScriptedMind mind) = OnFloor();
+        soldier.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.Tense] = 1f;
+        mind.Frame[(int)Igi2SoldierChannel.StrafeLeft] = 1f;
+
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.TenseRunLeft, soldier.Locomotion.CurrentState);
+        Assert.True(soldier.IsRunning);
+        Vector3d before = soldier.Position;
+        soldier.RunDelayed();
+        double moved = Math.Sqrt(Math.Pow(soldier.Position.X - before.X, 2) + Math.Pow(soldier.Position.Y - before.Y, 2));
+        Assert.Equal(Igi2HumanSoldier.TenseStrafeSpeed, moved, 0.01);
+
+        mind.Frame[(int)Igi2SoldierChannel.RollLeft] = 1f;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.StandRollLeft, soldier.Locomotion.CurrentState);
+        Assert.Equal(Igi2HumanPose.Crouching, soldier.Pose);
+        Assert.Equal(1, soldier.UpperBodyFlags & 1);
+
+        mind.Frame[(int)Igi2SoldierChannel.RollLeft] = 0f;
+        mind.Frame[(int)Igi2SoldierChannel.StrafeLeft] = 0f;
+        mind.Frame[(int)Igi2SoldierChannel.Kneel] = 1f;
+        animation.MainEnded = true;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.Kneel, soldier.Locomotion.CurrentState);
+        Assert.Equal(0, soldier.UpperBodyFlags & 1);
+    }
+
     private static (Igi2HumanSoldier, FakeAnimation, FakeSurroundings, ScriptedMind) Unborn()
     {
         FakeAnimation animation = new();

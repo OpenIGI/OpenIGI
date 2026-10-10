@@ -362,6 +362,18 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         LastState = state;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Unlike <see cref="PlayState"/>, a lowered weapon's clip plays forward, from its end.</remarks>
+    public void PlayStateAtEnd(int state, float blendSeconds)
+    {
+        int animation = (uint)state < (uint)_stateAnimations.Count ? _stateAnimations[state] : 0;
+        Igi2AnimationClip? clip = _weaponClips() is { } clips
+            ? ((uint)animation < (uint)clips.Count ? clips[animation] : null)
+            : (_rig is null ? null : _library?.Find(_rig, UnarmedClip));
+        SetAnimation(clip, clip?.TotalTime ?? 0, blendSeconds);
+        LastState = state;
+    }
+
     /// <summary>Sets a clip on the controller not playing, blends across to it and makes it the one playing.</summary>
     private void SetAnimation(Igi2AnimationClip? clip, int time, float blendSeconds)
     {
