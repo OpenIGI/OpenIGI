@@ -292,6 +292,20 @@ public sealed class Igi2Grenades(
     /// <summary>Gets or sets what a grenade's end shows and does.</summary>
     public IIgi2GrenadeEffects Effects { get; set; } = Igi2NoGrenadeEffects.Instance;
 
+    /// <summary>What a weapon's grenade does at its end: its physics type's second value, <c>GRENADE_EXPLOSIONTYPE_*</c>.</summary>
+    /// <param name="weapon">The weapon.</param>
+    /// <returns>The kind, normal when the type has no second value, or <see langword="null"/> when the weapon has no physics type.</returns>
+    public int? KindOf(Igi2WeaponTypeTask weapon)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        if (!types.TryFind(weapon.FixedModel, out Igi2PhysicsObjectType type))
+        {
+            return null;
+        }
+
+        return type.Parameters.Count > 1 ? type.Parameters[1].ToInt32() : Igi2GrenadeKind.Normal;
+    }
+
     /// <summary>
     /// A grenade leaves the hand, <c>Grenade_New</c> (<c>igi2 0x484FD0</c>): drawn as its weapon's <c>ProjectileModel</c>, a
     /// physics object of the type its <c>Fixed Model</c> names, at the throw's place with its speed and orientation.
@@ -315,17 +329,13 @@ public sealed class Igi2Grenades(
         }
 
         Igi2PhysicsObject? body = null;
-        int kind = Igi2GrenadeKind.Normal;
+        int kind = KindOf(weapon) ?? Igi2GrenadeKind.Normal;
         if (types.TryFind(weapon.FixedModel, out Igi2PhysicsObjectType type))
         {
             body = new Igi2PhysicsObject(type, models(model), grenade.Position, Vector3f.One);
             body.Body.Velocity = grenade.Speed;
             body.Body.UpdateSpeedApproximation();
             grenade.Orientation.AsSpan(0, 9).CopyTo(body.Orientation);
-            if (type.Parameters.Count > 1)
-            {
-                kind = type.Parameters[1].ToInt32();
-            }
         }
         else
         {

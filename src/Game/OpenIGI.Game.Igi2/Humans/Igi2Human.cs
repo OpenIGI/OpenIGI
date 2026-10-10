@@ -130,6 +130,12 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets a value indicating whether a dead body has come to rest, <c>Human_s.isDeathPositionStabilized</c>.</summary>
     public bool IsDeathPositionStabilized { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the body bleeds no sprites, <c>isBloodSpriteDisabled</c>.</summary>
+    public bool IsBloodSpriteDisabled { get; set; }
+
+    /// <summary>Gets or sets the bone collision's movement this tick, <c>tBoneCollisionData.tDeltaMovement</c>.</summary>
+    public Vector3f BoneDeltaMovement { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the upper body turns with the aim, <c>Human_s.isRotateUpperBody</c>.</summary>
     public bool IsRotateUpperBody { get; protected set; } = true;
 

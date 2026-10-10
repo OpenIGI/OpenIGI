@@ -52,6 +52,12 @@ public sealed partial class Igi2HumanSoldier
         states[Igi2SoldierState.LieDownReload] = (_, _) => EnterProneAction(RunLieDownReload);
         states[Igi2SoldierState.LieDownHit] = (_, _) => EnterLieDownHit();
         states[Igi2SoldierState.Dead] = (_, _) => EnterDead();
+        states[Igi2SoldierState.StandThrowGrenade] = (_, _) => EnterStandThrowGrenade();
+        states[Igi2SoldierState.StandCloseCombat] = (_, _) => EnterStandCloseCombat();
+        states[Igi2SoldierState.StandPressSwitch] = (_, _) => EnterStandPressSwitch();
+        states[Igi2SoldierState.Door] = (_, _) => EnterDoor();
+        states[Igi2SoldierState.SilentKill] = (_, _) => EnterSilentKill();
+        states[Igi2SoldierState.StandAction] = (_, _) => EnterStandAction();
         states[Igi2SoldierState.StandToKneel] = (_, _) => EnterStandToKneel();
         states[Igi2SoldierState.KneelToStand] = (_, _) => EnterKneelToStand();
         states[Igi2SoldierState.Kneel] = (_, _) => EnterKneel();

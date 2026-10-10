@@ -41,4 +41,7 @@ public readonly record struct Igi2AiEvent(
 
     /// <summary>A friend seen hurt, <c>AIEVENT_FRIENDLY_DAMAGE_SEEN</c>.</summary>
     public const int FriendlyDamageSeen = 36;
+
+    /// <summary><c>AIEVENT_GRENADESHOUT</c>: a soldier's grenade is on its way to where the event is.</summary>
+    public const int GrenadeShout = 37;
 }

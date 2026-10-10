@@ -116,7 +116,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         player.Soldiers = request.World.LevelRoot is { } levelRoot
-            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty, player.Human.Pickups)
+            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty, player.Human.Pickups, player.Grenades)
             : null;
         if (player.Soldiers is { } soldiers && player.Explosions is { } blasts)
         {
@@ -141,6 +141,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <param name="random">The session's run stream.</param>
     /// <param name="difficulty">The session's difficulty, which tunes the soldiers' hit points.</param>
     /// <param name="pickups">The level's pickups, which a dying soldier's weapon joins; <see langword="null"/> for none.</param>
+    /// <param name="grenades">The level's grenades, which a soldier's throw joins; <see langword="null"/> for none.</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
@@ -157,7 +158,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2Sounds sounds,
         IgiRandom random,
         OpenIGI.Game.Ai.AiDifficulty difficulty,
-        Pickups.Igi2PickupList? pickups = null)
+        Pickups.Igi2PickupList? pickups = null,
+        Weapons.Igi2Grenades? grenades = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(services);
@@ -167,11 +169,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
         ArgumentNullException.ThrowIfNull(random);
         services.TryGet(out Igi2HumanWeapons? armoury);
         services.TryGet(out Igi2GameMaterials? materials);
+        services.TryGet(out Igi2AnimTriggers? triggers);
         Soldiers.Igi2Soldiers soldiers = Soldiers.Igi2Soldiers.Spawn(
             root,
             (task, rig) =>
             {
-                Igi2LevelSurroundings surroundings = new(world, sounds) { Materials = materials, Pickups = pickups, Models = models };
+                Igi2LevelSurroundings surroundings = new(world, sounds) { Materials = materials, Pickups = pickups, Models = models, Grenades = grenades };
                 IIgi2PlayerWeaponControl weapon = Igi2NoWeaponControl.Instance;
                 if (armoury is not null)
                 {
@@ -191,6 +194,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
             body.Mind = new Soldiers.Igi2StandingSoldierMind();
             body.Difficulty = difficulty;
+            body.AnimTriggers = triggers;
+            if (body.Animation is Igi2HumanAnimation animation)
+            {
+                animation.TriggerTarget = new Soldiers.Igi2SoldierBodyTriggers(body);
+            }
             if (body.Collider is { } collider)
             {
                 world.AddBody(collider);
@@ -846,6 +854,20 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     /// <summary>Gets or sets the level's pickups, which a thrown weapon joins.</summary>
     public Pickups.Igi2PickupList? Pickups { get; set; }
+
+    /// <summary>Gets or sets the level's grenades, which a soldier's throw joins.</summary>
+    public Weapons.Igi2Grenades? Grenades { get; set; }
+
+    public bool ThrowGrenade(in Weapons.Igi2GrenadeThrow grenade)
+    {
+        if (Grenades is not { } grenades)
+        {
+            return false;
+        }
+
+        grenades.Launch(grenade);
+        return grenades.KindOf(grenade.WeaponType) == Weapons.Igi2GrenadeKind.Normal;
+    }
 
     /// <summary>Gets or sets what resolves a thrown weapon's fixed model, whose radius the pickup takes.</summary>
     public Func<string, Formats.World.MefModel?>? Models { get; set; }

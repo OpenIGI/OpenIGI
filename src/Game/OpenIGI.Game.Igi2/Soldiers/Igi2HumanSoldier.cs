@@ -50,10 +50,43 @@ public interface IIgi2SoldierMind
     float HeadTurn => 0f;
 
     /// <summary>
-    /// Gets the weapon the soldier may drop besides its own, <c>HumanAI+0x74DC</c> while <c>+0x74D0</c> is set, or
-    /// <see langword="null"/> for none.
+    /// Gets the grenade the mind carries, <c>HumanAI+0x74DC</c> while <c>+0x74D0</c> is set, or <see langword="null"/> for none: the
+    /// one it throws, and the one a dying soldier may drop besides its own weapon.
     /// </summary>
-    string? ExtraDropWeaponId => null;
+    string? GrenadeWeaponId => null;
+
+    /// <summary>Gets where the mind would throw its grenade, <c>HumanAI+0x74E0</c>, or <see langword="null"/> for nowhere.</summary>
+    Vector3d? GrenadeTargetPosition => null;
+
+    /// <summary>
+    /// Aims the mind's grenade from the hand at its target, <c>HumanAI_GetGrenadeOrientationAndSpeedToTarget</c>
+    /// (<c>igi2 0x4632A0</c>).
+    /// </summary>
+    /// <param name="soldier">The body.</param>
+    /// <param name="hand">Where the grenade leaves from.</param>
+    /// <param name="speed">Receives its speed, units a tick.</param>
+    /// <param name="orientation">Receives its orientation, nine floats row by row.</param>
+    /// <param name="flyTime">Receives the ticks it flies.</param>
+    /// <returns><see langword="true"/> when a throw reaches the target.</returns>
+    bool TryAimGrenade(Igi2HumanSoldier soldier, Vector3d hand, out Vector3f speed, out float[] orientation, out int flyTime)
+    {
+        speed = default;
+        orientation = [];
+        flyTime = 0;
+        return false;
+    }
+
+    /// <summary>Gets the clip name a stand action starts from, the mind's <c>HumanAI+0x28</c>, or <see langword="null"/> for none.</summary>
+    string? StandActionAnimation => null;
+
+    /// <summary>
+    /// Says a line at the mind's position, <c>HumanAI_PlaySoundAtPosition</c> (<c>igi2 0x464600</c>), queued when it may wait its
+    /// turn.
+    /// </summary>
+    /// <param name="soldier">The body.</param>
+    /// <param name="sound">The sound's name.</param>
+    /// <param name="queueable">Whether the line may wait for one still timing out.</param>
+    void Say(Igi2HumanSoldier soldier, string sound, bool queueable) => Say(soldier, sound);
 }
 
 /// <summary>An enemy soldier's body, as I.G.I. 2's <c>HumanSoldier_t</c> runs it.</summary>

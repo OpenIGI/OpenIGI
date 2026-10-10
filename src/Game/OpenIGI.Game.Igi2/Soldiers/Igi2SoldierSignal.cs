@@ -96,8 +96,14 @@ public enum Igi2SoldierSignal : uint
     /// <summary>Kept: bits the body raises itself.</summary>
     Kept8000000 = 0x8000000,
 
+    /// <summary>A throw's clip let the grenade go, <c>HUMANANIM_TRIGGER_THROWGRENADE_RELEASE</c> (kept until the throw takes it).</summary>
+    GrenadeReleased = Kept8000000,
+
     /// <summary>Kept: bits the body raises itself.</summary>
     Kept10000000 = 0x10000000,
+
+    /// <summary>A blow's clip struck, <c>HUMANANIM_TRIGGER_CLOSECOMBAT_DEALDAMAGE</c> (kept until the blow takes it).</summary>
+    BlowLanded = Kept10000000,
 
     /// <summary>Turn on the spot, channel 34.</summary>
     Turn = 0x20000000,

@@ -406,6 +406,85 @@ public sealed class RetailIgi2SoldierHarmTests
         return new Igi2WeaponHit(hit, damage, new Vector3f(-40960f, 0f, 0f), null, gun, null);
     }
 
+    /// <summary>
+    /// A soldier told to throw plays the near throw at a target 8192 away (<c>HumanSoldier_InitStateStandThrowGrenade</c>,
+    /// <c>igi2 0x4E6470</c>); when the clip lets go, its mind's grenade leaves the right hand with a fuse of its flight and fifteen
+    /// ticks more, once only (<c>RunStateStandThrowGrenade</c>, <c>0x4E6540</c>); and the clip's end stands it again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_soldier_throws_its_grenade_from_the_hand()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
+        Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
+        Igi2Grenades grenades = new(
+            m.Services!.Require<Physics.Igi2PhysicsObjectTypes>(), m.Level.ModelFor, new Physics.Igi2PhysicsWorld(m.Collision!, m.Materials), new World.Igi2DynamicTasks());
+        Igi2Gameplay.SpawnSoldiers(
+            m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
+            Game.Ai.AiDifficulty.Normal, grenades: grenades);
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        ThrowingMind mind = new() { Target = new Vector3d(body.Position.X + 8192.0, body.Position.Y, body.Position.Z) };
+        body.Mind = mind;
+        body.RunDelayed();
+
+        mind.Frame[(int)Igi2SoldierChannel.ThrowGrenade] = 1f;
+        body.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.ThrowGrenade] = 0f;
+        Assert.Equal(Igi2SoldierState.StandThrowGrenade, body.Locomotion.CurrentState);
+        Assert.False(body.IsThrowGrenadeTriggered);
+
+        body.Signal |= Igi2SoldierSignal.GrenadeReleased;
+        body.RunDelayed();
+        Igi2Grenade grenade = Assert.Single(grenades.Flying);
+        Assert.Equal(ThrowingMind.FlyTime + Igi2HumanSoldier.GrenadeFuseMargin, grenade.Throw.ExplodeTime);
+        Assert.InRange((grenade.Throw.Position - body.Position).Length, 1.0, 8192.0);
+        Assert.Same(body, grenade.Throw.Thrower);
+        Assert.True(body.IsThrowGrenadeTriggered);
+        Assert.Contains(Igi2HumanSoldier.GrenadeShout, mind.Said);
+
+        body.Signal |= Igi2SoldierSignal.GrenadeReleased;
+        body.RunDelayed();
+        Assert.Single(grenades.Flying);
+
+        for (int tick = 0; tick < 300 && body.Locomotion.CurrentState == Igi2SoldierState.StandThrowGrenade; tick++)
+        {
+            body.RunDelayed();
+        }
+
+        Assert.Equal(Igi2SoldierState.Stand, body.Locomotion.CurrentState);
+    }
+
+    /// <summary>A mind that sends a fixed frame, carries a hand grenade and aims it straight at its target.</summary>
+    private sealed class ThrowingMind : IIgi2SoldierMind
+    {
+        public const int FlyTime = 20;
+
+        public float[] Frame { get; } = new float[Igi2HumanChannels.Count];
+
+        public List<string> Said { get; } = [];
+
+        public Vector3d Target { get; init; }
+
+        public bool HasStarted => true;
+
+        public string? GrenadeWeaponId => "WEAPON_ID_GRENADE";
+
+        public Vector3d? GrenadeTargetPosition => Target;
+
+        public void Run(Igi2HumanSoldier soldier) => soldier.Update(Frame);
+
+        public void Say(Igi2HumanSoldier soldier, string sound) => Said.Add(sound);
+
+        public bool TryAimGrenade(Igi2HumanSoldier soldier, Vector3d hand, out Vector3f speed, out float[] orientation, out int flyTime)
+        {
+            speed = new Vector3f(409.6f, 0f, 204.8f);
+            orientation = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+            flyTime = FlyTime;
+            return true;
+        }
+    }
+
     private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers) Spawn()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);

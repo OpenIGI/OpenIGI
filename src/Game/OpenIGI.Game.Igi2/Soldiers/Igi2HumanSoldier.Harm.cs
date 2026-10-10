@@ -345,7 +345,7 @@ public sealed partial class Igi2HumanSoldier
             CreateGunPickupFromGameDifficulty(held);
         }
 
-        if (Mind?.ExtraDropWeaponId is { } extraId && Random.NextDouble() <= 0.5
+        if (Mind?.GrenadeWeaponId is { } extraId && Random.NextDouble() <= 0.5
             && inventory.Tables.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, extraId, StringComparison.Ordinal)) is { } extra
             && !string.Equals(extra.WeaponId, FlashbangWeaponId, StringComparison.Ordinal))
         {

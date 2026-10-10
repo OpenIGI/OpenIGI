@@ -49,6 +49,19 @@ public interface IIgi2HumanAnimation
     /// <param name="blendSeconds">The blend from the current pose; 0 for a cut.</param>
     void PlayStateAtEnd(int state, float blendSeconds) => PlayState(state, 0, blendSeconds);
 
+    /// <summary>Finds a clip of the body's rig by name, <c>Hierarchy_GetAnim</c> (<c>igi2 0x57F360</c>).</summary>
+    /// <param name="name">The clip's name.</param>
+    /// <returns>The clip, or <see langword="null"/> when the rig has none of that name.</returns>
+    Igi2AnimationClip? FindClip(string name) => null;
+
+    /// <summary>
+    /// Plays a clip on the whole body without noting a state, <c>HumanAnim_SetAnimation</c> (<c>igi2 0x58F110</c>) called directly.
+    /// </summary>
+    /// <param name="clip">The clip.</param>
+    /// <param name="time">The time to play it from, in clip ticks.</param>
+    /// <param name="blendSeconds">How long to blend it in.</param>
+    void SetClip(Igi2AnimationClip clip, int time, float blendSeconds) => PlayClip(clip, time, blendSeconds, 0);
+
     /// <summary>Gets the body's rig, or <see langword="null"/> for a model without bones.</summary>
     Igi2BoneHierarchy? Rig { get; }
 
@@ -120,6 +133,11 @@ public interface IIgi2HumanSurroundings
     void RegisterDetectable(Igi2Human body)
     {
     }
+
+    /// <summary>A grenade leaves a soldier's hand, <c>Grenade_New</c> (<c>igi2 0x484FD0</c>) under the level's dynamic task.</summary>
+    /// <param name="grenade">The throw.</param>
+    /// <returns>Whether it is a grenade that explodes, its physics type's second value nought, which its thrower warns of.</returns>
+    bool ThrowGrenade(in Weapons.Igi2GrenadeThrow grenade) => false;
 
     /// <summary>Gets a value indicating whether the human would fit lying flat where it stands.</summary>
     /// <remarks>

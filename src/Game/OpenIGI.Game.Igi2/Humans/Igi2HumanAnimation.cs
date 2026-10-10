@@ -374,6 +374,12 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
         LastState = state;
     }
 
+    /// <inheritdoc/>
+    public Igi2AnimationClip? FindClip(string name) => _rig is null ? null : _library?.Find(_rig, name);
+
+    /// <inheritdoc/>
+    public void SetClip(Igi2AnimationClip clip, int time, float blendSeconds) => SetAnimation(clip, time, blendSeconds);
+
     /// <summary>Sets a clip on the controller not playing, blends across to it and makes it the one playing.</summary>
     private void SetAnimation(Igi2AnimationClip? clip, int time, float blendSeconds)
     {

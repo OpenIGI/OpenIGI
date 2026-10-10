@@ -265,6 +265,53 @@ public sealed class Igi2HumanSoldierTests
         Assert.Equal(0, soldier.UpperBodyFlags & 1);
     }
 
+    /// <summary>
+    /// A blow (<c>HumanSoldier_InitStateStandCloseCombat</c>, <c>igi2 0x4E6750</c>) marks its damage dealt once the clip strikes, and
+    /// the clip's end stands it again (<c>RunStateStandCloseCombat</c>, <c>0x4E67A0</c>).
+    /// </summary>
+    [Fact]
+    public void A_blow_marks_itself_dealt_and_ends_standing()
+    {
+        (Igi2HumanSoldier soldier, FakeAnimation animation, _, ScriptedMind mind) = OnFloor();
+        soldier.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.CloseCombat] = 1f;
+        soldier.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.CloseCombat] = 0f;
+        Assert.Equal(Igi2SoldierState.StandCloseCombat, soldier.Locomotion.CurrentState);
+        Assert.False(soldier.IsDamageDealt);
+
+        soldier.Signal |= Igi2SoldierSignal.BlowLanded;
+        soldier.RunDelayed();
+        Assert.True(soldier.IsDamageDealt);
+        Assert.Equal(Igi2SoldierSignal.None, soldier.Signal & Igi2SoldierSignal.BlowLanded);
+
+        animation.MainEnded = true;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.Stand, soldier.Locomotion.CurrentState);
+    }
+
+    /// <summary>
+    /// Pressing a switch keeps the upper body off and moves by the clip (<c>HumanSoldier_InitStateStandPressSwitch</c>,
+    /// <c>igi2 0x4E9550</c>); the clip's end stands it with the upper body free.
+    /// </summary>
+    [Fact]
+    public void Pressing_a_switch_stands_it_once_the_clip_ends()
+    {
+        (Igi2HumanSoldier soldier, FakeAnimation animation, _, ScriptedMind mind) = OnFloor();
+        soldier.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.PressSwitch] = 1f;
+        soldier.RunDelayed();
+        mind.Frame[(int)Igi2SoldierChannel.PressSwitch] = 0f;
+        Assert.Equal(Igi2SoldierState.StandPressSwitch, soldier.Locomotion.CurrentState);
+        Assert.Equal(1, soldier.UpperBodyFlags & 1);
+        Assert.False(soldier.IsDisableDeltaTranslation);
+
+        animation.MainEnded = true;
+        soldier.RunDelayed();
+        Assert.Equal(Igi2SoldierState.Stand, soldier.Locomotion.CurrentState);
+        Assert.Equal(0, soldier.UpperBodyFlags & 1);
+    }
+
     private static (Igi2HumanSoldier, FakeAnimation, FakeSurroundings, ScriptedMind) Unborn()
     {
         FakeAnimation animation = new();
