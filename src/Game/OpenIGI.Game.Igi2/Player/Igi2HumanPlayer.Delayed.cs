@@ -89,6 +89,7 @@ public sealed partial class Igi2HumanPlayer
         // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490):
         // the controllers that step themselves step, before the next tick's input runs the update.
         Animation.AutoStep();
+        TouchPose();
 
         // The weapon's run handler queued its own delayed handler as the children ran, so it runs after this one.
         Weapon.RunDelayed();

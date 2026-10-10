@@ -191,6 +191,7 @@ public sealed partial class Igi2HumanPlayer
         Animation.ClearUpperBody(0.4f);
         Animation.PlayState(PickLockAnimation, 0, 0f);
         Animation.StepMain();
+        TouchPose();
 
         // Kneeling at the door's vertex, a metre and a bit out along its Y, on the side the player stands, and facing it.
         float[] m = [.. door.CurrentOrientation];
@@ -279,6 +280,7 @@ public sealed partial class Igi2HumanPlayer
         AimPrecision(Igi2PrecisionType.Standing);
         playClip();
         Animation.StepMain();
+        TouchPose();
 
         IReadOnlyList<float> m = action.CurrentOrientation;
         Vector3d vertex = action.MagicVertex;

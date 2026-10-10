@@ -111,6 +111,75 @@ public static class Igi2BoneMath
             (((Fpu)half + zy) - yx).F);
     }
 
+    /// <summary>
+    /// A bone tilted about X by an angle, as the lower backs, upper backs and shoulders of soldier and player alike do it: the
+    /// half angle's sine and cosine as the FPU leaves them, one product, one operation more, and past a thousand renormalised.
+    /// </summary>
+    /// <param name="bones">The bones.</param>
+    /// <param name="bone">The bone.</param>
+    /// <param name="angle">The tilt, the share of the pitch already taken.</param>
+    public static void TiltAboutX(Igi2BoneBuffer bones, int bone, Fpu angle)
+    {
+        ArgumentNullException.ThrowIfNull(bones);
+        Fpu half = angle * 0.5f;
+        Fpu s = Math.Sin(half.Value), c = Math.Cos(half.Value);
+        Quaternion32 q = bones.Orientations[bone];
+        float a = (((Fpu)q.Y - q.Z) * 0f).F;
+        float b = (((Fpu)q.W - q.X) * 0f).F;
+        float f = (((Fpu)q.X + q.Y) * s).F;
+        float g = (((Fpu)q.W - q.Z) * c).F;
+        Fpu e = ((Fpu)q.Z + q.W) * c;
+        Fpu sum = ((Fpu)g + e) + f;
+        float j = (((((Fpu)q.X - q.Y) * -s) + sum) * 0.5f).F;
+        q = new Quaternion32(
+            (((((Fpu)q.X + q.W) * (c + s)) + j) - sum).F,
+            (((((Fpu)q.Z + q.Y) * (c - s)) + j) - e).F,
+            (((Fpu)j + b) - g).F,
+            (((Fpu)j + a) - f).F);
+        int ops = bones.Ops[bone] + 1;
+        if (ops > RenormaliseOps)
+        {
+            ops = 0;
+            q = Normalise(q, wzxy: true);
+        }
+
+        bones.Orientations[bone] = q;
+        bones.Ops[bone] = ops;
+    }
+
+    /// <summary>
+    /// A lower back's own turn swapped for an upper-body clip's: the parent's turn taken off the bone, then the clip's root key put
+    /// on, each product counted and renormalised past a thousand (the lower back callbacks of soldier and player).
+    /// </summary>
+    /// <param name="bones">The bones.</param>
+    /// <param name="bone">The lower back.</param>
+    /// <param name="parent">Its parent.</param>
+    /// <param name="key">The upper-body clip's active root key.</param>
+    public static void SwapParentTurn(Igi2BoneBuffer bones, int bone, int parent, Quaternion32 key)
+    {
+        ArgumentNullException.ThrowIfNull(bones);
+        Quaternion32 p = bones.Orientations[parent];
+        Quaternion32 inverse = new(-p.X, -p.Y, -p.Z, p.W);
+        Quaternion32 local = Multiply(inverse, bones.Orientations[bone]);
+        int localOps = bones.Ops[parent] + bones.Ops[bone] + 1;
+        if (localOps > RenormaliseOps)
+        {
+            localOps = 0;
+            local = Normalise(local, wzxy: false);
+        }
+
+        Quaternion32 q = Multiply(key, local);
+        int ops = localOps + 1;
+        if (ops > RenormaliseOps)
+        {
+            ops = 0;
+            q = Normalise(q, wzxy: false);
+        }
+
+        bones.Orientations[bone] = q;
+        bones.Ops[bone] = ops;
+    }
+
     /// <summary>A quaternion scaled to unit length, its squares summed in the order a call site takes them.</summary>
     /// <param name="q">The quaternion.</param>
     /// <param name="wzxy">Whether the squares are summed w, z, x, y; otherwise w, z, y, x.</param>

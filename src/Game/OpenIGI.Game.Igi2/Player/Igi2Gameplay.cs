@@ -61,6 +61,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
         Igi2Sounds sounds = LevelSounds(request);
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms, sounds);
+        if (request.Services.TryGet(out Igi2WhizzbyClock? clock))
+        {
+            player.Human.WhizzbyClock = clock;
+        }
+
+        player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
+        player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
+        world.AddBody(player.Human.Collider);
         if (weapons is not null)
         {
             weapons.Effects = new Igi2LevelWeaponEffects(sounds, () => player.Human.View.Position);
@@ -79,7 +87,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
                         Effects = new Igi2LevelExplosionEffects(sounds),
                     };
                     explosions.AddTarget(player.Human);
-                    Weapons.Igi2Grenades grenades = new(physicsTypes, models, new Physics.Igi2PhysicsWorld(world, materials), player.Dynamic)
+                    Physics.Igi2PhysicsWorld flight = new(world, materials, static owner => !Igi2ObjectCollision.PassesThrough(owner));
+                    Weapons.Igi2Grenades grenades = new(physicsTypes, models, flight, player.Dynamic)
                     {
                         Effects = explosions,
                     };
@@ -268,6 +277,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         Func<string, Formats.World.MefModel?> models = Models(request.World);
         List<Interaction.IIgi2Activatable> activatables = [];
+        player.Human.LevelTick = () => level.LevelFlow?.Tick ?? 0;
 
         // What detectors see, in the order the tree makes them (AIDetection_ptDetectionQTaskList): the cameras and the player.
         if (request.Services.TryGet(out Igi2GameMaterials? sightMaterials))

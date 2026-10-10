@@ -158,6 +158,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Animation.StepMain();
+        TouchPose();
         UpdateViewBody();
         if (IsFire)
         {

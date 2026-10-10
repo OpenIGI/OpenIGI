@@ -9,7 +9,7 @@ using OpenIGI.Game.Igi2.Weapons;
 namespace OpenIGI.Game.Igi2.Soldiers;
 
 /// <content>How a soldier is struck: its collision, the zone a bullet finds, and the damage it takes.</content>
-public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2WeaponCollisionTarget, IIgi2ExplosionTarget
+public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2ExplosionTarget
 {
     /// <summary>How far a blast at full share tilts a soldier's view, <c>0.02617994</c> radians.</summary>
     private const float SoldierShakeAngle = 0.02617994f;
@@ -52,17 +52,6 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Weapon
         ArgumentNullException.ThrowIfNull(tweaks);
         Damage.MaxDamage = tweaks.HitPoints;
     }
-
-    /// <summary>
-    /// Whether a bullet may strike the soldier, <c>Human_WeaponCollisionEvaluateHandler</c> (<c>igi2 0x4FF4E0</c>) in single player for
-    /// a human that is not the player: never its own or one it is ignored by, nor one fired by its own side.
-    /// </summary>
-    /// <param name="query">The trace's context.</param>
-    /// <returns>Whether it may.</returns>
-    public bool EvaluateWeaponCollision(in Igi2WeaponCollisionQuery query) =>
-        !ReferenceEquals(query.Shooter, this)
-        && !ReferenceEquals(query.Ignore, this)
-        && !(query.Shooter is Igi2Human shooter && shooter.Team == Team);
 
     /// <summary>A bullet striking the soldier, <c>HumanSoldier_WeaponHitHandler</c> (<c>igi2 0x4EB290</c>).</summary>
     /// <param name="hit">The hit.</param>

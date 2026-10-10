@@ -324,6 +324,9 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.GetOrProvide(() => new Animation.Igi2AnimTriggers(context.Logger)).Register(context.Natives, context.Types);
+
+        // iLastWhizzbySoundTick (igi2 0x79748FC) lives for the whole run of the game, whatever level is played.
+        context.Services.GetOrProvide(static () => new Player.Igi2WhizzbyClock());
     }
 
     /// <inheritdoc/>

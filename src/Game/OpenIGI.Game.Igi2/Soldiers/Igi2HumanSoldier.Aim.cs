@@ -95,29 +95,13 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
         AimGamma = gamma < -AimGammaLimit ? -AimGammaLimit : gamma > AimGammaLimit ? AimGammaLimit : gamma;
         AimAlpha = alpha;
 
-        Quaternion32 q = bones.Orientations[bone];
-        int ops = bones.Ops[bone];
         if (Animation is Igi2HumanAnimation { UpperBody: { } upper } && upper.ActiveRotation(0) is { } key)
         {
-            // The parent's turn taken off, then the upper-body clip's root key put on.
-            Quaternion32 p = bones.Orientations[parent];
-            Quaternion32 inverse = new(-p.X, -p.Y, -p.Z, p.W);
-            Quaternion32 local = Igi2BoneMath.Multiply(inverse, q);
-            int localOps = bones.Ops[parent] + ops + 1;
-            if (localOps > Igi2BoneMath.RenormaliseOps)
-            {
-                localOps = 0;
-                local = Igi2BoneMath.Normalise(local, wzxy: false);
-            }
-
-            q = Igi2BoneMath.Multiply(key, local);
-            ops = localOps + 1;
-            if (ops > Igi2BoneMath.RenormaliseOps)
-            {
-                ops = 0;
-                q = Igi2BoneMath.Normalise(q, wzxy: false);
-            }
+            Igi2BoneMath.SwapParentTurn(bones, bone, parent, key);
         }
+
+        Quaternion32 q = bones.Orientations[bone];
+        int ops = bones.Ops[bone];
 
         // Half the heading about Z: the sine stored where the product reads it so, the cosine likewise.
         double half = (double)AimGamma * 0.5;
@@ -142,31 +126,11 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
             q = Igi2BoneMath.Normalise(q, wzxy: true);
         }
 
-        // A share of the tilt about X, the sines used as they come.
-        double share = AimAlpha >= 0f ? 0.32352942f : 0.5f;
-        Fpu tilt = ((Fpu)AimAlpha * share) * 0.5f;
-        Fpu ts = Math.Sin(tilt.Value), tc = Math.Cos(tilt.Value);
-        float ta = (((Fpu)q.Y - q.Z) * 0f).F;
-        float tb = (((Fpu)q.W - q.X) * 0f).F;
-        float tf = (((Fpu)q.X + q.Y) * ts).F;
-        float tg = (((Fpu)q.W - q.Z) * tc).F;
-        Fpu te = ((Fpu)q.Z + q.W) * tc;
-        Fpu tsum = ((Fpu)tg + te) + tf;
-        float tj = (((((Fpu)q.X - q.Y) * -ts) + tsum) * 0.5f).F;
-        q = new Quaternion32(
-            (((((Fpu)q.X + q.W) * (tc + ts)) + tj) - tsum).F,
-            (((((Fpu)q.Z + q.Y) * (tc - ts)) + tj) - te).F,
-            (((Fpu)tj + tb) - tg).F,
-            (((Fpu)tj + ta) - tf).F);
-        ops++;
-        if (ops > Igi2BoneMath.RenormaliseOps)
-        {
-            ops = 0;
-            q = Igi2BoneMath.Normalise(q, wzxy: true);
-        }
-
         bones.Orientations[bone] = q;
         bones.Ops[bone] = ops;
+
+        // A share of the tilt about X, the sines used as they come.
+        Igi2BoneMath.TiltAboutX(bones, bone, (Fpu)AimAlpha * (AimAlpha >= 0f ? 0.32352942f : 0.5f));
     }
 
     /// <summary>

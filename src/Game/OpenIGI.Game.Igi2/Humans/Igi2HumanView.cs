@@ -140,6 +140,12 @@ public sealed class Igi2HumanView
     /// <summary>Gets or sets the breathing sway on the pitch, <c>vBreathOffsetViewAlpha</c>.</summary>
     public float BreathPitchOffset { get; set; }
 
+    /// <summary>
+    /// Gets or sets the pitch the player's spine is tilted by, <c>HumanView+0x210</c>: eased toward <see cref="Pitch"/> by the lower
+    /// back's callback, read by the upper back's and the shoulders'.
+    /// </summary>
+    public float ShouldersPitch { get; set; }
+
     /// <summary>Gets or sets the turn the view is aimed at sideways of the body, <c>vIdealViewGamma</c>.</summary>
     public float IdealYaw { get; set; }
 
@@ -153,9 +159,10 @@ public sealed class Igi2HumanView
     /// Looks straight ahead of the body: the pitch, the sideways turn, what they are aimed at, their kicks and the breathing
     /// sway all zero, as <c>HumanPlayer_InitStateActivateDoor</c> (<c>igi2 0x4AD4CD</c>) leaves the view.
     /// </summary>
-    /// <remarks>The original zeroes the shoulders' pitch with them, which this view does not keep.</remarks>
+    /// <remarks>The shoulders' pitch is zeroed with them.</remarks>
     public void LookAhead()
     {
+        ShouldersPitch = 0f;
         Pitch = 0f;
         IdealPitch = 0f;
         PitchOffset = 0f;
