@@ -610,7 +610,9 @@ public sealed class AiSoldierCombatWiringTests
         GraphFile graph = Graph();
         Vector3d start = graph.Nodes[0].Position;
         Vector3d emplacement = graph.Nodes[1].Position;
-        AiStationaryGun gun = new(500, emplacement, Matrix3f.Identity);
+
+        // The stand's position is its pivot, over the floor the gunner stands on: mission 8's M2HBs stand 1.3 m up.
+        AiStationaryGun gun = new(500, new Vector3d(emplacement.X, emplacement.Y, emplacement.Z + 5345.0), Matrix3f.Identity);
         AiActivationClaims claims = new();
         AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
         {
@@ -659,10 +661,24 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Same(gun, soldier.MountedGun);
 
         // The object dispatch seats the body in the use-object state (36) and consumes the mount's slot 24.
+        // State 36's entry (0x45C8B0) moves the body in X and Y only and keeps its own height.
+        double heightBeforeMount = soldier.Position.Z;
         soldier.TickCombatState(animationDone: false);
         Assert.Equal(HumanSoldierStates.UseObjectState, soldier.CombatState);
-        Assert.Equal(gun.MountPosition, soldier.Position);
+        Assert.Equal(gun.MountPosition.X, soldier.Position.X);
+        Assert.Equal(gun.MountPosition.Y, soldier.Position.Y);
+        Assert.Equal(heightBeforeMount, soldier.Position.Z);
+        Assert.True(gun.MountPosition.Z - soldier.Position.Z > 4096.0, "the gunner was lifted to the gun's pivot");
         Assert.True(gun.IsOccupied);
+
+        // Attached to the gun (0x463310, 0x4610C0), the body swings round the stand with the traverse.
+        gun.Steer(0f, 0.5f);
+        gun.TickOccupied();
+        soldier.RideMountedGun();
+        Assert.Equal(gun.MountPosition.X, soldier.Position.X, 6);
+        Assert.Equal(gun.MountPosition.Y, soldier.Position.Y, 6);
+        Assert.Equal(heightBeforeMount, soldier.Position.Z);
+        Assert.Equal(gun.MountFacing, soldier.Facing, 5);
 
         // The walk to the gun has finished; the fight it was installed over is what runs now.
         Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));

@@ -1746,6 +1746,31 @@ public sealed class AiSoldier
     // Whether the gunner took its gun this tick, for the body's object dispatch.
     private bool _seatedOnGunThisTick;
 
+    /// <summary>Keeps a mounted gunner on the gun as it turns: behind the barrel, facing along it, at his own height.</summary>
+    /// <remarks>
+    /// The entry attaches the body to the gun (<c>0x463310</c> keeps its place in the gun's frame, <c>0x4635F0</c> sets
+    /// the attached flag) and the human's frame is then the gun's times that place (<c>0x4610C0</c>), so the gunner
+    /// swings round the stand with the traverse. The seat is the same point in the gun's turned frame either way.
+    /// </remarks>
+    public void RideMountedGun()
+    {
+        if (MountedGun is { } gun)
+        {
+            SeatOn(gun);
+        }
+    }
+
+    // State 36's entry (0x45C8B0) stands the body behind the gun: it takes the gun's position and frame (0x444B30), moves
+    // 2867.2 units along the frame's axis in X and Y only, and copies Z from the human's own Human+48 -- the mount
+    // never changes the body's height. The gun's position is its pivot, 1.3 m over the deck on mission 8's M2HBs;
+    // taking its Z stood the gunner in mid-air.
+    private void SeatOn(AiStationaryGun gun)
+    {
+        Vector3d mount = gun.MountPosition;
+        Position = new Vector3d(mount.X, mount.Y, Position.Z);
+        Facing = gun.MountFacing;
+    }
+
     // The frame slot the use-object signal reads -- channel 4's.
     private const int UseObjectSlot = 24;
 
@@ -2991,8 +3016,7 @@ public sealed class AiSoldier
             if (mountedGun)
             {
                 _seatedOnGunThisTick = true;
-                Position = gun.MountPosition;
-                Facing = gun.MountFacing;
+                SeatOn(gun);
             }
         }
         else
@@ -4102,8 +4126,7 @@ public sealed class AiSoldier
                 if (gunner.MountedThisTick && gun is not null)
                 {
                     _seatedOnGunThisTick = true;
-                    Position = gun.MountPosition;
-                    Facing = gun.MountFacing;
+                    SeatOn(gun);
                 }
                 return;
             }
@@ -4193,9 +4216,9 @@ public sealed class AiSoldier
         {
             if (MountedGun is { } emplacement)
             {
-                // State 36 stays attached at the mount heading. The StationaryGun task, not the
-                // Human root, consumes the turn inputs and clamps the barrel to its authored cone.
-                Facing = emplacement.MountFacing;
+                // State 36 stays attached to the gun. The StationaryGun task, not the Human root, consumes the turn
+                // inputs and clamps the barrel to its authored cone; the body rides its frame.
+                SeatOn(emplacement);
                 _combat.ReportAimed(emplacement.Contains(point));
             }
             else

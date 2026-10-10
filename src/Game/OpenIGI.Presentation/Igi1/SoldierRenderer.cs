@@ -2265,26 +2265,6 @@ public sealed class SoldierRenderer : IDisposable
             held.WeaponType?.Category ?? WeaponCategory.Knife);
     }
 
-    /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
-    private void UpdateMountedWeapon(Member member, AiSoldier brain)
-    {
-        if (brain.MountedGun is { } mounted
-            && mounted.Weapon is not null
-            && _stationaryWeaponVisuals.TryGetValue(mounted, out HeldWeapon? visual)
-            && visual is not null)
-        {
-            member.Weapon = visual;
-            member.RenderedMountedGun = mounted;
-            return;
-        }
-
-        if (member.RenderedMountedGun is not null)
-        {
-            member.Weapon = member.CarriedWeapon;
-            member.RenderedMountedGun = null;
-        }
-    }
-
     /// <summary>Chooses the simulation weapon that a dead soldier drops, independent of its drawn model.</summary>
     internal static WeaponType? WeaponForDrop(WeaponType? carriedWeaponType, WeaponType? _renderedWeaponType) =>
         carriedWeaponType;
@@ -2382,6 +2362,10 @@ public sealed class SoldierRenderer : IDisposable
                 return false;
             }
             mounted.FireCooldownTicks = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
+
+            // The round is the stand's: 0x474360 fires the gun object and keeps what it answers, so the stand's
+            // barrel flames, not the gunner's own weapon.
+            mounted.RecordShot(fired: true, kickPitch: 0f, kickYaw: 0f);
         }
         else
         {
@@ -2389,7 +2373,7 @@ public sealed class SoldierRenderer : IDisposable
             member.FireCooldown = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
         }
         RoundsFired++;
-        if (member is not null)
+        if (member is not null && mounted is null)
         {
             member.FiredThisTick = true;
             member.ShotSequence++;
@@ -2408,7 +2392,7 @@ public sealed class SoldierRenderer : IDisposable
         // sprays along its own facing whenever the target is inside a 16.3-degree cone, so its ray runs
         // along the body's heading at the aim point's height.
         Vector3d target = brain.Combat.TurnTo ?? SprayTarget(brain, enemyFeet, enemyCrouching);
-        Vector3d origin = mounted?.Position ?? ViewPosition(view, brain);
+        Vector3d origin = mounted?.MuzzlePosition ?? ViewPosition(view, brain);
         Vector3d aim = SpreadRound(brain, mounted, weapon, member, origin, target);
 
         // 0x479780, the carried gun's fire handler, after the cone: the kick, drawn from a disc (pairs until one
@@ -3322,6 +3306,11 @@ public sealed class SoldierRenderer : IDisposable
     /// </returns>
     public Vector3d? MuzzleOf(object? shooter)
     {
+        if (shooter is SoldierView gunner && _brains.TryGetValue(gunner, out AiSoldier? brain) && brain.MountedGun is { } gun)
+        {
+            return gun.MuzzlePosition;
+        }
+
         if (shooter is not SoldierView view || FindMember(view) is not { HasWeaponFrameState: true } member)
         {
             return null;
@@ -4811,7 +4800,6 @@ public sealed class SoldierRenderer : IDisposable
 
         if (member is not null)
         {
-            UpdateMountedWeapon(member, brain);
             if (collectDiagnostics && brain.Arm == AiCombatArm.Gunner)
             {
                 string report = $"runtime={brain.RuntimeId} gunnerId={brain.GunnerId} "
@@ -5116,13 +5104,23 @@ public sealed class SoldierRenderer : IDisposable
         // as it now stands. The kick it returns waits for the next tick.
         brain.SettleRecoil();
         _kickThisTick = default;
+
+        // 0x474190 with an occupant: the gun turns by the gunner's own turn inputs, shows its aim, and decays the last
+        // kick, before the trigger reaches it. The port's gunner aims at the point it fires at.
+        if (brain.MountedGun is { } steered)
+        {
+            steered.AimAt(brain.Combat.TurnTo ?? SprayTarget(brain, aimFeet, aimCrouching));
+            steered.TickOccupied();
+            brain.RideMountedGun();
+        }
+
         bool fired = FireIfAsked(view, brain, aimFeet, aimCrouching);
         if (fired)
         {
             brain.TakeWeaponKick(_kickThisTick.Pitch, _kickThisTick.Yaw);
         }
         WeaponType? soundingWeapon = brain.MountedGun?.Weapon ?? member?.WeaponType;
-        Vector3d soundPosition = brain.MountedGun?.Position ?? brain.EyePosition();
+        Vector3d soundPosition = brain.MountedGun?.MuzzlePosition ?? brain.EyePosition();
         _weaponSound?.Invoke(brain.RuntimeId, fired, soundingWeapon, soundPosition);
         if (requestedClipEnded)
         {
@@ -5452,6 +5450,7 @@ public sealed class SoldierRenderer : IDisposable
             double groundedZ = brain.HasGraph && brain.StoodOnGraph && !brain.GraphInParentFrame
                 ? soldier.Position.Z
                 : SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+
             return (new Vector3d(
                 soldier.Position.X / WorldScene.UnitsPerMetre,
                 soldier.Position.Y / WorldScene.UnitsPerMetre,
@@ -5691,9 +5690,9 @@ public sealed class SoldierRenderer : IDisposable
     {
         foreach ((AiStationaryGun gun, HeldWeapon? visual) in _stationaryWeaponVisuals)
         {
-            bool playerUsing = gun.IsOccupied && _interactions?.Items.Any(item =>
-                ReferenceEquals(item.StationaryGun, gun) && item.IsPlayerUsingStationaryGun) == true;
-            if (!ShouldDrawStaticStationaryGun(gun, playerUsing) || visual is null)
+            // 0x474190 poses the gun on its stand every tick, whoever is on it (0x474420): an AI gunner holds his own
+            // weapon, which 0x4600C0 keeps on his hand, and works the stand's.
+            if (visual is null)
             {
                 continue;
             }
@@ -5758,13 +5757,6 @@ public sealed class SoldierRenderer : IDisposable
                 DrawRigidWeapon(visual, gun.PositionUnits / WorldScene.UnitsPerMetre, gun.Orientation, camera);
             }
         }
-    }
-
-    /// <summary>Gets whether the holder model remains the visible gun for this ownership state.</summary>
-    internal static bool ShouldDrawStaticStationaryGun(AiStationaryGun gun, bool playerUsing)
-    {
-        ArgumentNullException.ThrowIfNull(gun);
-        return !gun.IsOccupied || playerUsing;
     }
 
     /// <summary>Gets a value indicating whether the player's third-person body is posed and drawing.</summary>
@@ -8317,7 +8309,6 @@ public sealed class SoldierRenderer : IDisposable
         public WeaponType? CarriedWeaponType { get; set; }
 
         /// <summary>The stationary gun whose model currently replaces the carried weapon.</summary>
-        public AiStationaryGun? RenderedMountedGun { get; set; }
 
         /// <summary>Whether a round left this soldier's barrel on the current simulation tick.</summary>
         public bool FiredThisTick { get; set; }

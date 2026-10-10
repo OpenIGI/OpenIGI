@@ -924,6 +924,15 @@ public sealed class WorldInteractionRegistry
                 stationaryGun.MountVertex = mount;
             }
 
+            // State 36's seat (0x444B30) is measured from vertex 0, the origin for a stand with none.
+            if (stationaryGun is not null
+                && models.TryGetValue(modelName, out MefModel? seatModel)
+                && seatModel.MagicVertexCount >= 1
+                && seatModel.TryGetMagicVertex(0, out Vector3f seat))
+            {
+                stationaryGun.SeatVertex = seat;
+            }
+
             (Vector3d localBoundsMinimum, Vector3d localBoundsMaximum, bool hasLocalBounds) =
                 type == InteractionActivateType.Fence
                     && models.TryGetValue(modelName, out MefModel? fenceModel)

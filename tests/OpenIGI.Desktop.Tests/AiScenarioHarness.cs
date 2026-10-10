@@ -109,6 +109,16 @@ public sealed class AiScenarioHarness : IDisposable
         IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> pairs = soldiers.BrainPairsForTesting;
         int playerTeam = soldiers.PlayerTeam;
         log.AppendLine(CultureInfo.InvariantCulture, $"player team {playerTeam} at {Fmt(player.Body.Position)}");
+
+        // OPENIGI_AI_SCENARIO_SETVAR=<script variable>=<value>@<tick>: the probe's setvar -- e.g. mission 8's
+        // EditVariable_50.nValue=1@60, which is AlarmControl_97's Alarm Expression, raises the alarm the level's way.
+        (string Name, int Value, int Tick)? setVar = null;
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_SETVAR") is { Length: > 0 } setText)
+        {
+            string[] nameRest = setText.Split('=', 2);
+            string[] valueTick = nameRest[1].Split('@');
+            setVar = (nameRest[0], int.Parse(valueTick[0], CultureInfo.InvariantCulture), int.Parse(valueTick[1], CultureInfo.InvariantCulture));
+        }
         foreach ((SoldierView view, AiSoldier brain) in pairs)
         {
             log.AppendLine(
@@ -204,6 +214,16 @@ public sealed class AiScenarioHarness : IDisposable
             log.AppendLine(CultureInfo.InvariantCulture, $"placing the player {near[0]} m out at {near[1]} degrees off A's facing: {Fmt(place)}");
         }
 
+        // OPENIGI_AI_SCENARIO_PLACE="x,y,z": the player's feet exactly there, in world units -- a spot taken from a
+        // report or the telemetry overlay.
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_PLACE") is { Length: > 0 } placeText)
+        {
+            double[] at = [.. placeText.Split(',').Select(t => double.Parse(t, CultureInfo.InvariantCulture))];
+            place = new Vector3d(at[0], at[1], at[2]);
+            found = true;
+            log.AppendLine(CultureInfo.InvariantCulture, $"placing the player at {Fmt(place)}");
+        }
+
         if (!found)
         {
             Vector3d forward = a.Orientation.Transposed().Transform(new Vector3d(0.0, 1.0, 0.0));
@@ -241,6 +261,14 @@ public sealed class AiScenarioHarness : IDisposable
             if (step == 0)
             {
                 player.Body.Position = place;
+            }
+
+            if (setVar is { } write && engine == write.Tick)
+            {
+                var loop = (OpenIGI.Engine.Flow.GameLoop)typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)!;
+                bool wrote = loop.Variables.TryWrite(write.Name, OpenIGI.Scripting.Runtime.QvmValue.FromInt32(write.Value));
+                log.AppendLine(CultureInfo.InvariantCulture, $"t{engine} setvar {write.Name}={write.Value} {(wrote ? "written" : "NOT FOUND")}");
+                setVar = null;
             }
 
             if (aimAtA && a.Activity != AiSoldierActivity.Dead)
