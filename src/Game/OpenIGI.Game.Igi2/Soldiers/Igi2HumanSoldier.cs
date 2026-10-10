@@ -76,6 +76,15 @@ public interface IIgi2SoldierMind
         return false;
     }
 
+    /// <summary>Gets where the mind's weapon fires from, <c>HumanAI+0x60</c>.</summary>
+    Vector3d FirePosition => default;
+
+    /// <summary>Gets the mind's own orientation, <c>HumanAI+0xA0</c>, nine floats row by row: a shot's when its aim has no side.</summary>
+    IReadOnlyList<float> FireOrientation => [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+
+    /// <summary>Gets the point the mind aims its shots at, <c>HumanAI+0x7530</c>.</summary>
+    Vector3d AimTarget => default;
+
     /// <summary>Gets the clip name a stand action starts from, the mind's <c>HumanAI+0x28</c>, or <see langword="null"/> for none.</summary>
     string? StandActionAnimation => null;
 
@@ -188,14 +197,6 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
 
     /// <summary>Gets or sets the damage the soldier died of, <c>vDeathDamage</c>.</summary>
     public float DeathDamage { get; set; }
-
-    /// <inheritdoc/>
-    /// <remarks>Where a soldier fires from (<c>HumanSoldier_WeaponGetParentParametersHandler</c>, <c>igi2 0x4E9B60</c>) is not ported yet.</remarks>
-    public override bool HasFireFrame => false;
-
-    /// <inheritdoc/>
-    public override Igi2FireFrame GetFireFrame(bool addInaccuracy) =>
-        throw new NotSupportedException("A soldier's fire frame (HumanSoldier_WeaponGetParentParametersHandler, igi2 0x4E9B60) is not ported.");
 
     /// <inheritdoc/>
     /// <remarks>A soldier is never seen in first person.</remarks>

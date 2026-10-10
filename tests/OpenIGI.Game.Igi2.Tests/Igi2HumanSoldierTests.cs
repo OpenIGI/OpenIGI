@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
+using OpenIGI.Game.Igi2.Weapons;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
 using static OpenIGI.Game.Igi2.Tests.Igi2PlayerFakes;
@@ -310,6 +311,63 @@ public sealed class Igi2HumanSoldierTests
         soldier.RunDelayed();
         Assert.Equal(Igi2SoldierState.Stand, soldier.Locomotion.CurrentState);
         Assert.Equal(0, soldier.UpperBodyFlags & 1);
+    }
+
+    /// <summary>
+    /// A soldier fires from its mind's fire position toward its aim point (<c>HumanSoldier_WeaponGetParentParametersHandler</c>,
+    /// <c>igi2 0x4E9B60</c>): forward along the aim, the side the aim crossed with straight up, unnormalised (shorter the steeper the
+    /// aim), up normalised; three run-stream draws go first; an aim straight up takes the mind's own orientation.
+    /// </summary>
+    [Fact]
+    public void A_soldier_fires_along_its_minds_aim()
+    {
+        (Igi2HumanSoldier soldier, _, _, _) = OnFloor();
+        AimingMind mind = new() { Fire = new Vector3d(100, 200, 300), Aim = new Vector3d(4196, 4296, 300) };
+        soldier.Mind = mind;
+        IgiRandom expected = new();
+        expected.NextRaw();
+        expected.NextRaw();
+        expected.NextRaw();
+        Assert.True(soldier.HasFireFrame);
+
+        Igi2FireFrame level = soldier.GetFireFrame(addInaccuracy: true);
+        Assert.Equal(mind.Fire, level.Position);
+        Assert.Equal(expected.NextRaw(), soldier.Random.NextRaw());
+        float[] o = level.Orientation;
+        Assert.Equal(0.70710677f, o[1], 5);
+        Assert.Equal(0.70710677f, o[4], 5);
+        Assert.Equal(0.70710677f, o[0], 5);
+        Assert.Equal(-0.70710677f, o[3], 5);
+        Assert.Equal(1f, o[8], 5);
+
+        mind.Aim = new Vector3d(100, 4296, 4396);
+        float[] steep = soldier.GetFireFrame(addInaccuracy: false).Orientation;
+        Assert.Equal(0.70710677f, steep[0], 5);
+        Assert.Equal(-0.70710677f, steep[5], 5);
+        Assert.Equal(0.70710677f, steep[8], 5);
+
+        mind.Aim = new Vector3d(100, 200, 9000);
+        Assert.Equal(mind.FireOrientation, soldier.GetFireFrame(addInaccuracy: false).Orientation);
+    }
+
+    /// <summary>A mind with a fire position and an aim point, and a turned orientation of its own.</summary>
+    private sealed class AimingMind : IIgi2SoldierMind
+    {
+        public Vector3d Fire { get; init; }
+
+        public Vector3d Aim { get; set; }
+
+        public bool HasStarted => true;
+
+        public Vector3d FirePosition => Fire;
+
+        public Vector3d AimTarget => Aim;
+
+        public IReadOnlyList<float> FireOrientation { get; } = [0f, 1f, 0f, -1f, 0f, 0f, 0f, 0f, 1f];
+
+        public void Run(Igi2HumanSoldier soldier)
+        {
+        }
     }
 
     private static (Igi2HumanSoldier, FakeAnimation, FakeSurroundings, ScriptedMind) Unborn()
