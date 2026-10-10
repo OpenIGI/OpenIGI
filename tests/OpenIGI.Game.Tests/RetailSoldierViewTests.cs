@@ -176,6 +176,60 @@ public sealed class RetailSoldierViewTests
         Assert.Equal(["level 7: 003_01_1"], unresolved);
     }
 
+    [RequiresGameDataFact]
+    public void TheRunAndFireClipHoldsTheGunLevelAndTheTenseRunHoldsItDown()
+    {
+        // State 17 (the tense run) plays clip 48 and state 18 (firing on the run, 0x45AAD0) clip 52, from 0x53ED10.
+        // The barrel's axis in the weapon bone's frame is taken from the standing fire clip (state 6, clip 56),
+        // which aims level along the body: then each clip's pitch of that axis says where its gun points. A palette
+        // rotation turns a bone-frame vector as M * v -- Transposed().Transform, Transform being the row-vector
+        // form -- the way the held weapon is drawn from it.
+        LoadedMission mission = Load(1, out LevelTask root);
+        HumanSoldierTask soldier = FindAll<HumanSoldierTask>(root)
+            .First(s => s.Class == HumanSoldierClass.Soldier && !CinematicActor.IsStaged(s));
+        Assert.True(mission.TryGetAnimationSet(soldier.BoneHierarchy, out BoneAnimationSet? set));
+
+        HumanBodyStateTable table = HumanSoldierStates.Table;
+        int fire = table.AnimationOf(HumanSoldierStates.FiringState);
+        int run = table.AnimationOf(HumanSoldierStates.RunState);
+        int runFire = table.AnimationOf(HumanSoldierStates.RunFiringState);
+        Assert.Equal((56, 48, 52), (fire, run, runFire));
+
+        Vector3f forward = new(0f, 1f, 0f);
+        // The inverse of M * v is the transpose's, M^T * v -- which is Transform.
+        Vector3f barrel = GunRotations(soldier, set!, fire)[0].Transform(forward);
+        float[] runPitch = [.. GunRotations(soldier, set!, run).Select(r => PitchDegrees(r.Transposed().Transform(barrel)))];
+        float[] runFirePitch = [.. GunRotations(soldier, set!, runFire)
+            .Select(r => PitchDegrees(r.Transposed().Transform(barrel)))];
+
+        // Measured: clip 48 holds the muzzle 51-58 degrees below level, clip 52 within 5-7 degrees of it.
+        string report = $"clip 48 pitch {runPitch.Min():0.0}..{runPitch.Max():0.0}; "
+            + $"clip 52 pitch {runFirePitch.Min():0.0}..{runFirePitch.Max():0.0}";
+        Assert.True(runFirePitch.All(pitch => Math.Abs(pitch) < 10f), report);
+        Assert.True(runPitch.All(pitch => pitch < -45f), report);
+    }
+
+    // The weapon bone's object-space rotation at every tick of one pass through a clip.
+    private static List<Matrix3f> GunRotations(HumanSoldierTask soldier, BoneAnimationSet set, int animation)
+    {
+        SoldierView view = new(soldier, set);
+        Assert.True(view.PlayStateAnimation(animation, loops: true));
+        List<Matrix3f> rotations = [];
+        for (int tick = 0; tick < 30; tick++)
+        {
+            rotations.Add(view.UnrotatedPose().Rotations[HumanAttachPoints.ThirdPersonWeapon]);
+            view.Tick();
+        }
+
+        return rotations;
+    }
+
+    private static float PitchDegrees(Vector3f direction)
+    {
+        float length = MathF.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        return MathF.Asin(direction.Z / length) * 180f / MathF.PI;
+    }
+
     private static IEnumerable<T> FindAll<T>(GameTask task)
         where T : GameTask
     {

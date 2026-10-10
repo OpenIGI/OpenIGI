@@ -4950,7 +4950,15 @@ public sealed class SoldierRenderer : IDisposable
             // the fire pose, whose zero root motion feeds AdvanceInCombat a zero step -- the exact
             // "engaging, never moving" stall. Retail's Follow is a full-body run state (17), not the
             // stand cycle with feet glued down.
-            if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
+            //
+            // A soldier body firing on the run is in state 18, whose entry (0x45AAD0) plays the table's clip 52 --
+            // the run with the gun up and levelled -- and whose own root motion carries it. Clip 48 is the tense
+            // run with the muzzle down; playing it through the burst pointed every running shot at the ground.
+            int movingAnimation = soldierGaits && brain.CombatState == HumanSoldierStates.RunFiringState
+                && brain.Body.CurrentAnimation >= 0
+                ? brain.Body.CurrentAnimation
+                : runAnimation;
+            if (movingAnimation < 0 || !view.SetMoving(true, movingAnimation))
             {
                 view.SetMoving(true, walkAnimation);
             }
