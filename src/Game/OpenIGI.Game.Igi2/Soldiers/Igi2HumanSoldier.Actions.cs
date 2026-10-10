@@ -60,6 +60,7 @@ public sealed partial class Igi2HumanSoldier
         if (AnimTriggers is not { } triggers || !triggers.TryGet(trigger.TriggerId, out Igi2AnimTriggerType type)
             || !triggers.IsAnsweredBy(type, SoldierTriggerTaskType))
         {
+            TriggerHumanType(trigger, AnimTriggers);
             return;
         }
 

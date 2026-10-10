@@ -45,6 +45,7 @@ public sealed partial class Igi2HumanPlayer
     {
         if (!IsPlayerTrigger(trigger.TriggerId))
         {
+            TriggerHumanType(trigger, AnimTriggers);
             return;
         }
 

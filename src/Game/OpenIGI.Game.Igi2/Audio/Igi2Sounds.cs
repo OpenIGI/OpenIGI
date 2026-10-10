@@ -126,6 +126,24 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     /// <summary>Gets how long it has played, in seconds.</summary>
     public float Seconds { get; private set; }
 
+    /// <summary>Gets the sound's own volume, <c>vBaseVolume</c>: one unless set.</summary>
+    public float BaseVolume { get; private set; } = 1f;
+
+    /// <summary>Gets the share of its volume it plays at, <c>vRelativeVolume</c>: one unless set.</summary>
+    public float RelativeVolume { get; private set; } = 1f;
+
+    /// <inheritdoc/>
+    /// <remarks>The volumes are kept on the sound; the mixer's voices take no volume yet.</remarks>
+    public void SetVolumes(float baseVolume, float relativeVolume)
+    {
+        if (baseVolume >= 0f)
+        {
+            BaseVolume = baseVolume;
+        }
+
+        RelativeVolume = relativeVolume;
+    }
+
     /// <inheritdoc/>
     /// <remarks>Until it is deleted, and while the mixer still plays it: one never heard has nothing to end but its deletion.</remarks>
     public bool IsAlive => !_deleted && _voice is { IsPlaying: true };

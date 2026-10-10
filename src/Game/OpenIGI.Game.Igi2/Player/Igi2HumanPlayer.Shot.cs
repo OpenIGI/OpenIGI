@@ -34,6 +34,11 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// <inheritdoc/>
     protected override bool IsThePlayer => true;
 
+    /// <inheritdoc/>
+    /// <remarks>The player's states 1 and 24, turning on the spot standing or crouched.</remarks>
+    protected override bool IsTurningOnTheSpot =>
+        Locomotion.CurrentState is Igi2PlayerState.StandTurn or Igi2PlayerState.CrouchTurn;
+
     /// <summary>Gets or sets when a passing bullet was last heard, shared for the whole run of the game.</summary>
     public Igi2WhizzbyClock WhizzbyClock { get; set; } = new();
 

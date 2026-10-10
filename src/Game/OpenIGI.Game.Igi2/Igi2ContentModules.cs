@@ -327,6 +327,9 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
 
         // iLastWhizzbySoundTick (igi2 0x79748FC) lives for the whole run of the game, whatever level is played.
         context.Services.GetOrProvide(static () => new Player.Igi2WhizzbyClock());
+
+        // iDeadBodySoundIndex (igi2 0x7D460CC) likewise.
+        context.Services.GetOrProvide(static () => new Humans.Igi2DeadBodySoundCycle());
     }
 
     /// <inheritdoc/>

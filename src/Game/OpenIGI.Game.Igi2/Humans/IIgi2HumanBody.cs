@@ -227,6 +227,20 @@ public interface IIgi2HumanSurroundings
     /// <param name="name">The sound definition's name.</param>
     /// <returns>The playing sound.</returns>
     IIgi2SoundInstance StartSound(string name);
+
+    /// <summary>
+    /// Plays a human's sound where it happens, <c>Human_PlaySound</c> (<c>igi2 0x4FB590</c>): the player's at its ears, anyone else's
+    /// at the point.
+    /// </summary>
+    /// <param name="name">The sound definition's name.</param>
+    /// <param name="position">Where it happens.</param>
+    /// <returns>The playing sound, or <see langword="null"/> when none plays.</returns>
+    IIgi2SoundInstance? PlaySoundAt(string name, Vector3d position) => StartSound(name);
+
+    /// <summary>Gets a level material row's game material, or <see langword="null"/> for none.</summary>
+    /// <param name="row">The row.</param>
+    /// <returns>The material.</returns>
+    World.Igi2GameMaterial? Material(int row) => null;
 }
 
 /// <summary>A sound a state holds on to: the task a <c>QReference</c> keeps, which may end on its own.</summary>
@@ -240,4 +254,11 @@ public interface IIgi2SoundInstance
 
     /// <summary>Stops the sound and lets go of it (<c>QTask_DeleteQTaskAndQTaskRefSafe</c>).</summary>
     void Delete();
+
+    /// <summary>Sets how loud the sound plays, <c>SoundSys_SetSoundVolumes</c> (<c>igi2 0x42F930</c>).</summary>
+    /// <param name="baseVolume">Its own volume; below nought leaves it as it is.</param>
+    /// <param name="relativeVolume">The share of that it plays at.</param>
+    void SetVolumes(float baseVolume, float relativeVolume)
+    {
+    }
 }

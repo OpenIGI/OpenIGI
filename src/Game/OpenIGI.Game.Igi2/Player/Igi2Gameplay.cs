@@ -66,6 +66,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             player.Human.WhizzbyClock = clock;
         }
 
+        if (request.Services.TryGet(out Igi2DeadBodySoundCycle? deadBodySounds))
+        {
+            player.Human.DeadBodySounds = deadBodySounds;
+        }
+
         player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
         player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
         world.AddBody(player.Human.Collider);
@@ -179,6 +184,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         services.TryGet(out Igi2HumanWeapons? armoury);
         services.TryGet(out Igi2GameMaterials? materials);
         services.TryGet(out Igi2AnimTriggers? triggers);
+        services.TryGet(out Igi2DeadBodySoundCycle? deadBodySounds);
         Soldiers.Igi2Soldiers soldiers = Soldiers.Igi2Soldiers.Spawn(
             root,
             (task, rig) =>
@@ -204,6 +210,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             body.Mind = new Soldiers.Igi2StandingSoldierMind();
             body.Difficulty = difficulty;
             body.AnimTriggers = triggers;
+            if (deadBodySounds is not null)
+            {
+                body.DeadBodySounds = deadBodySounds;
+            }
+
             if (body.Animation is Igi2HumanAnimation animation)
             {
                 animation.TriggerTarget = new Soldiers.Igi2SoldierBodyTriggers(body);
@@ -943,7 +954,13 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     {
     }
 
-    public string? LandingSound(int material) => null;
+    public string? LandingSound(int material) =>
+        Materials?[material] is { LandSound.Length: > 0 } game ? game.LandSound : null;
+
+    public Igi2GameMaterial? Material(int row) => Materials?[row];
+
+    public IIgi2SoundInstance? PlaySoundAt(string name, Vector3d position) =>
+        Owner is Igi2HumanPlayer ? StartSound(name) : sounds.New(name, position);
 
     public void PlaySound(string name) => StartSound(name);
 
