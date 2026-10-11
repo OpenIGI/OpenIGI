@@ -45,7 +45,7 @@ internal sealed unsafe class D3D12StreamlineAdapter : IStreamlineGraphicsAdapter
     public SlAdapterInfo Adapter { get; }
 
     /// <inheritdoc/>
-    public nint CommandList(IRhiCommandEncoder encoder) => (nint)((D3D12RhiCommandEncoder)encoder).List;
+    public nint CommandList(IRhiCommandEncoder encoder) => (nint)((D3D12RhiCommandEncoder)encoder).LendList();
 
     /// <inheritdoc/>
     public SlResource PrepareTag(IRhiTexture texture, IRhiCommandEncoder encoder)

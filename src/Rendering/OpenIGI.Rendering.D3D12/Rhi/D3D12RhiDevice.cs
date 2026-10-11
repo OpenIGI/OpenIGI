@@ -59,8 +59,8 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
         // Tier 3 binding allows a million and more; the traced world's bindless views live here too.
         ShaderHeap = new D3D12DescriptorHeap(Native, DescriptorHeapType.CbvSrvUav, 1_000_000, shaderVisible: true, "shader heap");
         SamplerHeap = new D3D12DescriptorHeap(Native, DescriptorHeapType.Sampler, 2048, shaderVisible: true, "sampler heap");
-        RtvHeap = new D3D12DescriptorHeap(Native, DescriptorHeapType.Rtv, 4096, shaderVisible: false, "render targets");
-        DsvHeap = new D3D12DescriptorHeap(Native, DescriptorHeapType.Dsv, 1024, shaderVisible: false, "depth targets");
+        RtvHeap = new D3D12AttachmentDescriptors(Native, DescriptorHeapType.Rtv, 1024, "render targets");
+        DsvHeap = new D3D12AttachmentDescriptors(Native, DescriptorHeapType.Dsv, 1024, "depth targets");
 
         _draw = CreateSignature(IndirectArgumentType.Draw, 16, "draw indirect");
         _drawIndexed = CreateSignature(IndirectArgumentType.DrawIndexed, 20, "draw indexed indirect");
@@ -127,11 +127,11 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
     /// <summary>Gets the shader-visible sampler heap.</summary>
     public D3D12DescriptorHeap SamplerHeap { get; }
 
-    /// <summary>Gets the render-target descriptor heap.</summary>
-    public D3D12DescriptorHeap RtvHeap { get; }
+    /// <summary>Gets the render-target descriptors, which grow a page at a time.</summary>
+    public D3D12AttachmentDescriptors RtvHeap { get; }
 
-    /// <summary>Gets the depth-stencil descriptor heap.</summary>
-    public D3D12DescriptorHeap DsvHeap { get; }
+    /// <summary>Gets the depth-stencil descriptors, which grow a page at a time.</summary>
+    public D3D12AttachmentDescriptors DsvHeap { get; }
 
     /// <summary>Gets the command signature an indirect draw executes through.</summary>
     public ID3D12CommandSignature* DrawSignature => _draw;

@@ -227,6 +227,10 @@ internal sealed unsafe class D3D12RhiTexture : IRhiTexture
         return view;
     }
 
+    /// <summary>Stops tracking a view disposed before the texture, which has already given its descriptors back.</summary>
+    /// <param name="view">The view.</param>
+    internal void Forget(D3D12RhiTextureView view) => _views.Remove(view);
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -423,7 +427,7 @@ internal sealed unsafe class D3D12RhiTextureView : IRhiTextureView
     {
         if (_rtv < 0)
         {
-            _rtv = _device.RtvHeap.Allocate(1);
+            _rtv = _device.RtvHeap.Allocate();
             RenderTargetViewDesc description = new() { Format = D3D12Translation.ViewFormat(Descriptor.Format) };
             if (Owner.SampleCount > 1)
             {
@@ -459,7 +463,7 @@ internal sealed unsafe class D3D12RhiTextureView : IRhiTextureView
         ref int slot = ref readOnly ? ref _dsvReadOnly : ref _dsv;
         if (slot < 0)
         {
-            slot = _device.DsvHeap.Allocate(1);
+            slot = _device.DsvHeap.Allocate();
             DepthStencilViewDesc description = new()
             {
                 Format = D3D12Translation.ViewFormat(Descriptor.Format),
@@ -510,25 +514,31 @@ internal sealed unsafe class D3D12RhiTextureView : IRhiTextureView
         {
             if (rtv >= 0)
             {
-                _device.RtvHeap.Free(rtv, 1);
+                _device.RtvHeap.Free(rtv);
             }
 
             if (dsv >= 0)
             {
-                _device.DsvHeap.Free(dsv, 1);
+                _device.DsvHeap.Free(dsv);
             }
 
             if (dsvReadOnly >= 0)
             {
-                _device.DsvHeap.Free(dsvReadOnly, 1);
+                _device.DsvHeap.Free(dsvReadOnly);
             }
         });
     }
 
     /// <inheritdoc/>
-    /// <remarks>Owned by the texture, and released with it.</remarks>
+    /// <remarks>
+    /// Gives its attachment descriptors back now rather than with the texture: a view made for one pass of a
+    /// texture that lives on would otherwise hold them for as long as the texture does. Its shader-resource
+    /// form is written into the bind groups that use it and goes with them.
+    /// </remarks>
     public void Dispose()
     {
+        Release();
+        Owner.Forget(this);
     }
 
     /// <summary><c>D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING</c>.</summary>

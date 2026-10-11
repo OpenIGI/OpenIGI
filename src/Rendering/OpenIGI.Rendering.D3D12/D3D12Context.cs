@@ -180,32 +180,41 @@ internal sealed unsafe class D3D12Context : IDisposable
     /// <returns><see langword="true"/> when it was reached.</returns>
     public bool WaitFor(ulong value, TimeSpan timeout)
     {
-        if (_fence->GetCompletedValue() >= value)
-        {
-            return true;
-        }
-
-        D3D12Check.Ok(_fence->SetEventOnCompletion(value, (void*)_fenceEvent), "ID3D12Fence::SetEventOnCompletion");
-        if (timeout != Timeout.InfiniteTimeSpan)
-        {
-            _ = Kernel32.WaitForSingleObject(_fenceEvent, (uint)Math.Max(0, timeout.TotalMilliseconds));
-            CheckRemoved();
-            return _fence->GetCompletedValue() >= value;
-        }
+        // The event is shared by every wait, and waking it proves nothing about THIS value: a wait that timed
+        // out leaves the event armed for its own value, and when the GPU reaches that later the event is left
+        // signalled for whoever waits next. Trusting the wake, WaitIdle returned on that stale signal with the
+        // GPU still a frame behind, and a swapchain rebuilt just after freed buffers the GPU was drawing into
+        // -- a page fault, the device hung, and frame generation's plugin unable to make its queues. So the
+        // fence itself is the answer, re-armed and re-read until it says so.
+        long deadline = timeout == Timeout.InfiniteTimeSpan
+            ? long.MaxValue
+            : Environment.TickCount64 + (long)Math.Max(0, timeout.TotalMilliseconds);
 
         // An endless wait is waited out in slices, so a GPU that stopped without removing the device -- a
         // hang the OS has not yet called -- is reported rather than silently freezing the game.
         const uint Slice = 5000;
-        for (int slices = 1; Kernel32.WaitForSingleObject(_fenceEvent, Slice) != 0; slices++)
+        long started = Environment.TickCount64;
+        bool warned = false;
+        while (_fence->GetCompletedValue() < value)
         {
-            CheckRemoved();
-            if (slices == 2)
+            long left = deadline - Environment.TickCount64;
+            if (left <= 0)
             {
-                _logger.Warning(LogCategory, $"The GPU has not reached fence value {value} in {Slice * slices / 1000} s (it is at {_fence->GetCompletedValue()}); it may be hung.");
+                CheckRemoved();
+                return false;
+            }
+
+            D3D12Check.Ok(_fence->SetEventOnCompletion(value, (void*)_fenceEvent), "ID3D12Fence::SetEventOnCompletion");
+            _ = Kernel32.WaitForSingleObject(_fenceEvent, (uint)Math.Min(left, Slice));
+            CheckRemoved();
+
+            if (!warned && timeout == Timeout.InfiniteTimeSpan && Environment.TickCount64 - started >= 2 * Slice)
+            {
+                warned = true;
+                _logger.Warning(LogCategory, $"The GPU has not reached fence value {value} in {(Environment.TickCount64 - started) / 1000} s (it is at {_fence->GetCompletedValue()}); it may be hung.");
             }
         }
 
-        CheckRemoved();
         return true;
     }
 

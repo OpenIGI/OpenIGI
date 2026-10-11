@@ -12,7 +12,8 @@ namespace OpenIGI.Rendering.D3D12.Descriptors;
 /// pointer into the heap and nothing is copied per draw.
 /// </para>
 /// <para>
-/// The render-target and depth heaps are the same allocator over a heap the GPU never sees.
+/// The render-target and depth descriptors are pages of the same allocator over heaps the GPU never sees;
+/// see <see cref="D3D12AttachmentDescriptors"/>.
 /// </para>
 /// <para>
 /// A run given back is free at once: the caller defers giving it back until no frame in flight can read

@@ -154,22 +154,26 @@ public sealed unsafe class D3D12Rhi : IDisposable
 
         try
         {
+            D3D12StreamlineAdapter? adapter = runtime is null ? null : new D3D12StreamlineAdapter(rhi);
+
+            // Frame generation's plugin goes before the first swapchain unless it was asked for: while it is
+            // loaded the host pays a copy every frame even with it off. BEFORE, because the plugin hooks the
+            // swapchain's creation and hands out back buffers of its own; unloaded after, it left a swapchain
+            // whose buffers it still held, and the first resize -- vsync turned off, a window resized -- failed
+            // with DXGI_ERROR_INVALID_CALL. Loading it later rebuilds the swapchain around it.
+            if (runtime is not null
+                && adapter is not null
+                && streamline is { FrameGeneration: false }
+                && runtime.IsFeatureSupported(SlFeature.DlssG, adapter.Adapter) == SlResult.Ok)
+            {
+                _ = runtime.SetFeatureLoaded(SlFeature.DlssG, false);
+            }
+
             rhi.AttachSwapchain(window, width, height, vsync);
 
             StreamlineSession? session = null;
-            D3D12StreamlineAdapter? adapter = null;
-            if (runtime is not null)
+            if (runtime is not null && adapter is not null)
             {
-                adapter = new D3D12StreamlineAdapter(rhi);
-
-                // Frame generation's plugin goes before the first frame unless it was asked for: while it is
-                // loaded the host pays a copy every frame even with it off. The swapchain is rebuilt around it.
-                if (streamline is { FrameGeneration: false }
-                    && runtime.IsFeatureSupported(SlFeature.DlssG, adapter.Adapter) == SlResult.Ok)
-                {
-                    _ = runtime.SetFeatureLoaded(SlFeature.DlssG, false);
-                }
-
                 session = new StreamlineSession(runtime, adapter, log);
                 rhi.AttachStreamline(session);
             }

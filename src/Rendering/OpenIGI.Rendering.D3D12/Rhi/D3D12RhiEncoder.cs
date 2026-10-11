@@ -25,6 +25,9 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
     private bool _inPass;
     private bool _finished;
 
+    // Whether something outside the backend has recorded into the list since the heaps were bound.
+    private bool _heapsStale;
+
     /// <summary>Initialises a new instance of the <see cref="D3D12RhiCommandEncoder"/> class.</summary>
     /// <param name="device">The device.</param>
     /// <param name="allocator">The allocator it records from.</param>
@@ -39,8 +42,7 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
         _list = list;
         Label = label;
 
-        ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2] { device.ShaderHeap.Heap, device.SamplerHeap.Heap };
-        _list->SetDescriptorHeaps(2, heaps);
+        BindHeaps();
     }
 
     /// <inheritdoc/>
@@ -51,6 +53,20 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
 
     /// <summary>Gets the list being recorded, for a backend part that records into it directly.</summary>
     public ID3D12GraphicsCommandList7* List => _list;
+
+    /// <summary>Hands the list to code outside the backend -- Streamline, and NVIDIA's features through it.</summary>
+    /// <returns>The list.</returns>
+    /// <remarks>
+    /// What records into it there binds descriptor heaps of its own and leaves them bound: after a ray
+    /// reconstruction or DLSS evaluation the list's heaps were NGX's, and every descriptor table this backend
+    /// set after it named a heap that was not the one bound, which the debug layer reports on every dispatch
+    /// and the hardware is free to read garbage through. The heaps are bound again before the next command.
+    /// </remarks>
+    public ID3D12GraphicsCommandList7* LendList()
+    {
+        _heapsStale = true;
+        return _list;
+    }
 
     /// <inheritdoc/>
     public IRhiRenderPassEncoder BeginRenderPass(RhiRenderPassDescriptor descriptor)
@@ -454,6 +470,19 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
         {
             throw new InvalidOperationException("A pass is open; end it before recording anything else.");
         }
+
+        if (_heapsStale)
+        {
+            BindHeaps();
+        }
+    }
+
+    /// <summary>Binds the device's shader-visible heaps, which every table this backend sets points into.</summary>
+    private void BindHeaps()
+    {
+        ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2] { _device.ShaderHeap.Heap, _device.SamplerHeap.Heap };
+        _list->SetDescriptorHeaps(2, heaps);
+        _heapsStale = false;
     }
 
     private void CopyFootprints(

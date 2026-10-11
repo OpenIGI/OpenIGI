@@ -80,9 +80,14 @@ internal sealed unsafe partial class D3D12RhiDevice
         };
 
         IDXGISwapChain1* swapchain1 = null;
-        D3D12Check.Ok(
-            Context.Dxgi->CreateSwapChainForHwnd((IUnknown*)Context.Queue, window, &description, null, null, &swapchain1),
-            "IDXGIFactory::CreateSwapChainForHwnd");
+        int created = Context.Dxgi->CreateSwapChainForHwnd((IUnknown*)Context.Queue, window, &description, null, null, &swapchain1);
+        if (created < 0)
+        {
+            // A removed device answers this with an invalid call rather than with its removal, through a
+            // Streamline proxy especially; asked first, the log says why and what DRED recorded.
+            Context.CheckRemoved();
+            D3D12Check.Ok(created, "IDXGIFactory::CreateSwapChainForHwnd");
+        }
 
         // Alt+Enter would switch to exclusive fullscreen behind the window's back; the window does that.
         Context.Dxgi->MakeWindowAssociation(window, 1u << 1);
