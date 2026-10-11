@@ -20,4 +20,12 @@ public enum BlendMode
     /// lightmap's neutral is a half rather than white: the doubling is in the blend, not in the texels.
     /// </remarks>
     Modulate2X,
+
+    /// <summary>Plain modulation: <c>dst * src</c>, the frame multiplied by what is drawn.</summary>
+    /// <remarks>
+    /// Project I.G.I.'s terrain lightmap pass: <c>sub_5144E0</c> mode 2 sets <c>SRCBLEND = ZERO</c> and
+    /// <c>DESTBLEND = SRCCOLOR</c> over a <c>SELECTARG1(TEXTURE)</c> stage, so the page's colour multiplies
+    /// the ground the material passes left, once -- white leaves it as it was.
+    /// </remarks>
+    Modulate,
 }

@@ -146,6 +146,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private const int MaximumSparePages = 512;
     private readonly List<BatchKey> _emptyBatchKeys = [];
     private TextureHandle[] _tiles;
+
+    // The level's terrain lightmap pages, uploaded through its light ramp the first time a chunk names one.
+    private readonly Dictionary<int, TextureHandle> _lightPages = [];
     private long _frame;
     private int _pageMeshCreates;
     private int _pageMeshDestroys;
@@ -664,6 +667,32 @@ public sealed class TerrainRenderer : ITerrainPresenter
                 triangles += layer.TriangleCount;
                 passes++;
             }
+
+            // The ground's light, after its material passes (sub_5144E0 mode 2): the page multiplies the
+            // frame -- ZERO, SRCCOLOR -- tested against the depth the base pass wrote and writing none,
+            // and fogs towards white, so that at full fog it leaves the fogged ground as it found it. A
+            // chunk no cell encloses has none and keeps its tiles' own colour, as in the original.
+            if (entry.Geometry.Light is { } light && LightPage(light.Page) is { IsValid: true } page)
+            {
+                _device.SetDetailFadeUnweighted(
+                    (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
+                    fadeOffset,
+                    fadeSlope);
+                _device.SetDepthState(DepthState.TestOnly);
+                _device.SetFogTarget(FogTarget.White);
+                _device.DrawMesh(
+                    entry.DirectMesh,
+                    light.IndexOffset,
+                    light.IndexCount,
+                    modelView,
+                    page,
+                    TextureHandle.None,
+                    BlendMode.Modulate);
+                _device.SetFogTarget(FogTarget.Scene);
+                triangles += light.TriangleCount;
+                passes++;
+            }
+
             chunks++;
         }
 
@@ -679,6 +708,50 @@ public sealed class TerrainRenderer : ITerrainPresenter
         LastOccludedChunkCount = 0;
         LastTriangleCount = triangles;
         LastVisitedCount = result.Visited;
+    }
+
+    /// <summary>Gets a terrain lightmap page as a texture, uploading it through the level's ramp on first use.</summary>
+    /// <param name="index">The page's index in <c>terrain.lmp</c>.</param>
+    /// <returns>The texture, or an invalid handle when the page cannot be drawn.</returns>
+    /// <remarks>
+    /// Each texel is an index into the ramp <see cref="TerrainLightBindings.Ramp"/> holds -- the sun over the
+    /// terrain's ambient -- expanded as <c>sub_517FD0</c> expands it. Linear and clamped, one level: the
+    /// original's stage 0 filters linearly and clamps, and whether it built mips depends on a global this
+    /// port does not reproduce, so the page is drawn at the one resolution it ships at.
+    /// </remarks>
+    private TextureHandle LightPage(int index)
+    {
+        if (_lightPages.TryGetValue(index, out TextureHandle cached))
+        {
+            return cached;
+        }
+
+        TextureHandle handle = default;
+        if (_terrain.Lightmaps is { } pages && index >= 0 && index < pages.Pages.Count && !pages.Pages[index].IsEmpty)
+        {
+            TerrainLightmapPage page = pages.Pages[index];
+            IReadOnlyList<Bgra32> ramp = _surface.Lights.Ramp;
+            ReadOnlySpan<byte> texels = page.Texels.Span;
+            var pixels = new Bgra32[page.Size * page.Size];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = ramp[texels[i]];
+            }
+
+            try
+            {
+                handle = _device.CreateTexture(
+                    new TextureDescription(page.Size, page.Size, 1, TextureFilter.Linear, TextureAddressMode.Clamp),
+                    pixels);
+            }
+            catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+            {
+                _logger.Warning(LogCategory, $"Terrain lightmap page {index} did not upload: {ex.Message}");
+            }
+        }
+
+        _lightPages[index] = handle;
+        return handle;
     }
 
     private bool EnsureDirectMesh(Entry entry)
@@ -845,6 +918,15 @@ public sealed class TerrainRenderer : ITerrainPresenter
             _device.DestroyTexture(tile);
         }
 
+        foreach (TextureHandle page in _lightPages.Values)
+        {
+            if (page.IsValid)
+            {
+                _device.DestroyTexture(page);
+            }
+        }
+
+        _lightPages.Clear();
         _cache.Clear();
         _geometryPool.Clear();
         _batchPages.Clear();
@@ -991,7 +1073,8 @@ public sealed class TerrainRenderer : ITerrainPresenter
             _surface,
             (float)(1.0 / WorldScene.UnitsPerMetre),
             _surface.Heights.Resolve(chunk),
-            _geometryPool);
+            _geometryPool,
+            _surface.Lights.Resolve(chunk));
 
         if (geometry is null)
         {
@@ -1009,7 +1092,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     /// <summary>Adds one chunk's material layers to spatially local, state-compatible mesh pages.</summary>
     private BatchedLayer[] AddToBatches(in TerrainChunk chunk, TerrainChunkGeometry geometry)
     {
-        int vertexCount = geometry.Vertices.Length / geometry.Layers.Length;
+        int vertexCount = geometry.VerticesPerPass;
         BatchedLayer[] result = new BatchedLayer[geometry.Layers.Length];
 
         for (int slot = 0; slot < geometry.Layers.Length; slot++)
@@ -1279,7 +1362,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
                 continue;
             }
 
-            int vertexCount = entry.Geometry.Vertices.Length / entry.Geometry.Layers.Length;
+            int vertexCount = entry.Geometry.VerticesPerPass;
             for (int slot = 0; slot < entry.Layers.Length; slot++)
             {
                 if (_affectedPages.Contains(entry.Layers[slot].Page))

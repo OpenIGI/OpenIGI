@@ -170,7 +170,11 @@ Varyings vertexMain(VertexInput input)
         // sum to one across every pass and both scales.
         float selector = input.colorBgra.a * 3.0;
         float material = selector < 0.5 ? 0.0 : (selector < 1.5 ? morph : (selector < 2.5 ? 1.0 - morph : 1.0));
-        output.fade = material * (terrain > 1.5 ? 1.0 - morph : morph);
+
+        // Three is a pass that covers the chunk once and has no share in the cross-fade -- Project
+        // I.G.I.'s terrain lightmap, multiplied over everything the material passes added: the
+        // morph slides it with the ground and nothing scales it.
+        output.fade = terrain > 2.5 ? 1.0 : material * (terrain > 1.5 ? 1.0 - morph : morph);
     }
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));

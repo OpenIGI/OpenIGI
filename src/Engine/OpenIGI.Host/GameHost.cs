@@ -5217,7 +5217,13 @@ internal sealed partial class GameHost : IDisposable
                     // -viewdist still wins when it is given, so an existing diagnostic command line keeps
                     // meaning what it did; otherwise the setting decides.
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
-                    GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
+
+                    // The original's own picture -- drawn straight to the back buffer, with no G-buffer to
+                    // keep the passes apart -- draws the ground as the original does, chunk by chunk with
+                    // its lightmap multiplied over it. Decided by the frame rather than by the preset's
+                    // name: a vanilla player who changes one setting reads as Custom, and used to lose the
+                    // ground's light with it.
+                    captured,
                     RenderCVars.TerrainOcclusion.Value,
 
                     // The ground casts into the cascades through the same caster the traced sun reads,

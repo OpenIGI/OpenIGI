@@ -317,6 +317,16 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha);
 
+    /// <summary>
+    /// Sets the terrain's level-of-detail slide for a pass that covers the chunk once and takes no share of
+    /// the material cross-fade: the seam morph applies, the weights do not.
+    /// </summary>
+    /// <param name="scale">As <see cref="SetDetailFade(float, float, float, bool)"/>.</param>
+    /// <param name="offset">As <see cref="SetDetailFade(float, float, float, bool)"/>.</param>
+    /// <param name="slope">As <see cref="SetDetailFade(float, float, float, bool)"/>.</param>
+    /// <remarks>Project I.G.I.'s terrain lightmap pass, which multiplies the whole chunk after its material passes.</remarks>
+    void SetDetailFadeUnweighted(float scale, float offset, float slope) => SetDetailFade(scale, offset, slope, fadeAlpha: false);
+
     /// <summary>Stops the terrain fade; subsequent <see cref="DrawMesh"/> calls draw unmodified.</summary>
     void ClearDetailFade();
 

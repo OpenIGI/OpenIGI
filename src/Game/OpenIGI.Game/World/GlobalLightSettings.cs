@@ -53,6 +53,14 @@ public readonly record struct GlobalLightSettings(
     /// <summary>The task type that carries the bands.</summary>
     public const string KeyframeType = "GlobalLightKeyframe";
 
+    /// <summary>Gets the terrain band's ambient: the floor of the ground's light ramp, each channel 0 to 1.</summary>
+    /// <remarks>
+    /// What <c>sub_50FE40</c> publishes to <c>0xA7DA20</c> and <c>sub_50FAE0</c> adds under the sun when it
+    /// builds the ramp a terrain lightmap's texels index -- see <see cref="TerrainLightBindings"/>. Black
+    /// where a level declares no keyframe.
+    /// </remarks>
+    public Vector3f TerrainAmbient { get; init; }
+
     /// <summary>The ambient a model wears where a level declares none: unmodified texture.</summary>
     public static Vector3f DefaultAmbient => Vector3f.One;
 
@@ -108,7 +116,10 @@ public readonly record struct GlobalLightSettings(
             Band(keyframe, "terrain"),
             Band(keyframe, "object category 1"),
             Colour(keyframe, "Ambient color object category 1") ?? Vector3f.One,
-            time);
+            time)
+        {
+            TerrainAmbient = Colour(keyframe, "Ambient color terrain") ?? default,
+        };
 
         static SceneFog Band(DeclaredTask keyframe, string band) => SceneFog.FromGlobalLight(
             Colour(keyframe, $"Fog color {band}") ?? default,

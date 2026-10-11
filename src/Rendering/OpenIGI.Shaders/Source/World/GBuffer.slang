@@ -145,7 +145,8 @@ Varyings vertexMain(VertexInput input)
         // share of the ground, not a coverage, and the colour's own channels are white for terrain.
         float selector = input.colorBgra.a * 3.0;
         float material = selector < 0.5 ? 0.0 : (selector < 1.5 ? morph : (selector < 2.5 ? 1.0 - morph : 1.0));
-        output.fade = material * (terrain > 1.5 ? 1.0 - morph : morph);
+        // Three: a pass with no share in the cross-fade (see World/Mesh3D.slang).
+        output.fade = terrain > 2.5 ? 1.0 : material * (terrain > 1.5 ? 1.0 - morph : morph);
     }
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));

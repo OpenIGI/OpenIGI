@@ -11,13 +11,23 @@ namespace OpenIGI.Game.World;
 /// <param name="Vertices">Every pass's vertices, back to back.</param>
 /// <param name="Indices">Absolute indices into <paramref name="Vertices"/>, three per triangle.</param>
 /// <param name="Layers">One pass per material, in the order they must be drawn.</param>
+/// <param name="Light">
+/// The pass that multiplies the chunk by its terrain lightmap after every material pass, or
+/// <see langword="null"/> where no <c>TerrainLightMap</c> cell encloses the chunk. Kept apart from
+/// <paramref name="Layers"/> because only the original's own picture draws it: the modern presets light
+/// the ground themselves.
+/// </param>
 public sealed record TerrainChunkGeometry(
     Vertex3D[] Vertices,
     ushort[] Indices,
-    TerrainChunkLayer[] Layers)
+    TerrainChunkLayer[] Layers,
+    TerrainChunkLightLayer? Light = null)
 {
     /// <summary>Gets the total triangle count across every pass.</summary>
     public int TriangleCount => Indices.Length / 3;
+
+    /// <summary>Gets how many vertices one pass holds: every pass, the light one included, is a whole copy of the chunk.</summary>
+    public int VerticesPerPass => Vertices.Length / (Layers.Length + (Light is null ? 0 : 1));
 
     /// <inheritdoc/>
     public override string ToString() =>
@@ -53,4 +63,14 @@ public readonly record struct TerrainChunkLayer(
     /// <inheritdoc/>
     public override string ToString() =>
         $"material {MaterialId} on tile {TileIndex}{(IsBase ? " (base)" : string.Empty)}";
+}
+
+/// <summary>A chunk's lightmap pass: the whole chunk once more, textured with its <c>terrain.lmp</c> page.</summary>
+/// <param name="Page">The page's index in <c>terrain.lmp</c>.</param>
+/// <param name="IndexOffset">The first index of the pass.</param>
+/// <param name="IndexCount">How many indices the pass covers.</param>
+public readonly record struct TerrainChunkLightLayer(int Page, int IndexOffset, int IndexCount)
+{
+    /// <summary>Gets the number of triangles the pass covers.</summary>
+    public int TriangleCount => IndexCount / 3;
 }
