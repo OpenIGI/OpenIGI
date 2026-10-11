@@ -33,11 +33,13 @@
     <PackageReference Include="Microsoft.Direct3D.D3D12" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- The game's project leaves both out of a package for another platform (DropD3D12RuntimeOffWindows). -->
   <ItemGroup>
     <None Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\D3D12Core.dll" Link="D3D12\D3D12Core.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
-    <!-- The debug layer, which OPENIGI_D3D12_VALIDATION loads. Development only, but small, and the same
-         folder the runtime is loaded from is the only place the factory looks for it. -->
-    <None Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\d3d12SDKLayers.dll" Link="D3D12\d3d12SDKLayers.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <!-- The debug layer, which OPENIGI_D3D12_VALIDATION loads: in the build output, where development runs from,
+         and never in a published package, where a player has no use for it (asked for there, the device is made
+         without it and says so). The folder the runtime is loaded from is the only place the factory looks. -->
+    <None Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\d3d12SDKLayers.dll" Link="D3D12\d3d12SDKLayers.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" Visible="false" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -63,6 +63,17 @@
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false"
                       GlobalPropertiesToRemove="PublishTrimmed;TrimMode;PublishReadyToRun;PublishSingleFile;IncludeNativeLibrariesForSelfExtract;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
+
+  <!-- Direct3D 12's runtime (D3D12/, from OpenIGI.Rendering.D3D12) is for Windows alone: a Linux or macOS package
+       carried 5 MB it can never load. Decided here, by the package's runtime identifier, because a referenced
+       library is built without one, and the release runner builds every platform's package on one machine. -->
+  <Target Name="DropD3D12RuntimeOffWindows" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(RuntimeIdentifier)' != '' and !$(RuntimeIdentifier.StartsWith('win'))">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').StartsWith('D3D12/'))" />
+    </ItemGroup>
+  </Target>
 
   <!-- GLFW decides whether Vulkan exists by dlopen'ing a file called exactly "libvulkan.1.dylib": one
        leaf name, hard coded, and the only one it will try. Silk asks it that question before it will
