@@ -38,14 +38,31 @@ public static class QualityBinding
     public static Dropdown? CreateControl(
         UiTheme theme, CVarRegistry cvars, QualityGroup group, ICollection<IDisposable>? lifetime = null)
     {
-        ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(cvars);
+        return CreateControl(theme, Lookup(cvars), group, lifetime);
+    }
+
+    /// <summary>Builds a dropdown over a quality group's variables as some view of them has them.</summary>
+    /// <param name="theme">The theme the control draws from.</param>
+    /// <param name="find">
+    /// Finds a variable by name, or <see langword="null"/>: the registry's, or a <see cref="SettingsDraft"/>'s
+    /// staged stand-ins, so the row writes only to the draft.
+    /// </param>
+    /// <param name="group">The group to bind.</param>
+    /// <param name="lifetime">Receives the handle that unhooks the dropdown; see the registry overload.</param>
+    /// <returns>The bound dropdown, or <see langword="null"/> when a variable the group names is missing.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static Dropdown? CreateControl(
+        UiTheme theme, Func<string, ICVar?> find, QualityGroup group, ICollection<IDisposable>? lifetime = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(find);
         ArgumentNullException.ThrowIfNull(group);
 
         var managed = new List<ICVar>();
         foreach (string name in group.Variables)
         {
-            if (!cvars.TryGet(name, out ICVar? cvar) || cvar is null)
+            if (find(name) is not { } cvar)
             {
                 return null;
             }
@@ -68,7 +85,7 @@ public static class QualityBinding
         options[customIndex] = CustomOption;
 
         var gate = new BindingGate();
-        var dropdown = new Dropdown(theme, group.Caption, options, Detect(cvars, group) ?? customIndex)
+        var dropdown = new Dropdown(theme, group.Caption, options, Detect(find, group) ?? customIndex)
         {
             OptionEnabled = index => index != customIndex,
         };
@@ -86,10 +103,7 @@ public static class QualityBinding
             {
                 foreach ((string variable, string value) in group.Levels[index].Values)
                 {
-                    if (cvars.TryGet(variable, out ICVar? cvar) && cvar is not null)
-                    {
-                        cvar.TrySetText(value, out _);
-                    }
+                    find(variable)?.TrySetText(value, out _);
                 }
             });
         };
@@ -98,7 +112,7 @@ public static class QualityBinding
         // notice. A change that lands the set on one of the steps shows that step; anything else shows
         // Custom, which is the honest answer.
         EventHandler<CVarChangedEventArgs> changed =
-            (_, _) => gate.Run(() => dropdown.SelectedIndex = Detect(cvars, group) ?? customIndex);
+            (_, _) => gate.Run(() => dropdown.SelectedIndex = Detect(find, group) ?? customIndex);
         foreach (ICVar cvar in managed)
         {
             cvar.Changed += changed;
@@ -123,6 +137,17 @@ public static class QualityBinding
     public static int? Detect(CVarRegistry cvars, QualityGroup group)
     {
         ArgumentNullException.ThrowIfNull(cvars);
+        return Detect(Lookup(cvars), group);
+    }
+
+    /// <summary>Works out which of a group's steps some view of its variables is at, if any.</summary>
+    /// <param name="find">Finds a variable by name, or <see langword="null"/>.</param>
+    /// <param name="group">The group to recognise.</param>
+    /// <returns>The step's index, or <see langword="null"/> when the values match none of them.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static int? Detect(Func<string, ICVar?> find, QualityGroup group)
+    {
+        ArgumentNullException.ThrowIfNull(find);
         ArgumentNullException.ThrowIfNull(group);
 
         for (int index = 0; index < group.Levels.Count; index++)
@@ -133,7 +158,7 @@ public static class QualityBinding
                 // MatchesText rather than a comparison against ValueText, for the reason
                 // GraphicsPresetRegistry.Detect records: a step declaring 0.70 reads back as 0.7 and the
                 // row would report Custom for ever after.
-                if (!cvars.TryGet(variable, out ICVar? cvar) || cvar is null || !cvar.MatchesText(value))
+                if (find(variable) is not { } cvar || !cvar.MatchesText(value))
                 {
                     matches = false;
                     break;
@@ -148,6 +173,9 @@ public static class QualityBinding
 
         return null;
     }
+
+    private static Func<string, ICVar?> Lookup(CVarRegistry cvars) =>
+        name => cvars.TryGet(name, out ICVar? cvar) ? cvar : null;
 
     // Runs its action once, on the first dispose.
     private sealed class Unhook(Action action) : IDisposable

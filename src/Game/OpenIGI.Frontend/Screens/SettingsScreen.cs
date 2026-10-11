@@ -23,7 +23,11 @@ namespace OpenIGI.Frontend.Screens;
 /// Categories are grouped by CVar name prefix — <c>r_</c> is graphics/display, <c>snd_</c> audio,
 /// <c>g_</c>/<c>ui_</c> gameplay — and, inside a category, by the next word of the name, so
 /// <c>g_ragdoll_force</c> and <c>g_ragdoll_gravity</c> share a Ragdoll panel. Controls are the
-/// <see cref="CVarBinding"/> rows, so every change previews the instant it is made.
+/// <see cref="CVarBinding"/> rows. On Audio and Gameplay a change previews the instant it is made; on
+/// Graphics and Display it waits in a <see cref="SettingsDraft"/> until Apply (F), as every game's options
+/// do -- a graphics API or a resolution is not something to change on the way past it. A display mode
+/// that was applied has to be kept within <see cref="KeepSeconds"/> or it is put back, and leaving with
+/// changes unapplied asks what to do with them.
 /// </para>
 /// <para>
 /// The Controls tab rebinds keyboard keys and mouse buttons against the active profile and persists their
@@ -41,6 +45,12 @@ public sealed class SettingsScreen : ShellScreen
 
     /// <summary>The most rows one panel holds before a long group continues in another.</summary>
     private const int MaxRowsPerPanel = 12;
+
+    /// <summary>How long a newly applied display mode waits to be kept before it is put back.</summary>
+    private const float KeepSeconds = 15f;
+
+    /// <summary>The variables a change of which can leave the player with no picture they can use, and so has to be kept.</summary>
+    private static readonly string[] DisplayModeVariables = ["r_window_mode", "r_resolution"];
 
     private readonly Dictionary<Control, ICVar> _boundCvars = [];
     private readonly List<UiElement> _tabPanels = [];
@@ -71,6 +81,29 @@ public sealed class SettingsScreen : ShellScreen
     private int _activeTab;
     private int _controlsTab = -1;
 
+    // The Graphics and Display categories' unapplied changes. Made with the page and kept across its
+    // rebuilds -- a resize, a resolution just applied -- so a half-made choice survives them; dropped on leaving.
+    private SettingsDraft? _draft;
+
+    // Which categories write to the draft rather than straight to their variables.
+    private readonly HashSet<int> _stagedTabs = [];
+
+    // How the rows being built find their variables: through the draft on a staged category.
+    private Func<string, ICVar?> _find = static _ => null;
+
+    private UiElement? _page;
+    private UiElement? _applyBar;
+    private Label? _applyNote;
+    private Button? _apply;
+    private Button? _discard;
+
+    // The question on screen, if any. Kept as data, so it survives the page being rebuilt under it -- which
+    // is exactly what applying a resolution does.
+    private Prompt? _prompt;
+    private Panel? _promptLayer;
+    private Label? _promptMessage;
+    private readonly List<Button> _promptButtons = [];
+
     /// <summary>Initializes a new instance of the <see cref="SettingsScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
     public SettingsScreen(ShellContext context)
@@ -86,7 +119,13 @@ public sealed class SettingsScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Settings;
 
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("CLICK", "Adjust"), new("R", "Reset defaults"), new("ESC", "Back")];
+    protected override IReadOnlyList<KeyHint> Hints =>
+        _prompt is { } prompt ? [new("ENTER", "Choose"), new("ESC", prompt.BackCaption)]
+        : IsStagedTab ? [new("CLICK", "Adjust"), new("F", "Apply"), new("BACKSPACE", "Discard"), new("R", "Reset defaults"), new("ESC", "Back")]
+        : [new("CLICK", "Adjust"), new("R", "Reset defaults"), new("ESC", "Back")];
+
+    /// <summary>Gets a value indicating whether the category on screen holds its changes until Apply.</summary>
+    private bool IsStagedTab => _stagedTabs.Contains(_activeTab);
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)
@@ -99,6 +138,8 @@ public sealed class SettingsScreen : ShellScreen
         _activeTab = 0;
         _controlsTab = -1;
         _resetBindings = null;
+        _stagedTabs.Clear();
+        _draft ??= CreateDraft();
 
         UiTheme theme = Context.Theme;
 
@@ -148,6 +189,14 @@ public sealed class SettingsScreen : ShellScreen
                 _controlsTab = i;
             }
 
+            // Graphics and Display bind to the draft, so their rows write nothing until Apply.
+            bool staged = categories[i].Title is "Graphics" or "Display";
+            if (staged)
+            {
+                _stagedTabs.Add(i);
+            }
+
+            _find = staged ? _draft.Find : FindLive;
             UiElement panel = BuildColumns(theme, categories[i].Build(), i);
             panel.Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed;
             _tabPanels.Add(panel);
@@ -156,15 +205,79 @@ public sealed class SettingsScreen : ShellScreen
 
         _help = new Label(theme.Body, string.Empty, 16f, theme.TextMuted) { Margin = new Thickness(0f, 12f, 0f, 0f) };
 
+        var footer = new Grid { ColumnSpacing = 24f };
+        footer.ColumnDefinitions.Add(GridLength.Star);
+        footer.ColumnDefinitions.Add(GridLength.Auto);
+        footer.RowDefinitions.Add(GridLength.Auto);
+        footer.Add(_help, 0, 0);
+        footer.Add(BuildApplyBar(theme), 0, 1);
+
         var layout = new Grid { RowSpacing = 36f, Padding = new Thickness(SideMargin, 48f, SideMargin, 0f) };
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto); // the title and the categories
         layout.RowDefinitions.Add(GridLength.Star); // the current category, filling the rest
-        layout.RowDefinitions.Add(GridLength.Auto); // the per-row help line
+        layout.RowDefinitions.Add(GridLength.Auto); // the per-row help line, and Apply on a staged category
         layout.Add(header, 0, 0);
         layout.Add(content, 1, 0);
-        layout.Add(_help, 2, 0);
-        return layout;
+        layout.Add(footer, 2, 0);
+        _page = layout;
+
+        _promptLayer = new Panel();
+        var root = new Panel();
+        root.AddChild(layout);
+        root.AddChild(_promptLayer);
+        UpdateApplyBar();
+        ShowPrompt(_prompt);
+        return root;
+    }
+
+    /// <inheritdoc/>
+    protected override void OnBuilt()
+    {
+        // A rebuild makes a new focus manager, which starts on the page's first row: a question still on
+        // screen has to keep it.
+        if (_prompt is not null && _promptButtons.Count > 0)
+        {
+            Focus?.Focus(_promptButtons[0]);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override bool HoldDeparture(Action leave)
+    {
+        switch (_prompt)
+        {
+            case { Kind: PromptKind.Keep } keep:
+                // Leaving is as good an answer as any that the new display mode works.
+                keep.Choices[0].Chosen();
+                return false;
+
+            case not null:
+                return true;
+        }
+
+        if (_draft is not { HasChanges: true })
+        {
+            return false;
+        }
+
+        ShowPrompt(new Prompt(
+            PromptKind.Leave,
+            "Unapplied changes",
+            "Apply your changes?",
+            _ => "Graphics or display settings were changed and not applied.",
+            "Cancel",
+            [
+                new("Apply", ButtonAccent.Solid, () => Apply(then: leave)),
+                new("Discard", ButtonAccent.Ghost, () =>
+                {
+                    ShowPrompt(null);
+                    _draft?.Discard();
+                    leave();
+                }),
+                new("Cancel", ButtonAccent.Ghost, () => ShowPrompt(null)),
+            ]));
+        return true;
     }
 
     /// <inheritdoc/>
@@ -172,6 +285,19 @@ public sealed class SettingsScreen : ShellScreen
     {
         ArgumentNullException.ThrowIfNull(nav);
         ArgumentNullException.ThrowIfNull(input);
+
+        // A question on screen takes every key: back answers it the cautious way, and the page's own keys
+        // wait for it to be answered.
+        if (_prompt is { } prompt)
+        {
+            if (nav.Back)
+            {
+                prompt.Back();
+                return false;
+            }
+
+            return base.HandleInput(nav, input);
+        }
 
         // A key-binding row that is listening swallows the keyboard until it captures a key.
         if (Focus?.Focused is KeyBindingRow { IsListening: true } row)
@@ -244,6 +370,16 @@ public sealed class SettingsScreen : ShellScreen
             ResetCurrentTab();
         }
 
+        if (IsStagedTab && input.Keyboard.WasPressed(KeyCode.F))
+        {
+            Apply();
+        }
+
+        if (IsStagedTab && input.Keyboard.WasPressed(KeyCode.Backspace))
+        {
+            _draft?.Discard();
+        }
+
         return base.HandleInput(nav, input);
     }
 
@@ -255,6 +391,15 @@ public sealed class SettingsScreen : ShellScreen
     /// </remarks>
     protected override bool MoveFocus(NavDirection direction)
     {
+        // A question holds focus among its own answers, which sit in a row.
+        if (_prompt is not null && _promptButtons.Count > 0)
+        {
+            int at = Focus?.Focused is Button focusedButton ? _promptButtons.IndexOf(focusedButton) : -1;
+            int step = direction is NavDirection.Left or NavDirection.Up ? -1 : 1;
+            Focus?.Focus(_promptButtons[at < 0 ? 0 : (at + step + _promptButtons.Count) % _promptButtons.Count]);
+            return true;
+        }
+
         if (direction is NavDirection.Up or NavDirection.Down
             && Focus?.Focused is Control focused
             && _activeTab >= 0 && _activeTab < _tabRows.Count)
@@ -280,6 +425,11 @@ public sealed class SettingsScreen : ShellScreen
         Context.Host.SaveSettings();
         Context.Host.SaveProfiles();
         ReleaseBindings();
+
+        // Whatever was not applied is dropped with the page; it never reached the game.
+        _draft?.Dispose();
+        _draft = null;
+        _prompt = null;
     }
 
     /// <summary>Unhooks every row from the variables it shows.</summary>
@@ -296,6 +446,20 @@ public sealed class SettingsScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
+        if (_prompt is { } prompt)
+        {
+            prompt.Elapsed += elapsedSeconds;
+            if (_promptMessage is not null)
+            {
+                _promptMessage.Text = prompt.Message(prompt.Elapsed);
+            }
+
+            if (prompt.Expires is { } expires && prompt.Elapsed >= expires)
+            {
+                prompt.Back();
+            }
+        }
+
         if (_help is null)
         {
             return;
@@ -330,6 +494,8 @@ public sealed class SettingsScreen : ShellScreen
         // focus; taking the first row of the new panel is what keeps the keyboard working.
         Focus?.Validate();
         Focus?.FocusFirst();
+        UpdateApplyBar();
+        RefreshHints();
     }
 
     /// <summary>Puts every variable on the current category back to its default.</summary>
@@ -369,7 +535,7 @@ public sealed class SettingsScreen : ShellScreen
             var rows = new List<Control>();
             foreach (QualityGroup group in section.Groups)
             {
-                if (QualityBinding.CreateControl(theme, Context.Cvars, group, _bindings) is not { } control)
+                if (QualityBinding.CreateControl(theme, _find, group, _bindings) is not { } control)
                 {
                     continue;
                 }
@@ -445,9 +611,7 @@ public sealed class SettingsScreen : ShellScreen
         var rows = new List<Control>();
         foreach (GraphicsSetting setting in settings)
         {
-            if (!Context.Cvars.TryGet(setting.Variable, out ICVar? cvar)
-                || cvar is null
-                || !CVarBinding.CanBind(cvar))
+            if (_find(setting.Variable) is not { } cvar || !CVarBinding.CanBind(cvar))
             {
                 continue;
             }
@@ -523,7 +687,7 @@ public sealed class SettingsScreen : ShellScreen
         GraphicsSetting setting,
         IReadOnlyList<(string Value, string Caption)> choices)
     {
-        if (!Context.Cvars.TryGet(setting.Variable, out ICVar? cvar) || cvar is null)
+        if (_find(setting.Variable) is not { } cvar)
         {
             return (null, null);
         }
@@ -632,36 +796,68 @@ public sealed class SettingsScreen : ShellScreen
         return rows;
     }
 
+    /// <summary>The preset row: stages a whole preset in the draft, and reads which one the draft amounts to.</summary>
     private Dropdown BuildPresetControl(UiTheme theme)
     {
+        SettingsDraft draft = _draft!;
         string[] presetNames = Enum.GetNames<GraphicsPreset>();
-        int current = Array.IndexOf(presetNames, Context.Presets.Current.ToString());
-        var presets = new Dropdown(theme, "Preset", presetNames, Math.Max(0, current))
+        int Shown() => Math.Max(0, Array.IndexOf(presetNames, Context.Presets.Recognise(draft.Holds).ToString()));
+
+        var presets = new Dropdown(theme, "Preset", presetNames, Shown())
         {
-            Tooltip = "Sets every graphics variable at once. Custom is what the settings become as soon as "
-                + "you change any of them yourself — it is a reading, not a choice.",
+            Tooltip = "Sets every graphics variable at once, when you apply. Custom is what the settings become "
+                + "as soon as you change any of them yourself — it is a reading, not a choice.",
         };
+
+        // Choosing a preset stages its values, each of which the draft reports; the row reads the preset back
+        // once, at the end, rather than at every one of them.
+        bool updating = false;
+        void ShowPreset()
+        {
+            updating = true;
+            try
+            {
+                presets.SelectedIndex = Shown();
+            }
+            finally
+            {
+                updating = false;
+            }
+        }
 
         presets.SelectionChanged += i =>
         {
-            if (Enum.TryParse(presetNames[i], out GraphicsPreset preset))
+            if (updating || !Enum.TryParse(presetNames[i], out GraphicsPreset preset))
             {
-                Context.Presets.Apply(preset);
+                return;
             }
+
+            updating = true;
+            try
+            {
+                foreach ((ICVar variable, string value) in Context.Presets.ValuesOf(preset))
+                {
+                    draft.Stage(variable).TrySetText(value, out _);
+                }
+            }
+            finally
+            {
+                updating = false;
+            }
+
+            ShowPreset();
         };
 
-        EventHandler<GraphicsPreset> presetChanged = (_, preset) =>
+        EventHandler changed = (_, _) =>
         {
-            int idx = Array.IndexOf(presetNames, preset.ToString());
-            if (idx >= 0)
+            if (!updating)
             {
-                presets.SelectedIndex = idx;
+                ShowPreset();
             }
         };
 
-        Context.Presets.PresetChanged += presetChanged;
-        _bindings.Add(new Unsubscribe(() => Context.Presets.PresetChanged -= presetChanged));
-
+        draft.Changed += changed;
+        _bindings.Add(new Unsubscribe(() => draft.Changed -= changed));
         return presets;
     }
 
@@ -841,11 +1037,190 @@ public sealed class SettingsScreen : ShellScreen
 
     private List<ICVar> CurrentTabCvars => _tabCvars.Count > 0 ? _tabCvars[^1] : [];
 
+    /// <summary>The draft the staged categories write to, which keeps the Apply bar's state.</summary>
+    private SettingsDraft CreateDraft()
+    {
+        var draft = new SettingsDraft(Context.Cvars);
+        draft.Changed += (_, _) => UpdateApplyBar();
+        return draft;
+    }
+
+    private ICVar? FindLive(string name) => Context.Cvars.TryGet(name, out ICVar? cvar) ? cvar : null;
+
+    /// <summary>The note and the two buttons beside the help line on a staged category.</summary>
+    private FlexPanel BuildApplyBar(UiTheme theme)
+    {
+        _applyNote = new Label(theme.Body, string.Empty, 16f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center };
+        _apply = new Button(theme, "Apply") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
+        _apply.Activated += _ => Apply();
+        _discard = new Button(theme, "Discard") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
+        _discard.Activated += _ => _draft?.Discard();
+
+        var bar = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f };
+        bar.Add(_applyNote);
+        bar.Add(_discard);
+        bar.Add(_apply);
+        _applyBar = bar;
+        return bar;
+    }
+
+    /// <summary>Shows the Apply bar on a staged category, and says whether there is anything to apply.</summary>
+    private void UpdateApplyBar()
+    {
+        bool changes = _draft?.HasChanges == true;
+        if (_applyBar is not null)
+        {
+            _applyBar.Visibility = IsStagedTab ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        if (_apply is not null)
+        {
+            _apply.IsEnabled = changes;
+        }
+
+        if (_discard is not null)
+        {
+            _discard.IsEnabled = changes;
+        }
+
+        if (_applyNote is not null)
+        {
+            _applyNote.Text = changes ? "Changes not applied" : string.Empty;
+            _applyNote.Color = changes ? Context.Theme.Accent : Context.Theme.TextMuted;
+        }
+
+        Focus?.Validate();
+    }
+
+    /// <summary>Writes the draft to the game, then asks for a new display mode to be kept.</summary>
+    /// <param name="then">What to do once it is applied -- leave the page -- unless a display mode now has to be kept.</param>
+    private void Apply(Action? then = null)
+    {
+        ShowPrompt(null);
+        if (_draft is not { HasChanges: true } draft)
+        {
+            then?.Invoke();
+            return;
+        }
+
+        // The graphics API last: changing it rebuilds the game, which should come back with everything else
+        // already in force and saved.
+        bool switchesApi = draft.Pending.Any(static change => change.Variable.Name == "r_renderer");
+        IReadOnlyList<(ICVar Variable, string Previous)> written =
+            draft.Commit(static variable => variable.Name == "r_renderer");
+
+        // The writes each read as the player taking over from the preset; the preset is whatever they add up to.
+        Context.Presets.Detect();
+        Context.Host.SaveSettings();
+
+        // A rebuilt game starts with the new API and window both, and nothing on screen to answer with.
+        List<(ICVar Variable, string Previous)> display =
+            [.. written.Where(static change => DisplayModeVariables.Contains(change.Variable.Name))];
+        if (display.Count > 0 && !switchesApi)
+        {
+            AskToKeep(display);
+            return;
+        }
+
+        then?.Invoke();
+    }
+
+    /// <summary>Asks for a display mode just applied to be kept, and puts it back if it is not.</summary>
+    /// <param name="previous">Each display variable written, with what it held before.</param>
+    private void AskToKeep(List<(ICVar Variable, string Previous)> previous)
+    {
+        void Revert()
+        {
+            ShowPrompt(null);
+            foreach ((ICVar variable, string text) in previous)
+            {
+                variable.TrySetText(text, out _);
+            }
+
+            Context.Host.SaveSettings();
+        }
+
+        ShowPrompt(new Prompt(
+            PromptKind.Keep,
+            "Display",
+            "Keep these display settings?",
+            elapsed => string.Create(
+                CultureInfo.InvariantCulture,
+                $"The previous ones come back in {Math.Max(0, (int)MathF.Ceiling(KeepSeconds - elapsed))} s."),
+            "Revert",
+            [
+                new("Keep", ButtonAccent.Solid, () => ShowPrompt(null)),
+                new("Revert", ButtonAccent.Ghost, Revert),
+            ],
+            KeepSeconds));
+    }
+
+    /// <summary>Puts a question on screen over the page, or takes it away with <see langword="null"/>.</summary>
+    private void ShowPrompt(Prompt? prompt)
+    {
+        _prompt = prompt;
+        _promptButtons.Clear();
+        _promptMessage = null;
+        if (_page is not null)
+        {
+            // The page behind a question is not there to be clicked.
+            _page.IsHitTestVisible = prompt is null;
+        }
+
+        if (_promptLayer is null)
+        {
+            return;
+        }
+
+        _promptLayer.ClearChildren();
+        if (prompt is null)
+        {
+            Focus?.Validate();
+            Focus?.FocusFirst();
+            RefreshHints();
+            return;
+        }
+
+        UiTheme theme = Context.Theme;
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 14f };
+        column.AddChild(new SectionTitle(theme, prompt.Eyebrow, prompt.Title) { HorizontalAlignment = HorizontalAlignment.Left, TitleSize = 34f, Margin = new Thickness(0f, 0f, 0f, 4f) });
+        _promptMessage = new Label(theme.Body, prompt.Message(prompt.Elapsed), 17f, UiPalette.TextBody) { Wrap = true };
+        column.AddChild(_promptMessage);
+
+        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f, Margin = new Thickness(0f, 10f, 0f, 0f) };
+        foreach (PromptChoice choice in prompt.Choices)
+        {
+            var button = new Button(theme, choice.Caption) { Accent = choice.Accent, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
+            if (choice.Accent == ButtonAccent.Solid)
+            {
+                button.CutCorner = 10f;
+            }
+
+            button.Activated += _ => choice.Chosen();
+            actions.Add(button);
+            _promptButtons.Add(button);
+        }
+
+        column.AddChild(actions);
+        var panel = new GlassPanel(theme)
+        {
+            Padding = new Thickness(44f, 32f),
+            Width = 640f,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        panel.AddChild(column);
+        _promptLayer.AddChild(panel);
+
+        Focus?.Focus(_promptButtons[0]);
+        RefreshHints();
+    }
+
     private void TrackForReset(IReadOnlyList<string> names)
     {
         foreach (string name in names)
         {
-            if (Context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null)
+            if (_find(name) is { } cvar)
             {
                 CurrentTabCvars.Add(cvar);
             }
@@ -897,6 +1272,41 @@ public sealed class SettingsScreen : ShellScreen
         }
 
         return names;
+    }
+
+    /// <summary>What a question on the page is about.</summary>
+    private enum PromptKind
+    {
+        /// <summary>Leaving with changes not applied.</summary>
+        Leave,
+
+        /// <summary>Keeping a display mode just applied.</summary>
+        Keep,
+    }
+
+    /// <summary>One answer to a question: its button, and what choosing it does.</summary>
+    private sealed record PromptChoice(string Caption, ButtonAccent Accent, Action Chosen);
+
+    /// <summary>A question over the page, and how long it has been asked.</summary>
+    /// <param name="Kind">What it is about.</param>
+    /// <param name="Eyebrow">The line above its title.</param>
+    /// <param name="Title">The question.</param>
+    /// <param name="Message">What it says under the title, given the seconds it has been on screen.</param>
+    /// <param name="BackCaption">What back does, for the footer: the last answer, the cautious one.</param>
+    /// <param name="Choices">The answers, the one wanted first.</param>
+    /// <param name="Expires">After how many seconds back answers it on the player's behalf, or never.</param>
+    private sealed record Prompt(
+        PromptKind Kind,
+        string Eyebrow,
+        string Title,
+        Func<float, string> Message,
+        string BackCaption,
+        IReadOnlyList<PromptChoice> Choices,
+        float? Expires = null)
+    {
+        public float Elapsed { get; set; }
+
+        public void Back() => Choices[^1].Chosen();
     }
 
     /// <summary>A titled run of rows: one glass panel's worth, or the start of one that continues.</summary>

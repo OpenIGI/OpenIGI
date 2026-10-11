@@ -153,6 +153,21 @@ public sealed class GraphicsPresetRegistry
     /// </remarks>
     public GraphicsPreset Detect()
     {
+        SetCurrent(Recognise(static (variable, expected) => variable.MatchesText(expected)));
+        return Current;
+    }
+
+    /// <summary>Works out which preset some view of the settings corresponds to, without changing <see cref="Current"/>.</summary>
+    /// <param name="holds">
+    /// Whether a variable, in that view, holds a value: the variable itself for <see cref="Detect"/>, or the
+    /// settings page's unapplied changes over it.
+    /// </param>
+    /// <returns>The matching preset, or <see cref="GraphicsPreset.Custom"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="holds"/> is <see langword="null"/>.</exception>
+    public GraphicsPreset Recognise(Func<ICVar, string, bool> holds)
+    {
+        ArgumentNullException.ThrowIfNull(holds);
+
         for (int index = 0; index < 4; index++)
         {
             bool matches = true;
@@ -162,7 +177,7 @@ public sealed class GraphicsPresetRegistry
                 // MatchesText rather than a comparison against ValueText: a float renders as its own
                 // shortest round trip, so a preset declaring 0.70 would never be recognised again once
                 // it had been applied and read back as 0.7.
-                if (values[index] is { } expected && !variable.MatchesText(expected))
+                if (values[index] is { } expected && !holds(variable, expected))
                 {
                     matches = false;
                     break;
@@ -171,13 +186,34 @@ public sealed class GraphicsPresetRegistry
 
             if (matches)
             {
-                SetCurrent((GraphicsPreset)index);
-                return Current;
+                return (GraphicsPreset)index;
             }
         }
 
-        SetCurrent(GraphicsPreset.Custom);
-        return Current;
+        return GraphicsPreset.Custom;
+    }
+
+    /// <summary>What a preset sets each variable it names to.</summary>
+    /// <param name="preset">The preset. <see cref="GraphicsPreset.Custom"/> names nothing.</param>
+    /// <returns>Each variable the preset assigns, with its value, in the order they were declared.</returns>
+    /// <remarks>For a caller that stages the preset rather than applying it: the settings page's draft.</remarks>
+    public IReadOnlyList<(ICVar Variable, string Value)> ValuesOf(GraphicsPreset preset)
+    {
+        var values = new List<(ICVar, string)>();
+        if (preset == GraphicsPreset.Custom)
+        {
+            return values;
+        }
+
+        foreach ((ICVar variable, string?[] presets) in _managed)
+        {
+            if (presets[(int)preset] is { } value)
+            {
+                values.Add((variable, value));
+            }
+        }
+
+        return values;
     }
 
     private void OnManagedVariableChanged(object? sender, CVarChangedEventArgs e)
