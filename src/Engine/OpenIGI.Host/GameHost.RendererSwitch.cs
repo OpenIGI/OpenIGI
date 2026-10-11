@@ -76,20 +76,55 @@ internal sealed partial class GameHost
             "Rebuilds the game over the next graphics API -- Direct3D 12, Vulkan, WebGPU -- in the same place.",
             context =>
             {
-                if (_switchPending is not null)
+                if (RequestRendererSwitch(target: null))
                 {
-                    return;
+                    context.Print("Switching renderer; the game will be back in a moment.");
                 }
-
-                _switchPending = new RendererSwitch(
-                    _activeMission?.Id ?? 0,
-                    _conditions,
-                    SwitchedHour(),
-                    CurrentPose());
-                _switchCaptureFramesLeft = SwitchCaptureFrames;
-                context.Print("Switching renderer; the game will be back in a moment.");
-                _logger.Information("Renderer", $"Switching renderer from {Describe(_switchPending)}.");
             });
+
+    /// <summary>Rebuilds the game over the API <c>r_renderer</c> now names, where that is not the one drawing.</summary>
+    /// <remarks>
+    /// Only where the composition root said which API it built: a game it did not tell has nothing to compare
+    /// the setting with, and a harness that changes the setting is not asking for its device to be torn down.
+    /// </remarks>
+    private void OnRendererSettingChanged()
+    {
+        if (_options.Renderer == RendererBackend.Auto)
+        {
+            return;
+        }
+
+        RendererBackend wanted = RendererBackends.Resolve(DisplayCVars.Renderer.Value);
+        if (wanted != _options.Renderer)
+        {
+            RequestRendererSwitch(wanted);
+        }
+    }
+
+    /// <summary>Asks for the game to be rebuilt over another API, once its picture has been read.</summary>
+    /// <param name="target">The API to build, or null for the next in the switch key's order.</param>
+    /// <returns><see langword="true"/> when a switch was asked for; false when one already was.</returns>
+    private bool RequestRendererSwitch(RendererBackend? target)
+    {
+        if (_switchPending is not null)
+        {
+            return false;
+        }
+
+        _switchPending = new RendererSwitch(
+            _activeMission?.Id ?? 0,
+            _conditions,
+            SwitchedHour(),
+            CurrentPose(),
+            Target: target,
+
+            // Chosen from the menu, where there is no mission to go back to: the player is put back on the
+            // settings page they chose it on, not on the landing page.
+            ShellTab: target is not null && _activeMission is null ? "settings" : null);
+        _switchCaptureFramesLeft = SwitchCaptureFrames;
+        _logger.Information("Renderer", $"Switching renderer from {Describe(_switchPending)}.");
+        return true;
+    }
 
     /// <summary>Reads the picture a switch holds across, and ends the game once it has it.</summary>
     /// <remarks>Called at the end of every frame, after it has been presented.</remarks>

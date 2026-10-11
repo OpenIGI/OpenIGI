@@ -187,15 +187,25 @@ using (window)
         "1",
         StringComparison.Ordinal);
 
-    // OPENIGI_RENDERER picks the API the renderer runs over: d3d12 for Direct3D 12 on Windows, vulkan, or
-    // webgpu -- the browser's API through wgpu-native, which is how the web build's renderer is compared
-    // against the desktop's on one machine. Unset, it is RendererSwitchOrder.Default.
+    // The API the renderer runs over: d3d12 for Direct3D 12 on Windows, vulkan, or webgpu -- the browser's
+    // API through wgpu-native, which is how the web build's renderer is compared against the desktop's on
+    // one machine. OPENIGI_RENDERER for this run, then r_renderer as the command line or the settings page
+    // left it; neither, and it is RendererSwitchOrder.Default. Read here rather than by the console, which
+    // loads the settings only once there is a device to show it on -- and a capture reads no saved settings.
     string? requested = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
+    string requestedBy = "OPENIGI_RENDERER";
+    if (string.IsNullOrEmpty(requested))
+    {
+        requested = SettingsFile.LastAssignment(options.StartupCommands, DisplayCVars.Renderer.Name)
+            ?? (options.Lockstep ? null : SettingsFile.ReadAssignment(SettingsPaths.GetSettingsPath(), DisplayCVars.Renderer.Name));
+        requestedBy = DisplayCVars.Renderer.Name;
+    }
+
     if (!RendererSwitchOrder.IsKnown(requested))
     {
         logger.Warning(
             "Renderer",
-            $"OPENIGI_RENDERER={requested} names no renderer; drawing over {RendererSwitchOrder.Describe(RendererSwitchOrder.Default)}.");
+            $"{requestedBy}={requested} names no renderer; drawing over {RendererSwitchOrder.Describe(RendererSwitchOrder.Default)}.");
     }
 
     RendererBackend backend = RendererSwitchOrder.Parse(requested);
@@ -235,12 +245,14 @@ using (window)
             return code;
         }
 
-        backend = RendererSwitchOrder.Next(backend);
+        // The API the settings page chose, or the next in F10's order.
+        backend = switched.Target is { } target ? RendererBackends.Resolve(target) : RendererSwitchOrder.Next(backend);
         runOptions = runOptions with
         {
             StartMission = switched.MissionId,
             PlayCutscenes = false,
             Resume = switched,
+            ShellTab = switched.ShellTab ?? runOptions.ShellTab,
 
             // What the first run was scripted to do has been done: a -runat that switched renderer would
             // switch again, and -entrycam would press Play over a mission already being played.
@@ -303,11 +315,12 @@ using (window)
             $"Drawing over {RendererSwitchOrder.Describe(backend)} on {rhiDevice.AdapterName}.");
 
         // The composition root is the only place that names a concrete backend: the graphics device
-        // above, and the audio factory here. GameHost itself sees only the abstractions.
+        // above, and the audio factory here. GameHost itself sees only the abstractions -- and which API
+        // was built, after any fallback, so it can tell when r_renderer asks for a different one.
         using GameHost game = new(
             platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
             TitleCatalog.Catalog, titleRuntime.Title,
-            fileSystem, runOptions, gamePath, logger);
+            fileSystem, runOptions with { Renderer = backend }, gamePath, logger);
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;

@@ -1008,6 +1008,10 @@ internal sealed partial class GameHost : IDisposable
         _device.VSyncEnabled = RenderCVars.VSync.Value;
         WhenChanged(RenderCVars.VSync, () => _device.VSyncEnabled = RenderCVars.VSync.Value);
 
+        // The window's mode and size as saved, and the API: r_renderer was read by the composition root
+        // before there was a device, and from here a change to it rebuilds the game over the one it names.
+        ApplyDisplaySettings();
+
         WhenChanged(RenderCVars.WeatherEnabled, ApplyWeatherSettings);
         WhenChanged(RenderCVars.WeatherStyle, ApplyWeatherSettings);
         WhenChanged(RenderCVars.WeatherSpeed, ApplyWeatherSettings);
@@ -1498,8 +1502,8 @@ internal sealed partial class GameHost : IDisposable
         // adopted -- see the collect further down.
         DistanceFieldBake.Result? bakedFieldForBackdrop = null;
 
-        // The menu is held to the display's rate rather than rendering as fast as it can, where the
-        // platform leaves the rate to the loop. See IFramePacer.
+        // The menu is held to the display's rate, and the game to r_frame_limit, rather than rendering as
+        // fast as they can, where the platform leaves the rate to the loop. See IFramePacer.
         IFramePacer menuPacer = _platform.CreateFramePacer();
         bool lastPassRendered = false;
 
@@ -1756,7 +1760,8 @@ internal sealed partial class GameHost : IDisposable
                     _device.CaptureFrame(captureWidth, captureHeight, pixels);
                     return pixels;
                 },
-                settingUnavailable: SettingUnavailable);
+                settingUnavailable: SettingUnavailable,
+                displayResolutions: DisplayResolutions);
 
             shellHostForEntryCam = shellHost;
 
@@ -1965,8 +1970,9 @@ internal sealed partial class GameHost : IDisposable
             }
 
             // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
-            // small upload between frames into a hitch. Only after a pass that presented, or the pacing
-            // would throttle the simulation's ticks as well; never under a capture, whose clock is its own.
+            // small upload between frames into a hitch; the game is held to the player's cap where Reflex
+            // is not holding it. Only after a pass that presented, or the pacing would throttle the
+            // simulation's ticks as well; never under a capture, whose clock is its own.
             // A level held behind the loading screen while its field bakes is paced harder still: the
             // withheld frames exist to advance the temporal passes, which thirty a second does as well as
             // a hundred, and every core the render thread is not spinning on is one the bake gets.
@@ -1976,9 +1982,9 @@ internal sealed partial class GameHost : IDisposable
                 {
                     menuPacer.Pace(30);
                 }
-                else if (menuMode && !RenderCVars.VSync.Value)
+                else if (FrameRateCap(menuMode) is > 0 and int cap)
                 {
-                    menuPacer.Pace(_window.RefreshRate > 0 ? _window.RefreshRate : 60);
+                    menuPacer.Pace(cap);
                 }
                 else
                 {

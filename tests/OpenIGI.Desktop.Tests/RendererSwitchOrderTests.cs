@@ -1,4 +1,5 @@
 using OpenIGI.Desktop;
+using OpenIGI.Rendering;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -13,6 +14,16 @@ public sealed class RendererSwitchOrderTests
     {
         Assert.Equal(RendererSwitchOrder.Default, RendererSwitchOrder.Parse(value));
         Assert.True(RendererSwitchOrder.IsKnown(value));
+    }
+
+    [Theory]
+    [InlineData("auto")]
+    [InlineData("Auto")]
+    public void Auto_is_the_platform_default(string value)
+    {
+        Assert.Equal(RendererSwitchOrder.Default, RendererSwitchOrder.Parse(value));
+        Assert.True(RendererSwitchOrder.IsKnown(value));
+        Assert.Equal(RendererSwitchOrder.Default, RendererBackends.Resolve(RendererBackend.Auto));
     }
 
     [Fact]

@@ -26,6 +26,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="saveProfiles">Persists player profiles and their progress.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 /// <param name="settingUnavailable">Why a setting cannot take effect here, or empty when it can.</param>
+/// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -38,7 +39,8 @@ public sealed class ShellHost(
     Action saveSettings,
     Action saveProfiles,
     CaptureThumbnail captureThumbnail,
-    Func<string, string>? settingUnavailable = null) : IShellHost
+    Func<string, string>? settingUnavailable = null,
+    Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null) : IShellHost
 {
     /// <inheritdoc/>
     public void StartMission(int missionId, int difficulty) => startMission(missionId, difficulty);
@@ -75,6 +77,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public string SettingUnavailable(string variable) => settingUnavailable?.Invoke(variable) ?? string.Empty;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>

@@ -145,6 +145,11 @@ public sealed class GraphicsPresetRegistryTests
             "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length", "r_lamp_daylight",
             "r_vsync", "r_world_briefing",
 
+            // The display: which API draws, and the window it draws into. Choices about the machine and the
+            // screen, not about how well the world is drawn -- a preset that rebuilt the renderer or resized
+            // the window would be doing something nobody choosing a quality tier asked for.
+            "r_renderer", "r_window_mode", "r_resolution",
+
             // How worn the flashlight's switch is -- how often it chatters before it catches. A property of
             // the torch the player carries, kept whatever tier draws it; a preset resetting it would be
             // swapping their torch for a new one.

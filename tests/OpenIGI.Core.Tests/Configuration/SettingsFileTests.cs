@@ -9,6 +9,45 @@ namespace OpenIGI.Core.Tests.Configuration;
 public sealed class SettingsFileTests
 {
     [Fact]
+    public void LastAssignment_FindsTheLastValueGivenAVariable()
+    {
+        string[] lines =
+        [
+            "// Variables",
+            "r_renderer vulkan",
+            "r_vsync 0; r_renderer \"webgpu\"",
+            "bind f10 r_switch_renderer",
+        ];
+
+        Assert.Equal("webgpu", SettingsFile.LastAssignment(lines, "r_renderer"));
+        Assert.Null(SettingsFile.LastAssignment(lines, "r_window_mode"));
+    }
+
+    [Fact]
+    public void ReadAssignment_IsNullForAFileThatIsNotThere() =>
+        Assert.Null(SettingsFile.ReadAssignment(Path.Combine(Path.GetTempPath(), "no-such-openigi-settings.cfg"), "r_renderer"));
+
+    [Theory]
+    [InlineData("1920x1080", 1920, 1080)]
+    [InlineData(" 2560X1440 ", 2560, 1440)]
+    public void ResolutionText_ReadsWhatItWrites(string text, int width, int height)
+    {
+        Assert.True(ResolutionText.TryParse(text, out int parsedWidth, out int parsedHeight));
+        Assert.Equal((width, height), (parsedWidth, parsedHeight));
+        Assert.Equal($"{width}x{height}", ResolutionText.Format(width, height));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("desktop")]
+    [InlineData("1920x")]
+    [InlineData("0x1080")]
+    [InlineData("-1920x1080")]
+    public void ResolutionText_RefusesAnythingThatIsNotASize(string? text) =>
+        Assert.False(ResolutionText.TryParse(text, out _, out _));
+
+    [Fact]
     public void Render_WritesOnlyArchivedVariablesThatDifferFromTheirDefault()
     {
         CVarRegistry variables = new();

@@ -111,7 +111,7 @@ public sealed class SettingsScreen : ShellScreen
         // advanced interface should be. A build locked to one preset has no Graphics category at all.
         List<(string Title, Func<List<SettingsGroup>> Build)> categories =
         [
-            ("Display", () => [SettingsGroup.Of("Display", SettingRows(theme, GraphicsMenu.DisplaySettings))]),
+            ("Display", () => [SettingsGroup.Of("Display", BuildDisplay(theme))]),
             ("Audio", () => CvarGroups(theme, NamesWithPrefix("snd_"), "Audio")),
             ("Controls", () => BuildControls(theme)),
             ("Gameplay", () => BuildGameplay(theme)),
@@ -452,23 +452,121 @@ public sealed class SettingsScreen : ShellScreen
                 continue;
             }
 
-            if (CVarBinding.CreateControl(theme, cvar, setting.Caption, _bindings) is not { } control)
+            if (CVarBinding.CreateControl(theme, cvar, setting.Caption, _bindings, setting.Choices) is not { } control)
             {
                 continue;
             }
 
-            string restart = cvar.Flags.HasFlag(CVarOptions.RequiresRestart)
-                ? "   [takes effect on the next level]"
-                : string.Empty;
-
-            string unavailable = Unavailable([setting.Variable]);
-            control.IsEnabled = unavailable.Length == 0;
-            control.Tooltip = $"{unavailable}{setting.Help}{restart}\n\n{setting.Variable}";
+            DescribeRow(control, cvar, setting);
             rows.Add(control);
             CurrentTabCvars.Add(cvar);
         }
 
         return rows;
+    }
+
+    /// <summary>Greys a row out where its setting cannot take effect, and gives it its help.</summary>
+    private void DescribeRow(Control control, ICVar cvar, GraphicsSetting setting)
+    {
+        string restart = cvar.Flags.HasFlag(CVarOptions.RequiresRestart)
+            ? "   [takes effect on the next level]"
+            : string.Empty;
+
+        string unavailable = Unavailable([setting.Variable]);
+        control.IsEnabled = unavailable.Length == 0;
+        control.Tooltip = $"{unavailable}{setting.Help}{restart}\n\n{setting.Variable}";
+    }
+
+    /// <summary>The Display page's rows, in <see cref="GraphicsMenu.DisplaySettings"/>'s order.</summary>
+    /// <remarks>
+    /// Two of them are lists this page builds, because their variables' types do not spell the choices out:
+    /// the resolutions the display offers, and the frame-rate caps.
+    /// </remarks>
+    private List<Control> BuildDisplay(UiTheme theme)
+    {
+        var rows = new List<Control>();
+        foreach (GraphicsSetting setting in GraphicsMenu.DisplaySettings)
+        {
+            switch (setting.Variable)
+            {
+                case "r_resolution":
+                    if (ChoiceRow(theme, setting, ResolutionChoices()) is ({ } resolution, { } cvar))
+                    {
+                        rows.Add(resolution);
+
+                        // Borderless has no resolution of its own to choose, so the row follows the window mode.
+                        WhileShown("r_window_mode", () => DescribeRow(resolution, cvar, setting));
+                    }
+
+                    break;
+
+                case "r_frame_limit":
+                    if (ChoiceRow(theme, setting, FrameRateCapChoices()) is ({ } cap, _))
+                    {
+                        rows.Add(cap);
+                    }
+
+                    break;
+
+                default:
+                    rows.AddRange(SettingRows(theme, [setting]));
+                    break;
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>A row choosing among a list of a variable's values, and the variable; nulls where it is not registered.</summary>
+    private (Dropdown? Control, ICVar? Cvar) ChoiceRow(
+        UiTheme theme,
+        GraphicsSetting setting,
+        IReadOnlyList<(string Value, string Caption)> choices)
+    {
+        if (!Context.Cvars.TryGet(setting.Variable, out ICVar? cvar) || cvar is null)
+        {
+            return (null, null);
+        }
+
+        Dropdown control = CVarBinding.CreateChoiceControl(theme, cvar, setting.Caption, choices, _bindings);
+        DescribeRow(control, cvar, setting);
+        CurrentTabCvars.Add(cvar);
+        return (control, cvar);
+    }
+
+    /// <summary>The desktop's own resolution, then every one the display offers, largest first.</summary>
+    private List<(string Value, string Caption)> ResolutionChoices()
+    {
+        List<(string Value, string Caption)> choices = [(string.Empty, "Desktop")];
+        foreach ((int width, int height) in Context.Host.DisplayResolutions())
+        {
+            choices.Add((
+                ResolutionText.Format(width, height),
+                string.Create(CultureInfo.InvariantCulture, $"{width} × {height}")));
+        }
+
+        return choices;
+    }
+
+    /// <summary>No cap, then the caps <see cref="GraphicsMenu.FrameRateCaps"/> offers.</summary>
+    private static List<(string Value, string Caption)> FrameRateCapChoices() =>
+        [
+            .. GraphicsMenu.FrameRateCaps.Select(static fps => fps <= 0
+                ? ("0", "Unlimited")
+                : (fps.ToString(CultureInfo.InvariantCulture), string.Create(CultureInfo.InvariantCulture, $"{fps} fps"))),
+        ];
+
+    /// <summary>Runs an action whenever a variable changes, for as long as this build of the page is shown.</summary>
+    private void WhileShown(string variable, Action action)
+    {
+        if (!Context.Cvars.TryGet(variable, out ICVar? cvar) || cvar is null)
+        {
+            return;
+        }
+
+        EventHandler<CVarChangedEventArgs> changed = (_, _) => action();
+        cvar.Changed += changed;
+        _bindings.Add(new Unsubscribe(() => cvar.Changed -= changed));
     }
 
     /// <summary>The variables a list of names binds to, grouped by the word after their prefix.</summary>

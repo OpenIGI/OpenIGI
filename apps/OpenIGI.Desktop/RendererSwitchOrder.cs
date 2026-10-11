@@ -1,54 +1,40 @@
+using OpenIGI.Rendering;
+
 namespace OpenIGI.Desktop;
-
-/// <summary>The graphics APIs the renderer can run over on the desktop.</summary>
-internal enum RendererBackend
-{
-    /// <summary>Vulkan: every platform, the default off Windows, and the reference the others are compared with.</summary>
-    Vulkan,
-
-    /// <summary>WebGPU through wgpu-native: the browser's API, run on the desktop to compare against Vulkan.</summary>
-    WebGpu,
-
-    /// <summary>Direct3D 12: the default on Windows.</summary>
-    D3D12,
-}
 
 /// <summary>Which backend a game starts on, and which one F10 moves to from the one running.</summary>
 /// <remarks>
-/// Named as <c>OPENIGI_RENDERER</c> names them. The switch steps through every backend this platform has,
-/// so the same view can be compared on each API without restarting the game by hand.
+/// Named as <c>OPENIGI_RENDERER</c> and <c>r_renderer</c> name them. The switch steps through every backend
+/// this platform has, so the same view can be compared on each API without restarting the game by hand.
 /// </remarks>
 internal static class RendererSwitchOrder
 {
-    /// <summary>The backend a game starts on when <c>OPENIGI_RENDERER</c> names none.</summary>
-    /// <remarks>
-    /// Direct3D 12 on Windows, Vulkan everywhere else. A Windows machine short of Direct3D 12's baseline still
-    /// draws: the composition root falls back to Vulkan and logs why.
-    /// </remarks>
-    public static RendererBackend Default => OperatingSystem.IsWindows() ? RendererBackend.D3D12 : RendererBackend.Vulkan;
+    /// <summary>Gets the backend a game starts on when nothing names one.</summary>
+    /// <remarks>See <see cref="RendererBackends.Default"/>.</remarks>
+    public static RendererBackend Default => RendererBackends.Default;
 
-    /// <summary>Reads the backend <c>OPENIGI_RENDERER</c> asks for.</summary>
-    /// <param name="value">The variable's value, or null when it is not set.</param>
+    /// <summary>Reads the backend <c>OPENIGI_RENDERER</c> or <c>r_renderer</c> asks for.</summary>
+    /// <param name="value">The value, or null when nothing set it.</param>
     /// <returns>The backend it names, or <see cref="Default"/>.</returns>
     /// <remarks>
     /// <c>rhi</c> is read as Vulkan: it named this renderer over Vulkan while another renderer was the
     /// default, and a script that still sets it means the same thing now. Direct3D 12 off Windows is
-    /// <see cref="Default"/>, since there is none to draw over.
+    /// <see cref="Default"/>, since there is none to draw over, and so is <c>auto</c>.
     /// </remarks>
     public static RendererBackend Parse(string? value) => value?.Trim().ToUpperInvariant() switch
     {
         "WEBGPU" => RendererBackend.WebGpu,
-        "D3D12" or "DX12" or "DIRECT3D12" when OperatingSystem.IsWindows() => RendererBackend.D3D12,
+        "D3D12" or "DX12" or "DIRECT3D12" => RendererBackends.Resolve(RendererBackend.D3D12),
         "VULKAN" or "RHI" => RendererBackend.Vulkan,
         _ => Default,
     };
 
-    /// <summary>Whether a value of <c>OPENIGI_RENDERER</c> names a backend at all.</summary>
-    /// <param name="value">The variable's value, or null when it is not set.</param>
+    /// <summary>Whether a value of <c>OPENIGI_RENDERER</c> or <c>r_renderer</c> names a backend at all.</summary>
+    /// <param name="value">The value, or null when nothing set it.</param>
     /// <returns><see langword="true"/> when it is unset or names one.</returns>
     public static bool IsKnown(string? value) =>
         string.IsNullOrEmpty(value)
-        || value.Trim().ToUpperInvariant() is "VULKAN" or "RHI" or "WEBGPU" or "D3D12" or "DX12" or "DIRECT3D12";
+        || value.Trim().ToUpperInvariant() is "AUTO" or "VULKAN" or "RHI" or "WEBGPU" or "D3D12" or "DX12" or "DIRECT3D12";
 
     /// <summary>The backend to switch to.</summary>
     /// <param name="current">The running one.</param>
@@ -73,6 +59,7 @@ internal static class RendererSwitchOrder
     {
         RendererBackend.WebGpu => "WebGPU",
         RendererBackend.D3D12 => "Direct3D 12",
-        _ => "Vulkan",
+        RendererBackend.Vulkan => "Vulkan",
+        _ => Describe(Default),
     };
 }
