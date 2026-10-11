@@ -75,7 +75,7 @@ public abstract class ShellScreen : Screen
     }
 
     /// <summary>Gets how blurred the level behind the page is, in design units; zero leaves it sharp.</summary>
-    public virtual float BackdropBlur => 6f;
+    public virtual float BackdropBlur => 4f;
 
     /// <summary>Gets the scale the level behind the page is drawn at, for a page that animates it.</summary>
     public virtual float BackdropScale => 1f;
