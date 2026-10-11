@@ -121,7 +121,7 @@ public sealed class SettingsScreen : ShellScreen
     /// <inheritdoc/>
     protected override IReadOnlyList<KeyHint> Hints =>
         _prompt is { } prompt ? [new("ENTER", "Choose"), new("ESC", prompt.BackCaption)]
-        : IsStagedTab ? [new("CLICK", "Adjust"), new("F", "Apply"), new("BACKSPACE", "Discard"), new("R", "Reset defaults"), new("ESC", "Back")]
+        : IsStagedTab && _draft?.HasChanges == true ? [new("CLICK", "Adjust"), new("F", "Apply"), new("BACKSPACE", "Discard"), new("R", "Reset defaults"), new("ESC", "Back")]
         : [new("CLICK", "Adjust"), new("R", "Reset defaults"), new("ESC", "Back")];
 
     /// <summary>Gets a value indicating whether the category on screen holds its changes until Apply.</summary>
@@ -203,9 +203,18 @@ public sealed class SettingsScreen : ShellScreen
             content.AddChild(panel);
         }
 
-        _help = new Label(theme.Body, string.Empty, 16f, theme.TextMuted) { Margin = new Thickness(0f, 12f, 0f, 0f) };
+        // Two lines, wrapped, and always two: it shares its row with the Apply bar now, and a row whose
+        // height followed the focused setting's help would nudge the whole page up and down.
+        _help = new Label(theme.Body, string.Empty, 16f, theme.TextMuted)
+        {
+            Margin = new Thickness(0f, 12f, 0f, 0f),
+            Wrap = true,
+            Height = 44f,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
 
-        var footer = new Grid { ColumnSpacing = 24f };
+        // Clear of the footer's rule, which the Apply bar's buttons otherwise sit on.
+        var footer = new Grid { ColumnSpacing = 24f, Margin = new Thickness(0f, 0f, 0f, 20f) };
         footer.ColumnDefinitions.Add(GridLength.Star);
         footer.ColumnDefinitions.Add(GridLength.Auto);
         footer.RowDefinitions.Add(GridLength.Auto);
@@ -1048,15 +1057,23 @@ public sealed class SettingsScreen : ShellScreen
     private ICVar? FindLive(string name) => Context.Cvars.TryGet(name, out ICVar? cvar) ? cvar : null;
 
     /// <summary>The note and the two buttons beside the help line on a staged category.</summary>
+    /// <remarks>
+    /// Sized as the category tabs are, not as the page's call-to-action buttons: it is a quiet status that
+    /// appears with a change and goes with it, rather than two greyed boxes standing by on every page.
+    /// </remarks>
     private FlexPanel BuildApplyBar(UiTheme theme)
     {
-        _applyNote = new Label(theme.Body, string.Empty, 16f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center };
-        _apply = new Button(theme, "Apply") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
-        _apply.Activated += _ => Apply();
-        _discard = new Button(theme, "Discard") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
+        _applyNote = new Label(theme.Heading, "UNAPPLIED CHANGES", 14f, theme.Accent)
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0f, 0f, 8f, 0f),
+        };
+        _discard = new Button(theme, "Discard") { Accent = ButtonAccent.Ghost, TextSize = 14f, Tracking = theme.LabelTracking, Padding = new Thickness(20f, 8f) };
         _discard.Activated += _ => _draft?.Discard();
+        _apply = new Button(theme, "Apply") { Accent = ButtonAccent.Solid, CutCorner = 8f, TextSize = 14f, Tracking = theme.LabelTracking, Padding = new Thickness(22f, 8f) };
+        _apply.Activated += _ => Apply();
 
-        var bar = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f };
+        var bar = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f, VerticalAlignment = VerticalAlignment.Center };
         bar.Add(_applyNote);
         bar.Add(_discard);
         bar.Add(_apply);
@@ -1064,32 +1081,20 @@ public sealed class SettingsScreen : ShellScreen
         return bar;
     }
 
-    /// <summary>Shows the Apply bar on a staged category, and says whether there is anything to apply.</summary>
+    /// <summary>Shows the Apply bar while a staged category has something to apply, and its keys in the footer.</summary>
     private void UpdateApplyBar()
     {
-        bool changes = _draft?.HasChanges == true;
+        bool shown = IsStagedTab && _draft?.HasChanges == true;
         if (_applyBar is not null)
         {
-            _applyBar.Visibility = IsStagedTab ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        if (_apply is not null)
-        {
-            _apply.IsEnabled = changes;
-        }
-
-        if (_discard is not null)
-        {
-            _discard.IsEnabled = changes;
-        }
-
-        if (_applyNote is not null)
-        {
-            _applyNote.Text = changes ? "Changes not applied" : string.Empty;
-            _applyNote.Color = changes ? Context.Theme.Accent : Context.Theme.TextMuted;
+            _applyBar.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
         }
 
         Focus?.Validate();
+        if (_prompt is null)
+        {
+            RefreshHints();
+        }
     }
 
     /// <summary>Writes the draft to the game, then asks for a new display mode to be kept.</summary>
@@ -1197,6 +1202,9 @@ public sealed class SettingsScreen : ShellScreen
             }
 
             button.Activated += _ => choice.Chosen();
+
+            // Made after the page's entrance, so it plays its own: a control starts transparent until one has.
+            button.PlayEnter(_promptButtons.Count * EntranceStagger);
             actions.Add(button);
             _promptButtons.Add(button);
         }
