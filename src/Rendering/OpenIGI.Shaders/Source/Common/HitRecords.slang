@@ -11,6 +11,10 @@
 // descriptor heap, read through ResourceDescriptorHeap. Either way the buffers are plain word and float
 // arrays, for the reason the shadow pass declared them so: the alignment that demands is four bytes, which
 // every one of these buffers already satisfies, and no layout rule has to agree with a C# struct.
+//
+// Every lane of a wave can be walking a different mesh, so on Direct3D 12 the heap index is marked
+// non-uniform. Unmarked, the hardware may read one lane's descriptor for the whole wave -- GPU-based
+// validation reports it on every shadow dispatch -- and a hit lands in another mesh's vertices.
 
 #ifndef OPENIGI_HIT_RECORDS_INCLUDED
 #define OPENIGI_HIT_RECORDS_INCLUDED
@@ -61,7 +65,7 @@ struct HitWords
                 return ConstBufferPointer<uint>.fromUInt((uint64_t(handle.y) << 32) | uint64_t(handle.x))[index];
             case hlsl:
                 {
-                    ByteAddressBuffer words = DescriptorHandle<ByteAddressBuffer>(handle);
+                    ByteAddressBuffer words = nonuniform(DescriptorHandle<ByteAddressBuffer>(handle));
                     return words.Load(index * 4u);
                 }
             }
@@ -84,7 +88,7 @@ struct HitFloats
                 return ConstBufferPointer<float>.fromUInt((uint64_t(handle.y) << 32) | uint64_t(handle.x))[index];
             case hlsl:
                 {
-                    ByteAddressBuffer words = DescriptorHandle<ByteAddressBuffer>(handle);
+                    ByteAddressBuffer words = nonuniform(DescriptorHandle<ByteAddressBuffer>(handle));
                     return asfloat(words.Load(index * 4u));
                 }
             }

@@ -393,233 +393,280 @@
       {
         "name": "uCutoutRecords",
         "offset": 0,
-        "size": 8
+        "size": 8,
+        "hlslOffset": 0
       },
       {
         "name": "uClipmapOrigin[0]",
         "offset": 16,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 16
       },
       {
         "name": "uClipmapOrigin[1]",
         "offset": 32,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 32
       },
       {
         "name": "uClipmapOrigin[2]",
         "offset": 48,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 48
       },
       {
         "name": "uClipmapOrigin[3]",
         "offset": 64,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 64
       },
       {
         "name": "uSkySh[0]",
         "offset": 80,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 80
       },
       {
         "name": "uSkySh[1]",
         "offset": 96,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 96
       },
       {
         "name": "uSkySh[2]",
         "offset": 112,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 112
       },
       {
         "name": "uSkySh[3]",
         "offset": 128,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 128
       },
       {
         "name": "uSkySh[4]",
         "offset": 144,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 144
       },
       {
         "name": "uSkySh[5]",
         "offset": 160,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 160
       },
       {
         "name": "uSkySh[6]",
         "offset": 176,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 176
       },
       {
         "name": "uAtlasSize",
         "offset": 192,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 192
       },
       {
         "name": "uLookupMin",
         "offset": 208,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 208
       },
       {
         "name": "uSunDirection",
         "offset": 224,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 224
       },
       {
         "name": "uSunColour",
         "offset": 240,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 240
       },
       {
         "name": "uSkyColour",
         "offset": 256,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 256
       },
       {
         "name": "uActiveCentre",
         "offset": 272,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 272
       },
       {
         "name": "uProbeMin",
         "offset": 288,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 288
       },
       {
         "name": "uTraceOrigin",
         "offset": 304,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 304
       },
       {
         "name": "uClipmapRange[0]",
         "offset": 320,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 320
       },
       {
         "name": "uClipmapRange[1]",
         "offset": 336,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 336
       },
       {
         "name": "uClipmapRange[2]",
         "offset": 352,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 352
       },
       {
         "name": "uClipmapRange[3]",
         "offset": 368,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 368
       },
       {
         "name": "uShadowLevels",
         "offset": 384,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 372
       },
       {
         "name": "uShadowResolution",
         "offset": 388,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 376
       },
       {
         "name": "uLookupBuckets",
         "offset": 392,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 380
       },
       {
         "name": "uLookupCell",
         "offset": 396,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 384
       },
       {
         "name": "uTileCount",
         "offset": 400,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 388
       },
       {
         "name": "uTileOffset",
         "offset": 404,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 392
       },
       {
         "name": "uUseActiveList",
         "offset": 408,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 396
       },
       {
         "name": "uActiveCount",
         "offset": 412,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 400
       },
       {
         "name": "uTileStride",
         "offset": 416,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 404
       },
       {
         "name": "uActiveRadius",
         "offset": 420,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 408
       },
       {
         "name": "uLightCount",
         "offset": 424,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 412
       },
       {
         "name": "uLocalScale",
         "offset": 428,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 416
       },
       {
         "name": "uProbeWidth",
         "offset": 432,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 420
       },
       {
         "name": "uProbeHeight",
         "offset": 436,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 424
       },
       {
         "name": "uTemporalIndex",
         "offset": 440,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 428
       },
       {
         "name": "uMaxFrames",
         "offset": 444,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 432
       },
       {
         "name": "uJitterStride",
         "offset": 448,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 436
       },
       {
         "name": "uMode",
         "offset": 452,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 440
       },
       {
         "name": "uBoost",
         "offset": 456,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 444
       },
       {
         "name": "uSkyShValid",
         "offset": 460,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 448
       },
       {
         "name": "uProbe",
         "offset": 464,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 452
       },
       {
         "name": "uProbeInvExtent",
         "offset": 468,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 456
       }
-    ]
+    ],
+    "hlslSize": 464
   }
 }

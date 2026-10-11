@@ -71,13 +71,16 @@
       {
         "name": "uResolution",
         "offset": 0,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 0
       },
       {
         "name": "uLevel",
         "offset": 4,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 4
       }
-    ]
+    ],
+    "hlslSize": 16
   }
 }

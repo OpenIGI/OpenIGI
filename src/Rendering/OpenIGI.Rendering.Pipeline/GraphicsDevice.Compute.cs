@@ -839,12 +839,15 @@ public sealed partial class GraphicsDevice
             Pass = new ComputePass(device, module, label, variant);
             Reflection = Pass.Program.Reflection;
 
+            // Laid out as the device's form of the module reads it: HLSL packs a constant buffer tighter than
+            // SPIR-V does after an array or around a two-component vector, so Direct3D 12 has offsets of its own.
+            ShaderTarget target = device.ShaderTarget;
             ShaderUniformBlock? globals = Reflection.Globals;
-            _values = new byte[globals?.Size ?? 0];
+            _values = new byte[globals?.SizeFor(target) ?? 0];
 
             foreach (ShaderUniformField field in globals?.Fields ?? [])
             {
-                _fields[field.Name] = field;
+                _fields[field.Name] = field with { Offset = field.OffsetFor(target) };
             }
 
             // A sampled texture the parameter block also names is read through a unit: sharing the name

@@ -292,6 +292,49 @@ public sealed class LightFixtureExtractorTests
             () => LightFixtureExtractor.Propose([], ["lamp"], clusterDistance: 0f));
     }
 
+    /// <summary>A lamp with no facing of its own, bolted to a wall, faces away from the wall.</summary>
+    /// <remarks>
+    /// A round wall lamp's faces point every way, so its winding gives no direction; lit as a point, its
+    /// light went through the wall behind it on the software path, whose cube maps cannot see a wall closer
+    /// than their near plane. The wall is another placement's, a few centimetres behind the lamp.
+    /// </remarks>
+    [Fact]
+    public void ALampWithNoFacingOnAWallFacesAwayFromTheWall()
+    {
+        LightFixture fixture = Assert.Single(
+            LightFixtureExtractor.Propose([Dome(new Vector3f(0f, 0f, 2f)), Mesh("concrete", WallAtX(-0.15f, 2f))], ["lamp"]));
+
+        Assert.True(fixture.IsDirectional);
+        Assert.Equal(1f, fixture.Direction.X, 3);
+        Assert.Equal(0f, fixture.Direction.Z, 3);
+    }
+
+    /// <summary>The same lamp standing on a floor keeps lighting every way, as a bulb on a stand does.</summary>
+    [Fact]
+    public void ALampWithNoFacingOnAFloorStaysAPointLight()
+    {
+        LightFixture fixture = Assert.Single(
+            LightFixtureExtractor.Propose([Dome(new Vector3f(0f, 0f, 0.15f)), Mesh("concrete", Quad(default, 1f))], ["lamp"]));
+
+        Assert.False(fixture.IsDirectional);
+    }
+
+    /// <summary>An emitter whose faces cancel -- two opposite squares -- so the winding gives it no facing.</summary>
+    private static LightFixtureExtractor.PlacedMesh Dome(Vector3f centre)
+    {
+        (Vector3f A, Vector3f B, Vector3f C)[] up = Quad(new Vector3f(centre.X, centre.Y, centre.Z + 0.05f), 0.1f);
+        (Vector3f A, Vector3f B, Vector3f C)[] down = [.. Quad(new Vector3f(centre.X, centre.Y, centre.Z - 0.05f), 0.1f)
+            .Select(static triangle => (triangle.A, triangle.C, triangle.B))];
+        return Mesh("lamp", [.. up, .. down]);
+    }
+
+    /// <summary>A two-metre square of wall in the YZ plane at an X, centred on a height.</summary>
+    private static (Vector3f A, Vector3f B, Vector3f C)[] WallAtX(float x, float height) =>
+    [
+        (new Vector3f(x, -1f, height - 1f), new Vector3f(x, 1f, height - 1f), new Vector3f(x, 1f, height + 1f)),
+        (new Vector3f(x, -1f, height - 1f), new Vector3f(x, 1f, height + 1f), new Vector3f(x, -1f, height + 1f)),
+    ];
+
     /// <summary>Builds one placed mesh whose every triangle draws with the same texture.</summary>
     private static LightFixtureExtractor.PlacedMesh Mesh(
         string texture,

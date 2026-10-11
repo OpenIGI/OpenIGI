@@ -227,6 +227,12 @@ public sealed class ShaderLibraryBuilder
             if (placements is not null)
             {
                 reflection = placements.Merge(reflection);
+                reflection = ConstantLayouts.Reconcile(
+                    module.Id,
+                    variant.Name,
+                    reflection,
+                    ConstantLayouts.Read(spirv.ReflectionJson),
+                    placements.Constants);
             }
         }
 

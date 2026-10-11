@@ -45,10 +45,11 @@ public static partial class LightFixtureStore
     /// its own emissive strength, so one texture can be a floodlight on one model and a reading lamp on
     /// another. 3 moved emission from the texture to the sub-mesh, 2 added the direction a fixture
     /// faces, and version 1 was a bare array — which is what an absent version reads as. 7 added the
-    /// emitting rectangle (long axis and half-extents) the lamp's shadow rays are aimed at.
+    /// emitting rectangle (long axis and half-extents) the lamp's shadow rays are aimed at. 8 faces a
+    /// fitting with no facing of its own away from the wall or ceiling it is mounted on.
     /// </para>
     /// </remarks>
-    public const int Version = 7;
+    public const int Version = 8;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>

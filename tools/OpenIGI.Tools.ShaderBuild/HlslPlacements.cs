@@ -6,9 +6,11 @@ namespace OpenIGI.Tools.ShaderBuild;
 /// <summary>Where one DXIL compile placed every resource: HLSL registers by name, and loose uniforms by offset.</summary>
 /// <param name="Resources">Each resource's register, keyed by its declared name.</param>
 /// <param name="Uniforms">Each loose uniform's byte offset in the global constant buffer, keyed by name.</param>
+/// <param name="Constants">Each constant block's fields as HLSL packs them, keyed by block name; see <see cref="ConstantLayouts"/>.</param>
 public sealed record HlslPlacements(
     IReadOnlyDictionary<string, ShaderHlslRegister> Resources,
-    IReadOnlyDictionary<string, int> Uniforms)
+    IReadOnlyDictionary<string, int> Uniforms,
+    IReadOnlyDictionary<string, IReadOnlyList<ShaderUniformField>> Constants)
 {
     /// <summary>The register Slang gives its implicit global constant buffer when a module has loose uniforms.</summary>
     /// <remarks>
@@ -28,10 +30,12 @@ public sealed record HlslPlacements(
         Dictionary<string, ShaderHlslRegister> resources = new(StringComparer.Ordinal);
         Dictionary<string, int> uniforms = new(StringComparer.Ordinal);
 
+        Dictionary<string, IReadOnlyList<ShaderUniformField>> constants = ConstantLayouts.Read(slangJson);
+
         using JsonDocument document = JsonDocument.Parse(slangJson);
         if (!document.RootElement.TryGetProperty("parameters", out JsonElement parameters))
         {
-            return new HlslPlacements(resources, uniforms);
+            return new HlslPlacements(resources, uniforms, constants);
         }
 
         foreach (JsonElement parameter in parameters.EnumerateArray())
@@ -65,7 +69,7 @@ public sealed record HlslPlacements(
                 registerClass, binding.GetProperty("index").GetInt32(), space, StructuredStride(module, name, parameter));
         }
 
-        return new HlslPlacements(resources, uniforms);
+        return new HlslPlacements(resources, uniforms, constants);
     }
 
     /// <summary>The element size of a structured buffer, as its view must state it; nought for anything else.</summary>
@@ -111,7 +115,10 @@ public sealed record HlslPlacements(
         bool same = first.Resources.Count == second.Resources.Count
             && first.Uniforms.Count == second.Uniforms.Count
             && first.Resources.All(pair => second.Resources.TryGetValue(pair.Key, out ShaderHlslRegister? other) && other == pair.Value)
-            && first.Uniforms.All(pair => second.Uniforms.TryGetValue(pair.Key, out int other) && other == pair.Value);
+            && first.Uniforms.All(pair => second.Uniforms.TryGetValue(pair.Key, out int other) && other == pair.Value)
+            && first.Constants.Count == second.Constants.Count
+            && first.Constants.All(pair => second.Constants.TryGetValue(pair.Key, out IReadOnlyList<ShaderUniformField>? other)
+                && other.SequenceEqual(pair.Value));
 
         if (!same)
         {

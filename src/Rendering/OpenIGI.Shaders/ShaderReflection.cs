@@ -250,16 +250,35 @@ public enum ShaderStorageAccess
 
 /// <summary>One field of a uniform block, for a host that sets its parameters by name.</summary>
 /// <param name="Name">The name the Slang source declares.</param>
-/// <param name="Offset">Where the field starts in the block, in bytes.</param>
+/// <param name="Offset">Where the field starts in the block, in bytes, as SPIR-V and WGSL lay it out.</param>
 /// <param name="Size">How many bytes the field occupies.</param>
-public sealed record ShaderUniformField(string Name, int Offset, int Size);
+/// <param name="HlslOffset">
+/// Where it starts in the DXIL form's block, which HLSL's constant-buffer packing can put earlier: an array's
+/// last element is not padded, and a two-component vector shares a register with the scalar before it.
+/// Absent for a module with no DXIL form.
+/// </param>
+public sealed record ShaderUniformField(
+    string Name,
+    int Offset,
+    int Size,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? HlslOffset = null)
+{
+    /// <summary>Where the field starts in the block a target's form of the module reads.</summary>
+    /// <param name="target">The target.</param>
+    /// <returns>The offset in bytes.</returns>
+    /// <exception cref="InvalidOperationException">The target is DXIL and the module has no DXIL form.</exception>
+    public int OffsetFor(ShaderTarget target) => target == ShaderTarget.Dxil
+        ? HlslOffset ?? throw new InvalidOperationException($"'{Name}' has no place in a DXIL constant buffer.")
+        : Offset;
+}
 
 /// <summary>A uniform block whose fields a host sets one at a time, by name.</summary>
 /// <param name="Name">The block's name.</param>
 /// <param name="Group">The descriptor set it is bound in.</param>
 /// <param name="Binding">The binding index within that set.</param>
-/// <param name="Size">The block's size in bytes.</param>
+/// <param name="Size">The block's size in bytes, as SPIR-V and WGSL lay it out.</param>
 /// <param name="Fields">Its fields, in declaration order.</param>
+/// <param name="HlslSize">The DXIL form's size in bytes, or null for a module with no DXIL form.</param>
 /// <remarks>
 /// Reported only for a block the module names <c>Globals</c>, which is the convention a module follows
 /// when it wants to be driven the way the engine's own compute seam drives one: a call per parameter,
@@ -272,7 +291,14 @@ public sealed record ShaderUniformBlock(
     int Group,
     int Binding,
     int Size,
-    IReadOnlyList<ShaderUniformField> Fields);
+    IReadOnlyList<ShaderUniformField> Fields,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? HlslSize = null)
+{
+    /// <summary>The block's size for a target's form of the module.</summary>
+    /// <param name="target">The target.</param>
+    /// <returns>The size in bytes.</returns>
+    public int SizeFor(ShaderTarget target) => target == ShaderTarget.Dxil ? HlslSize ?? Size : Size;
+}
 
 /// <summary>
 /// The block of constants pushed per draw: a Vulkan push constant, and on WebGPU a uniform buffer

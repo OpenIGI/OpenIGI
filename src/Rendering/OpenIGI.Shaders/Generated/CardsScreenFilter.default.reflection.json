@@ -145,33 +145,40 @@
       {
         "name": "uWidth",
         "offset": 0,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 0
       },
       {
         "name": "uHeight",
         "offset": 4,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 4
       },
       {
         "name": "uRadius",
         "offset": 8,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 8
       },
       {
         "name": "uAccum",
         "offset": 12,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 12
       },
       {
         "name": "uPosition",
         "offset": 16,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 16
       },
       {
         "name": "uSceneNormal",
         "offset": 20,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 20
       }
-    ]
+    ],
+    "hlslSize": 32
   }
 }

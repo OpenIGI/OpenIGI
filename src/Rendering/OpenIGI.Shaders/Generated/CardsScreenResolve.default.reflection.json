@@ -281,143 +281,172 @@
       {
         "name": "uUnproject",
         "offset": 0,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 0
       },
       {
         "name": "uPrevUnproject",
         "offset": 16,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 16
       },
       {
         "name": "uViewToWorld0",
         "offset": 32,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 32
       },
       {
         "name": "uViewToWorld1",
         "offset": 48,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 48
       },
       {
         "name": "uViewToWorld2",
         "offset": 64,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 64
       },
       {
         "name": "uCameraToCache",
         "offset": 80,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 80
       },
       {
         "name": "uPrevWorldToView0",
         "offset": 96,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 96
       },
       {
         "name": "uPrevWorldToView1",
         "offset": 112,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 112
       },
       {
         "name": "uPrevWorldToView2",
         "offset": 128,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 128
       },
       {
         "name": "uPrevCameraToCache",
         "offset": 144,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 144
       },
       {
         "name": "uProbeWorldToView0",
         "offset": 160,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 160
       },
       {
         "name": "uProbeWorldToView1",
         "offset": 176,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 176
       },
       {
         "name": "uProbeWorldToView2",
         "offset": 192,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 192
       },
       {
         "name": "uProbeCameraToCache",
         "offset": 208,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 208
       },
       {
         "name": "uScreenWidth",
         "offset": 220,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 220
       },
       {
         "name": "uScreenHeight",
         "offset": 224,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 224
       },
       {
         "name": "uHasHistory",
         "offset": 228,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 228
       },
       {
         "name": "uMaxFrames",
         "offset": 232,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 232
       },
       {
         "name": "uProbe",
         "offset": 236,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 236
       },
       {
         "name": "uSceneDepth",
         "offset": 240,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 240
       },
       {
         "name": "uSceneNormal",
         "offset": 244,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 244
       },
       {
         "name": "uHistory",
         "offset": 248,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 248
       },
       {
         "name": "uHistoryPosition",
         "offset": 252,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 252
       },
       {
         "name": "uProbePosition",
         "offset": 256,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 256
       },
       {
         "name": "uVelocity",
         "offset": 260,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 260
       },
       {
         "name": "uProbeStep",
         "offset": 264,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 264
       },
       {
         "name": "uProbeFrame",
         "offset": 268,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 268
       },
       {
         "name": "uHasVelocity",
         "offset": 272,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 272
       }
-    ]
+    ],
+    "hlslSize": 288
   }
 }

@@ -159,10 +159,11 @@ public static class LightFixtureExtractor
         }
 
         List<Triangle> triangles = [];
+        List<PlacedMesh> placed = [.. meshes];
 
-        foreach (PlacedMesh mesh in meshes)
+        for (int i = 0; i < placed.Count; i++)
         {
-            Gather(mesh, emitters, triangles);
+            Gather(placed[i], i, emitters, triangles);
         }
 
         if (triangles.Count == 0)
@@ -171,10 +172,17 @@ public static class LightFixtureExtractor
         }
 
         List<LightFixture> fixtures = [];
+        MountFinder mounts = new(placed);
 
         foreach (List<int> cluster in Cluster(triangles, clusterDistance))
         {
-            fixtures.Add(Describe(triangles, cluster, colour, radiusScale));
+            LightFixture fixture = Describe(triangles, cluster, colour, radiusScale);
+            if (!fixture.IsDirectional && mounts.Facing(fixture, triangles, cluster) is { } away)
+            {
+                fixture = fixture with { Direction = away };
+            }
+
+            fixtures.Add(fixture);
         }
 
         // Strongest first, because the list exists to be read top-down by someone deciding which
@@ -302,7 +310,7 @@ public static class LightFixtureExtractor
     }
 
     /// <summary>Collects one mesh's emitter triangles, in world space.</summary>
-    private static void Gather(in PlacedMesh mesh, HashSet<string> emitters, List<Triangle> into)
+    private static void Gather(in PlacedMesh mesh, int meshIndex, HashSet<string> emitters, List<Triangle> into)
     {
         if (mesh.Geometry is null || mesh.TextureForSlot is null)
         {
@@ -344,7 +352,8 @@ public static class LightFixtureExtractor
                     texture,
                     ToWorld(vertices[a].Position, mesh),
                     ToWorld(vertices[b].Position, mesh),
-                    ToWorld(vertices[c].Position, mesh)));
+                    ToWorld(vertices[c].Position, mesh),
+                    meshIndex));
             }
         }
     }
@@ -778,13 +787,181 @@ public static class LightFixtureExtractor
         }
     }
 
-    /// <summary>One emitter triangle, already in world space.</summary>
-    private readonly record struct Triangle(string Texture, Vector3d A, Vector3d B, Vector3d C)
+    /// <summary>One emitter triangle, already in world space, and which of the meshes it came from.</summary>
+    private readonly record struct Triangle(string Texture, Vector3d A, Vector3d B, Vector3d C, int Mesh = -1)
     {
         /// <summary>Gets the triangle's centroid.</summary>
         public Vector3d Centroid => new((A.X + B.X + C.X) / 3.0, (A.Y + B.Y + C.Y) / 3.0, (A.Z + B.Z + C.Z) / 3.0);
 
         /// <summary>Gets the triangle's area, in square metres.</summary>
         public double Area => 0.5 * Vector3d.Cross(B - A, C - A).Length;
+    }
+
+    /// <summary>Finds what a fixture with no facing of its own is mounted on, and faces it away from that.</summary>
+    /// <remarks>
+    /// <para>
+    /// A round wall lamp is a dome, its faces as much one way as another, so <see cref="Facing"/> rightly
+    /// cannot read a direction off it and the renderer lights it as a point. But a lamp bolted to a wall gives
+    /// the wall's far side none of its light, and a point does: on the software path a point lamp's cube of
+    /// maps draws nothing nearer than its near plane, which has to clear the fitting's own housing, so the wall
+    /// a hand's breadth behind it was not drawn either -- and mission 1's round lamps inside the security
+    /// building lit the plinth, the column and the canopy's edge outside it, where the traced shadow had them
+    /// dark. Facing away from its wall, the lamp lights its room and nothing behind it, on both paths.
+    /// </para>
+    /// <para>
+    /// The wall is read from the level rather than from the fitting's winding, which this game's models do not
+    /// keep consistent: the nearest surface of any OTHER placement within the fitting's own size of its centre.
+    /// Only a wall or a ceiling counts. A lamp standing on a desk or a floor keeps lighting as a point, which is
+    /// what a bulb on a stand does.
+    /// </para>
+    /// </remarks>
+    private sealed class MountFinder(List<PlacedMesh> meshes)
+    {
+        // How much further than the fitting's own size a mount may stand: a bracket's plate between them.
+        private const double Clearance = 0.1;
+
+        private readonly (Vector3d Min, Vector3d Max)?[] _bounds = new (Vector3d Min, Vector3d Max)?[meshes.Count];
+
+        /// <summary>The direction the fixture faces, away from what it is mounted on; null when it is not.</summary>
+        public Vector3f? Facing(in LightFixture fixture, List<Triangle> triangles, List<int> cluster)
+        {
+            HashSet<int> own = [];
+            foreach (int index in cluster)
+            {
+                own.Add(triangles[index].Mesh);
+            }
+
+            Vector3d centre = fixture.Position;
+            double reach = fixture.Extent + Clearance;
+            double nearest = reach * reach;
+            Vector3d mount = default;
+            bool found = false;
+
+            for (int m = 0; m < meshes.Count; m++)
+            {
+                if (own.Contains(m) || !Near(m, centre, reach))
+                {
+                    continue;
+                }
+
+                PlacedMesh mesh = meshes[m];
+                Vertex3D[] vertices = mesh.Geometry.Vertices;
+                ushort[] indices = mesh.Geometry.Indices;
+                for (int at = 0; at + 2 < indices.Length; at += 3)
+                {
+                    int a = indices[at];
+                    int b = indices[at + 1];
+                    int c = indices[at + 2];
+                    if (a >= vertices.Length || b >= vertices.Length || c >= vertices.Length)
+                    {
+                        continue;
+                    }
+
+                    Vector3d closest = ClosestOnTriangle(
+                        centre,
+                        ToWorld(vertices[a].Position, mesh),
+                        ToWorld(vertices[b].Position, mesh),
+                        ToWorld(vertices[c].Position, mesh));
+                    double distance = DistanceSquared(centre, closest);
+                    if (distance < nearest && distance > 1e-8)
+                    {
+                        nearest = distance;
+                        mount = closest;
+                        found = true;
+                    }
+                }
+            }
+
+            if (!found)
+            {
+                return null;
+            }
+
+            Vector3d away = (centre - mount).Normalized();
+
+            // Z is up. Away from a wall is sideways, away from a ceiling is down; away from a desk or a floor
+            // is up, which is a bulb on a stand and keeps its point light.
+            if (away.Z > 0.5)
+            {
+                return null;
+            }
+
+            return new Vector3f((float)away.X, (float)away.Y, (float)away.Z);
+        }
+
+        /// <summary>Whether any of a mesh can lie within reach of a point, by its world bounds.</summary>
+        private bool Near(int index, Vector3d point, double reach)
+        {
+            if (_bounds[index] is not { } box)
+            {
+                PlacedMesh mesh = meshes[index];
+                Vector3d min = new(double.MaxValue, double.MaxValue, double.MaxValue);
+                Vector3d max = new(double.MinValue, double.MinValue, double.MinValue);
+                foreach (Vertex3D vertex in mesh.Geometry.Vertices)
+                {
+                    Vector3d at = ToWorld(vertex.Position, mesh);
+                    min = new Vector3d(Math.Min(min.X, at.X), Math.Min(min.Y, at.Y), Math.Min(min.Z, at.Z));
+                    max = new Vector3d(Math.Max(max.X, at.X), Math.Max(max.Y, at.Y), Math.Max(max.Z, at.Z));
+                }
+
+                box = (min, max);
+                _bounds[index] = box;
+            }
+
+            return point.X >= box.Min.X - reach && point.X <= box.Max.X + reach
+                && point.Y >= box.Min.Y - reach && point.Y <= box.Max.Y + reach
+                && point.Z >= box.Min.Z - reach && point.Z <= box.Max.Z + reach;
+        }
+
+        /// <summary>The point of a triangle nearest a point (Ericson, Real-Time Collision Detection, 5.1.5).</summary>
+        private static Vector3d ClosestOnTriangle(Vector3d p, Vector3d a, Vector3d b, Vector3d c)
+        {
+            Vector3d ab = b - a;
+            Vector3d ac = c - a;
+            Vector3d ap = p - a;
+            double d1 = Vector3d.Dot(ab, ap);
+            double d2 = Vector3d.Dot(ac, ap);
+            if (d1 <= 0.0 && d2 <= 0.0)
+            {
+                return a;
+            }
+
+            Vector3d bp = p - b;
+            double d3 = Vector3d.Dot(ab, bp);
+            double d4 = Vector3d.Dot(ac, bp);
+            if (d3 >= 0.0 && d4 <= d3)
+            {
+                return b;
+            }
+
+            double vc = (d1 * d4) - (d3 * d2);
+            if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0)
+            {
+                return a + (ab * (d1 / (d1 - d3)));
+            }
+
+            Vector3d cp = p - c;
+            double d5 = Vector3d.Dot(ab, cp);
+            double d6 = Vector3d.Dot(ac, cp);
+            if (d6 >= 0.0 && d5 <= d6)
+            {
+                return c;
+            }
+
+            double vb = (d5 * d2) - (d1 * d6);
+            if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0)
+            {
+                return a + (ac * (d2 / (d2 - d6)));
+            }
+
+            double va = (d3 * d6) - (d5 * d4);
+            if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0)
+            {
+                return b + ((c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6))));
+            }
+
+            double denominator = 1.0 / (va + vb + vc);
+            return a + (ab * (vb * denominator)) + (ac * (vc * denominator));
+        }
     }
 }
