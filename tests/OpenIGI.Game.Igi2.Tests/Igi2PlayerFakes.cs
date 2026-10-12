@@ -150,6 +150,12 @@ internal static class Igi2PlayerFakes
 
         IReadOnlyList<Igi2Human> IIgi2HumanSurroundings.Humans => Humans;
 
+        public World.Igi2Particles? Particles { get; set; }
+
+        public List<Igi2BloodStain> Stains { get; } = [];
+
+        public void MarkBloodStain(in Igi2BloodStain stain) => Stains.Add(stain);
+
         public List<Ai.Igi2AiEvent> AiEvents { get; } = [];
 
         public void SendAiEvent(in Ai.Igi2AiEvent aiEvent) => AiEvents.Add(aiEvent);

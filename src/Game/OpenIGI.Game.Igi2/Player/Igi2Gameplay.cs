@@ -147,11 +147,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
             humans.AddRange(registered.Bodies);
         }
 
+        // Particle2DDynCubeObj's module: one stream and collision phase for every system the level makes.
+        Igi2Particles particles = new(world, player.Dynamic);
         foreach (Igi2Human human in humans)
         {
             if (human.Surroundings is Igi2LevelSurroundings surroundings)
             {
                 surroundings.Humans = humans;
+                surroundings.Particles = particles;
             }
         }
 
@@ -984,6 +987,9 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
         return default(Vector3f);
     }
+
+    /// <summary>Gets or sets the level's 2-D particles, which blood is thrown through.</summary>
+    public Igi2Particles? Particles { get; set; }
 
     /// <summary>Gets or sets every human registered in the level, <c>Human_ptQTaskList</c>.</summary>
     public IReadOnlyList<Igi2Human> Humans { get; set; } = [];

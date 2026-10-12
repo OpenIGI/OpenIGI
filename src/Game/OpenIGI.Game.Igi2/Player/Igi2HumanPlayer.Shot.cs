@@ -55,8 +55,8 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// </summary>
     /// <param name="hit">The hit.</param>
     /// <remarks>
-    /// The original only answers while the player is active, which a player always is here. Not yet: the flesh effect at the hit
-    /// (<c>HumanDamage_CreateFleshEnterEffect</c>, <c>0x469CE0</c>).
+    /// The original only answers while the player is active, which a player always is here. Last, blood is thrown at the hit
+    /// (<see cref="Igi2Human.CreateFleshEnterEffect"/>).
     /// </remarks>
     public void WeaponHit(in Igi2WeaponHit hit)
     {
@@ -73,6 +73,8 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
         {
             Killer = shooter;
         }
+
+        CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
     }
 
     /// <summary>

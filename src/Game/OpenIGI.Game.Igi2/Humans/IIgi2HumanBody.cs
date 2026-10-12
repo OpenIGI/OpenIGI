@@ -247,6 +247,18 @@ public interface IIgi2HumanSurroundings
     /// <param name="row">The row.</param>
     /// <returns>The material.</returns>
     World.Igi2GameMaterial? Material(int row) => null;
+
+    /// <summary>Gets a value indicating whether blood is shown, the options' <c>isBlood</c>: on unless turned off.</summary>
+    bool IsBlood => true;
+
+    /// <summary>Gets the level's 2-D particles, which blood is thrown through, or <see langword="null"/> when there are none.</summary>
+    World.Igi2Particles? Particles => null;
+
+    /// <summary>Leaves a blood stain on a surface, <c>CreateBulletHole</c> with a blood texture; drawing only.</summary>
+    /// <param name="stain">The stain.</param>
+    void MarkBloodStain(in Igi2BloodStain stain)
+    {
+    }
 }
 
 /// <summary>A sound a state holds on to: the task a <c>QReference</c> keeps, which may end on its own.</summary>

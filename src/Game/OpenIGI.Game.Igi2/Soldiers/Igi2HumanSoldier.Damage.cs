@@ -66,7 +66,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
     /// it died are kept and the dead bit is raised. Short of it the soldier flinches and cries out, and the AI hears it take damage.
     /// Unless one hit killed it, its mind says a line.
     /// </para>
-    /// <para>Not yet: the player's tally of hits and kills, and the bruise and flesh effects.</para>
+    /// <para>Blood is thrown once the damage is taken (<see cref="Igi2Human.CreateFleshEnterEffect"/>). Not yet: the player's tally of hits and kills, and the knife's bruise.</para>
     /// </remarks>
     public void WeaponHit(in Igi2WeaponHit hit)
     {
@@ -97,6 +97,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
         }
 
         Damage.Add(part, damage);
+        CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
         RecoilMeter = ((Fpu)damage + RecoilMeter).F;
         Vector3d? shooterAt = hit.Shooter is Igi2Human from ? from.Position : null;
         if (Damage.IsFatal)
