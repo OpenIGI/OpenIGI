@@ -331,6 +331,43 @@ public sealed class Igi2HumanAiConfig
     /// <summary>The names of the difficulties a scale row is for, <c>Config_azGameDifficulty</c>, each after <c>DIFF_SCALE_</c>.</summary>
     public static IReadOnlyList<string> Difficulties { get; } = ["GD_1", "GD_2", "GD_3"];
 
+    /// <summary>
+    /// A soldier's chance to hit at a distance (<c>HumanAIConfig_CalculateAccuracy</c>): up to the middle range, the close accuracy
+    /// times the near factor to the power of the distance; beyond, the middle accuracy times the far factor to the power of how far
+    /// past the middle range, the distance held to at least one and at most the long range.
+    /// </summary>
+    /// <param name="minRangeAccuracy">The close accuracy.</param>
+    /// <param name="medRangeAccuracy">The middle accuracy.</param>
+    /// <param name="accuracyMedRange">Where the middle range is.</param>
+    /// <param name="accuracyMaxRange">Where the long range is.</param>
+    /// <param name="medRangeAccuracyFactor">The near factor.</param>
+    /// <param name="maxRangeAccuracyFactor">The far factor.</param>
+    /// <param name="distance">The distance.</param>
+    /// <returns>The chance.</returns>
+    public static float CalculateAccuracy(
+        float minRangeAccuracy, float medRangeAccuracy, float accuracyMedRange, float accuracyMaxRange, float medRangeAccuracyFactor,
+        float maxRangeAccuracyFactor, float distance)
+    {
+        if (distance >= accuracyMedRange)
+        {
+            if (distance >= 1.0)
+            {
+                if (accuracyMaxRange < distance)
+                {
+                    distance = accuracyMaxRange;
+                }
+            }
+            else
+            {
+                distance = 1f;
+            }
+
+            return (float)(Math.Pow(maxRangeAccuracyFactor, distance - (double)accuracyMedRange) * medRangeAccuracy);
+        }
+
+        return (float)(Math.Pow(medRangeAccuracyFactor, distance) * minRangeAccuracy);
+    }
+
     private readonly Igi2HumanAiConfigItemTask[] _base = new Igi2HumanAiConfigItemTask[Igi2AiConstants.AiTypes.Count];
     private readonly Igi2HumanAiConfigItemTask[] _scale = new Igi2HumanAiConfigItemTask[Difficulties.Count];
 

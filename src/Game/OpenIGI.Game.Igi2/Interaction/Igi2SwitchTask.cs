@@ -49,6 +49,9 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
     private byte _isDestroyed;
     private byte _isLastDestroyed;
     private int _lastPressedTick;
+
+    /// <summary>Gets the tick it was last pressed on, <c>nLastPressedTick</c>.</summary>
+    public int LastPressedTick => _lastPressedTick;
     private int _clientId;
     private bool _started;
 

@@ -109,6 +109,9 @@ public sealed class Igi2DetectionItem
     /// <summary>Gets or sets a value indicating whether it stays listed once out of sight, <c>isKeepInListAfterLostSight</c>.</summary>
     public bool IsKeepInListAfterLostSight { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether its holder is still identifying it, <c>isIdentifying</c>.</summary>
+    public bool IsIdentifying { get; set; }
+
     /// <summary>Gets where it was last in plain sight, <c>tLastVisiblePosition</c>.</summary>
     public Vector3d LastVisiblePosition { get; internal set; }
 
@@ -237,6 +240,31 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
         int tick = _nextDisplace;
         _nextDisplace = (_nextDisplace + 1) % 4;
         return tick;
+    }
+
+    /// <summary>Gets the session's materials, which lines of sight are traced against.</summary>
+    public Igi2GameMaterials Materials => materials;
+
+    /// <summary>
+    /// Traces a line of sight through some groups, <c>World_LineOfSight</c> with <c>AIDetection_eLineOfSightQTaskEvent</c>.
+    /// </summary>
+    /// <param name="from">Where it starts.</param>
+    /// <param name="to">Where it ends.</param>
+    /// <param name="groups">The query groups.</param>
+    /// <param name="transparency">Receives how much the faces met let through.</param>
+    /// <returns><see langword="true"/> when it met nothing.</returns>
+    public bool LineOfSight(Vector3d from, Vector3d to, uint groups, out float transparency)
+    {
+        transparency = 1f;
+        if (sight is null)
+        {
+            return true;
+        }
+
+        Igi2LineOfSight line = new(from, to, materials) { Includes = SightIncludes };
+        bool clear = sight.LineOfSight(line, groups);
+        transparency = line.Transparency;
+        return clear;
     }
 
     /// <summary>
@@ -407,6 +435,11 @@ public sealed class Igi2AiDetection
     /// <returns>Its item, or <see langword="null"/> when it is not listed.</returns>
     public Igi2DetectionItem? Find(IIgi2Detectable target) =>
         Enemies.Find(item => ReferenceEquals(item.Target, target)) ?? Friends.Find(item => ReferenceEquals(item.Target, target));
+
+    /// <summary>Lists a target among the enemies, or finds it there, <c>AIDetection_NewListItem</c>.</summary>
+    /// <param name="target">The target.</param>
+    /// <returns>Its item.</returns>
+    public Igi2DetectionItem Track(IIgi2Detectable target) => Find(target) ?? Item(Enemies, target);
 
     /// <summary>Lets go of everything, <c>AIDetection_ClearDetection</c> (<c>igi2 0x474DF0</c>).</summary>
     public void Clear()

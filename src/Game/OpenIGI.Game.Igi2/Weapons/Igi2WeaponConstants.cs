@@ -27,6 +27,12 @@ public static class Igi2WeaponConstants
     /// <summary>The value of <c>AMMO_ID_UNDEFINED</c> and <c>WEAPON_ID_UNDEFINED</c>.</summary>
     public const int Undefined = -1;
 
+    /// <summary>The value of <c>WEAPONTYPE_SHOTGUN</c>; the guns are the types below and up to it.</summary>
+    public const int WeaponTypeShotgun = 2;
+
+    /// <summary>The value of <c>WEAPONTYPE_GRENADE</c>.</summary>
+    public const int WeaponTypeGrenade = Igi2WeaponTypeKind.Grenade;
+
     private static readonly (string Name, int Value)[] Values =
     [
         ("WEAPONCATEGORY_NONE", 0),

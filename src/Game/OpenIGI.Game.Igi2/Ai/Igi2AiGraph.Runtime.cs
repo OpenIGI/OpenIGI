@@ -36,8 +36,8 @@ public sealed class Igi2AiCoverItem
     /// <summary>Gets the node it belongs to.</summary>
     public required int NodeId { get; init; }
 
-    /// <summary>Gets, for each of 32 directions around the node, whether it is sheltered from that way.</summary>
-    public required bool[] CoverCircle { get; init; }
+    /// <summary>Gets, for each of 32 directions around the node, how it is sheltered from that way: nought not at all; bit 4 standing only.</summary>
+    public required int[] CoverCircle { get; init; }
 
     /// <summary>Gets or sets its flags: bit 1 is taken (<c>AIGraph_LockCoverNode</c>), bit 2 a soldier stands on it.</summary>
     public int Flags { get; set; }
@@ -111,6 +111,16 @@ public sealed partial class Igi2AiGraph
         return ((Fpu)node.Radius * 4096.0).Value <= ((Fpu)best * 0.000244140625).Value
             ? Igi2AiClosestNode.OutsideNode
             : Igi2AiClosestNode.InsideNode;
+    }
+
+    /// <summary>The node nearest a position, or <see langword="null"/>, as <see cref="ClosestNode"/> finds it.</summary>
+    /// <param name="position">The position.</param>
+    /// <param name="allowVehicleNodes">Whether a vehicle node may be the answer.</param>
+    /// <returns>The node.</returns>
+    public Igi2AiGraphNode? Nearest(Vector3d position, bool allowVehicleNodes)
+    {
+        ClosestNode(position, allowVehicleNodes, out Igi2AiGraphNode? node);
+        return node;
     }
 
     /// <summary>
@@ -248,7 +258,7 @@ public sealed partial class Igi2AiGraph
 
         // A position exactly due east, its angle a full turn, is sector 32: the original reads past the circle into the node id.
         int sector = CoverSector(node.Position, position);
-        return sector < 32 ? item.CoverCircle[sector] : item.NodeId != 0;
+        return sector < 32 ? item.CoverCircle[sector] != 0 : item.NodeId != 0;
     }
 
     /// <summary>Frees the cover a node took, <c>AIGraph_UnlockCoverNode</c>: the first item listed for it.</summary>
@@ -299,10 +309,10 @@ public sealed partial class Igi2AiGraph
                 continue;
             }
 
-            bool[] circle = new bool[32];
+            int[] circle = new int[32];
             for (int i = 0; i < 32; i++)
             {
-                circle[i] = BitConverter.ToInt32(item[(12 + (4 * i))..]) != 0;
+                circle[i] = BitConverter.ToInt32(item[(12 + (4 * i))..]);
             }
 
             _cover.Add(new Igi2AiCoverItem { NodeId = BitConverter.ToInt32(item[140..]), CoverCircle = circle });

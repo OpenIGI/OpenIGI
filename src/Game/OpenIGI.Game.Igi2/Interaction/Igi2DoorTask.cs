@@ -350,6 +350,10 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         _isOpenDoorChanged = 1;
     }
 
+    /// <summary>Holds the door where it is for some ticks, as a soldier on its way does (<c>Door+0x3A0</c>).</summary>
+    /// <param name="ticks">The ticks.</param>
+    public void HoldOpen(int ticks) => _holdTimer = ticks;
+
     /// <inheritdoc/>
     public void ToggleOpen(Vector3d from)
     {

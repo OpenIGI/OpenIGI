@@ -144,6 +144,12 @@ public sealed partial class Igi2AiSquadTask : Igi2Task
     [ScriptParam(ScriptParamType.Real32, "Formation Distance")]
     public float FormationDistance { get; set; } = 2f;
 
+    /// <summary>
+    /// Gets or sets the distance that overrides the formation distance when above nought, <c>vOverrideFormationDistance</c>: made
+    /// nought, and set by nothing the campaign uses.
+    /// </summary>
+    public float OverrideFormationDistance { get; set; }
+
     /// <summary>Gets or sets the kind of squad.</summary>
     [ScriptParam(ScriptParamType.EnumInt32, "SquadType")]
     public int SquadType { get; set; } = 1;

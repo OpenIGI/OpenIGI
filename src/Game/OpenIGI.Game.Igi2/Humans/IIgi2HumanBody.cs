@@ -111,6 +111,19 @@ public interface IIgi2HumanAnimation
     /// <param name="blendSeconds">How long to blend it in.</param>
     void PlayUpperBodyState(int state, int time, float blendSeconds);
 
+    /// <summary>Plays a named clip on the upper body, <c>HumanAnim_SetUpperBodyAnimationAndTime</c>.</summary>
+    /// <param name="name">The clip.</param>
+    /// <param name="time">The time to play it from, in clip ticks.</param>
+    /// <param name="blendSeconds">How long to blend it in.</param>
+    void PlayUpperBodyNamed(string name, int time, float blendSeconds)
+    {
+    }
+
+    /// <summary>Whether the held weapon has an upper-body clip for a state, other than the lower-body stand.</summary>
+    /// <param name="state">The state.</param>
+    /// <returns><see langword="true"/> when it has.</returns>
+    bool HasUpperBodyClipForState(int state) => false;
+
     /// <summary>Steps every controller that steps itself, as the body's children run each tick.</summary>
     void AutoStep();
 

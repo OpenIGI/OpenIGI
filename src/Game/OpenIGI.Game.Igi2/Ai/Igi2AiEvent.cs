@@ -10,19 +10,21 @@ namespace OpenIGI.Game.Igi2.Ai;
 /// <param name="Team">The team it concerns, <c>eTeam</c>; <c>-1</c> for every team.</param>
 /// <param name="Flags">Its flags, <c>bFlags</c>.</param>
 /// <param name="Radius">How far it reaches, in world units, <c>vRadius</c>.</param>
-/// <param name="Position">Where it happens, <c>*ptPosition</c>.</param>
+/// <param name="Position">Where it happens, <c>*ptPosition</c>, or <see langword="null"/> when nowhere.</param>
 /// <param name="Direction">Its direction, <c>tDirection</c>.</param>
 /// <param name="Originator">The human who raised it, <c>ptHumanOriginatorQTask</c>.</param>
 /// <param name="Reference">What it is about, <c>ptReferenceQTask</c>, or <see langword="null"/>.</param>
+/// <param name="Specific">The 24 bytes only this kind of event carries, <c>uEventSpecificData</c>, or <see langword="null"/>.</param>
 public readonly record struct Igi2AiEvent(
     int Event,
     int Team,
     int Flags,
     float Radius,
-    Vector3d Position,
+    Vector3d? Position,
     Vector3f Direction,
     object? Originator,
-    object? Reference = null)
+    object? Reference = null,
+    object? Specific = null)
 {
     /// <summary>The player bumping into another human, event 9 (<c>Human_HumanCollision</c>).</summary>
     public const int HumanBump = 9;

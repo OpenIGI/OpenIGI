@@ -230,6 +230,19 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     }
 
     /// <inheritdoc/>
+    public void PlayUpperBodyNamed(string name, int time, float blendSeconds) =>
+        SetUpperBody(_rig is null ? null : _library?.Find(_rig, name), time, blendSeconds);
+
+    /// <inheritdoc/>
+    /// <remarks>The weapon's clip must not be <c>stand_lowerbody</c>, the empty upper body (<c>dword_68F6C4</c>).</remarks>
+    public bool HasUpperBodyClipForState(int state)
+    {
+        int animation = (uint)state < (uint)_stateAnimations.Count ? _stateAnimations[state] : 0;
+        return _weaponClips() is { } clips && (uint)animation < (uint)clips.Count && clips[animation] is { } clip
+            && !string.Equals(clip.Name, "stand_lowerbody", StringComparison.Ordinal);
+    }
+
+    /// <inheritdoc/>
     public bool UpperBodyEnded => UpperBody?.IsEnded ?? false;
 
     /// <inheritdoc/>
