@@ -34,9 +34,6 @@ public sealed class Igi2LevelRun
     /// <summary>The milliseconds a tick lasts, <c>nMilisecondsPerTick</c>.</summary>
     public const int MillisecondsPerTick = 1000 / Frequency;
 
-    /// <summary>A building's type, <c>SectorObject</c>'s run handler (<c>SectorObject_RunHandler</c>, <c>igi2 0x589630</c>).</summary>
-    public const string BuildingType = "Building";
-
     private readonly Dictionary<GameTask, Action> _bound = [];
     private readonly List<Action> _delayed = [];
 
@@ -151,11 +148,6 @@ public sealed class Igi2LevelRun
                 RunDelayed();
                 break;
 
-            // Still a placeholder, being the world scene's placements; its run handler runs its children, then its attached
-            // objects' and its interiors' children, which are no tasks here.
-            case BuildingType:
-                RunChildren(task);
-                break;
         }
     }
 

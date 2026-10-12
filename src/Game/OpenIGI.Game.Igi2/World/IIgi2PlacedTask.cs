@@ -10,5 +10,15 @@ public interface IIgi2PlacedTask
     /// <param name="name">The parameter's name.</param>
     /// <param name="value">Receives the value, typed as a placeholder holds it.</param>
     /// <returns><see langword="true"/> when the task has the parameter.</returns>
-    bool TryGetValue(string name, out object? value);
+    /// <remarks>By default the generated parameter lookup, <see cref="Engine.Tasks.GameTask.TryGetScriptValue"/>.</remarks>
+    bool TryGetValue(string name, out object? value)
+    {
+        if (this is Engine.Tasks.GameTask task)
+        {
+            return task.TryGetScriptValue(name, out value);
+        }
+
+        value = null;
+        return false;
+    }
 }
