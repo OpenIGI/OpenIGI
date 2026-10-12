@@ -322,6 +322,31 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             playerTask.Human = player.Human;
         }
+
+        player.Input = task.Children.OfType<Igi2HumanPlayerInputTask>().FirstOrDefault();
+
+        // The map computer's tasks join it as they are made: the last limit, every highlight with its markers read.
+        if (request.Services.TryGet(out Computer.Igi2Computer? computer))
+        {
+            computer.BeginLevel();
+            player.Computer = computer;
+            foreach (Engine.Tasks.GameTask node in Descendants(root))
+            {
+                switch (node)
+                {
+                    case Computer.Igi2DefineComputerObjectiveTask objectives:
+                        objectives.Computer = computer;
+                        break;
+                    case Computer.Igi2DefineComputerLimitTask limit:
+                        limit.Attach(computer);
+                        break;
+                    case Computer.Igi2ComputerHilightTask hilight:
+                        hilight.Attach(computer);
+                        hilight.ReadMarkers(natives, functions);
+                        break;
+                }
+            }
+        }
         foreach (Igi2SoundGeneratorTask generator in Descendants(root).OfType<Igi2SoundGeneratorTask>())
         {
             generator.Sounds = player.Sounds;
@@ -735,6 +760,12 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets or sets the game-wide switches the level's scripts flip, or <see langword="null"/> for none.</summary>
     public Igi2FlowState? Flow { get; set; }
 
+    /// <summary>Gets or sets the player's input task, or <see langword="null"/> when the level gives the player none.</summary>
+    public Igi2HumanPlayerInputTask? Input { get; set; }
+
+    /// <summary>Gets or sets the map computer, or <see langword="null"/>.</summary>
+    public Computer.Igi2Computer? Computer { get; set; }
+
     /// <inheritdoc/>
     /// <remarks><c>CutScene_isRunning</c> as the last tick left it.</remarks>
     public bool IsCutscenePlaying => Level?.IsCutsceneRunning ?? false;
@@ -922,6 +953,14 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         Weapons?.RunGunShot();
         if (Level is { } level)
         {
+            // The player's first child, HumanPlayerInput, reads the controls into the frame it sends up as the player's update.
+            if (Input is { } input)
+            {
+                input.Run(level);
+                input.Apply(_frame);
+                Computer?.IsEnabled = input.IsComputerEnabled;
+            }
+
             level.Delay(RunPlayerDelayed);
         }
     }

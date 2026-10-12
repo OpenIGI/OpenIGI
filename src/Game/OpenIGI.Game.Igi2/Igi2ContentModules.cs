@@ -111,6 +111,7 @@ public sealed class Igi2PlayerContentModule : IContentModule
 
         context.Types.Register<Player.Igi2HumanPlayerTask>("HumanPlayer");
         context.Types.Register<Player.HumanPlayerConfigItemTask>(Player.HumanPlayerConfigItemTask.TypeName);
+        context.Types.Register<Player.Igi2HumanPlayerInputTask>(Player.Igi2HumanPlayerInputTask.TypeName);
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Player.Igi2PlayerTuning(context.Logger)).RegisterNatives(context.Natives, functions);
     }
@@ -193,6 +194,14 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2ContainerTask>(Flow.Igi2ContainerTask.TypeName);
         context.Types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
         context.Types.Register<Flow.Igi2EditVariableTask>(Flow.Igi2EditVariableTask.TypeName);
+        context.Types.Register<Flow.Igi2MissionScoreSettingsTask>(Flow.Igi2MissionScoreSettingsTask.TypeName);
+
+        // The map computer's level data: its objectives, its limit and its highlights, and the markers they name.
+        context.Types.Register<Computer.Igi2DefineComputerObjectiveTask>(Computer.Igi2DefineComputerObjectiveTask.TypeName);
+        context.Types.Register<Computer.Igi2DefineComputerLimitTask>(Computer.Igi2DefineComputerLimitTask.TypeName);
+        context.Types.Register<Computer.Igi2ComputerHilightTask>(Computer.Igi2ComputerHilightTask.TypeName);
+        Computer.Igi2Computer.RegisterConstants(context.Natives);
+        context.Services.GetOrProvide(static () => new Computer.Igi2Computer());
         context.Types.Register<Flow.Igi2CutSceneTask>(Flow.Igi2CutSceneTask.TypeName);
         context.Types.Register<Flow.Igi2EditCameraTask>(Flow.Igi2EditCameraTask.TypeName);
         context.Types.Register<Flow.Igi2LevelFlowTask>(Flow.Igi2LevelFlowTask.TypeName);
