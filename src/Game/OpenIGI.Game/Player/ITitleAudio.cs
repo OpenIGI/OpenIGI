@@ -50,4 +50,10 @@ public interface ITitleVoice
 
     /// <summary>Stops it sounding.</summary>
     void Silence();
+
+    /// <summary>Sets how loud it sounds, as a share of its definition's volume.</summary>
+    /// <param name="gain">The share, nought to one.</param>
+    void SetGain(float gain)
+    {
+    }
 }

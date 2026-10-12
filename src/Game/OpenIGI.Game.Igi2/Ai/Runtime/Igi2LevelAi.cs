@@ -49,6 +49,9 @@ public sealed record Igi2LevelAiSetup(
     /// them now.
     /// </summary>
     public Igi2AiWorld? World { get; init; }
+
+    /// <summary>Gets the ambient noise at a point, which muffles what soldiers hear, or <see langword="null"/> for none.</summary>
+    public Func<Vector3d, float>? NoiseAt { get; init; }
 }
 
 /// <summary>
@@ -94,6 +97,7 @@ public static class Igi2LevelAi
         world.PatrolPath = id => byId.GetValueOrDefault(id) as Igi2PatrolPathTask;
         world.EvaluateCommand = command => Igi2LineScript.Evaluate(command.Expression, setup.Natives, setup.Functions) != 0;
         world.Doors = [.. Igi2TaskTree.Descendants(setup.Root).OfType<Interaction.Igi2DoorTask>()];
+        world.NoiseAt = setup.NoiseAt ?? (static _ => 0f);
         if (setup.FireTaskTypes is { } fireTypes)
         {
             world.FireTaskTypes = fireTypes;

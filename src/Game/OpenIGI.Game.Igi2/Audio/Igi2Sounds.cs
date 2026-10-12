@@ -133,7 +133,7 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     public float RelativeVolume { get; private set; } = 1f;
 
     /// <inheritdoc/>
-    /// <remarks>The volumes are kept on the sound; the mixer's voices take no volume yet.</remarks>
+    /// <remarks>The voice sounds at the product of the two (<c>SoundSys_SetSoundVolumes</c>): a base below nought keeps the base.</remarks>
     public void SetVolumes(float baseVolume, float relativeVolume)
     {
         if (baseVolume >= 0f)
@@ -142,6 +142,7 @@ public sealed class Igi2Sound : IIgi2SoundInstance
         }
 
         RelativeVolume = relativeVolume;
+        _voice?.SetGain(((Fpu)BaseVolume * RelativeVolume).F);
     }
 
     /// <inheritdoc/>

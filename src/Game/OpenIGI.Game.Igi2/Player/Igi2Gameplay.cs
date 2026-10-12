@@ -325,6 +325,25 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Input = task.Children.OfType<Igi2HumanPlayerInputTask>().FirstOrDefault();
 
+        // The microphone hears from the game's camera, inside whatever sector it stands in; each ambient area plays to it.
+        Func<string, Formats.World.MefModel?> sceneModels = Models(request.World);
+        Igi2SectorLocator locator = new(
+            player.CollisionWorld,
+            World.Igi2SectorGraph.Build(root, model => sceneModels(model)?.Portals));
+        Audio.Igi2CameraListener listener = new(
+            () => level.CutsceneView?.Position ?? player.Human.View.Position,
+            locator,
+            () => level.Ticks);
+        List<Audio.Igi2AmbientAreaTask> ambience = [];
+        foreach (Audio.Igi2AmbientAreaTask area in Descendants(root).OfType<Audio.Igi2AmbientAreaTask>())
+        {
+            area.Audio = player.Sounds;
+            area.Listener = listener;
+            area.Random = player.Human.Random;
+            area.Prepare();
+            ambience.Add(area);
+        }
+
         // The map computer's tasks join it as they are made: the last limit, every highlight with its markers read.
         if (request.Services.TryGet(out Computer.Igi2Computer? computer))
         {
@@ -521,6 +540,21 @@ public sealed class Igi2Gameplay : ITitleGameplay
             request.Services.TryGet(out Ai.Igi2HumanAiConfig? config);
             request.Services.TryGet(out Igi2HumanWeapons? armoury);
             List<Igi2Human> everyone = [player.Human, .. soldiersWithMinds.Bodies];
+            Func<Vector3d, float> noise = point =>
+            {
+                // AmbientArea_GetNoiseLevelAtPosition: the loudest area whose box and falloff hold the point, at most one.
+                float loudest = 0f;
+                foreach (Audio.Igi2AmbientAreaTask area in ambience)
+                {
+                    float level = area.NoiseAt(point);
+                    if (loudest < level)
+                    {
+                        loudest = level >= 1f ? 1f : level;
+                    }
+                }
+
+                return loudest;
+            };
             player.Ai = Ai.Runtime.Igi2LevelAi.Build(new Ai.Runtime.Igi2LevelAiSetup(
                 root,
                 request.World.Resources,
@@ -537,6 +571,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 Difficulty = (int)player.Human.Difficulty,
                 Logger = request.World.Logger,
                 World = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? session) ? session : null,
+                NoiseAt = noise,
             });
         }
 

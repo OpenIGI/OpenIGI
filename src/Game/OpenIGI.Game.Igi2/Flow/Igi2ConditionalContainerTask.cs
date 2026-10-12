@@ -47,6 +47,20 @@ public sealed partial class Igi2ConditionalContainerTask : Igi2Task
     /// <summary>Gets a value indicating whether the children are in the world.</summary>
     public bool AreChildrenInWorld { get; private set; } = true;
 
+    /// <summary>Tells every task under a task that it is taken out of the world, in tree order.</summary>
+    private static void RemoveFromWorld(Engine.Tasks.GameTask task)
+    {
+        foreach (Engine.Tasks.GameTask child in task.Children)
+        {
+            if (child is World.IIgi2WorldMember member)
+            {
+                member.RemoveFromWorld();
+            }
+
+            RemoveFromWorld(child);
+        }
+    }
+
     /// <inheritdoc/>
     public override void Run(Igi2LevelRun level)
     {
@@ -72,6 +86,11 @@ public sealed partial class Igi2ConditionalContainerTask : Igi2Task
         }
         else
         {
+            if (AreChildrenInWorld)
+            {
+                RemoveFromWorld(this);
+            }
+
             AreChildrenInWorld = false;
             if (wasRun && !_stop.IsEmpty)
             {

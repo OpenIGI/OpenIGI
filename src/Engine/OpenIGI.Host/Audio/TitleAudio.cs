@@ -34,7 +34,7 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank) : ITitleAud
     public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null)
     {
         AudioVoiceHandle voice = sounds.PlayDefinition(definition, positionInUnits, looping: looping);
-        return voice == AudioVoiceHandle.None ? null : new Voice(sounds, definition, voice, looping);
+        return voice == AudioVoiceHandle.None ? null : new Voice(sounds, definition, voice, looping) { Position = positionInUnits };
     }
 
     /// <inheritdoc/>
@@ -46,10 +46,23 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank) : ITitleAud
     /// <summary>A voice the title holds.</summary>
     private sealed class Voice(SoundSystem sounds, string definition, AudioVoiceHandle voice, bool? looping) : ITitleVoice
     {
+        private float _gain = 1f;
+
+        public Vector3d Position { get; set; }
+
         public bool IsPlaying => sounds.IsPlaying(voice);
 
-        public void MoveTo(Vector3d positionInUnits) =>
-            sounds.SetDefinitionVoicePosition(definition, voice, positionInUnits, looping: looping);
+        public void MoveTo(Vector3d positionInUnits)
+        {
+            Position = positionInUnits;
+            sounds.SetDefinitionVoicePosition(definition, voice, positionInUnits, _gain, looping: looping);
+        }
+
+        public void SetGain(float gain)
+        {
+            _gain = gain;
+            sounds.SetDefinitionVoicePosition(definition, voice, Position, _gain, looping: looping);
+        }
 
         public void Silence() => sounds.Stop(voice);
     }
