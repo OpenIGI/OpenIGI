@@ -26,6 +26,14 @@ public abstract partial class Igi2Human
         UpdatePlatformPosition(forcePosition: true, forceOrientation: false);
     }
 
+    /// <summary>Lets go of the ground and puts the body at a spot, as a script moves a human (<c>Human_SetGroundTask</c> with none, then <c>Human_PopPosition</c>).</summary>
+    /// <param name="position">Where the body stands.</param>
+    public void PopPositionDroppingGround(Vector3d position)
+    {
+        DropGround();
+        PopPosition(position);
+    }
+
     /// <summary>
     /// Stands the body upright, turned to a heading at once: <c>Human_PopOrientation</c> (<c>igi2 0x502330</c>). The heading and
     /// the ideal heading are both set, and a rigid platform underfoot notes the body's new orientation on it.

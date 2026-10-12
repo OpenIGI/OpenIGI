@@ -558,6 +558,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        // The natives scripts reach the player and the humans through answer for this level.
+        if (request.Services.TryGet(out Igi2LevelNatives? levelNatives))
+        {
+            levelNatives.Bind(player.Human, id => placedById.GetValueOrDefault(id), root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault());
+        }
+
         foreach (Interaction.Igi2MineFieldTask field in Descendants(root).OfType<Interaction.Igi2MineFieldTask>())
         {
             field.Explosions = player.Explosions;

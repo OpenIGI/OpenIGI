@@ -62,6 +62,13 @@ public sealed partial class Igi2LevelFlowTask : Igi2Task
     /// <summary>Gets the time-of-day clock, <c>nTimeOfDayTick</c>.</summary>
     public int TimeOfDayTick { get; private set; }
 
+    /// <summary>The ticks the flow runs a second, <c>Flow_ptFlow-&gt;nFrequency</c>.</summary>
+    public const int Frequency = 30;
+
+    /// <summary>Sets the clock to an hour of the day, <c>LevelFlow_SetTimeOfDay</c>: the hour times the ticks of an hour.</summary>
+    /// <param name="hours">The hour.</param>
+    public void SetTimeOfDay(double hours) => TimeOfDayTick = Fpu.ToInt32((Fpu)hours * (Frequency * 3600.0));
+
     /// <summary>Gets or sets the profile's difficulty when the level was made, <c>eDifficultySetting</c>.</summary>
     public int Difficulty { get; set; } = 1;
 
