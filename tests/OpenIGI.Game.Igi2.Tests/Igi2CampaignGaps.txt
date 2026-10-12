@@ -9,13 +9,6 @@
 # After "    #": the missions (location*10+level) that need the gap | where it was found.
 
 name AIFunction_SetAccuracy    # 22 | MISSIONS/location2/level2/ai/521.qvm
-name AISquad_206.isDead    # 21 | MISSIONS/location2/level1/ai/503.qvm
-name AISquad_208.isDead    # 21 | MISSIONS/location2/level1/objects.qvm
-name AISquad_704.isDead    # 16 | MISSIONS/location1/level6/ai/Squad_705.qvm
-name AISquad_710.isDead    # 25 | MISSIONS/location2/level5/objects.qvm
-name AISquad_732.isDead    # 14 | MISSIONS/location1/level4/ai/Squad_733.qvm
-name Activate    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name AlternateFire    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name AnimTask_3988.isRun    # 12 | MISSIONS/location1/level2/objects.qvm
 name AnimTask_3988.nTick    # 12 | MISSIONS/location1/level2/objects.qvm
 name AnimTask_4039.isRun    # 12 | MISSIONS/location1/level2/objects.qvm
@@ -26,24 +19,15 @@ name AreaActivate_1704.nActive    # 17 | MISSIONS/location1/level7/ai/550.qvm, M
 name AreaActivate_1705.nActive    # 17 | MISSIONS/location1/level7/ai/560.qvm, MISSIONS/location1/level7/ai/561.qvm, …
 name AreaActivate_2106.nActive    # 15 | MISSIONS/location1/level5/ai/Squad_743.qvm
 name AreaActivate_IdInArea    # 21 31 35 | MISSIONS/location2/level1/objects.qvm, MISSIONS/location3/level1/objects.qvm, …
-name Binoculars    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name BreakScript    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name BuyPrimaryAmmo    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name BuySecondaryAmmo    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name COLUMNVIEW_DATATYPE_BASICSTRING    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Cabinet_2978.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Cabinet_3146.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Cabinet_3274.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Cabinet_3296.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Cabinet_3447.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Car_1300.isExploded    # 15 | MISSIONS/location1/level5/objects.qvm
-name ChangeTeams    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name ColumnView_Sort    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ColumnView_TestFunctionCB    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name ComputerIGIHQ    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name ComputerLog    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name ComputerMap    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name ComputerObjectives    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name Config_Fill3DProviderScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_FillSpeakerSetupListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_GameOptionsGraphicsGetThickCrosshair    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -75,14 +59,10 @@ name Config_SoundOptionsGetMusicVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 
 name Config_SoundOptionsGetSoundsEffectsVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_SoundOptionsSetMusicVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_SoundOptionsSetSoundsEffectsVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Console    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name ControlsMenu_987.isReset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_987.nOffset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertFloatFromOffset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertOffsetFromFloat    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Crouch    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name DIRECT3DRENDER_FILTERINGTYPE_TRILINEAR    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name DropWeapon    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name EditVariable_118.nValue    # 36 | MISSIONS/location3/level6/ai/545.qvm, MISSIONS/location3/level6/ai/546.qvm, …
 name EditVariable_127.nValue    # 36 | MISSIONS/location3/level6/ai/545.qvm, MISSIONS/location3/level6/ai/546.qvm, …
 name EditVariable_133.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MISSIONS/location3/level6/ai/501.qvm, …
@@ -90,12 +70,6 @@ name EditVariable_134.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MIS
 name EditVariable_135.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MISSIONS/location3/level6/ai/501.qvm, …
 name EditVariable_1504.nValue    # 21 | MISSIONS/location2/level1/ai/523.qvm
 name EditVariable_162.nValue    # 31 | MISSIONS/location3/level1/ai/Squad_707.qvm
-name Fire    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GAME_GAMEMODE_SINGLEPLAYER    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name GD_2    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GFXOPTIONS_ANTIALIASING_X6    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GFXOPTIONS_DETAIL_CUSTOM    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GFXOPTIONS_TEXTUREDETAIL_HIGH    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name GO3DSoundProvider    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name GOActiveMission    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name GOComplete    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
@@ -157,160 +131,20 @@ name GfxOptions_SetWaterQualityLevel    # 11 12 13 14 15 16 17 21 22 23 24 25 26
 name GfxOptions_SetWindOnForests    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name GoGfxCrossHairColour    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name GoGfxCrossHairThickness    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name HUMAN_TEAM_BAD    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name HUMAN_TEAM_GOOD    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name HumanAI_537.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_538.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_539.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_540.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_541.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_542.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_543.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanAI_544.isDetection    # 32 | MISSIONS/location3/level2/objects.qvm
-name HumanPlayer_0.nSpotted    # 26 34 | MISSIONS/location2/level6/objects.qvm, MISSIONS/location3/level4/objects.qvm
 name HumanPlayer_Activate    # 25 | MISSIONS/location2/level5/objects.qvm
 name HumanPlayer_DisableAllWeapons    # 26 | MISSIONS/location2/level6/objects.qvm
 name HumanPlayer_GetPrimaryWeaponID    # 23 32 | MISSIONS/location2/level3/objects.qvm, MISSIONS/location3/level2/objects.qvm
 name HumanPlayer_GetPrimaryWeaponModel    # 14 16 23 25 | MISSIONS/location1/level4/objects.qvm, MISSIONS/location1/level6/objects.qvm, …
 name HumanPlayer_LockActivate    # 25 | MISSIONS/location2/level5/objects.qvm
 name HumanPlayer_isDead    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm, MISSIONS/location1/level7/objects.qvm, …
-name HumanSoldier_1226.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_1228.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_1297.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_400.isDead    # 16 | MISSIONS/location1/level6/ai/501.qvm, MISSIONS/location1/level6/ai/502.qvm, …
-name HumanSoldier_401.isDead    # 16 25 | MISSIONS/location1/level6/ai/502.qvm, MISSIONS/location1/level6/ai/503.qvm, …
-name HumanSoldier_402.isDead    # 16 | MISSIONS/location1/level6/ai/503.qvm
-name HumanSoldier_403.isDead    # 21 | MISSIONS/location2/level1/objects.qvm
-name HumanSoldier_4069.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_408.isDead    # 33 | MISSIONS/location3/level3/objects.qvm
-name HumanSoldier_409.isDead    # 33 | MISSIONS/location3/level3/objects.qvm
-name HumanSoldier_410.isDead    # 33 | MISSIONS/location3/level3/objects.qvm
-name HumanSoldier_411.isDead    # 33 | MISSIONS/location3/level3/objects.qvm
-name HumanSoldier_415.isDead    # 31 | MISSIONS/location3/level1/objects.qvm
-name HumanSoldier_416.isDead    # 31 | MISSIONS/location3/level1/objects.qvm
-name HumanSoldier_417.isDead    # 31 | MISSIONS/location3/level1/objects.qvm
-name HumanSoldier_420.isDead    # 22 | MISSIONS/location2/level2/objects.qvm
-name HumanSoldier_424.isDead    # 21 | MISSIONS/location2/level1/ai/503.qvm
-name HumanSoldier_426.isDead    # 31 | MISSIONS/location3/level1/objects.qvm
-name HumanSoldier_430.isDead    # 14 22 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_431.isDead    # 14 22 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_432.isDead    # 14 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_433.isDead    # 14 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_434.isDead    # 14 21 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_435.isDead    # 14 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_436.isDead    # 14 | MISSIONS/location1/level4/ai/556.qvm, MISSIONS/location1/level4/ai/557.qvm, …
-name HumanSoldier_442.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
-name HumanSoldier_443.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
-name HumanSoldier_444.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
-name HumanSoldier_445.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
-name HumanSoldier_446.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
-name HumanSoldier_448.isDead    # 33 | MISSIONS/location3/level3/objects.qvm
-name HumanSoldier_449.isDead    # 33 | MISSIONS/location3/level3/objects.qvm
-name HumanSoldier_467.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_468.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_469.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_470.isDead    # 17 34 | MISSIONS/location1/level7/objects.qvm, MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_471.isDead    # 17 34 | MISSIONS/location1/level7/objects.qvm, MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_472.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_473.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_474.isDead    # 34 | MISSIONS/location3/level4/objects.qvm
-name HumanSoldier_490.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
-name HumanSoldier_491.isDead    # 26 | MISSIONS/location2/level6/objects.qvm
 name Human_PopPosition    # 26 34 | MISSIONS/location2/level6/objects.qvm, MISSIONS/location3/level4/objects.qvm
 name Human_Weapon    # 26 | MISSIONS/location2/level6/objects.qvm
-name INPUTPORT_DEVICE_KEYBOARD    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name INPUTPORT_DEVICE_MOUSE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Inventory    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Jump    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_0    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_1    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_2    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_3    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_4    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_5    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_6    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_7    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_9    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_A    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_ADD    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_ANGLE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_B    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_BACKSPACE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_C    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_CAPITAL    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_D    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_DELETE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_DIVIDE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_DOWN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_END    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_F    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_F1    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_F11    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_F12    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_F2    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_F7    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_G    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_GRAVE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_H    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_HOME    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_I    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_INSERT    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_J    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_K    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_L    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_LEFT    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_LEFT_CTRL    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_LEFT_SHIFT    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_M    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_MULTIPLY    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_N    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD0    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD1    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD2    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD3    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD4    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD5    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD6    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD7    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPAD9    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_NUMPADENTER    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_O    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_PAGEDOWN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_PAGEUP    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_Q    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_R    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_RETURN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_RIGHT    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_RIGHT_BRACKET    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_RIGHT_CTRL    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_RIGHT_SHIFT    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_S    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_SEPARATOR    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_SLASH    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_SPACE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_SUBTRACT    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_T    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_TAB    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_U    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_UP    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_V    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_W    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_X    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_Y    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name KEY_Z    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name LaserDesignatorOverlay_SetLockedOnStatus    # 32 | MISSIONS/location3/level2/objects.qvm
 name LaserDesignator_GetTicksHeldOnTask    # 32 | MISSIONS/location3/level2/objects.qvm
 name LevelFlow_LevelFailed    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name LevelFlow_SetTimeOfDay    # 13 | MISSIONS/location1/level3/objects.qvm
 name LevelTimer_1740.nTick    # 25 | MISSIONS/location2/level5/ai/503.qvm, MISSIONS/location2/level5/ai/504.qvm
-name LowerStance    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MENUMANAGER_IDLE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name MENUMANAGER_QUITTOMAINMENU    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MENUMANAGER_RESTARTLEVEL    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name MOUSE_BUTTON_1    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MOUSE_BUTTON_2    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MOUSE_WHEEL_DOWN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MOUSE_WHEEL_UP    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name MenuManager_ActivatePopupScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MenuManager_ClearStack    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MenuManager_DeactivatePopuScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -320,10 +154,6 @@ name MenuManager_PopScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 
 name MenuManager_PushScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MenuManager_RequestScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MenuManager_SetMode    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name MoveBackwards    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MoveForwards    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MoveLeft    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name MoveRight    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name NETMANAGER_MODE_PLAY    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name NETMANAGER_MODE_SELECTSKIN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name NETMANAGER_MODE_SELECTTEAM    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -345,19 +175,9 @@ name NetManager_eTeam    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35
 name NetMission_eCurrentObjective    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Netshop_Activate    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Netshop_SetInventoryText    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name NextWeapon    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Peek    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name PrevWeapon    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name QuickLoad    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Radio    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name RadioCom_Activate    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name RaiseStance    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Reload    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Say    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name Scores    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name ScrollListBox_985.nActiveID    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ScrollListBox_991.nActiveID    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Shop    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name SlotSelector_Deactivate    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_ItemClicked    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_SetActiveCategory    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -368,21 +188,6 @@ name SlotSelector_isCategorySelected    # 11 12 13 14 15 16 17 21 22 23 24 25 26
 name SlotSelector_isSlotEnabled    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isSlotVisible    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isThisCategorySelected    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name SquadRadio    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name TASKTYPE_AISTATIONARYGUN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_BOMBBACKPACK    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_CARDOOR    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_DEATHZONE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_DRAWER    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_GLASS    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_GRENADEPIN    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_HITZONE    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_LADDER    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_PRIMARYMAGICOBJ    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_RPGROCKET    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_SHADOWVOLUME    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TASKTYPE_WEAPONMAGICOBJ    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-name TeamSay    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name Terminal_110.isHacked    # 13 16 23 24 33 | MISSIONS/location1/level3/objects.qvm, MISSIONS/location1/level6/ai/520.qvm, …
 name Terminal_110.isHackedThisTick    # 16 23 24 33 | MISSIONS/location1/level6/objects.qvm, MISSIONS/location2/level3/objects.qvm, …
 name Terminal_1100.isHacked    # 35 | MISSIONS/location3/level5/objects.qvm
@@ -401,22 +206,8 @@ name Terminal_300.isHacked    # 16 | MISSIONS/location1/level6/objects.qvm
 name Terminal_3272.isHacked    # 36 | MISSIONS/location3/level6/objects.qvm
 name Terminal_3810.isHacked    # 23 | MISSIONS/location2/level3/objects.qvm
 name Terminal_3810.isHackedThisTick    # 23 | MISSIONS/location2/level3/objects.qvm
-name Thermal    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name ToggleBox_998.isOn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name ToggleWalkRun    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name USA    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WATERRENDER_QUALITY_HIGH    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory1    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory2    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory3    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory4    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory5    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory6    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory7    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name WeaponCategory9    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name Wire_4035.isInUse    # 35 | MISSIONS/location3/level5/objects.qvm
-name ZoomIn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name ZoomOut    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name priboy_bed_talking    # 21 | MISSIONS/location2/level1/objects.qvm
 name xxx    # 34 | MISSIONS/location3/level4/ai/3161.qvm, MISSIONS/location3/level4/ai/3165.qvm
 survey expression ! (  (AreaActivate_3275.nActive &&   (EditVariable_3243.nValue == 0 || EditVariable_3244.nValue == 0)  ||  AreaActivate_3272.nActive  ||  (AreaActivate_3276.nActive && EditVariable_3244.nValue == 0) )    # 33 | MISSIONS/location3/level3/objects.qvm: Expected ')' in line 0: ''

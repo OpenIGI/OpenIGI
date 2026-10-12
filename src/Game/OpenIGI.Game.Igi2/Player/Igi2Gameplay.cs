@@ -318,6 +318,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         level.Bind(task, player.RunPlayer);
+        if (task is Igi2HumanPlayerTask playerTask)
+        {
+            playerTask.Human = player.Human;
+        }
         foreach (Igi2SoundGeneratorTask generator in Descendants(root).OfType<Igi2SoundGeneratorTask>())
         {
             generator.Sounds = player.Sounds;

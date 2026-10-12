@@ -110,6 +110,7 @@ public sealed partial class Igi2HumanAi : IIgi2SoldierMind
         Soldier = soldier ?? throw new ArgumentNullException(nameof(soldier));
         PathSearch = new Igi2AiPathSearch(world.SearchPool);
         soldier.Mind = this;
+        task.Mind = this;
     }
 
     /// <summary>Gets the AI module.</summary>

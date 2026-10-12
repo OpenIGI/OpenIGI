@@ -57,4 +57,24 @@ public sealed partial class Igi2HumanPlayerTask : HumanPlayerTask
     /// <summary>Gets or sets a value indicating whether the player keeps the previous mission's weapons.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Carry over weapons from previous mission")]
     public bool CarryOverWeapons { get; set; }
+
+    /// <summary>Gets or sets the player the session made for this task, or <see langword="null"/>.</summary>
+    public Igi2HumanPlayer? Human { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Human_RegisterScriptSymbolsHandler</c>: <c>isDead</c> and <c>eTeam</c> as every human exports them, and <c>nSpotted</c>, the
+    /// times a squad first spotted the player.
+    /// </remarks>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindInt(this, "nSpotted", () => Human?.TimesSpotted ?? 0, value =>
+        {
+            if (Human is { } human)
+            {
+                human.TimesSpotted = value;
+            }
+        });
+    }
 }

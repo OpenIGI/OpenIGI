@@ -46,6 +46,32 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask
     /// <summary>Gets or sets the soldier's body, or <see langword="null"/> before the level's gameplay made one.</summary>
     public Igi2HumanSoldier? Body { get; set; }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Human_RegisterScriptSymbolsHandler</c>: <c>isDead</c> (a byte), <c>eTeam</c> and <c>nSpotted</c>, read through to the body
+    /// once it is made.
+    /// </remarks>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        ArgumentNullException.ThrowIfNull(variables);
+        variables.BindInt(this, "isDead", () => Body is { IsDead: true } ? 1 : 0, value => Body?.SetDeadLatch((byte)value != 0), sizeof(byte));
+        variables.BindInt(this, "eTeam", () => Body?.Team ?? Team, value =>
+        {
+            Team = value;
+            if (Body is { } body)
+            {
+                body.Team = value;
+            }
+        });
+        variables.BindInt(this, "nSpotted", () => Body?.TimesSpotted ?? 0, value =>
+        {
+            if (Body is { } body)
+            {
+                body.TimesSpotted = value;
+            }
+        });
+    }
+
     /// <summary>Gets the soldier's mind, its <c>HumanAI</c> child.</summary>
     public Igi2HumanAiTask? Ai => Children.OfType<Igi2HumanAiTask>().FirstOrDefault();
 
@@ -119,6 +145,23 @@ public sealed partial class Igi2HumanAiTask : Igi2Task
     public static string ScriptNameFor(int taskId) =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MISSION:AI/{taskId}.qsc");
 
+    /// <summary>Gets or sets the mind the level's AI made for it, or <see langword="null"/>.</summary>
+    public Runtime.Igi2HumanAi? Mind { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks><c>HumanAI_RegisterScriptSymbolsHandler</c>: <c>isDetection</c>, a byte, read through to the mind.</remarks>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        ArgumentNullException.ThrowIfNull(variables);
+        variables.BindInt(this, "isDetection", () => Mind is { IsDetection: true } ? 1 : 0, value =>
+        {
+            if (Mind is { } mind)
+            {
+                mind.IsDetection = (byte)value != 0;
+            }
+        }, sizeof(byte));
+    }
+
     /// <summary>Reads the types from their names, as one-line scripts.</summary>
     /// <param name="natives">The script namespace, with the AI's constants.</param>
     /// <param name="functions">The natives script text may call.</param>
@@ -191,6 +234,20 @@ public sealed partial class Igi2AiSquadTask : Igi2Task
     /// </remarks>
     /// <summary>Gets or sets the squad the level's AI made for it, or <see langword="null"/>.</summary>
     public Runtime.Igi2AiSquad? Squad { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks><c>AISquad_RegisterScriptSymbolsHandler</c>: <c>isDead</c>, a byte, read through to the squad.</remarks>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        ArgumentNullException.ThrowIfNull(variables);
+        variables.BindInt(this, "isDead", () => Squad is { IsDead: true } ? 1 : 0, value =>
+        {
+            if (Squad is { } squad)
+            {
+                squad.IsDead = (byte)value != 0;
+            }
+        }, sizeof(byte));
+    }
 
     /// <inheritdoc/>
     /// <remarks><c>AISquad_RunHandler</c>: the squad's tick, then its children's, dead or alive.</remarks>

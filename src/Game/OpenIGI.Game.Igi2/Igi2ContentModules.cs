@@ -32,6 +32,7 @@ public static class Igi2ContentModules
         new Igi2ForestContentModule(),
         new Igi2WaterContentModule(),
         new Igi2SkyContentModule(),
+        new Igi2TaskTypeConstantsModule(),
     ];
 }
 
@@ -70,6 +71,10 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
 
         // The criteria an AreaActivate is written in, each the bit its module registers (AreaActivateQTask_RegisterCriteria).
         Flow.Igi2AreaCriteria.Register(context.Natives);
+
+        // Config_Open: the input buttons, devices and key sources the controls name, the languages and the difficulties.
+        Config.Igi2ConfigConstants.Register(context.Natives);
+        Config.Igi2GameConstants.Register(context.Natives);
     }
 
     /// <inheritdoc/>
@@ -491,6 +496,25 @@ public sealed class Igi2SkyContentModule : IContentModule
 
     /// <inheritdoc/>
     /// <remarks>Nothing to load: a sky's textures arrive with the level, not before it.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+    }
+}
+
+/// <summary>The <c>TASKTYPE_*</c> constants, registered last so each is worth the id of the class every module before has registered.</summary>
+public sealed class Igi2TaskTypeConstantsModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Task type constants";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        Config.Igi2GameConstants.RegisterTaskTypes(context.Natives, context.Types);
+    }
+
+    /// <inheritdoc/>
     public void LoadTables(ContentLoadContext context)
     {
     }
