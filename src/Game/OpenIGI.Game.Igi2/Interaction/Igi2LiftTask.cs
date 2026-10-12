@@ -164,6 +164,9 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
     /// <summary>Gets or sets the level's models, which its solids' attachments are read from.</summary>
     public Func<string, MefModel?>? Models { get; set; }
 
+    /// <summary>Gets or sets the magic object types its attachments were built through, which it moves them through.</summary>
+    public World.Igi2MagicObjTypes? Magic { get; set; }
+
     /// <summary>Gets or sets the level's sounds it sounds through, or <see langword="null"/> for none.</summary>
     public Igi2Sounds? Sounds { get; set; }
 
@@ -437,7 +440,7 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
         if (_solids.Count > 0 && Models is { } models)
         {
             float[] m = _orientation;
-            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])));
+            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])), Magic);
         }
     }
 

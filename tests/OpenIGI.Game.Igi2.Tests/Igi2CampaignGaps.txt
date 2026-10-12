@@ -238,8 +238,6 @@ type LevelInfo    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | M
 type LightmapInfo    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MISSIONS/location1/level1/objects.qvm, MISSIONS/location1/level2/objects.qvm, …
 type ListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type LocalModelLODSettingsContainer    # 22 33 | MISSIONS/location2/level2/objects.qvm, MISSIONS/location3/level3/objects.qvm
-type MagicObjConfig    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
-type MagicObjConfigContainer    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | magicobjconfig.qvm
 type MenuFrame    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type MenuManager    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type MenuScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm

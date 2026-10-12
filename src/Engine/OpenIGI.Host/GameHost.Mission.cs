@@ -772,7 +772,7 @@ internal sealed partial class GameHost
         else
         {
             WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger));
+                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, Services: _title.Services));
             scene = built.Scene;
             _scene = scene;
             _ground = built.Ground;

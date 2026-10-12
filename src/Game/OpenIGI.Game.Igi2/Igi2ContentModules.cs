@@ -32,6 +32,7 @@ public static class Igi2ContentModules
         new Igi2ForestContentModule(),
         new Igi2WaterContentModule(),
         new Igi2SkyContentModule(),
+        new Igi2MagicObjContentModule(),
         new Igi2TaskTypeConstantsModule(),
     ];
 }
@@ -515,6 +516,30 @@ public sealed class Igi2SkyContentModule : IContentModule
     /// <remarks>Nothing to load: a sky's textures arrive with the level, not before it.</remarks>
     public void LoadTables(ContentLoadContext context)
     {
+    }
+}
+
+/// <summary>The magic object types, out of <c>magicobjconfig.qvm</c> (<see cref="World.Igi2MagicObjTypes"/>).</summary>
+public sealed class Igi2MagicObjContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Magic objects";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Types.Register<World.Igi2MagicObjConfigContainerTask>(World.Igi2MagicObjConfigContainerTask.TypeName);
+        context.Types.Register<World.Igi2MagicObjConfigTask>(World.Igi2MagicObjConfigTask.TypeName);
+        context.Services.GetOrProvide(static () => new World.Igi2MagicObjTypes());
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>At start-up, after every module has registered the types its <c>TASKTYPE_*</c> values name.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<World.Igi2MagicObjTypes>().Load(context.Resources, context.Natives, context.Tasks);
     }
 }
 

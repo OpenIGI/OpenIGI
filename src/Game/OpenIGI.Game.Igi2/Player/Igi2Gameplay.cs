@@ -453,6 +453,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             sight = detection;
         }
 
+        World.Igi2MagicObjTypes? magicTypes = request.Services.TryGet(out World.Igi2MagicObjTypes? loadedMagic) ? loadedMagic : null;
         foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
         {
             button.Models = models;
@@ -464,6 +465,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         foreach (Interaction.Igi2LiftTask lift in Descendants(root).OfType<Interaction.Igi2LiftTask>())
         {
             lift.Models = models;
+            lift.Magic = magicTypes;
             lift.Sounds = player.Sounds;
             lift.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2LiftTask.TypeName, lift.Id));
             movers.Add(lift);
@@ -472,6 +474,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         foreach (Interaction.Igi2DoorTask door in Descendants(root).OfType<Interaction.Igi2DoorTask>())
         {
             door.Models = models;
+            door.Magic = magicTypes;
             door.Sounds = player.Sounds;
             door.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2DoorTask.TypeName, door.Id));
             activatables.Add(door);
@@ -489,6 +492,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (prop.Guide is not null)
             {
                 prop.Models = models;
+                prop.Magic = magicTypes;
                 prop.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2EditRigidObjTask.TypeName, prop.Id));
                 movers.Add(prop);
             }
@@ -738,7 +742,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2WorldScene scene = Igi2WorldScene.Build(world.LevelRoot, models);
         Igi2TerrainSurface? ground = built.Ground is Igi2Ground level ? level.Surface : null;
         Igi2Forest forests = Igi2Forest.Build(world.LevelRoot, world.Resources);
-        return Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner, forests);
+        World.Igi2MagicObjTypes? magic = world.Services is { } services && services.TryGet(out World.Igi2MagicObjTypes? table) ? table : null;
+        return Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner, forests, magic);
     }
 
     /// <summary>Resolves a placed model name to its mesh through the mission's packs.</summary>

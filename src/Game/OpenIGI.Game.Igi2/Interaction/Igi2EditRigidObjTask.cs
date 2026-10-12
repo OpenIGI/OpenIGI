@@ -64,6 +64,9 @@ public sealed partial class Igi2EditRigidObjTask
     /// <summary>Gets or sets the level's models, which its solids' attachments are read from.</summary>
     public Func<string, MefModel?>? Models { get; set; }
 
+    /// <summary>Gets or sets the magic object types its attachments were built through, which it moves them through.</summary>
+    public World.Igi2MagicObjTypes? Magic { get; set; }
+
     /// <summary>Gets the guide that moves it, whose velocity is its parent speed, or <see langword="null"/>.</summary>
     public Igi2SplinePathGuideTask? Guide { get; private set; }
 
@@ -126,7 +129,7 @@ public sealed partial class Igi2EditRigidObjTask
         if (_solids.Count > 0 && Models is { } models)
         {
             float[] m = _orientation;
-            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])));
+            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8])), Magic);
         }
 
         foreach (GameTask child in Children)

@@ -234,6 +234,9 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     /// <summary>Gets or sets the level's models, which its magic vertex, its radius and its attachments are read from.</summary>
     public Func<string, MefModel?>? Models { get; set; }
 
+    /// <summary>Gets or sets the magic object types its attachments were built through, which it moves them through.</summary>
+    public World.Igi2MagicObjTypes? Magic { get; set; }
+
     /// <summary>Gets or sets the level's sounds it sounds through, or <see langword="null"/> for none.</summary>
     public Igi2Sounds? Sounds { get; set; }
 
@@ -604,7 +607,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     {
         if (_solids.Count > 0 && Models is { } models)
         {
-            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, Frame(_orientation)));
+            Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(_position, Frame(_orientation)), Magic);
         }
     }
 

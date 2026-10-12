@@ -129,13 +129,14 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// <param name="ground">The level's ground, or <see langword="null"/>.</param>
     /// <param name="terrainOwner">What a hit on the ground reports as struck.</param>
     /// <param name="forests">The level's stands of trees, or <see langword="null"/> for none.</param>
+    /// <param name="magic">The magic object types attach points are looked up in, or <see langword="null"/> to take every name as a model.</param>
     /// <returns>The world.</returns>
     /// <remarks>
     /// <para>
     /// Every static placement becomes an object at the pose its parameters give through <see cref="Igi2Pose"/>, and
     /// so does every model its model attaches, recursively. That is <c>ModelObj_CreateAttachObject</c>
-    /// (<c>igi2 0x56D0B0</c>): an attachment's name that is not a magic-object type is used as a model. Names that
-    /// are magic-object types are skipped, because their table is not read yet.
+    /// (<c>igi2 0x56D0B0</c>): an attachment's name is looked up in the magic table (<see cref="World.Igi2MagicObjTypes"/>), which gives
+    /// the model it wears; a name it does not hold is used as a model; a shadow volume or a mark is no solid.
     /// </para>
     /// <para>
     /// A model with bones becomes a <c>BoneMagicObj</c>, which does not answer ground queries, so it is left out.
@@ -152,7 +153,8 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
         Func<string, MefModel?> models,
         Igi2TerrainSurface? ground,
         object terrainOwner,
-        Igi2Forest? forests = null)
+        Igi2Forest? forests = null,
+        World.Igi2MagicObjTypes? magic = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(models);
@@ -195,7 +197,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
 
                     objects.Add(solid);
                 }
-            });
+            }, magic);
 
             // A security camera's lens is a task of its own, SCameraLens, its model at the holder's first vertex turned by its own
             // tilt and turn; it is a moving object, which bullets strike and sight never meets.
@@ -289,7 +291,13 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// <param name="models">Finds a model by name.</param>
     /// <param name="modelName">The placement's model.</param>
     /// <param name="pose">The placement's new pose.</param>
-    public static void Repose(IReadOnlyList<Igi2RigidObject> solids, Func<string, MefModel?> models, string modelName, Igi2Pose pose)
+    /// <param name="magic">The magic object types attach points are looked up in, as the level was built with.</param>
+    public static void Repose(
+        IReadOnlyList<Igi2RigidObject> solids,
+        Func<string, MefModel?> models,
+        string modelName,
+        Igi2Pose pose,
+        World.Igi2MagicObjTypes? magic = null)
     {
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(models);
@@ -308,11 +316,17 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                     solid.Orientation[i] = at.Orientation[i];
                 }
             }
-        });
+        }, magic);
     }
 
     // A placed model and everything hanging off it, depth first: the model, then each of its attachments in turn.
-    private static void Walk(Func<string, MefModel?> models, string modelName, Igi2Pose pose, int depth, Action<MefModel, string, Igi2Pose, int> visit)
+    private static void Walk(
+        Func<string, MefModel?> models,
+        string modelName,
+        Igi2Pose pose,
+        int depth,
+        Action<MefModel, string, Igi2Pose, int> visit,
+        World.Igi2MagicObjTypes? magic = null)
     {
         MefModel? model = models(modelName);
         if (model is null)
@@ -328,7 +342,11 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
 
         foreach (MefAttachment attachment in model.Attachments)
         {
-            Walk(models, attachment.Name, pose.Attach(attachment), depth + 1, visit);
+            // What the point becomes, out of the magic table: a shadow volume or a mark is stood on by nothing.
+            if ((magic is null ? attachment.Name : magic.ModelOf(attachment.Name)) is { } attached)
+            {
+                Walk(models, attached, pose.Attach(attachment), depth + 1, visit, magic);
+            }
         }
     }
 

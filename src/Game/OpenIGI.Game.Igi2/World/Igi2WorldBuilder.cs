@@ -67,7 +67,8 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             table,
             lightmaps,
             packs,
-            request.Logger);
+            request.Logger,
+            request.Services is { } services && services.TryGet(out Igi2MagicObjTypes? magic) ? magic : null);
 
         // The ground the player stands on, from the same level the placements came from. Built with no
         // logger because the presenter builds it again to draw it and reports it there; one line about a

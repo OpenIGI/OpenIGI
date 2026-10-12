@@ -53,7 +53,7 @@ internal sealed partial class GameHost
         }
 
         ITitlePlayer? player = _gameplay.CreatePlayer(new TitlePlayerRequest(
-            new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger),
+            new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, Services: _title.Services),
             new WorldBuildResult(scene, 0, 0, _ground, _spins),
             _title.Services,
             (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2),

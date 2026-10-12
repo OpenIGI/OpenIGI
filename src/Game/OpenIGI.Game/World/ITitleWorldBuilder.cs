@@ -13,6 +13,9 @@ namespace OpenIGI.Game.World;
 /// <param name="VehiclePhysics">
 /// The registry a walk reads a vehicle's mass and contact points from, or null for a title with none.
 /// </param>
+/// <param name="Services">
+/// The title's session services, for a title whose walk reads a table its modules loaded; null where the walk runs without a session.
+/// </param>
 public readonly record struct WorldBuildRequest(
     LoadedMission Mission,
     GameTask LevelRoot,
@@ -22,7 +25,8 @@ public readonly record struct WorldBuildRequest(
 
     // The registry a walk reads a vehicle's mass and contact points from. Nullable because a title
     // without driveable vehicles has none to read, and the walk treats absent as "no vehicle here".
-    VehiclePhysicsRegistry? VehiclePhysics = null);
+    VehiclePhysicsRegistry? VehiclePhysics = null,
+    Engine.Titles.IServiceCatalog? Services = null);
 
 /// <summary>What a title's scene walk produced.</summary>
 /// <param name="Scene">The placements, which the world presenter draws and the collision index is built from.</param>

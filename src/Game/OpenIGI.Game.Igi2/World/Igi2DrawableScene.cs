@@ -45,6 +45,7 @@ public static class Igi2DrawableScene
     /// <param name="lightmaps">The level's baked object lightmaps, or null when it ships none.</param>
     /// <param name="packs">The loaded packs, in the order the game opens them, for resolving meshes.</param>
     /// <param name="logger">Where load diagnostics go.</param>
+    /// <param name="magic">The magic object types attach points are looked up in, or <see langword="null"/> to take every name as a model.</param>
     /// <returns>The scene, and a count of what could not be placed.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
@@ -58,7 +59,8 @@ public static class Igi2DrawableScene
         Igi2ModelTable table,
         Igi2LightmapIndex? lightmaps,
         IReadOnlyList<LoadedPack> packs,
-        IOpenIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null,
+        Igi2MagicObjTypes? magic = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -95,9 +97,8 @@ public static class Igi2DrawableScene
         // ModelObj_CreateAttachObjects (igi2 0x56D620) walks the model's attachment array and
         // ModelObj_CreateAttachObject (0x56D0B0) makes each one an object in its own right: it composes
         // the attachment's position and matrix onto the parent's, looks the attachment's NAME up as a
-        // magic-object type, and -- when it is not one -- uses that same name AS A MODEL and spawns a
-        // RigidMagicObj. 27 of the 28 attachment names level 1 uses resolve straight to a model, so for
-        // static world geometry the name is simply the model.
+        // magic-object type (Igi2MagicObjTypes), which names the model it wears -- and when it is not one
+        // uses that same name AS A MODEL and spawns a RigidMagicObj.
         bool Emit(
             string modelName,
             Igi2Pose pose,
@@ -221,6 +222,13 @@ public static class Igi2DrawableScene
 
             foreach (MefAttachment attachment in model.Attachments)
             {
+                // The magic table decides what the point becomes: its type's model, its own name, or -- for a
+                // shadow volume or a mark -- nothing drawn, which enumerates no lightmap and takes no number.
+                if ((magic is null ? attachment.Name : magic.ModelOf(attachment.Name)) is not { } attachedModel)
+                {
+                    continue;
+                }
+
                 // ModelObj_CreateAttachObject (igi2 0x56D0B0): the parent's rows dotted with the record's
                 // offset, and the parent's matrix times the record's matrix TRANSPOSED -- the loader points
                 // the attachment array straight at the ATTA chunk's bytes, and the composition reads them
@@ -228,7 +236,7 @@ public static class Igi2DrawableScene
                 // is drawn is what is stood on.
                 int at = drawable.Count;
                 if (Emit(
-                    attachment.Name,
+                    attachedModel,
                     pose.Attach(attachment),
                     string.Empty,
                     default,
@@ -248,9 +256,8 @@ public static class Igi2DrawableScene
                 }
                 else
                 {
-                    // A name that is a magic-object TYPE rather than a model: the original reads its
-                    // model out of the magic table, which this port has none of for the sequel. It still
-                    // consumed its index above, so the numbering of everything after it holds.
+                    // A model the packs do not hold. It still consumed its index above, so the numbering of
+                    // everything after it holds.
                     attachmentsUnresolved++;
                 }
             }
