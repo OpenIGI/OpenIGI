@@ -13,6 +13,9 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
     /// <summary>The key of the message a weapon newly carried shows, before the weapon's name (<c>igi2 0x617B04</c>).</summary>
     public const string PickedUpMessagePrefix = "PICKEDUPWEAPON";
 
+    /// <summary>Gets or sets the level's other pickups, the things collected by walking into them.</summary>
+    public IReadOnlyList<Pickups.Igi2GenericPickupTask> GenericPickups { get; set; } = [];
+
     /// <summary>Gets or sets the level's pickups, or <see langword="null"/> for a level with none.</summary>
     public Igi2PickupList? Pickups { get; set; }
 
@@ -84,7 +87,21 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
     /// </remarks>
     private void Pickup()
     {
-        if (IsDead || Pickups is not { } pickups)
+        if (IsDead)
+        {
+            return;
+        }
+
+        // Everything else on the pickup list is offered whatever the hands are doing (GameFunctions_ePickupQTaskEvent).
+        foreach (Pickups.Igi2GenericPickupTask generic in GenericPickups)
+        {
+            if (generic.IsInWorld)
+            {
+                generic.Offer(View.Position);
+            }
+        }
+
+        if (Pickups is not { } pickups)
         {
             return;
         }

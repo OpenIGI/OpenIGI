@@ -781,7 +781,8 @@ public sealed class WorldRenderer : IWorldPresenter
 
             // Blown up with nothing authored to stand in its place: there is no rubble model to
             // swap to, so the placement leaves the frame entirely rather than drawing intact.
-            if (Destructibles?.IsDestroyed(authored) == true && authored.DestroyedReplacement is null)
+            if ((Destructibles?.IsDestroyed(authored) == true || Destruction?.IsDestroyed(authored) == true)
+                && authored.DestroyedReplacement is null)
             {
                 entry.Skip = true;
                 continue;

@@ -510,6 +510,17 @@ public sealed class Igi2Gameplay : ITitleGameplay
             activatables.Add(action);
         }
 
+        List<Pickups.Igi2GenericPickupTask> genericPickups = [];
+        foreach (Pickups.Igi2GenericPickupTask pickup in Descendants(root).OfType<Pickups.Igi2GenericPickupTask>())
+        {
+            pickup.Models = models;
+            pickup.PlaySound = name => player.Human.Surroundings.PlaySound(name);
+            genericPickups.Add(pickup);
+            destructibles.Add(pickup);
+        }
+
+        player.Human.GenericPickups = genericPickups;
+
         foreach (Interaction.Igi2TerminalTask terminal in Descendants(root).OfType<Interaction.Igi2TerminalTask>())
         {
             Arm(terminal, Interaction.Igi2TerminalTask.TypeName);
