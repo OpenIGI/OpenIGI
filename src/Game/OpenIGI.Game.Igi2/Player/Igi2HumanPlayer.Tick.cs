@@ -160,13 +160,10 @@ public sealed partial class Igi2HumanPlayer
         Animation.StepMain();
         TouchPose();
         UpdateViewBody();
+        // A shot pending on the tick the player dies still fires: HumanPlayer_Update tests only isFire.
         if (IsFire)
         {
-            if (!IsDead)
-            {
-                Weapon.Fire(FireType);
-            }
-
+            Weapon.Fire(FireType);
             IsFire = false;
             PerfectShotTimer = 0;
         }

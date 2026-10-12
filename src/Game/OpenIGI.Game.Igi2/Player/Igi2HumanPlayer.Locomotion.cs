@@ -280,6 +280,9 @@ public sealed partial class Igi2HumanPlayer
     // State 0 -- InitStateStand 0x4A2CA0, RunStateStand 0x4A2D80.
     private void EnterStand()
     {
+        // Standing straightens any lean: the view's peek offset and speed are zeroed.
+        View.PeekOffset = default;
+        View.PeekSpeed = default;
         Pose = Igi2HumanPose.Standing;
         Animation.PlayState(Igi2PlayerState.StandAnimation, 0, StateBlendSeconds);
         RequestedUpperBody = 1;

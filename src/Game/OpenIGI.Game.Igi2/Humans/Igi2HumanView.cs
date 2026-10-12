@@ -184,6 +184,9 @@ public sealed class Igi2HumanView
     /// <summary>Gets or sets how far the view leans out of the body, in the view's frame, <c>tPeekOffset</c>.</summary>
     public Vector3f PeekOffset { get; set; }
 
+    /// <summary>Gets or sets how fast the lean is moving, <c>tPeekSpeed</c>.</summary>
+    public Vector3f PeekSpeed { get; set; }
+
     /// <summary>Gets or sets how hard the view shakes, <c>vShakeFactor</c>; it runs down to zero by <see cref="ShakeTime"/> each tick.</summary>
     public float ShakeFactor { get; set; }
 

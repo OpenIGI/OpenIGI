@@ -193,7 +193,7 @@ public sealed partial class Igi2HumanPlayer
         if (mode == 0)
         {
             RequestedUpperBody = 0;
-            Animation.ClearUpperBody(0f);
+            Animation.ClearUpperBody(0.4f);
             return;
         }
 
@@ -344,15 +344,12 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Re-aims the precision for the posture already selected (<c>HumanPlayer_SetWeaponPrecision</c>, <c>igi2 0x49F5F0</c>).</summary>
     public void SetWeaponPrecision() => AimPrecision(PrecisionType);
 
-    /// <summary>Locked: the upper body is let go, unless planting a charge (<c>HumanPlayer_InitActionLock</c>, <c>igi2 0x4B3630</c>).</summary>
+    /// <summary>Locked: the upper body is let go, blending out over 0.4 s (<c>HumanPlayer_InitActionLock</c>, <c>igi2 0x4B3630</c>).</summary>
     private void EnterLock()
     {
-        if (Locomotion.CurrentState != Igi2PlayerState.ActivateC4BombTba)
-        {
-            CurrentUpperBody = 0;
-            RequestedUpperBody = 0;
-            Animation.ClearUpperBody(0f);
-        }
+        CurrentUpperBody = 0;
+        RequestedUpperBody = 0;
+        Animation.ClearUpperBody(0.4f);
 
         Action.Current = (_, _) => RunLock();
     }
@@ -430,6 +427,15 @@ public sealed partial class Igi2HumanPlayer
         }
 
         CheckBinoculars(forceChangeWeapon: false);
+
+        // With the binoculars up -- the weapon they replaced still remembered -- idle goes no further: no firing,
+        // reloading, activating or changing, and the bomb-area flag is left as it is (the rest of RunActionIdle sits
+        // under !ptPreBinocularWeapon).
+        if (PreviousWeaponType is not null)
+        {
+            return;
+        }
+
         if (held is not null && TryFireFromIdle(held))
         {
             return;
