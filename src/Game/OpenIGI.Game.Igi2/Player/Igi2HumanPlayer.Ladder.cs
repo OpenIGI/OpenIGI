@@ -51,8 +51,8 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
     /// <summary>Gets the step the player is moving by, <c>nStepChange</c>: one up, minus one down, nought still.</summary>
     public int LadderStepChange { get; private set; }
 
-    /// <summary>Gets the posture the player had before the ladder, which it takes again at the bottom, <c>tStateContext.ePrevStance</c>.</summary>
-    public Igi2HumanPose StanceBeforeLadder { get; private set; }
+    /// <summary>Gets the posture the player had before a ladder or a fence, which it takes again after, <c>tStateContext.ePrevStance</c>.</summary>
+    public Igi2HumanPose StanceBeforeClimb { get; private set; }
 
     /// <summary>
     /// Gets on or off the ladder being activated, <c>HumanPlayer_ClimbLadder</c>: run after both machines each tick while the player is
@@ -238,7 +238,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
     /// <summary>The posture before the ladder's state: crouched, lying, or standing.</summary>
     private void GoBackToStance()
     {
-        Go(StanceBeforeLadder switch
+        Go(StanceBeforeClimb switch
         {
             Igi2HumanPose.Crouching => Igi2PlayerState.Crouch,
             Igi2HumanPose.LyingFlat => Igi2PlayerState.Flat,
@@ -252,7 +252,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
     {
         View.PeekOffset = new Vector3f(View.PeekOffset.X, View.PeekOffset.Y, 0f);
         View.PeekSpeed = new Vector3f(View.PeekSpeed.X, View.PeekSpeed.Y, 0f);
-        StanceBeforeLadder = Pose;
+        StanceBeforeClimb = Pose;
         IsSwimming = false;
         Pose = Igi2HumanPose.Standing;
         BeginLadderState(fromEnd: false);

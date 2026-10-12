@@ -454,6 +454,24 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         World.Igi2MagicObjTypes? magicTypes = request.Services.TryGet(out World.Igi2MagicObjTypes? loadedMagic) ? loadedMagic : null;
+        // Fences hum while live with an ambient area of their own, are told where the player is, and are climbed while dead.
+        List<Interaction.IIgi2Notified> notified = [];
+        foreach (Interaction.Igi2FenceTask fence in Descendants(root).OfType<Interaction.Igi2FenceTask>())
+        {
+            fence.Models = models;
+            fence.EquipHum = hum =>
+            {
+                hum.Audio = player.Sounds;
+                hum.Listener = listener;
+                hum.Random = player.Human.Random;
+            };
+            fence.Prepare();
+            activatables.Add(fence);
+            notified.Add(fence);
+        }
+
+        player.Human.Notified = notified;
+
         // Ladders read their steps off their models' magic vertices, and look down their lines of sight before they are taken.
         foreach (Interaction.Igi2LadderTask ladder in Descendants(root).OfType<Interaction.Igi2LadderTask>())
         {

@@ -45,6 +45,7 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
     private readonly List<string> _sounds = [];
     private Igi2LevelExpression? _on;
     private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private bool _isFramed;
     private double _volume;
     private double _target;
     private int _delay;
@@ -121,6 +122,27 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
     public IgiRandom? Random { get; set; }
 
     /// <summary>
+    /// Sets it up as a task that makes one does, <c>AmbientArea_SetParameters</c>: where it is, its frame, its half sizes in metres,
+    /// its falloff and its sound list. <see cref="Prepare"/> follows, as its update-internal-data event does.
+    /// </summary>
+    /// <param name="position">Where it is.</param>
+    /// <param name="frame">Its frame, row by row.</param>
+    /// <param name="size">Its half sizes, in metres.</param>
+    /// <param name="falloff">How far past its box it fades out, in metres.</param>
+    /// <param name="soundDefs">Its sounds.</param>
+    public void SetParameters(Vector3d position, IReadOnlyList<float> frame, Vector3d size, double falloff, string soundDefs)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        ArgumentNullException.ThrowIfNull(soundDefs);
+        Position = position;
+        Size = size;
+        Falloff = falloff;
+        SoundDefs = soundDefs;
+        _frame = [.. frame];
+        _isFramed = true;
+    }
+
+    /// <summary>
     /// Readies it once its parameters are read (<c>AmbientArea_UpdateInternalDataHandler</c>): the sound list split on spaces, commas
     /// and semicolons (at most eight), and a first pause drawn.
     /// </summary>
@@ -135,7 +157,11 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
             }
         }
 
-        _frame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        if (!_isFramed)
+        {
+            _frame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        }
+
         DrawDelay();
     }
 

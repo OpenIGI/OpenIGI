@@ -177,6 +177,16 @@ public sealed partial class Igi2HumanPlayer
                 IsInitClimbLadder = true;
                 break;
 
+            case Igi2ActivateKind.Fence:
+                if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
+                {
+                    EndActivate();
+                    break;
+                }
+
+                IsInitClimbFence = true;
+                break;
+
             case Igi2ActivateKind.GenericTba or Igi2ActivateKind.Terminal:
                 // Only a fresh press starts the work; held from the last tick, the activation ends there.
                 if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)

@@ -143,6 +143,11 @@ public sealed partial class Igi2HumanPlayer
             ClimbLadder();
         }
 
+        if (IsInitClimbFence || IsClimbFence)
+        {
+            ClimbFence();
+        }
+
         Signal &= ~Igi2PlayerSignal.Hit;
         UpdateBody();
         View.UpdateView(Channels);
@@ -174,7 +179,13 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Weapon.UpdateStatus();
+        Notify();
         Pickup();
+        if (ElectricDamageTimeout != 0)
+        {
+            ElectricDamageTimeout--;
+        }
+
         View.DampenOffsets();
     }
 

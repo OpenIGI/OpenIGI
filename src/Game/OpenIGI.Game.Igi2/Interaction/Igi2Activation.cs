@@ -27,6 +27,9 @@ public enum Igi2ActivateKind
     /// <summary>A ladder, climbed from its foot or its top, <c>Ladder_GetActivateHandler</c>.</summary>
     Ladder = 8,
 
+    /// <summary>A fence, climbed over while it is dead, <c>Fence_GetActivateHandler</c>.</summary>
+    Fence = 9,
+
     /// <summary>A timed action at a code pad or a padlock, <c>GenericTBA_GetActivateHandler</c> (<c>igi2 0x4C2940</c>).</summary>
     GenericTba = 10,
 }

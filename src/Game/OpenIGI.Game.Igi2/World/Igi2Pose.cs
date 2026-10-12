@@ -241,6 +241,24 @@ public sealed class Igi2Pose
     public static float DirectionGamma(Vector3f direction) =>
         direction.X == 0f ? 0f : Fpu.Atan2(direction.Y, direction.X).F;
 
+    /// <summary>The angle between two directions, <c>Real32x3_Angle</c>: nought when either is zero.</summary>
+    /// <param name="a">One direction.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>The angle, nought to a half turn.</returns>
+    public static float Angle(Vector3f a, Vector3f b)
+    {
+        if ((a.X == 0f && a.Y == 0f && a.Z == 0f) || (b.X == 0f && b.Y == 0f && b.Z == 0f))
+        {
+            return 0f;
+        }
+
+        Fpu dot = (((Fpu)a.Z * b.Z) + ((Fpu)a.Y * b.Y)) + ((Fpu)a.X * b.X);
+        Fpu lengths = Fpu.Sqrt((((Fpu)a.X * a.X) + ((Fpu)a.Y * a.Y)) + ((Fpu)a.Z * a.Z))
+            * Fpu.Sqrt((((Fpu)b.X * b.X) + ((Fpu)b.Y * b.Y)) + ((Fpu)b.Z * b.Z));
+        double cosine = (dot / lengths).Value;
+        return cosine >= 1.0 ? 0f : cosine > -1.0 ? (float)Math.Acos(cosine) : 3.1415927f;
+    }
+
     /// <summary>
     /// The turn of a direction off the Y axis, <c>GameFunctions_CalcGamma</c> (<c>igi2 0x48C7C0</c>): the arc cosine of its
     /// normalised Y, negative when it points along positive X, and nought for one with neither.

@@ -149,7 +149,7 @@ public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Act
             Vector3f facing = new(v[1] * sign, v[4] * sign, v[7] * sign);
             Vector3f toward = new(-m[1], -m[4], -m[7]);
             Vector3d top = MagicVertex(1);
-            if (Angle(facing, toward) < 0.785398185f && view.Z < top.Z && view.Z > Position.Z)
+            if (Igi2Pose.Angle(facing, toward) < 0.785398185f && view.Z < top.Z && view.Z > Position.Z)
             {
                 if (!IsClear(context, new Vector3d(Position.X, Position.Y, view.Z)))
                 {
@@ -196,21 +196,6 @@ public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Act
 
     /// <inheritdoc/>
     protected override void OnParsed() => Prepare();
-
-    /// <summary>The angle between two directions, <c>Real32x3_Angle</c>: nought for a zero one.</summary>
-    private static float Angle(Vector3f a, Vector3f b)
-    {
-        if ((a.X == 0f && a.Y == 0f && a.Z == 0f) || (b.X == 0f && b.Y == 0f && b.Z == 0f))
-        {
-            return 0f;
-        }
-
-        Fpu dot = (((Fpu)a.Z * b.Z) + ((Fpu)a.Y * b.Y)) + ((Fpu)a.X * b.X);
-        Fpu lengths = Fpu.Sqrt((((Fpu)a.X * a.X) + ((Fpu)a.Y * a.Y)) + ((Fpu)a.Z * a.Z))
-            * Fpu.Sqrt((((Fpu)b.X * b.X) + ((Fpu)b.Y * b.Y)) + ((Fpu)b.Z * b.Z));
-        double cosine = (dot / lengths).Value;
-        return cosine >= 1.0 ? 0f : cosine > -1.0 ? (float)Math.Acos(cosine) : 3.1415927f;
-    }
 
     /// <summary>
     /// Whether a line from the view to a point is clear and lets everything through, passing through the human looking and the

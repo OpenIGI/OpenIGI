@@ -94,6 +94,9 @@ public static class Igi2PlayerState
     /// <summary>Sliding down a ladder (<c>HumanPlayer_InitStateClimbLadderSlideDown</c>).</summary>
     public const int ClimbLadderSlideDown = 48;
 
+    /// <summary>Climbing over a fence (<c>HumanPlayer_InitStateClimbFence</c>).</summary>
+    public const int ClimbFence = 49;
+
     /// <summary>Waiting for the network, the multiplayer starting state; the body is not moved in it.</summary>
     public const int NetworkWait = 56;
 
