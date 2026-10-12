@@ -6,7 +6,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Igi2Mission1Gaps.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Igi2CampaignGaps.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
