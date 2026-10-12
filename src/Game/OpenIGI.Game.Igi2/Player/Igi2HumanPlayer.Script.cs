@@ -6,12 +6,6 @@ namespace OpenIGI.Game.Igi2.Player;
 public sealed partial class Igi2HumanPlayer
 {
     /// <summary>
-    /// Gets or sets the ticks before an electric fence may shock the player again, <c>nElectricDamageTimeOut</c>; a shock sets it to
-    /// 45 and each tick counts it down.
-    /// </summary>
-    public int ElectricDamageTimeout { get; set; }
-
-    /// <summary>
     /// Activates a task as though the player had found it, <c>HumanPlayer_ActivateScriptFunction</c> (humanplayer.c): it becomes what
     /// the view found, the zoom comes off and the activation starts.
     /// </summary>
@@ -25,11 +19,36 @@ public sealed partial class Igi2HumanPlayer
     }
 
     /// <summary>
-    /// The byte <c>HumanPlayer_LockActivate</c> writes, at <c>+3217</c> of the player: in the shipped game that is the second byte of
-    /// the electric fence timeout, so locking holds shocks off for 256 ticks for each unit written, and unlocking clears that byte.
+    /// Locks or unlocks the activate key, <c>HumanPlayer_LockActivateScriptFunction</c>: the byte written is
+    /// <c>isPlayerActivateLocked</c>, and while it is set the key reads as up each tick once the activate update has run.
     /// </summary>
     /// <param name="value">The byte written.</param>
-    public void LockActivate(int value) => ElectricDamageTimeout = (ElectricDamageTimeout & ~0xFF00) | ((value & 0xFF) << 8);
+    public void LockActivate(int value) => IsActivateLocked = (byte)value != 0;
+
+    /// <summary>
+    /// Takes every weapon from the player but the knife, which goes in hand, <c>HumanPlayer_DisableAllWeapons</c>: each weapon carried
+    /// is dropped with the rounds in the pocket for it, and the upper body's mode is cleared.
+    /// </summary>
+    public void DisableAllWeapons()
+    {
+        if (Weapon.Inventory is not { } inventory)
+        {
+            return;
+        }
+
+        foreach (Weapons.Igi2WeaponItem item in inventory.Weapons)
+        {
+            inventory.Disable(item, removeCarriedAmmo: true);
+        }
+
+        inventory.EnableWeaponType(Flow.Igi2LevelNatives.KnifeId, addAmmo: false);
+        if (inventory.FindWeapon(Flow.Igi2LevelNatives.KnifeId) is { } knife)
+        {
+            inventory.Activate(knife);
+        }
+
+        CurrentUpperBody = 0;
+    }
 
     /// <summary>
     /// Puts the player back in its default states, <c>HumanPlayer_GoToDefaultState</c> (humanplayer.c): the activation ends, the

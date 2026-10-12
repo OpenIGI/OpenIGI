@@ -77,7 +77,7 @@ public sealed class Igi2LevelNatives
 
         functions.Register(natives, "HumanPlayer_DisableAllWeapons", _ =>
         {
-            DisableAllWeapons();
+            Player?.DisableAllWeapons();
             return QvmValue.Zero;
         }, 0);
 
@@ -169,28 +169,5 @@ public sealed class Igi2LevelNatives
         }
 
         return inventory?.FindWeapon(KnifeId)?.WeaponType;
-    }
-
-    /// <summary>
-    /// Takes every weapon from the player but the knife, which goes in hand, <c>HumanPlayer_DisableAllWeapons</c>: each weapon
-    /// carried is dropped with the rounds in the pocket for it.
-    /// </summary>
-    public void DisableAllWeapons()
-    {
-        if ((Player?.Weapon as Igi2PlayerWeapons)?.Inventory is not { } inventory)
-        {
-            return;
-        }
-
-        foreach (Igi2WeaponItem item in inventory.Weapons)
-        {
-            inventory.Disable(item, removeCarriedAmmo: true);
-        }
-
-        inventory.EnableWeaponType(KnifeId, addAmmo: false);
-        if (inventory.FindWeapon(KnifeId) is { } knife)
-        {
-            inventory.Activate(knife);
-        }
     }
 }
