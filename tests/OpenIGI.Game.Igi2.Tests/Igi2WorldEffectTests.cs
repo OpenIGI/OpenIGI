@@ -90,6 +90,22 @@ public sealed class Igi2WorldEffectTests
         Assert.Contains(m.Tree.OfType<Igi2EditBoneObjTask>(), static f => f.Clips.Count > 0 && f.Model.Length > 0);
     }
 
+    /// <summary>A building's lightmap info hands it its indoors ambient light as the level loads.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_buildings_lightmap_info_sets_its_inside_ambient()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Igi2LightmapInfoTask[] infos = [.. m.Tree.OfType<Igi2LightmapInfoTask>()];
+        Assert.NotEmpty(infos);
+        foreach (Igi2LightmapInfoTask info in infos)
+        {
+            if (info.Parent is Igi2BuildingTask building)
+            {
+                Assert.Equal(info.IndoorsAmbient, building.InsideAmbient);
+            }
+        }
+    }
+
     private static Flow.Igi2LevelRun Level()
     {
         Engine.Tasks.TaskTypeRegistry types = new();

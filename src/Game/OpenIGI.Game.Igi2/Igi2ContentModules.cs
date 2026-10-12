@@ -197,6 +197,8 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2EditVariableTask>(Flow.Igi2EditVariableTask.TypeName);
         context.Types.Register<Flow.Igi2MissionScoreSettingsTask>(Flow.Igi2MissionScoreSettingsTask.TypeName);
         context.Types.Register<World.Igi2BuildingTask>(World.Igi2BuildingTask.TypeName);
+        context.Types.Register<World.Igi2LevelInfoTask>(World.Igi2LevelInfoTask.TypeName);
+        context.Types.Register<World.Igi2LightmapInfoTask>(World.Igi2LightmapInfoTask.TypeName);
         context.Types.Register<Audio.Igi2AmbientAreaTask>(Audio.Igi2AmbientAreaTask.TypeName);
         context.Types.Register<World.Igi2RotateAttachmentTask>(World.Igi2RotateAttachmentTask.TypeName);
         context.Types.Register<World.Igi2SplineObjTask>(World.Igi2SplineObjTask.TypeName);
