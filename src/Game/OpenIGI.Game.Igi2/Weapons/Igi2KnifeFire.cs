@@ -20,8 +20,8 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// </remarks>
 public sealed class Igi2KnifeFire : IIgi2FireHandler
 {
-    /// <summary>How far a stab reaches, two metres in world units, <c>8192</c>.</summary>
-    public const double Reach = 8192.0;
+    /// <summary>How far a stab reaches, three metres in world units, <c>12288</c> (<c>Knife_Stab</c>).</summary>
+    public const double Reach = 12288.0;
 
     /// <summary>The kick a stab gives the view both ways, the float <c>0.0099999998</c>.</summary>
     public const float Kick = 0.0099999998f;
