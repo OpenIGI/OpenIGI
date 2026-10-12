@@ -13,6 +13,12 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// <param name="Depth">How deep in its root's attachment tree the object is; zero for the placed object itself.</param>
 public sealed record Igi2CollisionOwner(string TypeName, int LevelId, string Model, int Depth);
 
+/// <summary>An object an attach point makes of a magic type: the type, where the point puts it, and the solid it is made of.</summary>
+/// <param name="Type">The magic type.</param>
+/// <param name="Pose">Where it stands.</param>
+/// <param name="Solid">The owner its solid is built under.</param>
+public sealed record Igi2MagicPlacement(World.Igi2MagicObjType Type, Igi2Pose Pose, Igi2CollisionOwner Solid);
+
 /// <summary>
 /// The level as the collision engine sees it: every placed solid model and the ground, and the queries that
 /// trace lines through them.
@@ -317,6 +323,58 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                 }
             }
         }, magic);
+    }
+
+    /// <summary>
+    /// The objects the static placements' attach points make of a magic type, <c>ModelObj_CreateAttachObject</c>: each type the table
+    /// holds, where its point puts it, with the placement it hangs off and the solid it is made of.
+    /// </summary>
+    /// <param name="scene">What the level places.</param>
+    /// <param name="models">Resolves a model name to its mesh.</param>
+    /// <param name="magic">The magic object types.</param>
+    /// <returns>The objects, in the walk's order.</returns>
+    public static IEnumerable<Igi2MagicPlacement> MagicObjects(Igi2WorldScene scene, Func<string, MefModel?> models, World.Igi2MagicObjTypes magic)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(models);
+        ArgumentNullException.ThrowIfNull(magic);
+        List<Igi2MagicPlacement> found = [];
+        foreach (Igi2Placement placement in scene.StaticPlacements)
+        {
+            if (placement.Geometry is not null)
+            {
+                continue;
+            }
+
+            Igi2Pose pose = placement.Frame is { } frame
+                ? Igi2Pose.FromMatrix(placement.Position, frame)
+                : Igi2Pose.FromAngles(placement.Position, placement.Orientation);
+            Collect(placement.Model, pose, 0);
+
+            void Collect(string modelName, Igi2Pose at, int depth)
+            {
+                if (depth >= MaxAttachmentDepth || models(modelName) is not { } model)
+                {
+                    return;
+                }
+
+                foreach (MefAttachment attachment in model.Attachments)
+                {
+                    Igi2Pose attached = at.Attach(attachment);
+                    if (magic.Find(attachment.Name) is { } type)
+                    {
+                        found.Add(new Igi2MagicPlacement(type, attached, new Igi2CollisionOwner(placement.TypeName, placement.LevelId, type.Model, depth + 1)));
+                    }
+
+                    if (magic.ModelOf(attachment.Name) is { } next)
+                    {
+                        Collect(next, attached, depth + 1);
+                    }
+                }
+            }
+        }
+
+        return found;
     }
 
     // A placed model and everything hanging off it, depth first: the model, then each of its attachments in turn.

@@ -268,6 +268,29 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
         return clear;
     }
 
+    /// <summary>Traces a line of sight through some groups that passes through whatever a test names.</summary>
+    /// <param name="from">Where it starts.</param>
+    /// <param name="to">Where it ends.</param>
+    /// <param name="groups">The query groups.</param>
+    /// <param name="passes">Whether the line passes through an owner it meets.</param>
+    /// <param name="transparency">Receives how much the faces met let through.</param>
+    /// <returns><see langword="true"/> when it met nothing.</returns>
+    public bool LineOfSight(Vector3d from, Vector3d to, uint groups, Func<object, bool> passes, out float transparency)
+    {
+        ArgumentNullException.ThrowIfNull(passes);
+        transparency = 1f;
+        if (sight is null)
+        {
+            return true;
+        }
+
+        Func<object, bool> includes = SightIncludes;
+        Igi2LineOfSight line = new(from, to, materials) { Includes = owner => !passes(owner) && includes(owner) };
+        bool clear = sight.LineOfSight(line, groups);
+        transparency = line.Transparency;
+        return clear;
+    }
+
     /// <summary>
     /// Whether a point is in sight of the view, <c>AIDetection_CheckTargetVisibility</c> (<c>igi2 0x4744E0</c>): a line from the
     /// view meets nothing, or lets at least half through.

@@ -454,6 +454,30 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         World.Igi2MagicObjTypes? magicTypes = request.Services.TryGet(out World.Igi2MagicObjTypes? loadedMagic) ? loadedMagic : null;
+        // Ladders read their steps off their models' magic vertices, and look down their lines of sight before they are taken.
+        foreach (Interaction.Igi2LadderTask ladder in Descendants(root).OfType<Interaction.Igi2LadderTask>())
+        {
+            ladder.Models = models;
+            ladder.Sight = sight;
+            ladder.Prepare();
+            activatables.Add(ladder);
+        }
+
+        // And the ladders the buildings' attach points make (Ladder_CreateHandler with a magic object's context).
+        if (magicTypes is not null)
+        {
+            World.Igi2WorldScene ladderScene = World.Igi2WorldScene.Build(root, models);
+            foreach (Collision.Igi2MagicPlacement point in Collision.Igi2CollisionWorld.MagicObjects(ladderScene, models, magicTypes))
+            {
+                if (point.Type.TaskType == Interaction.Igi2LadderTask.TypeName)
+                {
+                    Interaction.Igi2LadderTask ladder = Interaction.Igi2LadderTask.FromAttachPoint(point, models);
+                    ladder.Sight = sight;
+                    activatables.Add(ladder);
+                }
+            }
+        }
+
         foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
         {
             button.Models = models;

@@ -24,6 +24,9 @@ public enum Igi2ActivateKind
     /// <summary>A wire is slid down (<c>Wire_GetActivateHandler</c>, <c>0x514CA0</c>).</summary>
     Wire = 7,
 
+    /// <summary>A ladder, climbed from its foot or its top, <c>Ladder_GetActivateHandler</c>.</summary>
+    Ladder = 8,
+
     /// <summary>A timed action at a code pad or a padlock, <c>GenericTBA_GetActivateHandler</c> (<c>igi2 0x4C2940</c>).</summary>
     GenericTba = 10,
 }
@@ -162,6 +165,22 @@ public sealed class Igi2EvaluateActivate
 
     /// <summary>Gets the best target found, <c>ptBestQTask</c>.</summary>
     public IIgi2Activatable? Best { get; private set; }
+
+    /// <summary>Gets or sets the human looking, <c>ptQTask</c>, which some targets note how they were found on.</summary>
+    public object? Activator { get; init; }
+
+    /// <summary>Takes a target outright, as a ladder does once its sight is clear: best, and dead ahead.</summary>
+    /// <param name="target">The target.</param>
+    public void Take(IIgi2Activatable target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        BestAlpha = 0f;
+        BestGamma = 0f;
+        Best = target;
+    }
+
+    /// <summary>Forgets the best target found so far, as a ladder whose sight is blocked does.</summary>
+    public void Clear() => Best = null;
 
     /// <summary>
     /// Offers a target worked from a spot on its front, as a timed action and a terminal are: only a view ahead of the spot along

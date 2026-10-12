@@ -26,6 +26,9 @@ public readonly record struct Igi2AiEvent(
     object? Reference = null,
     object? Specific = null)
 {
+    /// <summary>A human climbing a ladder other than at a walk, event 13, <c>AIEVENT_LADDER</c> (<c>HumanPlayer_RunStateClimbLadder</c>).</summary>
+    public const int Ladder = 13;
+
     /// <summary>The player bumping into another human, event 9 (<c>Human_HumanCollision</c>).</summary>
     public const int HumanBump = 9;
 

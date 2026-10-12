@@ -82,6 +82,18 @@ public static class Igi2PlayerState
     /// <summary>Dying.</summary>
     public const int Die = 55;
 
+    /// <summary>On a ladder, stepping up and down it (<c>HumanPlayer_InitStateClimbLadder</c>).</summary>
+    public const int ClimbLadder = 45;
+
+    /// <summary>Getting on a ladder at its top (<c>HumanPlayer_InitStateClimbLadderGetOnTop</c>).</summary>
+    public const int ClimbLadderGetOnTop = 46;
+
+    /// <summary>Getting off a ladder at its top (<c>HumanPlayer_InitStateClimbLadderGetOffTop</c>).</summary>
+    public const int ClimbLadderGetOffTop = 47;
+
+    /// <summary>Sliding down a ladder (<c>HumanPlayer_InitStateClimbLadderSlideDown</c>).</summary>
+    public const int ClimbLadderSlideDown = 48;
+
     /// <summary>Waiting for the network, the multiplayer starting state; the body is not moved in it.</summary>
     public const int NetworkWait = 56;
 

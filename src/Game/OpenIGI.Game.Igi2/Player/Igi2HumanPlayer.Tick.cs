@@ -138,6 +138,11 @@ public sealed partial class Igi2HumanPlayer
             IsRunning = false;
         }
 
+        if (IsInitClimbLadder || IsClimbLadder)
+        {
+            ClimbLadder();
+        }
+
         Signal &= ~Igi2PlayerSignal.Hit;
         UpdateBody();
         View.UpdateView(Channels);

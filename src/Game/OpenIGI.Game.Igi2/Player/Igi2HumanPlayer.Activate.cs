@@ -82,7 +82,10 @@ public sealed partial class Igi2HumanPlayer
             Igi2EvaluateActivate context = new(
                 View.Position,
                 [v.M11, v.M12, v.M13, v.M21, v.M22, v.M23, v.M31, v.M32, v.M33],
-                isPlayer: true);
+                isPlayer: true)
+            {
+                Activator = this,
+            };
             Vector3f r = RootTranslation;
             float radius = (Fpu.Sqrt((((Fpu)r.X * r.X) + ((Fpu)r.Y * r.Y)) + ((Fpu)r.Z * r.Z)) + ModelRadius).F;
             foreach (IIgi2Activatable candidate in Surroundings.FindActivatables(Position, radius))
@@ -161,6 +164,17 @@ public sealed partial class Igi2HumanPlayer
                 }
 
                 EndActivate();
+                break;
+
+            case Igi2ActivateKind.Ladder:
+                // Held from the last tick, the key does nothing more; pressed afresh, the ladder is got on after the machines run.
+                if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
+                {
+                    EndActivate();
+                    break;
+                }
+
+                IsInitClimbLadder = true;
                 break;
 
             case Igi2ActivateKind.GenericTba or Igi2ActivateKind.Terminal:
