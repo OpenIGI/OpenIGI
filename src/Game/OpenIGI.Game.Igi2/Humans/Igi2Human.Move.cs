@@ -150,7 +150,6 @@ public abstract partial class Igi2Human
             DeltaTranslation = default;
         }
 
-        Fpu slid = slideX + x;
         y = ((Fpu)slideY + y).F;
         z = ((Fpu)slideZ + z).F;
         Vector3f impact = ImpactSpeed;
@@ -158,7 +157,8 @@ public abstract partial class Igi2Human
         float impactY = ((Fpu)impact.Y * ImpactDecay).F, impactZ = ((Fpu)impact.Z * ImpactDecay).F;
         ImpactSpeed = new Vector3f(impactX.F, impactY, impactZ);
 
-        Vector3f speed = new((impactX + slid).F, ((Fpu)impactY + y).F, ((Fpu)impactZ + z).F);
+        // X sums impact and slide first, then the move (Human_Move: v15 + v14 + vX); Y and Z add the slide in earlier.
+        Vector3f speed = new(((impactX + slideX) + x).F, ((Fpu)impactY + y).F, ((Fpu)impactZ + z).F);
         AccumulatedSpeed = speed;
         if (IsGroundRigidObject)
         {
@@ -185,7 +185,7 @@ public abstract partial class Igi2Human
 
             if (IsHumanCollision)
             {
-                Surroundings.BumpHumans(start, to);
+                HumanCollision(start, ref to, out speed);
             }
         }
 

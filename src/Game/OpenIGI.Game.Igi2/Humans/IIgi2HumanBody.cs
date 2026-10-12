@@ -176,10 +176,11 @@ public interface IIgi2HumanSurroundings
     /// <returns>The push, or <see langword="null"/> when the ground does not push.</returns>
     Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing);
 
-    /// <summary>Tells the humans the move passes that they were bumped, <c>Human_HumanCollision</c> (<c>igi2 0x4FDB00</c>).</summary>
-    /// <param name="start">Where the move started.</param>
-    /// <param name="destination">Where it ended.</param>
-    void BumpHumans(Vector3d start, Vector3d destination);
+    /// <summary>
+    /// Gets every human registered in the world, <c>Human_ptQTaskList</c>, in registration order: the bodies a move is kept
+    /// out of (<see cref="Igi2Human.HumanCollision"/>).
+    /// </summary>
+    IReadOnlyList<Igi2Human> Humans => [];
 
     /// <summary>Gets a level material's landing sound, or <see langword="null"/> when it has none.</summary>
     /// <param name="material">The level material slot, as a hit's <c>ptEnterMaterial</c> names it.</param>

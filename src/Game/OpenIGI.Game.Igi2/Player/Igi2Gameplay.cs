@@ -140,6 +140,21 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        // Human_ptQTaskList: every human registered in the world, the bodies each move is kept out of.
+        List<Igi2Human> humans = [player.Human];
+        if (player.Soldiers is { } registered)
+        {
+            humans.AddRange(registered.Bodies);
+        }
+
+        foreach (Igi2Human human in humans)
+        {
+            if (human.Surroundings is Igi2LevelSurroundings surroundings)
+            {
+                surroundings.Humans = humans;
+            }
+        }
+
         player.Level = LevelRun(request, player);
         return player;
     }
@@ -970,9 +985,8 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         return default(Vector3f);
     }
 
-    public void BumpHumans(Vector3d start, Vector3d destination)
-    {
-    }
+    /// <summary>Gets or sets every human registered in the level, <c>Human_ptQTaskList</c>.</summary>
+    public IReadOnlyList<Igi2Human> Humans { get; set; } = [];
 
     public string? LandingSound(int material) =>
         Materials?[material] is { LandSound.Length: > 0 } game ? game.LandSound : null;

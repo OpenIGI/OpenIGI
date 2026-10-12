@@ -144,11 +144,15 @@ internal static class Igi2PlayerFakes
 
         public Vector3f? Conveyor { get; set; }
 
-        public int Bumps { get; private set; }
-
         public Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing) => Conveyor;
 
-        public void BumpHumans(Vector3d start, Vector3d destination) => Bumps++;
+        public List<Igi2Human> Humans { get; } = [];
+
+        IReadOnlyList<Igi2Human> IIgi2HumanSurroundings.Humans => Humans;
+
+        public List<Ai.Igi2AiEvent> AiEvents { get; } = [];
+
+        public void SendAiEvent(in Ai.Igi2AiEvent aiEvent) => AiEvents.Add(aiEvent);
 
         public void SendLandingEvent() => LandingEvents++;
 

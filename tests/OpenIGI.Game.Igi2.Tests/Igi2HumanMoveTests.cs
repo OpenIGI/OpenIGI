@@ -124,6 +124,45 @@ public sealed class Igi2HumanMoveTests
         Assert.Equal(default, player.GroundSpeed);
     }
 
+    /// <summary>
+    /// A move that brings the body nearer a human it overlaps keeps its height but not its ground travel, the speed is what
+    /// is left of it, and the player's bump is heard: <c>Human_HumanCollision</c>, event 9 within three metres.
+    /// </summary>
+    [Fact]
+    public void A_human_in_the_way_stops_the_move_across()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeSurroundings surroundings) = OnFloor();
+        (Igi2HumanPlayer other, _, _) = Igi2PlayerFakes.Player();
+        other.Position = new Vector3d(1000.0, 0.0, 0.0);
+        surroundings.Humans.AddRange([player, other]);
+        player.IsHumanCollision = true;
+        player.Speed = new Vector3f(500f, 0f, 0f);
+
+        player.Move();
+
+        Assert.Equal(0.0, player.Position.X);
+        Assert.Equal(default, player.TotalSpeed);
+        Ai.Igi2AiEvent bump = Assert.Single(surroundings.AiEvents);
+        Assert.Equal((9, 1090, 12288f), (bump.Event, bump.Flags, bump.Radius));
+    }
+
+    /// <summary>A move away from a human it overlaps is let through.</summary>
+    [Fact]
+    public void A_move_away_from_a_human_goes_through()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeSurroundings surroundings) = OnFloor();
+        (Igi2HumanPlayer other, _, _) = Igi2PlayerFakes.Player();
+        other.Position = new Vector3d(1000.0, 0.0, 0.0);
+        surroundings.Humans.AddRange([player, other]);
+        player.IsHumanCollision = true;
+        player.Speed = new Vector3f(-500f, 0f, 0f);
+
+        player.Move();
+
+        Assert.Equal(-500.0, player.Position.X);
+        Assert.Empty(surroundings.AiEvents);
+    }
+
     private static (Igi2HumanPlayer Player, Igi2PlayerFakes.FakeSurroundings Surroundings) OnFloor()
     {
         (Igi2HumanPlayer player, Igi2PlayerFakes.FakeSurroundings surroundings) = Body();

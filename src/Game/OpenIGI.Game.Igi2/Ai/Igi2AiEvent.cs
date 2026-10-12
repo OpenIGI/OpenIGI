@@ -24,6 +24,9 @@ public readonly record struct Igi2AiEvent(
     object? Originator,
     object? Reference = null)
 {
+    /// <summary>The player bumping into another human, event 9 (<c>Human_HumanCollision</c>).</summary>
+    public const int HumanBump = 9;
+
     /// <summary>A human landing or a body hitting the ground, <c>AIEVENT_GROUNDIMPACT</c>.</summary>
     public const int GroundImpact = 10;
 

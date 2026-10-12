@@ -28,6 +28,14 @@ public sealed partial class Igi2HumanPlayer : IIgi2Detectable
     /// <inheritdoc/>
     public bool IsGone => false;
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The player's bump is heard within three metres of its view: event 9, flags 1090, radius 12288
+    /// (<c>Human_HumanCollision</c>).
+    /// </remarks>
+    protected override void OnBlockedByHuman() =>
+        Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.HumanBump, Team, 1090, 12288f, View.Position, default, this, this));
+
     /// <summary>
     /// Where the eyes are by stance alone, <c>HumanView_GetOriginalViewPosition</c> (<c>igi2 0x4D7150</c>): above the feet by
     /// 6922.24 standing, 4096 crouching and 1228.8 lying flat.
