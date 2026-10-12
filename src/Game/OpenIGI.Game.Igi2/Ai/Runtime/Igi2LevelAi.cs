@@ -43,11 +43,17 @@ public sealed record Igi2LevelAiSetup(
 
     /// <summary>Gets where load diagnostics go.</summary>
     public IOpenIgiLogger? Logger { get; init; }
+
+    /// <summary>
+    /// Gets the session's AI module, whose natives are already bound, or <see langword="null"/> to make one for this level and bind
+    /// them now.
+    /// </summary>
+    public Igi2AiWorld? World { get; init; }
 }
 
 /// <summary>
-/// Gives a level's soldiers their minds, as the original loads them: the module emptied and its two default scripts read
-/// (<c>HumanAI_Open</c>, <c>AISquad_Open</c>), its natives bound; every squad and every soldier's mind made and its script read in
+/// Gives a level's soldiers their minds, as the original loads them: the session's module (opened with its natives and default
+/// scripts, <c>HumanAI_Open</c> and <c>AISquad_Open</c>) emptied of the last level; every squad and every soldier's mind made and its script read in
 /// the tree's order (<c>AISquad_UpdateInternalDataHandler</c>, <c>HumanAI_UpdateInternalDataHandler</c>); then, once the level is
 /// loaded, each squad's team built from its soldiers before they ready themselves (<c>AISquad_BuildTeamFromChildren</c>,
 /// <c>HumanAI_UpdateInternalDataAfterLoadHandler</c>, a parent before its children).
@@ -61,32 +67,37 @@ public static class Igi2LevelAi
     {
         ArgumentNullException.ThrowIfNull(setup);
         Dictionary<int, object> byId = TasksById(setup.Root, setup.Player);
-        Igi2AiWorld world = new()
+        Igi2AiWorld world = setup.World ?? new Igi2AiWorld();
+        if (setup.World is null)
         {
-            Natives = setup.Natives,
-            Resources = setup.Resources,
-            Random = setup.Random,
-            Humans = setup.Humans,
-            LevelTick = setup.LevelTick,
-            Difficulty = setup.Difficulty,
-            Detection = setup.Detection,
-            Player = setup.Player,
-            Graphs = Igi2AiGraphs.Build(setup.Root, setup.Resources, setup.Natives, setup.Functions, setup.Logger),
-            TaskById = id => byId.GetValueOrDefault(id),
-            TaskPosition = id => PositionOf(byId.GetValueOrDefault(id)),
-            PatrolPath = id => byId.GetValueOrDefault(id) as Igi2PatrolPathTask,
-            EvaluateCommand = command => Igi2LineScript.Evaluate(command.Expression, setup.Natives, setup.Functions) != 0,
-            Doors = [.. Igi2TaskTree.Descendants(setup.Root).OfType<Interaction.Igi2DoorTask>()],
-        };
+            world.Natives = setup.Natives;
+            new Igi2HumanAiNatives(world).Register(setup.Natives);
+            new Igi2AiSquadNatives(world).Register(setup.Natives);
+        }
+
+        if (world.Default is null)
+        {
+            world.LoadScripts(setup.Resources);
+        }
+
+        world.BeginLevel();
+        world.Resources = setup.Resources;
+        world.Random = setup.Random;
+        world.Humans = setup.Humans;
+        world.LevelTick = setup.LevelTick;
+        world.Difficulty = setup.Difficulty;
+        world.Detection = setup.Detection;
+        world.Player = setup.Player;
+        world.Graphs = Igi2AiGraphs.Build(setup.Root, setup.Resources, setup.Natives, setup.Functions, setup.Logger);
+        world.TaskById = id => byId.GetValueOrDefault(id);
+        world.TaskPosition = id => PositionOf(byId.GetValueOrDefault(id));
+        world.PatrolPath = id => byId.GetValueOrDefault(id) as Igi2PatrolPathTask;
+        world.EvaluateCommand = command => Igi2LineScript.Evaluate(command.Expression, setup.Natives, setup.Functions) != 0;
+        world.Doors = [.. Igi2TaskTree.Descendants(setup.Root).OfType<Interaction.Igi2DoorTask>()];
         if (setup.FireTaskTypes is { } fireTypes)
         {
             world.FireTaskTypes = fireTypes;
         }
-
-        world.BeginLevel();
-        world.LoadScripts(setup.Resources);
-        new Igi2HumanAiNatives(world).Register(setup.Natives);
-        new Igi2AiSquadNatives(world).Register(setup.Natives);
 
         foreach (Igi2AiSquadTask task in Igi2TaskTree.Descendants(setup.Root).OfType<Igi2AiSquadTask>())
         {

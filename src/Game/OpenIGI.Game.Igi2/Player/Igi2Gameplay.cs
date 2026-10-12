@@ -507,6 +507,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 Config = config,
                 Difficulty = (int)player.Human.Difficulty,
                 Logger = request.World.Logger,
+                World = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? session) ? session : null,
             });
         }
 

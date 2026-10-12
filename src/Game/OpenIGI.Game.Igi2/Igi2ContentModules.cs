@@ -274,7 +274,10 @@ public sealed class Igi2MaterialContentModule : IContentModule
     }
 }
 
-/// <summary>The AI: its task types, the constants its scripts use, and its tuning out of <c>settings.qvm</c>.</summary>
+/// <summary>
+/// The AI: its task types, the constants its scripts use, its tuning out of <c>settings.qvm</c>, and the module the level's soldiers
+/// and squads think in, with its natives and default scripts.
+/// </summary>
 /// <remarks>
 /// After the materials and before the player's tuning, the order <c>Flow_CreateHandler</c> (<c>igi2 0x401600</c>) loads the AI's
 /// settings in.
@@ -301,6 +304,12 @@ public sealed class Igi2AiContentModule : IContentModule
         Ai.Igi2PatrolPathCommandTask.RegisterCommands(context.Natives);
         context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         context.Services.GetOrProvide(() => new Ai.Igi2HumanAiConfig());
+
+        // HumanAI_Open and AISquad_Open bind the soldiers' and squads' natives once, for every level the game plays.
+        Ai.Runtime.Igi2AiWorld ai = context.Services.GetOrProvide(static () => new Ai.Runtime.Igi2AiWorld());
+        ai.Natives = context.Natives;
+        new Ai.Runtime.Igi2HumanAiNatives(ai).Register(context.Natives);
+        new Ai.Runtime.Igi2AiSquadNatives(ai).Register(context.Natives);
     }
 
     /// <inheritdoc/>
@@ -309,6 +318,9 @@ public sealed class Igi2AiContentModule : IContentModule
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<Ai.Igi2HumanAiConfig>().Load(
             context.Resources, context.Natives, context.Services.Require<Scripting.Igi2ScriptFunctions>(), context.Tasks);
+
+        // ... and read their default scripts (Script_New of common/ai/default.qsc and squaddefault.qsc).
+        context.Services.Require<Ai.Runtime.Igi2AiWorld>().LoadScripts(context.Resources);
     }
 }
 

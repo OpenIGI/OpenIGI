@@ -176,6 +176,7 @@ public sealed class RetailIgi2LevelAiTests
             FireTaskTypes = m.Services!.Require<Igi2HumanWeapons>().FireTaskTypes,
             Config = m.Services!.TryGet(out Igi2HumanAiConfig? config) ? config : null,
             Difficulty = 1,
+            World = m.Services!.Require<Igi2AiWorld>(),
         });
         return (m, soldiers, ai, player);
     }
