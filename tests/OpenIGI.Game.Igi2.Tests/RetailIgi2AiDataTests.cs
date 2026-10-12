@@ -105,6 +105,35 @@ public sealed class RetailIgi2AiDataTests
     }
 
     /// <summary>
+    /// The graphs answer soldiers' questions: each node is its own nearest node and stands inside itself; a search between two
+    /// linked nodes finds the two-step path at the link's cost; each graph's cover file is read, item by item.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_graphs_find_nodes_paths_and_cover()
+    {
+        RetailIgi2LevelLoadTests.Harness harness = Harness();
+        Igi2AiGraphs graphs = Graphs(harness);
+        Igi2AiGraph first = graphs.Graph(1)!;
+        Assert.Equal(1, first.Id);
+        Igi2AiGraphNode some = first.Nodes.Values.First(static n => (n.Criteria & Igi2AiGraph.ViewCriteria) == 0);
+
+        Assert.Equal(Igi2AiClosestNode.InsideNode, first.ClosestNode(some.Position, allowVehicleNodes: true, out Igi2AiGraphNode? closest));
+        Assert.Same(some, closest);
+
+        Igi2AiGraphLink link = first.Links[0];
+        Igi2AiPathSearch search = new(new Igi2AiSearchPool());
+        Assert.True(search.CreatePath(first, link.NodeA, link.NodeB, uint.MaxValue));
+        IReadOnlyList<Igi2AiSearchNode> path = search.GetPath(first.Id, link.NodeA, link.NodeB)!;
+        Assert.Equal([link.NodeA, link.NodeB], path.Select(static n => n.NodeId));
+        Assert.Equal(link.Length, search.PathCost, 0.01f);
+
+        Assert.Equal(189, graphs.Graph(1)!.Cover.Count);
+        Assert.Equal(192, graphs.Graph(3)!.Cover.Count);
+
+        Assert.All(graphs.Graph(1)!.Cover, item => Assert.NotNull(graphs.Graph(1)!.NodeAt(item.NodeId)));
+    }
+
+    /// <summary>
     /// The soldiers are typed, each with one mind naming a graph the level has, and resolve to C1 riflemen and pistol carriers;
     /// the squads keep their soldiers.
     /// </summary>

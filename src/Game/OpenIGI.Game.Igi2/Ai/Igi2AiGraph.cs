@@ -11,7 +11,7 @@ using System.Globalization;
 namespace OpenIGI.Game.Igi2.Ai;
 
 /// <summary>A node of an AI graph, I.G.I. 2's <c>AIGraphNode_s</c>.</summary>
-public sealed class Igi2AiGraphNode
+public sealed partial class Igi2AiGraphNode
 {
     /// <summary>The most links a node keeps, its <c>aptGraphLinks[64]</c>.</summary>
     public const int MaxLinks = 64;
@@ -104,7 +104,7 @@ public sealed record Igi2AiGraphLink(int NodeA, int NodeB, int Type, float Lengt
 /// as a one-line script. <c>eLinkType</c> makes a link from the last two ids read (<c>Graph_CreateLink</c>, <c>0x59A610</c>).
 /// </para>
 /// </remarks>
-public sealed class Igi2AiGraph
+public sealed partial class Igi2AiGraph
 {
     /// <summary>The most nodes a graph holds; a node with a higher id is dropped (<c>Graph_CreateNode</c>, <c>igi2 0x59A040</c>).</summary>
     public const int IdLimit = 2000;
@@ -435,7 +435,16 @@ public sealed class Igi2AiGraphs
                 continue;
             }
 
-            graphs[task.Id] = Igi2AiGraph.Read(bytes, graph.Placement, text => Igi2LineScript.Evaluate(text, natives, functions));
+            Igi2AiGraph read = Igi2AiGraph.Read(bytes, graph.Placement, text => Igi2LineScript.Evaluate(text, natives, functions));
+            read.Id = task.Id;
+
+            // AIGraph_UpdateInternalDataAfterLoadHandler reads the graph's cover, when the level ships it.
+            if (resources.TryLoad(Igi2AiGraph.CoverResourceNameFor(task.Id), out ReadOnlyMemory<byte> cover))
+            {
+                read.LoadCover(cover);
+            }
+
+            graphs[task.Id] = read;
         }
 
         return new Igi2AiGraphs(graphs);
