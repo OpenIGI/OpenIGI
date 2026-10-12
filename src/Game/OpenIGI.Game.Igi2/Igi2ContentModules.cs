@@ -76,11 +76,17 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
         // Config_Open: the input buttons, devices and key sources the controls name, the languages and the difficulties.
         Config.Igi2ConfigConstants.Register(context.Natives);
         Config.Igi2GameConstants.Register(context.Natives);
+
+        // Config_Open: the configuration's file natives, its graphics options and the settings the menus and scripts read.
+        context.Services.GetOrProvide(() => new Config.Igi2GameConfig()).Register(context.Natives);
     }
 
     /// <inheritdoc/>
+    /// <remarks>At start-up, <c>Config_LoadConfig</c>: the player profiles out of <c>config.qvm</c>.</remarks>
     public void LoadTables(ContentLoadContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Services.Require<Config.Igi2GameConfig>().Load(context.Resources, context.Natives);
     }
 }
 

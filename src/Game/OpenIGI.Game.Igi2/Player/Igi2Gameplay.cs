@@ -598,6 +598,13 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Motions = movers.Count > 0 ? new Interaction.Igi2MoverMotions(movers) : null;
 
+        // The game is played at the active profile's difficulty (Config_GetActiveDifficultyLevel); here the difficulty is chosen
+        // before the level, so the profile takes it, and the squads' scripts read it back.
+        if (request.Services.TryGet(out Config.Igi2GameConfig? gameConfig) && gameConfig.Active is { } profile)
+        {
+            profile.Difficulty = (int)player.Human.Difficulty;
+        }
+
         if (player.Soldiers is { } soldiersWithMinds)
         {
             request.Services.TryGet(out Ai.Igi2HumanAiConfig? config);

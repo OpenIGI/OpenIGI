@@ -19,7 +19,6 @@ name AreaActivate_1704.nActive    # 17 | MISSIONS/location1/level7/ai/550.qvm, M
 name AreaActivate_1705.nActive    # 17 | MISSIONS/location1/level7/ai/560.qvm, MISSIONS/location1/level7/ai/561.qvm, …
 name AreaActivate_2106.nActive    # 15 | MISSIONS/location1/level5/ai/Squad_743.qvm
 name AreaActivate_IdInArea    # 21 31 35 | MISSIONS/location2/level1/objects.qvm, MISSIONS/location3/level1/objects.qvm, …
-name BreakScript    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name Cabinet_2978.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Cabinet_3146.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
 name Cabinet_3274.isSearched    # 34 | MISSIONS/location3/level4/objects.qvm
@@ -30,35 +29,9 @@ name ColumnView_Sort    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 
 name ColumnView_TestFunctionCB    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_Fill3DProviderScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_FillSpeakerSetupListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GameOptionsGraphicsGetThickCrosshair    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GameOptionsGraphicsSetThickCrosshair    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GameOptionsInputGetInvertMouse    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GameOptionsInputGetMouseSensitivity    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GameOptionsInputSetInvertMouse    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GameOptionsInputSetMouseSensitivity    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GetActive3DProvider    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_GetActiveCrossHair    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GetActiveDifficultyLevel    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | COMMON/ai/squaddefault.qvm
-name Config_GetActiveSpeakerSetup    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_GetCrossHairs    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_GetRGBA    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsGetCrossHairAlpha    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsGetCrossHairColourB    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsGetCrossHairColourG    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsGetCrossHairColourR    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsGetGamma    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsSetCrossHairAlpha    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsSetCrossHairColourB    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsSetCrossHairColourG    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsSetCrossHairColourR    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_GraphicOptionsSetGamma    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SaveConfig    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SetActive3DProvider    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SetActiveSpeakerSetup    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SoundOptionsGetMusicVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SoundOptionsGetSoundsEffectsVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SoundOptionsSetMusicVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Config_SoundOptionsSetSoundsEffectsVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_987.isReset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_987.nOffset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertFloatFromOffset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -70,30 +43,6 @@ name EditVariable_134.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MIS
 name EditVariable_135.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MISSIONS/location3/level6/ai/501.qvm, …
 name EditVariable_1504.nValue    # 21 | MISSIONS/location2/level1/ai/523.qvm
 name EditVariable_162.nValue    # 31 | MISSIONS/location3/level1/ai/Squad_707.qvm
-name GO3DSoundProvider    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOActiveMission    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOComplete    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOContentControlPW    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGameDiff    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGameIsHideInventory    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGameLang    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGfxCrossHairAlpha    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGfxDevice    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGfxDisp    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGfxForceSoftwareVP    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOGfxGamma    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOInMouInv    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOInMouSens    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOInRemap    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOIsBlood    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOPlayer    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOPlayerMissionStats    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOSoundFX    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOSoundMusic    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOSoundSpeech    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOSpeakerSetup    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOStart    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GOVersion    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name Game_FillSaveGameScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Game_GetGameMode    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Game_GetNewestSaveGameSlot    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -115,22 +64,6 @@ name GenericPickup_3530.isPickedUp    # 13 | MISSIONS/location1/level3/objects.q
 name GenericPickup_3812.isPickedUp    # 23 | MISSIONS/location2/level3/objects.qvm
 name GenericPickup_3950.isPickedUp    # 13 | MISSIONS/location1/level3/objects.qvm
 name GenericPickup_3951.isPickedUp    # 13 | MISSIONS/location1/level3/objects.qvm
-name GfxOptions_ApplyCurrentOptionsToLastPlayerProfile    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_ConfigSetAntialiasingMode    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_ConfigSetTextureFilteringMode    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetBulletHitEffects    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetDetailLevelFromConfigFile    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetHighQualityForests    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetLensFlares    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetModelDetail    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetStencilShadows    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetTerrainDetailLevel    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetTextureCompression    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetTextureDetailFromScript    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetWaterQualityLevel    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GfxOptions_SetWindOnForests    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GoGfxCrossHairColour    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
-name GoGfxCrossHairThickness    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | config.qvm
 name HumanPlayer_Activate    # 25 | MISSIONS/location2/level5/objects.qvm
 name HumanPlayer_DisableAllWeapons    # 26 | MISSIONS/location2/level6/objects.qvm
 name HumanPlayer_GetPrimaryWeaponID    # 23 32 | MISSIONS/location2/level3/objects.qvm, MISSIONS/location3/level2/objects.qvm
