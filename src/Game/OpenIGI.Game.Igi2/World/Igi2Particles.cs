@@ -336,6 +336,17 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
     /// <summary>Lets every particle go at once, <c>Particle2DDynCubeObj_RemoveParticles</c>.</summary>
     public void RemoveParticles() => Count = 0;
 
+    /// <summary>Moves every live particle by an offset, as a smoke whose source moves carries its plume (<c>Particle2DDynCubeObj_MoveParticles</c>).</summary>
+    /// <param name="move">The offset.</param>
+    public void MoveParticles(Vector3d move)
+    {
+        for (int i = 0; i < Count; i++)
+        {
+            Vector3d p = _slots[i].Position;
+            _slots[i].Position = new Vector3d(((Fpu)p.X + move.X).Value, ((Fpu)move.Y + p.Y).Value, ((Fpu)p.Z + move.Z).Value);
+        }
+    }
+
     /// <summary>A tick of the system, <c>Particle2DDynCubeObj_RunHandler</c>.</summary>
     /// <returns><see langword="false"/> once the system has deleted itself.</returns>
     public bool Run()

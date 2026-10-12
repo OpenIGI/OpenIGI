@@ -129,6 +129,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
+        IReadOnlyDictionary<Engine.Tasks.GameTask, string>? worn = request.World.LevelRoot is { } facesRoot ? Igi2HumanFaces.Assign(facesRoot) : null;
         player.Soldiers = request.World.LevelRoot is { } levelRoot
             ? SpawnSoldiers(
                 levelRoot,
@@ -143,8 +144,28 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 player.Human.Pickups,
                 player.Grenades,
                 request.Natives,
-                request.Services.TryGet(out Scripting.Igi2ScriptFunctions? lineFunctions) ? lineFunctions : null)
+                request.Services.TryGet(out Scripting.Igi2ScriptFunctions? lineFunctions) ? lineFunctions : null,
+                worn)
             : null;
+
+        // The level's figures: each its face, its clips and its first pause, from the module's blink stream; then its weapon expression.
+        if (request.World.LevelRoot is { } figuresRoot && worn is not null)
+        {
+            IgiRandom blink = new(unchecked((uint)-912896271), unchecked((uint)-463112362), unchecked((uint)-1522052915));
+            List<World.Igi2EditBoneObjTask> figures = [];
+            foreach (World.Igi2EditBoneObjTask figure in Descendants(figuresRoot).OfType<World.Igi2EditBoneObjTask>())
+            {
+                figure.Prepare(clips, models, worn.TryGetValue(figure, out string? face) ? face : figure.Model, blink);
+                if (request.Natives is { } figureNatives && request.Services.TryGet(out Scripting.Igi2ScriptFunctions? figureFunctions))
+                {
+                    figure.AfterLoad(figureNatives, figureFunctions);
+                }
+
+                figures.Add(figure);
+            }
+
+            player.Figures = figures;
+        }
         if (player.Soldiers is { } soldiers && player.Explosions is { } blasts)
         {
             foreach (Soldiers.Igi2HumanSoldier soldier in soldiers.Bodies)
@@ -189,6 +210,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <param name="grenades">The level's grenades, which a soldier's throw joins; <see langword="null"/> for none.</param>
     /// <param name="natives">The session's script namespace, which the minds' type names are read in; <see langword="null"/> to leave them unread.</param>
     /// <param name="functions">The natives those names may call.</param>
+    /// <param name="worn">The model each soldier wears, its face given (<see cref="Igi2HumanFaces.Assign"/>).</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
@@ -208,7 +230,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Pickups.Igi2PickupList? pickups = null,
         Weapons.Igi2Grenades? grenades = null,
         OpenIGI.Scripting.Runtime.NativeRegistry? natives = null,
-        Scripting.Igi2ScriptFunctions? functions = null)
+        Scripting.Igi2ScriptFunctions? functions = null,
+        IReadOnlyDictionary<Engine.Tasks.GameTask, string>? worn = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(services);
@@ -238,7 +261,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 return (surroundings, weapon, animation);
             },
             models,
-            random);
+            random,
+            worn);
         foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies)
         {
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
@@ -500,6 +524,41 @@ public sealed class Igi2Gameplay : ITitleGameplay
             task.Explosive.Bind(player.CollisionWorld.SolidsOf(typeName, task.Id));
             player.Explosions?.AddTarget(task);
             destructibles.Add(task);
+        }
+
+        // A minefield's blasts go off at a task of the level, put on its ground.
+        Dictionary<int, object> placedById = [];
+        foreach (Engine.Tasks.GameTask node in Descendants(root))
+        {
+            if (node.Id != Engine.Tasks.GameTask.NoId)
+            {
+                placedById.TryAdd(node.Id, node switch
+                {
+                    Ai.Igi2HumanSoldierTask { Body: { } body } => body,
+                    Igi2HumanPlayerTask => player.Human,
+                    _ => node,
+                });
+            }
+        }
+
+        // Smokes make their particle systems as they are made, each setting the module's stream back to its seed.
+        if (player.Human.Surroundings is Igi2LevelSurroundings { Particles: { } particles })
+        {
+            World.Igi2SmokeRandom smokeRandom = new();
+            foreach (World.Igi2SmokeTask smoke in Descendants(root).OfType<World.Igi2SmokeTask>())
+            {
+                smoke.Particles = particles;
+                smoke.Stream = smokeRandom;
+                smoke.Player = player.Human;
+                smoke.Prepare();
+            }
+        }
+
+        foreach (Interaction.Igi2MineFieldTask field in Descendants(root).OfType<Interaction.Igi2MineFieldTask>())
+        {
+            field.Explosions = player.Explosions;
+            field.Collision = player.CollisionWorld;
+            field.TaskById = id => placedById.GetValueOrDefault(id);
         }
 
         foreach (Interaction.Igi2ConveyorBeltTask belt in Descendants(root).OfType<Interaction.Igi2ConveyorBeltTask>())
@@ -870,10 +929,13 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         }
     }
 
+    /// <summary>Gets or sets the level's figures (<see cref="World.Igi2EditBoneObjTask"/>), drawn with the soldiers.</summary>
+    public IReadOnlyList<World.Igi2EditBoneObjTask> Figures { get; set; } = [];
+
     /// <inheritdoc/>
     /// <remarks>
     /// The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies, then the grenades in flight, each
-    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand; built once a tick.
+    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand, then the figures; built once a tick.
     /// </remarks>
     public IReadOnlyList<TitleWorldModel> WorldModels
     {
@@ -888,7 +950,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
                     ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
                     : [];
                 IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
-                _lying = [.. pickups, .. flying, .. soldiers];
+                IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
+                _lying = [.. pickups, .. flying, .. soldiers, .. figures];
                 _lyingTick = _ticks;
             }
 

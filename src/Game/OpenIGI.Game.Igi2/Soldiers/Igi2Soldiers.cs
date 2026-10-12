@@ -59,6 +59,7 @@ public sealed class Igi2Soldiers
     /// <param name="body">Builds a body's surroundings, weapon and animation for a soldier's task and rig.</param>
     /// <param name="models">Resolves a placed model name to its mesh.</param>
     /// <param name="random">The session's run stream, which every soldier draws from.</param>
+    /// <param name="worn">The model each soldier wears, its face given; <see langword="null"/> for the level's own.</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Each stands where the level puts it, turned by its <c>Gamma</c> and upright; its weapon script arms it. Its task runs it
@@ -69,7 +70,8 @@ public sealed class Igi2Soldiers
         GameTask levelRoot,
         Func<Igi2HumanSoldierTask, Igi2BoneHierarchy?, (IIgi2HumanSurroundings Surroundings, IIgi2PlayerWeaponControl Weapon, IIgi2HumanAnimation Animation)> body,
         Func<string, Formats.World.MefModel?> models,
-        IgiRandom random)
+        IgiRandom random,
+        IReadOnlyDictionary<GameTask, string>? worn = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(body);
@@ -80,7 +82,8 @@ public sealed class Igi2Soldiers
         Igi2DeathAnimCycle cycle = new();
         foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(levelRoot).OfType<Igi2HumanSoldierTask>())
         {
-            Formats.World.MefModel? model = models(task.Model);
+            string wornModel = worn is not null && worn.TryGetValue(task, out string? face) ? face : task.Model;
+            Formats.World.MefModel? model = models(wornModel);
             Igi2BoneHierarchy? rig = model?.BoneHierarchy;
             (IIgi2HumanSurroundings surroundings, IIgi2PlayerWeaponControl weapon, IIgi2HumanAnimation animation) = body(task, rig);
             Igi2HumanSoldier soldier = new(weapon, animation, surroundings)
@@ -110,10 +113,10 @@ public sealed class Igi2Soldiers
                 }
             }
 
-            if (!looks.TryGetValue(task.Model, out Igi2BodyModel? look))
+            if (!looks.TryGetValue(wornModel, out Igi2BodyModel? look))
             {
-                look = Igi2BodyModel.From(task.Model, model);
-                looks[task.Model] = look;
+                look = Igi2BodyModel.From(wornModel, model);
+                looks[wornModel] = look;
             }
 
             soldier.Model = look;

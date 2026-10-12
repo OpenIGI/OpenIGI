@@ -76,6 +76,32 @@ public static class Igi2LineScript
         return new ScriptExpressionEvaluator(new Igi2ScriptContext(natives, functions)).EvaluateInt32(expression);
     }
 
+    /// <summary>Evaluates script text as one string expression, as <c>Script_ParseLine</c> and <c>Expression_EvalString</c> do.</summary>
+    /// <param name="source">The text.</param>
+    /// <param name="natives">The script namespace.</param>
+    /// <param name="functions">The natives the text may call.</param>
+    /// <returns>The expression's text, or empty when the text holds no expression or does not parse.</returns>
+    public static string EvaluateText(string? source, NativeRegistry natives, Igi2ScriptFunctions functions)
+    {
+        ArgumentNullException.ThrowIfNull(natives);
+        ArgumentNullException.ThrowIfNull(functions);
+        string text = source is null ? string.Empty : StripComments(source);
+        if (ScriptExpressionParser.IsBlank(text))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            ScriptExpression expression = ScriptExpressionParser.Parse(text, name => Constant(natives, name));
+            return new ScriptExpressionEvaluator(new Igi2ScriptContext(natives, functions)).EvaluateText(expression);
+        }
+        catch (ScriptExpressionException)
+        {
+            return string.Empty;
+        }
+    }
+
     private static int CommentStart(string line)
     {
         for (int i = 0; i < line.Length; i++)
