@@ -244,7 +244,7 @@ public static partial class Igi2AiContent
         Vector3d aimed = target.DetectablePosition;
         Vector3d end = new(aimed.X, aimed.Y, aimed.Z + 2048.0);
         float distance = Igi2AiMath.Distance(at, target.DetectablePosition);
-        bool clear = ai.World.Detection is not { } sight || sight.LineOfSight(start, end, 0x18000000u, out float transparency)
+        bool clear = ai.World.Detection is not { } sight || sight.LineOfSight(start, end, 0x18000000u, out float transparency, ai.Soldier)
             || transparency >= 0.800000011920929f;
         if (clear)
         {

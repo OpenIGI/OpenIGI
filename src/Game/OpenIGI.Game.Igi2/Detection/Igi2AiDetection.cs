@@ -252,8 +252,9 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     /// <param name="to">Where it ends.</param>
     /// <param name="groups">The query groups.</param>
     /// <param name="transparency">Receives how much the faces met let through.</param>
+    /// <param name="passes">The one human the line passes through, or <see langword="null"/>.</param>
     /// <returns><see langword="true"/> when it met nothing.</returns>
-    public bool LineOfSight(Vector3d from, Vector3d to, uint groups, out float transparency)
+    public bool LineOfSight(Vector3d from, Vector3d to, uint groups, out float transparency, object? passes = null)
     {
         transparency = 1f;
         if (sight is null)
@@ -261,7 +262,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
             return true;
         }
 
-        Igi2LineOfSight line = new(from, to, materials) { Includes = SightIncludes };
+        Igi2LineOfSight line = new(from, to, materials) { Includes = Through(passes, passes) };
         bool clear = sight.LineOfSight(line, groups);
         transparency = line.Transparency;
         return clear;
@@ -273,9 +274,11 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     /// </summary>
     /// <param name="from">The view.</param>
     /// <param name="to">The point.</param>
+    /// <param name="viewer">What looks, which the line passes through.</param>
+    /// <param name="target">What is looked at, which the line passes through.</param>
     /// <param name="material">The material crossed, when it is crossed and seen through.</param>
     /// <returns><see langword="true"/> when the point is seen.</returns>
-    internal bool CanSee(Vector3d from, Vector3d to, out int? material)
+    internal bool CanSee(Vector3d from, Vector3d to, object? viewer, object? target, out int? material)
     {
         material = null;
         if (sight is null)
@@ -283,7 +286,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
             return true;
         }
 
-        Igi2LineOfSight line = new(from, to, materials) { Includes = SightIncludes };
+        Igi2LineOfSight line = new(from, to, materials) { Includes = Through(viewer, target) };
         if (sight.LineOfSight(line, SightGroups))
         {
             return true;
@@ -296,6 +299,18 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
 
         material = line.Material;
         return true;
+    }
+
+    /// <summary>
+    /// What a line may meet: as <see cref="SightIncludes"/> says, but never the viewer or the target, as a human answers the line
+    /// (<c>Human_AIDetectionLineOfSightHandler</c>: every other human stops it).
+    /// </summary>
+    private Func<object, bool> Through(object? viewer, object? target)
+    {
+        Func<object, bool> includes = SightIncludes;
+        return viewer is null && target is null
+            ? includes
+            : owner => !ReferenceEquals(owner, viewer) && !ReferenceEquals(owner, target) && includes(owner);
     }
 }
 
@@ -426,7 +441,7 @@ public sealed class Igi2AiDetection
                 continue;
             }
 
-            Check(Item(list, target), info, view);
+            Check(Item(list, target), info, view, source);
         }
     }
 
@@ -515,7 +530,7 @@ public sealed class Igi2AiDetection
 
     // AIDetection_RunDetectionCheck (igi2 0x474950): the cone checked at its interval, and while any point is inside it, one
     // point looked at in turn at its interval; either every tick when continuous.
-    private void Check(Igi2DetectionItem item, Igi2DetectionInfo info, Igi2DetectionView view)
+    private void Check(Igi2DetectionItem item, Igi2DetectionInfo info, Igi2DetectionView view, IIgi2Detectable? source)
     {
         bool wasSeen = item.HasBeenFullVisible;
         bool continuous = (Flags & Continuous) != 0;
@@ -542,7 +557,7 @@ public sealed class Igi2AiDetection
             {
                 int point = item.CurrentPoint;
                 Vector3d at = info.Point(point);
-                bool seen = World.CanSee(view.Position, at, out int? material);
+                bool seen = World.CanSee(view.Position, at, source, item.Target, out int? material);
                 if (seen)
                 {
                     item.Materials[point] = material;
