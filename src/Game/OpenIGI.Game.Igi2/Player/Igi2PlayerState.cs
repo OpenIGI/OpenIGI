@@ -144,4 +144,16 @@ public static class Igi2PlayerState
 
     /// <summary>Crawling.</summary>
     public const int FlatCrawl = 80;
+
+    /// <summary>
+    /// The animation slot standing still plays (anim 61): <c>HumanPlayer_InitStateStand</c> plays slot 2, not the
+    /// stand state's own slot 0 (anim 60).
+    /// </summary>
+    public const int StandAnimation = 2;
+
+    /// <summary>The animation slot crouching still plays (anim 101): <c>HumanPlayer_InitStateCrouch</c> plays slot 25.</summary>
+    public const int CrouchAnimation = 25;
+
+    /// <summary>The animation slot a jump from a crouch plays (anim 117), <c>HumanPlayer_InitStateJump</c>.</summary>
+    public const int CrouchJumpAnimation = 68;
 }

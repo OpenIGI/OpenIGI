@@ -334,6 +334,55 @@ public sealed class Igi2PlayerLocomotionTests
         Assert.Equal(Igi2PlayerState.Crouch, player.Locomotion.CurrentState);
     }
 
+    /// <summary>
+    /// Standing and crouching still play animation slots of their own, not their states' slots:
+    /// <c>HumanPlayer_InitStateStand</c> plays slot 2 and <c>HumanPlayer_InitStateCrouch</c> slot 25.
+    /// </summary>
+    [Fact]
+    public void Standing_and_crouching_play_their_retail_slots()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeAnimation animation, _) = Igi2PlayerFakes.Player();
+        Tick(player, Igi2PlayerAction.None, grounded: true);
+        Assert.Equal((Igi2PlayerState.StandAnimation, 0, 0.2f), animation.Played[^1]);
+
+        Tick(player, Igi2PlayerAction.Crouch, grounded: true);
+
+        Assert.Equal(Igi2PlayerState.Crouch, player.Locomotion.CurrentState);
+        Assert.Equal((Igi2PlayerState.CrouchAnimation, 0, 0.2f), animation.Played[^1]);
+    }
+
+    /// <summary>Falling from a stand plays the stand's own slot, unblended (<c>HumanPlayer_InitStateFall</c>).</summary>
+    [Fact]
+    public void Falling_plays_the_pose_still_slot_unblended()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerFakes.FakeAnimation animation, _) = Igi2PlayerFakes.Player();
+        Tick(player, Igi2PlayerAction.None, grounded: true);
+
+        Tick(player, Igi2PlayerAction.None, grounded: false);
+
+        Assert.Equal(Igi2PlayerState.Fall, player.Locomotion.CurrentState);
+        Assert.Equal((Igi2PlayerState.Stand, 0, 0f), animation.Played[^1]);
+    }
+
+    /// <summary>
+    /// Walking backward and left, letting go of backward walks <b>right</b>: <c>HumanPlayer_RunStateWalkBackwardLeft</c>'s
+    /// own quirk, kept because the state sequence follows it.
+    /// </summary>
+    [Fact]
+    public void Walking_back_left_without_backward_walks_right()
+    {
+        Igi2HumanPlayer player = Igi2PlayerFakes.Player().Player;
+        Igi2PlayerAction walk = Igi2PlayerAction.ModifyWalkRun;
+        Tick(player, walk, grounded: true);
+        Tick(player, walk | Igi2PlayerAction.MoveBackwards | Igi2PlayerAction.MoveLeft, grounded: true);
+        Tick(player, walk | Igi2PlayerAction.MoveBackwards | Igi2PlayerAction.MoveLeft, grounded: true);
+        Assert.Equal(Igi2PlayerState.WalkBackwardLeft, player.Locomotion.CurrentState);
+
+        Tick(player, walk | Igi2PlayerAction.MoveLeft, grounded: true);
+
+        Assert.Equal(Igi2PlayerState.WalkRight, player.Locomotion.CurrentState);
+    }
+
     private static void Tick(Igi2HumanPlayer player, Igi2PlayerAction held, bool grounded)
     {
         Igi2PlayerFakes.Feed(player, held);

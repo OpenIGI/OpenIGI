@@ -78,7 +78,10 @@ public sealed class RetailIgi2GameplayTests
         Assert.True((player.Human.Signal & Igi2PlayerSignal.Grounded) != 0, "the player left the ground.");
     }
 
-    /// <summary>Spawned unarmed, the player's body plays its rig's looping <c>stand</c> from the start.</summary>
+    /// <summary>
+    /// Spawned unarmed, the player's body plays its rig's looping <c>stand</c> from the start, through animation slot 2:
+    /// <c>HumanPlayer_InitStateStand</c> plays slot 2 (anim 61), not the stand state's own slot 0.
+    /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void The_unarmed_player_plays_stand()
     {
@@ -88,7 +91,7 @@ public sealed class RetailIgi2GameplayTests
         player.Tick(Idle);
 
         Assert.Equal("stand", animation.Main.Clip?.Name);
-        Assert.Equal(Igi2PlayerState.Stand, animation.LastState);
+        Assert.Equal(Igi2PlayerState.StandAnimation, animation.LastState);
         Assert.False(animation.MainEnded);
     }
 

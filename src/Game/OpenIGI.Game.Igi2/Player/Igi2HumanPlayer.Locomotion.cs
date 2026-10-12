@@ -281,7 +281,7 @@ public sealed partial class Igi2HumanPlayer
     private void EnterStand()
     {
         Pose = Igi2HumanPose.Standing;
-        Animation.PlayState(Igi2PlayerState.Stand, 0, StateBlendSeconds);
+        Animation.PlayState(Igi2PlayerState.StandAnimation, 0, StateBlendSeconds);
         RequestedUpperBody = 1;
         AimPrecision(Igi2PrecisionType.Standing);
         Locomotion.Current = (_, _) => RunStand();
@@ -471,7 +471,8 @@ public sealed partial class Igi2HumanPlayer
             Diagonal(Igi2PlayerSignal.Backward, Igi2PlayerSignal.Right, Igi2PlayerState.WalkBackward, Igi2PlayerState.WalkRight)),
         new(GaitFamily.Walk, Igi2PlayerState.WalkBackwardLeft, -WalkSpeed, WalkStep, -SideSpeed, SideStep, null, Igi2PlayerState.RunBackwardLeft,
             [Igi2PlayerState.RunBackwardLeft, Igi2PlayerState.WalkBackward, Igi2PlayerState.CrouchWalkBackwardLeft], false,
-            Diagonal(Igi2PlayerSignal.Backward, Igi2PlayerSignal.Left, Igi2PlayerState.WalkBackward, Igi2PlayerState.WalkLeft)),
+            // Letting go of backward goes to walking RIGHT: HumanPlayer_RunStateWalkBackwardLeft's own quirk.
+            Diagonal(Igi2PlayerSignal.Backward, Igi2PlayerSignal.Left, Igi2PlayerState.WalkBackward, Igi2PlayerState.WalkRight)),
         new(GaitFamily.Walk, Igi2PlayerState.WalkRight, 0f, WalkStep, SideSpeed, SideStep, null, Igi2PlayerState.RunRight,
             [Igi2PlayerState.CrouchWalkRight], false,
             Side(Igi2PlayerSignal.Right, Igi2PlayerState.WalkForwardRight, Igi2PlayerState.WalkBackwardRight, Igi2PlayerState.Stand)),
@@ -634,7 +635,7 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>The entry crouching still and turning crouched share.</summary>
     /// <remarks>Coming up from lying flat takes a zoomed weapon out of its zoomed fire mode first.</remarks>
-    private void EnterCrouched(int state)
+    private void EnterCrouched(int animation)
     {
         if (Pose == Igi2HumanPose.LyingFlat)
         {
@@ -642,7 +643,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Pose = Igi2HumanPose.Crouching;
-        Animation.PlayState(state, 0, StateBlendSeconds);
+        Animation.PlayState(animation, 0, StateBlendSeconds);
         RequestedUpperBody = 4;
         AimPrecision(Igi2PrecisionType.Crouching);
     }
@@ -650,7 +651,7 @@ public sealed partial class Igi2HumanPlayer
     // State 23 -- InitStateCrouch 0x4A89F0, RunStateCrouch 0x4A8B20.
     private void EnterCrouch()
     {
-        EnterCrouched(Igi2PlayerState.Crouch);
+        EnterCrouched(Igi2PlayerState.CrouchAnimation);
         Locomotion.Current = (_, _) => RunCrouch();
     }
 

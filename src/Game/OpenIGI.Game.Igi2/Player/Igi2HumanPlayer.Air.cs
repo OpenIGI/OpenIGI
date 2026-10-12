@@ -28,7 +28,8 @@ public sealed partial class Igi2HumanPlayer
             return;
         }
 
-        Animation.PlayState(Igi2PlayerState.Jump, 0, StateBlendSeconds);
+        Animation.PlayState(
+            Pose == Igi2HumanPose.Crouching ? Igi2PlayerState.CrouchJumpAnimation : Igi2PlayerState.Jump, 0, StateBlendSeconds);
         AimJumpPrecision(Pose == Igi2HumanPose.Crouching);
         Surroundings.PlaySound("jump_1");
 
@@ -113,7 +114,19 @@ public sealed partial class Igi2HumanPlayer
     // State 37 -- InitStateFall 0x4AC1F0, RunStateFall 0x4AC2E0.
     private void EnterFall()
     {
-        Animation.PlayState(Igi2PlayerState.Fall, 0, 0f);
+        // InitStateFall plays the pose's own still slot, unblended; another pose plays nothing new.
+        int? still = Pose switch
+        {
+            Igi2HumanPose.Standing => Igi2PlayerState.Stand,
+            Igi2HumanPose.Crouching => Igi2PlayerState.Crouch,
+            Igi2HumanPose.LyingFlat => Igi2PlayerState.Flat,
+            _ => null,
+        };
+        if (still is int slot)
+        {
+            Animation.PlayState(slot, 0, 0f);
+        }
+
         Speed = AccumulatedSpeed;
         AimPrecision(Igi2PrecisionType.Running);
         Locomotion.Current = (_, _) => RunFall();
