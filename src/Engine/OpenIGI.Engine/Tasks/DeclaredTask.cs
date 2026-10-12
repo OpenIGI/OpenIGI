@@ -39,7 +39,10 @@ public sealed class DeclaredTask : GameTask
     /// <param name="value">Receives the value.</param>
     /// <returns><see langword="true"/> when the type declares a parameter with that name.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-    public bool TryGetValue(string name, out object? value)
+    public bool TryGetValue(string name, out object? value) => TryGetScriptValue(name, out value);
+
+    /// <inheritdoc/>
+    public override bool TryGetScriptValue(string name, out object? value)
     {
         ArgumentNullException.ThrowIfNull(name);
 

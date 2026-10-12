@@ -251,6 +251,21 @@ public abstract class GameTask
     {
     }
 
+    /// <summary>Gets the value a parameter was given, by the name level data declares it under.</summary>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">Receives the value.</param>
+    /// <returns><see langword="true"/> when the type declares a parameter with that name.</returns>
+    /// <remarks>
+    /// The same question whether the type is a class or a placeholder: the code the <c>[ScriptParam]</c> generator emits answers it
+    /// from the class's members, <see cref="DeclaredTask"/> from the values it kept. Readers that look a level's data up by type name
+    /// use it, so a type keeps being read when a class comes to implement it.
+    /// </remarks>
+    public virtual bool TryGetScriptValue(string name, out object? value)
+    {
+        value = null;
+        return false;
+    }
+
     /// <summary>Gets the script parameters this task type declares, in wire order.</summary>
     /// <remarks>Overridden by the generated code; empty for a type that declares none.</remarks>
     protected virtual IReadOnlyList<TaskParameter> ScriptParameters => [];
