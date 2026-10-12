@@ -128,7 +128,7 @@ public sealed partial class Igi2SoundGeneratorTask : Igi2Task
     {
         for (GameTask? task = Parent; task is not null; task = task.Parent)
         {
-            if (task is DeclaredTask declared && declared.TryGetValue("Position", out object? value) && value is Vector3d position)
+            if (task.TryGetScriptValue("Position", out object? value) && value is Vector3d position)
             {
                 return position;
             }

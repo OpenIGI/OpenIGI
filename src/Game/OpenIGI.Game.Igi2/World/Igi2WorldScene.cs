@@ -301,11 +301,9 @@ public sealed class Igi2WorldScene
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared
-                && string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
-                && declared.Id != GameTask.NoId)
+            if (string.Equals(child.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal) && child.Id != GameTask.NoId)
             {
-                into[declared.Id] = Igi2SplineObject.Read(declared);
+                into[child.Id] = Igi2SplineObject.Read(child);
             }
 
             CollectSplines(child, into);
@@ -320,27 +318,22 @@ public sealed class Igi2WorldScene
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is IIgi2PlacedTask && TryReadPlacement(child, out Igi2Placement typed))
+            if (child is DeclaredTask or IIgi2PlacedTask && TryReadPlacement(child, out Igi2Placement placement))
             {
-                into.Add(typed);
+                into.Add(placement);
+            }
+
+            // A spline's segments are not declared by anything -- they are made at load, between consecutive
+            // waypoints -- so they are read from the run as a whole rather than from a task. See
+            // <see cref="Igi2SplineObject"/>.
+            if (string.Equals(child.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
+                && splines.TryGetValue(child.Id, out Igi2SplineRun run))
+            {
+                into.AddRange(run.Segments);
             }
 
             if (child is DeclaredTask declared)
             {
-                if (TryReadPlacement(declared, out Igi2Placement placement))
-                {
-                    into.Add(placement);
-                }
-
-                // A spline's segments are not declared by anything -- they are made at load, between
-                // consecutive waypoints -- so they are read from the run as a whole rather than from a
-                // task. See <see cref="Igi2SplineObject"/>.
-                if (string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
-                    && splines.TryGetValue(declared.Id, out Igi2SplineRun run))
-                {
-                    into.AddRange(run.Segments);
-                }
-
                 // A locomotive places its whole rake. A carriage is a Train whose parent is one, and it
                 // carries no distance of its own -- Train_UpdateInternalDataHandler (igi2ed 0x47F8E0)
                 // calls Train_Move only for the one at the front, and that moves all of them.
@@ -420,19 +413,8 @@ public sealed class Igi2WorldScene
     /// <param name="name">The parameter's name, as level data declares it.</param>
     /// <param name="value">Receives the value.</param>
     /// <returns><see langword="true"/> when the task has the parameter.</returns>
-    internal static bool TryGetParameter(GameTask task, string name, out object? value)
-    {
-        switch (task)
-        {
-            case DeclaredTask declared:
-                return declared.TryGetValue(name, out value);
-            case IIgi2PlacedTask placed:
-                return placed.TryGetValue(name, out value);
-            default:
-                value = null;
-                return false;
-        }
-    }
+    internal static bool TryGetParameter(GameTask task, string name, out object? value) =>
+        task is IIgi2PlacedTask placed ? placed.TryGetValue(name, out value) : task.TryGetScriptValue(name, out value);
 
     private static bool TryReadPlacement(GameTask task, out Igi2Placement placement)
     {

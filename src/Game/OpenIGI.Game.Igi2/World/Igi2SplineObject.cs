@@ -52,16 +52,15 @@ public static class Igi2SplineObject
     /// A pair whose waypoint names no <c>Segment Model</c> still belongs to the track — it simply draws
     /// nothing — which is why the two lists are not the same length.
     /// </remarks>
-    public static Igi2SplineRun Read(DeclaredTask spline)
+    public static Igi2SplineRun Read(GameTask spline)
     {
         ArgumentNullException.ThrowIfNull(spline);
 
         List<Waypoint> waypoints = [];
         foreach (GameTask child in spline.Children)
         {
-            if (child is DeclaredTask declared
-                && string.Equals(declared.Type.Name, WaypointType, StringComparison.Ordinal)
-                && Waypoint.TryRead(declared, out Waypoint waypoint))
+            if (string.Equals(child.Type.Name, WaypointType, StringComparison.Ordinal)
+                && Waypoint.TryRead(child, out Waypoint waypoint))
             {
                 waypoints.Add(waypoint);
             }
@@ -194,11 +193,11 @@ public static class Igi2SplineObject
             first.Z, second.Z, third.Z);
     }
 
-    private static bool Flag(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is bool value && value;
+    private static bool Flag(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? raw) && raw is bool value && value;
 
-    private static int Number(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? raw) && raw is int value ? value : fallback;
+    private static int Number(GameTask task, string name, int fallback) =>
+        task.TryGetScriptValue(name, out object? raw) && raw is int value ? value : fallback;
 
     private static Vector3f Normalize(Vector3f value)
     {
@@ -225,21 +224,21 @@ public static class Igi2SplineObject
         bool Flipped,
         bool Automatic)
     {
-        public static bool TryRead(DeclaredTask task, out Waypoint waypoint)
+        public static bool TryRead(GameTask task, out Waypoint waypoint)
         {
             waypoint = default;
-            if (!task.TryGetValue(Igi2WorldScene.PositionParameter, out object? rawPosition)
+            if (!task.TryGetScriptValue(Igi2WorldScene.PositionParameter, out object? rawPosition)
                 || rawPosition is not Vector3d position)
             {
                 return false;
             }
 
-            Vector3f angles = task.TryGetValue(Igi2WorldScene.OrientationParameter, out object? rawAngles)
+            Vector3f angles = task.TryGetScriptValue(Igi2WorldScene.OrientationParameter, out object? rawAngles)
                 && rawAngles is Vector3f read
                     ? read
                     : default;
 
-            string model = task.TryGetValue(SegmentModelParameter, out object? rawModel)
+            string model = task.TryGetScriptValue(SegmentModelParameter, out object? rawModel)
                 && rawModel is string name
                 && !string.IsNullOrWhiteSpace(name)
                     ? name

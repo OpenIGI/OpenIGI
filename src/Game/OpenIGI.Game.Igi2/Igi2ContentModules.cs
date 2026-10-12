@@ -197,6 +197,9 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2MissionScoreSettingsTask>(Flow.Igi2MissionScoreSettingsTask.TypeName);
         context.Types.Register<World.Igi2BuildingTask>(World.Igi2BuildingTask.TypeName);
         context.Types.Register<Audio.Igi2AmbientAreaTask>(Audio.Igi2AmbientAreaTask.TypeName);
+        context.Types.Register<World.Igi2RotateAttachmentTask>(World.Igi2RotateAttachmentTask.TypeName);
+        context.Types.Register<World.Igi2SplineObjTask>(World.Igi2SplineObjTask.TypeName);
+        context.Types.Register<World.Igi2SplineObjWaypointTask>(World.Igi2SplineObjWaypointTask.TypeName);
 
         // The map computer's level data: its objectives, its limit and its highlights, and the markers they name.
         context.Types.Register<Computer.Igi2DefineComputerObjectiveTask>(Computer.Igi2DefineComputerObjectiveTask.TypeName);
