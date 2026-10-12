@@ -510,6 +510,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
             activatables.Add(action);
         }
 
+        foreach (Interaction.Igi2TerminalTask terminal in Descendants(root).OfType<Interaction.Igi2TerminalTask>())
+        {
+            Arm(terminal, Interaction.Igi2TerminalTask.TypeName);
+            activatables.Add(terminal);
+        }
+
         foreach (Interaction.Igi2AlarmControlTask alarm in Descendants(root).OfType<Interaction.Igi2AlarmControlTask>())
         {
             Arm(alarm, Interaction.Igi2AlarmControlTask.TypeName);

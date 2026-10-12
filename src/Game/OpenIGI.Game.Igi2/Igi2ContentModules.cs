@@ -231,6 +231,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2ConveyorBeltTask>(Interaction.Igi2ConveyorBeltTask.TypeName);
         context.Types.Register<Interaction.Igi2ExplodeObjectTask>(Interaction.Igi2ExplodeObjectTask.TypeName);
         context.Types.Register<Interaction.Igi2GenericTbaTask>(Interaction.Igi2GenericTbaTask.TypeName);
+        context.Types.Register<Interaction.Igi2TerminalTask>(Interaction.Igi2TerminalTask.TypeName);
         context.Types.Register<Interaction.Igi2AlarmControlTask>(Interaction.Igi2AlarmControlTask.TypeName);
         context.Types.Register<Interaction.Igi2EditRigidObjTask>(Interaction.Igi2EditRigidObjTask.TypeName);
         context.Types.Register<Paths.Igi2SplinePathNodeTask>(Paths.Igi2SplinePathNodeTask.TypeName);

@@ -32,19 +32,10 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2AlarmControlTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2WorkedActivatable
+    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2WorkedActivatable, IIgi2TerminalOwner
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AlarmControl";
-
-    /// <summary>The magic vertex a human hacks it from, <c>1</c>.</summary>
-    public const int ActivateVertex = 1;
-
-    /// <summary>How far to either side of its vertex a human may stand and still be offered it, <c>3072</c> (0.75 m).</summary>
-    public const double ActivateHalfWidth = 3072.0;
-
-    /// <summary>The ticks after its last use that it is still in use, <c>2</c>.</summary>
-    public const int InUseTicks = 2;
 
     /// <summary>The AI event an alarm that starts raises, <c>AIEVENT_ALARMON</c>.</summary>
     public const int AlarmOnEvent = 7;
@@ -52,30 +43,26 @@ public sealed partial class Igi2AlarmControlTask
     /// <summary>The AI event an alarm that stops raises, <c>AIEVENT_ALARMOFF</c>.</summary>
     public const int AlarmOffEvent = 8;
 
-    private byte _isInUse;
-    private byte _isLastInUse;
-    private int _lastInUseTick;
-    private int _isSetHacked;
-    private byte _isActive = 1;
-    private byte _isHacked;
-    private byte _isHackedThisTick;
-    private int _hackedThisTickTick;
-    private int _clientId;
     private int _team;
     private int _isTrigger;
     private int _isAlarm;
     private int _isLastAlarm;
     private int _triggerLastTick = -10000;
-    private Igi2LevelExpression? _activeExpression;
     private Igi2LevelExpression? _triggerExpression;
     private Igi2LevelExpression? _alarmExpression;
-    private Igi2LevelFlowTask? _flow;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2AlarmControlTask"/> class.</summary>
-    public Igi2AlarmControlTask() => Explosive = new Igi2Explosive(this, this);
+    public Igi2AlarmControlTask()
+    {
+        Explosive = new Igi2Explosive(this, this);
+        Terminal = new Igi2Terminal(this);
+    }
 
     /// <summary>Gets what it does when it explodes.</summary>
     public Igi2Explosive Explosive { get; }
+
+    /// <summary>Gets the terminal it is.</summary>
+    public Igi2Terminal Terminal { get; }
 
     /// <summary>Gets or sets what an alarm that starts does beside its AI event: count on the player's <c>nTimesAlarmTriggered</c>.</summary>
     public Action? AlarmRaised { get; set; }
@@ -139,11 +126,11 @@ public sealed partial class Igi2AlarmControlTask
 
     /// <summary>Gets or sets the seconds hacking it takes.</summary>
     [ScriptParam(ScriptParamType.Real32, "Hack Time (s)")]
-    public float HackTime { get; set; } = 4f;
+    public float HackTime { get; set; } = Igi2Terminal.DefaultHackTime;
 
     /// <inheritdoc/>
     [ScriptParam(ScriptParamType.String32, "Activate Sound")]
-    public string ActivateSound { get; set; } = "tba_hackcomp";
+    public string ActivateSound { get; set; } = Igi2Terminal.DefaultActivateSound;
 
     /// <summary>Gets or sets the script that says whether its alarm is triggered.</summary>
     [ScriptParam(ScriptParamType.VarString, "Trigger Expression")]
@@ -154,19 +141,19 @@ public sealed partial class Igi2AlarmControlTask
     public string AlarmScript { get; set; } = string.Empty;
 
     /// <summary>Gets a value indicating whether it may be hacked, <c>isActive</c>.</summary>
-    public bool IsActive => _isActive != 0;
+    public bool IsActive => Terminal.IsActive;
 
     /// <summary>Gets a value indicating whether it is hacked at, <c>isInUse</c>.</summary>
-    public bool IsInUse => _isInUse != 0;
+    public bool IsInUse => Terminal.IsInUse;
 
     /// <summary>Gets a value indicating whether it has been hacked, <c>isHacked</c>.</summary>
-    public bool IsHacked => _isHacked != 0;
+    public bool IsHacked => Terminal.IsHacked;
 
     /// <summary>Gets a value indicating whether it was hacked this tick, <c>isHackedThisTick</c>.</summary>
-    public bool IsHackedThisTick => _isHackedThisTick != 0;
+    public bool IsHackedThisTick => Terminal.IsHackedThisTick;
 
     /// <summary>Gets the level flow's tick it was hacked on, <c>nHackedThisFrameTick</c>.</summary>
-    public int HackedTick => _hackedThisTickTick;
+    public int HackedTick => Terminal.HackedTick;
 
     /// <summary>Gets a value indicating whether its alarm is triggered, <c>isTrigger</c>.</summary>
     public bool IsTrigger => _isTrigger != 0;
@@ -187,8 +174,7 @@ public sealed partial class Igi2AlarmControlTask
     public Vector3d Centre => Position;
 
     /// <inheritdoc/>
-    /// <remarks>The model it wears, with its largest scale of one; with none, it has no sphere.</remarks>
-    public float Radius => Explosive.Models?.Invoke(Explosive.Model)?.NativeMarkerBound ?? 0f;
+    public float Radius => Terminal.Radius;
 
     /// <inheritdoc/>
     public Igi2ActivateKind Kind => Igi2ActivateKind.Terminal;
@@ -198,8 +184,7 @@ public sealed partial class Igi2AlarmControlTask
     public float ActivateTime => HackTime;
 
     /// <inheritdoc/>
-    public Vector3d MagicVertex =>
-        Igi2MagicVertex.Position(Explosive.Models?.Invoke(Explosive.Model), ActivateVertex, Explosive.Frame, Position);
+    public Vector3d MagicVertex => Terminal.MagicVertex;
 
     /// <inheritdoc/>
     public IReadOnlyList<float> CurrentOrientation => Explosive.Frame;
@@ -208,39 +193,18 @@ public sealed partial class Igi2AlarmControlTask
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        RunTerminal(level);
+        Terminal.Run(level);
         RunAlarm(level);
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <c>Terminal_EvaluateActivateHandler</c> (<c>igi2 0x4CAF40</c>): only while active, from its second magic vertex, and only to
-    /// a view in front of it and within three quarters of a metre to either side.
-    /// </remarks>
-    public void EvaluateActivate(Igi2EvaluateActivate context)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        if (_isActive != 0)
-        {
-            context.OfferFromFront(MagicVertex, Explosive.Frame, ActivateHalfWidth, this);
-        }
-    }
+    public void EvaluateActivate(Igi2EvaluateActivate context) => Terminal.EvaluateActivate(context, this);
 
     /// <inheritdoc/>
-    /// <remarks><c>Terminal_ActivateHandler</c> (<c>igi2 0x4CB060</c>): in use, as of this tick.</remarks>
-    public void Activate(int activateTime)
-    {
-        _isInUse = 1;
-        _lastInUseTick = _flow?.Tick ?? 0;
-    }
+    public void Activate(int activateTime) => Terminal.Activate();
 
     /// <inheritdoc/>
-    /// <remarks>What <c>HumanPlayer_RunStateActivateTerminal</c> (<c>igi2 0x4AE3C2</c>) sets once the key has been held long enough.</remarks>
-    public void Finish()
-    {
-        _isSetHacked = 1;
-        _clientId = 0;
-    }
+    public void Finish() => Terminal.Hacked();
 
     /// <inheritdoc/>
     public void WeaponHit(in Igi2WeaponHit hit) => Explosive.WeaponHit(hit.Damage);
@@ -269,13 +233,7 @@ public sealed partial class Igi2AlarmControlTask
     /// </remarks>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
-        Explosive.ExportVars(variables);
-        variables.BindInt(this, "isInUse", () => _isInUse, value => _isInUse = (byte)value, sizeof(byte));
-        variables.BindInt(this, "isLastInUse", () => _isLastInUse, value => _isLastInUse = (byte)value, sizeof(byte));
-        variables.BindInt(this, "isActive", () => _isActive, value => _isActive = (byte)value, sizeof(byte));
-        variables.BindInt(this, "isHacked", () => _isHacked, value => _isHacked = (byte)value, sizeof(byte));
-        variables.BindInt(this, "isHackedThisTick", () => _isHackedThisTick, value => _isHackedThisTick = (byte)value, sizeof(byte));
-        variables.BindInt(this, "nClientID", () => _clientId, value => _clientId = value);
+        Terminal.ExportVars(variables, this);
         variables.BindInt(this, "nTeam", () => _team, value => _team = value);
         variables.BindInt(this, "isTrigger", () => _isTrigger, value => _isTrigger = value);
         variables.BindInt(this, "isAlarm", () => _isAlarm, value => _isAlarm = value);
@@ -288,53 +246,12 @@ public sealed partial class Igi2AlarmControlTask
     /// </remarks>
     protected override void OnParsed() => Explosive.Reset();
 
-    // Terminal_RunHandler (igi2 0x4CA9E0), single player.
-    private void RunTerminal(Igi2LevelRun level)
-    {
-        _flow = level.LevelFlow;
-        int flowTick = _flow?.Tick ?? 0;
-        if (_isHackedThisTick != 0)
-        {
-            _isHackedThisTick = 0;
-        }
-
-        if (_isSetHacked != 0)
-        {
-            _isSetHacked = 0;
-            _isHacked = 1;
-            _isHackedThisTick = 1;
-            _hackedThisTickTick = flowTick;
-        }
-
-        level.RunChildren(this);
-        Explosive.Run(level);
-        if (Explosive.IsExploded)
-        {
-            _isActive = 0;
-        }
-        else
-        {
-            _activeExpression ??= new Igi2LevelExpression(ActiveScript, Name, level.Natives);
-            if (!_activeExpression.IsEmpty)
-            {
-                _isActive = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_activeExpression));
-            }
-        }
-
-        if (flowTick > _lastInUseTick + InUseTicks)
-        {
-            _isInUse = 0;
-        }
-
-        _isLastInUse = _isInUse;
-    }
-
     // AlarmControl_RunHandler (igi2 0x4D0320): each script's value chopped and taken as a signed byte.
     private void RunAlarm(Igi2LevelRun level)
     {
         int wasAlarm = _isAlarm;
         _isLastAlarm = wasAlarm;
-        if (Explosive.IsExploded || _isActive == 0)
+        if (Explosive.IsExploded || !Terminal.IsActive)
         {
             _isTrigger = 0;
             _isAlarm = 0;

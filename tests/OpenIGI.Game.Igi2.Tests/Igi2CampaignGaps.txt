@@ -110,24 +110,6 @@ name SlotSelector_isCategorySelected    # 11 12 13 14 15 16 17 21 22 23 24 25 26
 name SlotSelector_isSlotEnabled    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isSlotVisible    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isThisCategorySelected    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Terminal_110.isHacked    # 13 16 23 24 33 | MISSIONS/location1/level3/objects.qvm, MISSIONS/location1/level6/ai/520.qvm, …
-name Terminal_110.isHackedThisTick    # 16 23 24 33 | MISSIONS/location1/level6/objects.qvm, MISSIONS/location2/level3/objects.qvm, …
-name Terminal_1100.isHacked    # 35 | MISSIONS/location3/level5/objects.qvm
-name Terminal_1120.isHacked    # 35 | MISSIONS/location3/level5/objects.qvm
-name Terminal_115.isHacked    # 26 | MISSIONS/location2/level6/objects.qvm
-name Terminal_115.isHackedThisTick    # 26 | MISSIONS/location2/level6/objects.qvm
-name Terminal_1200.isHacked    # 35 | MISSIONS/location3/level5/objects.qvm
-name Terminal_1204.isHacked    # 35 | MISSIONS/location3/level5/objects.qvm
-name Terminal_1205.isHacked    # 35 | MISSIONS/location3/level5/objects.qvm
-name Terminal_130.isHacked    # 12 21 | MISSIONS/location1/level2/objects.qvm, MISSIONS/location2/level1/objects.qvm
-name Terminal_130.isHackedThisTick    # 12 | MISSIONS/location1/level2/objects.qvm
-name Terminal_1300.isHackedThisTick    # 22 | MISSIONS/location2/level2/objects.qvm
-name Terminal_2719.isHacked    # 36 | MISSIONS/location3/level6/objects.qvm
-name Terminal_2751.isHacked    # 36 | MISSIONS/location3/level6/objects.qvm
-name Terminal_300.isHacked    # 16 | MISSIONS/location1/level6/objects.qvm
-name Terminal_3272.isHacked    # 36 | MISSIONS/location3/level6/objects.qvm
-name Terminal_3810.isHacked    # 23 | MISSIONS/location2/level3/objects.qvm
-name Terminal_3810.isHackedThisTick    # 23 | MISSIONS/location2/level3/objects.qvm
 name ToggleBox_998.isOn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Wire_4035.isInUse    # 35 | MISSIONS/location3/level5/objects.qvm
 name priboy_bed_talking    # 21 | MISSIONS/location2/level1/objects.qvm
@@ -170,7 +152,6 @@ type RainEffect    # 13 16 17 | MISSIONS/location1/level3/objects.qvm, MISSIONS/
 type ScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type SlideBar    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type StationaryGun    # 14 15 24 25 32 33 | MISSIONS/location1/level4/objects.qvm, MISSIONS/location1/level5/objects.qvm, …
-type Terminal    # 12 13 16 21 22 23 24 26 33 35 36 | MISSIONS/location1/level2/objects.qvm, MISSIONS/location1/level3/objects.qvm, …
 type ToggleBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type Train    # 12 | MISSIONS/location1/level2/objects.qvm
 type Wire    # 22 23 33 35 36 | MISSIONS/location2/level2/objects.qvm, MISSIONS/location2/level3/objects.qvm, …
