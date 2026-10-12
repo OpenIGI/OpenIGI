@@ -66,9 +66,12 @@ public sealed class Igi2HumanGroundTests
         Assert.Equal(2000.0, player.DistanceToGround);
     }
 
-    /// <summary>While a slope slides the body, ground up to two metres below still holds it.</summary>
+    /// <summary>
+    /// A sliding body is held by the same tolerance as any other: <c>Human_GroundCollision</c> stands only within it or
+    /// on its AI graph, so ground two metres below a sliding body leaves it in the air.
+    /// </summary>
     [Fact]
-    public void A_sliding_body_keeps_ground_two_metres_below()
+    public void A_sliding_body_is_not_held_beyond_the_tolerance()
     {
         (Igi2HumanPlayer player, Igi2PlayerFakes.FakeSurroundings surroundings) = Body();
         surroundings.World.Surfaces.Add(new Igi2PlayerFakes.FakeCollider(1000.0));
@@ -77,8 +80,8 @@ public sealed class Igi2HumanGroundTests
         Vector3d to = new(0.0, 0.0, 8000.0);
         player.GroundCollision(to, ref to, Tolerance);
 
-        Assert.True(player.Signal.HasFlag(Igi2PlayerSignal.Grounded));
-        Assert.Equal(1000.0, to.Z);
+        Assert.False(player.Signal.HasFlag(Igi2PlayerSignal.Grounded));
+        Assert.Equal(8000.0, to.Z);
     }
 
     /// <summary>A ceiling nearer than 1.8 metres above the feet raises the low-roof signal; a floor overhead does not count.</summary>
@@ -96,7 +99,8 @@ public sealed class Igi2HumanGroundTests
         player.GroundCollision(to, ref to, Tolerance);
 
         Assert.Equal(low, ((uint)player.Signal & 0x8) != 0);
-        Assert.Equal(facesUp ? 0.0 : height, player.DistanceToRoof);
+        // A floor overhead is no roof: the distance keeps its start, 2^30 (Human_CreateHandler).
+        Assert.Equal(facesUp ? 1073741824.0 : height, player.DistanceToRoof);
     }
 
     /// <summary>With nothing below, a floor just above the feet is found by looking up, and the body is lifted onto it.</summary>

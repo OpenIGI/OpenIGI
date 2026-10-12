@@ -24,9 +24,6 @@ public abstract partial class Igi2Human
     /// <summary>A roof nearer than this above the feet, 1.8 metres, is low.</summary>
     private const double LowRoofHeight = 7372.8;
 
-    /// <summary>How far below the feet a sliding body still counts as on the ground: two metres.</summary>
-    private const double SlidingReach = 8192.0;
-
     /// <summary>Where the material probe starts above the struck point, and how far down it reaches.</summary>
     private const double MaterialProbeAbove = 1638.4;
 
@@ -55,10 +52,12 @@ public abstract partial class Igi2Human
     public Igi2Intersection GroundIntersection { get; } = new();
 
     /// <summary>Gets how far the feet are above the ground found, <c>Human_s.vDistanceToGround</c>.</summary>
-    public double DistanceToGround { get; private set; }
+    /// <remarks><c>Human_CreateHandler</c> starts it at 2^30, as far as "nothing below" reaches.</remarks>
+    public double DistanceToGround { get; private set; } = 1073741824.0;
 
     /// <summary>Gets how far the roof is above the feet, <c>Human_s.vDistanceToRoof</c>, as of the last roof found.</summary>
-    public double DistanceToRoof { get; private set; }
+    /// <remarks>Starts at 2^30 (<c>Human_CreateHandler</c>).</remarks>
+    public double DistanceToRoof { get; private set; } = 1073741824.0;
 
     /// <summary>Gets or sets how far above the feet the footing query starts, <c>Human_s.vGroundCheckZOffset</c>.</summary>
     public float GroundCheckZOffset { get; set; }
@@ -70,7 +69,8 @@ public abstract partial class Igi2Human
     public float GroundAngle { get; private set; }
 
     /// <summary>Gets or sets how lit the human is where it stands, <c>Human_s.vLightmap</c>.</summary>
-    public float Lightmap { get; set; }
+    /// <remarks>Starts fully lit, 1 (<c>Human_CreateHandler</c>), which the first probe averages against.</remarks>
+    public float Lightmap { get; set; } = 1f;
 
     /// <summary>Gets or sets the speed a slope is pushing the body at, <c>Human_s.tIdealSlidingSpeed</c>.</summary>
     public Vector3f IdealSlidingSpeed { get; set; }
@@ -195,7 +195,7 @@ public abstract partial class Igi2Human
 
         double distance = ((Fpu)to.Z - ground.Position.Z).Value;
         DistanceToGround = distance;
-        return distance <= tolerance || (IdealSlidingSpeed.Z != 0f && distance < SlidingReach);
+        return distance <= tolerance;
     }
 
     /// <summary>Standing: normals up, the feet on the ground, hold of what is underfoot, and the slope of the step.</summary>
