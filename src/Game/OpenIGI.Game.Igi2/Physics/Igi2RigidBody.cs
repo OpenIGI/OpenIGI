@@ -200,11 +200,10 @@ public sealed class Igi2RigidBody
         Fpu dx = (((qx + qw) * hx) + t) - yw;
         Fpu dy = (yy + t) - yz;
         Fpu dz = (xw + t) - xz;
-        Fpu dw = (t + a) - zz;
         qx = new Fpu((dx + qx).F);
         qy = new Fpu((dy + qy).F);
         qz = new Fpu((dz + qz).F);
-        qw = dw + qw;
+        qw = ((qw + t) + a) - zz;
 
         Normalise(ref qx, ref qy, ref qz, ref qw);
         Normalise(ref qx, ref qy, ref qz, ref qw);
@@ -233,7 +232,7 @@ public sealed class Igi2RigidBody
             (largest, middle, smallest) = x > y ? (z, x, y) : (z, y, x);
         }
 
-        return (Fpu)largest + (((Fpu)middle * MiddleWeight) + ((Fpu)smallest * SmallestWeight));
+        return ((Fpu)largest + ((Fpu)smallest * SmallestWeight)) + ((Fpu)middle * MiddleWeight);
     }
 
     /// <summary>The reciprocal of a vector's length, as the client normalises: <c>1.0 / fsqrt((x*x + y*y) + z*z)</c>.</summary>

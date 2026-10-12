@@ -330,9 +330,9 @@ public sealed class Igi2PhysicsObject
             point.IsContact = false;
             Vector3f p = point.LocalPosition;
             Vector3f arm = new(
-                ((((Fpu)m[1] * p.Y) + ((Fpu)m[0] * p.X)) + ((Fpu)m[2] * p.Z)).F,
-                ((((Fpu)m[4] * p.Y) + ((Fpu)m[3] * p.X)) + ((Fpu)m[5] * p.Z)).F,
-                ((((Fpu)m[7] * p.Y) + ((Fpu)m[6] * p.X)) + ((Fpu)m[8] * p.Z)).F);
+                ((((Fpu)m[2] * p.Z) + ((Fpu)m[1] * p.Y)) + ((Fpu)m[0] * p.X)).F,
+                ((((Fpu)m[5] * p.Z) + ((Fpu)m[4] * p.Y)) + ((Fpu)m[3] * p.X)).F,
+                ((((Fpu)m[8] * p.Z) + ((Fpu)m[7] * p.Y)) + ((Fpu)m[6] * p.X)).F);
             Vector3d start = new(((Fpu)arm.X + origin.X).Value, ((Fpu)arm.Y + origin.Y).Value, ((Fpu)arm.Z + origin.Z).Value);
             Vector3f velocity = Body.PointVelocity(arm);
             _contactLines.Starts[lines] = start;
