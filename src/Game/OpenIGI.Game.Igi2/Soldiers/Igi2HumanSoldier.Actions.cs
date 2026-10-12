@@ -156,29 +156,6 @@ public sealed partial class Igi2HumanSoldier
         }
     }
 
-    /// <summary>
-    /// Where a bone stands in the world, <c>BoneDynCubeObj_GetBonePosition</c> (<c>igi2 0x568190</c>): its place as the bones now stand,
-    /// turned by the body's rows and added to its position; the body's position with no bones or no such bone.
-    /// </summary>
-    /// <param name="bone">The bone's name.</param>
-    /// <returns>The position.</returns>
-    public Vector3d BonePosition(string bone)
-    {
-        if (BodyPose() is not { } pose || Model is not { } model || Igi2BoneBranches.IndexOf(model.BoneNames, bone) is not (>= 0 and var index)
-            || index >= pose.Pose.BoneCount)
-        {
-            return Position;
-        }
-
-        Vector3f b = pose.Pose.Positions[index];
-        Matrix3f o = Orientation;
-        Fpu z = (((Fpu)o.M33 * b.Z) + ((Fpu)o.M32 * b.Y)) + ((Fpu)o.M31 * b.X);
-        float rz = z.F;
-        Fpu x = (((Fpu)o.M13 * b.Z) + ((Fpu)o.M12 * b.Y)) + ((Fpu)o.M11 * b.X);
-        Fpu y = (((Fpu)o.M23 * b.Z) + ((Fpu)o.M22 * b.Y)) + ((Fpu)o.M21 * b.X);
-        return new Vector3d((x + Position.X).Value, (y + Position.Y).Value, ((Fpu)rz + Position.Z).Value);
-    }
-
     /// <summary>Gets what the soldier last activated, <c>ptActivateQTaskRef</c>, or <see langword="null"/>.</summary>
     public Interaction.IIgi2Activatable? ActivateTarget { get; private set; }
 

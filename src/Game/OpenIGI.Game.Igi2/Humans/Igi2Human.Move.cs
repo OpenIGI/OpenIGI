@@ -189,9 +189,26 @@ public abstract partial class Igi2Human
             }
         }
 
-        if (IsDead && GroundIntersection.HitObject is { } under)
+        if (IsDead)
         {
-            SetGround(under);
+            if (GroundIntersection.HitObject is { } under)
+            {
+                SetGround(under);
+            }
+
+            // Until it lies still a body tilts onto the ground, keeps its orientation as the dead one, and falls and slides.
+            if (!IsDeathPositionStabilized)
+            {
+                InterpolateZAxisToAveragedGroundNormal();
+                DeadOrientation = Orientation;
+                HandleDeathCollision(start, ref to);
+                forcePosition = true;
+                forceOrientation = true;
+            }
+        }
+        else
+        {
+            BoneCollisionDelta = default;
         }
 
         Position = to;

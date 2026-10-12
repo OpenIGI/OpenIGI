@@ -171,7 +171,7 @@ public abstract partial class Igi2Human
 
     /// <summary>Death, once the damage reaches the limit: the weapon's sound slot is stopped and the dead bit raised.</summary>
     /// <remarks><c>Human_UpdateDie</c> (<c>igi2 0x504010</c>), single-player path.</remarks>
-    protected void UpdateDie()
+    public void UpdateDie()
     {
         if (!Damage.IsFatal || IsDead)
         {

@@ -16,7 +16,8 @@ public abstract partial class Igi2Human
     public float Beta { get; set; }
 
     /// <summary>Gets or sets the ground's normal averaged under a lying or dead body, <c>tLastAveragedGroundNormal</c>.</summary>
-    public Vector3f AveragedGroundNormal { get; set; }
+    /// <remarks>Starts straight up, (0, 0, 1) (<c>Human_CreateHandler</c>).</remarks>
+    public Vector3f AveragedGroundNormal { get; set; } = new(0f, 0f, 1f);
 
     /// <summary>
     /// Turns the body by the turn input and rebuilds its orientation: <c>Human_UpdateBody</c> (<c>igi2 0x500F30</c>).

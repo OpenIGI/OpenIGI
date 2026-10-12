@@ -163,6 +163,47 @@ public sealed class Igi2HumanMoveTests
         Assert.Empty(surroundings.AiEvents);
     }
 
+    /// <summary>
+    /// A dead body in the air falls by 44.600887 a tick and keeps that as its speed: <c>Human_HandleDeathCollision</c> takes the
+    /// move as made, no faster than falling, less the gravity.
+    /// </summary>
+    [Fact]
+    public void A_dead_body_falls_by_its_gravity()
+    {
+        (Igi2HumanPlayer player, _) = Body();
+        player.Position = new Vector3d(0.0, 0.0, 10000.0);
+        player.Damage.MaxDamage = 100f;
+        player.Damage.Damage = 100f;
+        player.UpdateDie();
+        Assert.True(player.IsDead);
+
+        Vector3d start = player.Position, to = start;
+        player.HandleDeathCollision(start, ref to);
+
+        Assert.Equal(-44.600887f, player.Speed.Z);
+        Assert.Equal(10000.0 - 44.600887298583984, to.Z, 0.001);
+        Assert.False(player.IsObjectCollision);
+        Assert.Equal(0, player.DeathStabilizationTimer);
+    }
+
+    /// <summary>On the ground a dead body counts its ticks there, and a slow slide stops (under 27.3 a tick).</summary>
+    [Fact]
+    public void A_dead_body_on_the_ground_stops_a_slow_slide()
+    {
+        (Igi2HumanPlayer player, _) = OnFloor();
+        player.Damage.MaxDamage = 100f;
+        player.Damage.Damage = 100f;
+        player.UpdateDie();
+
+        Vector3d start = player.Position, to = new(20.0, -10.0, 0.0);
+        player.HandleDeathCollision(start, ref to);
+
+        Assert.Equal(1, player.DeathStabilizationTimer);
+        Assert.Equal(0f, player.Speed.X);
+        Assert.Equal(0f, player.Speed.Y);
+        Assert.Equal(new Vector3f(0f, 0f, 1f), new Igi2HumanPlayer(Igi2NoWeaponControl.Instance, new Igi2PlayerFakes.FakeAnimation(), new Igi2PlayerFakes.FakeSurroundings()).AveragedGroundNormal);
+    }
+
     private static (Igi2HumanPlayer Player, Igi2PlayerFakes.FakeSurroundings Surroundings) OnFloor()
     {
         (Igi2HumanPlayer player, Igi2PlayerFakes.FakeSurroundings surroundings) = Body();

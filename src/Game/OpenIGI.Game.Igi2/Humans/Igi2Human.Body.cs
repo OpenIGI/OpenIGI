@@ -22,6 +22,34 @@ public abstract partial class Igi2Human : IIgi2BonedBody
     /// <summary>Gets or sets the human's collider in the level's collision world, or <see langword="null"/> when not placed in one.</summary>
     public Igi2BoneCollider? Collider { get; set; }
 
+    /// <summary>
+    /// Where a bone stands in the world, <c>BoneDynCubeObj_GetBonePosition</c> (<c>igi2 0x568190</c>): its place as the bones now stand,
+    /// turned by the body's rows and added to its position; the body's position with no bones or no such bone.
+    /// </summary>
+    /// <param name="bone">The bone's name.</param>
+    /// <returns>The position.</returns>
+    public Vector3d BonePosition(string bone) =>
+        Model is { } model && Igi2BoneBranches.IndexOf(model.BoneNames, bone) is >= 0 and var index ? BonePosition(index) : Position;
+
+    /// <summary>Where a bone stands in the world, by its index in the hierarchy (<c>BoneDynCubeObj_GetBonePosition</c>).</summary>
+    /// <param name="index">The bone's index.</param>
+    /// <returns>The position, or the body's position with no bones or no such bone.</returns>
+    public Vector3d BonePosition(int index)
+    {
+        if (index < 0 || BodyPose() is not { } pose || index >= pose.Pose.BoneCount)
+        {
+            return Position;
+        }
+
+        Vector3f b = pose.Pose.Positions[index];
+        Matrix3f o = Orientation;
+        Fpu z = (((Fpu)o.M33 * b.Z) + ((Fpu)o.M32 * b.Y)) + ((Fpu)o.M31 * b.X);
+        float rz = z.F;
+        Fpu x = (((Fpu)o.M13 * b.Z) + ((Fpu)o.M12 * b.Y)) + ((Fpu)o.M11 * b.X);
+        Fpu y = (((Fpu)o.M23 * b.Z) + ((Fpu)o.M22 * b.Y)) + ((Fpu)o.M21 * b.X);
+        return new Vector3d((x + Position.X).Value, (y + Position.Y).Value, ((Fpu)rz + Position.Z).Value);
+    }
+
     /// <summary>Gets what turns the body's bones toward its aim as the hierarchy reaches them, its type's bone callbacks.</summary>
     protected virtual IIgi2BoneCallbacks? BoneCallbacks => null;
 
