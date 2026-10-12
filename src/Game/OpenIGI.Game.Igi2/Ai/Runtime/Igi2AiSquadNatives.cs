@@ -43,6 +43,13 @@ public sealed class Igi2AiSquadNatives
         natives.RegisterFunction("AISquad_ReceiverHasTarget", ReceiverHasTarget);
         natives.RegisterFunction("AISquad_PlaySoundAtReceiversPos", PlaySoundAtReceiversPosition);
         natives.RegisterFunction("AISquad_TriggerEvent", TriggerEvent);
+
+        // AISquad_Open binds AISquad_nScriptSquadState and AISquad_nScriptEvent, which nothing in the client writes: nought unless a
+        // script sets them.
+        natives.RegisterVariable(
+            "AISquad_nSquadState", new QvmIntegerVariable(() => _world.SquadScriptState, value => _world.SquadScriptState = value));
+        natives.RegisterVariable(
+            "AISquad_nEvent", new QvmIntegerVariable(() => _world.SquadScriptEvent, value => _world.SquadScriptEvent = value));
     }
 
     private static QvmValue Bool(bool value) => QvmValue.FromInt32(value ? 1 : 0);

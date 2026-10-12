@@ -130,7 +130,20 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.View.ObjectModel = armsModel ?? string.Empty;
         player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
         player.Soldiers = request.World.LevelRoot is { } levelRoot
-            ? SpawnSoldiers(levelRoot, request.Services, world, clips, models, tuning, sounds, player.Human.Random, player.Human.Difficulty, player.Human.Pickups, player.Grenades)
+            ? SpawnSoldiers(
+                levelRoot,
+                request.Services,
+                world,
+                clips,
+                models,
+                tuning,
+                sounds,
+                player.Human.Random,
+                player.Human.Difficulty,
+                player.Human.Pickups,
+                player.Grenades,
+                request.Natives,
+                request.Services.TryGet(out Scripting.Igi2ScriptFunctions? lineFunctions) ? lineFunctions : null)
             : null;
         if (player.Soldiers is { } soldiers && player.Explosions is { } blasts)
         {
@@ -174,11 +187,13 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <param name="difficulty">The session's difficulty, which tunes the soldiers' hit points.</param>
     /// <param name="pickups">The level's pickups, which a dying soldier's weapon joins; <see langword="null"/> for none.</param>
     /// <param name="grenades">The level's grenades, which a soldier's throw joins; <see langword="null"/> for none.</param>
+    /// <param name="natives">The session's script namespace, which the minds' type names are read in; <see langword="null"/> to leave them unread.</param>
+    /// <param name="functions">The natives those names may call.</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
-    /// its <c>Weapon</c> script once loaded (<c>Human_UpdateInternalDataAfterCarryoverHandler</c>, <c>0x4FF440</c>). Until the AI's
-    /// mind is ported each soldier stands (<see cref="Soldiers.Igi2StandingSoldierMind"/>).
+    /// its <c>Weapon</c> script once loaded (<c>Human_UpdateInternalDataAfterCarryoverHandler</c>, <c>0x4FF440</c>). Each soldier
+    /// stands (<see cref="Soldiers.Igi2StandingSoldierMind"/>) until the level's AI gives it its mind (<see cref="Ai.Runtime.Igi2LevelAi"/>).
     /// </remarks>
     public static Soldiers.Igi2Soldiers SpawnSoldiers(
         Engine.Tasks.GameTask root,
@@ -191,7 +206,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
         IgiRandom random,
         OpenIGI.Game.Ai.AiDifficulty difficulty,
         Pickups.Igi2PickupList? pickups = null,
-        Weapons.Igi2Grenades? grenades = null)
+        Weapons.Igi2Grenades? grenades = null,
+        OpenIGI.Scripting.Runtime.NativeRegistry? natives = null,
+        Scripting.Igi2ScriptFunctions? functions = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(services);
@@ -225,6 +242,18 @@ public sealed class Igi2Gameplay : ITitleGameplay
         foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies)
         {
             ((Igi2LevelSurroundings)body.Surroundings).Owner = body;
+
+            // A soldier's rounds go into the same world as the player's, its weapon sounds at its head.
+            if (body.Weapon is Igi2PlayerWeapons arms)
+            {
+                arms.Effects = new Igi2LevelWeaponEffects(sounds, body.CheapHeadBonePosition);
+                arms.ImpactEffects = new Igi2LevelImpactEffects(sounds);
+                if (materials is not null)
+                {
+                    arms.World = new Igi2LevelGunShotWorld(world, materials);
+                }
+            }
+
             body.Mind = new Soldiers.Igi2StandingSoldierMind();
             body.Difficulty = difficulty;
             body.AnimTriggers = triggers;
@@ -240,6 +269,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (body.Collider is { } collider)
             {
                 world.AddBody(collider);
+            }
+        }
+
+        // HumanAI_UpdateInternalDataHandler reads each mind's AI and animation types from their names.
+        if (natives is not null && functions is not null)
+        {
+            foreach (Ai.Igi2HumanAiTask ai in Igi2TaskTree.Descendants(root).OfType<Ai.Igi2HumanAiTask>())
+            {
+                ai.ResolveTypes(natives, functions);
             }
         }
 
@@ -309,6 +347,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.LevelTick = () => level.LevelFlow?.Tick ?? 0;
 
         // What detectors see, in the order the tree makes them (AIDetection_ptDetectionQTaskList): the cameras and the player.
+        Detection.Igi2DetectionWorld? sight = null;
         if (request.Services.TryGet(out Igi2GameMaterials? sightMaterials))
         {
             Detection.Igi2DetectionWorld detection = new(player.CollisionWorld, sightMaterials)
@@ -333,7 +372,13 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 {
                     detection.Detectables.Add(player.Human);
                 }
+                else if (node is Ai.Igi2HumanSoldierTask { Body: { } soldier })
+                {
+                    detection.Detectables.Add(soldier);
+                }
             }
+
+            sight = detection;
         }
 
         foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
@@ -441,6 +486,29 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         player.Motions = movers.Count > 0 ? new Interaction.Igi2MoverMotions(movers) : null;
+
+        if (player.Soldiers is { } soldiersWithMinds)
+        {
+            request.Services.TryGet(out Ai.Igi2HumanAiConfig? config);
+            request.Services.TryGet(out Igi2HumanWeapons? armoury);
+            List<Igi2Human> everyone = [player.Human, .. soldiersWithMinds.Bodies];
+            player.Ai = Ai.Runtime.Igi2LevelAi.Build(new Ai.Runtime.Igi2LevelAiSetup(
+                root,
+                request.World.Resources,
+                natives,
+                functions,
+                player.Human,
+                everyone,
+                player.Human.Random,
+                () => level.LevelFlow?.Tick ?? 0)
+            {
+                Detection = sight,
+                FireTaskTypes = armoury?.FireTaskTypes,
+                Config = config,
+                Difficulty = (int)player.Human.Difficulty,
+                Logger = request.World.Logger,
+            });
+        }
 
         return level;
     }
@@ -624,6 +692,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets or sets the level's soldiers, or <see langword="null"/> before the level made them.</summary>
     public Soldiers.Igi2Soldiers? Soldiers { get; set; }
+
+    /// <summary>Gets or sets the level's AI, which gives the soldiers their minds, or <see langword="null"/>.</summary>
+    public Ai.Runtime.Igi2AiWorld? Ai { get; set; }
 
     /// <summary>Gets the level's sounds.</summary>
     public Igi2Sounds Sounds { get; private init; } = new(new Igi2SoundDefinitions(), null);

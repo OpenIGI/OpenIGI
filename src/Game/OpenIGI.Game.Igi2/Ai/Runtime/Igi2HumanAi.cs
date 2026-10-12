@@ -178,6 +178,18 @@ public sealed partial class Igi2HumanAi : IIgi2SoldierMind
     /// <summary>Gets the script's four reals, <c>avScriptRealValues</c>.</summary>
     public double[] ScriptReals { get; } = new double[4];
 
+    /// <summary>Gets or sets the least ticks between idle animations, <c>nAnimationMinimumDelay</c> (set, never read).</summary>
+    public int AnimationMinimumDelay { get; set; }
+
+    /// <summary>Gets or sets the drawn ticks added to it, <c>nAnimationRandomDelay</c> (set, never read).</summary>
+    public int AnimationRandomDelay { get; set; }
+
+    /// <summary>Gets or sets the ticks before the next idle animation, <c>nAnimationDelay</c> (set, never read).</summary>
+    public int AnimationDelay { get; set; }
+
+    /// <summary>Gets the animations the script may draw and their weights, <c>atAnimationEntries</c>: at most five.</summary>
+    public List<(int Animation, double Weight)> AnimationEntries { get; } = [];
+
     /// <summary>Gets or sets the evasive timer, <c>nEvasiveActionTimer</c>: 300 after being shot at.</summary>
     public int EvasiveActionTimer { get; set; }
 

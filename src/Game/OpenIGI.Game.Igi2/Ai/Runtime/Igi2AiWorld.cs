@@ -116,6 +116,15 @@ public sealed class Igi2AiWorld
     /// <summary>Gets or sets which side the next look-around starts to, <c>dword_834DBC4</c>.</summary>
     public int LookAroundSide { get; set; }
 
+    /// <summary>Gets or sets the script variable <c>HumanAI_nEvent</c> (<c>HumanAI_nScriptEvent</c>).</summary>
+    public int ScriptEvent { get; set; }
+
+    /// <summary>Gets or sets the script variable <c>AISquad_nSquadState</c> (<c>AISquad_nScriptSquadState</c>).</summary>
+    public int SquadScriptState { get; set; }
+
+    /// <summary>Gets or sets the script variable <c>AISquad_nEvent</c> (<c>AISquad_nScriptEvent</c>).</summary>
+    public int SquadScriptEvent { get; set; }
+
     /// <summary>Gets or sets the visual sweep pattern next used, <c>HumanAIContent_VisualSweepPattern</c>.</summary>
     public int VisualSweepPattern { get; set; }
 
@@ -228,6 +237,24 @@ public sealed class Igi2AiWorld
                 ai.Receive(aiEvent);
             }
         }
+    }
+
+    /// <summary>The soldier whose top action is going to use a task, <c>HumanAI_GetActivatingAI</c>.</summary>
+    /// <param name="taskId">The task's id.</param>
+    /// <returns>The mind, or <see langword="null"/>.</returns>
+    public Igi2HumanAi? ActivatingAi(int taskId)
+    {
+        foreach (Igi2Human human in Humans)
+        {
+            if (human is Soldiers.Igi2HumanSoldier { Mind: Igi2HumanAi ai }
+                && ai.Actions.Top is { Init: var init, Context: Igi2AiContent.ActivateContext { TaskId: var id } }
+                && init == Igi2AiContent.ActivateInit && id == taskId)
+            {
+                return ai;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Points the natives at a mind about to run its script for a kind of event, at a rank.</summary>

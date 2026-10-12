@@ -189,9 +189,15 @@ public sealed partial class Igi2AiSquadTask : Igi2Task
     /// <c>AISquad_RunHandler</c> (<c>igi2 0x498E80</c>) runs its soldiers every tick, after its own action stack; the squad's own
     /// part (its members, sounds, targets, fire orders and actions) is not ported yet.
     /// </remarks>
+    /// <summary>Gets or sets the squad the level's AI made for it, or <see langword="null"/>.</summary>
+    public Runtime.Igi2AiSquad? Squad { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks><c>AISquad_RunHandler</c>: the squad's tick, then its children's, dead or alive.</remarks>
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
+        Squad?.Run();
         level.RunChildren(this);
     }
 
