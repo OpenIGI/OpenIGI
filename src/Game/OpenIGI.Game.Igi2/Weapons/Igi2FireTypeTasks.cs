@@ -6,7 +6,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2GunTask : GameTask
+public sealed partial class Igi2GunTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "Gun";
@@ -192,7 +192,7 @@ public sealed partial class Igi2GunTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2ZoomTask : GameTask
+public sealed partial class Igi2ZoomTask : Igi2Task
 {
     /// <summary>
     /// Gets the scale of the narrowest view the zoom reaches, <c>Zoom+0x28</c>: the tangent of half its
@@ -250,7 +250,7 @@ public sealed partial class Igi2ZoomTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2ProjectileLauncherTask : GameTask
+public sealed partial class Igi2ProjectileLauncherTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "ProjectileLauncher";
@@ -320,7 +320,7 @@ public sealed partial class Igi2ProjectileLauncherTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2C4BombTask : GameTask
+public sealed partial class Igi2C4BombTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "C4Bomb";
@@ -362,7 +362,7 @@ public sealed partial class Igi2C4BombTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2ProximityMineTask : GameTask
+public sealed partial class Igi2ProximityMineTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "ProximityMine";
@@ -412,7 +412,7 @@ public sealed partial class Igi2ProximityMineTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2RemoteMineTask : GameTask
+public sealed partial class Igi2RemoteMineTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "RemoteMine";
@@ -462,7 +462,7 @@ public sealed partial class Igi2RemoteMineTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2MedipackTask : GameTask
+public sealed partial class Igi2MedipackTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "Medipack";
@@ -520,7 +520,7 @@ public sealed partial class Igi2MedipackTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2KnifeTask : GameTask
+public sealed partial class Igi2KnifeTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "Knife";
@@ -566,7 +566,7 @@ public sealed partial class Igi2KnifeTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2LaserDesignatorTask : GameTask
+public sealed partial class Igi2LaserDesignatorTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "LaserDesignator";
@@ -592,7 +592,7 @@ public sealed partial class Igi2LaserDesignatorTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2PullPinTask : GameTask
+public sealed partial class Igi2PullPinTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "PullPin";
@@ -614,7 +614,7 @@ public sealed partial class Igi2PullPinTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2FireModeTask : GameTask
+public sealed partial class Igi2FireModeTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "FireMode";
@@ -624,7 +624,7 @@ public sealed partial class Igi2FireModeTask : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). A fire type is a child of the weapon whose fire it carries out.
 /// </remarks>
-public sealed partial class Igi2LaserDotSwitchTask : GameTask
+public sealed partial class Igi2LaserDotSwitchTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "LaserDotSwitch";

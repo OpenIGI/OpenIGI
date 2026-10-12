@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Igi2.Ai;
 
 /// <summary>An enemy soldier's body as level data places it, I.G.I. 2's <c>HumanSoldier</c>.</summary>
 /// <remarks>Its parameters are the <c>Human</c> ones it inherits; its <c>HumanAI</c> is a child.</remarks>
-public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask, IIgi2RunTask
+public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
@@ -71,7 +71,7 @@ public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask, II
     /// <c>HumanSoldier_RunHandler</c> (<c>igi2 0x4EA190</c>) only queues the soldier for the delayed pass, where its body runs and
     /// its children with it (<see cref="Igi2HumanSoldier.RunDelayed"/>).
     /// </remarks>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         if (Body is { } body)
@@ -87,7 +87,7 @@ public sealed partial class Igi2HumanSoldierTask : GameTask, IIgi2PlacedTask, II
 /// from their names as one-line scripts and its own script is <c>MISSION:AI/&lt;id&gt;.qsc</c>
 /// (<c>HumanAI_UpdateInternalDataHandler</c>, <c>0x460030</c>).
 /// </remarks>
-public sealed partial class Igi2HumanAiTask : GameTask
+public sealed partial class Igi2HumanAiTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanAI";
@@ -135,7 +135,7 @@ public sealed partial class Igi2HumanAiTask : GameTask
 /// sixty to calm down, two metres between soldiers and thirty to run to an alarm. Its formation distance is held to [0, 10]
 /// and its script is <c>MISSION:AI/Squad_&lt;id&gt;.qsc</c> (<c>AISquad_UpdateInternalDataHandler</c>, <c>0x4990E0</c>).
 /// </remarks>
-public sealed partial class Igi2AiSquadTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2AiSquadTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AISquad";
@@ -183,7 +183,7 @@ public sealed partial class Igi2AiSquadTask : GameTask, IIgi2RunTask
     /// <c>AISquad_RunHandler</c> (<c>igi2 0x498E80</c>) runs its soldiers every tick, after its own action stack; the squad's own
     /// part (its members, sounds, targets, fire orders and actions) is not ported yet.
     /// </remarks>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);
@@ -202,7 +202,7 @@ public sealed partial class Igi2AiSquadTask : GameTask, IIgi2RunTask
 /// Its length is its count of children (<c>PatrolPath_UpdateInternalDataAfterLoadHandler</c>, <c>igi2 0x51BB40</c>); a soldier
 /// finds it by its task id (<c>PatrolPath_GetPatrolPathQTaskFromID</c>, <c>0x51BA00</c>).
 /// </remarks>
-public sealed partial class Igi2PatrolPathTask : GameTask
+public sealed partial class Igi2PatrolPathTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "PatrolPath";
@@ -263,7 +263,7 @@ public enum Igi2PatrolCommand
 /// Made as nothing, with no parameter and no node (<c>PatrolPathCommand_CreateHandler</c>, <c>igi2 0x51B6F0</c>); a command
 /// outside the known ones reads as nothing (<c>PatrolPathCommand_UpdateInternalDataHandler</c>, <c>0x51B740</c>).
 /// </remarks>
-public sealed partial class Igi2PatrolPathCommandTask : GameTask
+public sealed partial class Igi2PatrolPathCommandTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "PatrolPathCommand";

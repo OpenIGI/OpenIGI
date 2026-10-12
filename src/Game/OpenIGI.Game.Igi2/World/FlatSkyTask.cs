@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// backing of the same colour rather than black, which is the same arrangement Project I.G.I. uses.
 /// </para>
 /// </remarks>
-public sealed partial class FlatSkyTask : GameTask
+public sealed partial class FlatSkyTask : Igi2Task
 {
     /// <summary>The type name a level declares this under.</summary>
     public const string TypeName = "FlatSky";
@@ -85,7 +85,7 @@ public sealed partial class FlatSkyTask : GameTask
 /// diverge the moment a mod authored a path.
 /// </para>
 /// </remarks>
-public sealed partial class FlatSkyLayerTask : GameTask
+public sealed partial class FlatSkyLayerTask : Igi2Task
 {
     /// <summary>The type name a level declares this under.</summary>
     public const string TypeName = "FlatSkyLayer";
@@ -136,7 +136,7 @@ public sealed partial class FlatSkyLayerTask : GameTask
 /// Declared by exactly one shipped level. The five colours are the dome's, and <see cref="Time"/> is
 /// when they apply — so a level can take its sky from dawn to dusk without scripting it.
 /// </remarks>
-public sealed partial class FlatSkyKeyframeTask : GameTask
+public sealed partial class FlatSkyKeyframeTask : Igi2Task
 {
     /// <summary>The type name a level declares this under.</summary>
     public const string TypeName = "FlatSkyKeyframe";

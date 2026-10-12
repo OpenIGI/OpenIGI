@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <c>Weapon Animation Name</c> the name its own clips carry (<see cref="Animation.Igi2WeaponTypeAnims"/>).
 /// </para>
 /// </remarks>
-public sealed partial class Igi2WeaponTypeTask : GameTask
+public sealed partial class Igi2WeaponTypeTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "WeaponType";

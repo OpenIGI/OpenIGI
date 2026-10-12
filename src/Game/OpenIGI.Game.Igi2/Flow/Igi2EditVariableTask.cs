@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// <c>EditVariable_RunHandler</c> (<c>igi2 0x4488C0</c>): each tick the <c>Add</c> script's value, truncated, is added to it
 /// and the <c>Sub</c> script's taken off. It starts at its <c>Initial value</c>, which is the parameter's own storage.
 /// </remarks>
-public sealed partial class Igi2EditVariableTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2EditVariableTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditVariable";
@@ -33,7 +33,7 @@ public sealed partial class Igi2EditVariableTask : GameTask, IIgi2RunTask
     public string Sub { get; set; } = string.Empty;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _add ??= new Igi2LevelExpression(Add, Name, level.Natives);

@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// a step names the one after it.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SequenceCommandTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2SequenceCommandTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SequenceCommand";
@@ -79,7 +79,7 @@ public sealed partial class Igi2SequenceCommandTask : GameTask, IIgi2RunTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         if (Parent is not { } parent || FirstStep(parent) != this || IsStopped)

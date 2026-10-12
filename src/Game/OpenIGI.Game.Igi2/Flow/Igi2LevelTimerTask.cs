@@ -9,7 +9,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// one, says whether it runs; its <c>Reset</c> script, where it has one and is not nought, puts it back to nought; and running,
 /// it counts the tick.
 /// </remarks>
-public sealed partial class Igi2LevelTimerTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2LevelTimerTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "LevelTimer";
@@ -50,7 +50,7 @@ public sealed partial class Igi2LevelTimerTask : GameTask, IIgi2RunTask
     public int Tick => _tick;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);

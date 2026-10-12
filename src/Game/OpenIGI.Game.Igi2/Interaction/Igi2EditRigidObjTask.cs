@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2EditRigidObjTask
-    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2Mover, IIgi2AttachParent, IIgi2PathRider, IIgi2CameraTarget
+    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2AttachParent, IIgi2PathRider, IIgi2CameraTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditRigidObj";
@@ -103,7 +103,7 @@ public sealed partial class Igi2EditRigidObjTask
     public void Bind(IReadOnlyList<Igi2RigidObject> solids) => _solids = solids ?? throw new ArgumentNullException(nameof(solids));
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);

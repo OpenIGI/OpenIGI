@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// <see cref="ResourceList"/>.
 /// </para>
 /// </remarks>
-public sealed partial class WaterTask : GameTask
+public sealed partial class WaterTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Water";

@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).
 /// </para>
 /// </remarks>
-public sealed partial class Igi2ConveyorBeltTask : GameTask, IIgi2RunTask, IIgi2PlacedTask
+public sealed partial class Igi2ConveyorBeltTask : Igi2Task, IIgi2PlacedTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ConveyorBelt";
@@ -120,7 +120,7 @@ public sealed partial class Igi2ConveyorBeltTask : GameTask, IIgi2RunTask, IIgi2
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);

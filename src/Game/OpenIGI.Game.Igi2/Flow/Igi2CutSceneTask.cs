@@ -29,7 +29,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// run its start expression, and one that is not runs its stop expression once.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2CutSceneTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2CutSceneTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "CutScene";
@@ -139,7 +139,7 @@ public sealed partial class Igi2CutSceneTask : GameTask, IIgi2RunTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         if (!_started)

@@ -174,7 +174,7 @@ public readonly record struct Igi2DiscardBox(float MinX, float MinY, float MaxX,
 /// parameters below and no others; the editor's own <c>Update</c> push button is not in level data.
 /// </para>
 /// </remarks>
-public sealed partial class DiscardTask : GameTask
+public sealed partial class DiscardTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "DiscardTask";

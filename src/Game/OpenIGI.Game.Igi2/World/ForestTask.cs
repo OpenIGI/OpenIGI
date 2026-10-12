@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// and are not consulted again once it exists.
 /// </para>
 /// </remarks>
-public sealed partial class ForestTask : GameTask
+public sealed partial class ForestTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Forest";

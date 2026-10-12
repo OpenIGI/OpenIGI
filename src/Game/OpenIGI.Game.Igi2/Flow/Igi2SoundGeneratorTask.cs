@@ -23,7 +23,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// on its own, so <c>isPlaying</c> stays set after a one-shot has finished.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SoundGeneratorTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2SoundGeneratorTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SoundGenerator";
@@ -77,7 +77,7 @@ public sealed partial class Igi2SoundGeneratorTask : GameTask, IIgi2RunTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.Natives.SetSymbolContext(PlaySoundNative, this);

@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// so a container whose condition fails on its first tick takes them out then.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2ConditionalContainerTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2ConditionalContainerTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalContainer";
@@ -48,7 +48,7 @@ public sealed partial class Igi2ConditionalContainerTask : GameTask, IIgi2RunTas
     public bool AreChildrenInWorld { get; private set; } = true;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _condition ??= new Igi2LevelExpression(Condition, Name, level.Natives);

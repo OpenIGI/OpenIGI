@@ -4,14 +4,6 @@ using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
-/// <summary>A level task with a run handler of its own: what it does each tick, children and all.</summary>
-public interface IIgi2RunTask
-{
-    /// <summary>Runs the task one tick, its run handler.</summary>
-    /// <param name="level">The level it runs in.</param>
-    void Run(Igi2LevelRun level);
-}
-
 /// <summary>
 /// The level's tick: its task tree run from the root, every task by its own run handler, as <c>Flow_RunChildren</c>
 /// (<c>igi2 0x401A50</c>) runs the game's tasks.
@@ -139,11 +131,10 @@ public sealed class Igi2LevelRun
             return;
         }
 
-        switch (task)
+        if (task is Igi2Task typed)
         {
-            case IIgi2RunTask runnable:
-                runnable.Run(this);
-                return;
+            typed.Run(this);
+            return;
         }
 
         switch (task.Type.Name)

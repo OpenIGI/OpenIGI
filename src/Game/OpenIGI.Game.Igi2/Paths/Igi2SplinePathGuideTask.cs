@@ -26,7 +26,7 @@ namespace OpenIGI.Game.Igi2.Paths;
 /// (<c>SplinePathGuideQTask_UpdateInternalDataAfterLoadHandler</c>, <c>0x5E6700</c>).
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SplinePathGuideTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2SplinePathGuideTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SplinePathGuideQTask";
@@ -136,7 +136,7 @@ public sealed partial class Igi2SplinePathGuideTask : GameTask, IIgi2RunTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _speedScale = ((Fpu)_speed).F;

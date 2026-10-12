@@ -6,7 +6,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>).
 /// </remarks>
-public sealed partial class Igi2TagItemInt32Task : GameTask
+public sealed partial class Igi2TagItemInt32Task : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "TagItemInt32";
@@ -24,7 +24,7 @@ public sealed partial class Igi2TagItemInt32Task : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>).
 /// </remarks>
-public sealed partial class Igi2TagItemReal32Task : GameTask
+public sealed partial class Igi2TagItemReal32Task : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "TagItemReal32";
@@ -42,7 +42,7 @@ public sealed partial class Igi2TagItemReal32Task : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>).
 /// </remarks>
-public sealed partial class Igi2TagItemString16Task : GameTask
+public sealed partial class Igi2TagItemString16Task : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "TagItemString16";
@@ -60,7 +60,7 @@ public sealed partial class Igi2TagItemString16Task : GameTask
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>).
 /// </remarks>
-public sealed partial class Igi2TagItemBool8Task : GameTask
+public sealed partial class Igi2TagItemBool8Task : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "TagItemBool8";

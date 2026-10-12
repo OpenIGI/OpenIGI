@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Igi2.Paths;
 /// neighbours.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SplinePathNodeTask : GameTask, Flow.IIgi2CameraTarget
+public sealed partial class Igi2SplinePathNodeTask : Igi2Task, Flow.IIgi2CameraTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SplinePathNodeQTask";

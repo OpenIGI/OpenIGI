@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// <c>Floor_UpdateInternalDataHandler</c> (<c>igi2 0x46E940</c>) has the lift it belongs to read its floors again, which is how a
 /// lift, whose own data is read before its children are made, comes to stand at its first floor.
 /// </remarks>
-public sealed partial class Igi2FloorTask : GameTask
+public sealed partial class Igi2FloorTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Floor";

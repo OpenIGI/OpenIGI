@@ -29,7 +29,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2DoorTask : GameTask, IIgi2RunTask, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached
+public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Door";
@@ -263,7 +263,7 @@ public sealed partial class Igi2DoorTask : GameTask, IIgi2RunTask, IIgi2Door, II
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         Start(level);

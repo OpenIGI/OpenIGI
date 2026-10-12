@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Igi2.Pickups;
 /// weapon it gives by its <c>WEAPON_ID_*</c> name (<c>+0x1AC</c>) and how long it takes to come back (<c>+0x1CE</c>), which
 /// only a multiplayer game counts out. Its model is no parameter: it is the weapon's <c>Fixed Model</c>.
 /// </remarks>
-public sealed partial class Igi2GunPickupTask : GameTask
+public sealed partial class Igi2GunPickupTask : Igi2Task
 {
     /// <summary>The name levels declare the type by.</summary>
     public const string TypeName = "GunPickup";

@@ -32,7 +32,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2AlarmControlTask
-    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2WorkedActivatable
+    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2WorkedActivatable
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AlarmControl";
@@ -205,7 +205,7 @@ public sealed partial class Igi2AlarmControlTask
     public IReadOnlyList<float> CurrentOrientation => Explosive.Frame;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         RunTerminal(level);

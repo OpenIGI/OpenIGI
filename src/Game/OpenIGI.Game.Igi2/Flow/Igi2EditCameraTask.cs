@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// A cutscene's cameras are its <c>EditCamera</c> children and theirs, taken one after another, each for its
 /// <see cref="Duration"/> scaled by the cutscene's time scale (<c>CutScene_RegisterCutSceneCamera</c>, <c>igi2 0x438D50</c>).
 /// </remarks>
-public sealed partial class Igi2EditCameraTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2EditCameraTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditCamera";
@@ -82,7 +82,7 @@ public sealed partial class Igi2EditCameraTask : GameTask, IIgi2RunTask
 
     /// <inheritdoc/>
     /// <remarks><c>EditCamera_RunHandler</c> (<c>igi2 0x580BB0</c>): its children run.</remarks>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);

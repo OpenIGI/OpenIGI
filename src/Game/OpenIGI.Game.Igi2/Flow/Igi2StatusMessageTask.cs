@@ -27,7 +27,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// clock restarts each time its duration is out, as retail's does.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2StatusMessageTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2StatusMessageTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StatusMessage";
@@ -175,7 +175,7 @@ public sealed partial class Igi2StatusMessageTask : GameTask, IIgi2RunTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;

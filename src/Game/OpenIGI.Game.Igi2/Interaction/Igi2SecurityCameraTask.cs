@@ -36,7 +36,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// <para>The lens's swivel and destroyed model are not yet drawn; its collision follows both.</para>
 /// </remarks>
 public sealed partial class Igi2SecurityCameraTask
-    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2Detectable, IIgi2WeaponHitTarget, IIgi2ExplosionTarget
+    : Igi2Task, IIgi2PlacedTask, IIgi2Detectable, IIgi2WeaponHitTarget, IIgi2ExplosionTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SCamera";
@@ -265,7 +265,7 @@ public sealed partial class Igi2SecurityCameraTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         RunLens();

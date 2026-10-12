@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2SwitchTask : GameTask, IIgi2RunTask, IIgi2Pressable, IIgi2PlacedTask
+public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2PlacedTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Switch";
@@ -142,7 +142,7 @@ public sealed partial class Igi2SwitchTask : GameTask, IIgi2RunTask, IIgi2Pressa
     public Igi2ActivateKind Kind => Igi2ActivateKind.Switch;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         Start(level);

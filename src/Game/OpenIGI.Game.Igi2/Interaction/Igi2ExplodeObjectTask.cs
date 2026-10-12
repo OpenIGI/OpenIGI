@@ -14,7 +14,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </summary>
 /// <remarks>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</remarks>
 public sealed partial class Igi2ExplodeObjectTask
-    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask
+    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ExplodeObject";
@@ -81,7 +81,7 @@ public sealed partial class Igi2ExplodeObjectTask
     public bool IsDestroyed => Explosive.IsExploded;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);

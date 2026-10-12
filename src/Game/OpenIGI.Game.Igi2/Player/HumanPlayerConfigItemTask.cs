@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi2.Player;
 /// are written in km/h and the lengths in metres and converted to world units on the way in.
 /// </para>
 /// </remarks>
-public sealed partial class HumanPlayerConfigItemTask : GameTask
+public sealed partial class HumanPlayerConfigItemTask : Igi2Task
 {
     /// <summary>The script name the player script instantiates this type under.</summary>
     public const string TypeName = "HumanPlayerConfigItem";

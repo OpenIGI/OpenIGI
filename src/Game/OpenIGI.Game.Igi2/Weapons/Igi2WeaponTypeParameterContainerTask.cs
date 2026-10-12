@@ -6,7 +6,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <remarks>
 /// The parameters are the script's own declaration, in wire order (<c>Task_DeclareParameters</c> in <c>WEAPONS/weapon.qvm</c>). Its children are <c>TagItem</c>s.
 /// </remarks>
-public sealed partial class Igi2WeaponTypeParameterContainerTask : GameTask
+public sealed partial class Igi2WeaponTypeParameterContainerTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "WeaponTypeParameterContainer";

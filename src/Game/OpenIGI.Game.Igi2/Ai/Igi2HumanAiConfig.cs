@@ -7,7 +7,7 @@ using OpenIGI.Scripting.Runtime;
 namespace OpenIGI.Game.Igi2.Ai;
 
 /// <summary>The AI's tuning table, I.G.I. 2's <c>HumanAIConfig</c>: its items are the soldier types' base values and the difficulty scales.</summary>
-public sealed partial class Igi2HumanAiConfigTask : GameTask
+public sealed partial class Igi2HumanAiConfigTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanAIConfig";
@@ -26,7 +26,7 @@ public sealed partial class Igi2HumanAiConfigTask : GameTask
 /// scale's ones otherwise; reading it (<c>HumanAIConfigItem_UpdateInternalDataHandler</c>, <c>0x41DB70</c>) takes its type from
 /// its <c>AI Type</c> as a script constant.
 /// </remarks>
-public sealed partial class Igi2HumanAiConfigItemTask : GameTask
+public sealed partial class Igi2HumanAiConfigItemTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanAIConfigItem";

@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// is nothing but level data.
 /// </para>
 /// </remarks>
-public sealed partial class WaterLayerTask : GameTask
+public sealed partial class WaterLayerTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "WaterLayer";

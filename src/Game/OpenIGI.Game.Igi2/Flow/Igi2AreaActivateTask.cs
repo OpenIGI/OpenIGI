@@ -98,7 +98,7 @@ public static class Igi2AreaCriteria
 /// The camera's, the vehicles' and the side-kicks' are not ported and count none.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2AreaActivateTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2AreaActivateTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AreaActivate";
@@ -169,7 +169,7 @@ public sealed partial class Igi2AreaActivateTask : GameTask, IIgi2RunTask
     }
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
 

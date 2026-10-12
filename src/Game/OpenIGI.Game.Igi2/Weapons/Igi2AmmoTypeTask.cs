@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <c>0x43AF10</c>); see <see cref="Igi2WeaponTables"/>.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2AmmoTypeTask : GameTask
+public sealed partial class Igi2AmmoTypeTask : Igi2Task
 {
     /// <summary>The name scripts spawn this type by.</summary>
     public const string TypeName = "AmmoType";

@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi2.Paths;
 /// from the start is the last one's plus the segment's length over the mean of the two speeds.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SplinePathTask : GameTask
+public sealed partial class Igi2SplinePathTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SplinePathDynCubeObj";

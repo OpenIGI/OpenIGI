@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// and when it holds the game is completed; its <c>Failed</c> script's value is <c>isFailed</c>, and when it holds the game is
 /// failed and not completed. Then both clocks count the tick.
 /// </remarks>
-public sealed partial class Igi2LevelFlowTask : GameTask, IIgi2RunTask
+public sealed partial class Igi2LevelFlowTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "LevelFlow";
@@ -66,7 +66,7 @@ public sealed partial class Igi2LevelFlowTask : GameTask, IIgi2RunTask
     public int Difficulty { get; set; } = 1;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _complete ??= new Igi2LevelExpression(CompleteScript, Name, level.Natives);

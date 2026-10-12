@@ -31,7 +31,7 @@ public interface IIgi2TimedAction : IIgi2WorkedActivatable
 /// </para>
 /// </remarks>
 public sealed partial class Igi2GenericTbaTask
-    : GameTask, IIgi2RunTask, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2TimedAction
+    : Igi2Task, IIgi2PlacedTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplodingTask, IIgi2TimedAction
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "GenericTBA";
@@ -189,7 +189,7 @@ public sealed partial class Igi2GenericTbaTask
     public IReadOnlyList<float> CurrentOrientation => Explosive.Frame;
 
     /// <inheritdoc/>
-    public void Run(Igi2LevelRun level)
+    public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;

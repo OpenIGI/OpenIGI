@@ -317,7 +317,7 @@ public sealed record Igi2AiGraphPlacement(int MaxNodes, bool IsRelative, Vector3
 }
 
 /// <summary>An AI graph as level data places it, I.G.I. 2's <c>AIGraph</c>: the nodes and links soldiers walk.</summary>
-public sealed partial class Igi2AiGraphTask : GameTask
+public sealed partial class Igi2AiGraphTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AIGraph";
