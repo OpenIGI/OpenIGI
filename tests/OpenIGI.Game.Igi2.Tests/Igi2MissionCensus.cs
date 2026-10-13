@@ -77,7 +77,7 @@ internal static class Igi2MissionCensus
 
             foreach (string? name in program.SymbolNames)
             {
-                if (!string.IsNullOrEmpty(name) && !natives.Contains(name))
+                if (!string.IsNullOrEmpty(name) && !natives.Contains(name) && !RetailUnresolved.ContainsKey(name))
                 {
                     Add(gaps, $"name {name}", label);
                 }
@@ -111,7 +111,7 @@ internal static class Igi2MissionCensus
             {
                 foreach (string name in NamesIn(expression, gaps, label))
                 {
-                    if (!natives.Contains(name))
+                    if (!natives.Contains(name) && !RetailUnresolved.ContainsKey(name))
                     {
                         Add(gaps, $"name {name}", label);
                     }
@@ -293,7 +293,11 @@ internal static class Igi2MissionCensus
             }
             catch (ScriptExpressionException ex)
             {
-                Add(gaps, $"survey expression {Flatten(statement)}", $"{label}: {ex.Message}");
+                if (!RetailUnparsable.Contains(Flatten(statement)))
+                {
+                    Add(gaps, $"survey expression {Flatten(statement)}", $"{label}: {ex.Message}");
+                }
+
                 continue;
             }
 
@@ -342,7 +346,10 @@ internal static class Igi2MissionCensus
         return statements.Where(static st => !ScriptExpressionParser.IsBlank(st));
     }
 
-    private static string Flatten(string text) =>
+    /// <summary>An expression's text with its whitespace runs collapsed to single spaces, as the ledger lists it.</summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The flattened text.</returns>
+    internal static string Flatten(string text) =>
         string.Join(' ', text.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)).Trim();
 
     private static void Collect(ScriptExpression? node, List<string> names)
@@ -377,6 +384,45 @@ internal static class Igi2MissionCensus
 
         sources.Add(where);
     }
+
+    /// <summary>
+    /// Names the shipped scripts reach for that the retail engine never defines either, each with the reason: no engine module
+    /// registers the native, or no task of the level carries the id the exported variable is named after. Both engines read them as
+    /// nought and call them as nothing, so they are not gaps. <see cref="RetailIgi2CampaignCensusTests"/> checks every task id.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> RetailUnresolved = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["AIFunction_SetAccuracy"] = "humanai.c registers only AIFunction_SetAccuracyMedRange and AIFunction_SetAccuracyMaxRange",
+        ["Human_Weapon"] = "human.c registers no such symbol",
+        ["priboy_bed_talking"] = "a clip name written where a symbol is read; nothing registers it",
+        ["ColumnView_TestFunctionCB"] = "columnview.c registers no such symbol",
+        ["xxx"] = "a placeholder left in two of location3/level4's AI scripts",
+        ["AreaActivate_1701.nActive"] = "location1/level7",
+        ["AreaActivate_1703.nActive"] = "location1/level7",
+        ["AreaActivate_1704.nActive"] = "location1/level7",
+        ["AreaActivate_1705.nActive"] = "location1/level7",
+        ["AreaActivate_2106.nActive"] = "location1/level5",
+        ["EditVariable_118.nValue"] = "location3/level6",
+        ["EditVariable_127.nValue"] = "location3/level6",
+        ["EditVariable_133.nValue"] = "location3/level6",
+        ["EditVariable_134.nValue"] = "location3/level6",
+        ["EditVariable_135.nValue"] = "location3/level6",
+        ["EditVariable_1504.nValue"] = "location2/level1",
+        ["EditVariable_162.nValue"] = "location3/level1",
+        ["LevelTimer_1740.nTick"] = "location2/level5",
+    };
+
+    /// <summary>
+    /// Level expressions, flattened, that the retail parser rejects as the title's does (<c>Expression_Parse</c> reports a missing
+    /// <c>)</c> or operand through <c>Script_Error</c>): neither engine compiles them, so the task treats them as absent, which
+    /// <see cref="RetailIgi2CampaignCensusTests"/> checks.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> RetailUnparsable = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "! (  (AreaActivate_3275.nActive &&   (EditVariable_3243.nValue == 0 || EditVariable_3244.nValue == 0)  ||  AreaActivate_3272.nActive  ||  (AreaActivate_3276.nActive && EditVariable_3244.nValue == 0) )",
+        "( EditVariable_322.nValue == 0 && Door_330.isOpen  ) ||  ( EditVariable_322.nValue == 1 && LevelTimer_313.nTick > 2 * GAME_FREQUENCY  ) ||  ( EditVariable_322.nValue == 2 && LevelTimer_313.nTick > 4 * GAME_FREQUENCY  ) ||  ( EditVariable_322.nValue == 3 && LevelTimer_313.nTick > 14 * GAME_FREQUENCY  )  || ( EditVariable_322.nValue == 4 && (  LevelTimer_313.nTick > 18 * GAME_FREQUENCY   ||  EditVariable_324.nValue == 1  )  || ( EditVariable_322.nValue == 5 && LevelTimer_315.nTick > 2 * GAME_FREQUENCY  )",
+        "|1",
+    };
 
     /// <summary>VarString parameters whose text is data rather than script.</summary>
     /// <remarks>

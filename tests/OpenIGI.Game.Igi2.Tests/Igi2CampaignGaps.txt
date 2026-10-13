@@ -8,14 +8,7 @@
 #
 # After "    #": the missions (location*10+level) that need the gap | where it was found.
 
-name AIFunction_SetAccuracy    # 22 | MISSIONS/location2/level2/ai/521.qvm
-name AreaActivate_1701.nActive    # 17 | MISSIONS/location1/level7/ai/520.qvm, MISSIONS/location1/level7/ai/521.qvm, …
-name AreaActivate_1703.nActive    # 17 | MISSIONS/location1/level7/ai/540.qvm, MISSIONS/location1/level7/ai/541.qvm, …
-name AreaActivate_1704.nActive    # 17 | MISSIONS/location1/level7/ai/550.qvm, MISSIONS/location1/level7/ai/551.qvm, …
-name AreaActivate_1705.nActive    # 17 | MISSIONS/location1/level7/ai/560.qvm, MISSIONS/location1/level7/ai/561.qvm, …
-name AreaActivate_2106.nActive    # 15 | MISSIONS/location1/level5/ai/Squad_743.qvm
 name ColumnView_Sort    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name ColumnView_TestFunctionCB    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_Fill3DProviderScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_FillSpeakerSetupListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Config_GetActiveCrossHair    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -25,13 +18,6 @@ name ControlsMenu_987.isReset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 
 name ControlsMenu_987.nOffset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertFloatFromOffset    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ControlsMenu_ConvertOffsetFromFloat    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name EditVariable_118.nValue    # 36 | MISSIONS/location3/level6/ai/545.qvm, MISSIONS/location3/level6/ai/546.qvm, …
-name EditVariable_127.nValue    # 36 | MISSIONS/location3/level6/ai/545.qvm, MISSIONS/location3/level6/ai/546.qvm, …
-name EditVariable_133.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MISSIONS/location3/level6/ai/501.qvm, …
-name EditVariable_134.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MISSIONS/location3/level6/ai/501.qvm, …
-name EditVariable_135.nValue    # 36 | MISSIONS/location3/level6/ai/500.qvm, MISSIONS/location3/level6/ai/501.qvm, …
-name EditVariable_1504.nValue    # 21 | MISSIONS/location2/level1/ai/523.qvm
-name EditVariable_162.nValue    # 31 | MISSIONS/location3/level1/ai/Squad_707.qvm
 name Game_FillSaveGameScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Game_GetGameMode    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Game_GetNewestSaveGameSlot    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -39,9 +25,7 @@ name Game_SetMenuLoadFromSlot    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 
 name Game_SetMusicVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Game_SetSFXVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name Game_UpdateVolume    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Human_Weapon    # 26 | MISSIONS/location2/level6/objects.qvm
 name LevelFlow_LevelFailed    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name LevelTimer_1740.nTick    # 25 | MISSIONS/location2/level5/ai/503.qvm, MISSIONS/location2/level5/ai/504.qvm
 name MENUMANAGER_RESTARTLEVEL    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MenuManager_ActivatePopupScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name MenuManager_ClearStack    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
@@ -87,11 +71,6 @@ name SlotSelector_isSlotEnabled    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 3
 name SlotSelector_isSlotVisible    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isThisCategorySelected    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ToggleBox_998.isOn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name priboy_bed_talking    # 21 | MISSIONS/location2/level1/objects.qvm
-name xxx    # 34 | MISSIONS/location3/level4/ai/3161.qvm, MISSIONS/location3/level4/ai/3165.qvm
-survey expression ! (  (AreaActivate_3275.nActive &&   (EditVariable_3243.nValue == 0 || EditVariable_3244.nValue == 0)  ||  AreaActivate_3272.nActive  ||  (AreaActivate_3276.nActive && EditVariable_3244.nValue == 0) )    # 33 | MISSIONS/location3/level3/objects.qvm: Expected ')' in line 0: ''
-survey expression ( EditVariable_322.nValue == 0 && Door_330.isOpen  ) ||  ( EditVariable_322.nValue == 1 && LevelTimer_313.nTick > 2 * GAME_FREQUENCY  ) ||  ( EditVariable_322.nValue == 2 && LevelTimer_313.nTick > 4 * GAME_FREQUENCY  ) ||  ( EditVariable_322.nValue == 3 && LevelTimer_313.nTick > 14 * GAME_FREQUENCY  )  || ( EditVariable_322.nValue == 4 && (  LevelTimer_313.nTick > 18 * GAME_FREQUENCY   ||  EditVariable_324.nValue == 1  )  || ( EditVariable_322.nValue == 5 && LevelTimer_315.nTick > 2 * GAME_FREQUENCY  )    # 16 | MISSIONS/location1/level6/objects.qvm: Expected ')' in line 0: ''
-survey expression |1    # 17 | MISSIONS/location1/level7/objects.qvm: Syntax error, expected operand in line 1: '|'
 type ColumnView    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type ColumnViewColumn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type ControlsMenu    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm

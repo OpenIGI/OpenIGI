@@ -32,6 +32,29 @@ public sealed class RetailIgi2CampaignCensusTests
         (3, 1), (3, 2), (3, 3), (3, 4), (3, 5), (3, 6),
     ];
 
+    /// <summary>Every exported variable the census takes as retail-unresolved names a task id its level does not have.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Retail_unresolved_variables_name_tasks_their_levels_lack()
+    {
+        foreach ((string name, string where) in Igi2MissionCensus.RetailUnresolved.Where(static n => n.Key.Contains('.', StringComparison.Ordinal)))
+        {
+            string[] place = where.Split('/');
+            int id = int.Parse(name[(name.IndexOf('_', StringComparison.Ordinal) + 1)..name.IndexOf('.', StringComparison.Ordinal)], System.Globalization.CultureInfo.InvariantCulture);
+            Igi2Level level = Igi2Level.Find(place[0], place[1]);
+            Assert.DoesNotContain(RetailIgi2Mission1.All(level.Root), t => t.Id == id);
+        }
+    }
+
+    /// <summary>The level expressions retail cannot parse are, here too, never run.</summary>
+    [Fact]
+    public void Retail_unparsable_expressions_are_never_run()
+    {
+        foreach (string expression in Igi2MissionCensus.RetailUnparsable)
+        {
+            Assert.True(new Flow.Igi2LevelExpression(expression, "Task_1", new OpenIGI.Scripting.Runtime.NativeRegistry()).IsEmpty, expression);
+        }
+    }
+
     /// <summary>The measured gaps of every mission are exactly the ledger's.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Campaign_gaps_match_the_ledger()
