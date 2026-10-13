@@ -190,7 +190,15 @@ public sealed partial class Igi2HumanSoldier
                 break;
         }
 
-        target.Activate(0);
+        if (target is Weapons.Igi2StationaryGunTask gun)
+        {
+            gun.Man(this, 0);
+        }
+        else
+        {
+            target.Activate(0);
+        }
+
         ActivationCount++;
     }
 

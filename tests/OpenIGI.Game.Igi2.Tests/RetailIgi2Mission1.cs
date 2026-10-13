@@ -45,9 +45,9 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
         Screen.Run();
     }
 
-    public static RetailIgi2Mission1 Load(bool collision = false, bool soundLengths = false)
+    public static RetailIgi2Mission1 Load(bool collision = false, bool soundLengths = false, string location = "location1", string levelName = "level1")
     {
-        Igi2Level level = Igi2Level.Find("location1", "level1");
+        Igi2Level level = Igi2Level.Find(location, levelName);
         RetailIgi2LevelLoadTests.Harness harness = new(Path.Combine(level.Directory, "objects.qvm"), loadTables: true);
         harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
         harness.Session.Services.Require<Igi2FlowState>().Reset();
@@ -55,14 +55,14 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
 
         VirtualFileSystem files = new();
         files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
-        files.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
+        files.SetAlias(VirtualFileSystem.MissionAlias, $"LOCAL:missions/{location}/{levelName}/");
         Igi2SoundDefinitions definitions = new();
-        definitions.Load(new ResourceRegistry(files), ["LOCAL:common/sounds", "LOCAL:missions/location1/common/sounds", "MISSION:sounds"]);
+        definitions.Load(new ResourceRegistry(files), ["LOCAL:common/sounds", $"LOCAL:missions/{location}/common/sounds", "MISSION:sounds"]);
         Engine.Audio.SoundBank? bank = null;
         if (soundLengths)
         {
             bank = new Engine.Audio.SoundBank(files);
-            foreach (string directory in (string[])["LOCAL:common/sounds", "LOCAL:missions/location1/common/sounds", "MISSION:sounds"])
+            foreach (string directory in (string[])["LOCAL:common/sounds", $"LOCAL:missions/{location}/common/sounds", "MISSION:sounds"])
             {
                 bank.MountDirectory(directory);
                 bank.MountDirectory(directory + "/" + Igi2SoundDefinitions.DefaultLanguage);
