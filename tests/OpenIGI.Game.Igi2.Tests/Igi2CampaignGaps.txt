@@ -9,10 +9,6 @@
 # After "    #": the missions (location*10+level) that need the gap | where it was found.
 
 name AIFunction_SetAccuracy    # 22 | MISSIONS/location2/level2/ai/521.qvm
-name AnimTask_3988.isRun    # 12 | MISSIONS/location1/level2/objects.qvm
-name AnimTask_3988.nTick    # 12 | MISSIONS/location1/level2/objects.qvm
-name AnimTask_4039.isRun    # 12 | MISSIONS/location1/level2/objects.qvm
-name AnimTask_4039.nTick    # 12 | MISSIONS/location1/level2/objects.qvm
 name AreaActivate_1701.nActive    # 17 | MISSIONS/location1/level7/ai/520.qvm, MISSIONS/location1/level7/ai/521.qvm, …
 name AreaActivate_1703.nActive    # 17 | MISSIONS/location1/level7/ai/540.qvm, MISSIONS/location1/level7/ai/541.qvm, …
 name AreaActivate_1704.nActive    # 17 | MISSIONS/location1/level7/ai/550.qvm, MISSIONS/location1/level7/ai/551.qvm, …
@@ -98,7 +94,6 @@ survey expression ! (  (AreaActivate_3275.nActive &&   (EditVariable_3243.nValue
 survey expression ( EditVariable_322.nValue == 0 && Door_330.isOpen  ) ||  ( EditVariable_322.nValue == 1 && LevelTimer_313.nTick > 2 * GAME_FREQUENCY  ) ||  ( EditVariable_322.nValue == 2 && LevelTimer_313.nTick > 4 * GAME_FREQUENCY  ) ||  ( EditVariable_322.nValue == 3 && LevelTimer_313.nTick > 14 * GAME_FREQUENCY  )  || ( EditVariable_322.nValue == 4 && (  LevelTimer_313.nTick > 18 * GAME_FREQUENCY   ||  EditVariable_324.nValue == 1  )  || ( EditVariable_322.nValue == 5 && LevelTimer_315.nTick > 2 * GAME_FREQUENCY  )    # 16 | MISSIONS/location1/level6/objects.qvm: Expected ')' in line 0: ''
 survey expression |1    # 17 | MISSIONS/location1/level7/objects.qvm: Syntax error, expected operand in line 1: '|'
 type AIStationaryGunHolder    # 17 22 33 35 | MISSIONS/location1/level7/objects.qvm, MISSIONS/location2/level2/objects.qvm, …
-type AnimTask    # 12 | MISSIONS/location1/level2/objects.qvm
 type BirdFlock    # 17 25 | MISSIONS/location1/level7/objects.qvm, MISSIONS/location2/level5/objects.qvm
 type Car    # 15 17 35 36 | MISSIONS/location1/level5/objects.qvm, MISSIONS/location1/level7/objects.qvm, …
 type CarAI    # 15 17 35 36 | MISSIONS/location1/level5/objects.qvm, MISSIONS/location1/level7/objects.qvm, …
@@ -125,4 +120,3 @@ type ScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36
 type SlideBar    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type StationaryGun    # 14 15 24 25 32 33 | MISSIONS/location1/level4/objects.qvm, MISSIONS/location1/level5/objects.qvm, …
 type ToggleBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-type Train    # 12 | MISSIONS/location1/level2/objects.qvm

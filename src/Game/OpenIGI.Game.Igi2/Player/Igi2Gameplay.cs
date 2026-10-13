@@ -581,6 +581,28 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        // Trains are measured and put on the splines they ride, every carriage moving and drawn moving; then the AnimTasks that drive
+        // them set them back to their start (Train_UpdateInternalDataAfterLoadHandler, AnimQTask_UpdateInternalDataHandler).
+        foreach (Vehicles.Igi2TrainTask train in Descendants(root).OfType<Vehicles.Igi2TrainTask>().Where(static t => !t.IsCarriage))
+        {
+            Engine.Tasks.GameTask? rails = train.RailroadId < 0
+                ? null
+                : Descendants(root).FirstOrDefault(t => t.Id == train.RailroadId && t.Type.Name == World.Igi2SplineObject.SplineType);
+            train.Prepare(models, rails is null ? null : World.Igi2SplineObject.Read(rails).Path);
+            foreach (Vehicles.Igi2TrainTask car in train.Rake)
+            {
+                car.Sounds = player.Sounds;
+                car.Magic = magicTypes;
+                car.Bind(player.CollisionWorld.SolidsOf(Vehicles.Igi2TrainTask.TypeName, car.Id));
+                movers.Add(car);
+            }
+        }
+
+        foreach (Flow.Igi2AnimTask animation in Descendants(root).OfType<Flow.Igi2AnimTask>())
+        {
+            animation.Begin();
+        }
+
         List<Interaction.IIgi2Destructible> destructibles = [];
         foreach (Interaction.Igi2ExplodeObjectTask explosive in Descendants(root).OfType<Interaction.Igi2ExplodeObjectTask>())
         {

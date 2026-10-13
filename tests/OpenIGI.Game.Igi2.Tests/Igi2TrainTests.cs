@@ -1,8 +1,12 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Game.Igi2.Vehicles;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -159,5 +163,58 @@ public sealed class Igi2TrainTests
 
         Assert.Equal(9, carriages);
         Assert.Equal(2, trains);
+    }
+
+    /// <summary>
+    /// Mission 12's running AnimTask drives its train: set back at load to where the level starts it, at its original thrust's speed;
+    /// then each tick its thrust closes on the programme's, and it moves its speed along the spline, its carriages a coupling apart.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void An_anim_task_drives_its_train_along_the_spline()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level2");
+        Igi2AnimTask animation = All(level.Root).OfType<Igi2AnimTask>().Single(t => t.Id == 4039);
+        Igi2TrainTask train = All(level.Root).OfType<Igi2TrainTask>().Single(t => t.Id == animation.TargetId);
+        GameTask rails = All(level.Root).Single(t => t.Id == train.RailroadId);
+        train.Prepare(level.ModelFor, Igi2SplineObject.Read(rails).Path);
+        Assert.Equal(train.Rake[0].CurrentPosition, train.Rake[0].Built.Position);
+
+        animation.Begin();
+        Assert.Same(train, animation.Target);
+        Assert.Equal(0, animation.Tick);
+        Assert.Equal(train.OriginalPosition, train.Distance);
+        Assert.Equal(train.OriginalThrust, train.Thrust);
+
+        // Its run expression follows the other train's AnimTask, which waits on a mission variable; without it, it runs as authored.
+        animation.RunExpression = string.Empty;
+        Igi2LevelRun run = new(level.Root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
+        for (int tick = 0; tick < 300; tick++)
+        {
+            float before = train.Distance;
+            animation.Run(run);
+            if (animation.Tick >= 2)
+            {
+                Assert.Equal(((Fpu)(train.FlipDirection ? -train.Speed : train.Speed) + before).F, train.Distance);
+            }
+        }
+
+        Assert.Equal(300, animation.Tick);
+        for (int i = 1; i < train.Rake.Count; i++)
+        {
+            double gap = (train.Rake[i].CurrentPosition - train.Rake[i - 1].CurrentPosition).Length;
+            Assert.InRange(gap, train.Rake[i - 1].Length - 1500.0, train.Rake[i - 1].Length + 1500.0);
+        }
+    }
+
+    private static IEnumerable<GameTask> All(GameTask task)
+    {
+        yield return task;
+        foreach (GameTask child in task.Children)
+        {
+            foreach (GameTask inner in All(child))
+            {
+                yield return inner;
+            }
+        }
     }
 }

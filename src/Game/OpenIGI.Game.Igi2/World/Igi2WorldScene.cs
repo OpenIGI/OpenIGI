@@ -332,29 +332,20 @@ public sealed class Igi2WorldScene
                 into.AddRange(run.Segments);
             }
 
-            if (child is DeclaredTask declared)
+            // A locomotive places its whole rake. A carriage is a Train whose parent is one, and it carries no
+            // distance of its own -- Train_UpdateInternalDataHandler calls Train_Move only for the one at the
+            // front, and that moves all of them.
+            if (models is not null
+                && child is Vehicles.Igi2TrainTask train
+                && !train.IsCarriage
+                && splines.TryGetValue(train.RailroadId, out Igi2SplineRun rails))
             {
-                // A locomotive places its whole rake. A carriage is a Train whose parent is one, and it
-                // carries no distance of its own -- Train_UpdateInternalDataHandler (igi2ed 0x47F8E0)
-                // calls Train_Move only for the one at the front, and that moves all of them.
-                if (models is not null
-                    && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal)
-                    && !IsTrain(declared.Parent)
-                    && declared.TryGetValue(Igi2Train.RailroadParameter, out object? rawRail)
-                    && rawRail is int railroad
-                    && splines.TryGetValue(railroad, out Igi2SplineRun rails))
-                {
-                    into.AddRange(Igi2Train.Carriages(declared, rails.Path, models));
-                }
+                into.AddRange(Igi2Train.Carriages(train, rails.Path, models));
             }
 
             Collect(child, into, splines, models);
         }
     }
-
-    private static bool IsTrain(GameTask? task) =>
-        task is DeclaredTask declared
-        && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal);
 
     /// <summary>Reads one task's placement, if it declares the three parameters that make one.</summary>
     /// <param name="task">The placeholder task, or a typed task that says it is placed.</param>

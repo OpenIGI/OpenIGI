@@ -248,6 +248,8 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2AreaActivateTask>(Flow.Igi2AreaActivateTask.TypeName);
         context.Types.Register<Flow.Igi2LevelTimerTask>(Flow.Igi2LevelTimerTask.TypeName);
         context.Types.Register<Flow.Igi2OverlayHolderTask>(Flow.Igi2OverlayHolderTask.TypeName);
+        context.Types.Register<Flow.Igi2AnimTask>(Flow.Igi2AnimTask.TypeName);
+        context.Types.Register<Vehicles.Igi2TrainTask>(Vehicles.Igi2TrainTask.TypeName);
         context.Services.GetOrProvide(static () => new Flow.Igi2ScreenOverlay());
         Flow.Igi2ScreenOverlay.RegisterConstants(context.Natives);
         context.Types.Register<Flow.Igi2MissionTimerTask>(Flow.Igi2MissionTimerTask.TypeName);
