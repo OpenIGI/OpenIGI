@@ -13,6 +13,7 @@ public sealed class Igi2Computer
     public const int HilightBlock = 32;
 
     private readonly List<Igi2ComputerHilightTask> _hilights = [];
+    private readonly List<Igi2ComputerPlanTask> _plans = [];
 
     /// <summary>Gets the objective set that last ran while valid, or <see langword="null"/>.</summary>
     public Igi2DefineComputerObjectiveTask? Objectives { get; internal set; }
@@ -25,6 +26,9 @@ public sealed class Igi2Computer
 
     /// <summary>Gets the highlights, in the order they were made.</summary>
     public IReadOnlyList<Igi2ComputerHilightTask> Hilights => _hilights;
+
+    /// <summary>Gets the building plans, in the order they were made.</summary>
+    public IReadOnlyList<Igi2ComputerPlanTask> Plans => _plans;
 
     /// <summary>Gets or sets a value indicating whether the computer may be opened, <c>Computer_isEnabled</c>.</summary>
     public bool IsEnabled { get; set; } = true;
@@ -65,12 +69,17 @@ public sealed class Igi2Computer
         InactiveObjectives = null;
         Limit = null;
         _hilights.Clear();
+        _plans.Clear();
         IsEnabled = true;
     }
 
     /// <summary>Lists a highlight, <c>QTaskList_Register</c> in its create handler.</summary>
     /// <param name="hilight">The highlight.</param>
     internal void Register(Igi2ComputerHilightTask hilight) => _hilights.Add(hilight);
+
+    /// <summary>Lists a plan, <c>QVector_AddElement</c> in its create handler.</summary>
+    /// <param name="plan">The plan.</param>
+    internal void RegisterPlan(Igi2ComputerPlanTask plan) => _plans.Add(plan);
 
     /// <summary>The marker constants the computer object module registers.</summary>
     /// <param name="natives">The namespace.</param>

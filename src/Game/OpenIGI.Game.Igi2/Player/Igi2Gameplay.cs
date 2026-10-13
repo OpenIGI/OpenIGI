@@ -383,6 +383,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     case Computer.Igi2DefineComputerLimitTask limit:
                         limit.Attach(computer);
                         break;
+                    case Computer.Igi2ComputerPlanTask plan:
+                        plan.Attach(computer);
+                        break;
                     case Computer.Igi2ComputerHilightTask hilight:
                         hilight.Attach(computer);
                         hilight.ReadMarkers(natives, functions);
@@ -478,6 +481,27 @@ public sealed class Igi2Gameplay : ITitleGameplay
             cabinet.Models = models;
             cabinet.Prepare(magicTypes);
             activatables.Add(cabinet);
+        }
+
+        // A level's model LOD settings over the game's (LocalModelLODSettingsContainer_UpdateInternalDataAfterLoadHandler).
+        if (request.Services.TryGet(out World.Igi2ModelLodTable? lodTable))
+        {
+            lodTable.BeginLevel();
+            foreach (World.Igi2LocalModelLodSettingsContainerTask container in Descendants(root).OfType<World.Igi2LocalModelLodSettingsContainerTask>())
+            {
+                lodTable.Load(container, container.Path, request.World.Resources, natives);
+            }
+        }
+
+        // Scripted overlays go up on the game screen.
+        if (request.Services.TryGet(out Igi2ScreenOverlay? screenOverlay))
+        {
+            screenOverlay.Hide();
+            player.ScreenOverlay = screenOverlay;
+            foreach (Igi2OverlayHolderTask holder in Descendants(root).OfType<Igi2OverlayHolderTask>())
+            {
+                holder.Screen = screenOverlay;
+            }
         }
 
         // Wires are strung between their ends and climbed or ridden down.
@@ -1023,6 +1047,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
             return _held;
         }
     }
+
+    /// <summary>Gets or sets the overlay the scripts have put on the game screen, which the HUD draws.</summary>
+    public Igi2ScreenOverlay? ScreenOverlay { get; set; }
 
     /// <summary>Gets or sets the level's figures (<see cref="World.Igi2EditBoneObjTask"/>), drawn with the soldiers.</summary>
     public IReadOnlyList<World.Igi2EditBoneObjTask> Figures { get; set; } = [];

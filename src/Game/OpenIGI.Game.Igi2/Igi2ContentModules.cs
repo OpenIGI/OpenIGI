@@ -33,6 +33,7 @@ public static class Igi2ContentModules
         new Igi2WaterContentModule(),
         new Igi2SkyContentModule(),
         new Igi2MagicObjContentModule(),
+        new Igi2ModelLodContentModule(),
         new Igi2TaskTypeConstantsModule(),
     ];
 }
@@ -217,6 +218,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         // The map computer's level data: its objectives, its limit and its highlights, and the markers they name.
         context.Types.Register<Computer.Igi2DefineComputerObjectiveTask>(Computer.Igi2DefineComputerObjectiveTask.TypeName);
         context.Types.Register<Computer.Igi2DefineComputerLimitTask>(Computer.Igi2DefineComputerLimitTask.TypeName);
+        context.Types.Register<Computer.Igi2ComputerPlanTask>(Computer.Igi2ComputerPlanTask.TypeName);
         context.Types.Register<Computer.Igi2ComputerHilightTask>(Computer.Igi2ComputerHilightTask.TypeName);
         Computer.Igi2Computer.RegisterConstants(context.Natives);
         context.Services.GetOrProvide(static () => new Computer.Igi2Computer());
@@ -245,6 +247,9 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2StatusMessageTask>(Flow.Igi2StatusMessageTask.TypeName);
         context.Types.Register<Flow.Igi2AreaActivateTask>(Flow.Igi2AreaActivateTask.TypeName);
         context.Types.Register<Flow.Igi2LevelTimerTask>(Flow.Igi2LevelTimerTask.TypeName);
+        context.Types.Register<Flow.Igi2OverlayHolderTask>(Flow.Igi2OverlayHolderTask.TypeName);
+        context.Services.GetOrProvide(static () => new Flow.Igi2ScreenOverlay());
+        Flow.Igi2ScreenOverlay.RegisterConstants(context.Natives);
         context.Types.Register<Flow.Igi2MissionTimerTask>(Flow.Igi2MissionTimerTask.TypeName);
         context.Types.Register<Interaction.Igi2SecurityCameraTask>(Interaction.Igi2SecurityCameraTask.TypeName);
 
@@ -556,6 +561,34 @@ public sealed class Igi2MagicObjContentModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Services.Require<World.Igi2MagicObjTypes>().Load(context.Resources, context.Natives, context.Tasks);
+    }
+}
+
+/// <summary>The model LOD settings: the game's file at start-up (<see cref="World.Igi2ModelLodTable"/>), and the types a level's adds.</summary>
+public sealed class Igi2ModelLodContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Model LOD settings";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Types.Register<World.Igi2ModelLodSettingsContainerTask>(World.Igi2ModelLodSettingsContainerTask.TypeName);
+        context.Types.Register<World.Igi2LocalModelLodSettingsContainerTask>(World.Igi2LocalModelLodSettingsContainerTask.TypeName);
+        context.Types.Register<World.Igi2ModelLodSettingsTask>(World.Igi2ModelLodSettingsTask.TypeName);
+        context.Services.GetOrProvide(static () => new World.Igi2ModelLodTable());
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>Flow_CreateHandler</c> makes the game's container, which loads <c>lod.qsc</c> as it is made.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        World.Igi2ModelLodTable table = context.Services.Require<World.Igi2ModelLodTable>();
+        Engine.Tasks.GameTask container = context.Tasks.New(context.Tasks.Root, context.Tasks.Types.Get(World.Igi2ModelLodSettingsContainerTask.TypeName));
+        table.Load(container, World.Igi2ModelLodTable.GameFile, context.Resources, context.Natives);
+        table.KeepAsGame();
     }
 }
 
