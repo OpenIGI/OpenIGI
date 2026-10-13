@@ -108,9 +108,9 @@ public sealed class RetailIgi2StationaryGunTests
         Igi2AiStationaryGunHolderTask turret = All(level.Root).OfType<Igi2AiStationaryGunHolderTask>().Single(static t => t.Id == 3783);
         Detection.Igi2DetectionWorld detection = new(null, session.Require<World.Igi2GameMaterials>());
         turret.Prepare(session.Require<Igi2HumanWeapons>(), level.ModelFor, session.Require<World.Igi2MagicObjTypes>(), detection);
-        Assert.Equal("720_06_1", turret.HeadModel);
+        Assert.Equal("720_06_1", turret.Gun!.HeadModel);
 
-        Vector3d target = turret.BarrelPosition + new Vector3d(30.0 * 4096.0, 10.0 * 4096.0, -2.0 * 4096.0);
+        Vector3d target = turret.Gun!.BarrelPosition + new Vector3d(30.0 * 4096.0, 10.0 * 4096.0, -2.0 * 4096.0);
         Target enemy = new(target);
         turret.Detection!.Track(enemy).FullVisible[0] = true;
         turret.OnExpression = string.Empty;
@@ -120,15 +120,15 @@ public sealed class RetailIgi2StationaryGunTests
             turret.Run(run);
         }
 
-        Assert.True(turret.HasTarget);
-        Vector3d to = target - turret.BarrelPosition;
+        Assert.True(turret.Gun!.HasTarget);
+        Vector3d to = target - turret.Gun!.BarrelPosition;
         double length = to.Length;
-        IReadOnlyList<float> f = turret.BarrelFrame;
+        IReadOnlyList<float> f = turret.Gun!.BarrelFrame;
         double cosine = ((f[1] * to.X) + (f[4] * to.Y) + (f[7] * to.Z)) / length;
         Assert.True(cosine > Math.Cos(10.0 * Math.PI / 180.0), $"barrel off by {Math.Acos(cosine) * 180.0 / Math.PI} degrees");
-        Assert.True(turret.IsOnTarget);
-        Assert.True(turret.Firing!.Inventory.TotalBulletsFired > 0);
-        Assert.True(turret.Spin > 0f);
+        Assert.True(turret.Gun!.IsOnTarget);
+        Assert.True(turret.Gun!.Firing.Inventory.TotalBulletsFired > 0);
+        Assert.True(turret.Gun!.Spin > 0f);
         GC.KeepAlive(session);
     }
 
@@ -151,7 +151,7 @@ public sealed class RetailIgi2StationaryGunTests
         int barrel = own.FindIndex(static p => p.Instance.Name == "720_07_1");
         Assert.True(head >= 0 && barrel > head, $"head {head}, barrel {barrel}");
         Vector3d at = WorldScene.ToUnits(own[barrel].Position);
-        Assert.True((at - turret.BarrelPosition).Length < 1.0, $"barrel at {at}, gun puts it at {turret.BarrelPosition}");
+        Assert.True((at - turret.Gun!.BarrelPosition).Length < 1.0, $"barrel at {at}, gun puts it at {turret.Gun!.BarrelPosition}");
         GC.KeepAlive(session);
     }
 

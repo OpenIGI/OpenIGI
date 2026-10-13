@@ -649,12 +649,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             Detection.Igi2DetectionWorld? detection = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? turretAi) ? turretAi.Detection : null;
             foreach (Weapons.Igi2AiStationaryGunHolderTask turret in Descendants(root).OfType<Weapons.Igi2AiStationaryGunHolderTask>())
             {
-                turret.Random = player.Human.Random;
-                turret.Sounds = player.Sounds;
-                turret.Prepare(turretWeapons, models, magicTypes, detection);
-                if (turret.Firing is { } firing)
+                turret.Prepare(turretWeapons, models, magicTypes, detection, player.Sounds, player.Human.Random);
+                if (turret.Gun is { } gun)
                 {
-                    firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => turret.Muzzle);
+                    Igi2WeaponFiring firing = gun.Firing;
+                    firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Muzzle);
                     firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds);
                     if (turretMaterials is not null)
                     {

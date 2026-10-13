@@ -206,7 +206,7 @@ public sealed class Igi2WorldScene
                 PositionParameter,
                 OrientationParameter,
                 MountedModel: "Barrel model",
-                MountedOn: Weapons.Igi2AiStationaryGunHolderTask.GunType),
+                MountedOn: Weapons.Igi2AiStationaryGun.TypeName),
             ["Lift"] = new("Model", "Start Position", "Start Orientation"),
             ["SplineObjWaypoint"] = new("Waypoint Model", PositionParameter, OrientationParameter),
         };
