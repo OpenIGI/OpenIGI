@@ -34,7 +34,10 @@ public readonly record struct Igi2ProjectileLaunch(
 /// <param name="Position">Where it happens.</param>
 /// <param name="Direction">Its direction.</param>
 /// <param name="Team">The team of the one causing it.</param>
-public readonly record struct Igi2WeaponAiEvent(int Event, int Flags, float Radius, Vector3d Position, Vector3f Direction, int Team);
+/// <param name="Originator">The human who caused it, <c>ptHumanOriginatorQTask</c>.</param>
+/// <param name="Reference">What it is about, <c>ptReferenceQTask</c>.</param>
+public readonly record struct Igi2WeaponAiEvent(
+    int Event, int Flags, float Radius, Vector3d Position, Vector3f Direction, int Team, object? Originator = null, object? Reference = null);
 
 /// <summary>A casing a gun throws out, <c>GunCasing_New</c> (<c>igi2 0x5287A0</c>) as the gun asks for it.</summary>
 /// <param name="WeaponObject">Which of the holder's weapon objects it leaves from: its third magic vertex is where.</param>

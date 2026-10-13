@@ -7,15 +7,15 @@ namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>What a bullet's flight sounds in the level; what it shows arrives with its presentation.</summary>
 /// <param name="sounds">The level's sounds.</param>
-internal sealed class Igi2LevelImpactEffects(Igi2Sounds sounds) : IIgi2GunShotEffects
+/// <param name="ai">The session's AI, which hears the events, or <see langword="null"/>.</param>
+internal sealed class Igi2LevelImpactEffects(Igi2Sounds sounds, Ai.Runtime.Igi2AiWorld? ai = null) : IIgi2GunShotEffects
 {
     /// <inheritdoc/>
     public bool NewSound(string sound, Vector3d position) => sounds.New(sound, position) is not null;
 
     /// <inheritdoc/>
-    public void SendAiEvent(in Igi2WeaponAiEvent aiEvent)
-    {
-    }
+    public void SendAiEvent(in Igi2WeaponAiEvent aiEvent) =>
+        ai?.SendEvent(new Ai.Igi2AiEvent(aiEvent.Event, aiEvent.Team, aiEvent.Flags, aiEvent.Radius, aiEvent.Position, aiEvent.Direction, aiEvent.Originator, aiEvent.Reference));
 
     /// <inheritdoc/>
     public void Tracer(in Igi2Tracer tracer)
@@ -45,7 +45,8 @@ internal sealed class Igi2LevelImpactEffects(Igi2Sounds sounds) : IIgi2GunShotEf
 
 /// <summary>What an explosion sounds in the level.</summary>
 /// <param name="sounds">The level's sounds.</param>
-internal sealed class Igi2LevelExplosionEffects(Igi2Sounds sounds) : IIgi2ExplosionEffects
+/// <param name="ai">The session's AI, which hears the events, or <see langword="null"/>.</param>
+internal sealed class Igi2LevelExplosionEffects(Igi2Sounds sounds, Ai.Runtime.Igi2AiWorld? ai = null) : IIgi2ExplosionEffects
 {
     /// <inheritdoc/>
     public void BurnMark(Igi2Intersection ground, float radius)
@@ -56,9 +57,8 @@ internal sealed class Igi2LevelExplosionEffects(Igi2Sounds sounds) : IIgi2Explos
     public void Sound(string sound, Vector3d position) => sounds.New(sound, position);
 
     /// <inheritdoc/>
-    public void AiEvent(int aiEvent, int flags, Vector3d position, float range)
-    {
-    }
+    public void AiEvent(int aiEvent, int flags, Vector3d position, float range, int team = 1) =>
+        ai?.SendEvent(new Ai.Igi2AiEvent(aiEvent, team, flags, range, position, default, null));
 }
 
 /// <summary>
@@ -67,7 +67,8 @@ internal sealed class Igi2LevelExplosionEffects(Igi2Sounds sounds) : IIgi2Explos
 /// </summary>
 /// <param name="sounds">The level's sounds.</param>
 /// <param name="view">Where the holder's view is.</param>
-internal sealed class Igi2LevelWeaponEffects(Igi2Sounds sounds, Func<Vector3d> view) : IIgi2WeaponEffects
+/// <param name="ai">The session's AI, which hears the events, or <see langword="null"/>.</param>
+internal sealed class Igi2LevelWeaponEffects(Igi2Sounds sounds, Func<Vector3d> view, Ai.Runtime.Igi2AiWorld? ai = null) : IIgi2WeaponEffects
 {
     /// <summary>The most sounds a sequence holds, <c>Weapon_s + 0x28C</c> against ten.</summary>
     public const int SequenceLength = 10;
@@ -84,9 +85,8 @@ internal sealed class Igi2LevelWeaponEffects(Igi2Sounds sounds, Func<Vector3d> v
     }
 
     /// <inheritdoc/>
-    public void SendAiEvent(in Igi2WeaponAiEvent aiEvent)
-    {
-    }
+    public void SendAiEvent(in Igi2WeaponAiEvent aiEvent) =>
+        ai?.SendEvent(new Ai.Igi2AiEvent(aiEvent.Event, aiEvent.Team, aiEvent.Flags, aiEvent.Radius, aiEvent.Position, aiEvent.Direction, aiEvent.Originator, aiEvent.Reference));
 
     /// <inheritdoc/>
     public void MuzzleFlash(int weaponObject, string? sprite, float size)

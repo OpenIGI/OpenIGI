@@ -354,7 +354,7 @@ public sealed class Igi2GunShot
             string sound = material?.BulletHitSounds[(int)(draw % 6)] ?? string.Empty;
             rung = effects.NewSound(sound, hit.Position);
             Vector3f back = new((new Fpu(bullet.Direction.X) * -1.0f).F, (new Fpu(bullet.Direction.Y) * -1.0f).F, (new Fpu(bullet.Direction.Z) * -1.0f).F);
-            effects.SendAiEvent(new Igi2WeaponAiEvent(StrikeEvent, StrikeFlags, StrikeRadius, hit.Position, back, shooter.Team));
+            effects.SendAiEvent(new Igi2WeaponAiEvent(StrikeEvent, StrikeFlags, StrikeRadius, hit.Position, back, shooter.Team, shooter));
         }
 
         float penetration = (new Fpu(bullet.Penetration) - (material?.PenetrationPower ?? 0f)).F;

@@ -117,7 +117,8 @@ public interface IIgi2ExplosionEffects
     /// <param name="flags">Its flags.</param>
     /// <param name="position">Where.</param>
     /// <param name="range">How far it carries.</param>
-    void AiEvent(int aiEvent, int flags, Vector3d position, float range);
+    /// <param name="team">The team it concerns: an explosion's, 1; a grenade's, every team.</param>
+    void AiEvent(int aiEvent, int flags, Vector3d position, float range, int team = 1);
 }
 
 /// <summary>An explosion's effects that do nothing.</summary>
@@ -137,7 +138,7 @@ public sealed class Igi2NoExplosionEffects : IIgi2ExplosionEffects
     }
 
     /// <inheritdoc/>
-    public void AiEvent(int aiEvent, int flags, Vector3d position, float range)
+    public void AiEvent(int aiEvent, int flags, Vector3d position, float range, int team = 1)
     {
     }
 }
@@ -836,7 +837,8 @@ public sealed class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery col
     public void Sound(string sound, Vector3d position) => Effects.Sound(sound, position);
 
     /// <inheritdoc/>
-    public void AiEvent(int aiEvent, int flags, Vector3d position, float range) => Effects.AiEvent(aiEvent, flags, position, range);
+    /// <remarks>A grenade's events go to every team (<c>Grenade_SendDetectionEvent</c>).</remarks>
+    public void AiEvent(int aiEvent, int flags, Vector3d position, float range) => Effects.AiEvent(aiEvent, flags, position, range, -1);
 
     /// <summary>The fixed 40.96-unit step past each face the blast's trace makes.</summary>
     private const float StillStep = 40.96f;

@@ -227,11 +227,11 @@ public sealed class Igi2GunFire : IIgi2FireHandler
         float range = gun.AIdetectionRange;
         if (range > LoudRange)
         {
-            effects.SendAiEvent(new Igi2WeaponAiEvent(LoudShotEvent, 0x2C2, LoudEventRadius, request.Position, line, owner.Team));
+            effects.SendAiEvent(new Igi2WeaponAiEvent(LoudShotEvent, 0x2C2, LoudEventRadius, request.Position, line, owner.Team, owner, owner));
         }
 
-        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotEvent, 0x442, range, request.Position, line, owner.Team));
-        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotLineEvent, 0x522, range, request.Position, line, owner.Team));
+        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotEvent, 0x442, range, request.Position, line, owner.Team, owner, owner));
+        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotLineEvent, 0x522, range, request.Position, line, owner.Team, owner, owner));
         if (range > LoudRange)
         {
             owner.IgnoreLightOnVisibility(LoudVisibilityTicks);
