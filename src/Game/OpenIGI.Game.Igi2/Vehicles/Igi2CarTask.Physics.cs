@@ -77,6 +77,7 @@ public sealed partial class Igi2CarTask
         if (_body is not null && _solids.Count > 0 && Models is { } models)
         {
             Igi2CollisionWorld.Repose(_solids, models, Model, start, Magic);
+            PlaceDoors(start);
         }
     }
 
@@ -127,7 +128,9 @@ public sealed partial class Igi2CarTask
             body.Update(Gravity, AirResistance, SpinResistance, world);
             if (_solids.Count > 0 && Models is { } models)
             {
-                Igi2CollisionWorld.Repose(_solids, models, Model, Igi2Pose.FromMatrix(body.Position, Rows(body.Orientation)), Magic);
+                Igi2Pose moved = Igi2Pose.FromMatrix(body.Position, Rows(body.Orientation));
+                Igi2CollisionWorld.Repose(_solids, models, Model, moved, Magic);
+                PlaceDoors(moved);
             }
         }
 
@@ -411,6 +414,23 @@ public sealed partial class Igi2CarTask
             Vector3f n = wing.Normal;
             Fpu f = (((((Fpu)d.Y * n.Y) + ((Fpu)d.Z * n.Z)) + ((Fpu)d.X * n.X)) * wing.Area) * k;
             body.Body.AddForce(new Igi2PointForce(new Vector3f(((Fpu)n.X * f).F, ((Fpu)n.Y * f).F, ((Fpu)n.Z * f).F), wing.Position));
+        }
+    }
+
+    // CarDoor_UpdateMagicObjHandler, as the car moves its magic objects: each door's solid where its point puts it, turned by its swing.
+    private void PlaceDoors(Igi2Pose car)
+    {
+        foreach (Igi2CarDoor door in _doors)
+        {
+            if (door.Solid is { } solid)
+            {
+                Igi2Pose pose = door.Pose(car);
+                solid.Position = pose.Position;
+                for (int i = 0; i < solid.Orientation.Length; i++)
+                {
+                    solid.Orientation[i] = pose.Orientation[i];
+                }
+            }
         }
     }
 }

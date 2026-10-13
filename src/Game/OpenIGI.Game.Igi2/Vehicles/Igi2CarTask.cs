@@ -82,6 +82,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     private byte _isExploded;
     private bool _isWeaponSystemsRun;
     private IReadOnlyList<Igi2DeathZone> _deathZones = [];
+    private IReadOnlyList<Igi2CarDoor> _doors = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CarTask"/> class.</summary>
     public Igi2CarTask()
@@ -257,6 +258,9 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     /// <summary>Gets its kill boxes, once prepared.</summary>
     public IReadOnlyList<Igi2DeathZone> DeathZones => _deathZones;
 
+    /// <summary>Gets its doors, the attach points of the magic type <c>CarDoor</c>.</summary>
+    public IReadOnlyList<Igi2CarDoor> Doors => _doors;
+
     /// <summary>Gets or sets the level's explosions, which it goes off as and is reached by.</summary>
     public Igi2ExplosionWorld? Explosions { get; set; }
 
@@ -329,6 +333,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         AttachWheelsAndGun(weapons, models, random);
         _deathZones = _model is not null && Magic is { } magic ? Igi2DeathZone.Find(_model, magic, models, _solids) : [];
+        _doors = _model is not null && Magic is { } doorMagic ? Igi2CarDoor.Find(_model, doorMagic, models, _solids) : [];
         Reset();
     }
 
@@ -361,6 +366,12 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         RunDetection(level);
         level.RunChildren(this);
+
+        // CarDoor_RunHandler: its doors are among its magic objects, which run as its children do.
+        foreach (Igi2CarDoor door in _doors)
+        {
+            door.Run(IsDoorOpen);
+        }
 
         // DeathZone_RunHandler: while the car is not at rest.
         if (_deathZones.Count > 0 && _body is { } body && !body.IsIdle())
@@ -459,12 +470,23 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     /// <remarks>Its gun's head and barrel, turned on it; everything else of it moves with it.</remarks>
     public bool TryMovePart(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
     {
+        ArgumentNullException.ThrowIfNull(placement);
+        foreach (Igi2CarDoor door in _doors)
+        {
+            if (door.Model is not null && ReferenceEquals(placement.Model, door.Model) && placement.LevelId == Id)
+            {
+                Igi2Pose pose = door.Pose(Igi2Pose.FromMatrix(CurrentPosition, Rows(CurrentOrientation)));
+                positionMetres = WorldScene.ToMetres(pose.Position);
+                orientation = pose.ToMatrix();
+                return true;
+            }
+        }
+
         if (Gun is { } gun)
         {
             return gun.TryMovePart(placement, out positionMetres, out orientation);
         }
 
-        ArgumentNullException.ThrowIfNull(placement);
         (positionMetres, orientation) = (default, placement.Orientation);
         return false;
     }

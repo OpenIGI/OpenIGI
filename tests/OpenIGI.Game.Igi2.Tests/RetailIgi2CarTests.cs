@@ -164,6 +164,37 @@ public sealed class RetailIgi2CarTests
         Assert.Equal(0f, clear.Damage.Damage);
     }
 
+    /// <summary>
+    /// A car door (<c>CarDoor_RunHandler</c>) at its default thirty degrees a second swings a degree a tick toward its open angle of
+    /// -118 degrees and stops there, then back to shut; about its X axis it turns its point's Y toward Z (<c>CarDoor_UpdateMagicObjHandler</c>).
+    /// </summary>
+    [Fact]
+    public void A_car_door_swings_open_and_shut()
+    {
+        Formats.World.MefAttachment point = new("610_02_1", new Vector3f(100f, 0f, 0f), Matrix3f.Identity, 0);
+        Igi2CarDoor door = new(point, null, axis: 0, degreesPerSecond: 30f, maxDegrees: -118f, solid: null);
+        Assert.Equal(0.017453292f, door.Speed, 6);
+        door.Run(isOpen: true);
+        Assert.Equal(-door.Speed, door.Angle);
+        for (int tick = 0; tick < 200; tick++)
+        {
+            door.Run(isOpen: true);
+        }
+
+        Assert.Equal(door.MaxAngle, door.Angle);
+        Igi2Pose open = door.Pose(Igi2Pose.FromMatrix(new Vector3d(0.0, 0.0, 0.0), Matrix3f.Identity));
+        Assert.Equal(100.0, open.Position.X, 3);
+        Assert.Equal(Math.Cos(door.MaxAngle), open.Orientation[4], 5);
+        Assert.Equal(Math.Sin(door.MaxAngle), open.Orientation[7], 5);
+
+        for (int tick = 0; tick < 200; tick++)
+        {
+            door.Run(isOpen: false);
+        }
+
+        Assert.Equal(0f, door.Angle);
+    }
+
     private static Matrix3f Rows(IReadOnlyList<float> f) => new(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
 
     private static (RetailIgi2Mission1 Mission, Igi2CarTask Car) Car(int id)
