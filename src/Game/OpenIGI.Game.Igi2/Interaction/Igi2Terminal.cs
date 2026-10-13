@@ -181,4 +181,35 @@ public sealed class Igi2Terminal(IIgi2TerminalOwner owner)
         variables.BindInt(task, "isHackedThisTick", () => _isHackedThisTick, value => _isHackedThisTick = (byte)value, sizeof(byte));
         variables.BindInt(task, "nClientID", () => _clientId, value => _clientId = value);
     }
+
+    /// <summary>
+    /// Writes its save state, <c>Terminal_ptSerializeParameterList</c> past the exploding object's: whether it is in use and was, when it
+    /// was last, whether it may be hacked, has been and was this tick, and when.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    public void WriteState(Saves.Igi2StateWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Bool(_isInUse != 0);
+        writer.Bool(_isLastInUse != 0);
+        writer.Int(_lastInUseTick);
+        writer.Bool(_isActive != 0);
+        writer.Bool(_isHacked != 0);
+        writer.Bool(_isHackedThisTick != 0);
+        writer.Int(_hackedThisTickTick);
+    }
+
+    /// <summary>Reads its save state back.</summary>
+    /// <param name="reader">The reader.</param>
+    public void ReadState(Saves.Igi2StateReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        _isInUse = reader.Bool() ? (byte)1 : (byte)0;
+        _isLastInUse = reader.Bool() ? (byte)1 : (byte)0;
+        _lastInUseTick = reader.Int();
+        _isActive = reader.Bool() ? (byte)1 : (byte)0;
+        _isHacked = reader.Bool() ? (byte)1 : (byte)0;
+        _isHackedThisTick = reader.Bool() ? (byte)1 : (byte)0;
+        _hackedThisTickTick = reader.Int();
+    }
 }

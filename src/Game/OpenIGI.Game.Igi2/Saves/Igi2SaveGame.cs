@@ -142,7 +142,7 @@ public static class Igi2SaveGame
         ArgumentNullException.ThrowIfNull(call);
         ArgumentNullException.ThrowIfNull(byId);
         int next = 0;
-        if (Find(call, byId, ref next) is IIgi2Serialized serialized)
+        if (FindState(call, byId, ref next) is { } serialized)
         {
             serialized.ReadState(new Igi2StateReader(call, next, reader => FindReference(call, byId, reader)));
         }
@@ -181,9 +181,36 @@ public static class Igi2SaveGame
             return;
         }
 
+        string hierarchy = Hierarchy(anchor, task, ids);
+        Dictionary<string, int> places = new(StringComparer.Ordinal);
+        foreach (Igi2SerializedPart part in serialized.SerializedParts)
+        {
+            int place = places.GetValueOrDefault(part.TypeName);
+            places[part.TypeName] = place + 1;
+            Igi2StateWriter partWriter = new(target => Hierarchy(target, ids));
+            part.State.WriteState(partWriter);
+            text.Append(DefineTaskState).Append('(').Append(PartHierarchy(hierarchy, part.TypeName, place)).Append(partWriter.Arguments).Append(");\n");
+        }
+
         Igi2StateWriter writer = new(target => Hierarchy(target, ids));
         serialized.WriteState(writer);
-        text.Append(DefineTaskState).Append('(').Append(Hierarchy(anchor, task, ids)).Append(writer.Arguments).Append(");\n");
+        text.Append(DefineTaskState).Append('(').Append(hierarchy).Append(writer.Arguments).Append(");\n");
+    }
+
+    // A part one level below its task: the task's hierarchy with one more level, the part's type and place, and no id of its own.
+    private static string PartHierarchy(string hierarchy, string type, int place)
+    {
+        string[] fields = hierarchy.Split(", ");
+        int levels = int.Parse(fields[2], CultureInfo.InvariantCulture) + 1;
+        StringBuilder text = new();
+        text.Append(fields[0]).Append(", ").Append(fields[1]).Append(", ").Append(levels.ToString(CultureInfo.InvariantCulture));
+        for (int i = 3; i < fields.Length - 1; i++)
+        {
+            text.Append(", ").Append(fields[i]);
+        }
+
+        text.Append(CultureInfo.InvariantCulture, $", \"{type}\", {place}, -1");
+        return text.ToString();
     }
 
     // A reference to a task: its hierarchy from its nearest ancestor with an id, or -1.
@@ -250,6 +277,45 @@ public static class Igi2SaveGame
 
         next++;
         return task;
+    }
+
+    // The task's state, or, where the last step down names a type the task has no child of at that place, the part of the task retail
+    // keeps as one.
+    private static IIgi2Serialized? FindState(Igi2ScriptCall call, IReadOnlyDictionary<int, GameTask> byId, ref int next)
+    {
+        int start = next;
+        if (call.Count < start + 3)
+        {
+            return null;
+        }
+
+        int levels = call.GetInt32(start + 2);
+        if (levels == 0)
+        {
+            return Find(call, byId, ref next) as IIgi2Serialized;
+        }
+
+        GameTask? parent = byId.GetValueOrDefault(call.GetInt32(start));
+        bool known = parent is not null && parent.Type?.Name == call.GetText(start + 1);
+        for (int level = 0; level < levels - 1 && parent is not null; level++)
+        {
+            string stepType = call.GetText(start + 3 + (level * 2));
+            int stepPlace = call.GetInt32(start + 4 + (level * 2));
+            parent = parent.Children.Where(c => c.Type?.Name == stepType).Skip(stepPlace).FirstOrDefault();
+        }
+
+        int last = start + 3 + ((levels - 1) * 2);
+        string type = call.GetText(last);
+        int place = call.GetInt32(last + 1);
+        next = last + 3;
+        if (!known || parent is null)
+        {
+            return null;
+        }
+
+        return parent.Children.Where(c => c.Type?.Name == type).Skip(place).FirstOrDefault() is { } child
+            ? child as IIgi2Serialized
+            : (parent as IIgi2Serialized)?.SerializedParts.Where(p => p.TypeName == type).Skip(place).FirstOrDefault()?.State;
     }
 
     private static GameTask? FindReference(Igi2ScriptCall call, IReadOnlyDictionary<int, GameTask> byId, Igi2StateReader reader)

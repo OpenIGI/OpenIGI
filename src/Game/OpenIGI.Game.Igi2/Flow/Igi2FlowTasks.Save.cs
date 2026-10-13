@@ -20,13 +20,14 @@ public sealed partial class Igi2EditVariableTask : IIgi2Serialized
     }
 }
 
-/// <content>Its save state, <c>LevelTimer_ptSerializeParameterList</c>: its tick.</content>
+/// <content>Its save state, <c>LevelTimer_ptSerializeParameterList</c>: whether it runs, and its tick.</content>
 public sealed partial class Igi2LevelTimerTask : IIgi2Serialized
 {
     /// <inheritdoc/>
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        writer.Bool(_isRun != 0);
         writer.Int(_tick);
     }
 
@@ -34,17 +35,19 @@ public sealed partial class Igi2LevelTimerTask : IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _isRun = reader.Bool() ? (byte)1 : (byte)0;
         _tick = reader.Int();
     }
 }
 
-/// <content>Its save state, <c>ConditionalContainer_ptSerializeParameterList</c>: whether it runs.</content>
+/// <content>Its save state, <c>ConditionalContainer_ptSerializeParameterList</c>: whether its children are in the world, and whether it runs.</content>
 public sealed partial class Igi2ConditionalContainerTask : IIgi2Serialized
 {
     /// <inheritdoc/>
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        writer.Bool(AreChildrenInWorld);
         writer.Bool(_isRun != 0);
     }
 
@@ -52,6 +55,7 @@ public sealed partial class Igi2ConditionalContainerTask : IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        AreChildrenInWorld = reader.Bool();
         _isRun = reader.Bool() ? (byte)1 : (byte)0;
     }
 }
@@ -76,13 +80,14 @@ public sealed partial class Igi2LevelFlowTask : IIgi2Serialized
     }
 }
 
-/// <content>Its save state, <c>CutScene_ptSerializeParameterList</c>: whether it has finished, and its clock.</content>
+/// <content>Its save state, <c>CutScene_ptSerializeParameterList</c>: whether it runs and has finished, and its clock.</content>
 public sealed partial class Igi2CutSceneTask : IIgi2Serialized
 {
     /// <inheritdoc/>
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        writer.Bool(_isRun != 0);
         writer.Bool(_isFinished != 0);
         writer.Int(Tick);
     }
@@ -91,18 +96,20 @@ public sealed partial class Igi2CutSceneTask : IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _isRun = reader.Bool() ? (byte)1 : (byte)0;
         _isFinished = reader.Bool() ? (byte)1 : (byte)0;
         Tick = reader.Int();
     }
 }
 
-/// <content>Its save state, <c>MissionTimer_ptSerializeParameterList</c>: its status.</content>
+/// <content>Its save state, <c>MissionTimer_ptSerializeParameterList</c>: the ticks left, and its status.</content>
 public sealed partial class Igi2MissionTimerTask : IIgi2Serialized
 {
     /// <inheritdoc/>
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        writer.Int(TicksLeft);
         writer.Int((int)Status);
     }
 
@@ -110,13 +117,14 @@ public sealed partial class Igi2MissionTimerTask : IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        TicksLeft = reader.Int();
         Status = (Igi2MissionTimerStatus)reader.Int();
     }
 }
 
 /// <content>
-/// Its save state, <c>StatusMessage_ptSerializeParameterList</c>: when it finished showing and the ticks since, whether it is forced, shown,
-/// sent and finished, whether its printing has finished, and its ticks.
+/// Its save state, <c>StatusMessage_ptSerializeParameterList</c>: the tick it was sent, when it finished showing and the ticks since,
+/// whether it is forced, shown, sent and finished, whether its printing has finished, and its ticks.
 /// </content>
 public sealed partial class Igi2StatusMessageTask : IIgi2Serialized
 {
@@ -124,6 +132,7 @@ public sealed partial class Igi2StatusMessageTask : IIgi2Serialized
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        writer.Int(_tickSent);
         writer.Int(_finishedDisplay);
         writer.Int(_ticksSinceFinishedDisplay);
         writer.Bool(IsForceSend);
@@ -138,6 +147,7 @@ public sealed partial class Igi2StatusMessageTask : IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        _tickSent = reader.Int();
         _finishedDisplay = reader.Int();
         _ticksSinceFinishedDisplay = reader.Int();
         IsForceSend = reader.Bool();

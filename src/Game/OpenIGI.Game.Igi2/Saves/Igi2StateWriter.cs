@@ -25,7 +25,18 @@ public interface IIgi2Serialized
     /// (<c>Serialize_SaveQTaskTypeWithParent</c>, <c>isUseParentToSerialize</c>).
     /// </summary>
     bool IsSavedWithParent => false;
+
+    /// <summary>
+    /// Gets the parts of it that retail keeps as child tasks of their own, each with its type's name, written as those children are,
+    /// before it.
+    /// </summary>
+    IReadOnlyList<Igi2SerializedPart> SerializedParts => [];
 }
+
+/// <summary>A part of a task that retail keeps as a child task of its own type, with its own state, such as a camera's lens.</summary>
+/// <param name="TypeName">The child's type.</param>
+/// <param name="State">Its state.</param>
+public sealed record Igi2SerializedPart(string TypeName, IIgi2Serialized State);
 
 /// <summary>
 /// Writes a task's fields as the save script's arguments, each as its parameter type prints it (<c>ParameterList_eQParameterPrintEvent</c>,

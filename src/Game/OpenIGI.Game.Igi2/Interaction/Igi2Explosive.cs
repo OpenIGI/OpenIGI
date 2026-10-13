@@ -292,4 +292,39 @@ public sealed class Igi2Explosive
 
         _isExploded = 1;
     }
+
+    /// <summary>
+    /// Writes its save state, <c>ExplodeObject_ptSerializeParameterList</c>: a model object's, then whether it has exploded and is
+    /// exploding, its damage and its delay.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    public void WriteState(Saves.Igi2StateWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        Saves.Igi2ModelObjState.Write(writer, _parameters.Position, _frame);
+        writer.Bool(_isExploded != 0);
+        writer.Bool(_isExplode != 0);
+        writer.Real(_damage);
+        writer.Int(_delay);
+    }
+
+    /// <summary>Reads its save state back; one that had exploded wears its destroyed model again (<c>ExplodeObject_DeSerializeHandler</c>).</summary>
+    /// <param name="reader">The reader.</param>
+    public void ReadState(Saves.Igi2StateReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        Saves.Igi2ModelObjState.Read(reader);
+        bool exploded = reader.Bool();
+        _isExplode = reader.Bool() ? (byte)1 : (byte)0;
+        _damage = reader.Real();
+        _delay = reader.Int();
+        if (exploded)
+        {
+            SetExploded();
+        }
+        else
+        {
+            _isExploded = 0;
+        }
+    }
 }
