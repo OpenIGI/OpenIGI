@@ -72,6 +72,31 @@ public sealed class Igi2HumanView
     /// <summary>Gets or sets a value indicating whether the view's orientation is frozen, <c>isLockOrientation</c>.</summary>
     public bool IsLockOrientation { get; set; }
 
+    /// <summary>
+    /// Gets a value indicating whether something else says where the eyes are, <c>isOverride</c>: a mounted gun's seat. The camera
+    /// and the human's weapon take <see cref="OverridePosition"/> and <see cref="OverrideOrientation"/> then.
+    /// </summary>
+    public bool IsOverride { get; private set; }
+
+    /// <summary>Gets where the eyes are while overridden, <c>tOverridePos</c>.</summary>
+    public Vector3d OverridePosition { get; private set; }
+
+    /// <summary>Gets which way the eyes face while overridden, <c>tOverrideOrientation</c>, row by row, its columns right, forward, up.</summary>
+    public Matrix3f OverrideOrientation { get; private set; } = Matrix3f.Identity;
+
+    /// <summary>Puts the eyes somewhere else, <c>HumanView_OverrideView</c>.</summary>
+    /// <param name="position">Where.</param>
+    /// <param name="orientation">Which way, row by row.</param>
+    public void OverrideView(Vector3d position, Matrix3f orientation)
+    {
+        IsOverride = true;
+        OverridePosition = position;
+        OverrideOrientation = orientation;
+    }
+
+    /// <summary>Gives the eyes back to the view, <c>HumanView_ClearOverrideView</c>.</summary>
+    public void ClearOverrideView() => IsOverride = false;
+
     /// <summary>Gets or sets the impact's angle, <c>vImpactAngle</c>; a landing zeroes it.</summary>
     public float ImpactAngle { get; set; }
 

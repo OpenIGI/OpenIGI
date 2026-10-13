@@ -612,6 +612,40 @@ public sealed class Igi2Gameplay : ITitleGameplay
             animation.Begin();
         }
 
+        // Mounted guns are armed with weapons of their own and turn on their mounts; the player and the AI's soldiers work them.
+        List<Weapons.Igi2StationaryGunTask> guns = [];
+        if (request.Services.TryGet(out Weapons.Igi2HumanWeapons? gunWeapons))
+        {
+            Igi2GameMaterials? gunMaterials = request.Services.TryGet(out Igi2GameMaterials? found) ? found : null;
+            foreach (Weapons.Igi2StationaryGunTask gun in Descendants(root).OfType<Weapons.Igi2StationaryGunTask>())
+            {
+                gun.Magic = magicTypes;
+                gun.Random = player.Human.Random;
+                gun.Prepare(gunWeapons, models);
+                gun.Bind(player.CollisionWorld.SolidsOf(Weapons.Igi2StationaryGunTask.TypeName, gun.Id));
+                if (gun.Firing is { } firing)
+                {
+                    firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Mount);
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds);
+                    if (gunMaterials is not null)
+                    {
+                        firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, gunMaterials);
+                    }
+                }
+
+                activatables.Add(gun);
+                movers.Add(gun);
+                guns.Add(gun);
+            }
+        }
+
+        player.StationaryGuns = guns;
+        if (request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? gunAi))
+        {
+            Dictionary<int, Weapons.Igi2StationaryGunTask> gunsById = guns.Where(static g => g.Id >= 0).ToDictionary(static g => g.Id);
+            gunAi.StationaryGun = id => gunsById.GetValueOrDefault(id);
+        }
+
         List<Interaction.IIgi2Destructible> destructibles = [];
         foreach (Interaction.Igi2ExplodeObjectTask explosive in Descendants(root).OfType<Interaction.Igi2ExplodeObjectTask>())
         {
@@ -1021,8 +1055,13 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     public Vector3d Position => Human.Position;
 
     /// <inheritdoc/>
-    /// <remarks>A cutscene's camera, while one is placed, outranks the player's eyes.</remarks>
-    public Vector3d EyePosition => Level?.CutsceneView is { } cut ? cut.Position : Human.View.Position;
+    /// <remarks>
+    /// A cutscene's camera, while one is placed, outranks the player's eyes; a mounted gun's seat, while the view is overridden,
+    /// stands in for them (the human camera's mode 4).
+    /// </remarks>
+    public Vector3d EyePosition => Level?.CutsceneView is { } cut
+        ? cut.Position
+        : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -1043,7 +1082,7 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
                     new Vector3f(c[2], c[5], c[8]));
             }
 
-            Matrix3f m = Human.View.Orientation;
+            Matrix3f m = Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
                 new Vector3f(m.M13, m.M23, m.M33),
@@ -1079,6 +1118,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         }
     }
 
+    /// <summary>Gets or sets the level's mounted guns, whose barrels are drawn with the soldiers.</summary>
+    public IReadOnlyList<Weapons.Igi2StationaryGunTask> StationaryGuns { get; set; } = [];
+
     /// <summary>Gets or sets the overlay the scripts have put on the game screen, which the HUD draws.</summary>
     public Igi2ScreenOverlay? ScreenOverlay { get; set; }
 
@@ -1104,7 +1146,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
                     : [];
                 IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
                 IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures];
+                IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
+                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels];
                 _lyingTick = _ticks;
             }
 

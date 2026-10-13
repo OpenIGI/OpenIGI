@@ -100,6 +100,9 @@ public static class Igi2PlayerState
     /// <summary>Searching a cabinet (<c>HumanPlayer_InitStateActivateCabinet</c>).</summary>
     public const int ActivateCabinet = 39;
 
+    /// <summary>Working a mounted gun (<c>HumanPlayer_InitStateActivateStationaryGun</c>).</summary>
+    public const int ActivateStationaryGun = 41;
+
     /// <summary>Climbing along a wire hand over hand (<c>HumanPlayer_InitStateClimbWire</c>).</summary>
     public const int ClimbWire = 50;
 

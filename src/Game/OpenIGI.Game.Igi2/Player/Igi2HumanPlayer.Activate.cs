@@ -98,7 +98,15 @@ public sealed partial class Igi2HumanPlayer
 
         if (ActivatingTarget is { } activating)
         {
-            activating.Activate(ActivateTime);
+            if (activating is Weapons.Igi2StationaryGunTask gun)
+            {
+                gun.Man(this, ActivateTime);
+            }
+            else
+            {
+                activating.Activate(ActivateTime);
+            }
+
             ActivateTime++;
         }
     }
@@ -203,6 +211,16 @@ public sealed partial class Igi2HumanPlayer
                 }
 
                 Go(Igi2PlayerState.ActivateCabinet);
+                break;
+
+            case Igi2ActivateKind.StationaryGun:
+                if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
+                {
+                    EndActivate();
+                    break;
+                }
+
+                Go(Igi2PlayerState.ActivateStationaryGun);
                 break;
 
             case Igi2ActivateKind.Fence:

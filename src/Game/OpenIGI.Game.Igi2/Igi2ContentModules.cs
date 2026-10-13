@@ -257,6 +257,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<World.Igi2LensflareTask>(World.Igi2LensflareTask.TypeName);
         context.Types.Register<World.Igi2LensflareItemTask>(World.Igi2LensflareItemTask.TypeName);
         context.Types.Register<World.Igi2BirdFlockTask>(World.Igi2BirdFlockTask.TypeName);
+        context.Types.Register<Weapons.Igi2StationaryGunTask>(Weapons.Igi2StationaryGunTask.TypeName);
         context.Services.GetOrProvide(static () => new World.Igi2FlockRandom());
         context.Types.Register<Vehicles.Igi2TrainTask>(Vehicles.Igi2TrainTask.TypeName);
         context.Services.GetOrProvide(static () => new Flow.Igi2ScreenOverlay());
