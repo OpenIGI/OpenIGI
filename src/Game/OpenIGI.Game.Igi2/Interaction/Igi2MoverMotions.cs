@@ -17,7 +17,10 @@ public sealed class Igi2MoverMotions : IPlacementMotion
 
     /// <summary>Initializes a new instance of the <see cref="Igi2MoverMotions"/> class.</summary>
     /// <param name="movers">The level's moving objects.</param>
-    /// <param name="parts">The level's objects that move parts of themselves, or <see langword="null"/> for none.</param>
+    /// <param name="parts">
+    /// The level's objects that move parts of themselves, or <see langword="null"/> for none; a part one does not move moves with it,
+    /// when it moves.
+    /// </param>
     public Igi2MoverMotions(IEnumerable<IIgi2Mover> movers, IEnumerable<IIgi2PartMover>? parts = null)
     {
         ArgumentNullException.ThrowIfNull(movers);
@@ -38,7 +41,15 @@ public sealed class Igi2MoverMotions : IPlacementMotion
         ArgumentNullException.ThrowIfNull(placement);
         if (placement.LevelId >= 0 && _parts.TryGetValue(placement.LevelId, out IIgi2PartMover? part))
         {
-            return part.TryMovePart(placement, out positionMetres, out orientation);
+            if (part.TryMovePart(placement, out positionMetres, out orientation))
+            {
+                return true;
+            }
+
+            if (!_movers.ContainsKey(placement.LevelId))
+            {
+                return false;
+            }
         }
 
         if (placement.LevelId < 0 || !_movers.TryGetValue(placement.LevelId, out IIgi2Mover? mover))

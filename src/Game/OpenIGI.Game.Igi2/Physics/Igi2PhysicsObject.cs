@@ -244,6 +244,16 @@ public sealed class Igi2PhysicsObject
         LastOrientation = [.. Orientation];
     }
 
+    /// <summary>Takes where it is and how it is turned as where it was, as <c>PhysicsObj_Init</c> does once it is placed.</summary>
+    public void ResetLast()
+    {
+        LastPosition = Position;
+        LastOrientation = [.. Orientation];
+    }
+
+    /// <summary>Marks it touching, <c>nContact = 1</c>, as a car's wheels do when they meet the ground.</summary>
+    public void NoteContact() => ContactCount = 1;
+
     /// <summary>
     /// Whether the object has come to rest, <c>PhysicsObj_IsIdle</c> (<c>igi2 0x5AF810</c>): touching, no point moved since
     /// the last test, no force waiting, and slower and spinning less than its type's rest thresholds.

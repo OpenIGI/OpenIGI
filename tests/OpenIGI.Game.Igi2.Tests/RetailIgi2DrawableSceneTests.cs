@@ -60,9 +60,10 @@ public sealed class RetailIgi2DrawableSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(17_392, placements);
+        // Each of the nine cars mounts its gun's barrel; built without the magic table, as here, on itself.
+        Assert.Equal(17_401, placements);
         Assert.Equal(12_240, lightmapped);
-        Assert.Equal(2_813_691L, triangles);
+        Assert.Equal(2_813_979L, triangles);
 
         // The residue RetailIgi2ModelTableTests names one by one: two `soldier_1`, which is in no
         // archive anywhere in the installation, and 584 spline waypoints naming the editor's `ai-arrow`
@@ -160,7 +161,7 @@ public sealed class RetailIgi2DrawableSceneTests
         // Everything placed, less the characters, less the 586 the shipped data cannot resolve, plus
         // every part attached to one of them -- each of which is a placement in its own right.
         Assert.Equal(placed - characters - 586 + attached, drawable);
-        Assert.Equal(6_144, attached);
+        Assert.Equal(6_153, attached);
     }
 
     /// <summary>A drawable placement is in metres, and the walk it came from is in engine units.</summary>

@@ -261,6 +261,8 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Weapons.Igi2AiStationaryGunHolderTask>(Weapons.Igi2AiStationaryGunHolderTask.TypeName);
         context.Services.GetOrProvide(static () => new World.Igi2FlockRandom());
         context.Types.Register<Vehicles.Igi2TrainTask>(Vehicles.Igi2TrainTask.TypeName);
+        context.Types.Register<Vehicles.Igi2CarTask>(Vehicles.Igi2CarTask.TypeName);
+        context.Types.Register<Vehicles.Igi2CarAiTask>(Vehicles.Igi2CarAiTask.TypeName);
         context.Services.GetOrProvide(static () => new Flow.Igi2ScreenOverlay());
         Flow.Igi2ScreenOverlay.RegisterConstants(context.Natives);
         context.Types.Register<Flow.Igi2MissionTimerTask>(Flow.Igi2MissionTimerTask.TypeName);

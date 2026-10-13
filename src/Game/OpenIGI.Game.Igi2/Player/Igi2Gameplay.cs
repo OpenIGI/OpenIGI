@@ -666,6 +666,38 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         player.Turrets = turrets;
+
+        // Cars are physics objects of the types their models name, on sprung wheels, with their guns on their attach points; they move,
+        // and are drawn moving, and blasts reach them (Car_UpdateInternalDataHandler).
+        List<Vehicles.Igi2CarTask> cars = [];
+        if (request.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? carTypes)
+            && request.Services.TryGet(out Igi2GameMaterials? carMaterials))
+        {
+            request.Services.TryGet(out Weapons.Igi2HumanWeapons? carWeapons);
+            Detection.Igi2DetectionWorld? carDetection = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? carAi) ? carAi.Detection : null;
+            Physics.Igi2PhysicsWorld roads = new(player.CollisionWorld, carMaterials, static owner => !Igi2ObjectCollision.PassesThrough(owner));
+            foreach (Vehicles.Igi2CarTask car in Descendants(root).OfType<Vehicles.Igi2CarTask>())
+            {
+                car.Magic = magicTypes;
+                car.Sounds = player.Sounds;
+                car.Explosions = player.Explosions;
+                car.Bind(player.CollisionWorld.SolidsOf(Vehicles.Igi2CarTask.TypeName, car.Id));
+                car.Prepare(carTypes, models, roads, carWeapons, carDetection, player.Human.Random);
+                if (car.Gun is { } gun)
+                {
+                    Igi2WeaponFiring firing = gun.Firing;
+                    firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Muzzle);
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds);
+                    firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, carMaterials);
+                }
+
+                player.Explosions?.AddTarget(car);
+                movers.Add(car);
+                cars.Add(car);
+            }
+        }
+
+        player.Cars = cars;
         if (request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? gunAi))
         {
             Dictionary<int, Weapons.Igi2StationaryGunTask> gunsById = guns.Where(static g => g.Id >= 0).ToDictionary(static g => g.Id);
@@ -793,7 +825,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>(), .. turrets];
+        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>(), .. turrets, .. cars];
         player.Motions = movers.Count > 0 || partMovers.Count > 0 ? new Interaction.Igi2MoverMotions(movers, partMovers) : null;
 
         // The game is played at the active profile's difficulty (Config_GetActiveDifficultyLevel); here the difficulty is chosen
@@ -841,6 +873,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 World = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? session) ? session : null,
                 NoiseAt = noise,
             });
+
+            // CarAI_UpdateInternalDataAfterLoadHandler: each driver finds its car and its graph, and sets the car back to its start.
+            foreach (Vehicles.Igi2CarAiTask driver in Descendants(root).OfType<Vehicles.Igi2CarAiTask>())
+            {
+                driver.Prepare(player.Ai);
+            }
         }
 
         return level;
@@ -1147,6 +1185,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets or sets the level's automatic guns.</summary>
     public IReadOnlyList<Weapons.Igi2AiStationaryGunHolderTask> Turrets { get; set; } = [];
 
+    /// <summary>Gets or sets the level's cars.</summary>
+    public IReadOnlyList<Vehicles.Igi2CarTask> Cars { get; set; } = [];
+
     /// <summary>Gets or sets the level's mounted guns, whose barrels are drawn with the soldiers.</summary>
     public IReadOnlyList<Weapons.Igi2StationaryGunTask> StationaryGuns { get; set; } = [];
 
@@ -1176,7 +1217,8 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
                 IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
                 IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
                 IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels];
+                IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks];
                 _lyingTick = _ticks;
             }
 

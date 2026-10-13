@@ -207,6 +207,12 @@ public sealed class Igi2WorldScene
                 OrientationParameter,
                 MountedModel: "Barrel model",
                 MountedOn: Weapons.Igi2AiStationaryGun.TypeName),
+            ["Car"] = new(
+                "Model",
+                PositionParameter,
+                OrientationParameter,
+                MountedModel: "Barrel model",
+                MountedOn: Weapons.Igi2AiStationaryGun.TypeName),
             ["Lift"] = new("Model", "Start Position", "Start Orientation"),
             ["SplineObjWaypoint"] = new("Waypoint Model", PositionParameter, OrientationParameter),
         };
