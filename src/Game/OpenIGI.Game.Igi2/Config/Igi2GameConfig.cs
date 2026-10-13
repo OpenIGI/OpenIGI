@@ -205,12 +205,13 @@ public sealed class Igi2GameConfig
 
     /// <summary>Registers the file's natives and the settings natives the scripts call.</summary>
     /// <param name="natives">The script namespace.</param>
-    public void Register(NativeRegistry natives)
+    /// <param name="functions">The function table level expressions call, through which the menu's scripts reach the settings.</param>
+    public void Register(NativeRegistry natives, Scripting.Igi2ScriptFunctions? functions = null)
     {
         ArgumentNullException.ThrowIfNull(natives);
         RegisterReader(natives);
         RegisterGfxOptions(natives);
-        RegisterSettings(natives);
+        RegisterSettings(natives, functions);
         natives.RegisterFunction("BreakScript", c =>
         {
             if (_isBreakEnabled)
@@ -371,35 +372,38 @@ public sealed class Igi2GameConfig
         });
     }
 
-    private void RegisterSettings(NativeRegistry natives)
+    private void RegisterSettings(NativeRegistry natives, Scripting.Igi2ScriptFunctions? functions)
     {
-        natives.RegisterFunction("Config_GetActiveDifficultyLevel", _ => QvmValue.FromInt32(Active?.Difficulty ?? 0), 0);
-        natives.RegisterFunction("Config_SetActiveDifficultyLevel", c => Set(p => p.Difficulty = c.GetInt32(0)), 1);
-        natives.RegisterFunction("Config_GameOptionsInputGetInvertMouse", _ => QvmValue.FromInt32(Active?.InvertMouse == true ? 1 : 0), 0);
-        natives.RegisterFunction("Config_GameOptionsInputSetInvertMouse", c => Set(p => p.InvertMouse = c.GetInt32(0) != 0), 1);
-        natives.RegisterFunction("Config_GameOptionsInputGetMouseSensitivity", _ => QvmValue.FromSingle(Active?.MouseSensitivity ?? 0f), 0);
-        natives.RegisterFunction("Config_GameOptionsInputSetMouseSensitivity", c => Set(p => p.MouseSensitivity = c.GetSingle(0)), 1);
-        natives.RegisterFunction("Config_GameOptionsGraphicsGetThickCrosshair", _ => QvmValue.FromInt32(Active?.ThickCrossHair == true ? 1 : 0), 0);
-        natives.RegisterFunction("Config_GameOptionsGraphicsSetThickCrosshair", c => Set(p => p.ThickCrossHair = c.GetInt32(0) != 0), 1);
-        natives.RegisterFunction("Config_GraphicOptionsGetGamma", _ => QvmValue.FromSingle(Active?.Gamma ?? 0f), 0);
-        natives.RegisterFunction("Config_GraphicOptionsSetGamma", c => Set(p => p.Gamma = c.GetSingle(0)), 1);
-        natives.RegisterFunction("Config_GraphicOptionsGetCrossHairAlpha", _ => QvmValue.FromSingle(Active?.CrossHairAlpha ?? 0f), 0);
-        natives.RegisterFunction("Config_GraphicOptionsSetCrossHairAlpha", c => Set(p => p.CrossHairAlpha = c.GetSingle(0)), 1);
-        natives.RegisterFunction("Config_GraphicOptionsGetCrossHairColourR", _ => QvmValue.FromSingle(Active?.CrossHairColour.R ?? 0f), 0);
-        natives.RegisterFunction("Config_GraphicOptionsGetCrossHairColourG", _ => QvmValue.FromSingle(Active?.CrossHairColour.G ?? 0f), 0);
-        natives.RegisterFunction("Config_GraphicOptionsGetCrossHairColourB", _ => QvmValue.FromSingle(Active?.CrossHairColour.B ?? 0f), 0);
-        natives.RegisterFunction("Config_GraphicOptionsSetCrossHairColourR", c => Set(p => p.CrossHairColour = p.CrossHairColour with { R = c.GetSingle(0) }), 1);
-        natives.RegisterFunction("Config_GraphicOptionsSetCrossHairColourG", c => Set(p => p.CrossHairColour = p.CrossHairColour with { G = c.GetSingle(0) }), 1);
-        natives.RegisterFunction("Config_GraphicOptionsSetCrossHairColourB", c => Set(p => p.CrossHairColour = p.CrossHairColour with { B = c.GetSingle(0) }), 1);
-        natives.RegisterFunction("Config_SoundOptionsGetMusicVolume", _ => QvmValue.FromSingle(Active?.Music.Volume ?? 0f), 0);
-        natives.RegisterFunction("Config_SoundOptionsSetMusicVolume", c => Set(p => p.Music = p.Music with { Volume = c.GetSingle(0) }), 1);
-        natives.RegisterFunction("Config_SoundOptionsGetSoundsEffectsVolume", _ => QvmValue.FromSingle(Active?.SoundEffects.Volume ?? 0f), 0);
-        natives.RegisterFunction("Config_SoundOptionsSetSoundsEffectsVolume", c => Set(p => p.SoundEffects = p.SoundEffects with { Volume = c.GetSingle(0) }), 1);
-        natives.RegisterFunction("Config_GetActiveSpeakerSetup", _ => QvmValue.FromInt32(Active?.SpeakerSetup ?? 0), 0);
-        natives.RegisterFunction("Config_SetActiveSpeakerSetup", c => Set(p => p.SpeakerSetup = c.GetInt32(0)), 1);
-        natives.RegisterFunction("Config_GetActive3DProvider", _ => QvmValue.FromInt32(Active?.Sound3DProvider ?? 0), 0);
-        natives.RegisterFunction("Config_SetActive3DProvider", c => Set(p => p.Sound3DProvider = c.GetInt32(0)), 1);
-        natives.RegisterFunction("Config_SaveConfig", _ =>
+        void Fn(string name, Scripting.Igi2ScriptFunction function, int arguments) =>
+            Scripting.Igi2ScriptCall.Register(natives, functions, name, function, arguments);
+
+        Fn("Config_GetActiveDifficultyLevel", _ => QvmValue.FromInt32(Active?.Difficulty ?? 0), 0);
+        Fn("Config_SetActiveDifficultyLevel", c => Set(p => p.Difficulty = c.GetInt32(0)), 1);
+        Fn("Config_GameOptionsInputGetInvertMouse", _ => QvmValue.FromInt32(Active?.InvertMouse == true ? 1 : 0), 0);
+        Fn("Config_GameOptionsInputSetInvertMouse", c => Set(p => p.InvertMouse = c.GetInt32(0) != 0), 1);
+        Fn("Config_GameOptionsInputGetMouseSensitivity", _ => QvmValue.FromSingle(Active?.MouseSensitivity ?? 0f), 0);
+        Fn("Config_GameOptionsInputSetMouseSensitivity", c => Set(p => p.MouseSensitivity = c.GetSingle(0)), 1);
+        Fn("Config_GameOptionsGraphicsGetThickCrosshair", _ => QvmValue.FromInt32(Active?.ThickCrossHair == true ? 1 : 0), 0);
+        Fn("Config_GameOptionsGraphicsSetThickCrosshair", c => Set(p => p.ThickCrossHair = c.GetInt32(0) != 0), 1);
+        Fn("Config_GraphicOptionsGetGamma", _ => QvmValue.FromSingle(Active?.Gamma ?? 0f), 0);
+        Fn("Config_GraphicOptionsSetGamma", c => Set(p => p.Gamma = c.GetSingle(0)), 1);
+        Fn("Config_GraphicOptionsGetCrossHairAlpha", _ => QvmValue.FromSingle(Active?.CrossHairAlpha ?? 0f), 0);
+        Fn("Config_GraphicOptionsSetCrossHairAlpha", c => Set(p => p.CrossHairAlpha = c.GetSingle(0)), 1);
+        Fn("Config_GraphicOptionsGetCrossHairColourR", _ => QvmValue.FromSingle(Active?.CrossHairColour.R ?? 0f), 0);
+        Fn("Config_GraphicOptionsGetCrossHairColourG", _ => QvmValue.FromSingle(Active?.CrossHairColour.G ?? 0f), 0);
+        Fn("Config_GraphicOptionsGetCrossHairColourB", _ => QvmValue.FromSingle(Active?.CrossHairColour.B ?? 0f), 0);
+        Fn("Config_GraphicOptionsSetCrossHairColourR", c => Set(p => p.CrossHairColour = p.CrossHairColour with { R = c.GetSingle(0) }), 1);
+        Fn("Config_GraphicOptionsSetCrossHairColourG", c => Set(p => p.CrossHairColour = p.CrossHairColour with { G = c.GetSingle(0) }), 1);
+        Fn("Config_GraphicOptionsSetCrossHairColourB", c => Set(p => p.CrossHairColour = p.CrossHairColour with { B = c.GetSingle(0) }), 1);
+        Fn("Config_SoundOptionsGetMusicVolume", _ => QvmValue.FromSingle(Active?.Music.Volume ?? 0f), 0);
+        Fn("Config_SoundOptionsSetMusicVolume", c => Set(p => p.Music = p.Music with { Volume = c.GetSingle(0) }), 1);
+        Fn("Config_SoundOptionsGetSoundsEffectsVolume", _ => QvmValue.FromSingle(Active?.SoundEffects.Volume ?? 0f), 0);
+        Fn("Config_SoundOptionsSetSoundsEffectsVolume", c => Set(p => p.SoundEffects = p.SoundEffects with { Volume = c.GetSingle(0) }), 1);
+        Fn("Config_GetActiveSpeakerSetup", _ => QvmValue.FromInt32(Active?.SpeakerSetup ?? 0), 0);
+        Fn("Config_SetActiveSpeakerSetup", c => Set(p => p.SpeakerSetup = c.GetInt32(0)), 1);
+        Fn("Config_GetActive3DProvider", _ => QvmValue.FromInt32(Active?.Sound3DProvider ?? 0), 0);
+        Fn("Config_SetActive3DProvider", c => Set(p => p.Sound3DProvider = c.GetInt32(0)), 1);
+        Fn("Config_SaveConfig", _ =>
         {
             Save?.Invoke(this);
             return Done();

@@ -63,6 +63,39 @@ public sealed class Igi2ScriptCall
     /// <param name="index">The zero-based argument position.</param>
     /// <returns>The text, or empty.</returns>
     public string GetText(int index) => _compiled?.GetString(index) ?? _expression!.GetText(index);
+
+    /// <summary>Reads an argument as a float, as a compiled call's <c>GetSingle</c> does.</summary>
+    /// <param name="index">The argument.</param>
+    /// <returns>Its value.</returns>
+    public float GetSingle(int index) => (float)GetReal(index);
+
+    /// <summary>Reads an argument as text, as a compiled call's <c>GetString</c> does.</summary>
+    /// <param name="index">The argument.</param>
+    /// <returns>Its value.</returns>
+    public string GetString(int index) => GetText(index);
+
+    /// <summary>
+    /// Registers a native both for compiled scripts and for level expressions, or only for compiled scripts when there is no function
+    /// table: the one call shape the natives both reach are written against.
+    /// </summary>
+    /// <param name="natives">The script namespace.</param>
+    /// <param name="functions">The function table level expressions call, or <see langword="null"/>.</param>
+    /// <param name="name">The name.</param>
+    /// <param name="function">The body.</param>
+    /// <param name="argumentCount">The declared argument count.</param>
+    public static void Register(NativeRegistry natives, Igi2ScriptFunctions? functions, string name, Igi2ScriptFunction function, int argumentCount)
+    {
+        ArgumentNullException.ThrowIfNull(natives);
+        ArgumentNullException.ThrowIfNull(function);
+        if (functions is not null)
+        {
+            functions.Register(natives, name, function, argumentCount);
+        }
+        else
+        {
+            natives.RegisterFunction(name, call => function(new Igi2ScriptCall(call)), argumentCount);
+        }
+    }
 }
 
 /// <summary>The natives a task's script text may call, by name, alongside their registration for compiled scripts.</summary>

@@ -336,6 +336,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
+
+        // GameScreen_CreateHandler: the in-game menu, made of ingamemenu.qsc as the level's screen is; the shell presents it.
+        if (request.Services.TryGet(out Menus.Igi2InGameMenu? menu) && menu.Load(root, request.World.Resources, natives))
+        {
+            menu.LevelFailed = () => level.LevelFlow?.IsFailed == true;
+            menu.PlayerDead = () => player.Human.IsDead;
+            player.Menu = menu;
+        }
         if (request.Services.TryGet(out Igi2CutsceneShake? shake))
         {
             level.CutsceneShake = shake;
@@ -1195,6 +1203,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets or sets the level's automatic guns.</summary>
     public IReadOnlyList<Weapons.Igi2AiStationaryGunHolderTask> Turrets { get; set; } = [];
+
+    /// <summary>Gets or sets the level's in-game menu, which the shell presents.</summary>
+    public Menus.Igi2InGameMenu? Menu { get; set; }
 
     /// <summary>Gets or sets the level's cars.</summary>
     public IReadOnlyList<Vehicles.Igi2CarTask> Cars { get; set; } = [];

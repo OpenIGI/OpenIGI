@@ -66,6 +66,9 @@ internal static class Igi2MissionCensus
         new World.Igi2MissionCatalogue(NullLogger.Instance).Register(harness.Loop.Natives);
         harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
 
+        // GameScreen_CreateHandler makes the in-game menu as the level's screen is, which exports its windows' variables too.
+        harness.Session.Services.Require<Menus.Igi2InGameMenu>().Load(harness.LevelRoot, harness.Resources, harness.Loop.Natives);
+
         NativeRegistry natives = harness.Loop.Natives;
         TaskTypeRegistry types = harness.Loop.Types;
         SortedDictionary<string, SortedSet<string>> gaps = new(StringComparer.Ordinal);
@@ -397,6 +400,8 @@ internal static class Igi2MissionCensus
         ["priboy_bed_talking"] = "a clip name written where a symbol is read; nothing registers it",
         ["ColumnView_TestFunctionCB"] = "columnview.c registers no such symbol",
         ["xxx"] = "a placeholder left in two of location3/level4's AI scripts",
+        ["MenuManager_SetMode"] = "menumanager.c registers no such symbol; ingamemenu.qsc names it all the same",
+        ["Config_FillSpeakerSetupListBox"] = "config.c registers no such symbol; the sound page names it all the same",
         ["AreaActivate_1701.nActive"] = "location1/level7",
         ["AreaActivate_1703.nActive"] = "location1/level7",
         ["AreaActivate_1704.nActive"] = "location1/level7",

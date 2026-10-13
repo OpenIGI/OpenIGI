@@ -34,6 +34,7 @@ public static class Igi2ContentModules
         new Igi2SkyContentModule(),
         new Igi2MagicObjContentModule(),
         new Igi2ModelLodContentModule(),
+        new Igi2MenuContentModule(),
         new Igi2TaskTypeConstantsModule(),
     ];
 }
@@ -79,7 +80,8 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
         Config.Igi2GameConstants.Register(context.Natives);
 
         // Config_Open: the configuration's file natives, its graphics options and the settings the menus and scripts read.
-        context.Services.GetOrProvide(() => new Config.Igi2GameConfig()).Register(context.Natives);
+        context.Services.GetOrProvide(() => new Config.Igi2GameConfig())
+            .Register(context.Natives, context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions()));
     }
 
     /// <inheritdoc/>
@@ -604,6 +606,47 @@ public sealed class Igi2ModelLodContentModule : IContentModule
         Engine.Tasks.GameTask container = context.Tasks.New(context.Tasks.Root, context.Tasks.Types.Get(World.Igi2ModelLodSettingsContainerTask.TypeName));
         table.Load(container, World.Igi2ModelLodTable.GameFile, context.Resources, context.Natives);
         table.KeepAsGame();
+    }
+}
+
+/// <summary>
+/// The in-game menu (<see cref="Menus.Igi2InGameMenu"/>): its task types, the engine's <c>ControlsMenu</c> among them, its manager's
+/// natives, and the game, configuration and multiplayer natives its script calls. A level makes the menu as it loads.
+/// </summary>
+public sealed class Igi2MenuContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "In-game menu";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Types.Register<Menus.Igi2MenuManagerTask>(Menus.Igi2MenuManagerTask.TypeName);
+        context.Types.Register<Menus.Igi2MenuScreenTask>(Menus.Igi2MenuScreenTask.TypeName);
+        context.Types.Register<Menus.Igi2MenuFrameTask>(Menus.Igi2MenuFrameTask.TypeName);
+        context.Types.Register<Menus.Igi2MenuTextTask>(Menus.Igi2MenuTextTask.TypeName);
+        context.Types.Register<Menus.Igi2MenuTextSelectionTask>(Menus.Igi2MenuTextSelectionTask.TypeName);
+        context.Types.Register<Menus.Igi2SlideBarTask>(Menus.Igi2SlideBarTask.TypeName);
+        context.Types.Register<Menus.Igi2ListBoxTask>(Menus.Igi2ListBoxTask.TypeName);
+        context.Types.Register<Menus.Igi2ToggleBoxTask>(Menus.Igi2ToggleBoxTask.TypeName);
+        context.Types.Register<Menus.Igi2InputBoxTask>(Menus.Igi2InputBoxTask.TypeName);
+        context.Types.Register<Menus.Igi2ScrollListBoxTask>(Menus.Igi2ScrollListBoxTask.TypeName);
+        context.Types.Register<Menus.Igi2PictureBoxTask>(Menus.Igi2PictureBoxTask.TypeName);
+        context.Types.Register<Menus.Igi2DialogWindowTask>(Menus.Igi2DialogWindowTask.TypeName);
+        context.Types.Register<Menus.Igi2ColumnViewTask>(Menus.Igi2ColumnViewTask.TypeName);
+        context.Types.Register<Menus.Igi2ColumnViewColumnTask>(Menus.Igi2ColumnViewColumnTask.TypeName);
+        context.Types.Register<Menus.Igi2ControlsMenuTask>(Menus.Igi2ControlsMenuTask.TypeName);
+        Menus.Igi2InGameMenu menu = context.Services.GetOrProvide(static () => new Menus.Igi2InGameMenu());
+        Menus.Igi2SoundMix mix = context.Services.GetOrProvide(static () => new Menus.Igi2SoundMix());
+        Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
+        menu.Register(context.Natives, functions);
+        Menus.Igi2MenuNatives.Register(context.Natives, functions, menu, context.Services.GetOrProvide(() => new Config.Igi2GameConfig()), mix);
+    }
+
+    /// <inheritdoc/>
+    public void LoadTables(ContentLoadContext context)
+    {
     }
 }
 
