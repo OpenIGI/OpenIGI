@@ -208,14 +208,10 @@ public sealed class Igi2PlacementBindingTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (DeclaredTask task in Walk(level.Root)
-                .OfType<DeclaredTask>()
-                .Where(t => t.Type.Name == Igi2WorldScene.WireType))
+            foreach (Interaction.Igi2WireTask task in Walk(level.Root).OfType<Interaction.Igi2WireTask>())
             {
-                Assert.True(task.TryGetValue("Start position", out object? rawStart));
-                Assert.True(task.TryGetValue("Stop position", out object? rawStop));
-                Vector3d start = Assert.IsType<Vector3d>(rawStart);
-                Vector3d stop = Assert.IsType<Vector3d>(rawStop);
+                Vector3d start = task.Start;
+                Vector3d stop = task.Stop;
 
                 Igi2Placement placement = level.Scene.Placements.Single(p => p.LevelId == task.Id);
                 wires++;

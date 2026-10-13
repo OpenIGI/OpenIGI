@@ -97,7 +97,6 @@ name SlotSelector_isSlotEnabled    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 3
 name SlotSelector_isSlotVisible    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name SlotSelector_isThisCategorySelected    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 name ToggleBox_998.isOn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-name Wire_4035.isInUse    # 35 | MISSIONS/location3/level5/objects.qvm
 name priboy_bed_talking    # 21 | MISSIONS/location2/level1/objects.qvm
 name xxx    # 34 | MISSIONS/location3/level4/ai/3161.qvm, MISSIONS/location3/level4/ai/3165.qvm
 survey expression ! (  (AreaActivate_3275.nActive &&   (EditVariable_3243.nValue == 0 || EditVariable_3244.nValue == 0)  ||  AreaActivate_3272.nActive  ||  (AreaActivate_3276.nActive && EditVariable_3244.nValue == 0) )    # 33 | MISSIONS/location3/level3/objects.qvm: Expected ')' in line 0: ''
@@ -136,4 +135,3 @@ type SlideBar    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | ME
 type StationaryGun    # 14 15 24 25 32 33 | MISSIONS/location1/level4/objects.qvm, MISSIONS/location1/level5/objects.qvm, …
 type ToggleBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type Train    # 12 | MISSIONS/location1/level2/objects.qvm
-type Wire    # 22 23 33 35 36 | MISSIONS/location2/level2/objects.qvm, MISSIONS/location2/level3/objects.qvm, …

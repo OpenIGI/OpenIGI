@@ -40,6 +40,8 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.ClimbLadderGetOffTop] = (_, _) => EnterClimbLadderGetOffTop();
         states[Igi2PlayerState.ClimbLadderSlideDown] = (_, _) => EnterClimbLadderSlideDown();
         states[Igi2PlayerState.ClimbFence] = (_, _) => EnterClimbFence();
+        states[Igi2PlayerState.ClimbWire] = (_, _) => EnterClimbWire();
+        states[Igi2PlayerState.SlideWire] = (_, _) => EnterSlideWire();
         foreach (Gait gait in Gaits)
         {
             states[gait.State] = (_, _) => EnterGait(gait);

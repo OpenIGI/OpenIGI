@@ -97,6 +97,12 @@ public static class Igi2PlayerState
     /// <summary>Climbing over a fence (<c>HumanPlayer_InitStateClimbFence</c>).</summary>
     public const int ClimbFence = 49;
 
+    /// <summary>Climbing along a wire hand over hand (<c>HumanPlayer_InitStateClimbWire</c>).</summary>
+    public const int ClimbWire = 50;
+
+    /// <summary>Riding down a wire (<c>HumanPlayer_InitStateSlideWire</c>).</summary>
+    public const int SlideWire = 51;
+
     /// <summary>Waiting for the network, the multiplayer starting state; the body is not moved in it.</summary>
     public const int NetworkWait = 56;
 

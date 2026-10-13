@@ -177,6 +177,24 @@ public sealed partial class Igi2HumanPlayer
                 IsInitClimbLadder = true;
                 break;
 
+            case Igi2ActivateKind.Wire when ActivatingTarget is Igi2WireTask wire:
+                if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
+                {
+                    EndActivate();
+                    break;
+                }
+
+                if (wire.IsSliding)
+                {
+                    IsInitSlideWire = true;
+                }
+                else
+                {
+                    IsInitClimbWire = true;
+                }
+
+                break;
+
             case Igi2ActivateKind.Fence:
                 if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
                 {

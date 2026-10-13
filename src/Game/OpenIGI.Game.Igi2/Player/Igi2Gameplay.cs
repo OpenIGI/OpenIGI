@@ -472,6 +472,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.Notified = notified;
 
+        // Wires are strung between their ends and climbed or ridden down.
+        foreach (Interaction.Igi2WireTask wire in Descendants(root).OfType<Interaction.Igi2WireTask>())
+        {
+            wire.Models = models;
+            wire.Level = level;
+            wire.Prepare();
+            activatables.Add(wire);
+        }
+
         // Ladders read their steps off their models' magic vertices, and look down their lines of sight before they are taken.
         foreach (Interaction.Igi2LadderTask ladder in Descendants(root).OfType<Interaction.Igi2LadderTask>())
         {

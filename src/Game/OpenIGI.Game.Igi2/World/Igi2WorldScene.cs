@@ -448,9 +448,10 @@ public sealed class Igi2WorldScene
         Vector3d position;
         Matrix3f? frame = null;
         IIgi2PlacementGeometry? geometry = null;
-        if (task is DeclaredTask declaredWire
-            && string.Equals(task.Type.Name, WireType, StringComparison.Ordinal)
-            && WireTransform.TryCreate(declaredWire, out WireTransform wire))
+        if (string.Equals(task.Type.Name, WireType, StringComparison.Ordinal)
+            && task.TryGetScriptValue("Start position", out object? wireStart) && wireStart is Vector3d start
+            && task.TryGetScriptValue("Stop position", out object? wireStop) && wireStop is Vector3d stop
+            && WireTransform.TryCreate(start, stop, null, out WireTransform wire))
         {
             position = wire.PositionUnits;
             frame = wire.Orientation;

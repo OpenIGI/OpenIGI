@@ -148,6 +148,16 @@ public sealed partial class Igi2HumanPlayer
             ClimbFence();
         }
 
+        if (IsInitClimbWire || IsClimbWire)
+        {
+            ClimbWire();
+        }
+
+        if (IsInitSlideWire || IsSlideWire)
+        {
+            SlideWire();
+        }
+
         Signal &= ~Igi2PlayerSignal.Hit;
         UpdateBody();
         View.UpdateView(Channels);

@@ -50,6 +50,15 @@ public readonly record struct WireTransform(
         return Build(task, model, out transform);
     }
 
+    /// <summary>Builds the runtime transform from a wire's two endpoints and, when at hand, its model.</summary>
+    /// <param name="start">The start position, in engine units.</param>
+    /// <param name="stop">The stop position, in engine units.</param>
+    /// <param name="model">The wire's model, or <see langword="null"/>.</param>
+    /// <param name="transform">The transform.</param>
+    /// <returns><see langword="false"/> for two endpoints at one point.</returns>
+    public static bool TryCreate(Vector3d start, Vector3d stop, MefModel? model, out WireTransform transform) =>
+        Build(start, stop, model, out transform);
+
     private static bool Build(DeclaredTask task, MefModel? model, out WireTransform transform)
     {
         if (!TryPosition(task, "Start position", out Vector3d start)
@@ -58,6 +67,12 @@ public readonly record struct WireTransform(
             transform = default;
             return false;
         }
+
+        return Build(start, stop, model, out transform);
+    }
+
+    private static bool Build(Vector3d start, Vector3d stop, MefModel? model, out WireTransform transform)
+    {
 
         Vector3d span = stop - start;
         double length = span.Length;
