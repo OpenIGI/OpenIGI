@@ -43,6 +43,8 @@ public sealed class Igi2LevelNatives
         _taskById = taskById;
         LevelFlow = levelFlow;
         LaserDesignator.Reset();
+        LaserDesignator.TaskById = taskById;
+        LaserDesignator.LevelTick = () => LevelFlow?.Tick ?? 0;
     }
 
     /// <summary>Registers the natives for compiled scripts and script text alike.</summary>

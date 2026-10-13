@@ -24,6 +24,9 @@ public sealed class Igi2WeaponItem
     /// <summary>Gets the fire mode in use, <c>iActiveFireMode</c> (<c>WeaponTypeItem+0x18</c>); the first until a fire mode key changes it.</summary>
     public int ActiveFireMode { get; internal set; }
 
+    /// <summary>Gets or sets a value indicating whether its laser dot shows, <c>isLaserDotOn</c>.</summary>
+    public bool IsLaserDotOn { get; set; }
+
     /// <summary>Gets the rounds loaded in a fire type, <c>anFireTypeAmmoCount</c>.</summary>
     /// <param name="slot">0 for the primary fire type, 1 for the secondary.</param>
     /// <returns>The rounds.</returns>
@@ -539,7 +542,7 @@ public sealed class Igi2Inventory
             w.Int(item.Number);
             w.Int(item.ActiveFireMode);
             w.Bool(item.IsActive);
-            w.Bool(false);
+            w.Bool(item.IsLaserDotOn);
         });
         writer.Int(CurrentIndex);
     }
@@ -561,7 +564,7 @@ public sealed class Igi2Inventory
             }
         }
 
-        foreach ((int first, int second, int number, int mode, bool carried, _) in
+        foreach ((int first, int second, int number, int mode, bool carried, bool dot) in
             reader.List(static r => (r.Int(), r.Int(), r.Int(), r.Int(), r.Bool(), r.Bool())))
         {
             if ((uint)number < (uint)_weapons.Length)
@@ -571,6 +574,7 @@ public sealed class Igi2Inventory
                 item.SetLoaded(1, second);
                 item.ActiveFireMode = mode;
                 item.IsActive = carried;
+                item.IsLaserDotOn = dot;
             }
         }
 

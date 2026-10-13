@@ -27,6 +27,7 @@ public static class Igi2FireHandlers
         Igi2KnifeFire knife = new();
         Igi2PullPinFire pin = new();
         Igi2ProjectileLauncherFire launcher = new(tables);
+        Igi2LaserDesignatorFire designator = new();
         return parameters => parameters switch
         {
             Igi2PullPinTask => pin,
@@ -35,6 +36,7 @@ public static class Igi2FireHandlers
             Igi2GunTask => gun,
             Igi2FireModeTask => fireMode,
             Igi2ZoomTask => zoom,
+            Igi2LaserDesignatorTask => designator,
             _ => null,
         };
     }

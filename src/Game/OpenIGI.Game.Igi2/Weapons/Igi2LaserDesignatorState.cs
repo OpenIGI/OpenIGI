@@ -15,6 +15,19 @@ public sealed class Igi2LaserDesignatorState
     /// <summary>Gets or sets a value indicating whether the overlay shows a lock, <c>LaserDesignatorOverlay_IsLockedOn</c>.</summary>
     public bool IsLockedOn { get; set; }
 
+    /// <summary>Gets or sets the level's tasks by id, which a struck placement is taken up to.</summary>
+    public Func<int, object?> TaskById { get; set; } = static _ => null;
+
+    /// <summary>Gets or sets the level's tick, <c>LevelFlow nTick</c>, which a new target is noted at.</summary>
+    public Func<int> LevelTick { get; set; } = static () => 0;
+
+    /// <summary>Forgets the target, <c>LaserDesignator_LooseLock</c>.</summary>
+    public void LoseLock()
+    {
+        HitTask = null;
+        TickFirstHit = 0;
+    }
+
     /// <summary>Forgets the dot and the lock, as a level starts.</summary>
     public void Reset()
     {

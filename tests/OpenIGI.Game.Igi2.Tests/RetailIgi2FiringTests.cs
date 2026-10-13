@@ -426,6 +426,33 @@ public sealed class RetailIgi2FiringTests
         Assert.InRange(gamma, 2.5f - 1e-5f, 2.5f + 1e-5f);
     }
 
+    /// <summary>
+    /// The laser designator's dot is on while its trigger is held and off once it is let go, and letting go forgets the target the
+    /// level's scripts count the held ticks on (<c>LaserDesignator_WeaponReleaseHandler</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_laser_designator_marks_while_held()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        Assert.True(inventory.EnableWeaponType("WEAPON_ID_LASERDESIGNATOR", addAmmo: true));
+        Igi2WeaponItem designator = inventory.FindWeapon("WEAPON_ID_LASERDESIGNATOR")!;
+        Assert.True(inventory.Activate(designator));
+        Igi2LaserDesignatorState state = new() { LevelTick = static () => 120 };
+        weapons.Firing.LaserDesignator = state;
+
+        player.Weapon.Fire(0);
+        Assert.True(designator.IsLaserDotOn);
+        state.HitTask = designator;
+        state.TickFirstHit = 100;
+
+        player.Weapon.ReleaseTriggers();
+        Tick(player, Igi2PlayerAction.None);
+        Assert.False(designator.IsLaserDotOn);
+        Assert.Null(state.HitTask);
+        Assert.Equal(0, state.TickFirstHit);
+    }
+
     private static void Tick(Igi2HumanPlayer player, Igi2PlayerAction held)
     {
         Igi2PlayerFakes.Feed(player, held);

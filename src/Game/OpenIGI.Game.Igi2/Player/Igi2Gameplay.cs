@@ -864,6 +864,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
         if (request.Services.TryGet(out Igi2LevelNatives? levelNatives))
         {
             levelNatives.Bind(player.Human, id => placedById.GetValueOrDefault(id), root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault());
+
+            // The player's designator marks its target where the level's scripts read it (LaserDesignator_GetTicksHeldOnTask).
+            player.Weapons?.Firing.LaserDesignator = levelNatives.LaserDesignator;
         }
 
         foreach (Interaction.Igi2MineFieldTask field in Descendants(root).OfType<Interaction.Igi2MineFieldTask>())
