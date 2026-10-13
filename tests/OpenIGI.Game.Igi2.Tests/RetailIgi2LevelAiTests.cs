@@ -184,6 +184,101 @@ public sealed class RetailIgi2LevelAiTests
         Assert.Empty(misread);
     }
 
+    /// <summary>
+    /// The slots: a save to slot 1 is listed with its mission time and found as the newest, its header checks, and it loads back; the
+    /// load list ends with the restart line (12345678); the quick save is tagged; hard allows no slots.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Slots_save_list_and_load()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-igi2-slots-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
+            m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
+            Saves.Igi2SaveSlots slots = new(folder);
+            Saves.Igi2SaveOwner owner = new(0, 1, 11);
+            Assert.True(slots.Save(owner, 1, m.Tree[0], 30 * 3725));
+            Assert.True(slots.Save(owner, Saves.Igi2SaveSlots.QuickSave, m.Tree[0], 30));
+            File.SetLastWriteTimeUtc(slots.PathOf(Saves.Igi2SaveSlots.SlotFileName(owner, Saves.Igi2SaveSlots.QuickSave)), DateTime.UtcNow.AddHours(-1));
+            Assert.True(File.Exists(Path.Combine(folder, "savegames", "0-1-11-1.igi2save")));
+
+            Assert.Equal(new Saves.Igi2SaveInfo(63, 11, 30 * 3725), slots.Check(owner, 1));
+            Assert.Equal(1, slots.CountValid(owner));
+            Assert.True(slots.TryFindNewest(owner, out int newest));
+            Assert.Equal(1, newest);
+            IReadOnlyList<Saves.Igi2SaveListing> lines = slots.Listings(owner, static key => key == Saves.Igi2SaveSlots.QuickSaveKey ? "Quicksave" : "Mission Time");
+            Assert.Equal([1, Saves.Igi2SaveSlots.QuickSave, 12345678], lines.Select(static l => l.Slot));
+            Assert.EndsWith(" Mission Time: 1:02:05", lines[0].Text, StringComparison.Ordinal);
+            Assert.Contains("[Quicksave]", lines[1].Text, StringComparison.Ordinal);
+            Assert.Equal(new Saves.Igi2SaveListing(12345678, "menusystem/Restart Mission", true), lines[2]);
+
+            (RetailIgi2Mission1 fresh, _, _, Igi2TitlePlayer again) = Build();
+            fresh.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = again.Human;
+            Assert.True(slots.Load(owner, 1, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions).IsValid);
+            Assert.False(slots.Load(owner, 2, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions).IsValid);
+            Assert.Equal([3, 2, 0], Enumerable.Range(0, 3).Select(Saves.Igi2SaveSlots.AvailableSlots));
+            Assert.True(Saves.Igi2SaveSlots.TryParseSlotFileName("savegames/0-1-11-5.igi2save", out Saves.Igi2SaveOwner parsed, out int slot));
+            Assert.Equal((owner, 5), (parsed, slot));
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Retail's own slots for mission 11 list four saves and the restart line; the carry-over retail left for mission 12 loads onto the
+    /// player's weapon with every value read and arms it, and one written here reads back the same way.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Retail_slots_and_carry_over_read()
+    {
+        string root = GameDataSource.Igi2.RequireRoot();
+        if (!File.Exists(Path.Combine(root, "savegames", "missions", "co000012.qsc")))
+        {
+            return;
+        }
+
+        Saves.Igi2SaveSlots retail = new(root);
+        Saves.Igi2SaveOwner owner = new(0, 0, 11);
+        Assert.Equal(5, retail.Listings(owner, static key => key).Count);
+        Assert.True(retail.TryFindNewest(owner, out _));
+
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(m.Services!, m.Tree[0], m.Services!.Require<Igi2PlayerTuning>())!;
+        (Igi2HumanPlayer armed, _, _) = Igi2PlayerFakes.OnFloor(weapons);
+        m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = armed;
+        List<string> misread = [];
+        byte[] carry = File.ReadAllBytes(Path.Combine(root, "savegames", "missions", "co000012.qsc"));
+        Assert.Equal(12, Saves.Igi2SaveGame.CheckFile(carry).MissionId);
+        Saves.Igi2SaveGame.LoadFile(carry, m.Tree[0], m.Run.Natives, m.Run.Functions, misread);
+        Assert.Empty(misread);
+        Assert.Contains(weapons.Inventory.Weapons, static w => w.IsActive);
+
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-igi2-carry-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Saves.Igi2SaveSlots slots = new(folder);
+            Saves.Igi2SaveOwner next = new(0, 0, 12);
+            Assert.True(slots.SaveCarryOver(next, m.Tree.OfType<Igi2HumanPlayerTask>().Single()));
+            byte[] written = File.ReadAllBytes(slots.PathOf(Saves.Igi2SaveSlots.CarryOverFileName(next)));
+            Assert.EndsWith("co000012.qsc", Saves.Igi2SaveSlots.CarryOverFileName(next), StringComparison.Ordinal);
+            Saves.Igi2SaveGame.LoadFile(written, m.Tree[0], m.Run.Natives, m.Run.Functions, misread);
+            Assert.Empty(misread);
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
     private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null)
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);

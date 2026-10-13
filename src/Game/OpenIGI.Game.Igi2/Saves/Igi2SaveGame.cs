@@ -75,6 +75,37 @@ public static class Igi2SaveGame
         return text.ToString();
     }
 
+    /// <summary>
+    /// Writes a save game of one part of a task alone, as <c>Game_SaveCarryover</c> saves the player's weapon task: the header, then
+    /// that part's state against the task.
+    /// </summary>
+    /// <param name="owner">The task the part belongs to.</param>
+    /// <param name="partType">The part's type, such as <c>Weapon</c>.</param>
+    /// <param name="info">The header.</param>
+    /// <returns>The script's text, or <see langword="null"/> for a header that is not valid or a task without that part.</returns>
+    public static string? CreatePart(GameTask owner, string partType, Igi2SaveInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(partType);
+        if (!info.IsValid || owner is not IIgi2Serialized serialized
+            || serialized.SerializedParts.FirstOrDefault(p => p.TypeName == partType) is not { } part)
+        {
+            return null;
+        }
+
+        Dictionary<GameTask, int> ids = Ids(LevelRoot(owner));
+        if (!ids.ContainsKey(owner))
+        {
+            return null;
+        }
+
+        Igi2StateWriter writer = new(target => Hierarchy(target, ids));
+        part.State.WriteState(writer);
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{SaveGameInfo}({info.Version}, {info.MissionId}, {info.Ticks});\r\n{BreakScript}();\r\n{DefineTaskState}({PartHierarchy(Hierarchy(owner, owner, ids), partType, 0)}{writer.Arguments});\n");
+    }
+
     /// <summary>Reads a save game's header without putting its state back, <c>SaveGame_Check</c>.</summary>
     /// <param name="script">The script's text.</param>
     /// <returns>The header; not valid when the script has none.</returns>
