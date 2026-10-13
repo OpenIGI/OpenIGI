@@ -172,6 +172,9 @@ public sealed class Igi2PatrolList
     /// <summary>Gets how many are held.</summary>
     public int Count => _items.Count;
 
+    /// <summary>Gets the patrols, bottom first.</summary>
+    public IReadOnlyList<Igi2PatrolControl> Items => _items;
+
     /// <summary>Pushes a patrol; a full stack takes nothing.</summary>
     /// <param name="control">The patrol.</param>
     public void Push(Igi2PatrolControl control)

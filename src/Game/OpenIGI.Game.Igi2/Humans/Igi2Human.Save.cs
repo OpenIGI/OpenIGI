@@ -285,6 +285,17 @@ public abstract partial class Igi2Human
         return extras;
     }
 
+    /// <summary>
+    /// Gets the parts a human keeps as child tasks: its weapon, which <c>Human_CreateHandler</c> makes, then its view, which
+    /// <c>Human_UpdateInternalDataHandler</c> makes (human.c).
+    /// </summary>
+    /// <param name="inventory">What it carries, if it carries anything.</param>
+    /// <returns>The parts.</returns>
+    public IReadOnlyList<Igi2SerializedPart> SavedParts(Weapons.Igi2Inventory? inventory) =>
+        inventory is null
+            ? [new("HumanView", new ViewState(View))]
+            : [new("Weapon", new InventoryState(inventory)), new("HumanView", new ViewState(View))];
+
     private static float[] Rows(Matrix3f m) => [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33];
 
     private static Matrix3f Matrix(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
@@ -300,5 +311,19 @@ public abstract partial class Igi2Human
         }
 
         return bytes;
+    }
+
+    private sealed class InventoryState(Weapons.Igi2Inventory inventory) : IIgi2Serialized
+    {
+        public void WriteState(Igi2StateWriter writer) => inventory.WriteState(writer);
+
+        public void ReadState(Igi2StateReader reader) => inventory.ReadState(reader);
+    }
+
+    private sealed class ViewState(Igi2HumanView view) : IIgi2Serialized
+    {
+        public void WriteState(Igi2StateWriter writer) => view.WriteState(writer);
+
+        public void ReadState(Igi2StateReader reader) => view.ReadState(reader);
     }
 }

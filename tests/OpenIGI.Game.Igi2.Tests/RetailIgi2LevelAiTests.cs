@@ -103,6 +103,51 @@ public sealed class RetailIgi2LevelAiTests
         Assert.Equal(1f, mind.Soldier.Channels[Igi2SoldierChannel.Reload]);
     }
 
+    /// <summary>
+    /// Three hundred ticks in with the intro skipped, the soldiers, their minds and their squads are saved, and loaded into the mission built afresh: each
+    /// soldier stands where it stood, alive or dead as it was; each mind is on its node with its flags and its patrols at the same
+    /// commands; each squad has its flags, suspicion and actions.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Soldiers_and_squads_saved_and_loaded_are_as_they_were()
+    {
+        (RetailIgi2Mission1 played, Igi2Soldiers bodies, _, _) = Build();
+        played.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        for (int tick = 0; tick < 300; tick++)
+        {
+            played.Run.Tick();
+        }
+
+        string script = Saves.Igi2SaveGame.Create(played.Tree[0], new Saves.Igi2SaveInfo(Saves.Igi2SaveInfo.CurrentVersion, 11, 0))!;
+        Assert.Contains("\"HumanAI\"", script, StringComparison.Ordinal);
+        Assert.Contains("\"AISquad\"", script, StringComparison.Ordinal);
+
+        (RetailIgi2Mission1 fresh, _, _, _) = Build();
+        Saves.Igi2SaveGame.Load(script, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions);
+        Assert.Equal(Soldiers(played), Soldiers(fresh));
+        Assert.Equal(Squads(played), Squads(fresh));
+        Assert.Contains(bodies.Bodies, static b => b.Mind is Igi2HumanAi { Patrols.Count: > 0 });
+
+        static IEnumerable<string> Soldiers(RetailIgi2Mission1 m) =>
+            m.Tree.OfType<Igi2HumanSoldierTask>().Where(static t => t.Body is not null).Select(static t =>
+            {
+                Igi2HumanSoldier body = t.Body!;
+                Igi2HumanAi? mind = body.Mind as Igi2HumanAi;
+                return string.Join(
+                    ' ',
+                    t.Id,
+                    body.Position,
+                    body.IsDead,
+                    mind?.CurrentNode,
+                    mind?.Flags,
+                    string.Join(',', mind?.Patrols.Items.Select(static p => p.Current?.Id) ?? []));
+            });
+
+        static IEnumerable<string> Squads(RetailIgi2Mission1 m) =>
+            m.Tree.OfType<Igi2AiSquadTask>().Where(static t => t.Squad is not null).Select(static t =>
+                string.Join(' ', t.Id, t.Squad!.Flags, t.Squad.SuspicionLevel, t.Squad.TenseTimer, string.Join(',', t.Squad.Actions.Select(static a => a.Kind))));
+    }
+
     private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null)
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);

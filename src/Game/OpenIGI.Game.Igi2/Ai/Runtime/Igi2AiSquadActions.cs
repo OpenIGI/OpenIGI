@@ -157,6 +157,20 @@ public abstract class Igi2AiSquadAction
     {
     }
 
+    /// <summary>Writes the action's own state for a save game, after its kind.</summary>
+    /// <param name="words">Where it is written.</param>
+    /// <param name="squad">Its squad.</param>
+    public virtual void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+    }
+
+    /// <summary>Reads the action's own state back, as <c>AISquad_DeSerializeHandler</c> rebinds each action by its kind.</summary>
+    /// <param name="words">Where it is read from.</param>
+    /// <param name="squad">Its squad.</param>
+    public virtual void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+    }
+
     /// <summary>The run stream's difficulty test the searches make: a member runs unless the game is on its easiest setting.</summary>
     protected static bool RunsOn(Igi2AiSquad squad) => squad.World.Difficulty != 0;
 }
@@ -190,6 +204,20 @@ public sealed class Igi2AiSquadHoldArea : Igi2AiSquadAction
 
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.HoldArea;
+
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(_timer);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        _timer = words.Int();
+    }
 
     /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
@@ -262,6 +290,20 @@ public sealed class Igi2AiSquadInquire : Igi2AiSquadAction
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.Inquire;
 
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(_timer);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        _timer = words.Int();
+    }
+
     /// <summary>Gets the place being looked into.</summary>
     public Vector3d Position { get; private set; }
 
@@ -325,6 +367,34 @@ public sealed class Igi2AiSquadSearchArea : Igi2AiSquadAction
 
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.SearchArea;
+
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(_destination[0]);
+        words.Add(_destination[1]);
+        words.Add(_patternIndex[0]);
+        words.Add(_patternIndex[1]);
+        words.Add(_step);
+        words.Add(_rounds);
+        words.Add(_scale);
+        words.Add(_center);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        _destination[0] = words.Int();
+        _destination[1] = words.Int();
+        _patternIndex[0] = words.Int();
+        _patternIndex[1] = words.Int();
+        _step = words.Int();
+        _rounds = words.Int();
+        _scale = words.Int();
+        _center = words.Double3();
+    }
 
     /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
@@ -461,6 +531,25 @@ public sealed class Igi2AiSquadMove : Igi2AiSquadAction
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.Move;
 
     /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        ArgumentNullException.ThrowIfNull(squad);
+        words.Add(_node);
+        words.Add(_ordered is null ? -1 : squad.Members.ToList().IndexOf(_ordered));
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        ArgumentNullException.ThrowIfNull(squad);
+        _node = words.Int();
+        int ordered = words.Int();
+        _ordered = ordered >= 0 ? squad.Members.ElementAtOrDefault(ordered) : null;
+    }
+
+    /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
     {
         ArgumentNullException.ThrowIfNull(squad);
@@ -531,6 +620,30 @@ public sealed class Igi2AiSquadLeapfrog : Igi2AiSquadAction
 
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.Leapfrog;
+
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        ArgumentNullException.ThrowIfNull(squad);
+        words.Add(_node);
+        words.Add(_movingTeam);
+        words.Add(_timer);
+        words.Add(_target is not null && ReferenceEquals(_target, squad.World.Player) ? 1 : 0);
+        _spread.SaveState(words);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        ArgumentNullException.ThrowIfNull(squad);
+        _node = words.Int();
+        _movingTeam = words.Int();
+        _timer = words.Int();
+        _target = words.Int() == 1 ? squad.World.Player : null;
+        _spread.LoadState(words);
+    }
 
     /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
@@ -693,6 +806,36 @@ public sealed class Igi2AiSpreadOut
     /// <summary>Gets or sets the spread-out center.</summary>
     public Vector3d Center { get; set; }
 
+    /// <summary>Writes its state for a save game: its center, its places, its timer and its turn.</summary>
+    /// <param name="words">Where it is written.</param>
+    public void SaveState(Igi2AiSquadWords words)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(Center);
+        foreach (Vector3d place in _places)
+        {
+            words.Add(place);
+        }
+
+        words.Add(UpdateTimer);
+        words.Add(Turn);
+    }
+
+    /// <summary>Reads its state back.</summary>
+    /// <param name="words">Where it is read from.</param>
+    public void LoadState(Igi2AiSquadWords words)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        Center = words.Double3();
+        for (int i = 0; i < _places.Length; i++)
+        {
+            _places[i] = words.Double3();
+        }
+
+        UpdateTimer = words.Int();
+        Turn = words.Int();
+    }
+
     /// <summary>Gets or sets the ticks before another member moves.</summary>
     public int UpdateTimer { get; set; }
 
@@ -837,6 +980,20 @@ public sealed class Igi2AiSquadPatrol : Igi2AiSquadAction
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.Patrol;
 
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(PatrolPathId);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        PatrolPathId = words.Int();
+    }
+
     /// <summary>Gets the patrol walked, the script's <c>AISquad_GetCurrentPatrolID</c>.</summary>
     public int PatrolPathId { get; private set; }
 
@@ -898,6 +1055,26 @@ public sealed class Igi2AiSquadMoveSearchInDirection : Igi2AiSquadAction
 
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.MoveSearchInDirection;
+
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(_direction);
+        words.Add(_start);
+        words.Add(_node);
+        words.Add(_stage);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        _direction = words.Single3();
+        _start = words.Double3();
+        _node = words.Int();
+        _stage = words.Int();
+    }
 
     /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
@@ -998,6 +1175,26 @@ public sealed class Igi2AiSquadLookSearchInDirection : Igi2AiSquadAction
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.LookSearchInDirection;
 
     /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(_direction);
+        words.Add(_stage);
+        words.Add(_timer);
+        words.Add(_node);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        _direction = words.Single3();
+        _stage = words.Int();
+        _timer = words.Int();
+        _node = words.Int();
+    }
+
+    /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
     {
         ArgumentNullException.ThrowIfNull(squad);
@@ -1085,6 +1282,26 @@ public sealed class Igi2AiSquadDanger : Igi2AiSquadAction
 
     /// <inheritdoc/>
     public override Igi2AiSquadActionKind Kind => Igi2AiSquadActionKind.Danger;
+
+    /// <inheritdoc/>
+    public override void SaveState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        words.Add(_position);
+        words.Add(_direction);
+        words.Add(_stage);
+        words.Add(_timer);
+    }
+
+    /// <inheritdoc/>
+    public override void LoadState(Igi2AiSquadWords words, Igi2AiSquad squad)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        _position = words.Double3();
+        _direction = words.Single3();
+        _stage = words.Int();
+        _timer = words.Int();
+    }
 
     /// <inheritdoc/>
     public override bool Init(Igi2AiSquad squad, Igi2AiSquadChange change)
