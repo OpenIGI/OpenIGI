@@ -1730,7 +1730,8 @@ internal sealed partial class GameHost : IDisposable
                     _device.CaptureFrame(captureWidth, captureHeight, pixels);
                     return pixels;
                 },
-                settingUnavailable: SettingUnavailable);
+                settingUnavailable: SettingUnavailable,
+                missionSaves: () => _titlePlayer?.SaveGames);
 
             shellHostForEntryCam = shellHost;
 
@@ -3746,7 +3747,7 @@ internal sealed partial class GameHost : IDisposable
                 }
 
                 _missionObjectives?.TickAfterLevelState();
-                if (_missionObjectives is { IsFailed: true })
+                if (_missionObjectives is { IsFailed: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Failed })
                 {
                     // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
                     // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
@@ -3786,7 +3787,7 @@ internal sealed partial class GameHost : IDisposable
                     _missionFailureTicks = 0;
                 }
                 if (!_missionResultHandled
-                    && _missionObjectives is { IsComplete: true }
+                    && (_missionObjectives is { IsComplete: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Completed })
                     && _activeMission is { } completedMission)
                 {
                     _missionResultHandled = true;
@@ -3804,6 +3805,7 @@ internal sealed partial class GameHost : IDisposable
                         }
 
                         _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
+                        _titlePlayer?.MissionCompleted(nextMissionId);
                         StartMission(nextMissionId);
                     }
                     else

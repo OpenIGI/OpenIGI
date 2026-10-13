@@ -27,14 +27,20 @@ public sealed class PauseScreen : ShellScreen
     protected override IReadOnlyList<KeyHint> Hints => [new("ENTER", "Select"), new("Q E", "Sections"), new("ESC", "Resume")];
 
     /// <inheritdoc/>
-    protected override UiElement? BuildContent(LayoutContext context) =>
-        MissionActions.Build(
-            Context.Theme,
-            "Operation",
-            "Paused",
-            Context.Theme.Accent,
-            ("Resume", () => Context.Host.ResumeMission()),
-            [("RESTART MISSION", ButtonAccent.Ghost, () => Context.Host.RestartMission()), ("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
+    /// <remarks>A title that keeps its own save games of the mission adds saving and loading them.</remarks>
+    protected override UiElement? BuildContent(LayoutContext context)
+    {
+        List<(string Text, ButtonAccent Accent, Action Activated)> actions = [];
+        if (Context.Host.MissionSaves is { } saves)
+        {
+            actions.Add(("SAVE GAME", ButtonAccent.Ghost, () => Context.Stack.Reset(new MissionSavesScreen(Context, saves, isSaving: true))));
+            actions.Add(("LOAD GAME", ButtonAccent.Ghost, () => Context.Stack.Reset(new MissionSavesScreen(Context, saves, isSaving: false))));
+        }
+
+        actions.Add(("RESTART MISSION", ButtonAccent.Ghost, () => Context.Host.RestartMission()));
+        actions.Add(("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission()));
+        return MissionActions.Build(Context.Theme, "Operation", "Paused", Context.Theme.Accent, ("Resume", () => Context.Host.ResumeMission()), actions);
+    }
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)

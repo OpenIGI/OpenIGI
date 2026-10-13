@@ -69,6 +69,9 @@ public interface IShellHost
     /// <summary>Persists player profiles and their profile-bound progress immediately.</summary>
     void SaveProfiles();
 
+    /// <summary>Gets the running mission's own save games, for a title that keeps them, or <see langword="null"/>.</summary>
+    OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => null;
+
     /// <summary>Captures the current frame for a save-slot thumbnail.</summary>
     /// <param name="width">Receives the capture width.</param>
     /// <param name="height">Receives the capture height.</param>

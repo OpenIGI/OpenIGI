@@ -26,6 +26,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="saveProfiles">Persists player profiles and their progress.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 /// <param name="settingUnavailable">Why a setting cannot take effect here, or empty when it can.</param>
+/// <param name="missionSaves">The running mission's own save games, or <see langword="null"/>.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -38,8 +39,12 @@ public sealed class ShellHost(
     Action saveSettings,
     Action saveProfiles,
     CaptureThumbnail captureThumbnail,
-    Func<string, string>? settingUnavailable = null) : IShellHost
+    Func<string, string>? settingUnavailable = null,
+    Func<OpenIGI.Game.Player.ITitleSaveGames?>? missionSaves = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => missionSaves?.Invoke();
+
     /// <inheritdoc/>
     public void StartMission(int missionId, int difficulty) => startMission(missionId, difficulty);
 

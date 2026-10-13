@@ -89,7 +89,34 @@ public interface ITitlePlayer
     /// <summary>Gets which of the title's own placements are destroyed, or <see langword="null"/> when nothing it placed can be.</summary>
     IPlacementDestruction? Destruction => null;
 
+    /// <summary>Gets the title's own save games for the running mission, or <see langword="null"/> when it keeps none.</summary>
+    ITitleSaveGames? SaveGames => null;
+
+    /// <summary>
+    /// Gets how the title's own level has ended the mission, for a title whose level decides it rather than the host's objectives.
+    /// </summary>
+    TitleMissionOutcome Outcome => TitleMissionOutcome.Running;
+
+    /// <summary>Tells the title its mission is complete and which mission follows, before that one is loaded.</summary>
+    /// <param name="nextMissionId">The mission that follows.</param>
+    void MissionCompleted(int nextMissionId)
+    {
+    }
+
     /// <summary>Runs one game tick.</summary>
     /// <param name="input">The tick's input.</param>
     void Tick(in TitlePlayerInput input);
+}
+
+/// <summary>How a title's level has ended its mission.</summary>
+public enum TitleMissionOutcome
+{
+    /// <summary>The mission goes on.</summary>
+    Running,
+
+    /// <summary>The level has completed it.</summary>
+    Completed,
+
+    /// <summary>The level has failed it.</summary>
+    Failed,
 }
