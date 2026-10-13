@@ -105,7 +105,7 @@ public sealed class SnowRenderer : IDisposable
     /// <summary>Reads the retail RainEffect weather descriptor and enables snow when rain is false.</summary>
     public bool ReadParams(GameTask levelRoot)
     {
-        DeclaredTask? task = RainRenderer.FindRainEffect(levelRoot);
+        GameTask? task = RainRenderer.FindRainEffect(levelRoot);
         if (task is null)
         {
             _authoredAvailable = false;

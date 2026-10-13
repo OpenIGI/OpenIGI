@@ -148,13 +148,14 @@ public sealed class RainRenderer : IDisposable
     /// <summary>Recursively searches the task tree for a <c>RainEffect</c> task.</summary>
     /// <param name="task">Root task to search.</param>
     /// <returns>The <c>RainEffect</c> declared task, or <see langword="null"/> if not found.</returns>
-    public static DeclaredTask? FindRainEffect(GameTask task)
+    public static GameTask? FindRainEffect(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
 
-        if (task is DeclaredTask declared && string.Equals(declared.Type.Name, "RainEffect", StringComparison.Ordinal))
+        // Declared from level data, or typed by a title that runs it: either answers its parameters by name.
+        if (string.Equals(task.Type.Name, "RainEffect", StringComparison.Ordinal))
         {
-            return declared;
+            return task;
         }
 
         foreach (GameTask child in task.Children)
@@ -179,7 +180,7 @@ public sealed class RainRenderer : IDisposable
     /// </remarks>
     public bool ReadParams(GameTask levelRoot)
     {
-        DeclaredTask? rainTask = FindRainEffect(levelRoot);
+        GameTask? rainTask = FindRainEffect(levelRoot);
         if (rainTask is null)
         {
             _authoredAvailable = false;
@@ -205,9 +206,9 @@ public sealed class RainRenderer : IDisposable
     }
 
     /// <summary>Reads one RainEffect flag, tolerating boolean, integer and quoted-string spellings.</summary>
-    internal static bool ReadFlag(DeclaredTask task, string name)
+    internal static bool ReadFlag(GameTask task, string name)
     {
-        if (!task.TryGetValue(name, out object? raw))
+        if (!task.TryGetScriptValue(name, out object? raw))
         {
             return true;
         }
@@ -403,6 +404,6 @@ public sealed class RainRenderer : IDisposable
         (MinimumSpeedMultiplier + (Math.Clamp(seed, 0f, 1f) *
             (MaximumSpeedMultiplier - MinimumSpeedMultiplier))) * fallRange;
 
-    internal static float ReadFloat(DeclaredTask task, string name, float fallback) =>
-        task.TryGetValue(name, out object? value) && value is float f ? f : fallback;
+    internal static float ReadFloat(GameTask task, string name, float fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is float f ? f : fallback;
 }

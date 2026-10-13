@@ -113,4 +113,28 @@ public sealed class Igi2WorldEffectTests
         Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
         return new(root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
     }
+    /// <summary>A rain effect falls without an active expression, and as its expression says with one; its density is held in range.</summary>
+    [Fact]
+    public void Rain_falls_as_its_active_expression_says()
+    {
+        World.Igi2RainEffectTask always = new() { Density = 40 };
+        always.Run(RainLevel());
+        Assert.True(always.IsActive);
+        Assert.Equal(World.Igi2RainEffectTask.MaximumDensity, always.Layers);
+        Assert.Equal(World.Igi2RainEffectTask.RainTexture, always.Texture);
+
+        World.Igi2RainEffectTask stopped = new() { ActiveExpression = "0", IsRain = false, Density = 0 };
+        stopped.Run(RainLevel());
+        Assert.False(stopped.IsActive);
+        Assert.Equal(1, stopped.Layers);
+        Assert.Equal(World.Igi2RainEffectTask.SnowTexture, stopped.Texture);
+    }
+
+    private static Flow.Igi2LevelRun RainLevel()
+    {
+        Engine.Tasks.TaskTypeRegistry types = new();
+        Engine.Tasks.TaskTree tree = new(types);
+        Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
+        return new(root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
+    }
 }

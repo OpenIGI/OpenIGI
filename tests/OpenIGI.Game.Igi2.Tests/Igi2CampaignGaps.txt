@@ -115,7 +115,6 @@ type MenuScreen    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | 
 type MenuText    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type MenuTextSelection    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type PictureBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-type RainEffect    # 13 16 17 | MISSIONS/location1/level3/objects.qvm, MISSIONS/location1/level6/objects.qvm, …
 type ScrollListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type SlideBar    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type StationaryGun    # 14 15 24 25 32 33 | MISSIONS/location1/level4/objects.qvm, MISSIONS/location1/level5/objects.qvm, …
