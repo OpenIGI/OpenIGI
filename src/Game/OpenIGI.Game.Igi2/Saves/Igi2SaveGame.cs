@@ -4,6 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Saves;
@@ -48,6 +49,9 @@ public static class Igi2SaveGame
 
     /// <summary>The call the header is written as.</summary>
     public const string SaveGameInfo = "SaveGameInfo";
+
+    /// <summary>The call a pane of glass's breakage is written as.</summary>
+    public const string GlassContainerCall = "GlassContainer";
 
     /// <summary>The call that stops a run that only wants the header.</summary>
     public const string BreakScript = "BreakScript";
@@ -133,18 +137,108 @@ public static class Igi2SaveGame
         return info;
     }
 
+    /// <summary>
+    /// Reads a save game file's header, <c>SaveGame_Check</c>: the file as retail leaves it, compiled in place
+    /// (<c>Script_CompileEx</c>), is run until its <c>BreakScript</c>; the script's text is read.
+    /// </summary>
+    /// <param name="file">The file's bytes.</param>
+    /// <returns>The header; not valid when the file has none.</returns>
+    public static Igi2SaveInfo CheckFile(ReadOnlyMemory<byte> file) =>
+        QvmProgram.IsQvm(file.Span) ? RunCompiled(file, null, null) : Check(Encoding.Latin1.GetString(file.Span));
+
+    /// <summary>Puts a save game file's state back onto a level's tasks, compiled or text (<c>SaveGame_LoadFile</c>).</summary>
+    /// <param name="file">The file's bytes.</param>
+    /// <param name="root">The level's root.</param>
+    /// <param name="natives">The namespace a text save's constants resolve in.</param>
+    /// <param name="functions">The function table a text save's <c>DefineTaskState</c> is run through.</param>
+    /// <param name="misread">
+    /// When given, takes each task whose state was not read to the end of its arguments, or past it: its type, then how many it read
+    /// of how many there were.
+    /// </param>
+    /// <returns>The header.</returns>
+    public static Igi2SaveInfo LoadFile(
+        ReadOnlyMemory<byte> file,
+        GameTask root,
+        NativeRegistry natives,
+        Igi2ScriptFunctions functions,
+        ICollection<string>? misread = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        if (!QvmProgram.IsQvm(file.Span))
+        {
+            return Load(Encoding.Latin1.GetString(file.Span), root, natives, functions);
+        }
+
+        Dictionary<int, GameTask> byId = [];
+        foreach ((GameTask task, int id) in Ids(LevelRoot(root)))
+        {
+            byId.TryAdd(id, task);
+        }
+
+        return RunCompiled(file, byId, misread);
+    }
+
+    // A compiled save run with its own three calls: the header taken, a run for the header stopped at the break, and each
+    // DefineTaskState put back when there are tasks to put it on.
+    private static Igi2SaveInfo RunCompiled(ReadOnlyMemory<byte> file, IReadOnlyDictionary<int, GameTask>? byId, ICollection<string>? misread)
+    {
+        QvmProgram program;
+        try
+        {
+            program = QvmProgram.Read(file);
+        }
+        catch (QvmFormatException)
+        {
+            return default;
+        }
+
+        NativeRegistry calls = new();
+        calls.RegisterConstant("TRUE", 1);
+        calls.RegisterConstant("FALSE", 0);
+        Igi2SaveInfo info = default;
+        QvmInterpreter? machine = null;
+        calls.RegisterFunction(SaveGameInfo, c =>
+        {
+            info = new Igi2SaveInfo(c.GetInt32(0), c.GetInt32(1), c.GetInt32(2));
+            return QvmValue.Zero;
+        }, 3);
+        calls.RegisterFunction(BreakScript, _ =>
+        {
+            if (byId is null)
+            {
+                machine?.Break();
+            }
+
+            return QvmValue.Zero;
+        });
+        calls.RegisterFunction(DefineTaskState, c => byId is null ? QvmValue.Zero : Define(new Igi2ScriptCall(c), byId, misread));
+
+        // GlassContainer("<key>", <state>): a pane's breakage (GlassContainer_DeSerializeScriptFunction, glasscontainer.c). Glass is
+        // not modelled here yet, so its panes stay as the level made them.
+        calls.RegisterFunction(GlassContainerCall, _ => QvmValue.Zero, 2);
+        machine = new QvmInterpreter(program, calls);
+        machine.Run();
+        return info;
+    }
+
     /// <summary>Puts one task's state back, <c>Serialize_DeSerializeScriptFunction</c>.</summary>
     /// <param name="call">The call.</param>
     /// <param name="byId">The level's tasks by their ids.</param>
+    /// <param name="misread">When given, takes the task when its state was not read to exactly the end of its arguments.</param>
     /// <returns>Nought.</returns>
-    public static QvmValue Define(Igi2ScriptCall call, IReadOnlyDictionary<int, GameTask> byId)
+    public static QvmValue Define(Igi2ScriptCall call, IReadOnlyDictionary<int, GameTask> byId, ICollection<string>? misread = null)
     {
         ArgumentNullException.ThrowIfNull(call);
         ArgumentNullException.ThrowIfNull(byId);
         int next = 0;
         if (FindState(call, byId, ref next) is { } serialized)
         {
-            serialized.ReadState(new Igi2StateReader(call, next, reader => FindReference(call, byId, reader)));
+            Igi2StateReader reader = new(call, next, r => FindReference(call, byId, r));
+            serialized.ReadState(reader);
+            if (reader.Next != call.Count)
+            {
+                misread?.Add(string.Create(CultureInfo.InvariantCulture, $"{serialized.GetType().Name} read {reader.Next - next} of {call.Count - next}"));
+            }
         }
 
         return QvmValue.Zero;

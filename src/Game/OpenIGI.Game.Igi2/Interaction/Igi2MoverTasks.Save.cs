@@ -5,7 +5,7 @@ using OpenIGI.Game.Igi2.World;
 namespace OpenIGI.Game.Igi2.Interaction;
 
 /// <content>
-/// Its save state, <c>Door_ptSerializeParameterList</c>: its stop offsets and frame as authored, how far open it is, the angle it turns
+/// Its save state, <c>Door_ptSerializeParameterList</c>: a model object's, then its stop offsets and frame as authored, how far open it is, the angle it turns
 /// to and is at, where it is told to be, how far it has travelled, its nine flags, its pick time (written as a byte, as retail's
 /// boolean printer reads it), how long it has been open, and where it stood as the tick began.
 /// </content>
@@ -15,6 +15,7 @@ public sealed partial class Igi2DoorTask : IIgi2Serialized
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        Igi2ModelObjState.Write(writer, _position, _orientation);
         writer.Real(StopX);
         writer.Real(StopY);
         writer.Real9(_base);
@@ -43,6 +44,7 @@ public sealed partial class Igi2DoorTask : IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        Igi2ModelObjState.Read(reader);
         StopX = reader.Real();
         StopY = reader.Real();
         _base = reader.Real9();
@@ -71,7 +73,7 @@ public sealed partial class Igi2DoorTask : IIgi2Serialized
 }
 
 /// <content>
-/// Its save state, <c>Lift_ptSerializeParameterList</c>: the floor it heads for, where its way starts and stops and where it stood, its frames as authored, at
+/// Its save state, <c>Lift_ptSerializeParameterList</c>: a model object's, then the floor it heads for, where its way starts and stops and where it stood, its frames as authored, at
 /// either end and as it stood, its speed and how far along it is, the ticks it has stood, its five flags and its floors.
 /// </content>
 public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
@@ -80,6 +82,7 @@ public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        Igi2ModelObjState.Write(writer, _position, _orientation);
         writer.TaskReference(_activeFloor);
         writer.Real64x3(_startPosition);
         writer.Real64x3(_stopPosition);
@@ -105,6 +108,7 @@ public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
+        Igi2ModelObjState.Read(reader);
         Igi2FloorTask? floor = reader.TaskReference() as Igi2FloorTask;
         _startPosition = reader.Real64x3();
         _stopPosition = reader.Real64x3();

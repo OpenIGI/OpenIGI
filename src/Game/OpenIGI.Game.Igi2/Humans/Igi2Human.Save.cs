@@ -55,9 +55,6 @@ public sealed class Igi2HumanSaveExtras
     /// <summary>Gets or sets the games loaded, <c>nGameLoads</c>.</summary>
     public int GameLoads { get; set; }
 
-    /// <summary>Gets or sets the mission's ticks, <c>nTime</c>.</summary>
-    public int Time { get; set; }
-
     /// <summary>Gets or sets the alarms it set off, <c>nTimesAlarmTriggered</c>.</summary>
     public int TimesAlarmTriggered { get; set; }
 
@@ -66,7 +63,7 @@ public sealed class Igi2HumanSaveExtras
 }
 
 /// <content>
-/// Its save state, <c>Human_ptSerializeParameterList</c> (human.c): its channels as they were and are, its damage, its flags, its pose,
+/// Its save state, <c>Human_ptSerializeParameterList</c> (human.c): a model object's, then its channels as they were and are, its damage, its flags, its pose,
 /// camera and timers, its angles, its speeds, its distances to the ground and roof, its mission's figures, its state machine
 /// (<c>Human_ptSerializeStateParameterList</c>), and what it stands on.
 /// </content>
@@ -81,6 +78,7 @@ public abstract partial class Igi2Human
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(extras);
+        Igi2ModelObjState.Write(writer, Position, Rows(Orientation));
         writer.Array(Channels.Last);
         writer.Array(Channels.Current);
         writer.Real(Damage.Damage);
@@ -144,7 +142,7 @@ public abstract partial class Igi2Human
         writer.Int(extras.Kills);
         writer.Int(extras.Hits);
         writer.Int(extras.GameLoads);
-        writer.Int(extras.Time);
+        writer.Int(MissionTime);
         writer.Int(extras.TimesAlarmTriggered);
         writer.Int(extras.Health);
         writer.Int(0);
@@ -184,6 +182,9 @@ public abstract partial class Igi2Human
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = new();
+        (Vector3d position, float[] orientation, _) = Igi2ModelObjState.Read(reader);
+        Position = position;
+        Orientation = Matrix(orientation);
         float[] last = reader.FloatArray();
         float[] current = reader.FloatArray();
         Channels.Restore(current, last);
@@ -240,8 +241,8 @@ public abstract partial class Igi2Human
         reader.Real64();
         reader.Real64();
         reader.Real64x3();
-        Position = reader.Real64x3();
-        Orientation = Matrix(reader.Real9());
+        reader.Real64x3();
+        reader.Real9();
         extras.Difficulty = reader.Int();
         extras.MissionId = reader.Int();
         TimesSpotted = reader.Int();
@@ -249,7 +250,7 @@ public abstract partial class Igi2Human
         extras.Kills = reader.Int();
         extras.Hits = reader.Int();
         extras.GameLoads = reader.Int();
-        extras.Time = reader.Int();
+        MissionTime = reader.Int();
         extras.TimesAlarmTriggered = reader.Int();
         extras.Health = reader.Int();
         reader.Int();

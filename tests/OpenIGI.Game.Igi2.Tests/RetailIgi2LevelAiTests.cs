@@ -148,6 +148,42 @@ public sealed class RetailIgi2LevelAiTests
                 string.Join(' ', t.Id, t.Squad!.Flags, t.Squad.SuspicionLevel, t.Squad.TenseTimer, string.Join(',', t.Squad.Actions.Select(static a => a.Kind))));
     }
 
+    /// <summary>
+    /// A save the retail game made of mission 11 (<c>savegames/0-0-11-0.igi2save</c>, compiled in place) is read: its header says
+    /// version 63 and mission 11, and run into the mission built afresh it puts the level's clock and its tasks back where it was.
+    /// Every retail save of the mission is read to exactly the end of each task's arguments, the player's and soldiers' included.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_retail_save_loads_into_its_mission()
+    {
+        string file = Path.Combine(GameDataSource.Igi2.RequireRoot(), "savegames", "0-0-11-0.igi2save");
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        byte[] bytes = File.ReadAllBytes(file);
+        Saves.Igi2SaveInfo header = Saves.Igi2SaveGame.CheckFile(bytes);
+        Assert.Equal(63, header.Version);
+        Assert.Equal(11, header.MissionId);
+
+        (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
+        m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
+        int before = m.Run.LevelFlow!.Tick;
+        List<string> misread = [];
+        Saves.Igi2SaveInfo loaded = Saves.Igi2SaveGame.LoadFile(bytes, m.Tree[0], m.Run.Natives, m.Run.Functions, misread);
+        Assert.Equal(header, loaded);
+        Assert.NotEqual(before, m.Run.LevelFlow.Tick);
+        foreach (string other in Directory.GetFiles(Path.GetDirectoryName(file)!, "0-0-11-*.igi2save"))
+        {
+            (RetailIgi2Mission1 n, _, _, Igi2TitlePlayer np) = Build();
+            n.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = np.Human;
+            Saves.Igi2SaveGame.LoadFile(File.ReadAllBytes(other), n.Tree[0], n.Run.Natives, n.Run.Functions, misread);
+        }
+
+        Assert.Empty(misread);
+    }
+
     private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null)
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
