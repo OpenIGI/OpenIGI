@@ -388,8 +388,8 @@ public sealed partial class Igi2HumanPlayer
     /// With nothing to change to, the activate key activates what the view has found (<see cref="TryActivateFromIdle"/>).
     /// </para>
     /// <para>
-    /// Not yet: the binoculars, peeking, the computer and activating anything but a switch; throwing, whose state is not ported, so
-    /// where idle would throw it stays idle; and dropping the weapon.
+    /// With nothing asked for, the drop key drops a weapon its type lets be dropped (<see cref="TryDropWeapon"/>). Not yet: the
+    /// computer, whose screens the shell presents.
     /// </para>
     /// </remarks>
     private void RunIdle()
@@ -444,6 +444,7 @@ public sealed partial class Igi2HumanPlayer
         if (ChangeWeaponId == -1)
         {
             TryActivateFromIdle();
+            TryDropWeapon();
             IsInsideBombArea = false;
             return;
         }
@@ -541,8 +542,8 @@ public sealed partial class Igi2HumanPlayer
     /// </summary>
     /// <remarks>
     /// One draw from the run stream picks one of the four <c>changeweapon_0N</c> sounds; it is drawn whatever is in hand,
-    /// and the sound and the put-away play only for a weapon still carried. The weapon stops being ready. Not yet: the AI
-    /// hearing the weapon handled (<c>HumanPlayer_SendHandleWeaponAIEvent</c>, a range of 20480).
+    /// and the sound and the put-away play only for a weapon still carried. The weapon stops being ready, and the AI hears it
+    /// handled (<c>HumanPlayer_SendHandleWeaponAIEvent</c>, a range of 20480).
     /// </remarks>
     private void EnterChangeWeapon()
     {
@@ -555,6 +556,7 @@ public sealed partial class Igi2HumanPlayer
 
         IsWeaponReady = false;
         WeaponStatus = Igi2PlayerWeaponStatus.None;
+        SendHandleWeaponAiEvent();
         Action.Current = (_, _) => RunChangeWeapon();
     }
 
@@ -562,7 +564,7 @@ public sealed partial class Igi2HumanPlayer
     /// Once the put-away has played, or the weapon is no longer carried, puts the new weapon in hand and draws it
     /// (<c>HumanPlayer_RunActionChangeWeapon</c>, <c>igi2 0x4B75C0</c>).
     /// </summary>
-    /// <remarks>Not yet: dropping the weapon put away as a pickup, which a drop key asks for.</remarks>
+    /// <remarks>A weapon the drop key put away is dropped as the new one is asked for (<see cref="DropWeapon"/>).</remarks>
     private void RunChangeWeapon()
     {
         Igi2WeaponItem? held = HeldItem;
@@ -576,6 +578,11 @@ public sealed partial class Igi2HumanPlayer
         if (next is not null && WeaponStatus == Igi2PlayerWeaponStatus.None)
         {
             WeaponStatus = Igi2PlayerWeaponStatus.Allowed;
+        }
+
+        if (next is not null && !IsWeaponActivateRequested)
+        {
+            DropWeapon();
         }
 
         if (WeaponStatus == Igi2PlayerWeaponStatus.Allowed && !IsWeaponActivateRequested)

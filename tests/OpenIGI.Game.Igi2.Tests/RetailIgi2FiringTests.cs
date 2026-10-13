@@ -453,6 +453,35 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(0, state.TickFirstHit);
     }
 
+    /// <summary>
+    /// The drop key on a weapon its type lets be dropped in a single-player game puts it away for another: the AI hears it handled,
+    /// it lands as a pickup, not thrown short, with its load, and is carried no more.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_droppable_weapon_is_dropped()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _, Igi2PlayerFakes.FakeSurroundings surroundings) = ArmedPlayerWithWorld();
+        Igi2Inventory inventory = weapons.Inventory;
+        Igi2WeaponTypeTask droppable = inventory.Tables.WeaponTypes.First(static w => w.CanWeaponBeDroppedInSinglePlayerGame);
+        Assert.True(inventory.EnableWeaponType(droppable.WeaponId, addAmmo: true));
+        Igi2WeaponItem item = inventory.FindWeapon(droppable.WeaponId)!;
+        Assert.True(inventory.Activate(item));
+        int loaded = item.Loaded(0);
+
+        Tick(player, Igi2PlayerAction.DropWeapon);
+        for (int tick = 0; tick < 120 && surroundings.Thrown.Count == 0; tick++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+        }
+
+        (Igi2WeaponTypeTask type, _, int ammoInClip, _, bool isThrowShort) = Assert.Single(surroundings.Thrown);
+        Assert.Same(droppable, type);
+        Assert.Equal(loaded, ammoInClip);
+        Assert.False(isThrowShort);
+        Assert.False(item.IsActive);
+        Assert.Contains(surroundings.AiEvents, static e => e.Event == Ai.Igi2AiEvent.HandleWeapon);
+    }
+
     private static void Tick(Igi2HumanPlayer player, Igi2PlayerAction held)
     {
         Igi2PlayerFakes.Feed(player, held);

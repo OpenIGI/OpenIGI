@@ -162,6 +162,18 @@ internal static class Igi2PlayerFakes
 
         public void SendLandingEvent() => LandingEvents++;
 
+        public List<(Weapons.Igi2WeaponTypeTask WeaponType, float ThrowGamma, int AmmoInClip, int[] AmmoCount, bool IsThrowShort)> Thrown { get; } = [];
+
+        public void ThrowGunPickup(
+            Weapons.Igi2WeaponTypeTask weaponType,
+            Vector3d position,
+            IReadOnlyList<float> orientation,
+            float throwGamma,
+            int ammoInClip,
+            IReadOnlyList<int> ammoCount,
+            bool isThrowShort = true) =>
+            Thrown.Add((weaponType, throwGamma, ammoInClip, [.. ammoCount], isThrowShort));
+
         public bool IsUnderWater(out float depth)
         {
             depth = Water ?? 0f;

@@ -383,22 +383,6 @@ public sealed partial class Igi2HumanSoldier
             weaponType, position, [held.M11, held.M12, held.M13, held.M21, held.M22, held.M23, held.M31, held.M32, held.M33], gamma, load, counts);
     }
 
-    /// <summary>
-    /// Where the weapon in hand stands, <c>HumanAnim_GetWeaponPositionAndOrientation</c> (<c>igi2 0x58FCD0</c>): the active clip's
-    /// <c>weapon</c> attachment placed on its bone as the bones now stand, or a metre above the soldier, turned as it is.
-    /// </summary>
-    private (Vector3d Position, Matrix3f Orientation) WeaponPlacement()
-    {
-        if (BodyPose() is { AttachClip: { } clip } pose
-            && ViewModel.Igi2AttachedParts.TryFind(clip, pose.AttachTime, ViewModel.Igi2AttachedParts.WeaponAttachName, out int bone, out Vector3f relative, out Matrix3f relativeOrientation)
-            && (uint)bone < (uint)pose.Pose.BoneCount)
-        {
-            return ViewModel.Igi2AttachedParts.Place(Position, Orientation, pose.Pose.Positions[bone], pose.Pose.Rotations[bone], relative, relativeOrientation);
-        }
-
-        return (new Vector3d(Position.X, Position.Y, ((Fpu)Position.Z + 4096.0).Value), Orientation);
-    }
-
     /// <summary>The camera and body set as a death leaves them: no turning of the upper body, the upper body off, no root motion.</summary>
     private void LieStill(bool lockOrientation)
     {

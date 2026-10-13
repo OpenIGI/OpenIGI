@@ -475,6 +475,10 @@ public sealed partial class Igi2HumanPlayer
         ActivatingTarget = null;
     }
 
+    // HumanPlayer_SendHandleWeaponAIEvent: AIEVENT_HANDLEWEAPON from the player's team, heard within five metres of where it stands.
+    private void SendHandleWeaponAiEvent() =>
+        Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.HandleWeapon, Team, 1090, 20480f, Position, default, this));
+
     // Human_SendDoorAIEvent (igi2 0x49F6F0): AIEVENT_DOOR from the player's team, heard within five metres of where it stands.
     private void SendDoorAiEvent(object door) =>
         Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.Door, Team, 1090, 20480f, Position, default, this, door));

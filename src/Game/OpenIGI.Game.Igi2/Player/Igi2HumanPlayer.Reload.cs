@@ -8,8 +8,8 @@ namespace OpenIGI.Game.Igi2.Player;
 /// </content>
 /// <remarks>
 /// The rounds go in when a step's clip has played: straight after the start for a weapon with no loop, on the way into
-/// the loop or the end otherwise, and again each time round the loop. Not yet: the AI hearing the weapon handled
-/// (<c>HumanPlayer_SendHandleWeaponAIEvent</c>, a range of 20480) at each.
+/// the loop or the end otherwise, and again each time round the loop; the AI hears the weapon handled at each
+/// (<c>HumanPlayer_SendHandleWeaponAIEvent</c>, a range of 20480).
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
 {
@@ -56,6 +56,7 @@ public sealed partial class Igi2HumanPlayer
         if (Weapon.GetAnim(Igi2WeaponAnimRequest.FirstReloadLoop, View.ObjectRig, FireType) is null)
         {
             Weapon.Firing?.Reload();
+            SendHandleWeaponAiEvent();
             GoAction(Igi2PlayerActionState.Idle);
             return;
         }
@@ -72,6 +73,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Weapon.Firing?.Reload();
+        SendHandleWeaponAiEvent();
     }
 
     /// <summary>The reload's loop, a round at a time, <c>HumanPlayer_RunActionReloadLoop</c> (<c>igi2 0x4B65E0</c>).</summary>
@@ -113,6 +115,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Weapon.Firing?.Reload();
+        SendHandleWeaponAiEvent();
     }
 
     /// <summary>The reload's end on the upper body, then waits for it.</summary>

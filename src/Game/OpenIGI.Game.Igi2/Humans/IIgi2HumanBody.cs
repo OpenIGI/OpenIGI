@@ -223,8 +223,8 @@ public interface IIgi2HumanSurroundings
     void ShowStatusMessage(string key);
 
     /// <summary>
-    /// Throws a weapon into the level as a pickup, <c>GunPickup_New</c> (<c>igi2 0x46C2F0</c>) moving and thrown short, and puts it on
-    /// the level's pickup list.
+    /// Throws a weapon into the level as a pickup, <c>GunPickup_New</c> (<c>igi2 0x46C2F0</c>) moving, and puts it on the level's pickup
+    /// list.
     /// </summary>
     /// <param name="weaponType">The weapon.</param>
     /// <param name="position">Where it starts.</param>
@@ -232,7 +232,15 @@ public interface IIgi2HumanSurroundings
     /// <param name="throwGamma">The heading it is thrown along.</param>
     /// <param name="ammoInClip">The rounds its load holds.</param>
     /// <param name="ammoCount">The rounds it gives its two fire types.</param>
-    void ThrowGunPickup(Weapons.Igi2WeaponTypeTask weaponType, Vector3d position, IReadOnlyList<float> orientation, float throwGamma, int ammoInClip, IReadOnlyList<int> ammoCount)
+    /// <param name="isThrowShort">Whether the throw is a short one, as a dying soldier's is; a weapon dropped is not.</param>
+    void ThrowGunPickup(
+        Weapons.Igi2WeaponTypeTask weaponType,
+        Vector3d position,
+        IReadOnlyList<float> orientation,
+        float throwGamma,
+        int ammoInClip,
+        IReadOnlyList<int> ammoCount,
+        bool isThrowShort = true)
     {
     }
 

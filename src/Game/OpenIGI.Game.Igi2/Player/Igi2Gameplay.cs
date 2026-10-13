@@ -1552,15 +1552,28 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     /// <summary>Gets or sets what resolves a thrown weapon's fixed model, whose radius the pickup takes.</summary>
     public Func<string, Formats.World.MefModel?>? Models { get; set; }
 
-    public void ThrowGunPickup(Igi2WeaponTypeTask weaponType, Vector3d position, IReadOnlyList<float> orientation, float throwGamma, int ammoInClip, IReadOnlyList<int> ammoCount)
+    public void ThrowGunPickup(
+        Igi2WeaponTypeTask weaponType,
+        Vector3d position,
+        IReadOnlyList<float> orientation,
+        float throwGamma,
+        int ammoInClip,
+        IReadOnlyList<int> ammoCount,
+        bool isThrowShort = true)
     {
-        if (Pickups is not { } pickups || Owner is not Soldiers.Igi2HumanSoldier { Weapon.Inventory.Tables: { } tables })
+        Weapons.Igi2WeaponTables? tables = Owner switch
+        {
+            Soldiers.Igi2HumanSoldier soldier => soldier.Weapon.Inventory?.Tables,
+            Igi2HumanPlayer player => player.Weapon.Inventory?.Tables,
+            _ => null,
+        };
+        if (Pickups is not { } pickups || tables is null)
         {
             return;
         }
 
         float radius = weaponType.FixedModel.Length > 0 && Models?.Invoke(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
-        pickups.Add(OpenIGI.Game.Igi2.Pickups.Igi2GunPickup.Thrown(weaponType, tables, position, orientation, throwGamma, isMoving: true, isThrowShort: true, ammoInClip, ammoCount, radius));
+        pickups.Add(OpenIGI.Game.Igi2.Pickups.Igi2GunPickup.Thrown(weaponType, tables, position, orientation, throwGamma, isMoving: true, isThrowShort, ammoInClip, ammoCount, radius));
     }
 
     public bool IsOnElevator => false;

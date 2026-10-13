@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Igi2.Player;
 /// and the fire key coming up lets go.
 /// </para>
 /// <para>
-/// Not yet: the AI hearing a weapon that never runs out reload itself when empty (<c>HumanPlayer_SendHandleWeaponAIEvent</c>).
+/// A weapon that never runs out reloads itself when empty, and the AI hears it (<c>HumanPlayer_SendHandleWeaponAIEvent</c>).
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
@@ -216,6 +216,7 @@ public sealed partial class Igi2HumanPlayer
                 if (IsUnlimitedAmmo)
                 {
                     firing.Reload();
+                    SendHandleWeaponAiEvent();
                 }
                 else
                 {

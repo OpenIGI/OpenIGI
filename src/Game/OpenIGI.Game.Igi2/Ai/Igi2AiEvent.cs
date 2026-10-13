@@ -38,6 +38,9 @@ public readonly record struct Igi2AiEvent(
     /// <summary>A camera's first sight of someone while the alarm sounds, event 45, <c>AIEVENT_CAMERAALARMUPDATE</c>.</summary>
     public const int CameraAlarmUpdate = 45;
 
+    /// <summary>A weapon reloaded or changed, event 44, <c>AIEVENT_HANDLEWEAPON</c> (<c>HumanPlayer_SendHandleWeaponAIEvent</c>).</summary>
+    public const int HandleWeapon = 44;
+
     /// <summary>A door opened or shut, event 11, <c>AIEVENT_DOOR</c> (<c>Human_SendDoorAIEvent</c>).</summary>
     public const int Door = 11;
 
