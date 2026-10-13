@@ -71,7 +71,7 @@ public readonly record struct GlobalLightSettings(
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
 
-        DeclaredTask? lowest = null;
+        GameTask? lowest = null;
         float lowestTime = float.MaxValue;
         Find(levelRoot);
 
@@ -79,12 +79,12 @@ public readonly record struct GlobalLightSettings(
 
         void Find(GameTask task)
         {
-            if (task is DeclaredTask declared
-                && string.Equals(declared.Type.Name, KeyframeType, StringComparison.Ordinal)
-                && Number(declared, "Time") is { } time
+            if (task is { } candidate
+                && string.Equals(candidate.Type.Name, KeyframeType, StringComparison.Ordinal)
+                && Number(candidate, "Time") is { } time
                 && time < lowestTime)
             {
-                lowest = declared;
+                lowest = candidate;
                 lowestTime = time;
             }
 
@@ -100,7 +100,7 @@ public readonly record struct GlobalLightSettings(
     /// <param name="time">The keyframe's time key.</param>
     /// <returns>The settings its bands describe.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="keyframe"/> is <see langword="null"/>.</exception>
-    public static GlobalLightSettings From(DeclaredTask keyframe, float time)
+    public static GlobalLightSettings From(GameTask keyframe, float time)
     {
         ArgumentNullException.ThrowIfNull(keyframe);
 
@@ -110,14 +110,14 @@ public readonly record struct GlobalLightSettings(
             Colour(keyframe, "Ambient color object category 1") ?? Vector3f.One,
             time);
 
-        static SceneFog Band(DeclaredTask keyframe, string band) => SceneFog.FromGlobalLight(
+        static SceneFog Band(GameTask keyframe, string band) => SceneFog.FromGlobalLight(
             Colour(keyframe, $"Fog color {band}") ?? default,
             Number(keyframe, $"Fog density {band}") ?? 0f);
 
-        static Vector3f? Colour(DeclaredTask keyframe, string name) =>
-            keyframe.TryGetValue(name, out object? value) && value is Vector3f colour ? colour : null;
+        static Vector3f? Colour(GameTask keyframe, string name) =>
+            keyframe.TryGetScriptValue(name, out object? value) && value is Vector3f colour ? colour : null;
     }
 
-    private static float? Number(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is float number ? number : null;
+    private static float? Number(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? value) && value is float number ? number : null;
 }

@@ -122,6 +122,27 @@ public readonly record struct Igi2SceneAtmosphere(
 
         atmosphere = default;
 
+        // A typed light is keyed as the original keys it, at the hour the first frame's camera sees.
+        if (Find(levelRoot) is Igi2GlobalLightTask typed)
+        {
+            typed.Prepare();
+            typed.SetTime(Flow.Igi2LevelFlowTask.StartingCameraTime(levelRoot));
+            if (!typed.Children.OfType<Igi2GlobalLightKeyframeTask>().Any())
+            {
+                return false;
+            }
+
+            Igi2LightCategory terrain = typed.Category[0];
+            atmosphere = new Igi2SceneAtmosphere(
+                terrain.FogColour,
+                Math.Max(0f, terrain.FogDensity) * AuthoredDensityScale,
+                terrain.Ambient,
+                typed.SkyColour,
+                typed.Time,
+                typed.Category[1].Ambient);
+            return true;
+        }
+
         if (Find(levelRoot) is not { } light || SelectKeyframe(light) is not { } keyframe)
         {
             return false;
@@ -138,23 +159,23 @@ public readonly record struct Igi2SceneAtmosphere(
         return true;
     }
 
-    private static DeclaredTask? SelectKeyframe(DeclaredTask light)
+    private static GameTask? SelectKeyframe(GameTask light)
     {
-        DeclaredTask? best = null;
+        GameTask? best = null;
         float bestTime = float.MaxValue;
 
         foreach (GameTask child in light.Children)
         {
-            if (child is not DeclaredTask declared
-                || !string.Equals(declared.Type.Name, KeyframeTypeName, StringComparison.Ordinal))
+            if (child is not { } candidate
+                || !string.Equals(candidate.Type.Name, KeyframeTypeName, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            float time = Float(declared, "Time", float.MaxValue);
+            float time = Float(candidate, "Time", float.MaxValue);
             if (time >= 0f && time <= LatestHour && time < bestTime)
             {
-                best = declared;
+                best = candidate;
                 bestTime = time;
             }
         }
@@ -162,12 +183,12 @@ public readonly record struct Igi2SceneAtmosphere(
         return best;
     }
 
-    private static DeclaredTask? Find(GameTask task)
+    private static GameTask? Find(GameTask task)
     {
-        if (task is DeclaredTask declared
-            && string.Equals(declared.Type.Name, TaskTypeName, StringComparison.Ordinal))
+        if (task is { } candidate
+            && string.Equals(candidate.Type.Name, TaskTypeName, StringComparison.Ordinal))
         {
-            return declared;
+            return candidate;
         }
 
         foreach (GameTask child in task.Children)
@@ -181,9 +202,9 @@ public readonly record struct Igi2SceneAtmosphere(
         return null;
     }
 
-    private static float Float(DeclaredTask task, string name, float fallback) =>
-        task.TryGetValue(name, out object? value) && value is float number ? number : fallback;
+    private static float Float(GameTask task, string name, float fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is float number ? number : fallback;
 
-    private static Vector3f Colour(DeclaredTask task, string name, Vector3f fallback) =>
-        task.TryGetValue(name, out object? value) && value is Vector3f colour ? colour : fallback;
+    private static Vector3f Colour(GameTask task, string name, Vector3f fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is Vector3f colour ? colour : fallback;
 }

@@ -250,6 +250,10 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Flow.Igi2OverlayHolderTask>(Flow.Igi2OverlayHolderTask.TypeName);
         context.Types.Register<Flow.Igi2AnimTask>(Flow.Igi2AnimTask.TypeName);
         context.Types.Register<World.Igi2RainEffectTask>(World.Igi2RainEffectTask.TypeName);
+        context.Types.Register<World.Igi2DirlightTask>(World.Igi2DirlightTask.TypeName);
+        context.Types.Register<World.Igi2DirlightKeyframeTask>(World.Igi2DirlightKeyframeTask.TypeName);
+        context.Types.Register<World.Igi2GlobalLightTask>(World.Igi2GlobalLightTask.TypeName);
+        context.Types.Register<World.Igi2GlobalLightKeyframeTask>(World.Igi2GlobalLightKeyframeTask.TypeName);
         context.Types.Register<Vehicles.Igi2TrainTask>(Vehicles.Igi2TrainTask.TypeName);
         context.Services.GetOrProvide(static () => new Flow.Igi2ScreenOverlay());
         Flow.Igi2ScreenOverlay.RegisterConstants(context.Natives);

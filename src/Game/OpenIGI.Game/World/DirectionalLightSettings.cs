@@ -136,25 +136,25 @@ public readonly record struct DirectionalLightSettings(
             MathF.Sin(beta));
     }
 
-    private static DeclaredTask? SelectKeyframe(DeclaredTask light)
+    private static GameTask? SelectKeyframe(GameTask light)
     {
-        DeclaredTask? best = null;
+        GameTask? best = null;
         float bestTime = float.MaxValue;
 
         foreach (GameTask child in light.Children)
         {
-            if (child is not DeclaredTask declared
-                || !string.Equals(declared.Type.Name, KeyframeTypeName, StringComparison.Ordinal))
+            if (child is not { } candidate
+                || !string.Equals(candidate.Type.Name, KeyframeTypeName, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            float time = GetFloat(declared, "Time", float.MaxValue);
+            float time = GetFloat(candidate, "Time", float.MaxValue);
 
             // Earliest hour that is actually an hour. The out-of-range slot is the template.
             if (time >= 0f && time <= LatestHour && time < bestTime)
             {
-                best = declared;
+                best = candidate;
                 bestTime = time;
             }
         }
@@ -162,11 +162,11 @@ public readonly record struct DirectionalLightSettings(
         return best;
     }
 
-    private static DeclaredTask? Find(GameTask task, string typeName)
+    private static GameTask? Find(GameTask task, string typeName)
     {
-        if (task is DeclaredTask declared && string.Equals(declared.Type.Name, typeName, StringComparison.Ordinal))
+        if (task is { } candidate && string.Equals(candidate.Type.Name, typeName, StringComparison.Ordinal))
         {
-            return declared;
+            return candidate;
         }
 
         foreach (GameTask child in task.Children)
@@ -180,12 +180,12 @@ public readonly record struct DirectionalLightSettings(
         return null;
     }
 
-    private static float GetFloat(DeclaredTask task, string name, float fallback) =>
-        task.TryGetValue(name, out object? value) && value is float f ? f : fallback;
+    private static float GetFloat(GameTask task, string name, float fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is float f ? f : fallback;
 
-    private static bool GetBool(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is bool b && b;
+    private static bool GetBool(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? value) && value is bool b && b;
 
-    private static Vector3f GetColour(DeclaredTask task, string name, Vector3f fallback) =>
-        task.TryGetValue(name, out object? value) && value is Vector3f v ? v : fallback;
+    private static Vector3f GetColour(GameTask task, string name, Vector3f fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is Vector3f v ? v : fallback;
 }

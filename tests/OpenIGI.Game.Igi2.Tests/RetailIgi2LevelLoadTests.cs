@@ -49,15 +49,15 @@ public sealed class RetailIgi2LevelLoadTests
     }
 
     /// <summary>
-    /// The tree is still built largely out of placeholders, and that is the point: the module list covers
-    /// what the gameplay milestones have reached and no more.
+    /// The first mission's tree has no placeholder left: every type its level declares has a class of its
+    /// own, run by the gameplay the port has reached.
     /// </summary>
     /// <remarks>
-    /// Asserted rather than assumed, because a placeholder silently becoming a real class is how a level
-    /// would start looking loaded while behaving like nothing at all.
+    /// Asserted rather than assumed, because a type falling back to a placeholder is how a level would
+    /// start looking loaded while behaving like nothing at all.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void The_tree_is_built_from_declared_placeholders()
+    public void The_first_missions_tree_has_no_placeholders()
     {
         Harness harness = new(LevelScripts()[0]);
         harness.Loader.LoadScript(Harness.ScriptName);
@@ -66,7 +66,7 @@ public sealed class RetailIgi2LevelLoadTests
         Collect(harness.LevelRoot, tasks);
 
         Assert.NotEmpty(tasks);
-        Assert.Contains(tasks, static t => t is DeclaredTask);
+        Assert.DoesNotContain(tasks, static t => t is DeclaredTask);
     }
 
     /// <summary>An I.G.I. 2 session refuses I.G.I. 1's structural set, whose Container is not its own.</summary>

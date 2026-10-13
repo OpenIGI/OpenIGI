@@ -65,6 +65,39 @@ public sealed partial class Igi2LevelFlowTask : Igi2Task
     /// <summary>The ticks the flow runs a second, <c>Flow_ptFlow-&gt;nFrequency</c>.</summary>
     public const int Frequency = 30;
 
+    /// <summary>
+    /// Gets the hour of the day the cameras see, <c>nTimeOfDayTick / (nFrequency × 3600) + vStartTime</c>, which every frame sets the
+    /// lights to (<c>HumanCamera</c>'s <c>QCamera_Set</c>, then the viewport's draw callbacks).
+    /// </summary>
+    public float CameraTime => (((Fpu)TimeOfDayTick / (Frequency * 3600.0)) + StartTime).F;
+
+    /// <summary>Gets the hour of the day the cameras see as a level starts: its start time.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <returns>The hour, nought without a level flow.</returns>
+    public static float StartingCameraTime(GameTask levelRoot)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        return Find(levelRoot)?.CameraTime ?? 0f;
+
+        static Igi2LevelFlowTask? Find(GameTask task)
+        {
+            if (task is Igi2LevelFlowTask flow)
+            {
+                return flow;
+            }
+
+            foreach (GameTask child in task.Children)
+            {
+                if (Find(child) is { } found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+    }
+
     /// <summary>Sets the clock to an hour of the day, <c>LevelFlow_SetTimeOfDay</c>: the hour times the ticks of an hour.</summary>
     /// <param name="hours">The hour.</param>
     public void SetTimeOfDay(double hours) => TimeOfDayTick = Fpu.ToInt32((Fpu)hours * (Frequency * 3600.0));
