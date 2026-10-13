@@ -236,7 +236,7 @@ public interface IIgi2HumanSurroundings
     {
     }
 
-    /// <summary>Raises an event for the AI to perceive, <c>HumanAI_SendEvent</c> (<c>igi2 0x460A90</c>); nothing hears it until the AI's events are ported.</summary>
+    /// <summary>Raises an event for the AI to perceive, <c>HumanAI_SendEvent</c> (<c>igi2 0x460A90</c>); surroundings with no AI hear nothing.</summary>
     /// <param name="aiEvent">The event.</param>
     void SendAiEvent(in Ai.Igi2AiEvent aiEvent)
     {

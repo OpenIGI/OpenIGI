@@ -227,11 +227,6 @@ public sealed partial class Igi2AiSquadTask : Igi2Task
     /// <summary>Gets the squad's soldiers, the <c>HumanSoldier</c> tasks under it, in order.</summary>
     public IEnumerable<Igi2HumanSoldierTask> Soldiers => Igi2TaskTree.Descendants(this).OfType<Igi2HumanSoldierTask>();
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <c>AISquad_RunHandler</c> (<c>igi2 0x498E80</c>) runs its soldiers every tick, after its own action stack; the squad's own
-    /// part (its members, sounds, targets, fire orders and actions) is not ported yet.
-    /// </remarks>
     /// <summary>Gets or sets the squad the level's AI made for it, or <see langword="null"/>.</summary>
     public Runtime.Igi2AiSquad? Squad { get; set; }
 

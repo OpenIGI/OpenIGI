@@ -171,6 +171,15 @@ public sealed partial class Igi2SecurityCameraTask
     /// <summary>Gets what the lens is following, <c>ptTargetRef</c>, or <see langword="null"/>.</summary>
     public IIgi2Detectable? Target => _lens.Target;
 
+    /// <summary>Gets or sets where its AI events go, <c>HumanAI_SendEvent</c>, or <see langword="null"/> when no one hears them.</summary>
+    public Action<Ai.Igi2AiEvent>? AiEvents { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the level's alarm sounds: the last alarm control made's <c>isAlarm</c> (<c>dword_834DED8</c>), or
+    /// <see langword="null"/> when the level has none.
+    /// </summary>
+    public Func<bool>? IsAlarmSounding { get; set; }
+
     /// <summary>Gets the lens's tilt, <c>vAlpha</c>.</summary>
     public float LensAlpha => _lens.Alpha;
 
@@ -280,7 +289,8 @@ public sealed partial class Igi2SecurityCameraTask
             }
             else
             {
-                // HumanAI_SendEvent (igi2 0x460A90) tells the AI the camera is destroyed; the AI's events are not ported.
+                // HumanAI_SendEvent (igi2 0x460A90): AIEVENT_DESTROYED_CAMERA to every team, from the camera, eight metres out.
+                AiEvents?.Invoke(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.DestroyedCamera, -1, 131, 40960f, _position, default, null));
                 _destroyedEventTimer = DestroyedEventTicks;
             }
 
@@ -378,6 +388,22 @@ public sealed partial class Igi2SecurityCameraTask
         return r.Value < 3.1415927f ? r.F : (r - 6.2831855f).F;
     }
 
+    // The event's position is the target task's tOrientation (ModelObj+124) read as three doubles: retail points ptPosition at
+    // &ptTargetQTask[3].ptPrev, which is the frame, not tPos. Its first six floats, two to a double, are what the AI is told.
+    private static Vector3d OrientationAsPosition(IIgi2Detectable target)
+    {
+        if (target is not Humans.Igi2Human human)
+        {
+            return default;
+        }
+
+        Matrix3f m = human.Orientation;
+        return new Vector3d(Pair(m.M11, m.M12), Pair(m.M13, m.M21), Pair(m.M22, m.M23));
+
+        static double Pair(float low, float high) =>
+            BitConverter.Int64BitsToDouble(((long)BitConverter.SingleToInt32Bits(high) << 32) | (uint)BitConverter.SingleToInt32Bits(low));
+    }
+
     /// <summary>Exports its four (<c>SCamera_RegisterScriptSymbolsHandler</c>, <c>igi2 0x48FE70</c>).</summary>
     /// <param name="variables">The level's variables.</param>
     protected override void OnExportVars(ScriptVarRegistry variables)
@@ -395,7 +421,12 @@ public sealed partial class Igi2SecurityCameraTask
     // The lens's tick, SCamera_SCameraLensRunHandler (igi2 0x48EF20). The computer map's blink timers are the computer's.
     private void RunLens()
     {
-        // A first detection would tell the AI where the target is when the level has an alarm (AI event 45); not ported.
+        // A first detection while the level's alarm sounds tells the camera's side where its target is: AIEVENT_CAMERAALARMUPDATE.
+        if (_isDetection != 0 && _isLastDetection == 0 && IsAlarmSounding?.Invoke() == true && _lens.Target is { } seen)
+        {
+            AiEvents?.Invoke(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.CameraAlarmUpdate, CameraTeam, 0, 0f, OrientationAsPosition(seen), default, null));
+        }
+
         _isLastDetection = _isDetection;
         Lens lens = _lens;
         lens.Alpha = LimitAngle(lens.Alpha);

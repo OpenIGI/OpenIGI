@@ -23,7 +23,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// Then the alarm's (<c>AlarmControl_RunHandler</c>, <c>0x4D0320</c>): last tick's alarm is kept; exploded or inactive, it is
 /// neither triggered nor sounding; otherwise its trigger script says whether it is triggered, which stamps the level's tick,
 /// and its alarm script whether it sounds. An alarm that starts raises <c>AIEVENT_ALARMON</c> and counts once on the player's
-/// <c>nTimesAlarmTriggered</c>; one that stops raises <c>AIEVENT_ALARMOFF</c>. The AI's events are not ported.
+/// <c>nTimesAlarmTriggered</c>; one that stops raises <c>AIEVENT_ALARMOFF</c>. Both go to every team, from nowhere and no one.
 /// </para>
 /// <para>
 /// A human hacks it as a timed action at its model's second vertex, kneeling 0.675 m out, for its hack time. The multiplayer
@@ -66,6 +66,9 @@ public sealed partial class Igi2AlarmControlTask
 
     /// <summary>Gets or sets what an alarm that starts does beside its AI event: count on the player's <c>nTimesAlarmTriggered</c>.</summary>
     public Action? AlarmRaised { get; set; }
+
+    /// <summary>Gets or sets where its AI events go, <c>HumanAI_SendEvent</c>, or <see langword="null"/> when no one hears them.</summary>
+    public Action<Ai.Igi2AiEvent>? AiEvents { get; set; }
 
     /// <inheritdoc/>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -275,10 +278,15 @@ public sealed partial class Igi2AlarmControlTask
             _isAlarm = (sbyte)Igi2LevelExpression.Truncate(level.Evaluate(_alarmExpression));
         }
 
-        // HumanAI_SendEvent (igi2 0x460A90) with AlarmOnEvent / AlarmOffEvent, to every team, is not ported.
+        // HumanAI_SendEvent (igi2 0x460A90): AIEVENT_ALARMON (7) as it starts, AIEVENT_ALARMOFF (8) as it stops, to every team.
         if (wasAlarm == 0 && _isAlarm != 0)
         {
+            AiEvents?.Invoke(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.AlarmOn, -1, 0, 0f, null, default, null));
             AlarmRaised?.Invoke();
+        }
+        else if (wasAlarm != 0 && _isAlarm == 0)
+        {
+            AiEvents?.Invoke(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.AlarmOff, -1, 0, 0f, null, default, null));
         }
     }
 }

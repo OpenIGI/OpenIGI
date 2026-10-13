@@ -507,10 +507,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 FlowTicks = () => level.Ticks,
                 LevelTick = () => level.LevelFlow?.Tick ?? 0,
             };
+            // The level's alarm, for a camera's first sight: the last alarm control made (AlarmControl_CreateHandler's global).
+            Interaction.Igi2AlarmControlTask? levelAlarm = Descendants(root).OfType<Interaction.Igi2AlarmControlTask>().LastOrDefault();
             foreach (Engine.Tasks.GameTask node in Descendants(root))
             {
                 if (node is Interaction.Igi2SecurityCameraTask camera)
                 {
+                    camera.AiEvents = e => player.Ai?.SendEvent(e);
+                    camera.IsAlarmSounding = levelAlarm is null ? null : () => levelAlarm.IsAlarm;
                     camera.Models = models;
                     camera.Sounds = player.Sounds;
                     camera.Explosions = player.Explosions;
@@ -814,6 +818,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             Arm(alarm, Interaction.Igi2AlarmControlTask.TypeName);
             alarm.AlarmRaised = () => player.Human.TimesAlarmTriggered++;
+            alarm.AiEvents = e => player.Ai?.SendEvent(e);
             activatables.Add(alarm);
         }
 
@@ -955,6 +960,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 World = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? session) ? session : null,
                 NoiseAt = noise,
             });
+
+            // What the humans do that the AI hears -- a door, a fence, a ladder, a bump -- reaches the minds from now on.
+            foreach (Igi2Human human in everyone)
+            {
+                if (human.Surroundings is Igi2LevelSurroundings heard)
+                {
+                    heard.AiEvents = e => player.Ai?.SendEvent(e);
+                }
+            }
 
             // The kill boxes of the cars and the trains are tested against everyone.
             foreach (Vehicles.Igi2CarTask car in player.Cars)
@@ -1600,6 +1614,12 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     /// <summary>Gets or sets every human registered in the level, <c>Human_ptQTaskList</c>.</summary>
     public IReadOnlyList<Igi2Human> Humans { get; set; } = [];
+
+    /// <summary>Gets or sets where the AI's events go, <c>HumanAI_SendEvent</c>, once the level's AI is made.</summary>
+    public Action<Ai.Igi2AiEvent>? AiEvents { get; set; }
+
+    /// <inheritdoc/>
+    public void SendAiEvent(in Ai.Igi2AiEvent aiEvent) => AiEvents?.Invoke(aiEvent);
 
     public string? LandingSound(int material) =>
         Materials?[material] is { LandSound.Length: > 0 } game ? game.LandSound : null;

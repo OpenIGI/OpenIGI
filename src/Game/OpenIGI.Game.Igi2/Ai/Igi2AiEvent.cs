@@ -26,6 +26,21 @@ public readonly record struct Igi2AiEvent(
     object? Reference = null,
     object? Specific = null)
 {
+    /// <summary>An alarm starting, event 7, <c>AIEVENT_ALARMON</c> (<c>AlarmControl_RunHandler</c>).</summary>
+    public const int AlarmOn = 7;
+
+    /// <summary>An alarm stopping, event 8, <c>AIEVENT_ALARMOFF</c> (<c>AlarmControl_RunHandler</c>).</summary>
+    public const int AlarmOff = 8;
+
+    /// <summary>A security camera destroyed, event 35, <c>AIEVENT_DESTROYED_CAMERA</c> (<c>SCamera_RunHandler</c>).</summary>
+    public const int DestroyedCamera = 35;
+
+    /// <summary>A camera's first sight of someone while the alarm sounds, event 45, <c>AIEVENT_CAMERAALARMUPDATE</c>.</summary>
+    public const int CameraAlarmUpdate = 45;
+
+    /// <summary>A door opened or shut, event 11, <c>AIEVENT_DOOR</c> (<c>Human_SendDoorAIEvent</c>).</summary>
+    public const int Door = 11;
+
     /// <summary>A human climbing over a fence, event 12, <c>AIEVENT_FENCE</c> (<c>HumanPlayer_ClimbFence</c>).</summary>
     public const int Fence = 12;
 
