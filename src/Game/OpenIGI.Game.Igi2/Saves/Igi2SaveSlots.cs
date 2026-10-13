@@ -120,9 +120,10 @@ public sealed class Igi2SaveSlots(string directory)
     /// <param name="slot">The slot.</param>
     /// <param name="root">The task the state is written from.</param>
     /// <param name="ticks">The player's mission time.</param>
+    /// <param name="glass">The level's panes of glass, or <see langword="null"/>.</param>
     /// <returns><see langword="true"/> once written: retail's "Saving complete", otherwise its "Saving failed".</returns>
-    public bool Save(Igi2SaveOwner owner, int slot, GameTask root, int ticks) =>
-        Write(SlotFileName(owner, slot), root, new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, owner.Mission, ticks));
+    public bool Save(Igi2SaveOwner owner, int slot, GameTask root, int ticks, Interaction.Igi2GlassContainer? glass = null) =>
+        WriteText(SlotFileName(owner, slot), Igi2SaveGame.Create(root, new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, owner.Mission, ticks), glass));
 
     /// <summary>Reads a slot's header, <c>SaveGame_Check</c>.</summary>
     /// <param name="owner">Whose.</param>
@@ -137,15 +138,17 @@ public sealed class Igi2SaveSlots(string directory)
     /// <param name="root">The level's root.</param>
     /// <param name="natives">The namespace a text save's constants resolve in.</param>
     /// <param name="functions">The function table.</param>
+    /// <param name="glass">The level's panes of glass, or <see langword="null"/>.</param>
     /// <returns>The header; not valid when nothing was loaded: retail's "Loading failed".</returns>
-    public Igi2SaveInfo Load(Igi2SaveOwner owner, int slot, GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions)
+    public Igi2SaveInfo Load(
+        Igi2SaveOwner owner, int slot, GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions, Interaction.Igi2GlassContainer? glass = null)
     {
         if (!TryRead(SlotFileName(owner, slot), out byte[] file) || !Igi2SaveGame.CheckFile(file).IsValid)
         {
             return default;
         }
 
-        return Igi2SaveGame.LoadFile(file, root, natives, functions);
+        return Igi2SaveGame.LoadFile(file, root, natives, functions, glass: glass);
     }
 
     /// <summary>The newest valid save of the six, by when its file was written, <c>Game_FindNewestSaveGame</c>.</summary>
@@ -227,8 +230,6 @@ public sealed class Igi2SaveSlots(string directory)
         TryRead(CarryOverFileName(owner), out byte[] file) && Igi2SaveGame.CheckFile(file).IsValid
             ? Igi2SaveGame.LoadFile(file, root, natives, functions)
             : default;
-
-    private bool Write(string relative, GameTask root, Igi2SaveInfo info) => WriteText(relative, Igi2SaveGame.Create(root, info));
 
     private bool WriteText(string relative, string? script)
     {

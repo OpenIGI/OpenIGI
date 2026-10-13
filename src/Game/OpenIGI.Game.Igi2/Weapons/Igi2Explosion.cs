@@ -526,6 +526,10 @@ public sealed class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery col
         _targets.Add(target);
     }
 
+    /// <summary>Removes a target, <c>QTaskList_Remove(GameFunctions_ptExplosionQTaskList)</c>.</summary>
+    /// <param name="target">The target.</param>
+    public void RemoveTarget(IIgi2ExplosionTarget target) => _targets.Remove(target);
+
     /// <inheritdoc/>
     /// <remarks>
     /// <c>Grenade_RunHandler</c> (<c>igi2 0x484260</c>): once, at once, with three fragments and a fireball, the grenade's

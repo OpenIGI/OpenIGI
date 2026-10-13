@@ -144,6 +144,10 @@ public sealed class MefModel
     /// </remarks>
     public Vector3f RenderSphereCentre { get; private init; }
 
+    /// <summary>Gets the radius of the render mesh's bounding sphere, <c>tRenderMeshSphere</c>'s radius at <c>MESH+0x3C</c>.</summary>
+    /// <remarks>I.G.I. 2's <c>Glass_ExplosionHitHandler</c> (glass.c) sizes a pane by it.</remarks>
+    public float RenderSphereRadius { get; private init; }
+
     /// <summary>Gets the vertices, widened to the 40-byte layout.</summary>
     public ReadOnlySpan<MefVertex> Vertices => _vertices;
 
@@ -324,6 +328,7 @@ public sealed class MefModel
             boneNames)
         {
             RenderSphereCentre = renderSphereCentre,
+            RenderSphereRadius = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x3C..]),
         };
     }
 

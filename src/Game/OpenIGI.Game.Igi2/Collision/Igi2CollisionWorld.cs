@@ -1,3 +1,4 @@
+using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
@@ -11,7 +12,15 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// <param name="LevelId">That task's level id.</param>
 /// <param name="Model">The model's name.</param>
 /// <param name="Depth">How deep in its root's attachment tree the object is; zero for the placed object itself.</param>
-public sealed record Igi2CollisionOwner(string TypeName, int LevelId, string Model, int Depth);
+public sealed record Igi2CollisionOwner(string TypeName, int LevelId, string Model, int Depth)
+{
+    /// <summary>
+    /// Gets the key of a pane of glass, as <c>GlassContainer_MakeHashKey</c> builds it, or <see langword="null"/> for anything else:
+    /// the pane's place among its owner's attach points, then up through each model it hangs off, <c>M-</c> at the placed model's
+    /// container, and the placed model's name and level id (<c>0-600_00_1-3581</c>).
+    /// </summary>
+    public string? GlassKey { get; init; }
+}
 
 /// <summary>An object an attach point makes of a magic type: the type, where the point puts it, and the solid it is made of.</summary>
 /// <param name="Type">The magic type.</param>
@@ -76,6 +85,9 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// </summary>
     // The type whose mounted model is a solid of its own, a security camera's lens.
     private const string LensType = "SCamera";
+
+    /// <summary>The magic type a pane of glass is made as, <c>Glass</c>.</summary>
+    public const string GlassType = "Glass";
 
     private static readonly HashSet<string> SightThrough = new(StringComparer.Ordinal)
     {
@@ -184,12 +196,17 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
             Igi2Pose pose = placement.Frame is { } frame
                 ? Igi2Pose.FromMatrix(placement.Position, frame)
                 : Igi2Pose.FromAngles(placement.Position, placement.Orientation);
-            Walk(models, placement.Model, pose, depth: 0, (model, modelName, at, depth) =>
+            string root = string.Create(CultureInfo.InvariantCulture, $"{placement.Model}-{placement.LevelId}");
+            WalkKeyed(models, placement.Model, pose, depth: 0, root, null, null, step =>
             {
+                (MefModel model, string modelName, Igi2Pose at, int depth) = (step.Model, step.ModelName, step.Pose, step.Depth);
                 if (model.BoneHierarchy is null && Meshes(model) is { } meshes)
                 {
                     Igi2RigidObject solid = new(
-                        new Igi2CollisionOwner(placement.TypeName, placement.LevelId, modelName, depth),
+                        new Igi2CollisionOwner(placement.TypeName, placement.LevelId, modelName, depth)
+                        {
+                            GlassKey = step.Type?.TaskType == GlassType ? step.Key : null,
+                        },
                         meshes,
                         model.NativeMarkerBound,
                         isBuildingMesh: false)
@@ -384,6 +401,21 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
         Igi2Pose pose,
         int depth,
         Action<MefModel, string, Igi2Pose, int> visit,
+        World.Igi2MagicObjTypes? magic = null) =>
+        WalkKeyed(models, modelName, pose, depth, string.Empty, null, null, step => visit(step.Model, step.ModelName, step.Pose, step.Depth), magic);
+
+    // The walk with what made each attached model: its magic type, and the key GlassContainer_MakeHashKey gives an object made at that
+    // attach point -- its index among its owner's points, then the owner's chain. A model's chain is its name, its index in what it
+    // hangs off, M- where that is the placed model's container, and so up to the placed model's name and level id.
+    private static void WalkKeyed(
+        Func<string, MefModel?> models,
+        string modelName,
+        Igi2Pose pose,
+        int depth,
+        string chain,
+        World.Igi2MagicObjType? type,
+        string? key,
+        Action<WalkStep> visit,
         World.Igi2MagicObjTypes? magic = null)
     {
         MefModel? model = models(modelName);
@@ -392,21 +424,36 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
             return;
         }
 
-        visit(model, modelName, pose, depth);
+        visit(new WalkStep(model, modelName, pose, depth, type, key));
         if (depth >= MaxAttachmentDepth)
         {
             return;
         }
 
-        foreach (MefAttachment attachment in model.Attachments)
+        for (int i = 0; i < model.Attachments.Count; i++)
         {
+            MefAttachment attachment = model.Attachments[i];
+
             // What the point becomes, out of the magic table: a shadow volume or a mark is stood on by nothing.
             if ((magic is null ? attachment.Name : magic.ModelOf(attachment.Name)) is { } attached)
             {
-                Walk(models, attached, pose.Attach(attachment), depth + 1, visit, magic);
+                string index = i.ToString(CultureInfo.InvariantCulture);
+                WalkKeyed(
+                    models,
+                    attached,
+                    pose.Attach(attachment),
+                    depth + 1,
+                    $"{attached}-{index}-{(depth == 0 ? "M-" : string.Empty)}{chain}",
+                    magic?.Find(attachment.Name),
+                    $"{index}-{chain}",
+                    visit,
+                    magic);
             }
         }
     }
+
+    // One model the walk meets: the model, where it stands, how deep, the magic type that made it and its key.
+    private readonly record struct WalkStep(MefModel Model, string ModelName, Igi2Pose Pose, int Depth, World.Igi2MagicObjType? Type, string? Key);
 
     /// <summary>
     /// Vertical lines from each start by its distance, against the objects and, when asked, the ground:

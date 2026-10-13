@@ -231,7 +231,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     /// <summary>Gets or sets which objects a line of sight may meet: <c>AIDetection_eLineOfSightQTaskEvent</c> as each type answers it.</summary>
     /// <remarks>Glass never stops it (<c>Glass_AIDetectionLineOfSightHandler</c>, <c>igi2 0x4DBE30</c>); every other placed type does.</remarks>
     public Func<object, bool> SightIncludes { get; set; } =
-        static owner => owner is not Igi2CollisionOwner { TypeName: "Glass" };
+        static owner => owner is not Igi2CollisionOwner { GlassKey: not null };
 
     /// <summary>Takes the next of the four ticks a new detector runs on, <c>AIDetection_nDisplaceTick</c>.</summary>
     /// <returns>Its tick, nought to three.</returns>

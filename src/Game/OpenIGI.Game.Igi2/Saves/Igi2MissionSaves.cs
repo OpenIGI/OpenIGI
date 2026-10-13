@@ -33,6 +33,9 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
         _ => 0,
     };
 
+    /// <summary>Gets or sets the level's panes of glass, which a save keeps and a load puts back.</summary>
+    public Interaction.Igi2GlassContainer? Glass { get; set; }
+
     /// <summary>Gets where the slots are kept.</summary>
     public Igi2SaveSlots SlotStore => _slots;
 
@@ -73,14 +76,14 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
         }
 
         _player.SavesUsed++;
-        return _slots.Save(whose, slot, _level.Root, _player.MissionTime);
+        return _slots.Save(whose, slot, _level.Root, _player.MissionTime, Glass);
     }
 
     /// <inheritdoc/>
     /// <remarks>A load that succeeds adds one to the games loaded, <c>nGameLoads</c>, after the save's own count is put back.</remarks>
     public bool Load(int slot)
     {
-        if (!_slots.Load(_owner(), slot, _level.Root, _level.Natives, _level.Functions).IsValid)
+        if (!_slots.Load(_owner(), slot, _level.Root, _level.Natives, _level.Functions, Glass).IsValid)
         {
             return false;
         }

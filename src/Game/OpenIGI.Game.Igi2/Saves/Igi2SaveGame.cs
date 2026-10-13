@@ -59,8 +59,9 @@ public static class Igi2SaveGame
     /// <summary>Writes a save game of a level's tasks, <c>SaveGame_Create</c>.</summary>
     /// <param name="root">The task the state is written from.</param>
     /// <param name="info">The header.</param>
+    /// <param name="glass">The level's panes of glass, written after the tasks, or <see langword="null"/>.</param>
     /// <returns>The script's text, or <see langword="null"/> for a header that is not valid.</returns>
-    public static string? Create(GameTask root, Igi2SaveInfo info)
+    public static string? Create(GameTask root, Igi2SaveInfo info, Interaction.Igi2GlassContainer? glass = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         if (!info.IsValid)
@@ -72,6 +73,7 @@ public static class Igi2SaveGame
         text.Append(CultureInfo.InvariantCulture, $"{SaveGameInfo}({info.Version}, {info.MissionId}, {info.Ticks});\r\n{BreakScript}();\r\n");
         Dictionary<GameTask, int> ids = Ids(LevelRoot(root));
         Serialize(root, text, ids);
+        text.Append(glass?.SaveLines());
         return text.ToString();
     }
 
@@ -133,8 +135,10 @@ public static class Igi2SaveGame
     /// <param name="root">The level's root.</param>
     /// <param name="natives">The namespace its constants (<c>TRUE</c>, <c>FALSE</c>) resolve in.</param>
     /// <param name="functions">The function table <c>DefineTaskState</c> is run through.</param>
+    /// <param name="glass">The level's panes of glass, put back as the save's <c>GlassContainer</c> lines say, or <see langword="null"/>.</param>
     /// <returns>The header.</returns>
-    public static Igi2SaveInfo Load(string script, GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions)
+    public static Igi2SaveInfo Load(
+        string script, GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions, Interaction.Igi2GlassContainer? glass = null)
     {
         ArgumentNullException.ThrowIfNull(script);
         ArgumentNullException.ThrowIfNull(root);
@@ -153,6 +157,7 @@ public static class Igi2SaveGame
         }
 
         functions.Register(natives, DefineTaskState, c => Define(c, byId), 0);
+        Dictionary<string, int> panes = new(StringComparer.Ordinal);
         foreach (string statement in Statements(script))
         {
             if (statement.StartsWith(DefineTaskState, StringComparison.Ordinal))
@@ -163,8 +168,13 @@ public static class Igi2SaveGame
                     call.Run(natives, functions);
                 }
             }
+            else if (TryCall(statement, out string name, out IReadOnlyList<string> arguments) && name == GlassContainerCall && arguments.Count == 2)
+            {
+                panes[arguments[0].Trim('"')] = Int(arguments[1]);
+            }
         }
 
+        glass?.Restore(panes);
         return info;
     }
 
@@ -175,7 +185,7 @@ public static class Igi2SaveGame
     /// <param name="file">The file's bytes.</param>
     /// <returns>The header; not valid when the file has none.</returns>
     public static Igi2SaveInfo CheckFile(ReadOnlyMemory<byte> file) =>
-        QvmProgram.IsQvm(file.Span) ? RunCompiled(file, null, null) : Check(Encoding.Latin1.GetString(file.Span));
+        QvmProgram.IsQvm(file.Span) ? RunCompiled(file, null, null, null) : Check(Encoding.Latin1.GetString(file.Span));
 
     /// <summary>Puts a save game file's state back onto a level's tasks, compiled or text (<c>SaveGame_LoadFile</c>).</summary>
     /// <param name="file">The file's bytes.</param>
@@ -186,18 +196,20 @@ public static class Igi2SaveGame
     /// When given, takes each task whose state was not read to the end of its arguments, or past it: its type, then how many it read
     /// of how many there were.
     /// </param>
+    /// <param name="glass">The level's panes of glass, put back as the save's <c>GlassContainer</c> lines say, or <see langword="null"/>.</param>
     /// <returns>The header.</returns>
     public static Igi2SaveInfo LoadFile(
         ReadOnlyMemory<byte> file,
         GameTask root,
         NativeRegistry natives,
         Igi2ScriptFunctions functions,
-        ICollection<string>? misread = null)
+        ICollection<string>? misread = null,
+        Interaction.Igi2GlassContainer? glass = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         if (!QvmProgram.IsQvm(file.Span))
         {
-            return Load(Encoding.Latin1.GetString(file.Span), root, natives, functions);
+            return Load(Encoding.Latin1.GetString(file.Span), root, natives, functions, glass);
         }
 
         Dictionary<int, GameTask> byId = [];
@@ -206,12 +218,13 @@ public static class Igi2SaveGame
             byId.TryAdd(id, task);
         }
 
-        return RunCompiled(file, byId, misread);
+        return RunCompiled(file, byId, misread, glass);
     }
 
     // A compiled save run with its own three calls: the header taken, a run for the header stopped at the break, and each
     // DefineTaskState put back when there are tasks to put it on.
-    private static Igi2SaveInfo RunCompiled(ReadOnlyMemory<byte> file, IReadOnlyDictionary<int, GameTask>? byId, ICollection<string>? misread)
+    private static Igi2SaveInfo RunCompiled(
+        ReadOnlyMemory<byte> file, IReadOnlyDictionary<int, GameTask>? byId, ICollection<string>? misread, Interaction.Igi2GlassContainer? glass)
     {
         QvmProgram program;
         try
@@ -244,11 +257,25 @@ public static class Igi2SaveGame
         });
         calls.RegisterFunction(DefineTaskState, c => byId is null ? QvmValue.Zero : Define(new Igi2ScriptCall(c), byId, misread));
 
-        // GlassContainer("<key>", <state>): a pane's breakage (GlassContainer_DeSerializeScriptFunction, glasscontainer.c). Glass is
-        // not modelled here yet, so its panes stay as the level made them.
-        calls.RegisterFunction(GlassContainerCall, _ => QvmValue.Zero, 2);
+        // GlassContainer("<key>", <state>): a pane's breakage, gathered (GlassContainer_DeSerializeScriptFunction) and put back once
+        // the run is done (GlassContainer_DeSerializeDoneHandler).
+        Dictionary<string, int> panes = new(StringComparer.Ordinal);
+        calls.RegisterFunction(GlassContainerCall, c =>
+        {
+            if (c.ArgumentCount == 2)
+            {
+                panes[c.GetString(0)] = c.GetInt32(1);
+            }
+
+            return QvmValue.Zero;
+        }, 2);
         machine = new QvmInterpreter(program, calls);
         machine.Run();
+        if (byId is not null)
+        {
+            glass?.Restore(panes);
+        }
+
         return info;
     }
 

@@ -323,6 +323,105 @@ public sealed class RetailIgi2LevelAiTests
         }
     }
 
+    /// <summary>
+    /// The panes of glass mission 11's buildings hang are keyed as retail keys them (<c>GlassContainer_MakeHashKey</c>): exactly the
+    /// keys a retail save of the mission lists.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Glass_panes_are_keyed_as_retail_keys_them()
+    {
+        string file = Path.Combine(GameDataSource.Igi2.RequireRoot(), "savegames", "0-0-11-0.igi2save");
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        List<string> retail = [];
+        OpenIGI.Scripting.Runtime.NativeRegistry calls = new();
+        calls.RegisterConstant("TRUE", 1);
+        calls.RegisterConstant("FALSE", 0);
+        calls.RegisterFunction("SaveGameInfo", static _ => OpenIGI.Scripting.Runtime.QvmValue.Zero, 3);
+        calls.RegisterFunction("BreakScript", static _ => OpenIGI.Scripting.Runtime.QvmValue.Zero);
+        calls.RegisterFunction("DefineTaskState", static _ => OpenIGI.Scripting.Runtime.QvmValue.Zero);
+        calls.RegisterFunction("GlassContainer", c =>
+        {
+            retail.Add(c.GetString(0));
+            return OpenIGI.Scripting.Runtime.QvmValue.Zero;
+        }, 2);
+        new OpenIGI.Scripting.Runtime.QvmInterpreter(OpenIGI.Scripting.Qvm.QvmProgram.Read(File.ReadAllBytes(file)), calls).Run();
+
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Collision.Igi2CollisionWorld world = Collision.Igi2CollisionWorld.Build(
+            m.Level.Scene, m.Level.ModelFor, null, Igi2Gameplay.TerrainOwner, magic: m.Services!.Require<Igi2MagicObjTypes>());
+        string[] ours = [.. world.Objects.Select(static o => (o.Owner as Collision.Igi2CollisionOwner)?.GlassKey).OfType<string>()];
+        Assert.NotEmpty(retail);
+        Assert.Equal(retail.Order(StringComparer.Ordinal), ours.Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A pane takes a bullet's damage and holds until it reaches its threshold, between three quarters and one and a half; then it
+    /// breaks, says so once, leaves the world on its glass tick (no solid, gone from the drawing, a 1 in the save) and is whole again
+    /// when a save does not name it.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_pane_of_glass_breaks_and_comes_back()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Collision.Igi2CollisionWorld world = Collision.Igi2CollisionWorld.Build(
+            m.Level.Scene, m.Level.ModelFor, null, Igi2Gameplay.TerrainOwner, magic: m.Services!.Require<Igi2MagicObjTypes>());
+        Interaction.Igi2GlassContainer glass = Interaction.Igi2GlassContainer.Build(world, m.Level.ModelFor, new IgiRandom(), explosions: null);
+        Assert.NotEmpty(glass.Panes);
+        Assert.All(glass.Panes, static p => Assert.InRange(p.Threshold, 0.75f, 1.5f));
+
+        Interaction.Igi2Glass pane = glass.Panes[0];
+        List<Interaction.Igi2GlassShatter> shattered = [];
+        pane.Shattered = shattered.Add;
+        Collision.Igi2Intersection at = new() { Position = pane.Solid.Position };
+        Weapons.Igi2WeaponTypeTask weapon = new();
+        pane.WeaponHit(new Weapons.Igi2WeaponHit(at, 0.5f, new Vector3f(1000f, 0f, 0f), null, weapon, null));
+        Assert.False(pane.IsBroken);
+        pane.WeaponHit(new Weapons.Igi2WeaponHit(at, 1f, new Vector3f(1000f, 0f, 0f), null, weapon, null));
+        Assert.True(pane.IsBroken);
+        pane.WeaponHit(new Weapons.Igi2WeaponHit(at, 1f, new Vector3f(1000f, 0f, 0f), null, weapon, null));
+        Interaction.Igi2GlassShatter shatter = Assert.Single(shattered);
+        Assert.True(shatter.IsLocalImpact);
+        Assert.Equal(7f, shatter.Velocity.X, 3);
+
+        Assert.NotNull(pane.Solid.Mesh(0));
+        glass.Run();
+        Assert.True(pane.IsRemoved);
+        Assert.Null(pane.Solid.Mesh(0));
+        Assert.True(glass.IsGone(((Collision.Igi2CollisionOwner)pane.Solid.Owner).LevelId, pane.Solid.Position));
+        Assert.Contains($"GlassContainer(\"{pane.Key}\", 1);", glass.SaveLines(), StringComparison.Ordinal);
+
+        glass.Restore(new Dictionary<string, int>());
+        Assert.False(pane.IsBroken);
+        Assert.False(pane.IsRemoved);
+        Assert.NotNull(pane.Solid.Mesh(0));
+    }
+
+    /// <summary>The pane retail's save of mission 12 says is broken (<c>0-603_08_1-450</c>) is broken once loaded, and gone after its tick.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_retail_save_breaks_its_broken_glass()
+    {
+        string file = Path.Combine(GameDataSource.Igi2.RequireRoot(), "savegames", "0-0-12-2.igi2save");
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(levelName: "level2");
+        Collision.Igi2CollisionWorld world = Collision.Igi2CollisionWorld.Build(
+            m.Level.Scene, m.Level.ModelFor, null, Igi2Gameplay.TerrainOwner, magic: m.Services!.Require<Igi2MagicObjTypes>());
+        Interaction.Igi2GlassContainer glass = Interaction.Igi2GlassContainer.Build(world, m.Level.ModelFor, new IgiRandom(), explosions: null);
+        Saves.Igi2SaveGame.LoadFile(File.ReadAllBytes(file), m.Tree[0], m.Run.Natives, m.Run.Functions, glass: glass);
+        Interaction.Igi2Glass broken = glass.Find("0-603_08_1-450")!;
+        Assert.True(broken.IsBroken);
+        Assert.Single(glass.Panes, static p => p.IsBroken);
+        glass.Run();
+        Assert.True(broken.IsRemoved);
+    }
+
     private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null)
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);

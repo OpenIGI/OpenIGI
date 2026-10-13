@@ -74,6 +74,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
         player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
         world.AddBody(player.Human.Collider);
+
+        // The panes of glass the buildings hang, each made as the level's objects are, drawing its threshold from the run stream.
+        player.Glass = Interaction.Igi2GlassContainer.Build(world, models, player.Human.Random, explosions: null);
         if (weapons is not null)
         {
             weapons.Effects = new Igi2LevelWeaponEffects(sounds, () => player.Human.View.Position);
@@ -92,7 +95,27 @@ public sealed class Igi2Gameplay : ITitleGameplay
                         Effects = new Igi2LevelExplosionEffects(sounds),
                     };
                     explosions.AddTarget(player.Human);
-                    Physics.Igi2PhysicsWorld flight = new(world, materials, static owner => !Igi2ObjectCollision.PassesThrough(owner));
+                    foreach (Interaction.Igi2Glass pane in player.Glass.Panes)
+                    {
+                        pane.Explosions = explosions;
+                        explosions.AddTarget(pane);
+                    }
+
+                    // A thrown object breaks the glass it strikes and goes on through it (Glass_PhysicsObjHitHandler).
+                    Interaction.Igi2GlassContainer panes = player.Glass;
+                    Physics.Igi2PhysicsWorld flight = new(world, materials, static owner => !Igi2ObjectCollision.PassesThrough(owner))
+                    {
+                        Hit = (owner, thrown) =>
+                        {
+                            if (owner is Collision.Igi2CollisionOwner { GlassKey: { } key } && panes.Find(key) is { } glass)
+                            {
+                                glass.PhysicsHit(thrown.Position);
+                                return true;
+                            }
+
+                            return false;
+                        },
+                    };
                     Weapons.Igi2Grenades grenades = new(physicsTypes, models, flight, player.Dynamic)
                     {
                         Effects = explosions,
@@ -219,7 +242,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
             new Saves.Igi2SaveSlots(folder),
             () => new Saves.Igi2SaveOwner(config?.ActiveIndex ?? 0, config?.Active?.Difficulty ?? (int)player.Human.Difficulty, mission),
             level,
-            player.Human);
+            player.Human)
+        {
+            Glass = player.Glass,
+        };
         if (PlayerSpawn.FindGameplayTask(request.World.LevelRoot) is Igi2HumanPlayerTask task)
         {
             saves.LoadCarryOver(task);
@@ -791,7 +817,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
             activatables.Add(alarm);
         }
 
-        player.Destruction = destructibles.Count > 0 ? new Interaction.Igi2PlacementDestruction(destructibles) : null;
+        player.Destruction = destructibles.Count > 0 || player.Glass.Panes.Count > 0
+            ? new Interaction.Igi2PlacementDestruction(destructibles) { Glass = player.Glass }
+            : null;
 
         // An ExplodeObject of any kind: its models and blasts, its solids answering bullets, a target for blasts, and drawn
         // destroyed once it is.
@@ -1253,6 +1281,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
     /// <summary>Gets or sets the mission's save games.</summary>
     public Saves.Igi2MissionSaves? Saves { get; set; }
 
+    /// <summary>Gets or sets the level's panes of glass.</summary>
+    public Interaction.Igi2GlassContainer Glass { get; set; } = new();
+
     /// <inheritdoc/>
     public ITitleSaveGames? SaveGames => Saves;
 
@@ -1386,6 +1417,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
         {
             Flow?.IsBreakKeyDown = input.BreakCutscene;
             level.Tick();
+
+            // The glass container is the level's last child, made as the first pane was: its panes' glass tick follows the level's.
+            Glass.Run();
             StatusMessages.Run();
         }
         else

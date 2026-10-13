@@ -140,11 +140,15 @@ public sealed class Igi2PlacementDestruction(IEnumerable<IIgi2Destructible> dest
 {
     private readonly Dictionary<int, IIgi2Destructible> _byId = destructibles.ToDictionary(static d => d.Id);
 
+    /// <summary>Gets or sets the level's panes of glass, a pane that has left the world being drawn no more.</summary>
+    public Igi2GlassContainer? Glass { get; set; }
+
     /// <inheritdoc/>
     public bool IsDestroyed(OpenIGI.Game.World.WorldPlacement placement)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        return IsDestroyed(placement.LevelId);
+        return IsDestroyed(placement.LevelId)
+            || Glass?.IsGone(placement.LevelId, OpenIGI.Game.World.WorldScene.ToUnits(placement.Position)) == true;
     }
 
     /// <summary>Gets a value indicating whether the object a task placed is destroyed.</summary>
