@@ -13,15 +13,22 @@ namespace OpenIGI.Game.Igi2.Interaction;
 public sealed class Igi2MoverMotions : IPlacementMotion
 {
     private readonly Dictionary<int, IIgi2Mover> _movers = [];
+    private readonly Dictionary<int, IIgi2PartMover> _parts = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2MoverMotions"/> class.</summary>
     /// <param name="movers">The level's moving objects.</param>
-    public Igi2MoverMotions(IEnumerable<IIgi2Mover> movers)
+    /// <param name="parts">The level's objects that move parts of themselves, or <see langword="null"/> for none.</param>
+    public Igi2MoverMotions(IEnumerable<IIgi2Mover> movers, IEnumerable<IIgi2PartMover>? parts = null)
     {
         ArgumentNullException.ThrowIfNull(movers);
         foreach (IIgi2Mover mover in movers)
         {
             _movers[mover.Id] = mover;
+        }
+
+        foreach (IIgi2PartMover part in parts ?? [])
+        {
+            _parts[part.Id] = part;
         }
     }
 
@@ -29,6 +36,11 @@ public sealed class Igi2MoverMotions : IPlacementMotion
     public bool TryGetTransform(WorldPlacement placement, float tickFraction, out Vector3d positionMetres, out Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(placement);
+        if (placement.LevelId >= 0 && _parts.TryGetValue(placement.LevelId, out IIgi2PartMover? part))
+        {
+            return part.TryMovePart(placement, out positionMetres, out orientation);
+        }
+
         if (placement.LevelId < 0 || !_movers.TryGetValue(placement.LevelId, out IIgi2Mover? mover))
         {
             positionMetres = default;

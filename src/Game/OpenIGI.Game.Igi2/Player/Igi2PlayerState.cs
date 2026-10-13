@@ -97,6 +97,9 @@ public static class Igi2PlayerState
     /// <summary>Climbing over a fence (<c>HumanPlayer_InitStateClimbFence</c>).</summary>
     public const int ClimbFence = 49;
 
+    /// <summary>Searching a cabinet (<c>HumanPlayer_InitStateActivateCabinet</c>).</summary>
+    public const int ActivateCabinet = 39;
+
     /// <summary>Climbing along a wire hand over hand (<c>HumanPlayer_InitStateClimbWire</c>).</summary>
     public const int ClimbWire = 50;
 

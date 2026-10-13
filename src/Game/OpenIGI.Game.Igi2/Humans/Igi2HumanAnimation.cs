@@ -351,6 +351,13 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     }
 
     /// <inheritdoc/>
+    public int StateTotalTime(int state)
+    {
+        int animation = (uint)state < (uint)_stateAnimations.Count ? _stateAnimations[state] : 0;
+        return _weaponClips() is { } clips && (uint)animation < (uint)clips.Count ? clips[animation]?.TotalTime ?? 0 : 0;
+    }
+
+    /// <inheritdoc/>
     public void PlayState(int state, int time, float blendSeconds)
     {
         int animation = (uint)state < (uint)_stateAnimations.Count ? _stateAnimations[state] : 0;

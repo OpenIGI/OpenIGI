@@ -15,6 +15,9 @@ public enum Igi2ActivateKind
     /// <summary>A door is opened or shut (<c>Door_GetActivateHandler</c>, <c>0x537790</c>).</summary>
     Door = 2,
 
+    /// <summary>A cabinet is searched, <c>Cabinet_GetActivateHandler</c>.</summary>
+    Cabinet = 3,
+
     /// <summary>A terminal is hacked, <c>Terminal_GetActivateHandler</c> (<c>igi2 0x4CB050</c>).</summary>
     Terminal = 4,
 

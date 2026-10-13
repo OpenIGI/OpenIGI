@@ -195,6 +195,16 @@ public sealed partial class Igi2HumanPlayer
 
                 break;
 
+            case Igi2ActivateKind.Cabinet:
+                if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
+                {
+                    EndActivate();
+                    break;
+                }
+
+                Go(Igi2PlayerState.ActivateCabinet);
+                break;
+
             case Igi2ActivateKind.Fence:
                 if (Channels.Last[(int)Igi2HumanChannel.Activate] != 0f)
                 {

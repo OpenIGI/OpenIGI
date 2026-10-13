@@ -472,6 +472,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.Notified = notified;
 
+        // Cabinets are searched from their first magic vertex, their drawers sliding on the search clip's triggers.
+        foreach (Interaction.Igi2CabinetTask cabinet in Descendants(root).OfType<Interaction.Igi2CabinetTask>())
+        {
+            cabinet.Models = models;
+            cabinet.Prepare(magicTypes);
+            activatables.Add(cabinet);
+        }
+
         // Wires are strung between their ends and climbed or ridden down.
         foreach (Interaction.Igi2WireTask wire in Descendants(root).OfType<Interaction.Igi2WireTask>())
         {
@@ -670,7 +678,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        player.Motions = movers.Count > 0 ? new Interaction.Igi2MoverMotions(movers) : null;
+        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>()];
+        player.Motions = movers.Count > 0 || partMovers.Count > 0 ? new Interaction.Igi2MoverMotions(movers, partMovers) : null;
 
         // The game is played at the active profile's difficulty (Config_GetActiveDifficultyLevel); here the difficulty is chosen
         // before the level, so the profile takes it, and the squads' scripts read it back.

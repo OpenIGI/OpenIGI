@@ -236,6 +236,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Interaction.Igi2LadderTask>(Interaction.Igi2LadderTask.TypeName);
         context.Types.Register<Interaction.Igi2FenceTask>(Interaction.Igi2FenceTask.TypeName);
         context.Types.Register<Interaction.Igi2WireTask>(Interaction.Igi2WireTask.TypeName);
+        context.Types.Register<Interaction.Igi2CabinetTask>(Interaction.Igi2CabinetTask.TypeName);
         context.Types.Register<Interaction.Igi2AlarmControlTask>(Interaction.Igi2AlarmControlTask.TypeName);
         context.Types.Register<Interaction.Igi2EditRigidObjTask>(Interaction.Igi2EditRigidObjTask.TypeName);
         context.Types.Register<Paths.Igi2SplinePathNodeTask>(Paths.Igi2SplinePathNodeTask.TypeName);

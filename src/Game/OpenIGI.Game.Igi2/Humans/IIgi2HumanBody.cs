@@ -49,6 +49,11 @@ public interface IIgi2HumanAnimation
     /// <param name="blendSeconds">The blend from the current pose; 0 for a cut.</param>
     void PlayStateAtEnd(int state, float blendSeconds) => PlayState(state, 0, blendSeconds);
 
+    /// <summary>The length of the clip a state would play, in animation ticks; nought with none.</summary>
+    /// <param name="state">The state.</param>
+    /// <returns>The clip's length.</returns>
+    int StateTotalTime(int state) => 0;
+
     /// <summary>Finds a clip of the body's rig by name, <c>Hierarchy_GetAnim</c> (<c>igi2 0x57F360</c>).</summary>
     /// <param name="name">The clip's name.</param>
     /// <returns>The clip, or <see langword="null"/> when the rig has none of that name.</returns>
