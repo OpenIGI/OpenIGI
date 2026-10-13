@@ -71,6 +71,22 @@ public sealed class Igi2PatrolControl
         }
     }
 
+    /// <summary>
+    /// Puts a patrol back as a save game kept it: its path, the command it was running and its last <c>END</c>, both by level id, the
+    /// command's own state started afresh.
+    /// </summary>
+    /// <param name="path">The path.</param>
+    /// <param name="currentId">The level id of the command it was running, or -1.</param>
+    /// <param name="lastEndId">The level id of its last <c>END</c>, or -1.</param>
+    public void Restore(Igi2PatrolPathTask path, int currentId, int lastEndId)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        Path = path;
+        Current = path.Commands.FirstOrDefault(c => c.Id == currentId) ?? (path.Commands.Count > 0 ? path.Commands[0] : null);
+        LastEnd = lastEndId < 0 ? null : path.Commands.FirstOrDefault(c => c.Id == lastEndId);
+        UserModify = -1;
+    }
+
     /// <summary>The command at an offset, noting each <c>END</c> passed on the way, <c>PatrolPath_ScanToOffset</c>.</summary>
     private Igi2PatrolPathCommandTask? ScanToOffset(int offset)
     {
