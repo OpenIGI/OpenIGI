@@ -120,7 +120,8 @@ public sealed partial class Igi2DirlightTask : Igi2Task
             return;
         }
 
-        (Igi2DirlightKeyframeTask? before, Igi2DirlightKeyframeTask? after) = Igi2KeyframeSpan.Bracket(Keyframes, static k => k.KeyTime, _time);
+        (Igi2DirlightKeyframeTask? before, Igi2DirlightKeyframeTask? after) =
+            Igi2KeyframeSpan.Bracket(Keyframes, static k => k.KeyTime, _time);
         if (before is null)
         {
             Take(after!);
@@ -311,7 +312,9 @@ public sealed partial class Igi2GlobalLightTask : Igi2Task
     /// <summary>Gets the time of day it was last set to, <c>vCurrentTime</c>.</summary>
     public float Time => _time;
 
-    /// <summary>Spans its keyframes' times and sets it to the start of the day, <c>GlobalLightQTask_UpdateInternalDataHandler</c>.</summary>
+    /// <summary>
+    /// Spans its keyframes' times and sets it to the start of the day, <c>GlobalLightQTask_UpdateInternalDataHandler</c>.
+    /// </summary>
     public void Prepare()
     {
         _minTime = float.MaxValue;
@@ -359,7 +362,8 @@ public sealed partial class Igi2GlobalLightTask : Igi2Task
             return;
         }
 
-        (Igi2GlobalLightKeyframeTask? before, Igi2GlobalLightKeyframeTask? after) = Igi2KeyframeSpan.Bracket(Keyframes, static k => k.KeyTime, _time);
+        (Igi2GlobalLightKeyframeTask? before, Igi2GlobalLightKeyframeTask? after) =
+            Igi2KeyframeSpan.Bracket(Keyframes, static k => k.KeyTime, _time);
         if (before is null)
         {
             Take(after!);

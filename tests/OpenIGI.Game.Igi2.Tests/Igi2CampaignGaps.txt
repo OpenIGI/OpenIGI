@@ -102,8 +102,6 @@ type ColumnViewColumn    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35
 type ControlsMenu    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type DialogWindow    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type InputBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
-type Lensflare    # 13 14 15 16 17 21 22 23 24 25 26 31 32 33 35 36 | MISSIONS/location1/level3/objects.qvm, MISSIONS/location1/level4/objects.qvm, …
-type LensflareItem    # 13 14 15 16 17 21 22 23 24 25 26 31 32 33 35 36 | MISSIONS/location1/level3/objects.qvm, MISSIONS/location1/level4/objects.qvm, …
 type ListBox    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type MenuFrame    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
 type MenuManager    # 11 12 13 14 15 16 17 21 22 23 24 25 26 31 32 33 34 35 36 | MENUSYSTEM/ingamemenu.qvm
