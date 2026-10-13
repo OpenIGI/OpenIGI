@@ -225,6 +225,17 @@ public sealed class Igi2Gameplay : ITitleGameplay
             saves.LoadCarryOver(task);
         }
 
+        // The menus answer from these slots; a slot the load list asked for is loaded once the level is made (Game_CreateHandler).
+        if (request.Services.TryGet(out Saves.Igi2SaveSession? session))
+        {
+            session.Slots = saves.SlotStore;
+            session.Owner = saves.Owner;
+            if (session.TakeMenuLoadSlot() is var slot and >= 0)
+            {
+                saves.Load(slot);
+            }
+        }
+
         return saves;
     }
 

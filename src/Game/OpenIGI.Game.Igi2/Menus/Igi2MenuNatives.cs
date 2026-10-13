@@ -35,8 +35,14 @@ public static class Igi2MenuNatives
     /// <param name="menu">The in-game menu, whose active window the filling natives write to.</param>
     /// <param name="config">The game's configuration.</param>
     /// <param name="mix">The master volumes.</param>
+    /// <param name="saves">The session's save games.</param>
     public static void Register(
-        NativeRegistry natives, Scripting.Igi2ScriptFunctions? functions, Igi2InGameMenu menu, Igi2GameConfig config, Igi2SoundMix mix)
+        NativeRegistry natives,
+        Scripting.Igi2ScriptFunctions? functions,
+        Igi2InGameMenu menu,
+        Igi2GameConfig config,
+        Igi2SoundMix mix,
+        Saves.Igi2SaveSession saves)
     {
         ArgumentNullException.ThrowIfNull(natives);
         void Fn(string name, Scripting.Igi2ScriptFunction function, int arguments) =>
@@ -45,6 +51,7 @@ public static class Igi2MenuNatives
         ArgumentNullException.ThrowIfNull(menu);
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(mix);
+        ArgumentNullException.ThrowIfNull(saves);
 
         // Game_GetGameModeCB: single player, here always.
         Fn("Game_GetGameMode", _ => QvmValue.FromInt32(0), 0);
@@ -85,6 +92,23 @@ public static class Igi2MenuNatives
                 menu.AddItem(new Igi2MenuItem(SoundProviders[i], i));
             }
         }), 0);
+
+        // Game_GetNumberOfValidSaveGames: the mission's saves in the five menu slots. Game_FillSaveGameScrollListBox: each save into the
+        // active list by its slot, then the restart line. Game_SetMenuLoadFromSlot: the slot the next level loads, none for the restart
+        // line. Game_GetNewestSaveGameSlot: the newest save's slot, or the restart line's id.
+        Fn("Game_GetNumberOfValidSaveGames", c => QvmValue.FromInt32(
+            saves.Slots?.CountValid(saves.Owner with { Mission = c.GetInt32(0) }) ?? 0), 1);
+        Fn("Game_FillSaveGameScrollListBox", _ => Done(() =>
+        {
+            foreach (Saves.Igi2SaveListing line in saves.Slots?.Listings(saves.Owner, saves.Translate)
+                ?? [new Saves.Igi2SaveListing(Saves.Igi2SaveSlots.RestartMission, Saves.Igi2SaveSlots.RestartMissionKey, true)])
+            {
+                menu.AddItem(new Igi2MenuItem(line.Text, line.Slot, line.IsTranslated));
+            }
+        }), 0);
+        Fn("Game_SetMenuLoadFromSlot", c => Done(() => saves.SetMenuLoadSlot(c.GetInt32(0))), 1);
+        Fn("Game_GetNewestSaveGameSlot", _ => QvmValue.FromInt32(
+            saves.Slots is { } slots && slots.TryFindNewest(saves.Owner, out int newest) ? newest : Saves.Igi2SaveSlots.RestartMission), 0);
 
         Igi2MultiplayerNatives.Register(natives, functions, menu);
     }

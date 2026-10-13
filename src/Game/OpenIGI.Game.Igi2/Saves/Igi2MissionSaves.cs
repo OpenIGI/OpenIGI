@@ -33,6 +33,12 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
         _ => 0,
     };
 
+    /// <summary>Gets where the slots are kept.</summary>
+    public Igi2SaveSlots SlotStore => _slots;
+
+    /// <summary>Gets whose saves these are now.</summary>
+    public Igi2SaveOwner Owner => _owner();
+
     /// <inheritdoc/>
     public IReadOnlyList<TitleSaveSlot> Slots
     {

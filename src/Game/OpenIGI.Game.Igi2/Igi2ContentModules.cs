@@ -641,7 +641,13 @@ public sealed class Igi2MenuContentModule : IContentModule
         Menus.Igi2SoundMix mix = context.Services.GetOrProvide(static () => new Menus.Igi2SoundMix());
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());
         menu.Register(context.Natives, functions);
-        Menus.Igi2MenuNatives.Register(context.Natives, functions, menu, context.Services.GetOrProvide(() => new Config.Igi2GameConfig()), mix);
+        Menus.Igi2MenuNatives.Register(
+            context.Natives,
+            functions,
+            menu,
+            context.Services.GetOrProvide(() => new Config.Igi2GameConfig()),
+            mix,
+            context.Services.GetOrProvide(static () => new Saves.Igi2SaveSession()));
     }
 
     /// <inheritdoc/>
