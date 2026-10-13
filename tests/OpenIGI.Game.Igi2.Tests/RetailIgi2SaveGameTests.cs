@@ -67,4 +67,59 @@ public sealed class RetailIgi2SaveGameTests
             fresh.Tree.OfType<Igi2LevelTimerTask>().Select(static t => (t.Id, t.Tick)));
         Assert.Contains(played.Tree.OfType<Igi2ConditionalContainerTask>(), static c => c.IsRun);
     }
+
+    /// <summary>Frames are written as their three angles, as <c>Level_PrintReal32x9Handler</c> writes them, and read back as the frame.</summary>
+    [Fact]
+    public void Frames_are_written_as_their_angles()
+    {
+        float[] frame = World.Igi2Pose.Rotation(0f, 0f, 1.5f);
+        Igi2StateWriter writer = new();
+        writer.Real9(frame);
+        Assert.Equal(3, writer.Arguments.Split(", ", StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.EndsWith(Igi2StateWriter.Format(1.5f), writer.Arguments, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The player is saved with its weapon and its view as children of its own, and loaded into a fresh mission is where it was,
+    /// carries what it carried with the same rounds, looks where it looked and has set off as many alarms.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_player_saved_and_loaded_is_as_it_was()
+    {
+        RetailIgi2Mission1 played = RetailIgi2Mission1.Load();
+        Player.Igi2HumanPlayer before = Attach(played);
+        Weapons.Igi2Inventory carried = before.Weapon.Inventory!;
+        carried.EnableWeaponType("WEAPON_ID_MP5SD", addAmmo: true);
+        carried.Activate(carried.FindWeapon("WEAPON_ID_MP5SD")!);
+        before.Position = new Core.Numerics.Vector3d(1000.5, -2000.25, 300.125);
+        before.View.Pitch = 0.25f;
+        before.TimesAlarmTriggered = 3;
+        before.SavesUsed = 2;
+
+        string script = Igi2SaveGame.Create(played.Tree[0], new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, 11, 0))!;
+        Assert.Contains("\"HumanPlayer\"", script, StringComparison.Ordinal);
+
+        RetailIgi2Mission1 fresh = RetailIgi2Mission1.Load();
+        Player.Igi2HumanPlayer after = Attach(fresh);
+        Igi2SaveGame.Load(script, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions);
+        Weapons.Igi2Inventory loaded = after.Weapon.Inventory!;
+        Assert.Equal(before.Position, after.Position);
+        Assert.Equal(0.25f, after.View.Pitch);
+        Assert.Equal(3, after.TimesAlarmTriggered);
+        Assert.Equal(2, after.SavesUsed);
+        Assert.Equal("WEAPON_ID_MP5SD", loaded.Current?.WeaponType.WeaponId);
+        Assert.Equal(
+            carried.Weapons.Select(static w => (w.Number, w.IsActive, w.Loaded(0), w.Loaded(1))),
+            loaded.Weapons.Select(static w => (w.Number, w.IsActive, w.Loaded(0), w.Loaded(1))));
+        Assert.Equal(carried.Ammo.Select(static a => (a.Number, a.Count)), loaded.Ammo.Select(static a => (a.Number, a.Count)));
+    }
+
+    private static Player.Igi2HumanPlayer Attach(RetailIgi2Mission1 mission)
+    {
+        Player.Igi2PlayerWeapons weapons = Player.Igi2Gameplay.Arm(
+            mission.Services!, mission.Tree[0], mission.Services!.Require<Player.Igi2PlayerTuning>())!;
+        (Player.Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.OnFloor(weapons);
+        mission.Tree.OfType<Player.Igi2HumanPlayerTask>().Single().Human = player;
+        return player;
+    }
 }

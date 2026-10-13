@@ -515,6 +515,71 @@ public sealed class Igi2Inventory
 
         return rounds;
     }
+
+    /// <summary>
+    /// Writes its save state, <c>Weapon_ptSerializeParameterList</c>: its ammunition, each with its count, limit and number
+    /// (<c>Weapon_ptAmmoSerializeListItemParameterList</c>); its weapons, each with the rounds loaded for its two fire types, its number,
+    /// its fire mode, whether it is carried and whether its laser dot is on (<c>Weapon_ptWeaponSerializeListItemParameterList</c>); and
+    /// the weapon in hand.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    public void WriteState(Saves.Igi2StateWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.List(_ammo, static (w, a) =>
+        {
+            w.Int(a.Count);
+            w.Int(a.Limit);
+            w.Int(a.Number);
+        });
+        writer.List(_weapons, static (w, item) =>
+        {
+            w.Int(item.Loaded(0));
+            w.Int(item.Loaded(1));
+            w.Int(item.Number);
+            w.Int(item.ActiveFireMode);
+            w.Bool(item.IsActive);
+            w.Bool(false);
+        });
+        writer.Int(CurrentIndex);
+    }
+
+    /// <summary>Reads its save state back; the weapon in hand is put in hand again.</summary>
+    /// <param name="reader">The reader.</param>
+    public void ReadState(Saves.Igi2StateReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        foreach ((int count, int limit, int number) in reader.List(static r => (r.Int(), r.Int(), r.Int())))
+        {
+            if ((uint)number < (uint)_ammo.Length)
+            {
+                Igi2AmmoItem item = _ammo[number];
+                item.SetLimit(Igi2AmmoItem.NoLimit);
+                item.Empty();
+                item.Add(count);
+                item.SetLimit(limit);
+            }
+        }
+
+        foreach ((int first, int second, int number, int mode, bool carried, _) in
+            reader.List(static r => (r.Int(), r.Int(), r.Int(), r.Int(), r.Bool(), r.Bool())))
+        {
+            if ((uint)number < (uint)_weapons.Length)
+            {
+                Igi2WeaponItem item = _weapons[number];
+                item.SetLoaded(0, first);
+                item.SetLoaded(1, second);
+                item.ActiveFireMode = mode;
+                item.IsActive = carried;
+            }
+        }
+
+        int current = reader.Int();
+        if ((uint)current < (uint)_weapons.Length && _weapons[current].IsActive)
+        {
+            Activate(_weapons[current]);
+        }
+    }
 }
 
 /// <summary>What a weapon holds and has to hand for one fire type, <c>WeaponGetFireTypeAmmoContext_s</c>.</summary>

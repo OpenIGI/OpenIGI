@@ -373,4 +373,94 @@ public sealed class Igi2HumanView
             Yaw = SideLimit;
         }
     }
+
+    /// <summary>
+    /// Writes its save state, <c>HumanView_ptSerializeParameterList</c>: whether its first-person model shows and is in the world, where
+    /// the eyes are and how they are turned, its pitch and yaw with their ideals and offsets, its flags, its override, its peek, its
+    /// shake, its impact, its first-person model's angles and steps, its fields of view, its zoom, its translations, and its retraction.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    public void WriteState(Saves.Igi2StateWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        Matrix3f o = Orientation;
+        writer.Bool(ObjectModel.Length > 0);
+        writer.Bool(ObjectModel.Length > 0);
+        writer.Real64x3(Position);
+        writer.Real9([o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33]);
+        writer.Real(Pitch);
+        writer.Real(IdealPitch);
+        writer.Real(PitchOffset);
+        writer.Real(Yaw);
+        writer.Real(IdealYaw);
+        writer.Real(YawOffset);
+        writer.Bool(IsLockOrientation);
+        writer.Bool(false);
+        writer.Bool(IsOverride);
+        writer.Real64x3(OverridePosition);
+        writer.Real3(PeekOffset);
+        writer.Real3(PeekSpeed);
+        writer.Real(ShakeFactor);
+        writer.Real(ShakeRange);
+        writer.Real(ShakeAngle);
+        writer.Real(ShakeTime);
+        writer.Real(ImpactOffset);
+        writer.Real(ImpactAngle);
+        writer.Real(ObjectPitch);
+        writer.Real(IdealObjectPitch);
+        writer.Real(ObjectPitchStep);
+        writer.Real(ObjectYaw);
+        writer.Real(IdealObjectYaw);
+        writer.Real(ObjectYawStep);
+        writer.Real(FieldOfView);
+        writer.Real(ObjectFieldOfView);
+        writer.Bool(IsZoomMode);
+        writer.Real3(default);
+        writer.Real3(default);
+        writer.Real(RetractIdeal);
+        writer.Real(RetractReal);
+    }
+
+    /// <summary>Reads its save state back; an override is put back only as the stationary gun that set it sets it again.</summary>
+    /// <param name="reader">The reader.</param>
+    public void ReadState(Saves.Igi2StateReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        reader.Bool();
+        reader.Bool();
+        Position = reader.Real64x3();
+        float[] o = reader.Real9();
+        Orientation = new Matrix3f(o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8]);
+        Pitch = reader.Real();
+        IdealPitch = reader.Real();
+        PitchOffset = reader.Real();
+        Yaw = reader.Real();
+        IdealYaw = reader.Real();
+        YawOffset = reader.Real();
+        IsLockOrientation = reader.Bool();
+        reader.Bool();
+        reader.Bool();
+        reader.Real64x3();
+        PeekOffset = reader.Real3();
+        PeekSpeed = reader.Real3();
+        ShakeFactor = reader.Real();
+        ShakeRange = reader.Real();
+        ShakeAngle = reader.Real();
+        ShakeTime = reader.Real();
+        ImpactOffset = reader.Real();
+        ImpactAngle = reader.Real();
+        ObjectPitch = reader.Real();
+        IdealObjectPitch = reader.Real();
+        ObjectPitchStep = reader.Real();
+        ObjectYaw = reader.Real();
+        IdealObjectYaw = reader.Real();
+        ObjectYawStep = reader.Real();
+        FieldOfView = reader.Real();
+        ObjectFieldOfView = reader.Real();
+        IsZoomMode = reader.Bool();
+        reader.Real3();
+        reader.Real3();
+        RetractIdeal = reader.Real();
+        RetractReal = reader.Real();
+    }
 }

@@ -88,15 +88,28 @@ public sealed class Igi2StateWriter
         Real64(value.Z);
     }
 
-    /// <summary>Writes nine floats row by row, <c>Level_PrintReal32x9ExactHandler</c>.</summary>
-    /// <param name="value">The rows.</param>
+    /// <summary>
+    /// Writes a frame as its three angles, <c>Level_PrintReal32x9Handler</c>: <c>Real32x9_GetAngles</c>' alpha, beta and gamma.
+    /// </summary>
+    /// <param name="value">The frame, row by row.</param>
     public void Real9(IReadOnlyList<float> value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        for (int i = 0; i < 9; i++)
-        {
-            Real(value[i]);
-        }
+        (float alpha, float beta, float gamma) = World.Igi2Pose.Angles(value);
+        Real(alpha);
+        Real(beta);
+        Real(gamma);
+    }
+
+    /// <summary>Writes a quaternion, <c>Level_PrintQuat32Handler</c>: its four components and its operation count.</summary>
+    /// <param name="value">The quaternion.</param>
+    public void Quaternion(Quaternion32 value)
+    {
+        Real(value.X);
+        Real(value.Y);
+        Real(value.Z);
+        Real(value.W);
+        Int(0);
     }
 
     /// <summary>Writes a string, quoted with its tabs and line breaks escaped, <c>Level_PrintString</c>.</summary>
@@ -259,17 +272,21 @@ public sealed class Igi2StateReader
     /// <returns>The value.</returns>
     public Vector3d Real64x3() => new(Real64(), Real64(), Real64());
 
-    /// <summary>Reads nine floats row by row.</summary>
-    /// <returns>The rows.</returns>
+    /// <summary>Reads a frame written as its three angles, <c>Level_ParseReal32x9Handler</c>.</summary>
+    /// <returns>The frame, row by row.</returns>
     public float[] Real9()
     {
-        float[] rows = new float[9];
-        for (int i = 0; i < 9; i++)
-        {
-            rows[i] = Real();
-        }
+        float alpha = Real(), beta = Real(), gamma = Real();
+        return World.Igi2Pose.Rotation(alpha, beta, gamma);
+    }
 
-        return rows;
+    /// <summary>Reads a quaternion and its operation count.</summary>
+    /// <returns>The quaternion.</returns>
+    public Quaternion32 Quaternion()
+    {
+        Quaternion32 value = new(Real(), Real(), Real(), Real());
+        Int();
+        return value;
     }
 
     /// <summary>Reads a string.</summary>
@@ -336,7 +353,8 @@ public sealed class Igi2StateReader
             return null;
         }
 
-        if (_call.GetText(Next) is "-1" || (_call.GetInt32(Next) == -1 && _taskReference is null))
+        // A hierarchy opens with its ancestor's level id, never negative, so -1 is always no task.
+        if (_call.GetText(Next) is "-1" || _call.GetInt32(Next) == -1)
         {
             Next++;
             return null;

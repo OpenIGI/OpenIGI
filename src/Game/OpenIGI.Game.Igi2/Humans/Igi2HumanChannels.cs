@@ -59,6 +59,17 @@ public sealed class Igi2HumanChannels
         frame.CopyTo(_current);
     }
 
+    /// <summary>Puts both frames back as a save game kept them.</summary>
+    /// <param name="current">This tick's frame; values past <see cref="Count"/> are dropped, those short of it nought.</param>
+    /// <param name="last">Last tick's frame, likewise.</param>
+    public void Restore(ReadOnlySpan<float> current, ReadOnlySpan<float> last)
+    {
+        System.Array.Clear(_current);
+        System.Array.Clear(_last);
+        current[..Math.Min(current.Length, Count)].CopyTo(_current);
+        last[..Math.Min(last.Length, Count)].CopyTo(_last);
+    }
+
     /// <summary>Gets a value indicating whether a channel is non-zero this tick.</summary>
     /// <param name="channel">The channel.</param>
     /// <returns><see langword="true"/> while it is held.</returns>
