@@ -193,7 +193,39 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         player.Level = LevelRun(request, player);
+        player.Saves = MissionSaves(request, player);
         return player;
+    }
+
+    /// <summary>
+    /// The mission's save games, kept where retail keeps them, in the game's own <c>savegames</c> folder, so each game reads the
+    /// other's; and the weapons the last mission left, given to the player as the level starts when it asks for them
+    /// (<c>Game_LoadCarryOver</c>, after the level's objects).
+    /// </summary>
+    private static Saves.Igi2MissionSaves? MissionSaves(in TitlePlayerRequest request, Igi2TitlePlayer player)
+    {
+        if (player.Level is not { } level)
+        {
+            return null;
+        }
+
+        string folder = request.World.Resources.FileSystem.TryGetDevice(Engine.Vfs.LocalFileDevice.DeviceName, out Engine.Vfs.IFileDevice? device)
+            && device is Engine.Vfs.LocalFileDevice local
+            ? local.RootDirectory
+            : Path.Combine(Core.Configuration.SettingsPaths.GetUserDirectory(), "igi2");
+        request.Services.TryGet(out Config.Igi2GameConfig? config);
+        int mission = request.World.Mission.Descriptor.Id;
+        Saves.Igi2MissionSaves saves = new(
+            new Saves.Igi2SaveSlots(folder),
+            () => new Saves.Igi2SaveOwner(config?.ActiveIndex ?? 0, config?.Active?.Difficulty ?? (int)player.Human.Difficulty, mission),
+            level,
+            player.Human);
+        if (PlayerSpawn.FindGameplayTask(request.World.LevelRoot) is Igi2HumanPlayerTask task)
+        {
+            saves.LoadCarryOver(task);
+        }
+
+        return saves;
     }
 
     /// <summary>Makes the level's soldiers over its collision, each armed by its own weapon script.</summary>
@@ -1206,6 +1238,31 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
     /// <summary>Gets or sets the level's in-game menu, which the shell presents.</summary>
     public Menus.Igi2InGameMenu? Menu { get; set; }
+
+    /// <summary>Gets or sets the mission's save games.</summary>
+    public Saves.Igi2MissionSaves? Saves { get; set; }
+
+    /// <inheritdoc/>
+    public ITitleSaveGames? SaveGames => Saves;
+
+    /// <inheritdoc/>
+    /// <remarks>The level flow's <c>Complete</c> and <c>Failed</c> scripts, failure first (<c>LevelFlow_RunHandler</c>).</remarks>
+    public TitleMissionOutcome Outcome => Level?.LevelFlow switch
+    {
+        { IsFailed: true } => TitleMissionOutcome.Failed,
+        { IsComplete: true } => TitleMissionOutcome.Completed,
+        _ => TitleMissionOutcome.Running,
+    };
+
+    /// <inheritdoc/>
+    /// <remarks>The player's weapons are left for the mission that follows, <c>Game_SaveCarryover</c> (<c>Game_RunHandler</c>).</remarks>
+    public void MissionCompleted(int nextMissionId)
+    {
+        if (Saves is { } saves && Level is { } level && PlayerSpawn.FindGameplayTask(level.Root) is Igi2HumanPlayerTask task)
+        {
+            saves.SaveCarryOver(task, nextMissionId);
+        }
+    }
 
     /// <summary>Gets or sets the level's cars.</summary>
     public IReadOnlyList<Vehicles.Igi2CarTask> Cars { get; set; } = [];

@@ -11,6 +11,9 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets the ticks it has been active this mission, <c>tMissionScoreData.nTime</c>.</summary>
     public int MissionTime { get; set; }
 
+    /// <summary>Gets or sets the save games loaded this mission, <c>tMissionScoreData.nGameLoads</c>.</summary>
+    public int GameLoads { get; set; }
+
     /// <summary>
     /// The human's own part of its run handler, single-player: <c>Human_RunHandler</c> (<c>igi2 0x4FE3A0</c>) before it runs the
     /// body's children.

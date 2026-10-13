@@ -52,9 +52,6 @@ public sealed class Igi2HumanSaveExtras
     /// <summary>Gets or sets its hits, <c>nHits</c>.</summary>
     public int Hits { get; set; }
 
-    /// <summary>Gets or sets the games loaded, <c>nGameLoads</c>.</summary>
-    public int GameLoads { get; set; }
-
     /// <summary>Gets or sets the alarms it set off, <c>nTimesAlarmTriggered</c>.</summary>
     public int TimesAlarmTriggered { get; set; }
 
@@ -141,7 +138,7 @@ public abstract partial class Igi2Human
         writer.Int(MissionShots);
         writer.Int(extras.Kills);
         writer.Int(extras.Hits);
-        writer.Int(extras.GameLoads);
+        writer.Int(GameLoads);
         writer.Int(MissionTime);
         writer.Int(extras.TimesAlarmTriggered);
         writer.Int(extras.Health);
@@ -249,7 +246,7 @@ public abstract partial class Igi2Human
         reader.Int();
         extras.Kills = reader.Int();
         extras.Hits = reader.Int();
-        extras.GameLoads = reader.Int();
+        GameLoads = reader.Int();
         MissionTime = reader.Int();
         extras.TimesAlarmTriggered = reader.Int();
         extras.Health = reader.Int();

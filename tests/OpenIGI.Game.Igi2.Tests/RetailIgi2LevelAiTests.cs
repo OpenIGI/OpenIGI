@@ -279,6 +279,50 @@ public sealed class RetailIgi2LevelAiTests
         }
     }
 
+    /// <summary>
+    /// The pause menu's saves: on normal two slots and three saves a mission, each save using one and none once they are spent; a load
+    /// puts the mission back and counts itself; hard keeps no slots.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Mission_saves_spend_the_battery_and_count_loads()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-igi2-mission-saves-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
+            m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
+            int difficulty = 1;
+            Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), () => new Saves.Igi2SaveOwner(0, difficulty, 11), m.Run, player.Human);
+            Assert.Equal(2, saves.Slots.Count);
+            Assert.Equal(3, saves.SavesLeft);
+            Assert.False(saves.Slots[0].IsUsed);
+
+            Assert.True(saves.Save(0));
+            Assert.True(saves.Save(1));
+            Assert.False(saves.Save(2));
+            Assert.Equal(1, saves.SavesLeft);
+            Assert.True(saves.Slots[0].IsUsed);
+            Assert.True(saves.Save(0));
+            Assert.Equal(0, saves.SavesLeft);
+            Assert.False(saves.Save(1));
+
+            Assert.True(saves.Load(1));
+            Assert.Equal(1, player.Human.GameLoads);
+            Assert.False(saves.Load(4));
+
+            difficulty = 2;
+            Assert.Empty(saves.Slots);
+            Assert.Equal(0, saves.SavesLeft);
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
     private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null)
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);

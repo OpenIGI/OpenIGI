@@ -47,10 +47,14 @@ public sealed class RetailIgi2MissionCatalogueTests
         Assert.True(campaign > 0, "not one mission declared the single-player mode.");
         Assert.True(multiplayer > 0, "not one map declared the multiplayer mode.");
 
-        // No mission names the one that follows it: the first game's fourth argument has no counterpart,
-        // so a campaign order cannot be read out of this table.
+        // No mission names the one that follows it; Game_RunHandler takes the next node of the mission list, so each
+        // campaign mission leads to the next one defined, the last to none, and no multiplayer map leads anywhere.
+        MissionDescriptor[] singlePlayer = [.. catalogue.Missions.Where(static m => m.GameMode == Igi2MissionCatalogue.SinglePlayerMode)];
+        Assert.Equal(
+            [.. singlePlayer.Skip(1).Select(static m => m.Id), MissionDescriptor.NextMissionUndefined],
+            singlePlayer.Select(static m => m.NextMissionId));
         Assert.All(
-            catalogue.Missions,
+            catalogue.Missions.Where(static m => m.GameMode != Igi2MissionCatalogue.SinglePlayerMode),
             m => Assert.Equal(MissionDescriptor.NextMissionUndefined, m.NextMissionId));
 
         // And every id is distinct, which the original enforces by aborting.
