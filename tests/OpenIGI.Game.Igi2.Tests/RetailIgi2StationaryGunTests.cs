@@ -96,6 +96,80 @@ public sealed class RetailIgi2StationaryGunTests
         Assert.False(player.Human.View.IsOverride);
     }
 
+    /// <summary>
+    /// Mission 17's automatic gun carries its head on its holder's attach point and its barrel on the head; an enemy it sees, the head
+    /// and barrel turn onto at their speeds, and on target it fires, its barrel spinning.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_turret_turns_onto_what_it_sees_and_fires()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level7");
+        Igi2Session session = Igi2Session.Start();
+        Igi2AiStationaryGunHolderTask turret = All(level.Root).OfType<Igi2AiStationaryGunHolderTask>().Single(static t => t.Id == 3783);
+        Detection.Igi2DetectionWorld detection = new(null, session.Require<World.Igi2GameMaterials>());
+        turret.Prepare(session.Require<Igi2HumanWeapons>(), level.ModelFor, session.Require<World.Igi2MagicObjTypes>(), detection);
+        Assert.Equal("720_06_1", turret.HeadModel);
+
+        Vector3d target = turret.BarrelPosition + new Vector3d(30.0 * 4096.0, 10.0 * 4096.0, -2.0 * 4096.0);
+        Target enemy = new(target);
+        turret.Detection!.Track(enemy).FullVisible[0] = true;
+        turret.OnExpression = string.Empty;
+        Flow.Igi2LevelRun run = Bare();
+        for (int tick = 0; tick < 120; tick++)
+        {
+            turret.Run(run);
+        }
+
+        Assert.True(turret.HasTarget);
+        Vector3d to = target - turret.BarrelPosition;
+        double length = to.Length;
+        IReadOnlyList<float> f = turret.BarrelFrame;
+        double cosine = ((f[1] * to.X) + (f[4] * to.Y) + (f[7] * to.Z)) / length;
+        Assert.True(cosine > Math.Cos(10.0 * Math.PI / 180.0), $"barrel off by {Math.Acos(cosine) * 180.0 / Math.PI} degrees");
+        Assert.True(turret.IsOnTarget);
+        Assert.True(turret.Firing!.Inventory.TotalBulletsFired > 0);
+        Assert.True(turret.Spin > 0f);
+        GC.KeepAlive(session);
+    }
+
+    /// <summary>
+    /// An automatic gun's barrel is drawn as an object of its gun's own: on the first magic vertex of the head its holder's attach point
+    /// carries, walked after the head, where the gun places it at rest.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_turrets_barrel_hangs_on_its_head()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level7");
+        Igi2Session session = Igi2Session.Start();
+        World.Igi2MagicObjTypes magic = session.Require<World.Igi2MagicObjTypes>();
+        Igi2AiStationaryGunHolderTask turret = All(level.Root).OfType<Igi2AiStationaryGunHolderTask>().Single(static t => t.Id == 3783);
+        turret.Prepare(session.Require<Igi2HumanWeapons>(), level.ModelFor, magic, null);
+
+        (World.Igi2DrawableSceneResult built, _) = Igi2LevelScene.Build(level, magic);
+        List<WorldPlacement> own = [.. built.Scene.Placements.Where(static p => p.LevelId == 3783)];
+        int head = own.FindIndex(static p => p.Instance.Name == "720_06_1");
+        int barrel = own.FindIndex(static p => p.Instance.Name == "720_07_1");
+        Assert.True(head >= 0 && barrel > head, $"head {head}, barrel {barrel}");
+        Vector3d at = WorldScene.ToUnits(own[barrel].Position);
+        Assert.True((at - turret.BarrelPosition).Length < 1.0, $"barrel at {at}, gun puts it at {turret.BarrelPosition}");
+        GC.KeepAlive(session);
+    }
+
+    // Something seen, standing still.
+    private sealed class Target(Vector3d at) : Detection.IIgi2Detectable
+    {
+        public Vector3d DetectablePosition => at;
+
+        public float DetectableRadius => 4096f;
+
+        public float? VisibilityFactor => null;
+
+        public bool IsGone => false;
+
+        public Detection.Igi2DetectionInfo DetectionInfo() =>
+            new(Detection.Igi2DetectableKind.Human, at, at, at, 0, IsAlive: true, IsActive: true);
+    }
+
     private static (Igi2Level Level, Igi2Session Session, Igi2StationaryGunTask Gun) Gun()
     {
         Igi2Level level = Igi2Level.Find("location1", "level4");

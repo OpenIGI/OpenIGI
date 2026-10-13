@@ -640,6 +640,33 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         player.StationaryGuns = guns;
+
+        // Automatic guns watch from their muzzles and turn their heads and barrels towards what they see.
+        List<Weapons.Igi2AiStationaryGunHolderTask> turrets = [];
+        if (request.Services.TryGet(out Weapons.Igi2HumanWeapons? turretWeapons))
+        {
+            Igi2GameMaterials? turretMaterials = request.Services.TryGet(out Igi2GameMaterials? found) ? found : null;
+            Detection.Igi2DetectionWorld? detection = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? turretAi) ? turretAi.Detection : null;
+            foreach (Weapons.Igi2AiStationaryGunHolderTask turret in Descendants(root).OfType<Weapons.Igi2AiStationaryGunHolderTask>())
+            {
+                turret.Random = player.Human.Random;
+                turret.Sounds = player.Sounds;
+                turret.Prepare(turretWeapons, models, magicTypes, detection);
+                if (turret.Firing is { } firing)
+                {
+                    firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => turret.Muzzle);
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds);
+                    if (turretMaterials is not null)
+                    {
+                        firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, turretMaterials);
+                    }
+                }
+
+                turrets.Add(turret);
+            }
+        }
+
+        player.Turrets = turrets;
         if (request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? gunAi))
         {
             Dictionary<int, Weapons.Igi2StationaryGunTask> gunsById = guns.Where(static g => g.Id >= 0).ToDictionary(static g => g.Id);
@@ -767,7 +794,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>()];
+        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>(), .. turrets];
         player.Motions = movers.Count > 0 || partMovers.Count > 0 ? new Interaction.Igi2MoverMotions(movers, partMovers) : null;
 
         // The game is played at the active profile's difficulty (Config_GetActiveDifficultyLevel); here the difficulty is chosen
@@ -1117,6 +1144,9 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
             return _held;
         }
     }
+
+    /// <summary>Gets or sets the level's automatic guns.</summary>
+    public IReadOnlyList<Weapons.Igi2AiStationaryGunHolderTask> Turrets { get; set; } = [];
 
     /// <summary>Gets or sets the level's mounted guns, whose barrels are drawn with the soldiers.</summary>
     public IReadOnlyList<Weapons.Igi2StationaryGunTask> StationaryGuns { get; set; } = [];

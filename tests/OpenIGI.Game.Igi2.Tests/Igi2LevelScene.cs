@@ -17,8 +17,9 @@ internal static class Igi2LevelScene
 {
     /// <summary>Builds the drawable scene, keeping the registry it was read through.</summary>
     /// <param name="level">The level.</param>
+    /// <param name="magic">The magic object types attach points are looked up in, or <see langword="null"/> to place them by name.</param>
     /// <returns>The scene and the registry.</returns>
-    public static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) Build(Igi2Level level)
+    public static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) Build(Igi2Level level, World.Igi2MagicObjTypes? magic = null)
     {
         (List<LoadedPack> packs, ResourceRegistry resources) = Packs(level);
         string root = GameDataSource.Igi2.RequireRoot();
@@ -46,7 +47,8 @@ internal static class Igi2LevelScene
                 level.Root,
                 level.Table,
                 level.HasLightmaps ? level.Lightmaps : null,
-                packs),
+                packs,
+                magic: magic),
             resources);
     }
 

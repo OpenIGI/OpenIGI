@@ -47,6 +47,10 @@ namespace OpenIGI.Game.Igi2.World;
 /// The parameter naming the mounted model's own turn about the up axis, ADDED to the host's. Empty when
 /// it simply inherits the host's facing.
 /// </param>
+/// <param name="MountedOn">
+/// The magic task type of the attach point the mounted model hangs on, instead of the host itself: it is placed on that attach
+/// object's first magic vertex, facing as it faces, and walked after it. Empty to mount on the host.
+/// </param>
 /// <param name="Enumerated">
 /// Every model parameter the type's lightmap enumerator walks, in the order it walks them. Empty for a
 /// type with one model, which is then index zero. See <see cref="Igi2WorldScene.Bindings"/>.
@@ -61,4 +65,5 @@ public readonly record struct Igi2PlacementBinding(
     string MountedModel = "",
     string MountedAlpha = "",
     string MountedGamma = "",
-    IReadOnlyList<string>? Enumerated = null);
+    IReadOnlyList<string>? Enumerated = null,
+    string MountedOn = "");

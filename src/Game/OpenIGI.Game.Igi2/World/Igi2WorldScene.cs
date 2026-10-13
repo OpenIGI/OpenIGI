@@ -52,6 +52,10 @@ namespace OpenIGI.Game.Igi2.World;
 /// index plus one — so it is what picks the matching bake out of the level's archive. See
 /// <see cref="Igi2LightmapIndex"/>.
 /// </param>
+/// <param name="MountedOn">
+/// The magic task type of the attach point <paramref name="MountedModel"/> hangs on, or empty when it hangs on this model; see
+/// <see cref="Igi2PlacementBinding.MountedOn"/>.
+/// </param>
 public readonly record struct Igi2Placement(
     int LevelId,
     string TypeName,
@@ -64,7 +68,8 @@ public readonly record struct Igi2Placement(
     Vector3f MountedOrientation = default,
     Matrix3f? Frame = null,
     IIgi2PlacementGeometry? Geometry = null,
-    string DestroyedModel = "");
+    string DestroyedModel = "",
+    string MountedOn = "");
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -141,8 +146,9 @@ public sealed class Igi2WorldScene
     /// </description></item>
     /// <item><description>
     /// <c>StationaryGun</c>, <c>AIStationaryGunHolder</c> — <c>AIStationaryGunHolder_UpdateInternalDataHandler</c>
-    /// (<c>0x5158E0</c>) copies the parameter block's orientation straight into the model object. The
-    /// barrel is an attachment, and is left out for the same reason the camera body is.
+    /// copies the parameter block's orientation straight into the model object. An automatic gun's barrel is
+    /// an object of its gun's own, the attach point of type <c>AIStationaryGun</c>: <c>AIStationaryGun_UpdateInternalDataHandler</c>
+    /// makes it a child of that attach object, on its first magic vertex, so it is walked after it.
     /// </description></item>
     /// <item><description>
     /// <c>Wire</c> — <c>Wire_UpdateInternalDataHandler</c> (<c>0x49B720</c>) gives the model no
@@ -199,7 +205,8 @@ public sealed class Igi2WorldScene
                 "Holder model",
                 PositionParameter,
                 OrientationParameter,
-                MountedModel: "Barrel model"),
+                MountedModel: "Barrel model",
+                MountedOn: Weapons.Igi2AiStationaryGunHolderTask.GunType),
             ["Lift"] = new("Model", "Start Position", "Start Orientation"),
             ["SplineObjWaypoint"] = new("Waypoint Model", PositionParameter, OrientationParameter),
         };
@@ -514,7 +521,8 @@ public sealed class Igi2WorldScene
             mountedOrientation,
             frame,
             geometry,
-            destroyed);
+            destroyed,
+            binding.MountedOn);
         return true;
     }
 }

@@ -83,6 +83,7 @@ public static class Igi2DrawableScene
         string placementType = string.Empty;
         int placementGroup = WorldPlacement.DefaultRenderGroup;
         string placementDestroyed = string.Empty;
+        string placementMountedOn = string.Empty;
 
         int attached = 0;
         int attachmentsUnresolved = 0;
@@ -198,7 +199,7 @@ public static class Igi2DrawableScene
             // Emitted after the attachments because that is the order the lightmap enumerator walks:
             // a node's own model, then its attach objects, then its task children -- and the camera body
             // is a child task of the bracket (SCamera_SCameraLensCreateHandler, 0x48EC90).
-            if (mounted.Length > 0)
+            if (mounted.Length > 0 && (depth > 0 || placementMountedOn.Length == 0 || magic is null))
             {
                 Vector3d mountPosition = unitsPosition;
                 if (model.TryGetMagicVertex(0, out Vector3f mount))
@@ -234,12 +235,15 @@ public static class Igi2DrawableScene
                 // the attachment array straight at the ATTA chunk's bytes, and the composition reads them
                 // column for row. The collision world places the same tree through the same pose, so what
                 // is drawn is what is stood on.
+                // A model mounted on an attach object rather than on the host goes with that object, facing as it faces.
                 int at = drawable.Count;
+                Igi2Pose attachedPose = pose.Attach(attachment);
+                bool carries = depth == 0 && placementMountedOn.Length > 0 && magic?.Find(attachment.Name)?.TaskType == placementMountedOn;
                 if (Emit(
                     attachedModel,
-                    pose.Attach(attachment),
-                    string.Empty,
-                    default,
+                    attachedPose,
+                    carries ? mounted : string.Empty,
+                    carries ? attachedPose.ToMatrix() : default,
                     geometry: null,
                     variant,
                     depth + 1,
@@ -276,6 +280,7 @@ public static class Igi2DrawableScene
                 : $"{placement.TypeName}:{placement.LevelId}";
             placementGroup = placement.RenderGroup;
             placementDestroyed = placement.DestroyedModel;
+            placementMountedOn = placement.MountedOn;
 
             int index = 0;
             if (!Emit(
