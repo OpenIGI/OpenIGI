@@ -252,7 +252,7 @@ public sealed partial class Igi2HumanSoldier
     /// Reloading, <c>HumanSoldier_ReloadUpperBodySignalHandler</c> (<c>igi2 0x4E38F0</c>): when the reload's clip ends the weapon
     /// reloads and the arms go on to what is asked.
     /// </summary>
-    /// <remarks>The weapon's own reload (<c>Weapon_Reload</c>, <c>igi2 0x51E120</c>) is not ported yet.</remarks>
+    /// <remarks>The rounds go in (<c>Weapon_Reload</c>, <c>igi2 0x51E120</c>) as the clip ends, before the arms go on.</remarks>
     private void RunReloadUpperBody()
     {
         Igi2SoldierSignal s = Signal;
@@ -268,6 +268,7 @@ public sealed partial class Igi2HumanSoldier
             return;
         }
 
+        Weapon.Firing?.Reload();
         if ((s & Igi2SoldierSignal.Fire) != 0)
         {
             PlayUpper(UpperFire, Igi2SoldierUpperBody.Fire);
