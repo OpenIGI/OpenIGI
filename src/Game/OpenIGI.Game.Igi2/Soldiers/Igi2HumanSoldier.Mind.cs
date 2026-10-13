@@ -8,9 +8,6 @@ public sealed partial class Igi2HumanSoldier
 {
     private ulong _reportedSquads;
 
-    /// <summary>Gets or sets a value indicating whether the soldier takes part, <c>Human.isActive</c>: the script switches it.</summary>
-    public bool IsActive { get; set; } = true;
-
     /// <inheritdoc/>
     protected override float DetectionVisibility => VisibilityFactor;
 

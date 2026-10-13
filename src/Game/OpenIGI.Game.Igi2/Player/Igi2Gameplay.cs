@@ -874,6 +874,17 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 NoiseAt = noise,
             });
 
+            // The kill boxes of the cars and the trains are tested against everyone.
+            foreach (Vehicles.Igi2CarTask car in player.Cars)
+            {
+                car.Humans = everyone;
+            }
+
+            foreach (Vehicles.Igi2TrainTask train in Descendants(root).OfType<Vehicles.Igi2TrainTask>())
+            {
+                train.Humans = everyone;
+            }
+
             // CarAI_UpdateInternalDataAfterLoadHandler: each driver finds its car and its graph, and sets the car back to its start.
             foreach (Vehicles.Igi2CarAiTask driver in Descendants(root).OfType<Vehicles.Igi2CarAiTask>())
             {

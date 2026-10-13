@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.Vehicles;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -122,6 +123,48 @@ public sealed class RetailIgi2CarTests
         Assert.True((node.Position - car.CurrentPosition).Length < before);
         Assert.NotEqual(0f, driver.WantedGamma);
     }
+
+    /// <summary>
+    /// A human whose root bone is inside a moving car's kill box dies of ten thousand damage to the chest; one inside the box of a car
+    /// barely moving takes none, and one outside it is untouched (<c>Human_DeathZoneHitTestHandler</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_moving_car_kills_who_it_runs_over()
+    {
+        (RetailIgi2Mission1 m, Igi2CarTask car) = Car(1300);
+        Igi2DeathZone zone = Assert.Single(car.DeathZones);
+        Assert.NotNull(zone.Solid);
+        Igi2Pose pose = Igi2Pose.FromMatrix(car.CurrentPosition, Rows(car.CurrentOrientation));
+        Vector3d centre = pose.Attach(zone.Attachment).Position;
+
+        Assert.True(PlayerSpawn.TryFindGameplay(m.Level.Root, out PlayerSpawnPoint spawn));
+        Formats.World.MefModel body = m.Level.ModelFor(spawn.Model)!;
+        Humans.Igi2Human Stand(Vector3d at)
+        {
+            Player.Igi2TitlePlayer player = Player.Igi2TitlePlayer.Spawn(
+                m.Collision!, Igi2Session.Start().Require<Player.Igi2PlayerTuning>().General, at, 0f, Game.Ai.AiDifficulty.Easy, null, body.BoneHierarchy);
+            Vector3f root = body.BoneHierarchy!.Translations[0];
+            player.Human.RootTranslation = root;
+            player.Human.Position = new Vector3d(at.X - root.X, at.Y - root.Y, at.Z - root.Z);
+            return player.Human;
+        }
+
+        Humans.Igi2Human slow = Stand(centre);
+        zone.HitTest(pose, new Vector3f(49f, 0f, 0f), [slow]);
+        Assert.False(slow.IsDead);
+        Assert.Equal(0f, slow.Damage.Damage);
+        Assert.Equal(Humans.Igi2DamagePart.Chest, slow.Damage.LastPart);
+
+        Humans.Igi2Human under = Stand(centre);
+        Humans.Igi2Human clear = Stand(new Vector3d(centre.X + (10.0 * 4096.0), centre.Y, centre.Z));
+        zone.HitTest(pose, new Vector3f(30f, 40f, 0f), [under, clear]);
+        Assert.True(under.IsDead);
+        Assert.Equal(10000f, under.Damage.Damage);
+        Assert.False(clear.IsDead);
+        Assert.Equal(0f, clear.Damage.Damage);
+    }
+
+    private static Matrix3f Rows(IReadOnlyList<float> f) => new(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
 
     private static (RetailIgi2Mission1 Mission, Igi2CarTask Car) Car(int id)
     {

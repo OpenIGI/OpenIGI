@@ -92,6 +92,9 @@ public abstract partial class Igi2Human
     /// <summary>Gets a value indicating whether the human has died, <c>Human_s.isDead</c>.</summary>
     public bool IsDead { get; protected set; }
 
+    /// <summary>Gets or sets a value indicating whether the human takes part, <c>isActive</c>: a soldier's script switches it; the player always does.</summary>
+    public bool IsActive { get; set; } = true;
+
     /// <summary>
     /// Gets or sets how many times a squad first spotted this human, <c>Human.nSpotted</c> (<c>Human+0x1E0</c>): only the player's
     /// counts up; scripts read it as <c>&lt;name&gt;.nSpotted</c>.

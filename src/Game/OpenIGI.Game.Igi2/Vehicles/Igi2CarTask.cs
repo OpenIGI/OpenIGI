@@ -21,8 +21,8 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// <para>
 /// <c>Car_RunHandler</c>, once a tick: its engine sound, made of its type's sound while its play sound expression holds (or always,
 /// with none) and deleted when it does not; its open door expression, given to its door; its detection, while its can fire expression
-/// holds, from its gun's muzzle along the gun; its children (its driver, who drives it); its gun mounted where the car now is, and
-/// run; then its explosion, if one is coming.
+/// holds, from its gun's muzzle along the gun; its children (its driver, who drives it); its kill boxes, while it is not at rest; its
+/// gun mounted where the car now is, and run; then its explosion, if one is coming.
 /// </para>
 /// <para>
 /// It moves only when its driver drives it (<c>Car_UpdateAnimDataHandler</c>): a step at tick nought sets it back where the level put
@@ -81,6 +81,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     private int _ticksToDie = -1;
     private byte _isExploded;
     private bool _isWeaponSystemsRun;
+    private IReadOnlyList<Igi2DeathZone> _deathZones = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CarTask"/> class.</summary>
     public Igi2CarTask()
@@ -250,6 +251,12 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     /// <summary>Gets or sets the level's sounds.</summary>
     public Igi2Sounds? Sounds { get; set; }
 
+    /// <summary>Gets or sets the humans its kill boxes are tested against.</summary>
+    public IReadOnlyList<Humans.Igi2Human> Humans { get; set; } = [];
+
+    /// <summary>Gets its kill boxes, once prepared.</summary>
+    public IReadOnlyList<Igi2DeathZone> DeathZones => _deathZones;
+
     /// <summary>Gets or sets the level's explosions, which it goes off as and is reached by.</summary>
     public Igi2ExplosionWorld? Explosions { get; set; }
 
@@ -321,6 +328,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         }
 
         AttachWheelsAndGun(weapons, models, random);
+        _deathZones = _model is not null && Magic is { } magic ? Igi2DeathZone.Find(_model, magic, models, _solids) : [];
         Reset();
     }
 
@@ -353,6 +361,17 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         RunDetection(level);
         level.RunChildren(this);
+
+        // DeathZone_RunHandler: while the car is not at rest.
+        if (_deathZones.Count > 0 && _body is { } body && !body.IsIdle())
+        {
+            Igi2Pose pose = Igi2Pose.FromMatrix(body.Position, Rows(body.Orientation));
+            foreach (Igi2DeathZone zone in _deathZones)
+            {
+                zone.HitTest(pose, body.Body.Velocity, Humans);
+            }
+        }
+
         if (!_isWeaponSystemsRun)
         {
             MountGun();

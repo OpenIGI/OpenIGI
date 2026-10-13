@@ -7,10 +7,6 @@ namespace OpenIGI.Game.Igi2.Player;
 public sealed partial class Igi2HumanPlayer : IIgi2AreaOccupant
 {
     /// <inheritdoc/>
-    /// <remarks>The player is always active.</remarks>
-    public bool IsActive => true;
-
-    /// <inheritdoc/>
     public bool IsAi => false;
 
     /// <inheritdoc/>

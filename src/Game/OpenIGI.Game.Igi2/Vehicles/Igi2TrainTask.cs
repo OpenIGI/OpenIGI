@@ -59,6 +59,7 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
     private Igi2LevelExpression? _playSound;
     private Igi2Sound? _sound;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
+    private IReadOnlyList<Igi2DeathZone> _deathZones = [];
 
     /// <summary>Gets or sets its distance along the spline as the level starts, <c>vOriginalPos</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Position")]
@@ -185,7 +186,19 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
 
     /// <summary>Gives a carriage the solids it was built as, which then move with it.</summary>
     /// <param name="solids">Its solids, as <see cref="Igi2CollisionWorld.SolidsOf"/> gives them.</param>
-    public void Bind(IReadOnlyList<Igi2RigidObject> solids) => _solids = solids ?? throw new ArgumentNullException(nameof(solids));
+    public void Bind(IReadOnlyList<Igi2RigidObject> solids)
+    {
+        _solids = solids ?? throw new ArgumentNullException(nameof(solids));
+        _deathZones = Models is { } models && Magic is { } magic && models(Model) is { } model
+            ? Igi2DeathZone.Find(model, magic, models, solids)
+            : [];
+    }
+
+    /// <summary>Gets or sets the humans its kill boxes are tested against.</summary>
+    public IReadOnlyList<Humans.Igi2Human> Humans { get; set; } = [];
+
+    /// <summary>Gets its kill boxes, once bound.</summary>
+    public IReadOnlyList<Igi2DeathZone> DeathZones => _deathZones;
 
     /// <summary>Gets the train and its carriages, the locomotive first.</summary>
     public IReadOnlyList<Igi2TrainTask> Rake => _rake;
@@ -253,6 +266,17 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
         channels[0] = level5 >= 0.800000011920929f ? Math.Min(level5, 1f) : 0.800000011920929f;
         channels[1] = thrust > 0.0010000000474974513f ? 1f : 0f;
         level.RunChildren(this);
+
+        // DeathZone_RunHandler: a carriage's kill boxes take its locomotive's speed, which moves them while it is not nought.
+        float speed = Parent is Igi2TrainTask engine ? engine._speed : _speed;
+        if (_deathZones.Count > 0 && speed != 0f)
+        {
+            Igi2Pose pose = Igi2Pose.FromMatrix(_at, Rows(_orientation));
+            foreach (Igi2DeathZone zone in _deathZones)
+            {
+                zone.HitTest(pose, new Vector3f(speed, 0f, 0f), Humans);
+            }
+        }
     }
 
     /// <summary>Takes it out of the world, its sound with it, <c>Train_RemoveHandler</c>.</summary>
