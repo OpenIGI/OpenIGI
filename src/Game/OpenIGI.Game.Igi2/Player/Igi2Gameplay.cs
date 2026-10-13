@@ -493,6 +493,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        // Flocks start their birds' swings from the stream every flock draws from.
+        if (request.Services.TryGet(out World.Igi2FlockRandom? flockRandom))
+        {
+            foreach (World.Igi2BirdFlockTask flock in Descendants(root).OfType<World.Igi2BirdFlockTask>())
+            {
+                flock.Prepare(flockRandom);
+            }
+        }
+
         // Scripted overlays go up on the game screen.
         if (request.Services.TryGet(out Igi2ScreenOverlay? screenOverlay))
         {

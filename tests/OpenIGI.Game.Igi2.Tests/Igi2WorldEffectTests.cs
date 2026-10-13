@@ -137,4 +137,37 @@ public sealed class Igi2WorldEffectTests
         Engine.Tasks.GameTask root = tree.New(null, types.Register<Engine.Tasks.ContainerTask>("Container"));
         return new(root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
     }
+    /// <summary>
+    /// A flock holds its birds to a hundred and starts their swings at forty to 1240 ticks; flying, each bird stays within twice the
+    /// radius across and ten metres up or down, and is drawn as four triangles; out of sight it stands still.
+    /// </summary>
+    [Fact]
+    public void A_flock_wheels_while_seen()
+    {
+        World.Igi2BirdFlockTask flock = new() { Individuals = 150, Radius = 50f, CutoffDistance = 100f };
+        flock.Prepare(new World.Igi2FlockRandom());
+        Assert.Equal(World.Igi2BirdFlockTask.MaximumBirds, flock.Birds.Count);
+        Assert.All(flock.Birds, static bird => Assert.All(bird.Periods, static period => Assert.InRange(period, 40, 1240)));
+
+        Flow.Igi2LevelRun level = RainLevel();
+        for (int tick = 0; tick < 200; tick++)
+        {
+            flock.Run(level);
+        }
+
+        float reach = 2f * 50f * 4096f;
+        Assert.All(flock.Birds, bird =>
+        {
+            Assert.InRange(Math.Abs(bird.Position.X), 0f, reach);
+            Assert.InRange(Math.Abs(bird.Position.Y), 0f, reach);
+            Assert.InRange(Math.Abs(bird.Position.Z), 0f, 2f * 40960f);
+        });
+        Assert.Equal(flock.Birds.Count * 12, flock.Wings().Count);
+
+        flock.Project(101f * 4096f);
+        Assert.False(flock.IsSeen);
+        Core.Numerics.Vector3f before = flock.Birds[0].Position;
+        flock.Run(level);
+        Assert.Equal(before, flock.Birds[0].Position);
+    }
 }
