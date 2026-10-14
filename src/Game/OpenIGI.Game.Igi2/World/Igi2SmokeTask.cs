@@ -216,6 +216,8 @@ public sealed partial class Igi2SmokeTask : Igi2Task
             maxParticles: MaxParticles,
             onCollision: null);
         _system.Range = ((Fpu)ViewCutoff * 4096.0).F;
+        // smoke.c Smoke_UpdateInternalDataHandler: the plume owns its system even between emissions.
+        _system.IsSelfDestruct = false;
     }
 
     /// <inheritdoc/>
@@ -245,6 +247,17 @@ public sealed partial class Igi2SmokeTask : Igi2Task
         if (GenerateFactor > 0.0 && DoDamage)
         {
             Burn();
+        }
+
+        Emit();
+    }
+
+    /// <summary>Emits a tick of particles, <c>smoke.c Smoke_RunHandler</c>, including dynamically created grenade smoke.</summary>
+    public void Emit()
+    {
+        if (_system is not { } system)
+        {
+            return;
         }
 
         _count = ((Fpu)GenerateFactor + _count).F;

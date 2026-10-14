@@ -513,6 +513,41 @@ public sealed class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery col
     /// <summary>Gets the level's dynamic tasks.</summary>
     public Igi2DynamicTasks Dynamic { get; } = dynamic;
 
+    /// <summary>Gets or sets every human registered in the level, <c>Human_ptQTaskList</c>.</summary>
+    public IReadOnlyList<Humans.Igi2Human> Humans { get; set; } = [];
+
+    /// <summary>Gets or sets the particle module used by flash and smoke grenades.</summary>
+    public Igi2Particles? Particles { get; set; }
+
+    /// <summary>Gets the shared smoke stream, <c>smoke.c Smoke_CreateHandler</c>.</summary>
+    public Igi2SmokeRandom SmokeRandom { get; } = new();
+
+    /// <inheritdoc/>
+    public Igi2SmokeTask Smoke(Vector3d position)
+    {
+        // grenade.c Grenade_RunHandler / smoke.c Smoke_New: the packed double supplies two half-intensity RGB components.
+        Igi2SmokeTask smoke = new()
+        {
+            Position = position, Alpha = 0.5f, Gamma = 0f, MaxParticles = 30,
+            Radius = 1f, MaxRandomAngle = 3.1415927f, MinVelocity = 0.1f, MaxVelocity = 0.5f,
+            Colour = new Vector3f(0.5f, 0.5f, 0.5f), LifeTime = 4f, FadeTime = 2f,
+            FadeMode = 0, Sprite = 3, Size = 1f, SizeDelta = 0.6f,
+            MinRotation = 0f, MaxRotation = 0f, Intensity = 1f, GenerateFactor = 6.0,
+            Particles = Particles, Stream = SmokeRandom,
+        };
+        smoke.Prepare();
+        return smoke;
+    }
+
+    /// <inheritdoc/>
+    public void SmokeArea(Vector3d position, float range)
+    {
+        foreach (Humans.Igi2Human human in Humans)
+        {
+            human.SmokeArea(position, range);
+        }
+    }
+
     /// <summary>Gets or sets what explosions show and sound.</summary>
     public IIgi2ExplosionEffects Effects { get; set; } = Igi2NoExplosionEffects.Instance;
 

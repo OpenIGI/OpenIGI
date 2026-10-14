@@ -206,6 +206,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // Particle2DDynCubeObj's module: one stream and collision phase for every system the level makes.
         Igi2Particles particles = new(world, player.Dynamic);
+        if (player.Explosions is { } grenadeEffects)
+        {
+            grenadeEffects.Humans = humans;
+            grenadeEffects.Particles = particles;
+        }
         foreach (Igi2Human human in humans)
         {
             if (human.Surroundings is Igi2LevelSurroundings surroundings)
@@ -859,7 +864,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         // Smokes make their particle systems as they are made, each setting the module's stream back to its seed.
         if (player.Human.Surroundings is Igi2LevelSurroundings { Particles: { } particles })
         {
-            World.Igi2SmokeRandom smokeRandom = new();
+            World.Igi2SmokeRandom smokeRandom = player.Explosions?.SmokeRandom ?? new();
             foreach (World.Igi2SmokeTask smoke in Descendants(root).OfType<World.Igi2SmokeTask>())
             {
                 smoke.Particles = particles;

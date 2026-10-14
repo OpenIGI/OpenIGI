@@ -48,6 +48,18 @@ public readonly record struct Igi2GrenadeExplosion(
 /// <summary>What a grenade sounds, tells the AI and does at its end, behind which its flight does not depend.</summary>
 public interface IIgi2GrenadeEffects
 {
+    /// <summary>Creates the plume at fuse-out, <c>grenade.c Grenade_RunHandler</c>.</summary>
+    /// <param name="position">Where the grenade is.</param>
+    /// <returns>The plume, or null when effects are disabled.</returns>
+    Igi2SmokeTask? Smoke(Vector3d position) => null;
+
+    /// <summary>Tells humans in the smoke sphere, <c>grenade.c Grenade_RunHandler</c>.</summary>
+    /// <param name="position">The sphere centre.</param>
+    /// <param name="range">The sphere radius.</param>
+    void SmokeArea(Vector3d position, float range)
+    {
+    }
+
     /// <summary>A grenade explodes, <c>Explosion0_New</c> (<c>igi2 0x50A4E0</c>).</summary>
     /// <param name="explosion">The explosion.</param>
     void Explode(in Igi2GrenadeExplosion explosion);
@@ -119,6 +131,11 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
 
     private readonly Igi2LineTrace _ground = new(1);
     private readonly Igi2Grenades? _owner;
+    private Igi2SmokeTask? _smoke;
+    private bool _smokeStarted;
+
+    /// <summary>Gets the ticks since smoke began, <c>grenade.c Grenade_RunHandler</c>.</summary>
+    public int SmokeTicks { get; private set; }
 
     /// <summary>Initializes a new instance of the <see cref="Igi2Grenade"/> class.</summary>
     /// <param name="thrown">The throw it leaves the hand with.</param>
@@ -187,7 +204,7 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
     /// </para>
     /// <para>
     /// The tick the fuse is out, the ground under it is probed and, for an ordinary grenade, the explosion goes off with the
-    /// launcher's parameters, and the grenade is gone. Flash and smoke grenades are not ported yet.
+    /// launcher's parameters, and the grenade is gone. Smoke keeps moving until its plume has faded.
     /// </para>
     /// </remarks>
     public bool Run(Igi2PhysicsWorld world, IIgi2GrenadeEffects effects)
@@ -207,6 +224,54 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
             if (Body is { } body && !body.IsIdle())
             {
                 body.Update(Gravity, AirResistance, SpinResistance, world);
+            }
+
+            return true;
+        }
+
+        if (Kind == Igi2GrenadeKind.Smoke)
+        {
+            // grenade.c Grenade_RunHandler: the creation tick does not increment the smoke clock.
+            if (!_smokeStarted)
+            {
+                effects.Sound("explo_smoke", Position);
+                _smoke = effects.Smoke(Position);
+                _smokeStarted = true;
+            }
+            else
+            {
+                SmokeTicks++;
+                if (SmokeTicks % 30 == 0)
+                {
+                    effects.SmokeArea(Position, 12288f);
+                }
+
+                if (SmokeTicks > 900 && _smoke is { } stopping)
+                {
+                    stopping.GenerateFactor = 0.0;
+                }
+
+                if (SmokeTicks > 1080)
+                {
+                    if (_smoke?.System is { } finished)
+                    {
+                        finished.IsSelfDestruct = true;
+                    }
+
+                    return false;
+                }
+            }
+
+            ControlSound(effects, tick);
+            if (Body is { } smokingBody && !smokingBody.IsIdle())
+            {
+                smokingBody.Update(Gravity, AirResistance, SpinResistance, world);
+            }
+
+            if (_smoke is { } smoke)
+            {
+                smoke.Position = Position;
+                smoke.Emit();
             }
 
             return true;

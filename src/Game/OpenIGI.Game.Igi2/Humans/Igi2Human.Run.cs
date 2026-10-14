@@ -14,6 +14,34 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets the save games loaded this mission, <c>tMissionScoreData.nGameLoads</c>.</summary>
     public int GameLoads { get; set; }
 
+    private bool _inSmoke;
+    private IIgi2SoundInstance? _cough;
+
+    /// <summary>Marks a human inside smoke, <c>human.c Human_SmokeAreaHandler</c>.</summary>
+    /// <param name="position">The smoke centre.</param>
+    /// <param name="range">Its radius.</param>
+    public void SmokeArea(Vector3d position, float range)
+    {
+        float x = ((Fpu)Position.X - position.X).F;
+        float y = ((Fpu)Position.Y - position.Y).F;
+        Fpu z = (Fpu)Position.Z - position.Z;
+        if (Fpu.Sqrt((((Fpu)x * x) + ((Fpu)y * y)) + (z * z)).Value <= range)
+        {
+            _inSmoke = true;
+        }
+    }
+
+    /// <summary>Starts a cough only when none is playing and clears the smoke flag, <c>human.c Human_MaintainCough</c>.</summary>
+    protected void MaintainCough()
+    {
+        if (_inSmoke && _cough is not { IsAlive: true })
+        {
+            _cough = Surroundings.StartSound("cough");
+        }
+
+        _inSmoke = false;
+    }
+
     /// <summary>
     /// The human's own part of its run handler, single-player: <c>Human_RunHandler</c> (<c>igi2 0x4FE3A0</c>) before it runs the
     /// body's children.
@@ -22,8 +50,7 @@ public abstract partial class Igi2Human
     /// While a shot keeps the human visible regardless of the light (<see cref="IgnoreLightEffectOnVisibilityTimer"/>), the
     /// timer counts down and the flash it lit the human by fades to four fifths a tick; once it has run out the flash is gone.
     /// While it is active its mission clock counts the tick (<c>tMissionScoreData.nTime</c>), which a save game keeps as its time.
-    /// Not ported: the blood puddle under a body that has come to rest, and coughing in smoke
-    /// (<c>Human_MaintainCough</c>, <c>0x4FE2D0</c>).
+    /// Not ported: the blood puddle under a body that has come to rest.
     /// </remarks>
     protected void RunHuman()
     {
@@ -43,5 +70,7 @@ public abstract partial class Igi2Human
         {
             FlashEffect = default;
         }
+
+        MaintainCough();
     }
 }
