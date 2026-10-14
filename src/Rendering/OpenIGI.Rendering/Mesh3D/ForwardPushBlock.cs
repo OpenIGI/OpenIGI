@@ -171,7 +171,8 @@ public static class ForwardPushBlock
     /// <summary>The rotation rows, each w carrying a channel of the key colour or something else.</summary>
     /// <remarks>
     /// The key is read by the lit rig alone, so every other draw leaves the first w at zero: that is the
-    /// terrain flag the vertex stage reads, and a sun tint there would morph the world. The other two
+    /// terrain flag the vertex stage reads, and a sun tint there would morph the world. A negative
+    /// value marks material-weighted fog instead; it does not activate that morph. The other two
     /// w's are a world draw's remaining components of the direction towards the fixed-function sun.
     /// </remarks>
     private static void WriteRotation(
@@ -185,7 +186,8 @@ public static class ForwardPushBlock
         block[20] = modelView.M11;
         block[21] = modelView.M12;
         block[22] = modelView.M13;
-        block[23] = litRig ? state.Lighting.SunColour.X + state.LampLight.X : 0f;
+        block[23] = litRig ? state.Lighting.SunColour.X + state.LampLight.X
+            : state.FogTarget == FogTarget.MaterialWeightedHalfScene ? -1f : 0f;
 
         if (litRig)
         {

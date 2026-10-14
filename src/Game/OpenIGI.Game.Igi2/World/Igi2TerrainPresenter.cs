@@ -293,7 +293,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     /// a third the brightness the original draws them at.
     /// </remarks>
     private static FogTarget FogTargetOf(ChunkPass pass) =>
-        pass == ChunkPass.Lightmap ? FogTarget.White : FogTarget.HalfScene;
+        pass == ChunkPass.Lightmap ? FogTarget.White : FogTarget.MaterialWeightedHalfScene;
 
     private void DrawGround(in TerrainFrame frame)
     {

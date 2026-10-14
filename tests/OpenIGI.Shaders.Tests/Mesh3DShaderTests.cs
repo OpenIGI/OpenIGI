@@ -88,7 +88,7 @@ public sealed class Mesh3DShaderTests
     public void The_sun_lights_world_draws_only()
     {
         Assert.Contains(
-            "if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && dot(sunModel, sunModel) > 0.25)",
+            "if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)",
             Source,
             StringComparison.Ordinal);
         Assert.Contains("output.color.rgb *= clamp(sunlight, 0.0, 1.0);", Source, StringComparison.Ordinal);
@@ -118,7 +118,7 @@ public sealed class Mesh3DShaderTests
     public void The_fragment_stage_fogs_towards_the_frames_air()
     {
         Assert.Contains(
-            "float3 shown = lerp(push.normalKey2.xyz, base, input.fog);",
+            "float3 shown = lerp(push.normalKey2.xyz * fogShare, base, input.fog);",
             Source,
             StringComparison.Ordinal);
 

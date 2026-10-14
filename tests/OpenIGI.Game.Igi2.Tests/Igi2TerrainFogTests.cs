@@ -69,7 +69,7 @@ public sealed class Igi2TerrainFogTests
         Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Modulate2X);
         Assert.All(device.MeshDraws, draw =>
         {
-            Assert.Equal(draw.Blend == BlendMode.Modulate2X ? FogTarget.White : FogTarget.HalfScene, draw.FogTarget);
+            Assert.Equal(draw.Blend == BlendMode.Modulate2X ? FogTarget.White : FogTarget.MaterialWeightedHalfScene, draw.FogTarget);
 
             // And what it fogs towards, once the target and the blend are resolved together.
             Vector3f towards = draw.Fog.ColourFor(draw.Blend, draw.FogTarget);

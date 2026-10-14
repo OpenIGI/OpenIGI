@@ -199,7 +199,7 @@ Varyings vertexMain(VertexInput input)
     // (Direct3DRender_SetGenericStateRigid, igi2ed 0x56CA90): the global ambient plus the
     // light's diffuse times the cosine to the normal, saturated to one.
     float3 sunModel = float3(push.markerExposure.w, push.normalKey1.w, push.normalKey2.w);
-    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && dot(sunModel, sunModel) > 0.25)
+    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)
     {
         float normalLength = length(localNormal);
         float facing = normalLength > 0.0 ? dot(localNormal / normalLength, sunModel) : 0.0;
@@ -279,7 +279,7 @@ float4 fragmentMain(Varyings input) : SV_Target
     // The level's flat light on models, and the two draws it is not for: terrain, which is lit
     // by its materials, and anything blended, which the original draws with Direct3D lighting
     // off. White everywhere else it does not apply, so this is a multiply and not a branch.
-    float3 modelTint = (push.normalKey0.w > 0.5 || marker < 0.5) ? float3(1.0, 1.0, 1.0) : push.normalKey1.xyz;
+    float3 modelTint = (abs(push.normalKey0.w) > 0.5 || marker < 0.5) ? float3(1.0, 1.0, 1.0) : push.normalKey1.xyz;
 
     // What the sampled lightmap is multiplied by before it modulates the texture: the device's
     // lightmap scale, which a WORLD draw carries in the exposure slot it has no other use for.
@@ -311,7 +311,11 @@ float4 fragmentMain(Varyings input) : SV_Target
         // What the hardware fog did for the original: the surface faded into the air's own
         // colour, which an additive pass is handed as black so that a ground drawn as several
         // passes fogs once rather than once per pass.
-        float3 shown = lerp(push.normalKey2.xyz, base, input.fog);
+        // pc_terrainrender.c TerrainRender_SetBlendMode: SRCALPHA weights the result AFTER hardware fog.
+        // IGI2 stores the material share in grey RGB, so fog must carry the same share as the texture.
+        // Otherwise each extra material contributes a whole blue haze triangle, even at zero weight.
+        float fogShare = push.normalKey0.w < -0.5 ? input.color.r : 1.0;
+        float3 shown = lerp(push.normalKey2.xyz * fogShare, base, input.fog);
         if (cLinearScene != 0)
         {
             // The lightmap scale and the inverse exposure, together: see ForwardPushBlock.

@@ -14,6 +14,23 @@ namespace OpenIGI.Rendering.Tests;
 /// </remarks>
 public sealed class ForwardPushBlockTests
 {
+    /// <summary>Material fog is explicitly weighted without activating the IGI1 terrain morph or the rig light.</summary>
+    [Theory]
+    [InlineData(BlendMode.Opaque)]
+    [InlineData(BlendMode.Additive)]
+    public void Material_fog_preserves_the_weight_after_fogging(BlendMode blend)
+    {
+        Span<float> block = stackalloc float[ForwardPushBlock.Floats];
+        SceneFog fog = new(new Vector3f(0.2f, 0.4f, 0.6f), 0.001f);
+        ForwardPushBlock.Write(block, World with { Fog = fog, FogTarget = FogTarget.MaterialWeightedHalfScene },
+            Matrix4f.Identity, blend, hasLightmap: true);
+        Assert.Equal(-1f, block[23]);
+        Assert.Equal(fog.Colour.X * SceneFog.HalfTarget, block[28]);
+        Assert.Equal(fog.Colour.Y * SceneFog.HalfTarget, block[29]);
+        Assert.Equal(fog.Colour.Z * SceneFog.HalfTarget, block[30]);
+        Assert.Equal(fog.DensityPerMetre, block[31]);
+    }
+
     [Fact]
     public void The_first_sixteen_slots_are_the_model_view_projection()
     {
