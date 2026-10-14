@@ -83,7 +83,7 @@ public sealed partial class Igi2HumanPlayer
             writer.Real(_damageFlash[i]);
         }
 
-        writer.Real(0f);
+        writer.Real(FlashBangFlash);
         writer.Int(ElectricDamageTimeout);
         writer.Bool(false);
         writer.Bool(IsActivateLocked);
@@ -177,7 +177,7 @@ public sealed partial class Igi2HumanPlayer
             _damageFlash[i] = reader.Real();
         }
 
-        reader.Real();
+        FlashBangFlash = reader.Real();
         ElectricDamageTimeout = reader.Int();
         reader.Bool();
         IsActivateLocked = reader.Bool();

@@ -95,6 +95,7 @@ public sealed class RetailIgi2SaveGameTests
         before.View.Pitch = 0.25f;
         before.TimesAlarmTriggered = 3;
         before.SavesUsed = 2;
+        before.FlashBangFlash = 3.25f;
 
         string script = Igi2SaveGame.Create(played.Tree[0], new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, 11, 0))!;
         Assert.Contains("\"HumanPlayer\"", script, StringComparison.Ordinal);
@@ -107,6 +108,7 @@ public sealed class RetailIgi2SaveGameTests
         Assert.Equal(0.25f, after.View.Pitch);
         Assert.Equal(3, after.TimesAlarmTriggered);
         Assert.Equal(2, after.SavesUsed);
+        Assert.Equal(3.25f, after.FlashBangFlash);
         Assert.Equal("WEAPON_ID_MP5SD", loaded.Current?.WeaponType.WeaponId);
         Assert.Equal(
             carried.Weapons.Select(static w => (w.Number, w.IsActive, w.Loaded(0), w.Loaded(1))),

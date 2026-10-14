@@ -544,6 +544,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
 
             sight = detection;
+            player.Explosions?.FlashSight = detection;
         }
 
         World.Igi2MagicObjTypes? magicTypes = request.Services.TryGet(out World.Igi2MagicObjTypes? loadedMagic) ? loadedMagic : null;

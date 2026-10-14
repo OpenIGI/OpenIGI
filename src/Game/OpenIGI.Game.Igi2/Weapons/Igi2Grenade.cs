@@ -48,6 +48,14 @@ public readonly record struct Igi2GrenadeExplosion(
 /// <summary>What a grenade sounds, tells the AI and does at its end, behind which its flight does not depend.</summary>
 public interface IIgi2GrenadeEffects
 {
+    /// <summary>Starts a flash and tells every human, <c>flashbang.c FlashBang_New</c>.</summary>
+    /// <param name="position">Where it went off.</param>
+    /// <param name="ground">The ground probe's intersection.</param>
+    /// <param name="team">The thrower's team, or minus one.</param>
+    void FlashBang(Vector3d position, Igi2Intersection ground, int team)
+    {
+    }
+
     /// <summary>Creates the plume at fuse-out, <c>grenade.c Grenade_RunHandler</c>.</summary>
     /// <param name="position">Where the grenade is.</param>
     /// <returns>The plume, or null when effects are disabled.</returns>
@@ -280,6 +288,12 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
         _ground.Starts[0] = Position;
         _ground.Includes = world.Includes;
         world.Query.NextZ(_ground, [GroundProbe], 0xFFFFFFFF);
+        if (Kind == Igi2GrenadeKind.Flashbang)
+        {
+            // grenade.c Grenade_RunHandler: both ranges are 122880 and the context carries the thrower's team.
+            effects.FlashBang(Position, _ground.Intersections[0], Throw.Thrower is Humans.Igi2Human human ? human.Team : -1);
+        }
+
         if (Kind == Igi2GrenadeKind.Normal)
         {
             Igi2GrenadeParameters p = Throw.Parameters;

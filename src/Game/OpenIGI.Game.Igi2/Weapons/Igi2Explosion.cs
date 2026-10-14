@@ -492,7 +492,7 @@ public sealed class Igi2FragmentContainer(string model, int lifetime, float grav
 /// <param name="collision">The collision a blast is traced through to a target.</param>
 /// <param name="materials">The level's materials, whose penetration a blast loses through each face.</param>
 /// <param name="dynamic">The level's dynamic tasks.</param>
-public sealed class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery collision, Igi2GameMaterials materials, Igi2DynamicTasks dynamic)
+public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery collision, Igi2GameMaterials materials, Igi2DynamicTasks dynamic)
     : IIgi2GrenadeEffects
 {
     /// <summary>The query groups a blast is traced against: the ground, the splines, the solid objects and the forests.</summary>

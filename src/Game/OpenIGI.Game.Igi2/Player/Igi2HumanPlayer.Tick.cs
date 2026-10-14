@@ -191,6 +191,7 @@ public sealed partial class Igi2HumanPlayer
         Weapon.UpdateStatus();
         Notify();
         Pickup();
+        UpdateFlashBangFlash();
         if (ElectricDamageTimeout != 0)
         {
             ElectricDamageTimeout--;

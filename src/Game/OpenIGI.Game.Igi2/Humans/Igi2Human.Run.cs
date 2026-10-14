@@ -14,6 +14,12 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets the save games loaded this mission, <c>tMissionScoreData.nGameLoads</c>.</summary>
     public int GameLoads { get; set; }
 
+    /// <summary>Receives a flash event, <c>flashbang.c FlashBang_New</c>; derived player and soldier handlers respond.</summary>
+    /// <param name="hit">The position, range, team and visibility service.</param>
+    public virtual void FlashBang(in Weapons.Igi2FlashBangHit hit)
+    {
+    }
+
     private bool _inSmoke;
     private IIgi2SoundInstance? _cough;
 
