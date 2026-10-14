@@ -34,8 +34,10 @@ public static class Igi2AttachedParts
     /// <param name="time">The clip's time.</param>
     /// <param name="pose">The body's pose.</param>
     /// <param name="heldModel">The weapon in hand's fixed model, or <see langword="null"/> for nothing held.</param>
+    /// <param name="modelOf">Resolves configured magic-object names, or null when all other names are models.</param>
     /// <returns>The parts, in the clip's order.</returns>
-    public static IEnumerable<Igi2AttachedPart> Of(Igi2AnimationClip clip, int time, BonePose pose, string? heldModel)
+    public static IEnumerable<Igi2AttachedPart> Of(Igi2AnimationClip clip, int time, BonePose pose, string? heldModel,
+        Func<string, string?>? modelOf = null)
     {
         ArgumentNullException.ThrowIfNull(clip);
         ArgumentNullException.ThrowIfNull(pose);
@@ -44,7 +46,7 @@ public static class Igi2AttachedParts
             Igi2AnimationAttachObject attached = clip.AttachObjects[i];
             string? model = string.Equals(attached.Name, WeaponAttachName, StringComparison.OrdinalIgnoreCase)
                 ? heldModel
-                : attached.Name;
+                : modelOf is null ? attached.Name : modelOf(attached.Name);
             if (string.IsNullOrEmpty(model))
             {
                 continue;

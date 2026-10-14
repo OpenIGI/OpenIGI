@@ -36,8 +36,9 @@ public sealed class Igi2FirstPersonFrame
     /// <param name="human">The human whose view it is.</param>
     /// <param name="heldModel">The weapon in hand's fixed model, or <see langword="null"/> for nothing held.</param>
     /// <param name="tick">The tick the frame is for.</param>
+    /// <param name="attachments">The mission's rigid attachment resolver.</param>
     /// <returns>The frame, or <see langword="null"/> when the view draws nothing.</returns>
-    public TitleFirstPersonView? Build(Igi2Human human, string? heldModel, long tick)
+    public TitleFirstPersonView? Build(Igi2Human human, string? heldModel, long tick, Igi2ModelAttachments? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(human);
         Igi2HumanView view = human.View;
@@ -62,9 +63,18 @@ public sealed class Igi2FirstPersonFrame
         BonePose pose = BonePose.Evaluate(skeleton, _rotations, root);
 
         List<TitleViewModelPart> parts = [new TitleViewModelPart(view.ObjectModel, pose, default, Matrix3f.Identity)];
-        foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, view.ObjectAnimation.Time, pose, heldModel))
+        foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, view.ObjectAnimation.Time, pose, heldModel,
+            attachments is null ? null : attachments.ModelOf))
         {
-            parts.Add(new TitleViewModelPart(part.Model, null, part.Position, part.Orientation));
+            TitleViewModelPart rootPart = new(part.Model, null, part.Position, part.Orientation);
+            if (attachments is null)
+            {
+                parts.Add(rootPart);
+            }
+            else
+            {
+                parts.AddRange(attachments.Expand(rootPart));
+            }
         }
 
         return new TitleFirstPersonView(view.ObjectPosition, view.ObjectOrientation, view.ObjectFieldOfView, tick, parts);

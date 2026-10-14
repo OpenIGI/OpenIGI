@@ -5,6 +5,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.ViewModel;
+using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
@@ -36,7 +37,16 @@ public sealed class RetailIgi2FirstPersonTests
 
         TitleFirstPersonView view = Frame(player, weapons, 1);
 
-        Assert.Equal(["arms1_1", "102_01_1"], view.Parts.Select(static p => p.Model));
+        Assert.Equal(["arms1_1", "102_01_1"], view.Parts.Take(2).Select(static p => p.Model));
+        Assert.True(view.Parts.Count > 2, "The MP5SD's model attachments must also be drawn.");
+        Igi2MagicObjTypes magic = Mission1.Value.Session.Require<Igi2MagicObjTypes>();
+        foreach (MefAttachment attachment in Mission1.Value.Level.ModelFor("102_01_1")!.Attachments)
+        {
+            if (magic.ModelOf(attachment.Name) is { } model)
+            {
+                Assert.Contains(view.Parts, part => part.Model == model);
+            }
+        }
         Assert.NotNull(view.Parts[0].Pose);
         Assert.Null(view.Parts[1].Pose);
         Assert.Equal(player.View.ObjectPosition, view.Origin);
@@ -147,7 +157,7 @@ public sealed class RetailIgi2FirstPersonTests
             player.Update();
         }
 
-        Assert.Equal("139_01_1", Frame(player, weapons, 2).Parts[^1].Model);
+        Assert.Equal("139_01_1", Frame(player, weapons, 2).Parts[1].Model);
     }
 
     /// <summary>A zoomed view draws nothing, as <c>HumanView_EnterHandler</c> declines then.</summary>
@@ -162,7 +172,8 @@ public sealed class RetailIgi2FirstPersonTests
     }
 
     private static TitleFirstPersonView Frame(Igi2HumanPlayer player, Igi2PlayerWeapons weapons, long tick) =>
-        new Igi2FirstPersonFrame().Build(player, weapons.Inventory.Current?.WeaponType.FixedModel, tick)!;
+        new Igi2FirstPersonFrame().Build(player, weapons.Inventory.Current?.WeaponType.FixedModel, tick,
+            new Igi2ModelAttachments(Mission1.Value.Level.ModelFor, Mission1.Value.Session.Require<Igi2MagicObjTypes>()))!;
 
     private static (Igi2HumanPlayer Player, Igi2PlayerWeapons Weapons) ArmedPlayer()
     {

@@ -61,6 +61,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
         Igi2Sounds sounds = LevelSounds(request);
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms, sounds);
+        player.ModelAttachments = new Igi2ModelAttachments(models,
+            request.Services.TryGet(out Igi2MagicObjTypes? attachmentTypes) ? attachmentTypes : null);
         if (request.Services.TryGet(out Igi2WhizzbyClock? clock))
         {
             player.Human.WhizzbyClock = clock;
@@ -1291,13 +1293,16 @@ public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWor
 
             if (_heldTick != _ticks)
             {
-                _held = _firstPerson.Build(Human, Inventory?.Current?.WeaponType.FixedModel, _ticks);
+                _held = _firstPerson.Build(Human, Inventory?.Current?.WeaponType.FixedModel, _ticks, ModelAttachments);
                 _heldTick = _ticks;
             }
 
             return _held;
         }
     }
+
+    /// <summary>Gets or sets the mission's resolver for the held model's nested magic objects.</summary>
+    public Igi2ModelAttachments? ModelAttachments { get; set; }
 
     /// <summary>Gets or sets the level's automatic guns.</summary>
     public IReadOnlyList<Weapons.Igi2AiStationaryGunHolderTask> Turrets { get; set; } = [];
