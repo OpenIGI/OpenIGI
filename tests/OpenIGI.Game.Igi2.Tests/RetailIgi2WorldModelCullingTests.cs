@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -76,6 +77,45 @@ public sealed class RetailIgi2WorldModelCullingTests
         renderer.DrawWorld([body], Camera3D.Default, Matrix4f.CreateProjection(640f, 360f, 640f, 360f, 1280, 720, 0.1f, 1000f));
         Assert.Single(device.AnimatedMeshUpdates);
         Assert.NotEmpty(device.MeshDraws);
+    }
+
+    /// <summary>A batch of independent palettes uploads exact serial vertices on the caller's graphics thread.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void World_skin_batch_preserves_vertices_and_graphics_thread()
+    {
+        (LoadedMission mission, ResourceRegistry resources, string name, MefModel model) = Mission();
+        using RecordingGraphicsDevice device = new();
+        using Igi2ViewModelRenderer renderer = new(device, resources);
+        Assert.True(renderer.Load(mission));
+        Igi2BoneSkin skin = Igi2BoneSkin.Create(model)!;
+        TitleWorldModel[] bodies = new TitleWorldModel[8];
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            bodies[i] = new(name, new Vector3d(0, 409600, 0), Matrix3f.Identity,
+                Pose(model, new Vector3f(i * 16, 0, 0)), new object(), 1);
+        }
+
+        int thread = Environment.CurrentManagedThreadId;
+        Matrix4f projection = Matrix4f.CreateProjection(640f, 360f, 640f, 360f, 1280, 720, 0.1f, 1000f);
+        // The render mesh retains extra source records beyond the base vertices; skinning leaves that tail intact.
+        Vertex3D[] expected = [.. MefMeshBuilder.Build(model, 1f)!.Vertices];
+        for (int tick = 1; tick <= 3; tick++)
+        {
+            for (int i = 0; i < bodies.Length; i++)
+            {
+                bodies[i] = bodies[i] with { Tick = tick, Pose = Pose(model, new Vector3f(i * 16, 0, tick * 32)) };
+            }
+            renderer.DrawWorld(bodies, Camera3D.Default, projection);
+            Assert.Equal(bodies.Length, device.AnimatedMeshUpdates.Count);
+            for (int i = 0; i < bodies.Length; i++)
+            {
+                skin.Skin(bodies[i].Pose!, 1f / 4096f, expected);
+                Vertex3D[] actual = device.Meshes[device.AnimatedMeshUpdates.Keys.ElementAt(i)].Vertices;
+                Assert.True(System.Runtime.InteropServices.MemoryMarshal.AsBytes(expected.AsSpan()).SequenceEqual(
+                    System.Runtime.InteropServices.MemoryMarshal.AsBytes(actual.AsSpan())));
+            }
+        }
+        Assert.All(device.AnimatedMeshThreadIds, id => Assert.Equal(thread, id));
     }
 
     private static BonePose Pose(MefModel model, Vector3f root)

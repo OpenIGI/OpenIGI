@@ -15,6 +15,9 @@ namespace OpenIGI.TestSupport;
 /// </remarks>
 public sealed class RecordingGraphicsDevice : IGraphicsDevice
 {
+    /// <summary>The managed threads used for animated mesh creation and updates.</summary>
+    public List<int> AnimatedMeshThreadIds { get; } = [];
+
     private uint _nextTexture = 1;
     private uint _nextMesh = 1;
     private uint _nextOcclusionQuery = 1;
@@ -1006,6 +1009,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public MeshHandle CreateAnimatedMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
     {
+        AnimatedMeshThreadIds.Add(Environment.CurrentManagedThreadId);
         MeshHandle handle = CreateMesh(vertices, indices);
         PreviousPoseStreams[handle.Id] = vertices.ToArray();
         AnimatedMeshUpdates[handle.Id] = 0;
@@ -1014,6 +1018,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices)
     {
+        AnimatedMeshThreadIds.Add(Environment.CurrentManagedThreadId);
         if (!Meshes.TryGetValue(mesh.Id, out (Vertex3D[] Vertices, ushort[] Indices) entry))
         {
             throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));

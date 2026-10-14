@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -41,6 +42,38 @@ public sealed class RetailIgi2LookPreviewTests
         player.Human.View.IsLockOrientation = true;
         Assert.False(player.CanPreviewLook);
         Assert.Equal(player.LookOrientation, player.PreviewLook(255f, 255f, 1f, false));
+    }
+
+    /// <summary>Consuming horizontal mouse input does not rewind presentation on a retail building floor.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Grounded_mouse_preview_matches_the_committed_tick()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level1");
+        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, level.Terrain(), "terrain");
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world,
+            Igi2Session.Start().Require<Igi2PlayerTuning>().General, default, 0f, AiDifficulty.Normal);
+        foreach (Igi2RigidObject building in world.Objects.Where(static o => o.Owner is Igi2CollisionOwner { TypeName: "Building", Depth: 0 }))
+        {
+            Vector3d above = new(building.Position.X, building.Position.Y, building.Position.Z + 32768.0);
+            Vector3d feet = above;
+            player.Human.GroundCollision(above, ref feet, 65536f);
+            if (player.Human.IsGroundRigidObject)
+            {
+                player.Human.Position = feet;
+                player.Human.UpdatePlatformPosition(true, true);
+                break;
+            }
+        }
+
+        Assert.True(player.Human.IsGroundRigidObject);
+        for (int tick = 0; tick < 60; tick++)
+        {
+            Matrix3f predicted = player.PreviewLook(8f, 0f, 0.4f, false);
+            player.Tick(new TitlePlayerInput(8f, 0f, default, default, 0.4f, false));
+            Vector3f expected = predicted.Column2, actual = player.ViewOrientation.Row3;
+            Assert.InRange((actual - expected).Length, 0f, 0.00001f);
+            Assert.True(player.Human.IsGroundRigidObject);
+        }
     }
 
     private static Igi2TitlePlayer Player() => Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),

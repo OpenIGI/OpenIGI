@@ -46,6 +46,8 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
     private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, Part?> _parts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<object, Part?> _bodies = new(ReferenceEqualityComparer.Instance);
+    private readonly List<Part> _skinBatch = [];
+    private readonly ParallelOptions _skinWorkers = new() { MaxDegreeOfParallelism = Math.Min(4, Environment.ProcessorCount) };
     private Igi2TextureLoader? _textures;
     private Igi2ModelTable? _table;
     private Func<string, MefModel?>? _models;
@@ -165,6 +167,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
         FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
+        PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation);
@@ -310,21 +313,97 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         return new Part(skin, geometry, vertices, mesh, [.. subsets]);
     }
 
+    private void PrepareWorldSkins(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in FrustumCulling.Frustum frustum)
+    {
+        _skinBatch.Clear();
+        foreach (TitleWorldModel wanted in models)
+        {
+            if (wanted is not { Pose: { } pose, Instance: { } instance }
+                || _models!(wanted.Model) is not { } model
+                || !WorldModelVisible(wanted, model, camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation), frustum))
+            {
+                continue;
+            }
+
+            if (!_bodies.TryGetValue(instance, out Part? part))
+            {
+                part = Build(wanted.Model, skinned: true);
+                _bodies[instance] = part;
+            }
+
+            if (part is null || part.Tick == wanted.Tick || SamePose(part.SkinnedPose, pose) || _skinBatch.Contains(part))
+            {
+                continue;
+            }
+
+            part.PendingPose = pose;
+            part.PendingInstance = instance;
+            part.PendingModel = wanted.Model;
+            part.PendingTick = wanted.Tick;
+            part.SkinError = null;
+            _skinBatch.Add(part);
+        }
+
+        // pc_direct3drender.c Direct3DRender_ProcessVerticesBone: every model's vertex stream is independent.
+        // Only the unchanged CPU calculations run on workers. Resource creation, uploads and draws stay here.
+        if (_skinBatch.Count >= 4 && _skinWorkers.MaxDegreeOfParallelism > 1)
+        {
+            Parallel.For(0, _skinBatch.Count, _skinWorkers, SkinWorldPart);
+        }
+        else
+        {
+            for (int i = 0; i < _skinBatch.Count; i++) { SkinWorldPart(i); }
+        }
+
+        foreach (Part part in _skinBatch)
+        {
+            try
+            {
+                if (part.SkinError is { } error) { throw error; }
+                UploadSkin(part, part.PendingPose!);
+                part.Tick = part.PendingTick;
+            }
+            catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+            {
+                _logger.Warning(LogCategory, $"'{part.PendingModel}' could not be posed: {ex.Message}");
+                _bodies[part.PendingInstance!] = null;
+            }
+            finally
+            {
+                part.PendingPose = null;
+                part.PendingInstance = null;
+                part.SkinError = null;
+            }
+        }
+        _skinBatch.Clear();
+    }
+
+    private void SkinWorldPart(int index)
+    {
+        Part part = _skinBatch[index];
+        try
+        {
+            part.Skin!.Skin(part.PendingPose!, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
+        }
+        catch (ArgumentException ex)
+        {
+            part.SkinError = ex;
+        }
+    }
+
+    private void UploadSkin(Part part, BonePose pose)
+    {
+        if (part.Mesh.IsValid) { _device.UpdateAnimatedMesh(part.Mesh, part.Vertices); }
+        else { part.Mesh = _device.CreateAnimatedMesh(part.Vertices, part.Geometry.Indices); }
+        part.SkinnedPose = pose;
+    }
+
     private bool Reskin(Part part, BonePose pose, string model, Action drop)
     {
         try
         {
             part.Skin!.Skin(pose, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
-            if (part.Mesh.IsValid)
-            {
-                _device.UpdateAnimatedMesh(part.Mesh, part.Vertices);
-            }
-            else
-            {
-                part.Mesh = _device.CreateAnimatedMesh(part.Vertices, part.Geometry.Indices);
-            }
-
-            part.SkinnedPose = pose;
+            UploadSkin(part, pose);
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
@@ -372,5 +451,15 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         public long Tick { get; set; } = long.MinValue;
 
         public BonePose? SkinnedPose { get; set; }
+
+        public BonePose? PendingPose { get; set; }
+
+        public object? PendingInstance { get; set; }
+
+        public string PendingModel { get; set; } = string.Empty;
+
+        public long PendingTick { get; set; }
+
+        public ArgumentException? SkinError { get; set; }
     }
 }
