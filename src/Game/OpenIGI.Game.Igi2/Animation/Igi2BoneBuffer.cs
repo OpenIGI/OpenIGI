@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.World;
@@ -15,6 +16,7 @@ namespace OpenIGI.Game.Igi2.Animation;
 /// </remarks>
 public sealed class Igi2BoneBuffer
 {
+    private BonePose? _pose;
     /// <summary>Initializes a new instance of the <see cref="Igi2BoneBuffer"/> class, every orientation the identity.</summary>
     /// <param name="boneCount">The number of bones.</param>
     public Igi2BoneBuffer(int boneCount)
@@ -52,13 +54,30 @@ public sealed class Igi2BoneBuffer
     public BonePose ToPose(IReadOnlyList<int> parents)
     {
         ArgumentNullException.ThrowIfNull(parents);
+        if (_pose is { } cached && cached.BoneCount == BoneCount && parents.Count == BoneCount
+            && MemoryMarshal.AsBytes(Matrices.AsSpan()).SequenceEqual(MemoryMarshal.AsBytes(cached.Rotations))
+            && MemoryMarshal.AsBytes(Translations.AsSpan()).SequenceEqual(MemoryMarshal.AsBytes(cached.Positions)))
+        {
+            bool sameParents = true;
+            for (int i = 0; i < BoneCount; i++)
+            {
+                if (parents[i] != cached.Parents[i]) { sameParents = false; break; }
+            }
+            if (sameParents) { return cached; }
+        }
+
+        if (parents is int[] array)
+        {
+            return _pose = BonePose.FromBones(Matrices, Translations, array);
+        }
+
         int[] p = new int[BoneCount];
         for (int i = 0; i < p.Length; i++)
         {
             p[i] = parents[i];
         }
 
-        return BonePose.FromBones(Matrices, Translations, p);
+        return _pose = BonePose.FromBones(Matrices, Translations, p);
     }
 }
 
@@ -229,8 +248,7 @@ public static class Igi2BoneMath
             }
 
             callbacks?.Run(bones, bone, parent);
-            float[] r = Igi2Pose.FromQuaternion(bones.Orientations[bone]);
-            bones.Matrices[bone] = new Matrix3f(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]);
+            bones.Matrices[bone] = Igi2Pose.QuaternionRotation(bones.Orientations[bone]);
         }
     }
 }

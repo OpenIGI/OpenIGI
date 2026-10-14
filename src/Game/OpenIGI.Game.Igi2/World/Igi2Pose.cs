@@ -491,6 +491,15 @@ public sealed class Igi2Pose
     /// <returns>The rotation, row by row.</returns>
     public static float[] FromQuaternion(Quaternion32 q)
     {
+        Matrix3f matrix = QuaternionRotation(q);
+        return [matrix.M11, matrix.M12, matrix.M13, matrix.M21, matrix.M22, matrix.M23, matrix.M31, matrix.M32, matrix.M33];
+    }
+
+    /// <summary>Builds the same quaternion rotation directly into a matrix without allocating a nine-float array.</summary>
+    /// <param name="q">The quaternion.</param>
+    /// <returns>The rotation, with the same FPU operation order as <see cref="FromQuaternion"/>.</returns>
+    public static Matrix3f QuaternionRotation(Quaternion32 q)
+    {
         Fpu x = q.X, y = q.Y, z = q.Z, w = q.W;
         static Fpu Twice(Fpu a, Fpu b)
         {
@@ -500,12 +509,10 @@ public sealed class Igi2Pose
 
         Fpu xx = Twice(x, x), xy = Twice(y, x), xz = Twice(z, x), xw = Twice(w, x);
         Fpu yy = Twice(y, y), yz = Twice(z, y), yw = Twice(w, y), zz = Twice(z, z), zw = Twice(w, z);
-        return
-        [
+        return new Matrix3f(
             (((Fpu)1f - yy) - zz).F, (xy - zw).F, (yw + xz).F,
             (zw + xy).F, (((Fpu)1f - xx) - zz).F, (yz - xw).F,
-            (xz - yw).F, (yz + xw).F, (((Fpu)1f - xx) - yy).F,
-        ];
+            (xz - yw).F, (yz + xw).F, (((Fpu)1f - xx) - yy).F);
     }
 
     /// <summary>The orientation as a matrix, row for row.</summary>

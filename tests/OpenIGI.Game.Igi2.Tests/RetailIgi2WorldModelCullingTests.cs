@@ -40,8 +40,27 @@ public sealed class RetailIgi2WorldModelCullingTests
         renderer.DrawWorld([hidden], Camera3D.Default, projection);
         Assert.Equal(updates, device.AnimatedMeshUpdates[mesh]);
 
-        renderer.DrawWorld([body with { Tick = 3 }], Camera3D.Default, projection);
+        renderer.DrawWorld([body with { Tick = 3, Pose = Pose(model, new Vector3f(0, 0, 16)) }], Camera3D.Default, projection);
         Assert.Equal(updates + 1, device.AnimatedMeshUpdates[mesh]);
+    }
+
+    /// <summary>A fresh tick with an identical bone palette draws without skinning or uploading it again.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Unchanged_world_poses_do_not_upload_again_on_new_ticks()
+    {
+        (LoadedMission mission, ResourceRegistry resources, string name, MefModel model) = Mission();
+        using RecordingGraphicsDevice device = new();
+        using Igi2ViewModelRenderer renderer = new(device, resources);
+        Assert.True(renderer.Load(mission));
+        TitleWorldModel body = new(name, new Vector3d(0, 409600, 0), Matrix3f.Identity, Pose(model, default), new object(), 1);
+        Matrix4f projection = Matrix4f.CreateProjection(640f, 360f, 640f, 360f, 1280, 720, 0.1f, 1000f);
+        renderer.DrawWorld([body], Camera3D.Default, projection);
+        uint mesh = Assert.Single(device.AnimatedMeshUpdates).Key;
+        int updates = device.AnimatedMeshUpdates[mesh];
+        int draws = device.MeshDraws.Count;
+        renderer.DrawWorld([body with { Tick = 2, Pose = Pose(model, default) }], Camera3D.Default, projection);
+        Assert.Equal(updates, device.AnimatedMeshUpdates[mesh]);
+        Assert.Equal(draws * 2, device.MeshDraws.Count);
     }
 
     /// <summary>The culling sphere follows animation root translation even when the object origin is behind the eye.</summary>
@@ -63,6 +82,27 @@ public sealed class RetailIgi2WorldModelCullingTests
     {
         Igi2BoneHierarchy rig = model.BoneHierarchy!;
         return BonePose.Evaluate(rig.CreateSkeleton(), Enumerable.Repeat(Quaternion32.Identity, rig.BoneCount).ToArray(), root);
+    }
+
+    /// <summary>The previous first-person pose is already uploaded; one update advances both GPU streams to the new tick pair.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void First_person_reuses_the_uploaded_previous_pose()
+    {
+        (LoadedMission mission, ResourceRegistry resources, string name, MefModel model) = Mission();
+        using RecordingGraphicsDevice device = new();
+        using Igi2ViewModelRenderer renderer = new(device, resources);
+        Assert.True(renderer.Load(mission));
+        BonePose previous = Pose(model, default), current = Pose(model, new Vector3f(0, 0, 16));
+        TitleViewModelPart part = new(name, previous, default, Matrix3f.Identity);
+        TitleFirstPersonView view = new(default, Matrix3f.Identity, 1f, 1, [part]);
+        renderer.Draw(view, Camera3D.Default, Matrix4f.Identity);
+        uint mesh = Assert.Single(device.AnimatedMeshUpdates).Key;
+        Vertex3D[] before = device.Meshes[mesh].Vertices;
+        renderer.Draw(view with { Tick = 2, PoseInterpolation = 0.5f,
+            Parts = [part with { Pose = current, PreviousPose = previous }] }, Camera3D.Default, Matrix4f.Identity);
+        Assert.Equal(1, device.AnimatedMeshUpdates[mesh]);
+        Assert.Equal(before, device.PreviousPoseStreams[mesh]);
+        Assert.NotEqual(before[0].Position, device.Meshes[mesh].Vertices[0].Position);
     }
 
     private static (LoadedMission, ResourceRegistry, string, MefModel) Mission()

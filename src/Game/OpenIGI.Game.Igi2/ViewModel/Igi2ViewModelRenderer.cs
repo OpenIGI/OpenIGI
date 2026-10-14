@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -115,7 +116,8 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
             {
                 if (part.Tick != view.Tick)
                 {
-                    if (wanted.PreviousPose is { } previous && !Reskin(part, previous, wanted.Model, () => _parts[wanted.Model] = null))
+                    if (wanted.PreviousPose is { } previous && !SamePose(part.SkinnedPose, previous)
+                        && !Reskin(part, previous, wanted.Model, () => _parts[wanted.Model] = null))
                     {
                         continue;
                     }
@@ -181,7 +183,8 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
                     _bodies[instance] = part;
                 }
 
-                if (part is null || (part.Tick != wanted.Tick && !Reskin(part, pose, wanted.Model, () => _bodies[instance] = null)))
+                if (part is null || (part.Tick != wanted.Tick && !SamePose(part.SkinnedPose, pose)
+                    && !Reskin(part, pose, wanted.Model, () => _bodies[instance] = null)))
                 {
                     continue;
                 }
@@ -321,6 +324,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
                 part.Mesh = _device.CreateAnimatedMesh(part.Vertices, part.Geometry.Indices);
             }
 
+            part.SkinnedPose = pose;
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
@@ -348,6 +352,11 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         _models = null;
     }
 
+    private static bool SamePose(BonePose? previous, BonePose current) => ReferenceEquals(previous, current)
+        || (previous is not null
+            && MemoryMarshal.AsBytes(previous.Positions).SequenceEqual(MemoryMarshal.AsBytes(current.Positions))
+            && MemoryMarshal.AsBytes(previous.Rotations).SequenceEqual(MemoryMarshal.AsBytes(current.Rotations)));
+
     private sealed class Part(Igi2BoneSkin? skin, MeshGeometry geometry, Vertex3D[] vertices, MeshHandle mesh, (MeshSubset Subset, TextureHandle Texture)[] subsets)
     {
         public Igi2BoneSkin? Skin { get; } = skin;
@@ -361,5 +370,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         public (MeshSubset Subset, TextureHandle Texture)[] Subsets { get; } = subsets;
 
         public long Tick { get; set; } = long.MinValue;
+
+        public BonePose? SkinnedPose { get; set; }
     }
 }
