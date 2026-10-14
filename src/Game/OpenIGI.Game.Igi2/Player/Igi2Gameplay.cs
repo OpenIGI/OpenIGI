@@ -1118,7 +1118,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 }
 
 /// <summary>The ported player as the host steps it.</summary>
-public sealed class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels
+public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels
 {
     /// <summary>DirectInput's relative counts to the analog axis, <c>Mouse_Update</c> (<c>igi2ed 0x55ED60</c>): a 255th each.</summary>
     private const double CountsToAnalog = 0.00392156862745098;

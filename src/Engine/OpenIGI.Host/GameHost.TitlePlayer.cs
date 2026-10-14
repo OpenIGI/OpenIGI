@@ -155,6 +155,19 @@ internal sealed partial class GameHost
         return true;
     }
 
+    /// <summary>Applies pending mouse motion to this rendered frame while gameplay remains on its tick.</summary>
+    /// <param name="smooth">Whether Smooth Motion is enabled for this frame.</param>
+    private void PresentTitleLook(bool smooth)
+    {
+        PlayerProfile? profile = _configuration.Active;
+        bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
+            && !_missionFailedMenu;
+        _titlePresentation.SetLookPreview(available && _titlePlayer is ITitlePlayerLook { CanPreviewLook: true } look
+            ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
+                profile?.InvertMouse ?? false)
+            : null);
+    }
+
     /// <summary>Whether the title's cutscene break key is down this tick.</summary>
     /// <remarks>
     /// Escape, read as the key's state, as retail's <c>LevelFlow_GetBreakCutSceneKey</c> reads it. With cinematics off it is

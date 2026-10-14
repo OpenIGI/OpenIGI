@@ -3916,6 +3916,7 @@ internal sealed partial class GameHost : IDisposable
                     ? _loop.Clock.TickFraction(pacingWall)
                     : 1f;
                 _titlePresentationBlend = _titlePlayer is { IsCutscenePlaying: true } ? 1f : tickBlend;
+                PresentTitleLook(smoothPresentation && !console.WantsPointer);
 
                 // Whether the picture's own clock keeps step with the wall clock, behind
                 // the Pacing log category at Debug. Sampled here because this pair -- the tick and the blend --

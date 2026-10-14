@@ -10,6 +10,66 @@ namespace OpenIGI.Presentation.Tests;
 /// <summary>Title camera and weapon motion use the same tick pair without changing simulation.</summary>
 public sealed class TitlePlayerPresentationTests
 {
+    /// <summary>Mouse changes render immediately between simulation ticks, and consumption does not rewind the camera.</summary>
+    [Fact]
+    public void Live_mouse_aim_is_not_interpolated_back_to_the_previous_tick()
+    {
+        LookPlayer player = new();
+        TitlePlayerPresentation presentation = new();
+        presentation.Reset(player);
+        player.Heading = 0.4f;
+        presentation.CaptureTick(player);
+        Matrix3f preview = LookPlayer.Rotation(0.6f);
+        presentation.SetLookPreview(preview);
+        AssertDirection(preview.Column2, presentation.Camera(0.25f).Orientation.Row3);
+        AssertDirection(preview.Column2, presentation.FirstPerson(0.25f)!.Orientation.Column2);
+        Vector3f expectedOffset = preview.Transposed().Transform(LookPlayer.Offset);
+        Vector3d origin = presentation.FirstPerson(0.25f)!.Origin;
+        Assert.Equal(expectedOffset.X, (float)origin.X, 4);
+        Assert.Equal(expectedOffset.Y, (float)origin.Y, 4);
+        Assert.Equal(0.4f, player.Heading);
+        player.Heading = 0.6f;
+        presentation.CaptureTick(player);
+        presentation.SetLookPreview(player.LookOrientation);
+        AssertDirection(preview.Column2, presentation.Camera(0f).Orientation.Row3);
+        presentation.SetLookPreview(null);
+        AssertDirection(LookPlayer.Rotation(0.4f).Column2, presentation.Camera(0f).Orientation.Row3);
+    }
+
+    private static void AssertDirection(Vector3f expected, Vector3f actual)
+    {
+        Assert.Equal(expected.X, actual.X, 5);
+        Assert.Equal(expected.Y, actual.Y, 5);
+        Assert.Equal(expected.Z, actual.Z, 5);
+    }
+
+    private sealed class LookPlayer : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook
+    {
+        public static Vector3f Offset => new(10f, 20f, -5f);
+        public float Heading { get; set; }
+        public Vector3d Position => default;
+        public Vector3d EyePosition => default;
+        public Matrix3f LookOrientation => Rotation(Heading);
+        public Matrix3f ViewOrientation => Matrix3f.FromRows(LookOrientation.Column1, LookOrientation.Column3, LookOrientation.Column2);
+        public bool CanPreviewLook => true;
+        public Matrix3f PreviewLook(float mouseX, float mouseY, float sensitivity, bool invertMouse) => Rotation(Heading + mouseX);
+        public TitleFirstPersonView FirstPerson
+        {
+            get
+            {
+                Vector3f offset = LookOrientation.Transposed().Transform(Offset);
+                return new(new Vector3d(offset.X, offset.Y, offset.Z), LookOrientation, 0.5f, 0, []);
+            }
+        }
+
+        public void Tick(in TitlePlayerInput input) { }
+        public static Matrix3f Rotation(float angle)
+        {
+            float c = MathF.Cos(angle), s = MathF.Sin(angle);
+            return new(c, -s, 0f, s, c, 0f, 0f, 0f, 1f);
+        }
+    }
+
     /// <summary>The camera, lens, arms origin and rigid attachment agree at a halfway frame.</summary>
     [Fact]
     public void Camera_and_hands_share_the_tick_fraction()
