@@ -3915,6 +3915,7 @@ internal sealed partial class GameHost : IDisposable
                 float tickBlend = smoothPresentation
                     ? _loop.Clock.TickFraction(pacingWall)
                     : 1f;
+                _titlePresentationBlend = _titlePlayer is { IsCutscenePlaying: true } ? 1f : tickBlend;
 
                 // Whether the picture's own clock keeps step with the wall clock, behind
                 // the Pacing log category at Debug. Sampled here because this pair -- the tick and the blend --
@@ -3933,7 +3934,7 @@ internal sealed partial class GameHost : IDisposable
                 SightZoomFrame sight = _playerMode && _player is not null
                     ? _player.SmoothedSightZoom(tickBlend)
                     : _playerMode && _titlePlayer is { } titleLens
-                        ? new SightZoomFrame(titleLens.FieldOfViewScale, HumanView.DefaultViewModelTanX)
+                        ? new SightZoomFrame(_titlePresentation.FieldOfView(_titlePresentationBlend), HumanView.DefaultViewModelTanX)
                         : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
@@ -4166,7 +4167,7 @@ internal sealed partial class GameHost : IDisposable
                     : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                         && interactionCamera.IsActive
                         ? interactionCamera.Camera
-                        : _playerMode && _titlePlayer is { } titlePlayer ? TitleCamera(titlePlayer)
+                        : _playerMode && _titlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend)
                         : _playerMode && _player is not null ? _player.Camera : _camera.Camera;
 
                 // The walking eye glides between its tick pair, and so does the recoil kick inside its

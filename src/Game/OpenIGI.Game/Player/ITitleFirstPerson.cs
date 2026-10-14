@@ -26,11 +26,19 @@ public sealed record TitleFirstPersonView(
     Matrix3f Orientation,
     float ObjectFieldOfView,
     long Tick,
-    IReadOnlyList<TitleViewModelPart> Parts);
+    IReadOnlyList<TitleViewModelPart> Parts)
+{
+    /// <summary>Gets the current tick's share of a skinned pose; one disables presentation interpolation.</summary>
+    public float PoseInterpolation { get; init; } = 1f;
+}
 
 /// <summary>One model the first-person view draws.</summary>
 /// <param name="Model">The model's name, as the title's packs resolve it.</param>
 /// <param name="Pose">The skeleton a skinned model is posed by, in the view model's frame and units; null for a rigid one.</param>
 /// <param name="Position">Where a rigid model stands in the view model's frame, in world units.</param>
 /// <param name="Orientation">A rigid model's orientation in the view model's frame.</param>
-public sealed record TitleViewModelPart(string Model, BonePose? Pose, Vector3f Position, Matrix3f Orientation);
+public sealed record TitleViewModelPart(string Model, BonePose? Pose, Vector3f Position, Matrix3f Orientation)
+{
+    /// <summary>Gets the previous tick's skin pose, when this part is presented between ticks.</summary>
+    public BonePose? PreviousPose { get; init; }
+}

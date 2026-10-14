@@ -113,17 +113,27 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
             Matrix3f orientation;
             if (wanted.Pose is not null)
             {
-                if (part.Tick != view.Tick && !Reskin(part, wanted.Pose, wanted.Model, () => _parts[wanted.Model] = null))
+                if (part.Tick != view.Tick)
                 {
-                    continue;
+                    if (wanted.PreviousPose is { } previous && !Reskin(part, previous, wanted.Model, () => _parts[wanted.Model] = null))
+                    {
+                        continue;
+                    }
+
+                    if (!Reskin(part, wanted.Pose, wanted.Model, () => _parts[wanted.Model] = null))
+                    {
+                        continue;
+                    }
                 }
 
                 part.Tick = view.Tick;
+                _device.SetPoseInterpolation(1f - view.PoseInterpolation, 1f - view.PoseInterpolation);
                 orientation = view.Orientation;
                 modelView = camera.CreateModelView(WorldScene.ToMetres(origin), orientation);
             }
             else
             {
+                _device.ClearPoseInterpolation();
                 Vector3f local = view.Orientation.Transposed().Transform(wanted.Position);
                 Vector3d at = new(origin.X + local.X, origin.Y + local.Y, origin.Z + local.Z);
                 orientation = view.Orientation * wanted.Orientation;
@@ -134,6 +144,7 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         }
 
         _device.SetVertexSun(Vector3f.Zero);
+        _device.ClearPoseInterpolation();
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 

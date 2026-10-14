@@ -32,6 +32,8 @@ internal sealed partial class GameHost
 
     private ITitleGameplay? _gameplay;
     private ITitlePlayer? _titlePlayer;
+    private readonly OpenIGI.Presentation.Cameras.TitlePlayerPresentation _titlePresentation = new();
+    private float _titlePresentationBlend = 1f;
     private ITitleViewModelPresenter? _titleArms;
     private float _titleMouseX;
     private float _titleMouseY;
@@ -66,6 +68,7 @@ internal sealed partial class GameHost
         }
 
         _titlePlayer = player;
+        _titlePresentation.Reset(player);
         _player = null;
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
@@ -145,6 +148,7 @@ internal sealed partial class GameHost
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
             TitleBreakKey()));
+        _titlePresentation.CaptureTick(player);
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
@@ -209,7 +213,7 @@ internal sealed partial class GameHost
     {
         if (_titlePlayer is not ITitleFirstPerson hands || _titleArms is not { } arms
             || !_playerMode || _computerOpen || _entry.IsCameraActive || _cutscenes?.IsPlaying == true
-            || hands.FirstPerson is not { } held)
+            || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {
             return;
         }
