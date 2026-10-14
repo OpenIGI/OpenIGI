@@ -250,8 +250,9 @@ public readonly record struct Igi2TerrainTile(
         double right = SampleX(x + size + 1);
         double bottom = SampleY(y + size + 1);
 
-        foreach (Igi2TerrainExtent submap in Submaps)
+        for (int i = 0; i < Submaps.Count; i++)
         {
+            Igi2TerrainExtent submap = Submaps[i];
             if (submap.Contains(left, top, right, bottom))
             {
                 return true;

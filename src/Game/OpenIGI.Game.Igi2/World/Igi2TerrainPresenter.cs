@@ -356,7 +356,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _ready.Clear();
         foreach (Tile tile in _tiles)
         {
-            Igi2TerrainTessellation tessellation = tile.Lod.Tessellate(view, _settings);
+            Igi2TerrainTessellation tessellation = tile.Lod.TessellateFrame(view, _settings);
             drawn += tessellation.SquaresDrawn;
             culled += tessellation.SquaresCulled;
             _ready.Add((tile, tessellation, frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity)));

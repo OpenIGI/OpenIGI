@@ -485,6 +485,7 @@ public sealed class Igi2TerrainLod
     private readonly Igi2TerrainDiscard[] _discards;
     private readonly int[] _slotOf = new int[256];
     private readonly List<int> _slotMaterial = [];
+    private Builder? _frameBuilder;
 
     /// <summary>Builds the quadtree over one tile.</summary>
     /// <param name="tile">The tile.</param>
@@ -550,9 +551,16 @@ public sealed class Igi2TerrainLod
     /// <returns>The geometry, and what the traversal cost.</returns>
     public Igi2TerrainTessellation Tessellate(in Igi2TerrainView view, in Igi2TerrainLodSettings settings)
     {
-        Builder builder = new(this, view, settings);
-        return builder.Run();
+        Builder builder = new(this, reuseBuffers: false);
+        return builder.Run(view, settings);
     }
+
+    /// <summary>Tessellates into retained frame buffers; the result is valid until the next call on this tile.</summary>
+    /// <param name="view">The current eye and clipping planes.</param>
+    /// <param name="settings">The current detail controls.</param>
+    /// <returns>The frame's borrowed geometry.</returns>
+    internal Igi2TerrainTessellation TessellateFrame(in Igi2TerrainView view, in Igi2TerrainLodSettings settings) =>
+        (_frameBuilder ??= new Builder(this, reuseBuffers: true)).Run(view, settings);
 
     /// <inheritdoc/>
     public override string ToString() =>
@@ -643,8 +651,14 @@ public sealed class Igi2TerrainLod
     private sealed class Builder
     {
         private readonly Igi2TerrainLod _owner;
-        private readonly Igi2TerrainView _view;
-        private readonly Igi2TerrainLodSettings _settings;
+        private Igi2TerrainView _view;
+        private Igi2TerrainLodSettings _settings;
+        private readonly bool _reuseBuffers;
+        private readonly Stack<Square> _stack = new();
+        private readonly List<Igi2TerrainPass> _passes = [];
+        private readonly float[][] _passWeights;
+        private readonly int[][] _passIndices;
+        private int[] _groundBuffer = [];
 
         private readonly List<Vector3d> _positions = [];
         private readonly List<Vector3f> _normals = [];
@@ -667,24 +681,49 @@ public sealed class Igi2TerrainLod
         private long _covered;
         private long _superseded;
 
-        public Builder(Igi2TerrainLod owner, in Igi2TerrainView view, in Igi2TerrainLodSettings settings)
+        public Builder(Igi2TerrainLod owner, bool reuseBuffers)
         {
             _owner = owner;
-            _view = view;
-            _settings = settings;
-        }
-
-        public Igi2TerrainTessellation Run()
-        {
-            int slots = _owner._slotMaterial.Count;
+            _reuseBuffers = reuseBuffers;
+            int slots = owner._slotMaterial.Count;
+            _passWeights = new float[slots][];
+            _passIndices = new int[slots][];
             for (int i = 0; i < slots; i++)
             {
                 _indices.Add([]);
                 _baseIndices.Add([]);
+                _passWeights[i] = [];
+                _passIndices[i] = [];
+            }
+        }
+
+        public Igi2TerrainTessellation Run(in Igi2TerrainView view, in Igi2TerrainLodSettings settings)
+        {
+            // pc_terrainrender.c TerrainRender_Draw refills retained render buffers each frame.
+            // Reuse storage, but forget every decision: clipping, morphs and detail still run for this view.
+            _view = view;
+            _settings = settings;
+            _positions.Clear();
+            _normals.Clear();
+            _trueZ.Clear();
+            _lights.Clear();
+            _discarded.Clear();
+            _weights.Clear();
+            _vertices.Clear();
+            _edges.Clear();
+            _ground.Clear();
+            _passes.Clear();
+            _stack.Clear();
+            _culled = _visited = _drawn = _uncovered = 0;
+            _covered = _superseded = 0;
+            for (int i = 0; i < _indices.Count; i++)
+            {
+                _indices[i].Clear();
+                _baseIndices[i].Clear();
             }
 
             int n = _owner.RootSize;
-            Stack<Square> stack = new();
+            Stack<Square> stack = _stack;
             Push(stack, new Square(0, 0, n, Vertex(0, 0), Vertex(n, 0), Vertex(n, n), Vertex(0, n)));
 
             Span<int> midpoint = stackalloc int[5];
@@ -1035,7 +1074,7 @@ public sealed class Igi2TerrainLod
         {
             int slots = _owner._slotMaterial.Count;
             int count = _positions.Count;
-            List<Igi2TerrainPass> passes = [];
+            List<Igi2TerrainPass> passes = _passes;
 
             for (int slot = 0; slot < slots; slot++)
             {
@@ -1047,7 +1086,16 @@ public sealed class Igi2TerrainLod
                 int id = _owner._slotMaterial[slot];
                 TerrainMaterialTask material = _owner._materials[id];
 
-                float[] weights = new float[count];
+                float[] weights;
+                if (_reuseBuffers)
+                {
+                    EnsureCapacity(ref _passWeights[slot], count);
+                    weights = _passWeights[slot];
+                }
+                else
+                {
+                    weights = new float[count];
+                }
                 for (int i = 0; i < count; i++)
                 {
                     weights[i] = _weights[(i * slots) + slot];
@@ -1061,9 +1109,9 @@ public sealed class Igi2TerrainLod
                     id,
                     material.TextureScale,
                     material.DetailTextureScale,
-                    indices.ToArray(),
+                    _reuseBuffers ? CopyToBuffer(indices, ref _passIndices[slot]) : indices.ToArray(),
                     baseTriangles,
-                    weights));
+                    weights.AsMemory(0, count)));
             }
 
             return Igi2TerrainMesh.Create(
@@ -1071,10 +1119,25 @@ public sealed class Igi2TerrainLod
                 _normals,
                 _lights,
                 passes,
-                _ground.ToArray(),
+                _reuseBuffers ? CopyToBuffer(_ground, ref _groundBuffer) : _ground.ToArray(),
                 _owner._tile.Width,
                 _owner._tile.Height,
                 _uncovered);
+        }
+
+        private static ReadOnlyMemory<int> CopyToBuffer(List<int> values, ref int[] buffer)
+        {
+            EnsureCapacity(ref buffer, values.Count);
+            values.CopyTo(buffer);
+            return buffer.AsMemory(0, values.Count);
+        }
+
+        private static void EnsureCapacity<T>(ref T[] buffer, int count)
+        {
+            if (buffer.Length < count)
+            {
+                Array.Resize(ref buffer, Math.Max(count, Math.Max(16, buffer.Length * 2)));
+            }
         }
     }
 }

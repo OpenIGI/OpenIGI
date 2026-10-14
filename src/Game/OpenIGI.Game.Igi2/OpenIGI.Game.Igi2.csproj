@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Game.Igi2.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- One game's content: its data layout, its format profile and the content modules that register
          its task types, script natives and tables. Never references the other title project; only an app
          composition root may name both, and it does so through IGameTitleRuntime. -->
