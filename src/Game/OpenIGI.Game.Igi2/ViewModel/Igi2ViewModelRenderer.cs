@@ -162,8 +162,15 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+        FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
         foreach (TitleWorldModel wanted in models)
         {
+            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation);
+            if (_models(wanted.Model) is not { } model || !WorldModelVisible(wanted, model, modelView, frustum))
+            {
+                continue;
+            }
+
             Part? part;
             if (wanted is { Pose: { } pose, Instance: { } instance })
             {
@@ -188,12 +195,36 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
 
             if (part is not null)
             {
-                DrawPart(part, camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation), wanted.Orientation);
+                DrawPart(part, modelView, wanted.Orientation);
             }
         }
 
         _device.SetVertexSun(Vector3f.Zero);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+    }
+
+    private static bool WorldModelVisible(TitleWorldModel wanted, MefModel model, in Matrix4f modelView, in FrustumCulling.Frustum frustum)
+    {
+        // pc_direct3drender.c Direct3DRender_DrawBoneMesh excludes before processing vertices;
+        // bonedyncubeobj.c BoneDynCubeObj_Exclude moves the authored render sphere by root translation.
+        // Keep models with missing bounds visible rather than inventing a bound that could clip them.
+        if (!(model.RenderSphereRadius > 0f) || !float.IsFinite(model.RenderSphereRadius))
+        {
+            return true;
+        }
+
+        Vector3f centre = model.RenderSphereCentre;
+        if (wanted.Pose is { BoneCount: > 0 } pose)
+        {
+            Vector3f root = pose.Positions[0];
+            centre = new Vector3f(
+                ((Fpu)centre.X + root.X).F,
+                ((Fpu)centre.Y + root.Y).F,
+                ((Fpu)centre.Z + root.Z).F);
+        }
+
+        const float scale = (float)(1.0 / WorldScene.UnitsPerMetre);
+        return frustum.SphereVisible(modelView, new BoundingSphere(centre * scale, model.RenderSphereRadius * scale));
     }
 
     /// <summary>Draws one part, lit by the sun turned into its frame.</summary>
