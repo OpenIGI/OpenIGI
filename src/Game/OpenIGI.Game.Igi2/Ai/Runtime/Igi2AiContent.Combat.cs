@@ -473,7 +473,7 @@ public static partial class Igi2AiContent
         item.Delete = PatrolDelete;
         if (ai.Patrols.Top is { Path: { } path, Current: { } current } top)
         {
-            int index = path.Commands.ToList().IndexOf(current);
+            int index = path.IndexOfCommand(current);
             if (index >= 0)
             {
                 top.Init(ai.World.PatrolPath(context.PatrolPathId), index);

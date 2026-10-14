@@ -277,6 +277,21 @@ public sealed partial class Igi2PatrolPathTask : Igi2Task
 
     /// <summary>Gets the commands, in the order they run.</summary>
     public IReadOnlyList<Igi2PatrolPathCommandTask> Commands => [.. Children.OfType<Igi2PatrolPathCommandTask>()];
+
+    /// <summary>Finds a command's position without allocating a command snapshot and a second list.</summary>
+    /// <param name="command">The command to find, or null for none.</param>
+    /// <returns>Its index among command children, or minus one when absent.</returns>
+    public int IndexOfCommand(Igi2PatrolPathCommandTask? command)
+    {
+        int index = 0;
+        foreach (GameTask child in Children)
+        {
+            if (child is not Igi2PatrolPathCommandTask) { continue; }
+            if (ReferenceEquals(child, command)) { return index; }
+            index++;
+        }
+        return -1;
+    }
 }
 
 /// <summary>What a patrol command does, the <c>PATROLPATHCOMMAND_*</c> constants (<c>PatrolPath_RegisterCommands</c>, <c>igi2 0x51B9A0</c>).</summary>

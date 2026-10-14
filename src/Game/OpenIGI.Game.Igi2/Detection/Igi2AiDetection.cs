@@ -442,7 +442,7 @@ public sealed class Igi2AiDetection
             if (!(Distance(target.DetectablePosition, view.Position) + target.DetectableRadius <= view.ConeLength)
                 && (!view.IsSecondaryViewUsed
                     || !(Distance(target.DetectablePosition, view.Position) + target.DetectableRadius <= view.SecondaryConeLength))
-                && !Enemies.Exists(item => ReferenceEquals(item.Target, target)))
+                && FindItem(Enemies, target) is null)
             {
                 continue;
             }
@@ -472,7 +472,7 @@ public sealed class Igi2AiDetection
     /// <param name="target">The target.</param>
     /// <returns>Its item, or <see langword="null"/> when it is not listed.</returns>
     public Igi2DetectionItem? Find(IIgi2Detectable target) =>
-        Enemies.Find(item => ReferenceEquals(item.Target, target)) ?? Friends.Find(item => ReferenceEquals(item.Target, target));
+        FindItem(Enemies, target) ?? FindItem(Friends, target);
 
     /// <summary>Lists a target among the enemies, or finds it there, <c>AIDetection_NewListItem</c>.</summary>
     /// <param name="target">The target.</param>
@@ -512,7 +512,7 @@ public sealed class Igi2AiDetection
     // AIDetection_NewListItem (igi2 0x474660): the listed item of a target, or a new one at the list's end.
     private Igi2DetectionItem Item(List<Igi2DetectionItem> list, IIgi2Detectable target)
     {
-        if (list.Find(item => ReferenceEquals(item.Target, target)) is { } listed)
+        if (FindItem(list, target) is { } listed)
         {
             return listed;
         }
@@ -540,8 +540,26 @@ public sealed class Igi2AiDetection
             }
         }
 
-        Enemies.RemoveAll(i => ReferenceEquals(i.Target, target));
-        Friends.RemoveAll(i => ReferenceEquals(i.Target, target));
+        RemoveTarget(Enemies, target);
+        RemoveTarget(Friends, target);
+    }
+
+    // aidetection.c AIDetection_GetListItemFromQTask: direct searches avoid per-target capturing predicates.
+    private static Igi2DetectionItem? FindItem(List<Igi2DetectionItem> list, IIgi2Detectable target)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (ReferenceEquals(list[i].Target, target)) { return list[i]; }
+        }
+        return null;
+    }
+
+    private static void RemoveTarget(List<Igi2DetectionItem> list, IIgi2Detectable target)
+    {
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(list[i].Target, target)) { list.RemoveAt(i); }
+        }
     }
 
     // AIDetection_RemoveDeadItems (igi2 0x474AB0): what no longer exists is let go.

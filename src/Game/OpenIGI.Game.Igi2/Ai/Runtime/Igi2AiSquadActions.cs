@@ -536,7 +536,16 @@ public sealed class Igi2AiSquadMove : Igi2AiSquadAction
         ArgumentNullException.ThrowIfNull(words);
         ArgumentNullException.ThrowIfNull(squad);
         words.Add(_node);
-        words.Add(_ordered is null ? -1 : squad.Members.ToList().IndexOf(_ordered));
+        int orderedIndex = -1, index = 0;
+        if (_ordered is not null)
+        {
+            foreach (Igi2HumanAi member in squad.Members)
+            {
+                if (ReferenceEquals(member, _ordered)) { orderedIndex = index; break; }
+                index++;
+            }
+        }
+        words.Add(orderedIndex);
     }
 
     /// <inheritdoc/>

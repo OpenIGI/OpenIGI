@@ -25,6 +25,8 @@ public sealed class Igi2AnimBlend : IIgi2PoseSource
 
     private Igi2BoneBuffer? _old;
     private Igi2BoneBuffer? _new;
+    private bool[] _onlyMask = [];
+    private bool[] _ownMask = [];
 
     /// <summary>Gets the ticks the blend has run, <c>nTime</c>.</summary>
     public int Elapsed { get; private set; }
@@ -125,7 +127,8 @@ public sealed class Igi2AnimBlend : IIgi2PoseSource
             Vector3f fromRoot = root, toRoot = root;
             if (!ReferenceEquals(from.Mask, to.Mask) && !from.IsNoClip)
             {
-                bool[] only = new bool[count];
+                if (_onlyMask.Length != count) { _onlyMask = new bool[count]; }
+                bool[] only = _onlyMask;
                 bool any = false;
                 for (int bone = 0; bone < count; bone++)
                 {
@@ -141,7 +144,8 @@ public sealed class Igi2AnimBlend : IIgi2PoseSource
                 }
             }
 
-            bool[] own = new bool[count];
+            if (_ownMask.Length != count) { _ownMask = new bool[count]; }
+            bool[] own = _ownMask;
             for (int bone = 0; bone < count; bone++)
             {
                 own[bone] = At(to.Mask, bone) && mask[bone];

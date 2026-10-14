@@ -108,7 +108,7 @@ public sealed partial class Igi2HumanAi
         Igi2AiContent.PatrolContext context = new()
         {
             PatrolPathId = path.Id,
-            StartIndex = Math.Max(0, path.Commands.ToList().IndexOf(top.Current!)),
+            StartIndex = Math.Max(0, path.IndexOfCommand(top.Current)),
         };
         Igi2AiActionItem item = Actions.Take();
         if (Actions.TakeContext())
