@@ -39,6 +39,11 @@ internal sealed partial class GameHost
     private float _titleMouseY;
     private PlayerAction _titlePressed;
     private PlayerAction _titleScriptHeld;
+    private double _titleTickMilliseconds;
+    private double _titleTickMaximumMilliseconds;
+    private int _titleMeasuredTicks;
+    private bool _titleLastLiveLook;
+    private bool _titleLastCameraMatches;
 
     /// <summary>Stands the title's own player where the level places it, when the title brings one.</summary>
     /// <param name="loaded">The mission.</param>
@@ -68,6 +73,11 @@ internal sealed partial class GameHost
         }
 
         _titlePlayer = player;
+        _titleTickMilliseconds = 0;
+        _titleTickMaximumMilliseconds = 0;
+        _titleMeasuredTicks = 0;
+        _titleLastLiveLook = false;
+        _titleLastCameraMatches = false;
         _titlePresentation.Reset(player);
         _player = null;
         _world?.Motions = player.Motions;
@@ -140,6 +150,7 @@ internal sealed partial class GameHost
         held |= _titleScriptHeld;
 
         PlayerProfile? profile = _configuration.Active;
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
@@ -149,6 +160,10 @@ internal sealed partial class GameHost
             profile?.InvertMouse ?? false,
             TitleBreakKey()));
         _titlePresentation.CaptureTick(player);
+        double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        _titleTickMilliseconds += milliseconds;
+        _titleTickMaximumMilliseconds = Math.Max(_titleTickMaximumMilliseconds, milliseconds);
+        _titleMeasuredTicks++;
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
@@ -187,6 +202,29 @@ internal sealed partial class GameHost
     /// </remarks>
     private void RegisterTitlePlayerCommands(ConsoleSystem console)
     {
+        console.Commands.Add(
+            "title_presentation",
+            "Reports the active build, title camera smoothing gates and measured title tick cost.",
+            context =>
+            {
+                context.Print($"Game directory: {AppContext.BaseDirectory}; process: {Environment.ProcessPath}");
+                if (_titlePlayer is not { } player)
+                {
+                    context.Print("No title player is active; the host player or fly camera supplies the view.");
+                    return;
+                }
+
+                string gates = $"r_smooth={RenderCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
+                    + $"walking={_playerMode}, computer={_computerOpen}, entry={_entry.IsCameraActive}, "
+                    + $"hostCutscene={_cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
+                    + $"canPreview={player is ITitlePlayerLook { CanPreviewLook: true }}, "
+                    + $"lastGameplayLiveLook={_titleLastLiveLook}, lastGameplayCameraMatches={_titleLastCameraMatches}";
+                context.Print(gates);
+                context.Print(FormattableString.Invariant(
+                    $"blend={_titlePresentationBlend:F4}, pendingMouse=({_titleMouseX:F3},{_titleMouseY:F3}), ticks={_loop.Clock.TickCount}, renders={_loop.Clock.FrameCount}, titleTickMs mean={_titleTickMilliseconds / Math.Max(1, _titleMeasuredTicks):F3} max={_titleTickMaximumMilliseconds:F3} samples={_titleMeasuredTicks}"));
+                Diagnostics.PresentationPacingProbe.Report("title_presentation");
+            });
+
         console.Commands.Add(
             "title_hold",
             "Holds the title player's controls as if their keys were down: action names (Fire, Reload, MoveUp, ...) or none. Not in the original.",

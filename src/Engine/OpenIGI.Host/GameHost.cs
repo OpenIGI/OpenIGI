@@ -4337,6 +4337,12 @@ internal sealed partial class GameHost : IDisposable
                 // The eye has settled by here -- every camera that could have claimed the frame has
                 // had its say -- so this is where the inspector's projection can read it.
                 _inspectorEye = eye;
+                if (_titlePlayer is not null && _playerMode && !console.WantsPointer && !menuMode)
+                {
+                    _titleLastLiveLook = _titlePresentation.HasLookPreview;
+                    Camera3D titleEye = _titlePresentation.Camera(_titlePresentationBlend);
+                    _titleLastCameraMatches = eye.Position == titleEye.Position && eye.Orientation == titleEye.Orientation;
+                }
 
                 // Everything soldier-shaped resolves its own frame state once, here, so the shadow
                 // cascades and the geometry pass draw identical bodies in identical places.

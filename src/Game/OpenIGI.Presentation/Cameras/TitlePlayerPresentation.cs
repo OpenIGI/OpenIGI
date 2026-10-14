@@ -12,6 +12,9 @@ public sealed class TitlePlayerPresentation
     private Frame? _current;
     private Matrix3f? _previewLook;
 
+    /// <summary>Gets whether the captured tick pair and this frame permit live mouse aim.</summary>
+    public bool HasLookPreview => _previewLook is not null && _previous?.Look is not null && _current?.Look is not null;
+
     /// <summary>Sets the render-time mouse aim; null selects the ordinary tick camera.</summary>
     /// <param name="orientation">The preview's local-to-world right/forward/up orientation.</param>
     public void SetLookPreview(Matrix3f? orientation) => _previewLook = orientation;
