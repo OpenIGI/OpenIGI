@@ -340,7 +340,7 @@ internal sealed partial class GameHost
             player.ViewOrientation);
     }
 
-    /// <summary>F1 between the title's player and the free camera: the free camera leaves from where the eyes are.</summary>
+    /// <summary>F1 swaps cameras; returning places the title's player beneath the free camera as IGI1 does.</summary>
     private void ToggleTitlePlayer()
     {
         if (_titlePlayer is not { } player || _camera is null)
@@ -357,6 +357,25 @@ internal sealed partial class GameHost
             float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
             _camera.MoveTo(eye.Position, yaw, pitch);
         }
+        else if (player is ITitlePlayerPlacement placement)
+        {
+            if (!placement.TryPlace(_camera.Position * TitleUnitsPerMetre, _camera.Yaw))
+            {
+                _playerMode = false;
+                _logger.Warning("Player", "Cannot stand here; staying with the free camera.");
+            }
+            else
+            {
+                _titlePresentation.Reset(player);
+                _titlePresentationBlend = 1f;
+            }
+        }
+
+        _titleMouseX = 0f;
+        _titleMouseY = 0f;
+        _titlePressed = default;
+        _titleExtraPressed = 0;
+        if (player is ITitlePlayerLook look) { look.ResetLook(); }
 
         _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
     }
