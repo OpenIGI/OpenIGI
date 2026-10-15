@@ -74,11 +74,12 @@ public static class Igi2LevelAi
         // humanai.c HumanAI_UpdateInternalDataHandler: scripts run in the loaded level's namespace.
         // The desktop may have promoted a preview loop since this shared module was opened.
         world.Natives = setup.Natives;
-        if (setup.World is null)
-        {
-            new Igi2HumanAiNatives(world).Register(setup.Natives);
-            new Igi2AiSquadNatives(world).Register(setup.Natives);
-        }
+        // humanai.c HumanAI_Open / HumanAI_RegisterConstants; aisquad.c AISquad_Open:
+        // the playing title owns these bindings. The shared desktop soldier renderer can have
+        // installed IGI1 handlers and event values since module registration, even in this namespace.
+        Igi2AiConstants.Register(setup.Natives);
+        new Igi2HumanAiNatives(world).Register(setup.Natives);
+        new Igi2AiSquadNatives(world).Register(setup.Natives);
 
         if (world.Default is null)
         {

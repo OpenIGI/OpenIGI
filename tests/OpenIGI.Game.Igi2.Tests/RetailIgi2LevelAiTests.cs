@@ -59,6 +59,8 @@ public sealed class RetailIgi2LevelAiTests
         WorldBuildRequest world = new(mission, root, resources, null,
             Core.Diagnostics.NullLogger.Instance, Services: m.Services);
         WorldBuildResult built = Igi2WorldBuilder.Instance.Build(world);
+        // The desktop's shared soldier renderer registers the first game's AI before standing the title player.
+        _ = new Game.Ai.AiScriptHost(promoted.Natives);
         Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(Igi2Gameplay.Instance.CreatePlayer(
             new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
         Assert.NotNull(player.Level);
@@ -67,6 +69,16 @@ public sealed class RetailIgi2LevelAiTests
         Igi2HumanAi[] minds = [.. player.Soldiers!.Bodies.Select(static body => body.Mind).OfType<Igi2HumanAi>()];
         Assert.NotEmpty(minds);
         Assert.All(minds, static mind => Assert.NotNull(mind.Script));
+        Vector3d[] initialPositions = [.. minds.Select(static mind => mind.Soldier.Position)];
+        for (int tick = 0; tick < 1200; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+        }
+        Assert.True(minds.Where((mind, index) => Math.Abs(mind.Soldier.Position.X - initialPositions[index].X)
+            + Math.Abs(mind.Soldier.Position.Y - initialPositions[index].Y) > 4096.0).Any(),
+            string.Join(Environment.NewLine, player.DescribeActors()) + Environment.NewLine
+            + string.Join(Environment.NewLine, minds.Select(static mind => $"{mind.Task.Id}: actions={mind.Actions.Top?.Run?.Method.Name}, patrols={mind.Patrols.Count}, enemies={mind.Detection.Enemies.Count}, team={mind.Soldier.Team}"))
+            + $" flowTick={player.Level.LevelFlow?.Tick}, playerTeam={player.Human.Team}");
         Igi2HumanAi facing = Assert.Single(minds, static mind => mind.Task.Parent?.Id == 400);
         Matrix3f orientation = facing.Soldier.Orientation;
         Vector3d soldierAt = facing.Soldier.Position;
