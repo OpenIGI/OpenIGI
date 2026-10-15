@@ -69,6 +69,7 @@ public sealed class RetailIgi2LevelAiTests
         Igi2HumanAi[] minds = [.. player.Soldiers!.Bodies.Select(static body => body.Mind).OfType<Igi2HumanAi>()];
         Assert.NotEmpty(minds);
         Assert.All(minds, static mind => Assert.NotNull(mind.Script));
+        player.Human.Damage.MaxDamage = 1000000f;
         Vector3d[] initialPositions = [.. minds.Select(static mind => mind.Soldier.Position)];
         for (int tick = 0; tick < 1200; tick++)
         {
@@ -89,13 +90,40 @@ public sealed class RetailIgi2LevelAiTests
         int ammunition = facing.AmmoInWeapon();
         Assert.True(ammunition > 0);
         bool detected = false;
+        int shots = 0, lastAmmo = ammunition;
+        bool reloaded = false;
+        float damageBefore = player.Human.Damage.Damage;
         for (int tick = 0; tick < 600; tick++)
         {
             player.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
             detected |= facing.Squad!.Targets.Count > 0;
+            int ammo = facing.AmmoInWeapon();
+            shots += Math.Max(lastAmmo - ammo, 0);
+            reloaded |= ammo > lastAmmo;
+            lastAmmo = ammo;
         }
         Assert.True(detected);
-        Assert.True(facing.AmmoInWeapon() < ammunition);
+        Assert.True(reloaded);
+        Assert.True(shots > ammunition, $"Guard fired {shots} rounds with an initial magazine of {ammunition}.");
+        Assert.True(player.Human.Damage.Damage > damageBefore, "Guard bullets must damage the player.");
+        using (RecordingGraphicsDevice device = new())
+        {
+            OpenIGI.Rendering.SpriteBatch batch = new(device);
+            Presentation.ITitleHudPresenter hud = Assert.IsAssignableFrom<Presentation.ITitleHudPresenter>(
+                Igi2PresentationProvider.Instance.CreateTitleHud(new Presentation.HudPresentationRequest(device, Core.Diagnostics.NullLogger.Instance)));
+            player.GameConfig = new Config.Igi2GameConfig();
+            batch.Begin();
+            hud.Draw(batch, player, 1280, 720);
+            batch.End();
+            Assert.NotEmpty(device.Draws);
+            Assert.All(device.Draws.SelectMany(static draw => draw.Vertices), static vertex => Assert.True(vertex.Color.A > 0));
+            device.Draws.Clear();
+            player.GameConfig.Active!.CrossHairAlpha = 0f;
+            batch.Begin();
+            hud.Draw(batch, player, 1280, 720);
+            batch.End();
+            Assert.Empty(device.Draws);
+        }
         Assert.All(minds, static mind => Assert.True(mind.HasStarted,
             $"AI {mind.Task.Id}: graph={mind.Task.GraphId}/{mind.Graph is not null}, active={mind.Soldier.IsActive}, time={mind.Soldier.MissionTime}"));
         Assert.All(minds, static mind => Assert.True(mind.Soldier.Animation.MainTime > 0,
@@ -159,8 +187,7 @@ public sealed class RetailIgi2LevelAiTests
     /// <summary>
     /// With the intro skipped (<c>EditVariable_2112</c>, which ends <c>ConditionalContainer_3532</c> and lets the soldiers' containers
     /// run) and the player fifteen metres in front of soldier 400, his squad lists the player as a target and he fires his
-    /// Makarov's whole clip at it. He carries no more than that clip (<c>Weapon_EnableWeaponType</c> gives a gun pickup's worth), so
-    /// he then asks for a reload that never comes, as retail's does.
+    /// Makarov, reloads from the soldier's unlimited reserve and resumes firing.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void A_soldier_fights_the_player_in_front_of_him()
@@ -181,8 +208,7 @@ public sealed class RetailIgi2LevelAiTests
         }
 
         Assert.True(seen);
-        Assert.Equal(8, shots);
-        Assert.Equal(1f, mind.Soldier.Channels[Igi2SoldierChannel.Reload]);
+        Assert.True(shots > 8, $"The guard must fire again after his first magazine; shots={shots}.");
     }
 
     /// <summary>

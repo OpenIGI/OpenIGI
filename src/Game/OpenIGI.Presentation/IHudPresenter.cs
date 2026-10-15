@@ -16,6 +16,17 @@ using OpenIGI.UI;
 
 namespace OpenIGI.Presentation;
 
+/// <summary>Draws the HUD for a player whose gameplay is supplied by its title.</summary>
+public interface ITitleHudPresenter
+{
+    /// <summary>Draws into an open sprite batch, with state read from the title's own player.</summary>
+    /// <param name="batch">The open batch.</param>
+    /// <param name="player">The playing title's player.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void Draw(SpriteBatch batch, OpenIGI.Game.Player.ITitlePlayer player, int screenWidth, int screenHeight);
+}
+
 /// <summary>Draws a title's heads-up display, in the shape the original drew it.</summary>
 /// <remarks>
 /// <para>

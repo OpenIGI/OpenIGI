@@ -310,6 +310,11 @@ public interface ITitlePresentationProvider
     /// <returns>The presenter.</returns>
     IHudPresenter? CreateHud(in HudPresentationRequest request) => null;
 
+    /// <summary>Builds the HUD for this title's own gameplay player.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter, or null when the title has none.</returns>
+    ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => null;
+
     /// <summary>Builds the modern reskin of this title's heads-up display.</summary>
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>

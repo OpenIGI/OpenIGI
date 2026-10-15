@@ -6282,6 +6282,15 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // captured scene so camera motion blur, depth of field, bloom and tone mapping can only
                 // affect the world and first-person rig. The damage and flash washes intentionally remain
                 // later in the draw order and still cover the HUD exactly as they did before this separation.
+                if (_titlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
+                    && _playerMode && !_computerOpen && !_entry.IsCameraActive && _cutscenes?.IsPlaying != true
+                    && _thirdPerson.ShowsViewModel)
+                {
+                    batch.Begin();
+                    titleHud.Draw(batch, titleHudPlayer, _window.Width, _window.Height);
+                    batch.End();
+                }
+
                 if (RemasteredHudPresentation.UsesRetailWeaponHud(
                         remasterHud,
                         _player?.IsBinocularsOpen == true,

@@ -35,6 +35,7 @@ internal sealed partial class GameHost
     private readonly OpenIGI.Presentation.Cameras.TitlePlayerPresentation _titlePresentation = new();
     private float _titlePresentationBlend = 1f;
     private ITitleViewModelPresenter? _titleArms;
+    private ITitleHudPresenter? _titleHud;
     private float _titleMouseX;
     private float _titleMouseY;
     private PlayerAction _titlePressed;
@@ -52,6 +53,7 @@ internal sealed partial class GameHost
     private void StandTitlePlayer(LoadedMission loaded, LevelTask levelRoot, WorldScene scene)
     {
         _titlePlayer = null;
+        _titleHud = null;
         _titleArms?.Dispose();
         _titleArms = null;
         if (_gameplay is null)
@@ -73,6 +75,7 @@ internal sealed partial class GameHost
         }
 
         _titlePlayer = player;
+        _titleHud = _presentation.CreateTitleHud(new HudPresentationRequest(_device, _logger));
         _titleTickMilliseconds = 0;
         _titleTickMaximumMilliseconds = 0;
         _titleMeasuredTicks = 0;

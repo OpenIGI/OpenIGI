@@ -228,6 +228,11 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         DeathDamage = 0f;
         RecoilThreshold = 0.33000001f;
         UpperBodyState = Igi2SoldierUpperBody.Idle;
+        // humansoldier.c HumanSoldier_CreateHandler: soldiers reload without consuming reserve rounds.
+        if (Weapon.Firing is { } firing)
+        {
+            firing.IsUnlimitedAmmo = true;
+        }
     }
 
     /// <summary>Takes the tick's channels and runs the soldier: <c>HumanSoldier_HumanUpdateHandler</c> (<c>igi2 0x4EB250</c>).</summary>
@@ -291,6 +296,8 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         TouchPose();
         Mind?.Run(this);
         Weapon.RunDelayed();
+        // weapon.c Weapon_RunDelayedHandler runs the GunShot child after firing; gunshot.c GunShot_RunHandler.
+        Weapon.Firing?.RunGunShot();
         TouchPose();
     }
 

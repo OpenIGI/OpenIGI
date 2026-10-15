@@ -88,14 +88,14 @@ public sealed class Igi2PlayerProfile
     /// <summary>Gets or sets the gamma.</summary>
     public float Gamma { get; set; }
 
-    /// <summary>Gets or sets the crosshair's opacity.</summary>
-    public float CrossHairAlpha { get; set; }
+    /// <summary>Gets or sets the crosshair's opacity (config.c Config_DefaultGameOptions).</summary>
+    public float CrossHairAlpha { get; set; } = 1f;
 
     /// <summary>Gets or sets a value indicating whether the crosshair is drawn thick.</summary>
     public bool ThickCrossHair { get; set; }
 
     /// <summary>Gets or sets the crosshair's colour.</summary>
-    public (float R, float G, float B) CrossHairColour { get; set; }
+    public (float R, float G, float B) CrossHairColour { get; set; } = (1f, 0.25f, 0f);
 
     /// <summary>Gets or sets a value indicating whether vertices are processed in software.</summary>
     public bool ForceSoftwareVertexProcessing { get; set; }

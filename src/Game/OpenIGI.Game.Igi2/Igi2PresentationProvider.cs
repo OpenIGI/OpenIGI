@@ -17,8 +17,8 @@ namespace OpenIGI.Game.Igi2;
 /// <remarks>
 /// <para>
 /// <b>Only what exists.</b> The sequel draws its placed world, its ground, its sky, its forests and water,
-/// and what its own player holds in front of its eyes (<see cref="CreateTitleViewModel"/>). It has no HUD
-/// and no map computer yet. Every other factory is left at the interface's default of null, which the host
+/// and what its own player holds in front of its eyes (<see cref="CreateTitleViewModel"/>). Its title HUD draws weapon sights;
+/// the remaining HUD and map computer are pending. Every other factory is left at the interface's default of null, which the host
 /// reads as "this title does not present that pass" and skips.
 /// </para>
 /// <para>
@@ -44,6 +44,9 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 {
     /// <summary>Gets the shared instance.</summary>
     public static Igi2PresentationProvider Instance { get; } = new();
+
+    /// <inheritdoc/>
+    public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new Hud.Igi2HudRenderer();
 
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>

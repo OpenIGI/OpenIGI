@@ -61,6 +61,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2PlayerWeapons? weapons = Arm(request.Services, request.World.LevelRoot, tuning, clips);
         Igi2Sounds sounds = LevelSounds(request);
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, general, spawn.Position, spawn.Gamma, request.Difficulty, clips, rig, weapons, arms, sounds);
+        player.GameConfig = request.Services.TryGet(out Config.Igi2GameConfig? gameConfig) ? gameConfig : null;
         player.ModelAttachments = new Igi2ModelAttachments(models,
             request.Services.TryGet(out Igi2MagicObjTypes? attachmentTypes) ? attachmentTypes : null);
         if (request.Services.TryGet(out Igi2WhizzbyClock? clock))
@@ -1120,6 +1121,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
 /// <summary>The ported player as the host steps it.</summary>
 public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels
 {
+    /// <summary>Gets or sets the title profile whose HUD preferences are currently active.</summary>
+    public Config.Igi2GameConfig? GameConfig { get; set; }
+
     /// <summary>DirectInput's relative counts to the analog axis, <c>Mouse_Update</c> (<c>igi2ed 0x55ED60</c>): a 255th each.</summary>
     private const double CountsToAnalog = 0.00392156862745098;
 
