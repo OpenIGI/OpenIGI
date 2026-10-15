@@ -76,6 +76,50 @@ public sealed class RetailIgi2LookPreviewTests
         }
     }
 
+    /// <summary>Both axes retain their last rendered aim when a tick consumes small, fast or reversed mouse motion.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Unfiltered_mouse_preview_and_tick_agree_on_both_axes()
+    {
+        foreach (float fov in new[] { 1f, 0.25f })
+        {
+            foreach (bool invert in new[] { false, true })
+            {
+                Igi2TitlePlayer player = Player();
+                player.Human.View.FieldOfView = fov;
+                foreach (float counts in new[] { 1f, 3f, 12f, -7f, 512f, -512f, 0f, 2f })
+                {
+                    Matrix3f preview = player.PreviewLook(counts, counts * 0.02f, 0.4f, invert);
+                    player.Tick(new TitlePlayerInput(counts, counts * 0.02f, default, default, 0.4f, invert,
+                        UnfilteredMouse: true));
+                    Assert.InRange((preview.Column2 - player.ViewOrientation.Row3).Length, 0f, 0.00001f);
+                    Assert.InRange((preview.Column2 - player.PreviewLook(0f, 0f, 0.4f, invert).Column2).Length, 0f, 0.00001f);
+                }
+            }
+        }
+    }
+
+    /// <summary>Stopping the mouse leaves no next-tick pitch tail; fast horizontal movement is not capped at 255 counts.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Unfiltered_mouse_has_no_release_tail_or_tick_speed_cap()
+    {
+        Igi2TitlePlayer player = Player();
+        player.Tick(new TitlePlayerInput(512f, 4f, default, default, 0.4f, false, UnfilteredMouse: true));
+        Assert.InRange(player.Human.Gamma, -2.524f, -2.522f);
+        float pitch = player.Human.View.IdealPitch;
+        player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false, UnfilteredMouse: true));
+        Assert.Equal(pitch, player.Human.View.IdealPitch);
+        player.Human.Channels.IsLocked = true;
+        Assert.False(player.CanPreviewLook);
+        Assert.Equal(player.LookOrientation, player.PreviewLook(100f, 100f, 0.4f, false));
+
+        Igi2TitlePlayer retail = Player();
+        retail.Tick(new TitlePlayerInput(512f, 4f, default, default, 0.4f, false));
+        Assert.InRange(retail.Human.Gamma, -1.257f, -1.256f);
+        float filteredPitch = retail.Human.View.IdealPitch;
+        retail.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
+        Assert.True(retail.Human.View.IdealPitch > filteredPitch);
+    }
+
     private static Igi2TitlePlayer Player() => Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
         Igi2Session.Start().Require<Igi2PlayerTuning>().General, default, 0f, AiDifficulty.Normal);
 }

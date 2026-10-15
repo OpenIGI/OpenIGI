@@ -233,19 +233,18 @@ public static class RenderCVars
     /// <remarks>
     /// <para>
     /// The simulation is fixed at 30 Hz and stays there — that is the determinism contract. What this
-    /// changes is only what is <em>drawn</em>: on, each frame renders bodies, poses and the player's
+    /// changes is how each frame renders bodies, poses and the player's
     /// own eye blended between the last two tick states, so an uncapped frame rate looks uncapped
-    /// instead of a 30 Hz slideshow with a smooth mouse. AI, ballistics and every other consumer keep
-    /// reading tick states, so nothing behaves differently.
+    /// instead of a 30 Hz slideshow with a smooth mouse. AI and ballistics keep reading tick states.
+    /// IGI2 also uses linear mouse counts for both the frame preview and the next tick's aim, bypassing
+    /// its retail pitch filters and turn cap. Off retains that title's retail mouse response.
     /// </para>
     /// <para>
     /// On under vanilla too. The original presents exactly one tick's state per frame and vanilla is
     /// otherwise held to what the original did, but a 30 Hz slideshow is not a look anyone chose to
     /// preserve -- it is what a 1998 target frame rate left behind, and the tier exists to show the
-    /// original's <em>picture</em>, not its schedule. Nothing the simulation observes moves either way,
-    /// so vanilla stays frame-for-frame identical in what it draws and only stops holding frames back.
-    /// The reference captures are unaffected: <c>-lockstep</c> pins the one-render-per-tick pairing on
-    /// its own, ahead of this setting, which is what those captures have always run under.
+    /// original's <em>picture</em>, not its schedule. Reference captures use <c>-lockstep</c>, which
+    /// disables interpolation and unfiltered mouse aim ahead of this setting.
     /// </para>
     /// </remarks>
     public static readonly BoolCVar SmoothPresentation = Presets.Define(
@@ -253,7 +252,7 @@ public static class RenderCVars
             "r_smooth",
             true,
             CVarOptions.Archive,
-            "Draw between simulation ticks so movement is as smooth as the frame rate. Sim stays 30 Hz."),
+            "Smooth movement between ticks and use unfiltered IGI2 mouse aim. Simulation stays 30 Hz."),
         vanilla: "1",
         enhanced: "1",
         high: "1",

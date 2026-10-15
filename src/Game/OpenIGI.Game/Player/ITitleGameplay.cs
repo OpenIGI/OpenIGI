@@ -53,6 +53,7 @@ public readonly record struct TitlePlayerRequest(
 /// <param name="MouseSensitivity">The profile's mouse sensitivity.</param>
 /// <param name="InvertMouse">Whether the profile inverts the vertical look.</param>
 /// <param name="BreakCutscene">Whether the cutscene break key is down: Escape, the key retail's level scripts read.</param>
+/// <param name="UnfilteredMouse">Whether Smooth Motion uses linear mouse counts instead of the title's tick filters.</param>
 public readonly record struct TitlePlayerInput(
     float MouseX,
     float MouseY,
@@ -60,7 +61,8 @@ public readonly record struct TitlePlayerInput(
     PlayerAction Pressed,
     float MouseSensitivity,
     bool InvertMouse,
-    bool BreakCutscene = false);
+    bool BreakCutscene = false,
+    bool UnfilteredMouse = false);
 
 /// <summary>A title's own player, as the host steps it and looks through it.</summary>
 public interface ITitlePlayer

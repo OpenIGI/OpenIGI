@@ -1444,7 +1444,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Igi2PlayerAction pressed = Map(input.Pressed);
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
-        _reader.Read(new Igi2PlayerInputState(Analog(input.MouseX), Analog(input.MouseY), held, pressed), _frame);
+        Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;
+        _reader.Read(new Igi2PlayerInputState(
+            Analog(input.MouseX, Human.UnfilteredMouse), Analog(input.MouseY, Human.UnfilteredMouse), held, pressed), _frame);
         if (Level is { } level)
         {
             Flow?.IsBreakKeyDown = input.BreakCutscene;
@@ -1499,11 +1501,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Nine floats row by row as a matrix.</summary>
     private static Matrix3f Rows(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
-    /// <summary>The mouse's counts as the input port's analog axis: a 255th each, held within one either way.</summary>
-    private static float Analog(float counts)
+    /// <summary>The mouse's counts as a 255th each; retail clamps to one, while Smooth Motion retains the raw range.</summary>
+    private static float Analog(float counts, bool unfilteredMouse = false)
     {
         float analog = ((Fpu)(double)counts * CountsToAnalog).F;
-        return analog < -1f ? -1f : analog > 1f ? 1f : analog;
+        return unfilteredMouse ? analog : analog < -1f ? -1f : analog > 1f ? 1f : analog;
     }
 
     private static Igi2PlayerAction Map(PlayerAction actions)

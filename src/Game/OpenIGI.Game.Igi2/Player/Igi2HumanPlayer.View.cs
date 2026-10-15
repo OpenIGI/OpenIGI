@@ -95,6 +95,6 @@ public sealed partial class Igi2HumanPlayer
     {
         view.Pitch = view.IdealPitch;
         view.PitchOffset = 0f;
-        view.UpdateView(Channels);
+        view.UpdateView(Channels, UnfilteredMouse);
     }
 }

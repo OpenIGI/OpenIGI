@@ -295,6 +295,7 @@ public sealed class Igi2HumanView
     /// Aims the view up or down from the look input: <c>HumanView_UpdateView</c> (<c>igi2 0x4D62F0</c>).
     /// </summary>
     /// <param name="channels">The human's channels: the vertical look, and the field-of-view buttons.</param>
+    /// <param name="unfilteredMouse">Whether Smooth Motion bypasses tick averaging and the fine-aim curve.</param>
     /// <remarks>
     /// <para>
     /// At the default field of view the vertical look is the average of this tick's and last tick's input; zoomed
@@ -308,11 +309,11 @@ public sealed class Igi2HumanView
     /// or put it back.
     /// </para>
     /// </remarks>
-    public void UpdateView(Igi2HumanChannels channels)
+    public void UpdateView(Igi2HumanChannels channels, bool unfilteredMouse = false)
     {
         ArgumentNullException.ThrowIfNull(channels);
         Fpu look = channels[Igi2HumanChannel.LookY];
-        if (FieldOfView == DefaultFieldOfView)
+        if (!unfilteredMouse && FieldOfView == DefaultFieldOfView)
         {
             look = (look + channels.Last[(int)Igi2HumanChannel.LookY]) * 0.5;
         }
@@ -324,7 +325,7 @@ public sealed class Igi2HumanView
 
         float step = (((Fpu)3.1415927f * look) * FieldOfView).F;
         Fpu size = look.Value < 0.0 ? -look : look;
-        if (size.Value < FineAim)
+        if (!unfilteredMouse && size.Value < FineAim)
         {
             step = ((Fpu)step / ((Fpu)2.0 - (size * FineAimSlope))).F;
         }

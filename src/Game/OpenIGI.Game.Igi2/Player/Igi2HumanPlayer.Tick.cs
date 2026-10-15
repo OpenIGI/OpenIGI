@@ -7,6 +7,9 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <content>The player's tick: the order the original runs everything in.</content>
 public sealed partial class Igi2HumanPlayer
 {
+    /// <summary>Gets or sets whether Smooth Motion bypasses the retail vertical mouse filters for this tick.</summary>
+    public bool UnfilteredMouse { get; set; }
+
     /// <summary>The ticks a landing or a hit holds off the next jump, <c>nJumpWaitTimer</c>'s reload.</summary>
     public const int JumpWait = 15;
 
@@ -160,7 +163,7 @@ public sealed partial class Igi2HumanPlayer
 
         Signal &= ~Igi2PlayerSignal.Hit;
         UpdateBody();
-        View.UpdateView(Channels);
+        View.UpdateView(Channels, UnfilteredMouse);
         CheckViewCollision();
         if (!IsDisableDeltaTranslationScale)
         {

@@ -158,7 +158,8 @@ internal sealed partial class GameHost
             _titlePressed,
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
-            TitleBreakKey()));
+            TitleBreakKey(),
+            UnfilteredMouse: RenderCVars.SmoothPresentation.Value && !_options.Lockstep));
         _titlePresentation.CaptureTick(player);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;

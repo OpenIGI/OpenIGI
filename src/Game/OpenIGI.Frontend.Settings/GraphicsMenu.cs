@@ -527,7 +527,8 @@ public static class GraphicsMenu
             "r_smooth",
             "Smooth Motion",
             "Draws the world at your display's rate rather than the original's fixed thirty steps a "
-                + "second, interpolating between them. Off is the original's own cadence."),
+                + "second, interpolating between them. Also removes IGI2's mouse filtering and turn-speed cap. "
+                + "Off restores the original cadence and IGI2 mouse response."),
     ];
 
     /// <summary>Gets every quality group on the page, in the order they are shown.</summary>

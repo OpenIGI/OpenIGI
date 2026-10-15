@@ -10,7 +10,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerLook
 {
     /// <inheritdoc/>
     public bool CanPreviewLook => !IsCutscenePlaying && !Human.IsDead && !Human.IsLockOrientation
-        && !Human.View.IsLockOrientation && !Human.View.IsOverride;
+        && !Human.View.IsLockOrientation && !Human.View.IsOverride && !Human.Channels.IsLocked;
 
     /// <inheritdoc/>
     public Matrix3f LookOrientation => Aim(Human.Gamma, Human.View.IdealPitch);
@@ -23,25 +23,15 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerLook
             return LookOrientation;
         }
 
-        // human.c Human_UpdateBody / humanview.c HumanView_UpdateView: the same sensitivity,
-        // analog bounds, field-of-view scale and fine-aim curve; only the pending mouse contribution.
+        // Smooth Motion follows IGI1's frame look: linear pending counts, without retail's tick cap,
+        // two-tick pitch average or fine-aim curve. The tick consumes this same mouse policy.
+        // With Smooth Motion off, human.c Human_UpdateBody / humanview.c HumanView_UpdateView stay retail.
         float gain = Math.Clamp(sensitivity, Igi2PlayerInputReader.MinimumSensitivity, Igi2PlayerInputReader.MaximumSensitivity);
-        float x = ((Fpu)gain * Analog(mouseX)).F;
-        Fpu y = (Fpu)gain * Analog(invertMouse ? -mouseY : mouseY);
+        float x = ((Fpu)gain * Analog(mouseX, unfilteredMouse: true)).F;
+        Fpu y = (Fpu)gain * Analog(invertMouse ? -mouseY : mouseY, unfilteredMouse: true);
         float fov = Human.View.FieldOfView;
         float gamma = ((-((Fpu)x * 3.1415927f) * fov) + Human.Gamma).F;
-        if (fov == Igi2HumanView.DefaultFieldOfView)
-        {
-            y *= 0.5;
-        }
-
         float step = (((Fpu)3.1415927f * y) * fov).F;
-        Fpu size = y.Value < 0.0 ? -y : y;
-        if (size.Value < 0.06f)
-        {
-            step = ((Fpu)step / ((Fpu)2.0 - (size * 16.666666666666668))).F;
-        }
-
         float pitch = Math.Clamp(((Fpu)step + Human.View.IdealPitch).F, -Igi2HumanView.PitchLimit, Igi2HumanView.PitchLimit);
         return Aim(gamma, pitch);
     }
