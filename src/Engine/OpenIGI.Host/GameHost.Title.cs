@@ -162,6 +162,7 @@ internal sealed partial class GameHost
         _presentation = binding.Presentation;
         _worldBuilder = binding.WorldBuilder;
         _gameplay = binding.Gameplay;
+        RestoreTitleInputBindings();
         _missionCatalogue = binding.Missions;
         _gamePath = binding.DataRoot;
 

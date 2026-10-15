@@ -869,6 +869,7 @@ internal sealed partial class GameHost : IDisposable
         // Settings load from the retail config.qvm, and from our own file in preference to it when one
         // exists. Nothing here ever writes into the original installation.
         _configuration = HostConfiguration.Load(_fileSystem, _logger);
+        RestoreTitleInputBindings();
         _configHost = new HostConfigHost(_device, _window)
         {
             ApplyResolution = (w, h) =>
@@ -1721,7 +1722,11 @@ internal sealed partial class GameHost : IDisposable
                     }
                 },
                 saveSettings: () => console.SaveSettings(),
-                saveProfiles: () => HostConfiguration.Save(_configuration, _logger),
+                saveProfiles: () =>
+                {
+                    RestoreTitleInputBindings();
+                    HostConfiguration.Save(_configuration, _logger);
+                },
                 captureThumbnail: (out captureWidth, out captureHeight) =>
                 {
                     captureWidth = _window.Width;
@@ -1731,7 +1736,12 @@ internal sealed partial class GameHost : IDisposable
                     return pixels;
                 },
                 settingUnavailable: SettingUnavailable,
-                missionSaves: () => _titlePlayer?.SaveGames);
+                missionSaves: () => _titlePlayer?.SaveGames,
+                inputBindingLabel: action => TitleInputBindings.Label(action, _gameplay?.InputBindings ?? []),
+                resetInputBindings: profile =>
+                {
+                    TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
+                });
 
             shellHostForEntryCam = shellHost;
 

@@ -26,6 +26,14 @@ public sealed class ShellTests
 {
     private sealed class FakeHost : IShellHost
     {
+        public IReadOnlyList<TitleInputBinding> Controls { get; set; } = [];
+
+        public PlayerProfile? Profile { get; set; }
+
+        public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
+
+        public void ResetInputBindings(PlayerProfile profile) => TitleInputBindings.Reset(profile, Controls);
+
         public int? Previewed { get; private set; }
 
         public int StartedMission { get; private set; } = -1;
@@ -168,14 +176,14 @@ public sealed class ShellTests
         Assert.NotEqual(context.Games[0].Id, context.ActiveTitleId);
     }
 
-    private static (Shell Shell, FakeHost Host) BuildShell(string savesDir, int activeMission = 2)
+    private static (Shell Shell, FakeHost Host) BuildShell(string savesDir, int activeMission = 2, IReadOnlyList<TitleInputBinding>? controls = null)
     {
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont font = OpenIGI.UI.Text.UiFont.ForMeasurement(
             OpenIGI.UI.Text.FontAtlasBuilder.Build(File.ReadAllBytes(fontPath), 48f));
         var theme = new UiTheme(font);
 
-        var host = new FakeHost();
+        var host = new FakeHost { Controls = controls ?? [] };
         var missions = new List<MissionInfo>
         {
             new(1, 1, "Mission One", "The first briefing.", "mission1.spr"),
@@ -186,6 +194,8 @@ public sealed class ShellTests
         if (config.Active is { } active)
         {
             active.ActiveMission = activeMission;
+            TitleInputBindings.RestoreMissing(active, host.Controls);
+            host.Profile = active;
         }
 
         var context = new ShellContext(
@@ -869,6 +879,48 @@ public sealed class ShellTests
             {
                 Directory.Delete(dir, recursive: true);
             }
+        }
+    }
+
+    /// <summary>Title controls hide superseded rows and swap/reset only the controls active in that title.</summary>
+    [Fact]
+    public void Controls_tab_scopes_title_rebindings_and_reset()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            TitleInputBinding[] controls =
+            [
+                new(1, new("Title_test_Crouch", InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_SHIFT"), "Crouch", PlayerAction.Crouch),
+                new(2, new("Title_test_Walk", InputBindingKeyNames.KeyboardDevice, "KEY_CAPITAL"), "Walk/run", PlayerAction.ToggleWalkRun),
+            ];
+            (Shell shell, FakeHost host) = BuildShell(dir, controls: controls);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            screen.Root!.Descendants().OfType<TabStrip>().First().SelectedIndex = 3;
+            Pump(shell, 0.1f);
+            KeyBindingRow crouch = screen.Root!.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Crouch");
+            KeyBindingRow walk = screen.Root.Descendants().OfType<KeyBindingRow>().Single(r => r.Action == "Walk/run");
+            Assert.DoesNotContain(screen.Root.Descendants().OfType<KeyBindingRow>(), r => r.Action == "ToggleWalkRun");
+            Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
+            crouch.Activate();
+            Assert.True(crouch.TryCaptureKey(KeyCode.RightControl));
+            Assert.Equal("KEY_RIGHT_CTRL", host.Profile!.Bindings.Single(b => b.Action == "Crouch").Key);
+            Assert.Equal("KEY_LEFT_SHIFT", host.Profile.Bindings.Single(b => b.Action == "ToggleWalkRun").Key);
+            walk.Activate();
+            Assert.True(walk.TryCaptureKey(KeyCode.RightControl));
+            Assert.Equal(KeyCode.CapsLock, crouch.BoundKey);
+            Assert.Equal(KeyCode.RightControl, walk.BoundKey);
+            Find<Button>(screen, b => b.Text == "RESET BINDINGS TO DEFAULTS")!.Activate();
+            Assert.Equal(KeyCode.LeftShift, crouch.BoundKey);
+            Assert.Equal(KeyCode.CapsLock, walk.BoundKey);
+            Assert.Equal("KEY_RIGHT_CTRL", host.Profile.Bindings.Single(b => b.Action == "Crouch").Key);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) { Directory.Delete(dir, recursive: true); }
         }
     }
 

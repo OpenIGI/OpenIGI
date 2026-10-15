@@ -41,6 +41,21 @@ public sealed class Igi2Gameplay : ITitleGameplay
     public static Igi2Gameplay Instance { get; } = new();
 
     /// <inheritdoc/>
+    /// <remarks>config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.</remarks>
+    public IReadOnlyList<TitleInputBinding> InputBindings { get; } =
+    [
+        new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Z"), "Lower stance"),
+        new((ulong)Igi2PlayerAction.LowerStance, new("Title_igi2_LowerStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_DELETE"), "Lower stance (alternate)"),
+        new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStance", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_Q"), "Raise stance"),
+        new((ulong)Igi2PlayerAction.RaiseStance, new("Title_igi2_RaiseStanceAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_INSERT"), "Raise stance (alternate)"),
+        new((ulong)Igi2PlayerAction.ToggleStandLie, new("Title_igi2_ToggleStandLie", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.PlayerProfile.UnboundKey), "Toggle stand/prone"),
+        new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_Crouch", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_LEFT_SHIFT"), "Crouch", PlayerAction.Crouch),
+        new((ulong)Igi2PlayerAction.Crouch, new("Title_igi2_CrouchAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_RIGHT_CTRL"), "Crouch (alternate)"),
+        new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRun", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_CAPITAL"), "Toggle walk/run", PlayerAction.ToggleWalkRun),
+        new((ulong)Igi2PlayerAction.ToggleWalkRun, new("Title_igi2_ToggleWalkRunAlt", Game.Config.InputBindingKeyNames.KeyboardDevice, "KEY_END"), "Toggle walk/run (alternate)"),
+    ];
+
+    /// <inheritdoc/>
     public ITitlePlayer? CreatePlayer(in TitlePlayerRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.Services);
@@ -1470,8 +1485,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
     {
-        Igi2PlayerAction held = Map(input.Held);
-        Igi2PlayerAction pressed = Map(input.Pressed);
+        Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);
+        Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
         Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;

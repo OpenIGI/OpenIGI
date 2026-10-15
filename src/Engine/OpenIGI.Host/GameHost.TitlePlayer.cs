@@ -39,6 +39,7 @@ internal sealed partial class GameHost
     private float _titleMouseX;
     private float _titleMouseY;
     private PlayerAction _titlePressed;
+    private ulong _titleExtraPressed;
     private PlayerAction _titleScriptHeld;
     private double _titleTickMilliseconds;
     private double _titleTickMaximumMilliseconds;
@@ -52,6 +53,7 @@ internal sealed partial class GameHost
     /// <param name="scene">The placements the scene walk produced.</param>
     private void StandTitlePlayer(LoadedMission loaded, LevelTask levelRoot, WorldScene scene)
     {
+        RestoreTitleInputBindings();
         _titlePlayer = null;
         _titleHud?.Dispose();
         _titleHud = null;
@@ -104,6 +106,7 @@ internal sealed partial class GameHost
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
+        _titleExtraPressed = 0;
         _playerMode = !_options.StartFlying;
 
         Vector3d eye = player.EyePosition;
@@ -136,6 +139,10 @@ internal sealed partial class GameHost
                 _titlePressed |= action;
             }
         }
+        if (_gameplay is { } gameplay)
+        {
+            _titleExtraPressed |= TitleInputBindings.Sample(_configuration.Active, _window.Input, gameplay.InputBindings, pressed: true);
+        }
     }
 
     /// <summary>Runs the title's player for one tick, with the input gathered since the last.</summary>
@@ -165,16 +172,19 @@ internal sealed partial class GameHost
         held |= _titleScriptHeld;
 
         PlayerProfile? profile = _configuration.Active;
+        PlayerAction replaced = _gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
-            held,
-            _titlePressed,
+            held & ~replaced,
+            _titlePressed & ~replaced,
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
-            UnfilteredMouse: RenderCVars.SmoothPresentation.Value && !_options.Lockstep));
+            UnfilteredMouse: RenderCVars.SmoothPresentation.Value && !_options.Lockstep,
+            TitleHeld: _gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
+            TitlePressed: _titleExtraPressed));
         _titlePresentation.CaptureTick(player);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;
@@ -183,7 +193,14 @@ internal sealed partial class GameHost
         _titleMouseX = 0f;
         _titleMouseY = 0f;
         _titlePressed = default;
+        _titleExtraPressed = 0;
         return true;
+    }
+
+    private void RestoreTitleInputBindings()
+    {
+        if (_gameplay is not { } gameplay) { return; }
+        foreach (PlayerProfile profile in _configuration.Profiles) { TitleInputBindings.RestoreMissing(profile, gameplay.InputBindings); }
     }
 
     /// <summary>Applies pending mouse motion to this rendered frame while gameplay remains on its tick.</summary>

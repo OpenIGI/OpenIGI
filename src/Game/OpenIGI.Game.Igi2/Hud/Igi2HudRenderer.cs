@@ -14,12 +14,15 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (player is not Igi2TitlePlayer title) { return; }
-        DrawMessages(batch, title, screenWidth, screenHeight);
+        if (player is not Igi2TitlePlayer title || screenWidth <= 0 || screenHeight <= 0) { return; }
+        // Keep the authored status art readable at modern resolutions; world-space sights and view flashes stay in pixels.
+        _scale = screenHeight / 720f;
+        float width = screenWidth / _scale, height = screenHeight / _scale;
+        DrawMessages(batch, title, width, height);
         if (!title.IsCutscenePlaying && !title.Human.IsDead)
         {
-            DrawStatus(batch, title, screenWidth, screenHeight);
-            DrawInteraction(batch, title.Human, screenWidth, screenHeight);
+            DrawStatus(batch, title, width, height);
+            DrawInteraction(batch, title.Human, width, height);
         }
         DrawSight(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawEffects(batch, title.Human, screenWidth, screenHeight); }

@@ -24,6 +24,10 @@ public sealed partial class Igi2HudRenderer
     private string _ammunition = string.Empty;
     private int _timerSeconds = -1;
     private string _timer = string.Empty;
+    private float _scale = 1f;
+    private string _weaponName = string.Empty;
+    private string _fireMode = string.Empty;
+    private string _weaponLabel = string.Empty;
     private static readonly Bgra32 Blue = Bgra32.FromRgba(102, 153, 255, 255);
 
     /// <summary>Creates the title's HUD presenter.</summary>
@@ -40,7 +44,8 @@ public sealed partial class Igi2HudRenderer
     {
         Dispose();
         _assets = new Igi2SpriteResources(_device, files, _logger);
-        if (_assets.Get("fontmp.fnt") is { IsFont: true } font) { _font = new BitmapTextRenderer(font); }
+        // statusscreen.c StatusScreen_CreateHandler: persistent weapon/ammo text uses ComputerMenu's font3, not fontmp.
+        if (_assets.Get("font3.fnt") is { IsFont: true } font) { _font = new BitmapTextRenderer(font); }
         // Upload persistent status art before gameplay draws it.
         string[] names = ["stance_standing.spr", "stance_crouching.spr", "stance_lying.spr", "stance_flying.spr", "stance_running.spr",
             "powerbarbackground.spr", "powerbar.spr", "visibilitymeter.spr", "visibilitybar.spr", "visibilityalert.spr", "progressbar.spr",
@@ -75,7 +80,7 @@ public sealed partial class Igi2HudRenderer
         }
     }
 
-    private void DrawStatus(SpriteBatch batch, Igi2TitlePlayer title, int width, int height)
+    private void DrawStatus(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
         Igi2HumanPlayer human = title.Human;
         // humanplayer.c HumanPlayer_StatusDisplayHandler: posture and health at the lower left, visibility beside them.
@@ -90,24 +95,43 @@ public sealed partial class Igi2HudRenderer
         {
             SpriteFrame frame = background.Asset.Frames[0];
             float x = 40f - (frame.Width * 0.5f), y = height - 50f - (frame.Height * 0.5f);
-            background.Draw(batch, 0, x, y, Blue);
+            Sprite(batch, "powerbarbackground.spr", x, y, Blue);
             SpriteFrame fill = power.Asset.Frames[0];
             Bgra32 healthColour = Bgra32.FromRgba(Channel(0.8f - (health * 0.52f)), Channel((health * 0.22f) + 0.2f), Channel((health * 0.7f) + 0.2f), 255);
             Bar(batch, "powerbar.spr", 38f - (fill.Width * 0.5f), height - 52f - (fill.Height * 0.5f), health, healthColour, vertical: true);
             float visibilityX = x + frame.Width + 5f, visibilityY = y + 10f;
             Sprite(batch, "visibilitymeter.spr", visibilityX, visibilityY, Blue);
+            Sprite(batch, "visibilityalert.spr", visibilityX + 10f, y, Blue);
             float light = Math.Clamp(human.Lightmap, 0f, 1f), brightness = Math.Clamp(light - 0.5f, 0f, 0.5f) * 2f;
             Bgra32 visibilityColour = Bgra32.FromRgba(Channel((brightness + 1f) * 0.4f), Channel(0.6f - (brightness * 0.4f)), Channel(1f - (brightness * 0.8f)), 255);
             Bar(batch, "visibilitybar.spr", visibilityX + 7f, visibilityY, light, visibilityColour, vertical: true);
             if (_assets.Get(stance) is { } posture)
             {
-                posture.Draw(batch, 0, visibilityX + 11f, height - 21f - posture.Asset.Frames[0].Height, Blue);
+                Sprite(batch, stance, visibilityX + 11f, height - 21f - posture.Asset.Frames[0].Height, Blue);
             }
         }
         if (title.Inventory?.Current is { } held)
         {
-            // weapon.c Weapon_StatusDisplayHandler; gun.c Gun_StatusDisplayHandler.
-            Sprite(batch, held.WeaponType.WeaponSprite, width - 260f, height - 90f, Blue);
+            // weapontype.c WeaponType_DrawIconHandler; WeaponType_GetFireTypeScreenPosition; gun.c Gun_StatusDisplayHandler.
+            string mode = held.ActiveFireMode switch { 1 => held.WeaponType.FiremodeName1, 2 => held.WeaponType.FiremodeName2, _ => held.WeaponType.FiremodeName };
+            if (_weaponName != held.WeaponType.WeaponName || _fireMode != mode)
+            {
+                _weaponName = held.WeaponType.WeaponName;
+                _fireMode = mode;
+                _weaponLabel = mode.Length > 0 ? string.Concat(_weaponName, " : ", mode) : _weaponName;
+            }
+            float right = ((Fpu)width * 0.984375).F, baseline = ((Fpu)height * 0.9583333134651184).F;
+            float nameWidth = _font?.Measure(_weaponLabel).Width ?? 0f, lineHeight = _font?.LineHeight ?? 0;
+            Text(batch, _weaponLabel, right - nameWidth, baseline - 2f - lineHeight, Blue);
+            float iconWidth = 0f;
+            if (_assets?.Get(held.WeaponType.WeaponSprite) is { } icon)
+            {
+                SpriteFrame picture = icon.Asset.Frames[0];
+                iconWidth = picture.Width;
+                Sprite(batch, held.WeaponType.WeaponSprite, right - iconWidth, baseline - 4f - lineHeight - picture.Height, Bgra32.White);
+            }
+            float lineWidth = MathF.Max(iconWidth, nameWidth + 3f);
+            Fill(batch, new RectF(right - lineWidth, baseline, lineWidth, 1f), Bgra32.FromRgba(102, 153, 255, 128));
             Weapons.Igi2FireTypeRounds rounds = title.Inventory.FireTypeRounds(held, 0);
             if (_loadedRounds != rounds.Loaded || _availableRounds != rounds.Available)
             {
@@ -115,8 +139,8 @@ public sealed partial class Igi2HudRenderer
                 _availableRounds = rounds.Available;
                 _ammunition = string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded,4}/{rounds.Available,4}");
             }
-            Text(batch, _ammunition, width - 180f, height - 42f, Blue);
-            Text(batch, held.WeaponType.WeaponName, width - 270f, height - 112f, Blue);
+            float ammoWidth = _font?.Measure(_ammunition).Width ?? 0f;
+            Text(batch, _ammunition, right - 10f - ammoWidth, baseline + 4f, Blue);
         }
         if (title.Level?.LevelFlow is { InterfaceTimerEnabled: true, MaxPlayTime: > 0f } flow)
         {
@@ -130,15 +154,15 @@ public sealed partial class Igi2HudRenderer
         }
     }
 
-    private void DrawInteraction(SpriteBatch batch, Igi2HumanPlayer human, int width, int height)
+    private void DrawInteraction(SpriteBatch batch, Igi2HumanPlayer human, float width, float height)
     {
         if (human.IsProgressBar)
         {
             // humanplayer.c HumanPlayer_StatusDisplayHandler: the timed action keeps its bar visible in movement-camera mode.
             float progress = human.TimedActionTime > 0 ? Math.Clamp((float)human.TimedActionTimer / human.TimedActionTime, 0f, 1f) : 1f;
             RectF fill = new(width * 0.315625f, height * 0.8375f, width * 0.36875f * progress, height * 0.010416667f);
-            batch.FillRect(fill, Bgra32.White);
-            batch.FillRect(new RectF(width * 0.3125f, height * 0.8333333f, width * 0.375f, height * 0.01875f),
+            Fill(batch, fill, Bgra32.White);
+            Fill(batch, new RectF(width * 0.3125f, height * 0.8333333f, width * 0.375f, height * 0.01875f),
                 Bgra32.FromRgba(51, 128, 255, 128));
         }
         IIgi2Activatable? target = human.ActivatingTarget ?? human.EvaluateTarget;
@@ -166,21 +190,28 @@ public sealed partial class Igi2HudRenderer
         _ => null,
     };
 
-    private void DrawMessages(SpriteBatch batch, Igi2TitlePlayer title, int width, int height)
+    private void DrawMessages(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
         float y = title.IsCutscenePlaying ? height - 100f : 36f;
         foreach (Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
             if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying) { continue; }
-            _font?.DrawCentered(batch, slot.Text.AsSpan(0, Math.Min(slot.Printed, slot.Text.Length)), width * 0.5f, y,
-                Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)));
+            _font?.DrawCentered(batch, slot.Text.AsSpan(0, Math.Min(slot.Printed, slot.Text.Length)), width * 0.5f * _scale, y * _scale,
+                Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
             y += 28f;
         }
     }
 
-    private void Sprite(SpriteBatch batch, string name, float x, float y, Bgra32 colour) => _assets?.Get(name)?.Draw(batch, 0, x, y, colour);
+    private void Sprite(SpriteBatch batch, string name, float x, float y, Bgra32 colour)
+    {
+        if (_assets?.Get(name) is not { } sprite) { return; }
+        sprite.DrawFrame(batch, sprite.Asset.Frames[0], x * _scale, y * _scale, _scale, _scale, colour);
+    }
 
-    private void Text(SpriteBatch batch, string text, float x, float y, Bgra32 colour) => _font?.Draw(batch, text, x, y, colour);
+    private void Text(SpriteBatch batch, string text, float x, float y, Bgra32 colour) => _font?.Draw(batch, text, x * _scale, y * _scale, colour, _scale, _scale);
+
+    private void Fill(SpriteBatch batch, RectF rectangle, Bgra32 colour) => batch.FillRect(
+        new RectF(rectangle.X * _scale, rectangle.Y * _scale, rectangle.Width * _scale, rectangle.Height * _scale), colour);
 
     private void Bar(SpriteBatch batch, string name, float x, float y, float fraction, Bgra32 colour, bool vertical)
     {
@@ -189,7 +220,7 @@ public sealed partial class Igi2HudRenderer
         float h = vertical ? frame.Height * fraction : frame.Height;
         float w = vertical ? frame.Width : frame.Width * fraction;
         float top = vertical ? 1f - fraction : 0f;
-        batch.Draw(sprite.Textures[frame.TextureIndex], new RectF(x, y + (frame.Height - h), w, h),
+        batch.Draw(sprite.Textures[frame.TextureIndex], new RectF(x * _scale, (y + (frame.Height - h)) * _scale, w * _scale, h * _scale),
             new RectF(frame.U0, frame.V0 + ((frame.V1 - frame.V0) * top), (frame.U1 - frame.U0) * (vertical ? 1f : fraction), (frame.V1 - frame.V0) * (vertical ? fraction : 1f)), colour);
     }
 }

@@ -596,37 +596,45 @@ public sealed class SettingsScreen : ShellScreen
         invert.ValueChanged += value => profile.InvertMouse = value;
 
         var bindingRows = new List<KeyBindingRow>(profile.Bindings.Count);
+        var bindingIndices = new List<int>(profile.Bindings.Count);
+        PlayerProfile visibleBindings = new();
         for (int i = 0; i < profile.Bindings.Count; i++)
         {
             int index = i;
             InputBinding binding = profile.Bindings[index];
+            string? label = Context.Host.InputBindingLabel(binding.Action);
+            if (label is null) { continue; }
+            int visibleIndex = bindingRows.Count;
+            visibleBindings.Bindings.Add(binding);
+            bindingIndices.Add(index);
             KeyCode current = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed) ? parsed : KeyCode.None;
-            var row = new KeyBindingRow(theme, binding.Action, current, InputBindingKeyNames.DisplayName(binding))
+            var row = new KeyBindingRow(theme, label, current, InputBindingKeyNames.DisplayName(binding))
             {
-                Tooltip = $"Press this row, then a key, mouse button or wheel scroll, to rebind {binding.Action}.",
+                Tooltip = $"Press this row, then a key, mouse button or wheel scroll, to rebind {label}.",
             };
 
-            row.BindingChanged += key => Rebound(profile.RebindKeyboard(index, key));
-            row.MouseBindingChanged += button => Rebound(profile.RebindMouseButton(index, button));
-            row.MouseWheelBindingChanged += direction => Rebound(profile.RebindMouseWheel(index, direction));
+            row.BindingChanged += key => { visibleBindings.RebindKeyboard(visibleIndex, key); Rebound(); };
+            row.MouseBindingChanged += button => { visibleBindings.RebindMouseButton(visibleIndex, button); Rebound(); };
+            row.MouseWheelBindingChanged += direction => { visibleBindings.RebindMouseWheel(visibleIndex, direction); Rebound(); };
             bindingRows.Add(row);
 
-            void Rebound(int conflict)
+            void Rebound()
             {
-                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
-                if (conflict >= 0)
+                for (int rowIndex = 0; rowIndex < bindingRows.Count; rowIndex++)
                 {
-                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
+                    profile.Bindings[bindingIndices[rowIndex]] = visibleBindings.Bindings[rowIndex];
+                    RefreshBindingRow(bindingRows[rowIndex], visibleBindings.Bindings[rowIndex]);
                 }
             }
         }
 
         _resetBindings = () =>
         {
-            profile.ResetBindingsToDefaults();
+            Context.Host.ResetInputBindings(profile);
             for (int i = 0; i < bindingRows.Count; i++)
             {
-                RefreshBindingRow(bindingRows[i], profile.Bindings[i]);
+                visibleBindings.Bindings[i] = profile.Bindings[bindingIndices[i]];
+                RefreshBindingRow(bindingRows[i], visibleBindings.Bindings[i]);
             }
         };
 

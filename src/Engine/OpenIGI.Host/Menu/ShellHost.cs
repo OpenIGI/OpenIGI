@@ -27,6 +27,8 @@ namespace OpenIGI.Host.Menu;
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 /// <param name="settingUnavailable">Why a setting cannot take effect here, or empty when it can.</param>
 /// <param name="missionSaves">The running mission's own save games, or <see langword="null"/>.</param>
+/// <param name="inputBindingLabel">The active title's visible control labels.</param>
+/// <param name="resetInputBindings">Restores the active title's control defaults.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -40,7 +42,9 @@ public sealed class ShellHost(
     Action saveProfiles,
     CaptureThumbnail captureThumbnail,
     Func<string, string>? settingUnavailable = null,
-    Func<OpenIGI.Game.Player.ITitleSaveGames?>? missionSaves = null) : IShellHost
+    Func<OpenIGI.Game.Player.ITitleSaveGames?>? missionSaves = null,
+    Func<string, string?>? inputBindingLabel = null,
+    Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null) : IShellHost
 {
     /// <inheritdoc/>
     public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => missionSaves?.Invoke();
@@ -74,6 +78,16 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public void SaveProfiles() => saveProfiles();
+
+    /// <inheritdoc/>
+    public string? InputBindingLabel(string action) => inputBindingLabel is { } label ? label(action) : action;
+
+    /// <inheritdoc/>
+    public void ResetInputBindings(OpenIGI.Game.Config.PlayerProfile profile)
+    {
+        if (resetInputBindings is { } reset) { reset(profile); }
+        else { profile.ResetBindingsToDefaults(); }
+    }
 
     /// <inheritdoc/>
     public Bgra32[] CaptureThumbnail(out int width, out int height) => captureThumbnail(out width, out height);

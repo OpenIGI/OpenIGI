@@ -21,6 +21,9 @@ namespace OpenIGI.Game.Player;
 /// </remarks>
 public interface ITitleGameplay
 {
+    /// <summary>Gets additional, rebindable controls in this title's own action vocabulary.</summary>
+    IReadOnlyList<TitleInputBinding> InputBindings => [];
+
     /// <summary>Makes the player a loaded level places.</summary>
     /// <param name="request">The level, what it was built into, and the session it runs in.</param>
     /// <returns>The player, or <see langword="null"/> when the level places none.</returns>
@@ -54,6 +57,8 @@ public readonly record struct TitlePlayerRequest(
 /// <param name="InvertMouse">Whether the profile inverts the vertical look.</param>
 /// <param name="BreakCutscene">Whether the cutscene break key is down: Escape, the key retail's level scripts read.</param>
 /// <param name="UnfilteredMouse">Whether Smooth Motion uses linear mouse counts instead of the title's tick filters.</param>
+/// <param name="TitleHeld">Additional held actions in the title's vocabulary.</param>
+/// <param name="TitlePressed">Additional actions pressed since the last tick.</param>
 public readonly record struct TitlePlayerInput(
     float MouseX,
     float MouseY,
@@ -62,7 +67,9 @@ public readonly record struct TitlePlayerInput(
     float MouseSensitivity,
     bool InvertMouse,
     bool BreakCutscene = false,
-    bool UnfilteredMouse = false);
+    bool UnfilteredMouse = false,
+    ulong TitleHeld = 0,
+    ulong TitlePressed = 0);
 
 /// <summary>A title's own player, as the host steps it and looks through it.</summary>
 public interface ITitlePlayer
