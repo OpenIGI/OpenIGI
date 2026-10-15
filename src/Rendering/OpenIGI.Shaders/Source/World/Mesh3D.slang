@@ -37,13 +37,12 @@ struct MeshPush
     //    lit by the key below; TWO is that same rig shaded as ordinary geometry.
     // y: one over the exposure the resolve will apply.
     // z: how much of the previous pose is in the position drawn.
-    // w: for the rig, the ambient level under the key light. For a world draw, the x of the
-    //    model-space direction towards the fixed-function sun, or zero.
+    // w: for the rig, the ambient level under the key light; zero for ordinary world draws.
     float4 markerExposure;
 
     // The model-to-view rotation, row by row; each w carries one channel of the key colour for
-    // the rig, and for a world draw the first is the terrain flag and the other two the y and z
-    // of the sun direction above. For terrain the first row is the level-of-detail ramp and the
+    // the rig. Ordinary world draws carry their complete model-space sun in normalKey0.xyz,
+    // and normalKey0.w is the terrain flag. For terrain the first row is the level-of-detail ramp and the
     // second row's xyz is the chunk's origin relative to the eye. The third row is the frame's
     // distance fog for every draw but the lit rig.
     float4 normalKey0;
@@ -198,7 +197,7 @@ Varyings vertexMain(VertexInput input)
     // The sun on an object with no bake, as Direct3D's vertex pipeline computed it for I.G.I. 2
     // (Direct3DRender_SetGenericStateRigid, igi2ed 0x56CA90): the global ambient plus the
     // light's diffuse times the cosine to the normal, saturated to one.
-    float3 sunModel = float3(push.markerExposure.w, push.normalKey1.w, push.normalKey2.w);
+    float3 sunModel = push.normalKey0.xyz;
     if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)
     {
         float normalLength = length(localNormal);

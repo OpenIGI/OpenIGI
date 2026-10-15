@@ -14,6 +14,26 @@ namespace OpenIGI.Rendering.Tests;
 /// </remarks>
 public sealed class ForwardPushBlockTests
 {
+    /// <summary>Turning the model must preserve the complete sun direction independently of distance fog.</summary>
+    [Theory]
+    [InlineData(1f, 0f, 0f)]
+    [InlineData(0f, 1f, 0f)]
+    [InlineData(0f, 0f, 1f)]
+    [InlineData(-0.6f, 0f, 0.8f)]
+    public void World_sun_direction_does_not_alias_the_fog_density(float x, float y, float z)
+    {
+        Span<float> block = stackalloc float[ForwardPushBlock.Floats];
+        ForwardDrawState state = World with
+        {
+            VertexSun = new Vector3f(x, y, z),
+            Fog = new SceneFog(new Vector3f(0.2f, 0.3f, 0.4f), 0.002f),
+        };
+        ForwardPushBlock.Write(block, state, Matrix4f.Identity, BlendMode.Opaque, hasLightmap: false);
+        Assert.Equal(new[] { x, y, z }, block[20..23].ToArray());
+        Assert.Equal(0.002f, block[31]);
+        Assert.Equal([0.2f, 0.3f, 0.4f], block[28..31].ToArray());
+    }
+
     /// <summary>Material fog is explicitly weighted without activating the IGI1 terrain morph or the rig light.</summary>
     [Theory]
     [InlineData(BlendMode.Opaque)]

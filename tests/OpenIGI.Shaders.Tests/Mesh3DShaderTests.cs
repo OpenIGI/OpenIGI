@@ -12,7 +12,7 @@ namespace OpenIGI.Shaders.Tests;
 /// <para>
 /// Both terms ride slots of a push block that is exactly the 128 bytes Vulkan guarantees, and both
 /// are read only by the draws they are meant for: a world draw's exposure slot is its lightmap gain,
-/// and the three spare <c>w</c> components are its sun direction. The rig keeps its exposure and its
+/// and the first normal row carries its sun direction separately from fog. The rig keeps its exposure and its
 /// key colour in the same places. What these check is the contract that keeps the two apart — the
 /// gating on the marker and the terrain flag.
 /// </para>
@@ -87,6 +87,7 @@ public sealed class Mesh3DShaderTests
     [Fact]
     public void The_sun_lights_world_draws_only()
     {
+        Assert.Contains("float3 sunModel = push.normalKey0.xyz;", Source, StringComparison.Ordinal);
         Assert.Contains(
             "if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)",
             Source,

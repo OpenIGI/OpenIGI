@@ -200,7 +200,7 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
         _S7 = _S2.colorBgra_0.zyxw;
     }
     output_0.color_0 = _S7;
-    var sunModel_0 : vec3<f32> = vec3<f32>(push_0.markerExposure_0.w, push_0.normalKey1_0.w, push_0.normalKey2_0.w);
+    var sunModel_0 : vec3<f32> = push_0.normalKey0_0.xyz;
     if((abs(push_0.markerExposure_0.x)) > 0.5f)
     {
         _S6 = terrain_0 < 0.5f;

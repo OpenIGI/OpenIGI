@@ -61,10 +61,10 @@ public readonly record struct DetailFade(float Scale, float Offset, float Slope,
 /// </para>
 /// <para>
 /// The layout, slot by slot: the model-view-projection in the first sixteen; the marker and the
-/// lightmap scale or inverse exposure; the pose blend; the rig's ambient level or the sun's first
-/// component. The last three rows are read three different ways — as the terrain's fade ramp and camera
+/// lightmap scale or inverse exposure; the pose blend; and the rig's ambient level. The last three rows
+/// are read three different ways — as the terrain's fade ramp and camera
 /// offset, as the model-to-view rotation with the key colour in the w's for the lit rig, or as a single
-/// rotation row plus the flat model light for an ordinary world draw — and the frame's fog rides in the
+/// model-space sun plus the flat model light for an ordinary world draw — and the frame's fog rides in the
 /// final row of the two that do not need it.
 /// </para>
 /// </remarks>
@@ -124,12 +124,11 @@ public static class ForwardPushBlock
 
         block[18] = state.PoseBlend;
 
-        // The rig's ambient level; for a world draw, the first component of the model-space direction
-        // towards the fixed-function sun, which is zero unless the vertex sun was switched on.
+        // The rig's ambient level; ordinary world draws keep their complete sun in the first normal row.
         float lampFill = Luminance(state.LampLight);
         block[19] = litRig
             ? state.Lighting.AmbientColour.Length + lampFill
-            : state.VertexSun.X;
+            : 0f;
 
         if (state.DetailFade.Active && !litRig)
         {
@@ -183,9 +182,11 @@ public static class ForwardPushBlock
         bool litRig,
         bool hasLightmap)
     {
-        block[20] = modelView.M11;
-        block[21] = modelView.M12;
-        block[22] = modelView.M13;
+        // Ordinary world geometry does not use the rig's normal transform. Keep all three sun
+        // components here: the last row's w is fog density and cannot also hold the sun's z.
+        block[20] = litRig ? modelView.M11 : state.VertexSun.X;
+        block[21] = litRig ? modelView.M12 : state.VertexSun.Y;
+        block[22] = litRig ? modelView.M13 : state.VertexSun.Z;
         block[23] = litRig ? state.Lighting.SunColour.X + state.LampLight.X
             : state.FogTarget == FogTarget.MaterialWeightedHalfScene ? -1f : 0f;
 
