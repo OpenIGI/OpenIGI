@@ -71,9 +71,11 @@ public static class Igi2LevelAi
         ArgumentNullException.ThrowIfNull(setup);
         Dictionary<int, object> byId = TasksById(setup.Root, setup.Player);
         Igi2AiWorld world = setup.World ?? new Igi2AiWorld();
+        // humanai.c HumanAI_UpdateInternalDataHandler: scripts run in the loaded level's namespace.
+        // The desktop may have promoted a preview loop since this shared module was opened.
+        world.Natives = setup.Natives;
         if (setup.World is null)
         {
-            world.Natives = setup.Natives;
             new Igi2HumanAiNatives(world).Register(setup.Natives);
             new Igi2AiSquadNatives(world).Register(setup.Natives);
         }

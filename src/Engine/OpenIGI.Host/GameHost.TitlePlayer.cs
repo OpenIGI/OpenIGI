@@ -203,6 +203,16 @@ internal sealed partial class GameHost
     /// </remarks>
     private void RegisterTitlePlayerCommands(ConsoleSystem console)
     {
+        console.Commands.Add("title_ai", "Reports title guards' AI startup, script, graph and animation state.", context =>
+        {
+            if (_titlePlayer is not ITitlePlayerDiagnostics diagnostics)
+            {
+                context.Print("The active title player exposes no actor diagnostics.");
+                return;
+            }
+            foreach (string line in diagnostics.DescribeActors()) { context.Print(line); }
+        });
+
         console.Commands.Add(
             "title_presentation",
             "Reports the active build, title camera smoothing gates and measured title tick cost.",

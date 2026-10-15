@@ -368,7 +368,9 @@ public sealed class Igi2AiContentModule : IContentModule
 
         // HumanAI_Open and AISquad_Open bind the soldiers' and squads' natives once, for every level the game plays.
         Ai.Runtime.Igi2AiWorld ai = context.Services.GetOrProvide(static () => new Ai.Runtime.Igi2AiWorld());
-        ai.Natives = context.Natives;
+        // A registration-only menu preview shares loaded tables with the playing session. It must not
+        // redirect the live HumanAI script executor into its private namespace; promotion binds it in LevelAi.Build.
+        ai.Natives ??= context.Natives;
         new Ai.Runtime.Igi2HumanAiNatives(ai).Register(context.Natives);
         new Ai.Runtime.Igi2AiSquadNatives(ai).Register(context.Natives);
     }

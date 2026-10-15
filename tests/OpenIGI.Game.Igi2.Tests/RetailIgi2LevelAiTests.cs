@@ -20,6 +20,76 @@ namespace OpenIGI.Game.Igi2.Tests;
 /// <summary>Mission 1's soldiers given their minds and squads, and run, as <c>HumanAI</c> and <c>AISquad</c> load and run them.</summary>
 public sealed class RetailIgi2LevelAiTests
 {
+    /// <summary>A registration-only backdrop must not redirect the playing AI's script namespace.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Preview_registration_keeps_the_playing_ai_namespace()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Igi2AiWorld ai = m.Services!.Require<Igi2AiWorld>();
+        Assert.Same(m.Run.Natives, ai.Natives);
+        Engine.Flow.GameLoop preview = new(new Engine.Time.ManualTimeSource(1000),
+            structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
+        VirtualFileSystem files = new();
+        files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
+        Engine.Titles.TitleSession.Start(Igi2Runtime.Instance.Modules, preview, files, new ResourceRegistry(files),
+            loadTables: false, inherited: m.Services);
+        Assert.Same(m.Run.Natives, ai.Natives);
+    }
+
+    /// <summary>The desktop gameplay factory starts living minds and advances their animation after skipping the intro.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Gameplay_factory_starts_living_guards()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
+        resources.FileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
+        // The menu builds a second loop with inherited tables, then promotes that loop for play.
+        Engine.Flow.GameLoop promoted = new(new Engine.Time.ManualTimeSource(1000),
+            structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
+        Engine.Titles.TitleSession.Start(Igi2Runtime.Instance.Modules, promoted, resources.FileSystem, resources,
+            loadTables: false, inherited: m.Services);
+        Engine.Tasks.LevelTask root = (Engine.Tasks.LevelTask)promoted.Tasks.New(promoted.Tasks.Root,
+            promoted.Types.Get(Engine.Tasks.EngineTaskTypes.Level));
+        new Engine.Level.LevelLoader(root, promoted.TaskCommands, promoted.Natives, resources).LoadScript("MISSION:objects.qvm");
+        Assert.Same(m.Run.Natives, m.Services!.Require<Igi2AiWorld>().Natives);
+        MissionDescriptor descriptor = new(11, "igi2", string.Empty, string.Empty,
+            MissionDescriptor.NextMissionUndefined, "LOCAL:missions/location1/level1/", packs[0].Directory,
+            packs[^1].Directory, packs[0].Name, packs[^1].Name, string.Empty);
+        LoadedMission mission = new(descriptor, packs[0], packs[^1], [], Packs: packs);
+        WorldBuildRequest world = new(mission, root, resources, null,
+            Core.Diagnostics.NullLogger.Instance, Services: m.Services);
+        WorldBuildResult built = Igi2WorldBuilder.Instance.Build(world);
+        Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(Igi2Gameplay.Instance.CreatePlayer(
+            new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
+        Assert.NotNull(player.Level);
+        Assert.NotNull(player.Ai);
+        Assert.Same(promoted.Natives, player.Ai.Natives);
+        Igi2HumanAi[] minds = [.. player.Soldiers!.Bodies.Select(static body => body.Mind).OfType<Igi2HumanAi>()];
+        Assert.NotEmpty(minds);
+        Assert.All(minds, static mind => Assert.NotNull(mind.Script));
+        Igi2HumanAi facing = Assert.Single(minds, static mind => mind.Task.Parent?.Id == 400);
+        Matrix3f orientation = facing.Soldier.Orientation;
+        Vector3d soldierAt = facing.Soldier.Position;
+        player.Human.Position = new Vector3d(soldierAt.X + (orientation.M12 * 61440.0),
+            soldierAt.Y + (orientation.M22 * 61440.0), soldierAt.Z);
+        player.Human.UpdateViewBody(updateAnimation: false);
+        player.Human.Damage.MaxDamage = 1000000f;
+        int ammunition = facing.AmmoInWeapon();
+        Assert.True(ammunition > 0);
+        bool detected = false;
+        for (int tick = 0; tick < 600; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+            detected |= facing.Squad!.Targets.Count > 0;
+        }
+        Assert.True(detected);
+        Assert.True(facing.AmmoInWeapon() < ammunition);
+        Assert.All(minds, static mind => Assert.True(mind.HasStarted,
+            $"AI {mind.Task.Id}: graph={mind.Task.GraphId}/{mind.Graph is not null}, active={mind.Soldier.IsActive}, time={mind.Soldier.MissionTime}"));
+        Assert.All(minds, static mind => Assert.True(mind.Soldier.Animation.MainTime > 0,
+            $"AI {mind.Task.Id}: animation={mind.Soldier.Animation.MainTime}, step={mind.Soldier.Animation.MainTimeStep}, state={mind.Soldier.Locomotion.CurrentState}"));
+    }
+
     /// <summary>
     /// Every squad gets its soldiers as one team, in its children's order, and every soldier with a <c>HumanAI</c> gets a mind: its
     /// script read from <c>MISSION:AI/&lt;id&gt;</c>, its graph and the node nearest it, and its type's tuning.
