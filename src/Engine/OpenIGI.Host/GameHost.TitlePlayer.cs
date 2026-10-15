@@ -119,6 +119,16 @@ internal sealed partial class GameHost
     {
         _titleMouseX += _window.Input.Mouse.DeltaX;
         _titleMouseY += _window.Input.Mouse.DeltaY;
+        if (_titlePlayer is ITitlePlayerLook look)
+        {
+            if (RenderCVars.SmoothPresentation.Value && !_options.Lockstep)
+            {
+                PlayerProfile? profile = _configuration.Active;
+                look.GatherLook(_window.Input.Mouse.DeltaX, _window.Input.Mouse.DeltaY,
+                    profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity, profile?.InvertMouse ?? false);
+            }
+            else { look.ResetLook(); }
+        }
         foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
         {
             if (PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(action)))
@@ -183,6 +193,7 @@ internal sealed partial class GameHost
         PlayerProfile? profile = _configuration.Active;
         bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
             && !_missionFailedMenu;
+        if (!available && _titlePlayer is ITitlePlayerLook stopped) { stopped.ResetLook(); }
         _titlePresentation.SetLookPreview(available && _titlePlayer is ITitlePlayerLook { CanPreviewLook: true } look
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
                 profile?.InvertMouse ?? false)

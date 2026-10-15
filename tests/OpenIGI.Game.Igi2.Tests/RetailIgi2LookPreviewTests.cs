@@ -35,8 +35,8 @@ public sealed class RetailIgi2LookPreviewTests
     public void Preview_respects_pitch_bounds_and_view_locks()
     {
         Igi2TitlePlayer player = Player();
-        Matrix3f up = player.PreviewLook(0f, 255f, 1f, false);
-        Matrix3f down = player.PreviewLook(0f, 255f, 1f, true);
+        Matrix3f up = player.PreviewLook(0f, -10000f, 1f, false);
+        Matrix3f down = player.PreviewLook(0f, -10000f, 1f, true);
         Assert.InRange(up.Column2.Z, 0.99f, 1f);
         Assert.InRange(down.Column2.Z, -1f, -0.99f);
         player.Human.View.IsLockOrientation = true;
@@ -69,7 +69,7 @@ public sealed class RetailIgi2LookPreviewTests
         for (int tick = 0; tick < 60; tick++)
         {
             Matrix3f predicted = player.PreviewLook(8f, 0f, 0.4f, false);
-            player.Tick(new TitlePlayerInput(8f, 0f, default, default, 0.4f, false));
+            player.Tick(new TitlePlayerInput(8f, 0f, default, default, 0.4f, false, UnfilteredMouse: true));
             Vector3f expected = predicted.Column2, actual = player.ViewOrientation.Row3;
             Assert.InRange((actual - expected).Length, 0f, 0.00001f);
             Assert.True(player.Human.IsGroundRigidObject);
@@ -104,7 +104,8 @@ public sealed class RetailIgi2LookPreviewTests
     {
         Igi2TitlePlayer player = Player();
         player.Tick(new TitlePlayerInput(512f, 4f, default, default, 0.4f, false, UnfilteredMouse: true));
-        Assert.InRange(player.Human.Gamma, -2.524f, -2.522f);
+        float expected = -MouseLookSettings.FromSensitivity(0.4f, false).YawDelta(512f);
+        Assert.InRange(MathF.Abs(player.Human.Gamma - expected), 0f, 0.000001f);
         float pitch = player.Human.View.IdealPitch;
         player.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false, UnfilteredMouse: true));
         Assert.Equal(pitch, player.Human.View.IdealPitch);
@@ -118,6 +119,72 @@ public sealed class RetailIgi2LookPreviewTests
         float filteredPitch = retail.Human.View.IdealPitch;
         retail.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
         Assert.True(retail.Human.View.IdealPitch > filteredPitch);
+    }
+
+    /// <summary>Both titles use the same physical count-to-angle curve, axis signs and zoom scaling.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Smooth_mouse_matches_igi1_at_every_sensitivity_and_zoom()
+    {
+        foreach (float sensitivity in new[] { 0f, 0.05f, 0.4f, 1f })
+        {
+            foreach (float fov in new[] { 0.25f, 1f })
+            {
+                foreach (bool invert in new[] { false, true })
+                {
+                    Igi2TitlePlayer player = Player();
+                    player.Human.View.FieldOfView = fov;
+                    MouseLookSettings igi1 = MouseLookSettings.FromSensitivity(sensitivity, invert);
+                    float zoom = MouseLookSettings.ZoomSensitivityScale(fov);
+                    player.Tick(new TitlePlayerInput(19.5f, -7.25f, default, default, sensitivity, invert, UnfilteredMouse: true));
+                    Assert.InRange(MathF.Abs(player.Human.Gamma + (igi1.YawDelta(19.5f) * zoom)), 0f, 0.000001f);
+                    Assert.InRange(MathF.Abs(player.Human.View.IdealPitch - (igi1.PitchDelta(-7.25f) * zoom)), 0f, 0.000001f);
+                }
+            }
+        }
+    }
+
+    /// <summary>A reversal at the pitch limit is applied immediately, even before the next simulation tick.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Frame_pitch_clamping_does_not_swallow_a_reversal()
+    {
+        Igi2TitlePlayer player = Player();
+        player.Human.View.IdealPitch = Humans.Igi2HumanView.PitchLimit - 0.0001f;
+        player.GatherLook(0f, -10000f, 0.4f, false);
+        player.GatherLook(0f, 1f, 0.4f, false);
+        Matrix3f preview = player.PreviewLook(0f, -9999f, 0.4f, false);
+        player.Tick(new TitlePlayerInput(0f, -9999f, default, default, 0.4f, false, UnfilteredMouse: true));
+        float expected = Humans.Igi2HumanView.PitchLimit + MouseLookSettings.FromSensitivity(0.4f, false).PitchDelta(1f);
+        Assert.InRange(MathF.Abs(player.Human.View.IdealPitch - expected), 0f, 0.000001f);
+        Assert.InRange((preview.Column2 - player.ViewOrientation.Row3).Length, 0f, 0.00001f);
+    }
+
+    /// <summary>Fractional counts and reversals survive several render frames per tick, without reapplying consumed motion.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Frame_motion_is_committed_once_without_losing_counts()
+    {
+        Igi2TitlePlayer player = Player();
+        MouseLookSettings igi1 = MouseLookSettings.Default;
+        float gamma = 0f, pitch = 0f;
+        float[] counts = [0.125f, -0.25f, 1f, -2f, 4f, 0.25f, 0.125f];
+        for (int tick = 0; tick < 30; tick++)
+        {
+            float sum = 0f;
+            foreach (float count in counts)
+            {
+                player.GatherLook(count, count, 0.4f, false);
+                gamma -= igi1.YawDelta(count);
+                pitch += igi1.PitchDelta(count);
+                sum += count;
+            }
+            Matrix3f preview = player.PreviewLook(sum, sum, 0.4f, false);
+            player.Tick(new TitlePlayerInput(sum, sum, default, default, 0.4f, false, UnfilteredMouse: true));
+            Assert.InRange(MathF.Abs(player.Human.Gamma - gamma), 0f, 0.00001f);
+            Assert.InRange(MathF.Abs(player.Human.View.IdealPitch - pitch), 0f, 0.00001f);
+            Assert.InRange((preview.Column2 - player.ViewOrientation.Row3).Length, 0f, 0.00001f);
+            float committed = player.Human.Gamma;
+            player.Tick(RetailIgi2Mission1.Idle with { UnfilteredMouse = true });
+            Assert.Equal(committed, player.Human.Gamma);
+        }
     }
 
     private static Igi2TitlePlayer Player() => Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),

@@ -4,11 +4,11 @@ using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Player;
 
-/// <summary>The movement camera used while the player performs a timed interaction.</summary>
+/// <summary>The collision-constrained camera used for timed interactions and the player's death animation.</summary>
 internal sealed class Igi2MovementCamera
 {
     private readonly Igi2LineTrace _trace = new(1);
-    private bool _active;
+    private int _mode;
     private float _alpha;
     private float _gamma;
     private float _distance;
@@ -19,12 +19,12 @@ internal sealed class Igi2MovementCamera
 
     public void Run(Igi2HumanPlayer human, Igi2CollisionWorld world, double mouseX, double mouseY)
     {
-        if (human.CameraMode != 3) { _active = false; return; }
-        // humancamera.c HumanCamera_MovementInit: start a quarter metre away, aim for 2.5 metres.
+        if (human.CameraMode is not (3 or 5)) { _mode = 0; return; }
+        // humancamera.c HumanCamera_MovementInit / HumanCamera_DeathCameraInit: seed the orbit, then find clearance to 2.5 metres.
         // computermap.c sub_4DE380: choose a clear direction around the body before orbiting.
         Vector3d anchor = human.BonePosition("center");
         if (anchor == human.Position) { anchor = human.View.Position; }
-        if (!_active)
+        if (_mode != human.CameraMode)
         {
             _alpha = 0f;
             _gamma = -1.5707964f;
@@ -38,8 +38,8 @@ internal sealed class Igi2MovementCamera
                 if (clear > best) { best = clear; _gamma = gamma; }
                 if (clear >= 12288.0) { break; }
             }
-            _distance = (float)Math.Max(0.0, Math.Min(_distance, best - 2048.0));
-            _active = true;
+            _distance = (float)Math.Max(0.0, Math.Min(10240.0, best - 2048.0));
+            _mode = human.CameraMode;
         }
         // humancamera.c HumanCamera_UpdateAlphaAndGammaWithCollisions: 6 degrees per tick, pitch limits, 1/30 metre recovery.
         float da = Math.Clamp(((Fpu)mouseY * 0.6981317400932312).F, -0.10471976f, 0.10471976f);
@@ -51,8 +51,29 @@ internal sealed class Igi2MovementCamera
         _distance = Math.Min(available, Math.Min(10240f, ((Fpu)_distance + 136.53334045410156).F));
         Position = new(((Fpu)offset.X * _distance + anchor.X).Value,
             ((Fpu)offset.Y * _distance + anchor.Y).Value, ((Fpu)offset.Z * _distance + anchor.Z).Value);
-        float yaw = (((Fpu)human.Gamma + _gamma) + 1.5707963705062866).F;
-        Orientation = Igi2Pose.FromAngles(default, new Vector3f(-_alpha, 0f, yaw)).ToMatrix();
+        // computermap.c sub_4DEE70: look back at the anchor, with world up, even on tilted ground.
+        Fpu dx = (Fpu)anchor.X - Position.X, dy = (Fpu)anchor.Y - Position.Y, dz = (Fpu)anchor.Z - Position.Z;
+        Vector3f forward;
+        if (dx.Value == 0.0 && dy.Value == 0.0) { forward = new(0f, 1f, 0f); }
+        else
+        {
+            Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((dx * dx) + (dy * dy)) + (dz * dz));
+            forward = new((dx * inverse).F, (dy * inverse).F, (dz * inverse).F);
+        }
+        Vector3f right = Normalize(new(forward.Y, -forward.X, 0f));
+        Vector3f up = Normalize(new(
+            (((Fpu)right.Y * forward.Z) - ((Fpu)right.Z * forward.Y)).F,
+            (((Fpu)right.Z * forward.X) - ((Fpu)right.X * forward.Z)).F,
+            (((Fpu)right.X * forward.Y) - ((Fpu)right.Y * forward.X)).F));
+        Orientation = new(right.X, forward.X, up.X, right.Y, forward.Y, up.Y, right.Z, forward.Z, up.Z);
+    }
+
+    private static Vector3f Normalize(Vector3f value)
+    {
+        Fpu length = Fpu.Sqrt((((Fpu)value.X * value.X) + ((Fpu)value.Y * value.Y)) + ((Fpu)value.Z * value.Z));
+        if (length.Value == 0.0) { return value; }
+        Fpu inverse = (Fpu)1.0 / length;
+        return new(((Fpu)value.X * inverse).F, ((Fpu)value.Y * inverse).F, ((Fpu)value.Z * inverse).F);
     }
 
     private static Vector3d Direction(Igi2HumanPlayer human, float alpha, float gamma)

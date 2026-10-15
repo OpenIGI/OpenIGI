@@ -1268,7 +1268,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// </remarks>
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
-        : Human.CameraMode == 3 ? _movementCamera.Position
+        : Human.CameraMode is 3 or 5 ? _movementCamera.Position
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position;
 
     /// <inheritdoc/>
@@ -1290,7 +1290,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                     new Vector3f(c[2], c[5], c[8]));
             }
 
-            Matrix3f m = Human.CameraMode == 3 ? _movementCamera.Orientation
+            Matrix3f m = Human.CameraMode is 3 or 5 ? _movementCamera.Orientation
                 : Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
@@ -1301,7 +1301,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
-    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView : Human.CameraMode == 3 ? 1f : Human.View.FieldOfView;
+    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -1399,7 +1399,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
                 // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
                 // interaction mode draws the working body rather than the first-person weapon.
-                IReadOnlyList<TitleWorldModel> working = Human.CameraMode == 3 && Human.Model is { } body
+                IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
                     ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks) : [];
                 _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. working];
                 _lyingTick = _ticks;
@@ -1475,6 +1475,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
         Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;
+        _lookInput = input;
         _reader.Read(new Igi2PlayerInputState(
             Analog(input.MouseX, Human.UnfilteredMouse), Analog(input.MouseY, Human.UnfilteredMouse), held, pressed), _frame);
         if (Level is { } level)
@@ -1494,6 +1495,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
 
         _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);
+        ResetLook();
         Sounds.Run();
         _ticks++;
     }
@@ -1524,6 +1526,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     {
         Human.Pickups?.Run();
         Human.View.RunZoom();
+        if (Human.UnfilteredMouse) { WriteSmoothLook(); }
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
