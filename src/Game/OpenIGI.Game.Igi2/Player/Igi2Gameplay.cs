@@ -925,7 +925,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>(), .. turrets, .. cars];
+        player.Cameras = [.. Descendants(root).OfType<Interaction.Igi2SecurityCameraTask>()];
+        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>(), .. turrets, .. cars, .. player.Cameras];
         player.Motions = movers.Count > 0 || partMovers.Count > 0 ? new Interaction.Igi2MoverMotions(movers, partMovers) : null;
 
         // The game is played at the active profile's difficulty (Config_GetActiveDifficultyLevel); here the difficulty is chosen
@@ -1124,6 +1125,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the title profile whose HUD preferences are currently active.</summary>
     public Config.Igi2GameConfig? GameConfig { get; set; }
 
+    /// <summary>Gets or sets the cameras whose lenses and indicator lights are drawn.</summary>
+    public IReadOnlyList<Interaction.Igi2SecurityCameraTask> Cameras { get; set; } = [];
+
     /// <summary>DirectInput's relative counts to the analog axis, <c>Mouse_Update</c> (<c>igi2ed 0x55ED60</c>): a 255th each.</summary>
     private const double CountsToAnalog = 0.00392156862745098;
 
@@ -1157,6 +1161,22 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     private long _heldTick = -1;
     private TitleWorldModel[] _lying = [];
     private long _lyingTick = -1;
+    private TitleWorldSprite[] _lights = [];
+    private long _lightsTick = -1;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<TitleWorldSprite> WorldSprites
+    {
+        get
+        {
+            if (_lightsTick != _ticks)
+            {
+                _lights = [.. Cameras.Select(static c => c.Indicator()).OfType<TitleWorldSprite>()];
+                _lightsTick = _ticks;
+            }
+            return _lights;
+        }
+    }
 
     private readonly Igi2LevelSurroundings _surroundings;
 
@@ -1248,6 +1268,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// </remarks>
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
+        : Human.CameraMode == 3 ? _movementCamera.Position
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position;
 
     /// <inheritdoc/>
@@ -1269,7 +1290,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                     new Vector3f(c[2], c[5], c[8]));
             }
 
-            Matrix3f m = Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
+            Matrix3f m = Human.CameraMode == 3 ? _movementCamera.Orientation
+                : Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
                 new Vector3f(m.M13, m.M23, m.M33),
@@ -1279,7 +1301,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
-    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView : Human.View.FieldOfView;
+    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView : Human.CameraMode == 3 ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -1290,7 +1312,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     {
         get
         {
-            if (Level?.CutsceneView is not null)
+            if (Level?.CutsceneView is not null || Human.CameraMode != 1 || Human.IsThirdPerson)
             {
                 return null;
             }
@@ -1375,7 +1397,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
                 IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
                 IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks];
+                // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
+                // interaction mode draws the working body rather than the first-person weapon.
+                IReadOnlyList<TitleWorldModel> working = Human.CameraMode == 3 && Human.Model is { } body
+                    ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks) : [];
+                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. working];
                 _lyingTick = _ticks;
             }
 
@@ -1467,6 +1493,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             RunPlayerDelayed();
         }
 
+        _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);
         Sounds.Run();
         _ticks++;
     }

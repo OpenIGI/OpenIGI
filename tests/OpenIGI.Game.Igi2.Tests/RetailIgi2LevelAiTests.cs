@@ -109,20 +109,23 @@ public sealed class RetailIgi2LevelAiTests
         using (RecordingGraphicsDevice device = new())
         {
             OpenIGI.Rendering.SpriteBatch batch = new(device);
-            Presentation.ITitleHudPresenter hud = Assert.IsAssignableFrom<Presentation.ITitleHudPresenter>(
+            using Presentation.ITitleHudPresenter hud = Assert.IsAssignableFrom<Presentation.ITitleHudPresenter>(
                 Igi2PresentationProvider.Instance.CreateTitleHud(new Presentation.HudPresentationRequest(device, Core.Diagnostics.NullLogger.Instance)));
+            hud.Load(resources.FileSystem);
             player.GameConfig = new Config.Igi2GameConfig();
             batch.Begin();
             hud.Draw(batch, player, 1280, 720);
             batch.End();
             Assert.NotEmpty(device.Draws);
-            Assert.All(device.Draws.SelectMany(static draw => draw.Vertices), static vertex => Assert.True(vertex.Color.A > 0));
+            Assert.Contains(device.Draws, static draw => draw.Texture.IsValid);
+            int withSight = device.Draws.Sum(static draw => draw.Vertices.Length);
             device.Draws.Clear();
             player.GameConfig.Active!.CrossHairAlpha = 0f;
             batch.Begin();
             hud.Draw(batch, player, 1280, 720);
             batch.End();
-            Assert.Empty(device.Draws);
+            Assert.NotEmpty(device.Draws);
+            Assert.True(device.Draws.Sum(static draw => draw.Vertices.Length) < withSight);
         }
         Assert.All(minds, static mind => Assert.True(mind.HasStarted,
             $"AI {mind.Task.Id}: graph={mind.Task.GraphId}/{mind.Graph is not null}, active={mind.Soldier.IsActive}, time={mind.Soldier.MissionTime}"));

@@ -168,6 +168,19 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
         _damageFlash[3] = d;
     }
 
+    // humanplayer.c HumanPlayer_UpdateDamageFlash: each corner loses 1/45 per simulation tick.
+    private void UpdateDamageFlash()
+    {
+        for (int i = 0; i < _damageFlash.Length; i++)
+        {
+            if (_damageFlash[i] != 0f)
+            {
+                Fpu faded = (Fpu)_damageFlash[i] - 0.02222222276031971;
+                _damageFlash[i] = faded.Value < 0.0 ? 0f : faded.F;
+            }
+        }
+    }
+
     /// <summary>The body pushed along the shot's line on the ground, its impact speed taking the unit direction's share.</summary>
     private void Push(Vector3f d)
     {

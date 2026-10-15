@@ -1980,6 +1980,8 @@ internal sealed partial class GameHost
             : null;
         _player = null;
         _titlePlayer = null;
+        _titleHud?.Dispose();
+        _titleHud = null;
         _playerMode = false;
         _pendingGenericTbaExplosions.Clear();
 

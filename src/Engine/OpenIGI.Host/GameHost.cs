@@ -6286,6 +6286,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _playerMode && !_computerOpen && !_entry.IsCameraActive && _cutscenes?.IsPlaying != true
                     && _thirdPerson.ShowsViewModel)
                 {
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     titleHud.Draw(batch, titleHudPlayer, _window.Width, _window.Height);
                     batch.End();
@@ -7837,6 +7838,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         _renderer?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
+        _titleHud?.Dispose();
         _cardLighting?.Dispose();
         _cardLookup?.Dispose();
         _sdfClipmaps?.Dispose();

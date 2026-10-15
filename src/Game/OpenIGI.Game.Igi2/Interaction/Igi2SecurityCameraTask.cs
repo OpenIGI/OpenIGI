@@ -33,10 +33,10 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// a target outside five degrees of its aim at three quarters of a degree a tick, within its limits; with none, after two seconds
 /// it sweeps between its limits at its speed, holding at each end for its delay.
 /// </para>
-/// <para>The lens's swivel and destroyed model are not yet drawn; its collision follows both.</para>
+/// <para>The visible lens follows the collision frame; its indicator uses the lens model's first magic vertex.</para>
 /// </remarks>
 public sealed partial class Igi2SecurityCameraTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2Detectable, IIgi2WeaponHitTarget, IIgi2ExplosionTarget
+    : Igi2Task, IIgi2PlacedTask, IIgi2Detectable, IIgi2WeaponHitTarget, IIgi2ExplosionTarget, IIgi2PartMover
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SCamera";
@@ -185,6 +185,49 @@ public sealed partial class Igi2SecurityCameraTask
 
     /// <summary>Gets the lens's turn off rest, <c>vGamma</c>.</summary>
     public float LensGamma => _lens.Gamma;
+
+    /// <summary>Gets the lens pivot in world units.</summary>
+    public Vector3d LensPosition => _lens.Position;
+
+    /// <summary>Gets the lens frame, shared by its collision and visible model.</summary>
+    public Matrix3f LensOrientation => new(_lens.Frame[0], _lens.Frame[1], _lens.Frame[2],
+        _lens.Frame[3], _lens.Frame[4], _lens.Frame[5], _lens.Frame[6], _lens.Frame[7], _lens.Frame[8]);
+
+    /// <summary>Gets whether the indicator is in its bright phase (scamera.c SCamera_SCameraLensRunHandler).</summary>
+    public bool LightBright { get; private set; }
+
+    private int _lightTicks;
+
+    /// <summary>Builds the powered lens's blinking indicator (scamera.c SCamera_SCameraLensEnterHandler).</summary>
+    /// <returns>The light, or null when powered off or destroyed.</returns>
+    public Game.Player.TitleWorldSprite? Indicator()
+    {
+        if (!IsOn || IsDestroyed) { return null; }
+        Vector3d position = Igi2MagicVertex.Position(Models?.Invoke(_lens.Model ?? CameraModel), 0, _lens.Frame, _lens.Position);
+        bool alert = IsDetection || Target is not null;
+        bool yellow = HolderModel.StartsWith("313", StringComparison.Ordinal);
+        byte red = alert ? (byte)128 : yellow ? (byte)100 : (byte)0;
+        byte green = alert ? (byte)0 : yellow ? (byte)100 : (byte)128;
+        if (!LightBright && !alert) { red /= 2; green /= 2; }
+        return new("alarmlight.spr", position, LightBright ? 1024f : 512f,
+            Core.Graphics.Bgra32.FromRgba(red, green, 0, 128));
+    }
+
+    /// <inheritdoc/>
+    public bool TryMovePart(Game.World.WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        positionMetres = placement.Position;
+        orientation = placement.Orientation;
+        if (placement.LevelId != Id || !string.Equals(placement.Instance.Name, CameraModel, StringComparison.OrdinalIgnoreCase)) { return false; }
+        // scamera.c SCamera_SCameraLensRunHandler: all lens attachments follow the lens pivot.
+        Matrix3f built = Igi2Pose.FromAngles(default, new Vector3f(CameraAlpha, 0f, ((Fpu)HolderGamma + CameraGamma).F)).ToMatrix();
+        Matrix3f current = LensOrientation;
+        Vector3d local = built.Transform(Game.World.WorldScene.ToUnits(placement.Position) - LensPosition);
+        positionMetres = Game.World.WorldScene.ToMetres(current.Transposed().Transform(local) + LensPosition);
+        orientation = current * (built.Transposed() * placement.Orientation);
+        return true;
+    }
 
     /// <summary>Gets the lens's damage, <c>vDamage</c>.</summary>
     public float Damage => _lens.Damage;
@@ -421,6 +464,8 @@ public sealed partial class Igi2SecurityCameraTask
     // The lens's tick, SCamera_SCameraLensRunHandler (igi2 0x48EF20). The computer map's blink timers are the computer's.
     private void RunLens()
     {
+        if (_lightTicks != 0) { _lightTicks--; }
+        else { LightBright = !LightBright; _lightTicks = 7; }
         // A first detection while the level's alarm sounds tells the camera's side where its target is: AIEVENT_CAMERAALARMUPDATE.
         if (_isDetection != 0 && _isLastDetection == 0 && IsAlarmSounding?.Invoke() == true && _lens.Target is { } seen)
         {

@@ -17,8 +17,12 @@ using OpenIGI.UI;
 namespace OpenIGI.Presentation;
 
 /// <summary>Draws the HUD for a player whose gameplay is supplied by its title.</summary>
-public interface ITitleHudPresenter
+public interface ITitleHudPresenter : IDisposable
 {
+    /// <summary>Loads the title's sprites and fonts before drawing.</summary>
+    /// <param name="files">The installed title data.</param>
+    void Load(VirtualFileSystem files);
+
     /// <summary>Draws into an open sprite batch, with state read from the title's own player.</summary>
     /// <param name="batch">The open batch.</param>
     /// <param name="player">The playing title's player.</param>

@@ -75,6 +75,38 @@ public sealed class RetailIgi2SecurityCameraTests
         Igi2RigidObject lens = m.Collision!.SolidsOf(Igi2SecurityCameraTask.TypeName, Sweeper).Single(static s => s.Owner is Igi2CollisionOwner { Depth: 1 });
         float turn = (((Fpu)camera.LensGamma + camera.HolderGamma) + camera.CameraGamma).F;
         Assert.Equal(Igi2Pose.Rotation(camera.LensAlpha, 0f, turn), lens.Orientation);
+
+        (Igi2DrawableSceneResult built, Engine.Resources.ResourceRegistry resources) = Igi2LevelScene.Build(m.Level);
+        Game.World.WorldPlacement head = built.Scene.Placements.Single(p => p.LevelId == Sweeper && p.Instance.Name == camera.CameraModel);
+        Game.World.WorldPlacement holder = built.Scene.Placements.Single(p => p.LevelId == Sweeper && p.Instance.Name == camera.HolderModel);
+        Assert.True(camera.TryMovePart(head, out Vector3d drawn, out Matrix3f rotation));
+        Assert.False(camera.TryMovePart(holder, out _, out _));
+        Vector3d expected = Game.World.WorldScene.ToMetres(lens.Position);
+        Assert.Equal(expected.X, drawn.X, 4);
+        Assert.Equal(expected.Y, drawn.Y, 4);
+        Assert.Equal(expected.Z, drawn.Z, 4);
+        Assert.Equal(camera.LensOrientation.M12, rotation.M12, 5);
+        Assert.NotEqual(head.Orientation, rotation);
+        Game.Player.TitleWorldSprite light = Assert.IsType<Game.Player.TitleWorldSprite>(camera.Indicator());
+        Assert.True(light.Colour.G > 0);
+        Assert.Equal(0, light.Colour.R);
+        for (int tick = 0; tick < 8; tick++) { m.Run.Tick(); }
+        Assert.NotEqual(light.HalfSize, camera.Indicator()!.HalfSize);
+        using RecordingGraphicsDevice device = new();
+        using ViewModel.Igi2ViewModelRenderer renderer = new(device, resources);
+        Assert.True(renderer.Load(built.Scene.Mission));
+        Vector3f ambient = new(0.1f, 0.2f, 0.3f);
+        device.SetModelAmbient(ambient);
+        renderer.DrawWorldSprites([light], new Rendering.Camera3D(default, Matrix3f.Identity), Matrix4f.Identity);
+        RecordingGraphicsDevice.MeshDrawCall draw = Assert.Single(device.MeshDraws);
+        Assert.Equal(Rendering.DepthState.TestOnly, draw.DepthState);
+        Assert.Equal(Rendering.BlendMode.Additive, draw.Blend);
+        Assert.True(draw.Diffuse.IsValid);
+        Assert.Equal(Vector3f.One, draw.ModelAmbient);
+        Assert.Equal(ambient, device.ModelAmbient);
+        camera.BulletDamage(1f);
+        m.Run.Tick();
+        Assert.Null(camera.Indicator());
     }
 
     /// <summary>

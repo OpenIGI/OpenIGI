@@ -7,14 +7,27 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.Hud;
 
-/// <summary>The weapon sight for the title-owned player, independent of the host's IGI1 HUD state.</summary>
-public sealed class Igi2HudRenderer : ITitleHudPresenter
+/// <summary>The retail status display for the title-owned player.</summary>
+public sealed partial class Igi2HudRenderer : ITitleHudPresenter
 {
     /// <inheritdoc/>
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (player is not Igi2TitlePlayer title || title.IsCutscenePlaying || title.Human.IsDead
+        if (player is not Igi2TitlePlayer title) { return; }
+        DrawMessages(batch, title, screenWidth, screenHeight);
+        if (!title.IsCutscenePlaying && !title.Human.IsDead)
+        {
+            DrawStatus(batch, title, screenWidth, screenHeight);
+            DrawInteraction(batch, title.Human, screenWidth, screenHeight);
+        }
+        DrawSight(batch, title, screenWidth, screenHeight);
+        if (!title.IsCutscenePlaying) { DrawEffects(batch, title.Human, screenWidth, screenHeight); }
+    }
+
+    private static void DrawSight(SpriteBatch batch, Igi2TitlePlayer title, int screenWidth, int screenHeight)
+    {
+        if (title.IsCutscenePlaying || title.Human.IsDead || title.Human.IsProgressBar
             || title.Human.IsThirdPerson || title.Human.View.IsOverride || title.Human.CameraMode != 1
             || title.Weapons is not { Inventory.Current: { } held } weapons || weapons.IsZoomFireModeActive)
         {

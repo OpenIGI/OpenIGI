@@ -37,7 +37,7 @@ namespace OpenIGI.Game.Igi2.ViewModel;
 /// lit the same way, under the world's projection.
 /// </para>
 /// </remarks>
-public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorldModelPresenter
+public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorldModelPresenter
 {
     private const string LogCategory = "igi2.viewmodel";
 
@@ -86,6 +86,8 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
         _table = Igi2ModelTable.Create([.. packs.Select(static pack => pack.Pack)]);
         _models = Igi2DrawableScene.Models(_table, packs);
         _textures = new Igi2TextureLoader(_device, _resources, _logger);
+        _spriteResources = new Igi2SpriteResources(_device, _resources.FileSystem, _logger);
+        _spriteResources.Get("alarmlight.spr");
         return true;
     }
 
@@ -416,6 +418,10 @@ public sealed class Igi2ViewModelRenderer : ITitleViewModelPresenter, ITitleWorl
 
     private void Release()
     {
+        foreach (MeshHandle mesh in _spriteMeshes) { _device.DestroyMesh(mesh); }
+        _spriteMeshes.Clear();
+        _spriteResources?.Dispose();
+        _spriteResources = null;
         foreach (Part? part in _parts.Values.Concat(_bodies.Values))
         {
             if (part is { Mesh.IsValid: true })

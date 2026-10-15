@@ -97,6 +97,12 @@ public interface ITitleWorldModelPresenter
     /// <param name="camera">Where they are seen from, in metres.</param>
     /// <param name="projection">The world's projection.</param>
     void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection);
+
+    /// <summary>Draws camera-facing additive lights against the world's depth.</summary>
+    /// <param name="sprites">The title's lights.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawWorldSprites(IReadOnlyList<TitleWorldSprite> sprites, in Camera3D camera, in Matrix4f projection) { }
 }
 
 /// <summary>Draws the weapon the player is holding.</summary>

@@ -41,6 +41,7 @@ public sealed class RetailIgi2CabinetTests
         Igi2PlayerWeapons weapons = Igi2Gameplay.Arm(session.Session.Services, level.Root, tuning, clips)!;
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(world, tuning.General, cabinet.Position, 0f, AiDifficulty.Easy, clips, body.BoneHierarchy, weapons);
         player.Human.ModelRadius = body.NativeMarkerBound;
+        player.Human.Model = Humans.Igi2BodyModel.From(point.Model, body);
         player.Human.RootTranslation = body.BoneHierarchy!.Translations[0];
         player.Human.AnimTriggers = session.Session.Services.Require<Igi2AnimTriggers>();
         Flow.Igi2LevelRun run = new(level.Root, new OpenIGI.Scripting.Runtime.NativeRegistry(), new Scripting.Igi2ScriptFunctions());
@@ -49,14 +50,29 @@ public sealed class RetailIgi2CabinetTests
         Assert.Equal(Igi2PlayerState.ActivateCabinet, player.Human.Locomotion.CurrentState);
         Assert.Equal((int)(cabinet.SearchTime * 30f), player.Human.TimedActionTime);
         float widest = 0f;
+        bool sawBody = false;
+        bool sawProgress = false;
         for (int tick = 0; tick < 300 && !cabinet.IsSearched; tick++)
         {
             player.Tick(RetailIgi2Mission1.Idle with { Held = PlayerAction.Activate });
             cabinet.Run(run);
+            if (player.Human.CameraMode == 3)
+            {
+                Assert.Null(player.FirstPerson);
+                Assert.Contains(player.WorldModels, model => ReferenceEquals(model.Instance, player.Human));
+                Assert.NotEqual(player.Human.View.Position, player.EyePosition);
+                Vector3d toBody = player.Human.BonePosition("center") - player.EyePosition;
+                Vector3f forward = player.ViewOrientation.Row3;
+                Assert.True((toBody.X * forward.X) + (toBody.Y * forward.Y) + (toBody.Z * forward.Z) > 0.0);
+                sawBody = true;
+                sawProgress |= player.Human.TimedActionTimer > 0 && player.Human.TimedActionTimer < player.Human.TimedActionTime;
+            }
             widest = Math.Max(widest, cabinet.DrawerOffset);
         }
 
         Assert.True(cabinet.IsSearched);
+        Assert.True(sawBody);
+        Assert.True(sawProgress);
         Assert.Equal(Igi2CabinetTask.DrawerTravel, widest);
         Assert.NotEqual(Igi2PlayerState.ActivateCabinet, player.Human.Locomotion.CurrentState);
         Assert.False(player.Human.IsActivating);

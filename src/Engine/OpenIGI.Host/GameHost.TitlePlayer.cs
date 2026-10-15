@@ -53,6 +53,7 @@ internal sealed partial class GameHost
     private void StandTitlePlayer(LoadedMission loaded, LevelTask levelRoot, WorldScene scene)
     {
         _titlePlayer = null;
+        _titleHud?.Dispose();
         _titleHud = null;
         _titleArms?.Dispose();
         _titleArms = null;
@@ -76,6 +77,7 @@ internal sealed partial class GameHost
 
         _titlePlayer = player;
         _titleHud = _presentation.CreateTitleHud(new HudPresentationRequest(_device, _logger));
+        _titleHud?.Load(_resources.FileSystem);
         _titleTickMilliseconds = 0;
         _titleTickMaximumMilliseconds = 0;
         _titleMeasuredTicks = 0;
@@ -297,6 +299,7 @@ internal sealed partial class GameHost
         if (_titlePlayer is ITitleWorldModels owned && _titleArms is ITitleWorldModelPresenter models)
         {
             models.DrawWorld(owned.WorldModels, eye, projection);
+            models.DrawWorldSprites(owned.WorldSprites, eye, projection);
         }
     }
 

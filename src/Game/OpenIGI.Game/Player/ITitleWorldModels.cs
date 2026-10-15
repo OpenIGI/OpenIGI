@@ -13,7 +13,17 @@ public interface ITitleWorldModels
 {
     /// <summary>Gets the models as of the last tick.</summary>
     IReadOnlyList<TitleWorldModel> WorldModels { get; }
+
+    /// <summary>Gets depth-tested light sprites as of the last tick.</summary>
+    IReadOnlyList<TitleWorldSprite> WorldSprites => [];
 }
+
+/// <summary>A camera-facing world sprite, with its position and half-size in world units.</summary>
+/// <param name="Sprite">The title's sprite resource name.</param>
+/// <param name="Position">The world position.</param>
+/// <param name="HalfSize">Half the width and height.</param>
+/// <param name="Colour">The modulating colour and opacity.</param>
+public sealed record TitleWorldSprite(string Sprite, Vector3d Position, float HalfSize, OpenIGI.Core.Graphics.Bgra32 Colour);
 
 /// <summary>One model a title player's level draws in the world: rigid, or a skinned body posed by its skeleton.</summary>
 /// <param name="Model">The model's name, as the title's packs resolve it.</param>

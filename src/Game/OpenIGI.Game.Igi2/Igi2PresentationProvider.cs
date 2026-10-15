@@ -46,7 +46,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     public static Igi2PresentationProvider Instance { get; } = new();
 
     /// <inheritdoc/>
-    public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new Hud.Igi2HudRenderer();
+    public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new Hud.Igi2HudRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
