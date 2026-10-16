@@ -98,6 +98,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
     private readonly List<Igi2BoneCollider> _bodies = [];
+    private readonly List<World.Igi2WaterBody> _waters = [];
     private readonly Igi2TerrainCollider? _terrain;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CollisionWorld"/> class.</summary>
@@ -136,6 +137,17 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     {
         ArgumentNullException.ThrowIfNull(body);
         _bodies.Add(body);
+    }
+
+    /// <summary>Gets the bodies of water in the world: only line traces meet their surfaces.</summary>
+    public IReadOnlyList<World.Igi2WaterBody> Waters => _waters;
+
+    /// <summary>Puts a body of water in the world, as <c>Water_CreateHandler</c> registers its object with its size for a radius.</summary>
+    /// <param name="water">The body.</param>
+    public void AddWater(World.Igi2WaterBody water)
+    {
+        ArgumentNullException.ThrowIfNull(water);
+        _waters.Add(water);
     }
 
     /// <summary>Gets the ground, or <see langword="null"/> for a level with none.</summary>
@@ -687,6 +699,22 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                 else
                 {
                     forest.NextZ(trace);
+                }
+            }
+        }
+
+        // Water answers only line traces (Water_TraceLinesHandler), in its own group.
+        if (lines && (groups & (World.Igi2Water.Group | EveryTypeGroup)) != 0)
+        {
+            foreach (World.Igi2WaterBody water in _waters)
+            {
+                Vector3d p = water.Position;
+                double r = water.BoundingRadius;
+                if (max.X >= p.X - r && min.X <= r + p.X
+                    && max.Y >= p.Y - r && min.Y <= r + p.Y
+                    && p.Z - r <= max.Z && min.Z <= r + p.Z)
+                {
+                    water.TraceLines(trace);
                 }
             }
         }

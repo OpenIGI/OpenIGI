@@ -551,6 +551,15 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// <summary>Gets or sets what explosions show and sound.</summary>
     public IIgi2ExplosionEffects Effects { get; set; } = Igi2NoExplosionEffects.Instance;
 
+    /// <summary>Gets or sets the level's water, which a grenade's blast under it splashes, or <see langword="null"/>.</summary>
+    public World.Igi2Water? Water { get; set; }
+
+    /// <summary>The AI event a grenade's blast raises, <c>20</c>, which alone is looked for under water.</summary>
+    public const int GrenadeBlastEvent = 20;
+
+    /// <summary>The sound a blast under water makes instead of its own, <c>"explo_water"</c>.</summary>
+    public const string UnderwaterSound = "explo_water";
+
     /// <summary>Gets the targets explosions reach, in the order they joined.</summary>
     public IReadOnlyList<IIgi2ExplosionTarget> Targets => _targets;
 
@@ -673,6 +682,16 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     public Igi2Explosion Start(Igi2ExplosionRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Explosion0_NewEx: a grenade's blast half a metre under the surface splashes the water, sounds "explo_water" and
+        // throws no fireballs.
+        if (request.AiEvent == GrenadeBlastEvent && Water is { } water
+            && water.IsUnderWater(new Vector3d(request.Position.X, request.Position.Y, ((Fpu)request.Position.Z - 2048.0).Value), out _, out int body))
+        {
+            water.ExplosionEffect(body, request.Position);
+            request = request with { Sound = UnderwaterSound, FireballCount = 0 };
+        }
+
         Vector3f direction = Physics.Igi2RigidBody.Normalised(request.Direction);
         if (request.Ground is { HitObject: Igi2RigidObject or Igi2SplineSegment } struck)
         {

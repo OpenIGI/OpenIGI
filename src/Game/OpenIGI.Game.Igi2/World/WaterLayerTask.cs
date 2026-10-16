@@ -24,7 +24,7 @@ public sealed partial class WaterLayerTask : Igi2Task
 
     /// <summary>Gets or sets how many wave crests fit into a unit of distance — <c>vFrequency</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Frequency")]
-    public float Frequency { get; set; }
+    public float Frequency { get; set; } = 100f;
 
     /// <summary>Gets or sets how far the surface rises and falls — <c>vAmplitude</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Amplitude")]
@@ -32,7 +32,7 @@ public sealed partial class WaterLayerTask : Igi2Task
 
     /// <summary>Gets or sets how fast the train travels — <c>vSpeed</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Speed")]
-    public float Speed { get; set; }
+    public float Speed { get; set; } = 1f;
 
     /// <summary>Gets or sets which way it travels — <c>vAngle</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Angle")]

@@ -30,6 +30,11 @@ internal sealed class Igi2LevelImpactEffects(Igi2Sounds sounds, Ai.Runtime.Igi2A
     /// <inheritdoc/>
     public void WaterSplash(in Igi2WaterSplash splash)
     {
+        // Water_GunShotEffect: the splash and, maybe, a ripple, on the body the bullet struck.
+        if (splash.Intersection.HitObject is World.Igi2WaterBody water)
+        {
+            water.Module.BulletEffect(water, splash.Intersection.Position, splash.Penetration, splashTexture: null);
+        }
     }
 
     /// <inheritdoc/>

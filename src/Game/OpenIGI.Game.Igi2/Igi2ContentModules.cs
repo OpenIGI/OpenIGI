@@ -262,6 +262,9 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Weapons.Igi2StationaryGunTask>(Weapons.Igi2StationaryGunTask.TypeName);
         context.Types.Register<Weapons.Igi2AiStationaryGunHolderTask>(Weapons.Igi2AiStationaryGunHolderTask.TypeName);
         context.Services.GetOrProvide(static () => new World.Igi2FlockRandom());
+
+        // Water_Open: the water module, whose stream is seeded once for the session.
+        context.Services.GetOrProvide(static () => new World.Igi2Water());
         context.Types.Register<Vehicles.Igi2TrainTask>(Vehicles.Igi2TrainTask.TypeName);
         context.Types.Register<Vehicles.Igi2CarTask>(Vehicles.Igi2CarTask.TypeName);
         context.Types.Register<Vehicles.Igi2CarAiTask>(Vehicles.Igi2CarAiTask.TypeName);

@@ -54,27 +54,27 @@ public sealed partial class WaterTask : Igi2Task
 
     /// <summary>Gets or sets how far the sheet reaches — <c>vRadius</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Size")]
-    public float Size { get; set; }
+    public float Size { get; set; } = 10f;
 
     /// <summary>Gets or sets how finely the sheet is tessellated — <c>vDetail</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Detail")]
-    public float Detail { get; set; }
+    public float Detail { get; set; } = 0.2f;
 
     /// <summary>Gets or sets how transparent the surface is — <c>vAlpha</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Alpha")]
-    public float Alpha { get; set; }
+    public float Alpha { get; set; } = 1f;
 
     /// <summary>Gets or sets how far the surface texture is tiled — <c>vUVScale</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "UV Scale")]
-    public float UvScale { get; set; }
+    public float UvScale { get; set; } = 1f;
 
     /// <summary>Gets or sets how far the reflection is tiled — <c>vEnvScale</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Env Scale")]
-    public float EnvScale { get; set; }
+    public float EnvScale { get; set; } = 0.5f;
 
     /// <summary>Gets or sets how far out the sheet fades — <c>vFadeOut</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Fadeout")]
-    public float FadeOut { get; set; }
+    public float FadeOut { get; set; } = 0.005f;
 
     /// <summary>Gets or sets the surface texture — <c>atTexture[0]</c>.</summary>
     [ScriptParam(ScriptParamType.String256, "Texture")]
@@ -87,16 +87,16 @@ public sealed partial class WaterTask : Igi2Task
 
     /// <summary>Gets or sets the water's own colour — <c>tDiffuseColor</c>.</summary>
     [ScriptParam(ScriptParamType.Rgb, "Diffuse Color")]
-    public Vector3f DiffuseColour { get; set; }
+    public Vector3f DiffuseColour { get; set; } = new(0.1f, 0.1f, 0f);
 
     /// <summary>Gets or sets the colour of its highlights — <c>tSpecularColor</c>.</summary>
     [ScriptParam(ScriptParamType.Rgb, "Specular Color")]
-    public Vector3f SpecularColour { get; set; }
+    public Vector3f SpecularColour { get; set; } = new(0.1f, 0.1f, 0f);
 
     /// <summary>Gets or sets how far light travels into the water before it is absorbed, in metres.</summary>
     /// <remarks><c>vAbsorptionLength</c> — what makes shallow water read as shallow.</remarks>
     [ScriptParam(ScriptParamType.Real32, "Absorption length (depth) (m)")]
-    public float AbsorptionLength { get; set; }
+    public float AbsorptionLength { get; set; } = 3.5f;
 
     /// <summary>Gets or sets the cosine beyond which the surface stops reflecting — <c>vMaxReflectionAngle</c>.</summary>
     [ScriptParam(ScriptParamType.Real32, "Max Reflection Angle (cos)")]
@@ -183,6 +183,13 @@ public sealed partial class WaterTask : Igi2Task
     /// </remarks>
     [ScriptParam(ScriptParamType.VarString, "Environmental map index")]
     public string EnvmapIndexExpression { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the body the level runs for it, or <see langword="null"/> when no level runs it.</summary>
+    public Igi2WaterBody? Body { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks><c>Water_RunHandler</c>: its ripples spread, its splashes rise and fall, and its tick counts.</remarks>
+    public override void Run(Flow.Igi2LevelRun level) => Body?.Run();
 
     /// <summary>Gets the environment map indices <see cref="ResourceList"/> names.</summary>
     /// <remarks>

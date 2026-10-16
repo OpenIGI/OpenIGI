@@ -612,6 +612,31 @@ public sealed class Igi2Gameplay : ITitleGameplay
         World.Igi2MagicObjTypes? magicTypes = request.Services.TryGet(out World.Igi2MagicObjTypes? loadedMagic) ? loadedMagic : null;
         // Fences hum while live with an ambient area of their own, are told where the player is, and are climbed while dead.
         List<Interaction.IIgi2Notified> notified = [];
+        // The level's water, in the order it is made (Water_ptQTaskList): its surface in the collision world, its depth asked by
+        // the humans' surroundings, its splashes made by bullets and blasts. The module outlives the level, as its stream does.
+        World.Igi2Water water = request.Services.TryGet(out World.Igi2Water? sessionWater) ? sessionWater : new World.Igi2Water();
+        water.Clear();
+        water.FlowTicks = () => level.Ticks;
+        foreach (World.WaterTask waterTask in Descendants(root).OfType<World.WaterTask>())
+        {
+            World.Igi2WaterBody body = water.Add(waterTask);
+            waterTask.Body = body;
+            player.CollisionWorld.AddWater(body);
+        }
+
+        foreach (Igi2Human human in LevelHumans(root, player))
+        {
+            if (human.Surroundings is Igi2LevelSurroundings wet)
+            {
+                wet.Water = water;
+            }
+        }
+
+        if (player.Explosions is { } underwater)
+        {
+            underwater.Water = water;
+        }
+
         foreach (Interaction.Igi2FenceTask fence in Descendants(root).OfType<Interaction.Igi2FenceTask>())
         {
             fence.Models = models;
@@ -1627,7 +1652,7 @@ internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2G
 
     public Igi2GameMaterials Materials { get; } = materials;
 
-    public bool IsWater(IIgi2Collider struck) => false;
+    public bool IsWater(IIgi2Collider struck) => struck is World.Igi2WaterBody;
 
     public bool IsBoned(IIgi2Collider struck) => struck is Igi2BoneCollider;
 
@@ -1707,14 +1732,25 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     {
     }
 
+    /// <summary>Gets or sets the level's water, which the owner's depth is asked of.</summary>
+    public World.Igi2Water? Water { get; set; }
+
+    // The body the owner was last found in, Human_s.iWaterIndex.
+    private int _waterIndex = -1;
+
     public bool IsUnderWater(out float depth)
     {
         depth = 0f;
-        return false;
+        _waterIndex = -1;
+        return Water is { } water && Owner is { } owner && water.IsUnderWater(owner.Position, out depth, out _waterIndex);
     }
 
     public void StirWater(bool isRunning)
     {
+        if (Water is { } water && Owner is { } owner)
+        {
+            water.PlayerMovementEffect(owner.Position, _waterIndex, isRunning);
+        }
     }
 
     /// <summary>Gets the level's conveyor belts, by level id.</summary>
