@@ -411,6 +411,9 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
 
         // HumanSoldier_iDeathAnimCycle (igi2 0x7D46188) likewise: the death clips go round across levels and loads.
         context.Services.GetOrProvide(static () => new Soldiers.Igi2DeathAnimCycle());
+
+        // Missile_tRandomState (igi2 0x52F5B0) likewise.
+        context.Services.GetOrProvide(static () => new Weapons.Igi2MissileRandom());
     }
 
     /// <inheritdoc/>

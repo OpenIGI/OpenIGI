@@ -280,6 +280,25 @@ public sealed class Igi2Pose
     }
 
     /// <summary>
+    /// The pitch of a direction off the Y axis, <c>GameFunctions_CalcAlpha</c> (<c>igi2 0x48C760</c>): the arc cosine of its normalised Y
+    /// against Z, negative when it points down, and nought for one with neither.
+    /// </summary>
+    /// <param name="y">The direction's Y.</param>
+    /// <param name="z">The direction's Z.</param>
+    /// <returns>The pitch, in radians.</returns>
+    public static float CalcAlpha(double y, double z)
+    {
+        if (y == 0.0 && z == 0.0)
+        {
+            return 0f;
+        }
+
+        Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((Fpu)y * y) + ((Fpu)z * z));
+        float angle = Acos(((Fpu)y * inverse).F);
+        return (inverse * z).Value < 0.0 ? -angle : angle;
+    }
+
+    /// <summary>
     /// A frame whose Y axis is a direction, <c>gamefunctions.c GameFunctions_CreateOrientationFromDirection</c>: its X axis the
     /// direction crossed with the world's up, or, for a direction within about eighteen degrees of straight up or down, its Z
     /// axis across the world's X first; every axis made unit where it can be.

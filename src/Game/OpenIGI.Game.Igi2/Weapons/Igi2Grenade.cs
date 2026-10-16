@@ -374,6 +374,46 @@ public sealed class Igi2Grenades(
     /// <summary>Gets or sets where an impact grenade's blast goes off, or <see langword="null"/> for a level where none can.</summary>
     public Igi2ExplosionWorld? Explosions { get; set; }
 
+    /// <summary>The fire type tag that names a missile's model, and the model it names untagged (<c>Missile_CreateWeaponTypeParametersHandler</c>).</summary>
+    public const string MissileModelTag = "Missile - Model";
+
+    /// <summary>The missile a launcher fires when its fire type names none.</summary>
+    public const string DefaultMissileModel = "110_02_1";
+
+    /// <summary>Gets or sets the missiles' own stream.</summary>
+    public IgiRandom MissileStream { get; set; } = new Igi2MissileRandom().Random;
+
+    /// <summary>Gets or sets the level's tick, which times a missile's look for ground.</summary>
+    public Func<int> LevelTick { get; set; } = static () => 0;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The fire type's <c>Missile - Model</c> names a physics type that a missile moves; one that names none, or a model with no such
+    /// type, would stop the original, and fires nothing here.
+    /// </remarks>
+    public void LaunchMissile(in Igi2ProjectileLaunch launch, Engine.Tasks.GameTask fireType)
+    {
+        ArgumentNullException.ThrowIfNull(fireType);
+        string model = DefaultMissileModel;
+        foreach (Engine.Tasks.GameTask child in fireType.Children)
+        {
+            if (child is Igi2TagItemString16Task { TagName: MissileModelTag } tag)
+            {
+                model = tag.Value;
+                break;
+            }
+        }
+
+        if (Explosions is not { } explosions || !types.TryFind(model, out Igi2PhysicsObjectType type)
+            || !types.IsMovedBy(type, "Missile") || Igi2MissileType.Of(type) is not { } missile)
+        {
+            _logger.Warning("Missile", $"No missile physics type for {model}: the missile is not fired.");
+            return;
+        }
+
+        Dynamic.Add(new Igi2Missile(launch, model, type, missile, models(model), World, explosions, MissileStream, LevelTick));
+    }
+
     /// <inheritdoc/>
     /// <remarks>Into the level's dynamic tasks, its path traced through what the grenades fly through.</remarks>
     public void LaunchImpact(in Igi2ProjectileLaunch launch, Engine.Tasks.GameTask fireType)

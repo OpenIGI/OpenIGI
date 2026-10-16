@@ -146,6 +146,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
                         Effects = explosions,
                         Explosions = explosions,
                     };
+                    if (request.Services.TryGet(out Weapons.Igi2MissileRandom? missileStream))
+                    {
+                        grenades.MissileStream = missileStream.Random;
+                    }
+
                     weapons.Grenades = grenades;
                     player.Grenades = grenades;
                     player.Explosions = explosions;
@@ -570,6 +575,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Func<string, Formats.World.MefModel?> models = Models(request.World);
         List<Interaction.IIgi2Activatable> activatables = [];
         player.Human.LevelTick = () => level.LevelFlow?.Tick ?? 0;
+        if (player.Grenades is { } launched)
+        {
+            launched.LevelTick = () => level.LevelFlow?.Tick ?? 0;
+        }
 
         // What detectors see, in the order the tree makes them (AIDetection_ptDetectionQTaskList): the cameras and the player.
         Detection.Igi2DetectionWorld? sight = null;

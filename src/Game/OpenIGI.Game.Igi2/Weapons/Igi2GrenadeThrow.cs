@@ -160,6 +160,13 @@ public interface IIgi2GrenadeWorld
     void LaunchImpact(in Igi2ProjectileLaunch launch, Engine.Tasks.GameTask fireType)
     {
     }
+
+    /// <summary>A launcher fires a missile, <c>Missile_CreateProjectileHandler</c> (<c>igi2 0x52EFE0</c>).</summary>
+    /// <param name="launch">The shot.</param>
+    /// <param name="fireType">The fire type whose tags name the missile's model.</param>
+    void LaunchMissile(in Igi2ProjectileLaunch launch, Engine.Tasks.GameTask fireType)
+    {
+    }
 }
 
 /// <summary>A level with no grenade in it: a grenade thrown into it is gone.</summary>

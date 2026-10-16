@@ -153,6 +153,10 @@ public sealed class Igi2WeaponFiring
         {
             Grenades.LaunchImpact(launch, fireTypeParameters);
         }
+        else if (launch.ProjectileTaskType == _taskTypes.Missile)
+        {
+            Grenades.LaunchMissile(launch, fireTypeParameters);
+        }
         else
         {
             Effects.CreateProjectile(launch);
