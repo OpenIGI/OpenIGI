@@ -62,6 +62,9 @@ public readonly record struct Igi2AiEvent(
     /// <summary>A human hurt, <c>AIEVENT_TAKINGDAMAGE</c>.</summary>
     public const int TakingDamage = 14;
 
+    /// <summary>A bullet heard going by, event 19, <c>AIEVENT_GUNSHOTMISS</c> (<c>Human_EvaluateGunShotHandler</c>).</summary>
+    public const int GunShotMiss = 19;
+
     /// <summary>A death cry, <c>AIEVENT_DEATH_CRY</c>.</summary>
     public const int DeathCry = 24;
 

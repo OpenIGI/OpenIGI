@@ -27,6 +27,16 @@ public interface IIgi2GunShotWorld
     /// <param name="struck">What was struck.</param>
     /// <returns>Whether it is a human.</returns>
     bool IsHuman(IIgi2Collider struck);
+
+    /// <summary>
+    /// Lets every human weigh a shot's bullets before they are traced, <c>Human_eEvaluateGunShotQTaskEvent</c> sent over
+    /// <c>Human_ptQTaskList</c> by <c>GunShot_RunHandler</c>: a soldier that hears one go by is told of it.
+    /// </summary>
+    /// <param name="shot">The shot, its bullets not yet traced.</param>
+    /// <param name="shooter">Who made the shot, <c>ptGunShotCreatorQTaskRef</c>.</param>
+    void EvaluateGunShot(Igi2GunShot shot, object shooter)
+    {
+    }
 }
 
 /// <summary>

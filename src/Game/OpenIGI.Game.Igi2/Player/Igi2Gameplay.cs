@@ -105,7 +105,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             if (weapons is not null)
             {
-                weapons.World = new Igi2LevelGunShotWorld(world, materials);
+                weapons.World = new Igi2LevelGunShotWorld(world, materials, LevelAi(request.Services));
                 if (request.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? physicsTypes))
                 {
                     Weapons.Igi2ExplosionWorld explosions = new(player.Human.Random, world, materials, player.Dynamic)
@@ -366,7 +366,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 arms.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(services));
                 if (materials is not null)
                 {
-                    arms.World = new Igi2LevelGunShotWorld(world, materials);
+                    arms.World = new Igi2LevelGunShotWorld(world, materials, LevelAi(services));
                 }
             }
 
@@ -782,7 +782,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services));
                     if (gunMaterials is not null)
                     {
-                        firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, gunMaterials);
+                        firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, gunMaterials, LevelAi(request.Services));
                     }
                 }
 
@@ -810,7 +810,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services));
                     if (turretMaterials is not null)
                     {
-                        firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, turretMaterials);
+                        firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, turretMaterials, LevelAi(request.Services));
                     }
                 }
 
@@ -841,7 +841,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     Igi2WeaponFiring firing = gun.Firing;
                     firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Muzzle, LevelAi(request.Services));
                     firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services));
-                    firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, carMaterials);
+                    firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, carMaterials, LevelAi(request.Services));
                 }
 
                 player.Explosions?.AddTarget(car);
@@ -1618,8 +1618,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
 /// <summary>The level a bullet flies through: the collision world and the session's materials.</summary>
 /// <remarks>Nothing in the collision world is water yet; the boned objects are its humans.</remarks>
-internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2GameMaterials materials) : IIgi2GunShotWorld
+internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2GameMaterials materials, Ai.Runtime.Igi2AiWorld? ai = null)
+    : IIgi2GunShotWorld
 {
+    public void EvaluateGunShot(Igi2GunShot shot, object shooter) => ai?.EvaluateGunShot(shot, shooter);
+
     public IIgi2CollisionQuery Collision { get; } = collision;
 
     public Igi2GameMaterials Materials { get; } = materials;

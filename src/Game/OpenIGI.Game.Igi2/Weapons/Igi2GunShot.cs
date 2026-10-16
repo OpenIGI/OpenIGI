@@ -115,8 +115,8 @@ public sealed record Igi2GunShotHitRecord(Igi2MaterialEffect Effect, Igi2Interse
 /// penetration. Up to ten faces leave an effect, all made once the bullet is done.
 /// </para>
 /// <para>
-/// Not yet: <c>Human_eEvaluateGunShotQTaskEvent</c>, which tells every human with an AI of a bullet passing within its
-/// hearing before the trace, arrives with the AI.
+/// Before the trace every human weighs the bullets (<see cref="IIgi2GunShotWorld.EvaluateGunShot"/>): a soldier hears those
+/// that pass within two metres of its head (<see cref="FindHearableIntersections"/>).
 /// </para>
 /// </remarks>
 public sealed class Igi2GunShot
@@ -144,6 +144,15 @@ public sealed class Igi2GunShot
 
     /// <summary>The groups a bullet is traced against, <c>Forest_bQTaskGroup | 0x58000001</c>; the ground's is added unless the shot ignores it.</summary>
     private const uint ObjectGroups = Igi2CollisionWorld.ForestGroup | 0x58000001u;
+
+    private const string MissileType = "Missile";
+
+    /// <summary>The types whose handler spares the shooter and the ignored task: <c>ExplodeObject</c> and the types derived from it, and <c>Car</c>.</summary>
+    private static readonly HashSet<string> CarriedEvaluators = new(StringComparer.Ordinal)
+    {
+        "ExplodeObject", "Terminal", "AlarmControl", "SCameraControl", "Bomb", "Generator", "GenericTBA", "PlaceExplosiveTBA", "Mine",
+        "Radio", "Car",
+    };
 
     private readonly List<Igi2GunShotInstant> _instants = new(MaxInstants);
     private readonly Igi2LineTrace _trace = new(1);
@@ -241,12 +250,18 @@ public sealed class Igi2GunShot
             return;
         }
 
+        world.EvaluateGunShot(this, shooter);
         uint groups = ObjectGroups | ((Options & Igi2GunShotOptions.IgnoreTerrain) == 0 ? Igi2CollisionWorld.TerrainGroup : 0u);
         Igi2WeaponCollisionQuery query = new(shooter, Ignore, hitProbability);
         _trace.Mesh = 0;
         _trace.TracePortals = false;
         _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
-        _trace.Includes = owner => owner is not IIgi2WeaponCollisionTarget target || target.EvaluateWeaponCollision(query);
+        _trace.Includes = owner => owner switch
+        {
+            IIgi2WeaponCollisionTarget target => target.EvaluateWeaponCollision(query),
+            Igi2CollisionOwner solid => EvaluateSolid(solid, query),
+            _ => true,
+        };
 
         bool rung = false;
         foreach (Igi2GunShotInstant bullet in _instants)
@@ -255,6 +270,97 @@ public sealed class Igi2GunShot
         }
 
         _instants.Clear();
+    }
+
+    /// <summary>
+    /// Whether a bullet may strike a placed solid, the weapon-collision evaluate handlers of the types that link one
+    /// (<c>ExplodeObject_</c>, <c>Car_</c>, <c>Missile_WeaponCollisionEvaluateHandler</c>): not the weapon's holder nor the shot's
+    /// ignored task, and never a missile. Every other type takes every bullet.
+    /// </summary>
+    private static bool EvaluateSolid(Igi2CollisionOwner solid, in Igi2WeaponCollisionQuery query)
+    {
+        if (solid.TypeName == MissileType)
+        {
+            return false;
+        }
+
+        if (!CarriedEvaluators.Contains(solid.TypeName))
+        {
+            return true;
+        }
+
+        return !IsTask(query.Shooter, solid.LevelId) && !IsTask(query.Ignore, solid.LevelId);
+    }
+
+    private static bool IsTask(object? task, int levelId) => task is Igi2Task { Id: var id } && id == levelId;
+
+    /// <summary>
+    /// Where this tick's bullets pass a point within two metres, <c>GunShot_FindHearableIntersections</c>: a bullet whose muzzle is
+    /// that near is heard there; otherwise its end, when that is near; otherwise the nearest point of its line, when that lies
+    /// on the line and is near. One point a bullet, at most as many as there is room for.
+    /// </summary>
+    /// <param name="target">The point listened from.</param>
+    /// <param name="into">Where the points go.</param>
+    /// <returns>How many were found.</returns>
+    public int FindHearableIntersections(Vector3d target, Span<Vector3d> into)
+    {
+        const double Near = 8192.0;
+        const double Scale = 0.000244140625;
+        int found = 0;
+        foreach (Igi2GunShotInstant bullet in _instants)
+        {
+            if (found >= into.Length)
+            {
+                break;
+            }
+
+            Vector3d p0 = bullet.Position;
+            Fpu vx = (Fpu)bullet.Range * bullet.Direction.X;
+            Fpu vy = (Fpu)bullet.Range * bullet.Direction.Y;
+            Fpu vz = (Fpu)bullet.Range * bullet.Direction.Z;
+            if (!(Distance(p0, target).Value >= Near))
+            {
+                into[found++] = p0;
+                continue;
+            }
+
+            Vector3d p1 = new((vx + p0.X).Value, (vy + p0.Y).Value, (vz + p0.Z).Value);
+            if (Distance(p1, target).Value < Near)
+            {
+                into[found++] = p1;
+                continue;
+            }
+
+            Fpu length = ((vz * vz) * Scale) + ((vy * vy) * Scale) + ((vx * vx) * Scale);
+            if (!(length.Value > 0.0))
+            {
+                continue;
+            }
+
+            Fpu along = (((((Fpu)target.Y - p0.Y) * vy) * Scale) + ((((Fpu)target.Z - p0.Z) * vz) * Scale)
+                + ((((Fpu)target.X - p0.X) * vx) * Scale)) / length;
+            if (!(along.Value >= 0.0) || !(along.Value <= 1.0))
+            {
+                continue;
+            }
+
+            Vector3d nearest = new(((vx * along) + p0.X).Value, ((vy * along) + p0.Y).Value, ((vz * along) + p0.Z).Value);
+            if (Distance(nearest, target).Value < Near)
+            {
+                into[found++] = nearest;
+            }
+        }
+
+        return found;
+    }
+
+    // |a - b| at the client's precision: the X and Y differences kept as floats, the Z inline.
+    private static Fpu Distance(Vector3d a, Vector3d b)
+    {
+        float dx = ((Fpu)a.X - b.X).F;
+        float dy = ((Fpu)a.Y - b.Y).F;
+        Fpu dz = (Fpu)a.Z - b.Z;
+        return Fpu.Sqrt((((Fpu)dx * dx) + ((Fpu)dy * dy)) + (dz * dz));
     }
 
     /// <summary>One bullet's flight, from its muzzle to where it stops, and the effects of the faces it crossed.</summary>

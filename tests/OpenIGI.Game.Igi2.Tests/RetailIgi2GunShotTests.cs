@@ -147,6 +147,27 @@ public sealed class RetailIgi2GunShotTests
         Assert.Equal(16, shot.BulletsFired);
     }
 
+    /// <summary>
+    /// A bullet is heard where it passes within two metres of a head (<c>GunShot_FindHearableIntersections</c>): at its muzzle when
+    /// that is near, else at the nearest point of its line; one that passes further off is not heard.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_bullet_is_heard_where_it_passes_near()
+    {
+        Igi2GunShot shot = new();
+        shot.AddInstant(default, new Vector3f(0f, 1f, 0f), 260f, 0.29f, 5f, Session.Value.Mp5sd, null);
+        Span<Vector3d> heard = stackalloc Vector3d[4];
+
+        Assert.Equal(1, shot.FindHearableIntersections(new Vector3d(4096.0, 0.0, 0.0), heard));
+        Assert.Equal(default, heard[0]);
+
+        Assert.Equal(1, shot.FindHearableIntersections(new Vector3d(4096.0, 409600.0, 0.0), heard));
+        Assert.Equal(0.0, heard[0].X, 6);
+        Assert.Equal(409600.0, heard[0].Y, 1);
+
+        Assert.Equal(0, shot.FindHearableIntersections(new Vector3d(12288.0, 409600.0, 0.0), heard));
+    }
+
     /// <summary>The distance run on along the line by one leg of the trace, from where it started to the face it struck.</summary>
     private static float Travel(float travelled, double from, double to)
     {

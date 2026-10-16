@@ -239,6 +239,52 @@ public sealed class Igi2AiWorld
         }
     }
 
+    /// <summary>
+    /// Every human weighs a shot's bullets before they fly, <c>human.c Human_EvaluateGunShotHandler</c>: a soldier with a mind hears
+    /// the bullets that pass within two metres of its head, one event each.
+    /// </summary>
+    /// <param name="shot">The shot.</param>
+    /// <param name="shooter">Who holds the weapon that made it.</param>
+    /// <remarks>
+    /// <para>
+    /// The shot's creator is the weapon itself (<c>Weapon_CreateHandler</c>), never a human, so the handler's test of the creator's
+    /// team always compares with team one: a human of team one hears nothing, whoever fired. A human holding the shot's creator
+    /// would be skipped, but none does.
+    /// </para>
+    /// <para>
+    /// Retail's quirk is kept too: the n-th event is told of the n-th bullet of the shot, from its muzzle, whichever bullets were the
+    /// ones heard. The event's originator is the shot's ignored task, a mounted gun's holder, and its team; with none, team nought.
+    /// </para>
+    /// </remarks>
+    public void EvaluateGunShot(Weapons.Igi2GunShot shot, object shooter)
+    {
+        ArgumentNullException.ThrowIfNull(shot);
+        const int CreatorTeam = 1;
+        Igi2Human? ignored = shot.Ignore as Igi2Human;
+        Span<Vector3d> heard = stackalloc Vector3d[32];
+        foreach (Igi2Human listener in Humans)
+        {
+            if (listener.Team == CreatorTeam
+                || listener is not Soldiers.Igi2HumanSoldier { Mind: Igi2HumanAi ai } soldier)
+            {
+                continue;
+            }
+
+            Vector3d head = soldier.CheapHeadBonePosition();
+            int count = shot.FindHearableIntersections(head, heard);
+            for (int i = 0; i < count && i < shot.Instants.Count; i++)
+            {
+                Vector3d muzzle = shot.Instants[i].Position;
+                float dx = ((Fpu)head.X - muzzle.X).F;
+                float dy = ((Fpu)head.Y - muzzle.Y).F;
+                float dz = ((Fpu)head.Z - muzzle.Z).F;
+                float radius = (Fpu.Sqrt(((Fpu)dx * dx) + ((Fpu)dy * dy) + ((Fpu)dz * dz)) + 4096.0).F;
+                ai.Receive(new Igi2AiEvent(
+                    Igi2AiEvent.GunShotMiss, ignored?.Team ?? 0, 1090, radius, muzzle, new Vector3f(dx, dy, dz), ignored, shot));
+            }
+        }
+    }
+
     /// <summary>The soldier whose top action is going to use a task, <c>HumanAI_GetActivatingAI</c>.</summary>
     /// <param name="taskId">The task's id.</param>
     /// <returns>The mind, or <see langword="null"/>.</returns>
