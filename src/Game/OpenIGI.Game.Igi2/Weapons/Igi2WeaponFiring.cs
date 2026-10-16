@@ -180,7 +180,11 @@ public sealed class Igi2WeaponFiring
     /// </summary>
     /// <param name="item">The weapon.</param>
     /// <returns><see langword="true"/> when it went in hand; a weapon not carried does not.</returns>
-    /// <remarks>Not yet: the fire types' own deactivate and activate handlers.</remarks>
+    /// <remarks>
+    /// Of the fire types' own handlers single-player ships only <c>ThermoSight_WeaponDeactivateHandler</c>: infrared off and the overlay
+    /// down, which the overlay's coming down here and the player's tick-end infrared check (<c>HumanPlayer_RunDelayedHandler</c>) do.
+    /// A spent throwable put away is dropped by the inventory (<see cref="Igi2Inventory.Activate"/>).
+    /// </remarks>
     public bool Activate(Igi2WeaponItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
