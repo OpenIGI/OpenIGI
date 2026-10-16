@@ -113,7 +113,11 @@ public sealed class Igi2PhysicsObject
     /// The body is the type's box, in metres turned to units, with its inverse moments raised by a hundredth. The object
     /// collides with every group, the ground included, and its last position starts where it is.
     /// </remarks>
-    public Igi2PhysicsObject(Igi2PhysicsObjectType type, MefModel? model, Vector3d position, Vector3f scale)
+    /// <param name="typeModel">
+    /// The type's own model, whose contact points' magic vertices size a type defined with no size (<c>PhysicsObjType_GetSize</c>,
+    /// <c>igi2 0x5AD4D0</c>); the drawn model when omitted.
+    /// </param>
+    public Igi2PhysicsObject(Igi2PhysicsObjectType type, MefModel? model, Vector3d position, Vector3f scale, MefModel? typeModel = null)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         Position = position;
@@ -124,6 +128,11 @@ public sealed class Igi2PhysicsObject
         }
 
         Vector3f size = type.Size;
+        if (size.X == 0f || size.Y == 0f || size.Z == 0f)
+        {
+            size = SizeFromModel(type, typeModel ?? model);
+        }
+
         Body.InitBox(type.Mass, ((Fpu)size.X * 4096f).F, ((Fpu)size.Y * 4096f).F, ((Fpu)size.Z * 4096f).F);
         Vector3f inertia = Body.InverseInertia;
         Body.InverseInertia = new Vector3f(
@@ -278,6 +287,28 @@ public sealed class Igi2PhysicsObject
     /// A contact point's place on the object, <c>RigidDynCubeObj_GetMagicVertexLocalPos</c> (<c>igi2 0x58E3B0</c>): the model's
     /// magic vertex times the scale, or the centre when the model has none of that number.
     /// </summary>
+    /// <summary>
+    /// A type's size from its model, <c>PhysicsObjType_GetSizeFromModel</c> (<c>igi2 0x5AD180</c>): the extent of its contact points'
+    /// magic vertices along each axis, a point with no such vertex at the origin.
+    /// </summary>
+    private static Vector3f SizeFromModel(Igi2PhysicsObjectType type, MefModel? model)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+        double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+        foreach (Igi2PhysicsContactPointType point in type.ContactPoints)
+        {
+            Vector3f v = model is not null && model.TryGetMagicVertex(point.MagicVertex, out Vector3f vertex) ? vertex : default;
+            minX = Math.Min(minX, v.X);
+            minY = Math.Min(minY, v.Y);
+            minZ = Math.Min(minZ, v.Z);
+            maxX = Math.Max(maxX, v.X);
+            maxY = Math.Max(maxY, v.Y);
+            maxZ = Math.Max(maxZ, v.Z);
+        }
+
+        return new Vector3f((float)Math.Abs(maxX - minX), (float)Math.Abs(maxY - minY), (float)Math.Abs(maxZ - minZ));
+    }
+
     private static Vector3f MagicVertex(MefModel? model, int index, Vector3f scale)
     {
         if (model is null)

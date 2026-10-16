@@ -465,7 +465,7 @@ public sealed class Igi2Grenades(
         int kind = KindOf(weapon) ?? Igi2GrenadeKind.Normal;
         if (types.TryFind(weapon.FixedModel, out Igi2PhysicsObjectType type))
         {
-            body = new Igi2PhysicsObject(type, models(model), grenade.Position, Vector3f.One);
+            body = new Igi2PhysicsObject(type, models(model), grenade.Position, Vector3f.One, models(weapon.FixedModel));
             body.Body.Velocity = grenade.Speed;
             body.Body.UpdateSpeedApproximation();
             grenade.Orientation.AsSpan(0, 9).CopyTo(body.Orientation);
