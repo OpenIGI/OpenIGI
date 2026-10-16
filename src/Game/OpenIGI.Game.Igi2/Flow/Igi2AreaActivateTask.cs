@@ -22,6 +22,12 @@ public interface IIgi2AreaOccupant
 
     /// <summary>Gets where its root bone is, <c>BoneDynCubeObj_GetRootPosition</c> (<c>igi2 0x5680F0</c>).</summary>
     Vector3d RootPosition { get; }
+
+    /// <summary>Gets a value indicating whether its mind is a side-kick's, the <c>HumanAI</c>'s first flag (<c>AIFunction_SetSideKick</c>).</summary>
+    bool IsSideKick => false;
+
+    /// <summary>Gets where a side-kick is counted at, its root as it holds what it drops (<c>bonedyncubeobj.c sub_580CA0</c>).</summary>
+    Vector3d SideKickPosition => RootPosition;
 }
 
 /// <summary>
@@ -95,7 +101,9 @@ public static class Igi2AreaCriteria
 /// (<c>Human_AreaActivateTeamCB</c>, <c>0x5007E0</c>); each team bit the mask holds runs it again, so a mask of two teams
 /// counts each human twice. <c>CRITERIA_HUMAN</c> counts the active (<c>Human_AreaActivateAllHumansCB</c>, <c>0x500910</c>);
 /// <c>CRITERIA_HUMANPLAYER</c> the level's task 0 when it is the player (<c>HumanPlayer_AreaActivateCB</c>, <c>0x49E290</c>).
-/// The camera's, the vehicles' and the side-kicks' are not ported and count none.
+/// <c>CRITERIA_CAMERA</c> counts the game screen's camera (<c>GameScreen_CameraInAreaCB</c>), <c>CRITERIA_VEHICLE</c> each car
+/// at its position (<c>Vehicle_AeraActivateCB</c>, the list <c>Car_CreateHandler</c> registers in), and
+/// <c>CRITERIA_HUMANAI_SIDEKICK</c> each human whose mind is a side-kick's, dead or alive (<c>HumanAI_AreaActivateSideKickCB</c>).
 /// </para>
 /// </remarks>
 public sealed partial class Igi2AreaActivateTask : Igi2Task
@@ -139,6 +147,12 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
 
     /// <summary>Gets or sets the level's task 0 when it is the player, or <see langword="null"/>.</summary>
     public IIgi2AreaOccupant? Player { get; set; }
+
+    /// <summary>Gets or sets where the game screen's camera stands, or <see langword="null"/> while there is none.</summary>
+    public Func<Vector3d?> CameraPosition { get; set; } = static () => null;
+
+    /// <summary>Gets or sets the level's vehicles, <c>GameFunctions_ptVehicleQTaskList</c>, each by where it is.</summary>
+    public Func<IEnumerable<Vector3d>> VehiclePositions { get; set; } = static () => [];
 
     /// <summary>
     /// Readies the box, <c>AreaActivateQTask_UpdateInternalDataHandler</c> (<c>igi2 0x592CA0</c>): its frame from its angles and its
@@ -213,6 +227,37 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
         if (criterion == Igi2AreaCriteria.HumanPlayer)
         {
             return Player is { } player && IsInside(player.RootPosition) ? 1 : 0;
+        }
+
+        if (criterion == Igi2AreaCriteria.Camera)
+        {
+            return CameraPosition() is { } eye && IsInside(eye) ? 1 : 0;
+        }
+
+        if (criterion == Igi2AreaCriteria.Vehicle)
+        {
+            foreach (Vector3d vehicle in VehiclePositions())
+            {
+                if (IsInside(vehicle))
+                {
+                    hits++;
+                }
+            }
+
+            return hits;
+        }
+
+        if (criterion == Igi2AreaCriteria.SideKick)
+        {
+            foreach (IIgi2AreaOccupant human in Humans)
+            {
+                if (human.IsSideKick && IsInside(human.SideKickPosition))
+                {
+                    hits++;
+                }
+            }
+
+            return hits;
         }
 
         if (criterion == Igi2AreaCriteria.Human)

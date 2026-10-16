@@ -157,6 +157,9 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     public override bool IsAi => Mind is Ai.Runtime.Igi2HumanAi;
 
     /// <inheritdoc/>
+    public override bool IsSideKick => Mind is Ai.Runtime.Igi2HumanAi { Flags: var flags } && (flags & 1) != 0;
+
+    /// <inheritdoc/>
     protected override IIgi2HumanWeapon HumanWeapon => Weapon;
 
     /// <summary>Gets or sets the locomotion signal word, <c>tState.bSignal</c>.</summary>

@@ -11,6 +11,12 @@ public abstract partial class Igi2Human : IIgi2AreaOccupant
     public virtual bool IsAi => false;
 
     /// <inheritdoc/>
+    public virtual bool IsSideKick => false;
+
+    /// <inheritdoc/>
+    public Vector3d SideKickPosition => HeldRootPosition();
+
+    /// <inheritdoc/>
     /// <remarks>
     /// <c>BoneDynCubeObj_GetRootPosition</c> (<c>igi2 0x5680F0</c>): the root bone's translation turned by the body's frame and added
     /// to its position, each row summed second term first.

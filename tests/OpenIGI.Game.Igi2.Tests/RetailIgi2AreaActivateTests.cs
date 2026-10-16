@@ -80,12 +80,36 @@ public sealed class RetailIgi2AreaActivateTests
         Assert.Equal(9, Count(m, area, "CRITERIA_HUMAN0 + CRITERIA_HUMAN1 + CRITERIA_HUMAN2"));
         Assert.Equal(1, Count(m, area, "CRITERIA_HUMANPLAYER"));
         Assert.Equal(3, Count(m, area, "CRITERIA_HUMAN"));
-        Assert.Equal(0, Count(m, area, "CRITERIA_VEHICLE + CRITERIA_CAMERA"));
+        Assert.Equal(0, Count(m, area, "CRITERIA_VEHICLE + CRITERIA_CAMERA + CRITERIA_HUMANAI_SIDEKICK"));
 
         area.IsDetectionDisabled = true;
         area.Humans = [];
         area.Run(m.Run);
         Assert.Equal(0, area.Active);
+    }
+
+    /// <summary>
+    /// The camera counts once when inside (<c>GameScreen_CameraInAreaCB</c>); each vehicle inside counts (<c>Vehicle_AeraActivateCB</c>);
+    /// each side-kick inside counts, dead or alive, at the root it drops things from (<c>HumanAI_AreaActivateSideKickCB</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_camera_the_vehicles_and_the_side_kicks_count()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Igi2AreaActivateTask area = m.Tree.OfType<Igi2AreaActivateTask>().Single(static a => a.Id == Conveyor);
+        Vector3d inside = area.Position;
+        Vector3d outside = new(inside.X, inside.Y, inside.Z + area.Dimensions.Z);
+        area.Humans =
+        [
+            new Occupant(0, true, true, true, outside) { IsSideKick = true, SideKickPosition = inside },
+            new Occupant(0, false, true, true, inside) { IsSideKick = true, SideKickPosition = outside },
+            new Occupant(0, false, true, true, inside),
+        ];
+
+        Assert.Equal(1, Count(m, area, "CRITERIA_HUMANAI_SIDEKICK"));
+        Assert.Equal(1, Count(m, area, "CRITERIA_CAMERA", camera: inside));
+        Assert.Equal(0, Count(m, area, "CRITERIA_CAMERA", camera: outside));
+        Assert.Equal(2, Count(m, area, "CRITERIA_VEHICLE", vehicles: [inside, outside, inside]));
     }
 
     /// <summary>
@@ -123,7 +147,7 @@ public sealed class RetailIgi2AreaActivateTests
         }
     }
 
-    private static int Count(RetailIgi2Mission1 m, Igi2AreaActivateTask area, string criteria)
+    private static int Count(RetailIgi2Mission1 m, Igi2AreaActivateTask area, string criteria, Vector3d? camera = null, Vector3d[]? vehicles = null)
     {
         Igi2AreaActivateTask probe = new()
         {
@@ -133,11 +157,18 @@ public sealed class RetailIgi2AreaActivateTests
             Criteria = criteria,
             Humans = area.Humans,
             Player = area.Player,
+            CameraPosition = () => camera,
+            VehiclePositions = () => vehicles ?? [],
         };
         probe.Prepare();
         probe.Run(m.Run);
         return probe.Active;
     }
 
-    private sealed record Occupant(int Team, bool IsDead, bool IsActive, bool IsAi, Vector3d RootPosition) : IIgi2AreaOccupant;
+    private sealed record Occupant(int Team, bool IsDead, bool IsActive, bool IsAi, Vector3d RootPosition) : IIgi2AreaOccupant
+    {
+        public bool IsSideKick { get; init; }
+
+        public Vector3d SideKickPosition { get; init; } = RootPosition;
+    }
 }

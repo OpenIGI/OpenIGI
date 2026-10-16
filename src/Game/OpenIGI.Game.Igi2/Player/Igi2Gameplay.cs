@@ -538,10 +538,15 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // The level's humans, in Human_ptQTaskList's order: each criterion that counts humans walks them all.
         IIgi2AreaOccupant[] humans = [.. LevelHumans(root, player)];
+
+        // The level's cars, in the order they are made: the vehicle list areas count.
+        Vehicles.Igi2CarTask[] levelCars = [.. Descendants(root).OfType<Vehicles.Igi2CarTask>()];
         foreach (Igi2AreaActivateTask area in Descendants(root).OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
             area.Player = player.Human;
+            area.CameraPosition = () => player.EyePosition;
+            area.VehiclePositions = () => levelCars.Select(static car => car.Position);
         }
 
         // Each line's pieces are counted once its parameters are read, in the language the screens load.
