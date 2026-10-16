@@ -144,6 +144,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     Weapons.Igi2Grenades grenades = new(physicsTypes, models, flight, player.Dynamic)
                     {
                         Effects = explosions,
+                        Explosions = explosions,
                     };
                     weapons.Grenades = grenades;
                     player.Grenades = grenades;

@@ -153,6 +153,13 @@ public interface IIgi2GrenadeWorld
     /// <summary>A grenade leaves the hand, <c>Grenade_New</c> (<c>igi2 0x484FD0</c>).</summary>
     /// <param name="grenade">The throw.</param>
     void Launch(in Igi2GrenadeThrow grenade);
+
+    /// <summary>A launcher fires a grenade that bursts on impact, <c>ImpactGrenade_CreateProjectileHandler</c> (<c>igi2 0x4CC8B0</c>).</summary>
+    /// <param name="launch">The shot.</param>
+    /// <param name="fireType">The fire type whose tags carry the grenade's parameters.</param>
+    void LaunchImpact(in Igi2ProjectileLaunch launch, Engine.Tasks.GameTask fireType)
+    {
+    }
 }
 
 /// <summary>A level with no grenade in it: a grenade thrown into it is gone.</summary>

@@ -371,6 +371,20 @@ public sealed class Igi2Grenades(
     /// <summary>Gets or sets what a grenade's end shows and does.</summary>
     public IIgi2GrenadeEffects Effects { get; set; } = Igi2NoGrenadeEffects.Instance;
 
+    /// <summary>Gets or sets where an impact grenade's blast goes off, or <see langword="null"/> for a level where none can.</summary>
+    public Igi2ExplosionWorld? Explosions { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>Into the level's dynamic tasks, its path traced through what the grenades fly through.</remarks>
+    public void LaunchImpact(in Igi2ProjectileLaunch launch, Engine.Tasks.GameTask fireType)
+    {
+        ArgumentNullException.ThrowIfNull(fireType);
+        if (Explosions is { } explosions)
+        {
+            Dynamic.Add(new Igi2ImpactGrenade(launch, Igi2ImpactGrenadeParameters.Of(fireType), explosions, World.Query));
+        }
+    }
+
     /// <summary>What a weapon's grenade does at its end: its physics type's second value, <c>GRENADE_EXPLOSIONTYPE_*</c>.</summary>
     /// <param name="weapon">The weapon.</param>
     /// <returns>The kind, normal when the type has no second value, or <see langword="null"/> when the weapon has no physics type.</returns>
