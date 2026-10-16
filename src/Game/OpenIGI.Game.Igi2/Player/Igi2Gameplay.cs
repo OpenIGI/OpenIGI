@@ -1456,7 +1456,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
             if (_heldTick != _ticks)
             {
-                _held = _firstPerson.Build(Human, Inventory?.Current?.WeaponType.FixedModel, _ticks, ModelAttachments);
+                _held = _firstPerson.Build(Human, Inventory?.Current?.WeaponType.FixedModel, _ticks, ModelAttachments, Weapons?.Firing.Flashes);
                 _heldTick = _ticks;
             }
 
@@ -1551,7 +1551,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
                 // interaction mode draws the working body rather than the first-person weapon.
                 IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
-                    ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks) : [];
+                    ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
                 _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working];
                 _lyingTick = _ticks;
             }

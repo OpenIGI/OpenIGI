@@ -144,11 +144,13 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                 Vector3d at = new(origin.X + local.X, origin.Y + local.Y, origin.Z + local.Z);
                 orientation = view.Orientation * wanted.Orientation;
                 modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
+                QueueFlashes(wanted.MuzzleFlashes, wanted.Model, at, orientation);
             }
 
             DrawPart(part, modelView, orientation);
         }
 
+        DrawQueuedFlashes(camera, firstPerson: true);
         _device.SetVertexSun(Vector3f.Zero);
         _device.ClearPoseInterpolation();
         _device.SetMaterialOverride(SurfaceMaterial.Default);
@@ -169,6 +171,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
         FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
+        _flashMeshCursor = 0;
         PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
@@ -204,9 +207,11 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             if (part is not null)
             {
                 DrawPart(part, modelView, wanted.Orientation);
+                QueueFlashes(wanted.MuzzleFlashes, wanted.Model, wanted.Position, wanted.Orientation);
             }
         }
 
+        DrawQueuedFlashes(camera, firstPerson: false);
         _device.SetVertexSun(Vector3f.Zero);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }

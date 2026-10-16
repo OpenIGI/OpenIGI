@@ -37,8 +37,14 @@ public sealed class Igi2FirstPersonFrame
     /// <param name="heldModel">The weapon in hand's fixed model, or <see langword="null"/> for nothing held.</param>
     /// <param name="tick">The tick the frame is for.</param>
     /// <param name="attachments">The mission's rigid attachment resolver.</param>
+    /// <param name="flashes">The flashes at the weapon objects, or <see langword="null"/>.</param>
     /// <returns>The frame, or <see langword="null"/> when the view draws nothing.</returns>
-    public TitleFirstPersonView? Build(Igi2Human human, string? heldModel, long tick, Igi2ModelAttachments? attachments = null)
+    public TitleFirstPersonView? Build(
+        Igi2Human human,
+        string? heldModel,
+        long tick,
+        Igi2ModelAttachments? attachments = null,
+        Weapons.Igi2MuzzleFlashes? flashes = null)
     {
         ArgumentNullException.ThrowIfNull(human);
         Igi2HumanView view = human.View;
@@ -63,10 +69,14 @@ public sealed class Igi2FirstPersonFrame
         BonePose pose = BonePose.Evaluate(skeleton, _rotations, root);
 
         List<TitleViewModelPart> parts = [new TitleViewModelPart(view.ObjectModel, pose, default, Matrix3f.Identity)];
+        int weaponObject = 0;
         foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, view.ObjectAnimation.Time, pose, heldModel,
             attachments is null ? null : attachments.ModelOf))
         {
-            TitleViewModelPart rootPart = new(part.Model, null, part.Position, part.Orientation);
+            TitleViewModelPart rootPart = new(part.Model, null, part.Position, part.Orientation)
+            {
+                MuzzleFlashes = Igi2BodyFrame.IsWeaponObject(part, heldModel) ? flashes?.Present(weaponObject++) : null,
+            };
             if (attachments is null)
             {
                 parts.Add(rootPart);

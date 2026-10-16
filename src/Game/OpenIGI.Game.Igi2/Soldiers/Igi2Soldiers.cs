@@ -40,7 +40,7 @@ public sealed class Igi2Soldiers
             {
                 if (body.Model is { } model)
                 {
-                    models.AddRange(Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick));
+                    models.AddRange(Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes));
                 }
             }
 

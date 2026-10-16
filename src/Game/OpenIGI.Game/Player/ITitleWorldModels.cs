@@ -38,4 +38,18 @@ public sealed record TitleWorldModel(
     Matrix3f Orientation,
     BonePose? Pose = null,
     object? Instance = null,
-    long Tick = 0);
+    long Tick = 0)
+{
+    /// <summary>Gets the flashes at a rigid model's muzzle, its third magic vertex, or <see langword="null"/> for none.</summary>
+    public IReadOnlyList<TitleMuzzleFlash>? MuzzleFlashes { get; init; }
+}
+
+/// <summary>
+/// A flash at a weapon's muzzle: a quad across the barrel seen when looking down it, and a quad along the barrel turned to the eye
+/// seen from the side, both added to what is behind them.
+/// </summary>
+/// <param name="FrontTexture">The resource name of the texture across the barrel.</param>
+/// <param name="SideTexture">The resource name of the texture along the barrel, or <see langword="null"/> for none.</param>
+/// <param name="Size">The flash's size: the quads' half-width in world units over 4096 (5120 across the barrel in first person).</param>
+/// <param name="Intensity">Its strength, nought to one.</param>
+public sealed record TitleMuzzleFlash(string FrontTexture, string? SideTexture, float Size, float Intensity);

@@ -74,6 +74,9 @@ public sealed class Igi2WeaponFiring
     /// <summary>Gets the weapon's bullets, the <c>GunShot</c> <c>Weapon_CreateHandler</c> (<c>igi2 0x51C320</c>) makes under it.</summary>
     public Igi2GunShot GunShot { get; } = new();
 
+    /// <summary>Gets the flashes the weapon's shots made, its <c>MuzzleFlash</c> children.</summary>
+    public Igi2MuzzleFlashes Flashes { get; } = new();
+
     /// <summary>Gets or sets where the grenades the weapon throws go (<c>Grenade_CreateProjectileHandler</c>, <c>igi2 0x484BE0</c>).</summary>
     public IIgi2GrenadeWorld Grenades { get; set; } = Igi2NoGrenades.Instance;
 
@@ -90,12 +93,15 @@ public sealed class Igi2WeaponFiring
     public IIgi2GunShotEffects ImpactEffects { get; set; } = Igi2NoGunShotEffects.Instance;
 
     /// <summary>Traces the bullets fired last tick (<c>GunShot_RunHandler</c>, <c>igi2 0x4C76E0</c>); with no level they are forgotten.</summary>
+    /// <remarks>The weapon's flashes run after it, as its later children.</remarks>
     public void RunGunShot()
     {
         if (World is { } world)
         {
             GunShot.Run(Owner, HitProbability, world, ImpactEffects);
         }
+
+        Flashes.Run();
     }
 
     /// <summary>

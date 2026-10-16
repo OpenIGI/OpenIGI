@@ -41,4 +41,7 @@ public sealed record TitleViewModelPart(string Model, BonePose? Pose, Vector3f P
 {
     /// <summary>Gets the previous tick's skin pose, when this part is presented between ticks.</summary>
     public BonePose? PreviousPose { get; init; }
+
+    /// <summary>Gets the flashes at a rigid part's muzzle, its third magic vertex, or <see langword="null"/> for none.</summary>
+    public IReadOnlyList<TitleMuzzleFlash>? MuzzleFlashes { get; init; }
 }

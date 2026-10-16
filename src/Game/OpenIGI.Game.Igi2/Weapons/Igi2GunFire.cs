@@ -253,7 +253,14 @@ public sealed class Igi2GunFire : IIgi2FireHandler
 
         int weaponObject = Math.Min(request.Weapon.Inventory.TotalBulletsFired % 2, objects - 1);
         owner.Flash(HolderFlash);
-        effects.MuzzleFlash(weaponObject, gun.MuzzleFlashFrontSprite.Length == 0 ? null : gun.MuzzleFlashFrontSprite, gun.MuzzleFlashSize);
+        string? front = gun.MuzzleFlashFrontSprite.Length == 0 ? null : gun.MuzzleFlashFrontSprite;
+        string? side = gun.MuzzleFlashSideSprite.Length == 0 ? null : gun.MuzzleFlashSideSprite;
+        effects.MuzzleFlash(weaponObject, front, gun.MuzzleFlashSize);
+        if (front is not null || side is not null)
+        {
+            request.Weapon.Flashes.Add(new Igi2MuzzleFlash(weaponObject, front, side, gun.MuzzleFlashSize));
+        }
+
         if (gun.BulletCasingModel.Length == 0)
         {
             return;
