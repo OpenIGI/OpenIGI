@@ -178,8 +178,10 @@ public sealed partial class Igi2HumanPlayer
         }
 
         MoveBody();
+        // Lying, the body tilts toward the averaged ground under it (off a train), and is noted again on its platform.
         if (Pose == Igi2HumanPose.LyingFlat && GroundCollider?.Owner is not Igi2CollisionOwner { TypeName: TrainType })
         {
+            InterpolateZAxisToAveragedGroundNormal();
             UpdatePlatformPosition(forcePosition: false, forceOrientation: true);
         }
 
