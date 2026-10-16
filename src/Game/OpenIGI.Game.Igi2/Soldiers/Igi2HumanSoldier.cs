@@ -199,9 +199,6 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// <summary>Gets the upper body's handler, <c>tUpperBodyState.pfSignalHandler</c>.</summary>
     public Igi2SoldierUpperBody UpperBodyState { get; private set; } = Igi2SoldierUpperBody.Idle;
 
-    /// <summary>Gets how visible the soldier is, <c>vVisibilityFactor</c>: the light it stands in, less crouched or lying.</summary>
-    public float VisibilityFactor { get; private set; }
-
     /// <summary>Gets or sets the damage the soldier died of, <c>vDeathDamage</c>.</summary>
     public float DeathDamage { get; set; }
 

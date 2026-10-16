@@ -482,6 +482,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         if (task is Igi2HumanPlayerTask playerTask)
         {
             playerTask.Human = player.Human;
+            player.Human.Task = playerTask;
         }
 
         player.Input = task.Children.OfType<Igi2HumanPlayerInputTask>().FirstOrDefault();

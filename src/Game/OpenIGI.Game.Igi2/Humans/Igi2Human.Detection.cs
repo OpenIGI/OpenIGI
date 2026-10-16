@@ -19,6 +19,9 @@ public abstract partial class Igi2Human : IIgi2Detectable
     /// <inheritdoc/>
     float? IIgi2Detectable.VisibilityFactor => DetectionVisibility;
 
+    /// <summary>Gets or sets how well detectors see the human, <c>Human_s.vVisibilityFactor</c>, its kind's own measure.</summary>
+    public float VisibilityFactor { get; set; } = 1f;
+
     /// <summary>Gets how far off it may be seen, as a share of a cone's length (<c>Human + 0x7C8</c>).</summary>
     protected virtual float DetectionVisibility => 1f;
 

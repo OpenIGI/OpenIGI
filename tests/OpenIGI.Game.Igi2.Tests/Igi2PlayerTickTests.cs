@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using Xunit;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -9,6 +10,28 @@ namespace OpenIGI.Game.Igi2.Tests;
 public sealed class Igi2PlayerTickTests
 {
     /// <summary>Standing still on a floor, the player stays put and grounded, and the jump wait counts down.</summary>
+    /// <summary>
+    /// How well detectors see the player follows the light it stands in, halved, and its stance: four fifths of it crouched, three
+    /// fifths lying; a shot that has just lit it shows it fully (<c>HumanPlayer_UpdateVisibilityFactor</c>).
+    /// </summary>
+    [Fact]
+    public void The_player_is_seen_by_its_light_and_its_stance()
+    {
+        (Igi2HumanPlayer player, _, _) = Igi2PlayerFakes.Player();
+        player.Lightmap = 1.2f;
+        player.RunDelayed();
+        Assert.Equal(0.6f, player.VisibilityFactor);
+
+        player.Pose = Igi2HumanPose.Crouching;
+        player.RunDelayed();
+        Assert.Equal(((Fpu)0.6f * 0.800000011920929).F, player.VisibilityFactor);
+
+        player.Pose = Igi2HumanPose.LyingFlat;
+        player.IgnoreLightEffectOnVisibilityTimer = 5;
+        player.RunDelayed();
+        Assert.Equal(((Fpu)1f * 0.6000000238418579).F, player.VisibilityFactor);
+    }
+
     [Fact]
     public void Standing_still_stays_put()
     {

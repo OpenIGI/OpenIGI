@@ -61,7 +61,7 @@ public sealed partial class Igi2HumanPlayer
     /// </para>
     /// <para>
     /// Not ported yet: the scope's breathing sway (<c>HumanPlayer_HandleBreathViewOffset</c>, <c>igi2 0x4B4710</c>, a
-    /// <c>Zoom</c> weapon's), the AI's view of the player, the save and load slots, the cheat keys, the inventory toggle,
+    /// <c>Zoom</c> weapon's), the save and load slots, the cheat keys, the inventory toggle,
     /// the running and fatigue sounds (<c>0x4BF140</c>, <c>0x4BF1C0</c>), the action menu and the sector lookup.
     /// </para>
     /// </remarks>
@@ -80,6 +80,8 @@ public sealed partial class Igi2HumanPlayer
         }
 
         IsInfraEnabled = Weapon.Inventory?.Current?.WeaponType.WeaponType == Weapons.Igi2WeaponTypeKind.Special;
+
+        UpdateVisibilityFactor();
 
         int lost = Fpu.ToInt32(((Fpu)Damage.Damage / Damage.MaxDamage) * 100.0);
         MissionHealth = Math.Clamp(100 - lost, 0, 100);

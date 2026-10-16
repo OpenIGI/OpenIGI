@@ -30,6 +30,7 @@ public sealed partial class Igi2HumanPlayer
             Difficulty = (int)Difficulty,
             TimesAlarmTriggered = TimesAlarmTriggered,
             Health = MissionHealth,
+            VisibilityFactor = VisibilityFactor,
         });
 
         // Action: the action machine, written as a human's state is.
@@ -121,6 +122,7 @@ public sealed partial class Igi2HumanPlayer
         IsCheckActivateButton = extras.IsCheckActivateButton;
         TimesAlarmTriggered = extras.TimesAlarmTriggered;
         MissionHealth = extras.Health;
+        VisibilityFactor = extras.VisibilityFactor;
 
         uint actionFlags = unchecked((uint)reader.Int());
         reader.Int();
