@@ -45,6 +45,30 @@ public abstract partial class Igi2Human : IIgi2WeaponOwner
     /// <inheritdoc/>
     public abstract int WeaponObjectCount();
 
+    /// <summary>
+    /// The weapon objects on the body, <c>Human_GetWeaponObjectHandler</c>'s body branch (<c>igi2 0x500A10</c>): the <c>weapon</c>
+    /// attach objects of the clip the upper body plays, or of the main clip when the upper body plays none.
+    /// </summary>
+    /// <returns>The number.</returns>
+    protected int BodyWeaponObjectCount()
+    {
+        if (Animation is not Igi2HumanAnimation { AttachSource.Clip: { } clip })
+        {
+            return 0;
+        }
+
+        int count = 0;
+        foreach (Formats.Animation.Igi2AnimationAttachObject attached in clip.AttachObjects)
+        {
+            if (string.Equals(attached.Name, ViewModel.Igi2FirstPersonFrame.WeaponAttachName, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     /// <inheritdoc/>
     public void Flash(Vector3f flash) => FlashEffect = flash;
 

@@ -108,11 +108,16 @@ public sealed partial class Igi2HumanPlayer
     /// view (<c>Human_GetWeaponObjectHandler</c>, <c>igi2 0x500A10</c>, the view's controller's <c>WeaponMagicObj</c>
     /// children).
     /// </summary>
-    /// <returns>The number; none seen from behind or with the camera elsewhere.</returns>
-    /// <remarks>Not yet: the third-person weapon, held on the body.</remarks>
+    /// <returns>The number.</returns>
+    /// <remarks>Seen from behind, or with the camera elsewhere, the weapon is the one on the body (<see cref="Igi2Human.BodyWeaponObjectCount"/>).</remarks>
     public override int WeaponObjectCount()
     {
-        if (IsThirdPerson || CameraMode != 1 || View.ObjectAnimation.Clip is not { } clip)
+        if (IsThirdPerson || CameraMode != 1)
+        {
+            return BodyWeaponObjectCount();
+        }
+
+        if (View.ObjectAnimation.Clip is not { } clip)
         {
             return 0;
         }

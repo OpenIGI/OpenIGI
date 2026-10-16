@@ -240,7 +240,7 @@ public sealed class RetailIgi2LevelAiTests
         (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build(facing: 400);
         m.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
         Igi2HumanAi mind = (Igi2HumanAi)m.Tree.OfType<Igi2HumanSoldierTask>().Single(static t => t.Id == 400).Body!.Mind!;
-        bool seen = false;
+        bool seen = false, held = false;
         int shots = 0, last = mind.AmmoInWeapon();
         for (int tick = 0; tick < 1800; tick++)
         {
@@ -249,10 +249,12 @@ public sealed class RetailIgi2LevelAiTests
             seen |= mind.Squad!.Targets.Count > 0;
             int ammo = mind.AmmoInWeapon();
             shots += Math.Max(last - ammo, 0);
+            held |= ammo < last && mind.Soldier.WeaponObjectCount() > 0;
             last = ammo;
         }
 
         Assert.True(seen);
+        Assert.True(held, "The guard fired with no weapon object on his body: his flashes and casings were skipped.");
         Assert.True(shots > 8, $"The guard must fire again after his first magazine; shots={shots}.");
     }
 

@@ -209,8 +209,8 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     public float DeathDamage { get; set; }
 
     /// <inheritdoc/>
-    /// <remarks>A soldier is never seen in first person.</remarks>
-    public override int WeaponObjectCount() => 0;
+    /// <remarks>A soldier holds its weapon on its body (<see cref="Igi2Human.BodyWeaponObjectCount"/>).</remarks>
+    public override int WeaponObjectCount() => BodyWeaponObjectCount();
 
     /// <summary>
     /// Readies the soldier as <c>HumanSoldier_CreateHandler</c> (<c>igi2 0x4E9E10</c>) does after the shared human's create.
