@@ -55,7 +55,22 @@ public sealed partial class Igi2HumanPlayer
         _isDropWeapon = false;
         Igi2WeaponTypeTask? type = _dropWeaponType;
         _dropWeaponType = null;
-        if (type is null || Weapon.Inventory is not { } inventory || inventory.FindWeapon(type.WeaponId) is not { } item)
+        if (type is not null)
+        {
+            ThrowWeapon(type, removeCarriedAmmo: true);
+        }
+    }
+
+    /// <summary>
+    /// Throws a carried weapon down as a pickup, <c>GunPickup_NewFromWeapon</c> and <c>Weapon_DisableWeaponType</c>: turned as the
+    /// hand holds it, at the body's root raised 1228.8, thrown along the heading give or take an eighth of a turn (one draw of the
+    /// run stream), with its load and, if asked, the ammunition carried for it, which then goes with it.
+    /// </summary>
+    /// <param name="type">The weapon.</param>
+    /// <param name="removeCarriedAmmo">Whether its carried ammunition goes with it.</param>
+    private void ThrowWeapon(Igi2WeaponTypeTask type, bool removeCarriedAmmo)
+    {
+        if (Weapon.Inventory is not { } inventory || inventory.FindWeapon(type.WeaponId) is not { } item)
         {
             return;
         }
@@ -71,7 +86,7 @@ public sealed partial class Igi2HumanPlayer
         for (int slot = 0; slot < pockets.Length; slot++)
         {
             Igi2FireTypeRounds rounds = inventory.FireTypeRounds(item, slot);
-            pockets[slot] = rounds.AmmoType is null ? 0 : rounds.Available;
+            pockets[slot] = rounds.AmmoType is null || !removeCarriedAmmo ? 0 : rounds.Available;
         }
 
         Surroundings.ThrowGunPickup(
@@ -82,6 +97,6 @@ public sealed partial class Igi2HumanPlayer
             item.Loaded(0),
             pockets,
             isThrowShort: false);
-        inventory.Disable(item, removeCarriedAmmo: true);
+        inventory.Disable(item, removeCarriedAmmo);
     }
 }

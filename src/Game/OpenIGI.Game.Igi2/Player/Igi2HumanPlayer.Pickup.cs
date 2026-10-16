@@ -79,10 +79,11 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
     /// not refused for carrying all its rounds already (<see cref="Igi2GunPickup.Offer"/>).
     /// </para>
     /// <para>
-    /// A weapon of a category carried in another weapon is only offered, and so is any on the tick the activate key goes
-    /// down: what takes it then is the action menu, which offers to swap it for each weapon of its category carried
-    /// (<c>HumanPlayer_RegisterWeaponPickupActionItem</c>, <c>0x49F810</c>) and, chosen, drops the one carried. Not yet: the
-    /// action menu, and with it the swap.
+    /// A weapon of a category carried in another weapon is only offered: within reach, with nothing to activate in view, the action
+    /// menu offers to swap it for each weapon of its category carried (<c>HumanPlayer_RegisterWeaponPickupActionItem</c>,
+    /// <c>0x49F810</c>). When the activate key goes down with that swap first on the menu, the weapon is taken and the one carried
+    /// thrown down in its place, with its carried ammunition unless the two share it; the walk over the list ends there. Taking
+    /// the one in hand asks for a change to the one taken.
     /// </para>
     /// </remarks>
     private void Pickup()
@@ -117,21 +118,91 @@ public sealed partial class Igi2HumanPlayer : IIgi2PickupTaker
             }
 
             bool isAutoPickup = false;
+            bool isSwap = false;
             Igi2Inventory? inventory = Weapon.Inventory;
-            Igi2WeaponItem? carried = inventory?.NextInCategory(pickup.WeaponType.WeaponCategory, null);
-            if (!Channels.WasPressed(Igi2HumanChannel.Activate))
+            int category = pickup.WeaponType.WeaponCategory;
+            Igi2WeaponItem? carried = inventory?.NextInCategory(category, null);
+            if (Channels.WasPressed(Igi2HumanChannel.Activate))
             {
-                if (inventory?.FindWeapon(pickup.WeaponType.WeaponId) is { IsActive: true })
+                // The swap first on the action menu, if it is one of this pickup's, is taken.
+                for (; carried is not null; carried = inventory!.NextInCategory(category, carried.WeaponType))
                 {
-                    isAutoPickup = true;
-                }
-                else if (carried is null)
-                {
-                    isAutoPickup = true;
+                    if (ActionMenu.IsFirst(pickup, carried.WeaponType))
+                    {
+                        isAutoPickup = true;
+                        isSwap = true;
+                        break;
+                    }
                 }
             }
+            else if (inventory?.FindWeapon(pickup.WeaponType.WeaponId) is { IsActive: true })
+            {
+                isAutoPickup = true;
+                carried = null;
+            }
+            else if (carried is null)
+            {
+                isAutoPickup = true;
+                isSwap = true;
+            }
 
-            _ = pickup.Offer(new Igi2PickupOffer(this, View.Position, isAutoPickup), pickups.Sight, pickups.Materials);
+            bool offered = pickup.Offer(new Igi2PickupOffer(this, View.Position, isAutoPickup), pickups.Sight, pickups.Materials);
+            if (!isSwap)
+            {
+                if (offered && EvaluateTarget is null && inventory is not null)
+                {
+                    for (Igi2WeaponItem? other = carried; other is not null; other = inventory.NextInCategory(category, other.WeaponType))
+                    {
+                        RegisterWeaponSwap(pickup, other.WeaponType);
+                    }
+                }
+
+                continue;
+            }
+
+            if (offered && carried is not null)
+            {
+                SwapFor(pickup, carried);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Offers a swap on the action menu, <c>HumanPlayer_RegisterWeaponPickupActionItem</c>: unless a pickup of the same weapon is
+    /// offered for the same carried one already.
+    /// </summary>
+    private void RegisterWeaponSwap(Igi2GunPickup pickup, Igi2WeaponTypeTask give)
+    {
+        if (ActionMenu.IsOffered((item, context) =>
+            item is Igi2GunPickup other && ReferenceEquals(context, give) && ReferenceEquals(other.WeaponType, pickup.WeaponType)))
+        {
+            return;
+        }
+
+        ActionMenu.Register(pickup, give);
+    }
+
+    /// <summary>
+    /// The swap taken (<c>HumanPlayer_Pickup</c>'s end): the carried weapon thrown down, with its carried ammunition unless the
+    /// weapon taken fires the same, and a change asked for to the one taken if the thrown one was in hand.
+    /// </summary>
+    private void SwapFor(Igi2GunPickup pickup, Igi2WeaponItem carried)
+    {
+        if (Weapon.Inventory is not { } inventory)
+        {
+            return;
+        }
+
+        Igi2WeaponTypeTask give = carried.WeaponType;
+        bool shareAmmo = ReferenceEquals(
+            pickup.WeaponType.AmmoInfo(0, inventory.Tables).AmmoType,
+            give.AmmoInfo(0, inventory.Tables).AmmoType);
+        bool wasHeld = ReferenceEquals(HeldItem?.WeaponType, give);
+        ThrowWeapon(give, removeCarriedAmmo: !shareAmmo);
+        if (wasHeld)
+        {
+            ChangeWeaponId = inventory.FindWeapon(pickup.WeaponType.WeaponId)?.Number ?? ChangeWeaponId;
         }
     }
 }

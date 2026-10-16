@@ -138,6 +138,46 @@ public sealed class RetailIgi2GunPickupTests
     }
 
     /// <summary>
+    /// A weapon of a category the player carries another of is offered on the action menu as a swap for it; with the swap first,
+    /// the activate key takes the weapon and throws the carried one down (<c>HumanPlayer_Pickup</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_action_menu_swaps_a_carried_weapon_for_one_lying()
+    {
+        Mission1Setup m = Mission1.Value;
+        Igi2PickupList pickups = Pickups();
+        Igi2GunPickup grenade = pickups.Items[0];
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, Igi2PlayerFakes.FakeSurroundings surroundings) = StandingBy(grenade, pickups);
+        Igi2Inventory inventory = weapons.Inventory;
+        (Igi2WeaponItem carried, Igi2WeaponTypeTask lying) = inventory.Weapons
+            .Where(static w => w.IsActive)
+            .SelectMany(w => inventory.Tables.WeaponTypes, (w, t) => (w, t))
+            .First(p => p.t.WeaponCategory == p.w.WeaponType.WeaponCategory && p.t.WeaponId != p.w.WeaponType.WeaponId
+                && p.t.FixedModel.Length > 0 && inventory.FindWeapon(p.t.WeaponId) is not { IsActive: true }
+                && inventory.Weapons.Count(o => o.IsActive && o.WeaponType.WeaponCategory == p.t.WeaponCategory) == 1);
+        Igi2GunPickup swap = Igi2GunPickup.Thrown(lying, inventory.Tables, grenade.Position, grenade.Orientation, 0f, isMoving: false, isThrowShort: false, 1, null, 100f);
+        pickups.Add(swap);
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            Igi2PlayerFakes.Feed(player, Igi2PlayerAction.None);
+            player.Update();
+            player.RunDelayed();
+        }
+
+        Assert.True(player.ActionMenu.IsFirst(swap, carried.WeaponType));
+        Assert.False(swap.IsDelete);
+
+        Igi2PlayerFakes.Feed(player, Igi2PlayerAction.Activate);
+        player.Update();
+
+        Assert.True(swap.IsDelete);
+        Assert.True(inventory.FindWeapon(lying.WeaponId)!.IsActive);
+        Assert.False(carried.IsActive);
+        Assert.Contains(surroundings.Thrown, t => ReferenceEquals(t.WeaponType, carried.WeaponType));
+    }
+
+    /// <summary>
     /// The player standing on the floor under a grenade, at the first spot within its reach where standing eyes see it, as
     /// the view sets them a tick after: the feet plus the standing eye height (<c>HumanView_GetOriginalViewPosition</c>).
     /// </summary>

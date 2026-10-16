@@ -76,6 +76,7 @@ public sealed partial class Igi2HumanPlayer
     {
         bool isCut = false;
         MoveOnGround(0f, GroundAcceleration, 0f, GroundAcceleration);
+        ActionMenu.SetNoDrawTimeout(ActivationMenuHide);
         if (SearchPhase == 1)
         {
             int endTicks = 30 * (Animation.StateTotalTime(SearchEndClip) / 4800);

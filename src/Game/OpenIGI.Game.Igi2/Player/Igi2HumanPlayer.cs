@@ -109,6 +109,9 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
     /// <summary>Gets or sets the speed the player's own legs add on the ground, <c>tGroundMovementSpeed</c>.</summary>
     public Vector3f GroundMovementSpeed { get; set; }
 
+    /// <summary>Gets the status screen's action menu, <c>ActionMenuScreen_ptQTask</c>: what the player would do now, and in what order.</summary>
+    public Igi2ActionMenu ActionMenu { get; } = new();
+
     /// <summary>Gets or sets the player tuning the script set, <c>HumanPlayer_tGeneral</c>.</summary>
     public Igi2HumanPlayerGeneral General { get; set; } = Igi2HumanPlayerGeneral.Unset;
 
@@ -246,14 +249,15 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
         signal |= Held(Igi2HumanChannel.Jump, Igi2PlayerSignal.Jump);
         signal |= Held(Igi2HumanChannel.NextWeapon, Igi2PlayerSignal.NextWeapon);
 
+        // The zoom keys also rotate the action menu (ActionMenuScreen_Scroll).
         if (channels.WasPressed(Igi2HumanChannel.ZoomIn))
         {
-            Weapon.StepActionMenu(1);
+            ActionMenu.RequestScroll(1);
         }
 
         if (channels.WasPressed(Igi2HumanChannel.ZoomOut))
         {
-            Weapon.StepActionMenu(-1);
+            ActionMenu.RequestScroll(-1);
         }
 
         if (channels.WasPressed(Igi2HumanChannel.ZoomIn))

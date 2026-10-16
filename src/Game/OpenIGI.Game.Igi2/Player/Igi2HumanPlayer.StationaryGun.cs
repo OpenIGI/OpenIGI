@@ -72,6 +72,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2GunOperator
     private void RunActivateStationaryGun(Igi2StationaryGunTask gun)
     {
         MoveOnGround(0f, 118.76579284667969f, 0f, 118.76579284667969f);
+        ActionMenu.SetNoDrawTimeout(ActivationMenuHide);
         bool leave = (Signal & Igi2PlayerSignal.Activate) != 0 && Channels.Last[(int)Igi2HumanChannel.Activate] == 0f;
         leave |= (Signal & Igi2PlayerSignal.Dead) != 0;
         if (!leave)

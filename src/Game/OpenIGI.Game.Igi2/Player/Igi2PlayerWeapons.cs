@@ -200,11 +200,6 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     }
 
     /// <inheritdoc/>
-    public void StepActionMenu(int direction)
-    {
-    }
-
-    /// <inheritdoc/>
     public void StopSoundSlot()
     {
     }

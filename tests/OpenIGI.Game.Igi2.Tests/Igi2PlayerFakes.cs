@@ -281,7 +281,6 @@ internal static class Igi2PlayerFakes
 
         public void ClearAllWeapons() => Calls.Add("ClearAllWeapons");
 
-        public void StepActionMenu(int direction) => Calls.Add($"Menu{direction}");
     }
 
     /// <summary>A level of flat floors and ceilings, each answering vertical lines as a handler does.</summary>

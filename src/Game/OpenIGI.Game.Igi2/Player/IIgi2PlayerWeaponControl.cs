@@ -88,10 +88,6 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Takes a zoomed weapon out of its zoomed fire mode, as getting up from lying flat does.</summary>
     /// <remarks><c>HumanPlayer_LeaveZoomAlternateFireMode</c> (<c>igi2 0x4BEC80</c>).</remarks>
     void LeaveZoomAlternateFireMode();
-
-    /// <summary>Moves the action menu's selection one way or the other.</summary>
-    /// <param name="direction">+1 or −1.</param>
-    void StepActionMenu(int direction);
 }
 
 /// <summary>A player holding nothing: every query answers "no weapon" and every request does nothing.</summary>
@@ -188,11 +184,6 @@ public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 
     /// <inheritdoc/>
     public void ClearAllWeapons()
-    {
-    }
-
-    /// <inheritdoc/>
-    public void StepActionMenu(int direction)
     {
     }
 }

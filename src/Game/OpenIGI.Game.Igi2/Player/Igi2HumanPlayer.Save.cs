@@ -117,6 +117,9 @@ public sealed partial class Igi2HumanPlayer
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = ReadHumanState(reader);
+
+        // HumanPlayer_DeSerializeHandler forgets what the action menu held.
+        ActionMenu.ClearHistory();
         IsWeaponReady = extras.IsWeaponReady;
         IsDisableDeltaTranslationScale = extras.IsDisableDeltaTranslationScale;
         IsCheckActivateButton = extras.IsCheckActivateButton;

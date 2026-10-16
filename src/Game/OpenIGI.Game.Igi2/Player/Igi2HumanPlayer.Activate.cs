@@ -117,12 +117,12 @@ public sealed partial class Igi2HumanPlayer
     /// activation starts.
     /// </summary>
     /// <remarks>
-    /// The action menu (<c>ActionMenuScreen_IsFirstActionItem</c>, <c>0x524E60</c>) is the status screen's, not ported yet; the
-    /// found thing stands as its first item.
+    /// The found thing must be the action menu's first item (<c>ActionMenuScreen_IsFirstActionItem</c>, <c>0x524E60</c>), which it
+    /// becomes two ticks after it is first found, and not while the menu is hidden.
     /// </remarks>
     private void TryActivateFromIdle()
     {
-        if (EvaluateTarget is not { } target || Channels[Igi2HumanChannel.Activate] == 0f)
+        if (EvaluateTarget is not { } target || Channels[Igi2HumanChannel.Activate] == 0f || !ActionMenu.IsFirst(target, null))
         {
             return;
         }
@@ -299,6 +299,7 @@ public sealed partial class Igi2HumanPlayer
     private void RunActivateDoor(IIgi2Door door)
     {
         MoveOnGround(0f, GroundAcceleration, 0f, GroundAcceleration);
+        ActionMenu.SetNoDrawTimeout(ActivationMenuHide);
         if (StepTimedAction() is not { } finished)
         {
             return;
@@ -377,8 +378,7 @@ public sealed partial class Igi2HumanPlayer
     private void RunWork(IIgi2WorkedActivatable action, string? finishedSound)
     {
         MoveOnGround(0f, GroundAcceleration, 0f, GroundAcceleration);
-
-        // ActionMenuScreen_ptQTask's selection is held on the action (the action menu is not ported).
+        ActionMenu.SetNoDrawTimeout(ActivationMenuHide);
         if (StepTimedAction() is not { } finished)
         {
             return;
@@ -476,6 +476,9 @@ public sealed partial class Igi2HumanPlayer
         IsCheckActivateButton = true;
         ActivatingTarget = null;
     }
+
+    /// <summary>The ticks an activation keeps the action menu hidden, renewed every tick it runs, <c>10</c>.</summary>
+    private const int ActivationMenuHide = 10;
 
     // HumanPlayer_SendHandleWeaponAIEvent: AIEVENT_HANDLEWEAPON from the player's team, heard within five metres of where it stands.
     private void SendHandleWeaponAiEvent() =>

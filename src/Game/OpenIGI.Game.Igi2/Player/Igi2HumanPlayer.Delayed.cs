@@ -62,7 +62,7 @@ public sealed partial class Igi2HumanPlayer
     /// <para>
     /// Not ported yet: the scope's breathing sway (<c>HumanPlayer_HandleBreathViewOffset</c>, <c>igi2 0x4B4710</c>, a
     /// <c>Zoom</c> weapon's), the save and load slots, the cheat keys, the inventory toggle,
-    /// the running and fatigue sounds (<c>0x4BF140</c>, <c>0x4BF1C0</c>), the action menu and the sector lookup.
+    /// the running and fatigue sounds (<c>0x4BF140</c>, <c>0x4BF1C0</c>) and the sector lookup.
     /// </para>
     /// </remarks>
     public void RunDelayed()
@@ -87,6 +87,14 @@ public sealed partial class Igi2HumanPlayer
         MissionHealth = Math.Clamp(100 - lost, 0, 100);
         PerfectShotTimer++;
         MaintainCollisionZOffset();
+
+        // The action menu offers what the player would activate, unless activation is locked, and works out its order.
+        if (!IsActivateLocked && EvaluateTarget is { } offered)
+        {
+            ActionMenu.Register(offered, null);
+        }
+
+        ActionMenu.Update();
 
         // Then the body's children run (Human_RunHandler, igi2 0x4FE3A0, through BoneDynCubeObj_RunHandler, 0x565490):
         // the controllers that step themselves step, before the next tick's input runs the update.

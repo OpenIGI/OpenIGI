@@ -355,12 +355,20 @@ public sealed partial class Igi2HumanPlayer
     }
 
     /// <summary>Waits for the lock to lift, then goes idle (<c>HumanPlayer_RunActionLock</c>, <c>igi2 0x4B3680</c>).</summary>
-    /// <remarks>Not yet: activating an object while swimming, which the lock lets through.</remarks>
+    /// <remarks>Locked while swimming, the player may still activate the action menu's first item.</remarks>
     private void RunLock()
     {
         if (!IsLockAction)
         {
             GoAction(Igi2PlayerActionState.Idle);
+            return;
+        }
+
+        // A swimmer may still activate what it found, if it is the action menu's first item.
+        if (IsSwimming && EvaluateTarget is { } target && Channels[Igi2HumanChannel.Activate] != 0f && ActionMenu.IsFirst(target, null))
+        {
+            View.DisableZoomMode();
+            InitActivate(target);
         }
     }
 
