@@ -112,6 +112,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     {
                         Effects = new Igi2LevelExplosionEffects(sounds, LevelAi(request.Services)),
                     };
+                    if (weapons.ImpactEffects is Igi2LevelImpactEffects impacts)
+                    {
+                        impacts.Explosions = explosions;
+                    }
+
                     explosions.AddTarget(player.Human);
                     foreach (Interaction.Igi2Glass pane in player.Glass.Panes)
                     {
@@ -377,7 +382,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (body.Weapon is Igi2PlayerWeapons arms)
             {
                 arms.Effects = new Igi2LevelWeaponEffects(sounds, body.CheapHeadBonePosition, LevelAi(services));
-                arms.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(services));
+                arms.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(services)) { Explosions = grenades?.Explosions };
                 if (materials is not null)
                 {
                     arms.World = new Igi2LevelGunShotWorld(world, materials, LevelAi(services));
@@ -845,7 +850,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 if (gun.Firing is { } firing)
                 {
                     firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Mount, LevelAi(request.Services));
-                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services));
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services)) { Explosions = player.Explosions };
                     if (gunMaterials is not null)
                     {
                         firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, gunMaterials, LevelAi(request.Services));
@@ -873,7 +878,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 {
                     Igi2WeaponFiring firing = gun.Firing;
                     firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Muzzle, LevelAi(request.Services));
-                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services));
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services)) { Explosions = player.Explosions };
                     if (turretMaterials is not null)
                     {
                         firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, turretMaterials, LevelAi(request.Services));
@@ -906,7 +911,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 {
                     Igi2WeaponFiring firing = gun.Firing;
                     firing.Effects = new Igi2LevelWeaponEffects(player.Sounds, () => gun.Muzzle, LevelAi(request.Services));
-                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services));
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(player.Sounds, LevelAi(request.Services)) { Explosions = player.Explosions };
                     firing.World = new Igi2LevelGunShotWorld(player.CollisionWorld, carMaterials, LevelAi(request.Services));
                 }
 

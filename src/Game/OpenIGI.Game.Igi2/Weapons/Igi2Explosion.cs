@@ -686,7 +686,16 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// <param name="request">The explosion.</param>
     /// <returns>The explosion.</returns>
     /// <remarks>A blast under water would make a water splash instead of fire and sound; the water is not in the collision yet.</remarks>
-    public Igi2Explosion Start(Igi2ExplosionRequest request)
+    public Igi2Explosion Start(Igi2ExplosionRequest request) => Start(request, null);
+
+    /// <summary>
+    /// Starts an explosion whose fragments' container spins at angles already drawn, as a bullet's impact effect draws them before
+    /// it calls <c>Explosion0_NewEx</c>.
+    /// </summary>
+    /// <param name="request">The explosion.</param>
+    /// <param name="spin">The container's three angles, or <see langword="null"/> to draw them.</param>
+    /// <returns>The explosion.</returns>
+    public Igi2Explosion Start(Igi2ExplosionRequest request, (float A, float B, float C)? spin)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -705,9 +714,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             Effects.BurnMark(struck, request.BurnRange);
         }
 
-        float a = (Draw() * 0.6283185f).F;
-        float b = (Draw() * 0.6283185f).F;
-        float c = (Draw() * 0.6283185f).F;
+        (float a, float b, float c) = spin ?? ((Draw() * 0.6283185f).F, (Draw() * 0.6283185f).F, (Draw() * 0.6283185f).F);
         Igi2FragmentContainer fragments = new(
             request.FragmentModel,
             15,

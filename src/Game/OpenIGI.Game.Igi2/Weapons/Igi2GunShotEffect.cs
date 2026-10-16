@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// effect that smokes draws once more and, on an odd draw, raises two puffs from four further draws.
 /// </para>
 /// <para>
-/// Not yet: the <c>Explosion0</c>'s own run, its fragments flying over the ticks after.
+/// The <c>Explosion0</c> then runs as any explosion does, its fragments flying, and drawing, over the ticks after.
 /// </para>
 /// </remarks>
 public static class Igi2GunShotEffect

@@ -22,9 +22,42 @@ internal sealed class Igi2LevelImpactEffects(Igi2Sounds sounds, Ai.Runtime.Igi2A
     {
     }
 
+    /// <summary>Gets or sets where an impact's chips fly, an explosion of no damage, or <see langword="null"/> for none.</summary>
+    public Igi2ExplosionWorld? Explosions { get; set; }
+
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>GunShotEffect_CreateEffectHandler</c>'s <c>Explosion0_NewEx</c>: once, at once, no damage over two metres, its chips the
+    /// effect's model thrown in a twelfth of a turn about the shot at 340 to 680 a tick, no sound, no AI event; the angles already
+    /// drawn. It runs on the ticks after as any explosion does.
+    /// </remarks>
     public void Fragments(in Igi2ImpactFragments fragments)
     {
+        Explosions?.Start(
+            new Igi2ExplosionRequest(
+                fragments.Position,
+                1,
+                0,
+                0f,
+                2048f,
+                0f,
+                0f,
+                fragments.Fragments,
+                0,
+                null,
+                fragments.Model,
+                string.Empty,
+                -1,
+                0x402,
+                49152f,
+                fragments.Direction,
+                0.5235987901687622f,
+                340f,
+                680f,
+                null,
+                null,
+                Igi2ExplosionFalloff.Linear),
+            fragments.Spin);
     }
 
     /// <inheritdoc/>
