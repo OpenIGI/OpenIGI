@@ -154,6 +154,9 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     protected override IIgi2GraphFooting? GraphFooting => Mind as IIgi2GraphFooting;
 
     /// <inheritdoc/>
+    public override bool IsAi => Mind is Ai.Runtime.Igi2HumanAi;
+
+    /// <inheritdoc/>
     protected override IIgi2HumanWeapon HumanWeapon => Weapon;
 
     /// <summary>Gets or sets the locomotion signal word, <c>tState.bSignal</c>.</summary>

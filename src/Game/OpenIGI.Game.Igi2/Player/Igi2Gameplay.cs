@@ -216,11 +216,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         // Human_ptQTaskList: every human registered in the world, the bodies each move is kept out of.
-        List<Igi2Human> humans = [player.Human];
-        if (player.Soldiers is { } registered)
-        {
-            humans.AddRange(registered.Bodies);
-        }
+        List<Igi2Human> humans = LevelHumans(request.World.LevelRoot, player);
 
         // Particle2DDynCubeObj's module: one stream and collision phase for every system the level makes.
         Igi2Particles particles = new(world, player.Dynamic);
@@ -409,6 +405,36 @@ public sealed class Igi2Gameplay : ITitleGameplay
         return soldiers;
     }
 
+    /// <summary>
+    /// Every human of the level in <c>Human_ptQTaskList</c>'s order: each registers as it is made (<c>Human_CreateHandler</c>),
+    /// so in the tree's order, the player where its <c>HumanPlayer</c> task stands.
+    /// </summary>
+    private static List<Igi2Human> LevelHumans(Engine.Tasks.GameTask? root, Igi2TitlePlayer player)
+    {
+        List<Igi2Human> humans = [];
+        if (root is not null)
+        {
+            foreach (Engine.Tasks.GameTask node in Descendants(root))
+            {
+                if (node is Igi2HumanPlayerTask && !humans.Contains(player.Human))
+                {
+                    humans.Add(player.Human);
+                }
+                else if (node is Ai.Igi2HumanSoldierTask { Body: { } soldier })
+                {
+                    humans.Add(soldier);
+                }
+            }
+        }
+
+        if (!humans.Contains(player.Human))
+        {
+            humans.Insert(0, player.Human);
+        }
+
+        return humans;
+    }
+
     /// <summary>The level's tick, with the player bound to its <c>HumanPlayer</c> task, as <c>Flow_RunChildren</c> (<c>igi2 0x401A50</c>) runs it.</summary>
     /// <param name="request">The level and the session.</param>
     /// <param name="player">The player.</param>
@@ -502,8 +528,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
             generator.Sounds = player.Sounds;
         }
 
-        // The level's humans, in Human_ptQTaskList's order, are the player alone until the AI's soldiers are its own.
-        IIgi2AreaOccupant[] humans = [player.Human];
+        // The level's humans, in Human_ptQTaskList's order: each criterion that counts humans walks them all.
+        IIgi2AreaOccupant[] humans = [.. LevelHumans(root, player)];
         foreach (Igi2AreaActivateTask area in Descendants(root).OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
@@ -973,7 +999,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             request.Services.TryGet(out Ai.Igi2HumanAiConfig? config);
             request.Services.TryGet(out Igi2HumanWeapons? armoury);
-            List<Igi2Human> everyone = [player.Human, .. soldiersWithMinds.Bodies];
+            List<Igi2Human> everyone = LevelHumans(root, player);
             Func<Vector3d, float> noise = point =>
             {
                 // AmbientArea_GetNoiseLevelAtPosition: the loudest area whose box and falloff hold the point, at most one.

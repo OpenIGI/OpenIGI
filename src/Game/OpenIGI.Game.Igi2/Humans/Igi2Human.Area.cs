@@ -1,13 +1,14 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Flow;
 
-namespace OpenIGI.Game.Igi2.Player;
+namespace OpenIGI.Game.Igi2.Humans;
 
-/// <content>The player as the areas count it.</content>
-public sealed partial class Igi2HumanPlayer : IIgi2AreaOccupant
+/// <content>A human as the areas count it.</content>
+public abstract partial class Igi2Human : IIgi2AreaOccupant
 {
     /// <inheritdoc/>
-    public bool IsAi => false;
+    /// <remarks>Only a soldier whose mind is a <c>HumanAI</c> has one.</remarks>
+    public virtual bool IsAi => false;
 
     /// <inheritdoc/>
     /// <remarks>
