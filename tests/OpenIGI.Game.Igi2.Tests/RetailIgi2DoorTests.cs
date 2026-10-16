@@ -252,6 +252,7 @@ public sealed class RetailIgi2DoorTests
         {
             Hold(player);
             Assert.False(door.IsPicked);
+            Igi2CameraClearance.AssertClear(m.Collision!, human, player.EyePosition);
         }
 
         Hold(player);

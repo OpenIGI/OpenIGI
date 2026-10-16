@@ -50,7 +50,7 @@ public sealed class RetailIgi2PlayerDeathPresentationTests
         TitleWorldModel first = Assert.Single(player.WorldModels, m => ReferenceEquals(m.Instance, human));
         Vector3f[] firstPose = first.Pose!.Positions.ToArray();
         Assert.NotEqual(human.View.Position, player.EyePosition);
-        Vector3d cameraToBody = human.BonePosition("center") - player.EyePosition;
+        Vector3d cameraToBody = human.HeldRootPosition() - player.EyePosition;
         Assert.True(cameraToBody.Length > 4096.0, "The initial clearance search must place the camera outside the body.");
         Vector3f forward = player.ViewOrientation.Row3;
         Assert.InRange(((cameraToBody.X * forward.X) + (cameraToBody.Y * forward.Y) + (cameraToBody.Z * forward.Z)) / cameraToBody.Length, 0.999, 1.001);
@@ -61,6 +61,7 @@ public sealed class RetailIgi2PlayerDeathPresentationTests
             player.Tick(RetailIgi2Mission1.Idle with { MouseX = 1f, MouseY = -0.25f, UnfilteredMouse = true });
             TitleWorldModel body = Assert.Single(player.WorldModels, m => ReferenceEquals(m.Instance, human));
             poseChanged |= !body.Pose!.Positions.SequenceEqual(firstPose);
+            Igi2CameraClearance.AssertClear(mission.Collision!, human, player.EyePosition);
             Assert.Equal(clip, animation.Main.Clip!.Name);
             Assert.Null(player.FirstPerson);
         }
