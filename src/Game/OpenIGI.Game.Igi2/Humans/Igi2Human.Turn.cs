@@ -35,8 +35,8 @@ public abstract partial class Igi2Human
     /// and the roll that stand it on that normal, and the orientation is multiplied by the tilt they make.
     /// </para>
     /// <para>
-    /// Not yet ported: a body riding something takes its orientation from what it rides, and a lying body's turn is
-    /// first checked for room (<c>Human_IsGammaRotationAllowed</c>, <c>igi2 0x505D40</c>); here it always has room.
+    /// A lying body's turn is first checked for room (<see cref="CheckTurnRoom"/>) and refused whole when it has none.
+    /// Not yet ported: a body riding something takes its orientation from what it rides.
     /// </para>
     /// </remarks>
     public void UpdateBody()
@@ -53,6 +53,11 @@ public abstract partial class Igi2Human
         Alpha = 0f;
         Beta = 0f;
         Fpu turn = (-((Fpu)input * Pi)) * View.FieldOfView;
+        if (turn.Value != 0.0 && Pose == Igi2HumanPose.LyingFlat)
+        {
+            turn = CheckTurnRoom(turn);
+        }
+
         Fpu heading = turn + IdealGamma;
         IdealGamma = heading.F;
         TurningSpeed = turn.F;

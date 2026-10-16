@@ -297,9 +297,17 @@ internal static class Igi2PlayerFakes
             {
                 surface.NextZ(trace);
             }
+
+            foreach (IIgi2Collider other in Others)
+            {
+                other.NextZ(trace);
+            }
         }
 
         public List<FakeCollider> Surfaces { get; } = [];
+
+        /// <summary>Gets colliders of other shapes, asked after the surfaces.</summary>
+        public List<IIgi2Collider> Others { get; } = [];
 
         public int Queries { get; private set; }
 
@@ -317,6 +325,11 @@ internal static class Igi2PlayerFakes
             foreach (FakeCollider surface in Surfaces)
             {
                 surface.NextZ(trace);
+            }
+
+            foreach (IIgi2Collider other in Others)
+            {
+                other.NextZ(trace);
             }
         }
     }
@@ -356,6 +369,40 @@ internal static class Igi2PlayerFakes
                 hit.LocalNormal = hit.Normal;
                 hit.EnterMaterial = material;
                 hit.Light = light;
+            }
+        }
+    }
+
+    /// <summary>An upright wall across the X axis at one X, facing back down the axis, that any line crossing it strikes.</summary>
+    internal sealed class FakeWall(double x) : IIgi2Collider
+    {
+        public object Owner => this;
+
+        public void NextZ(Igi2LineTrace trace)
+        {
+            for (int i = 0; i < trace.Count; i++)
+            {
+                Vector3d from = trace.Starts[i], to = trace.Ends[i];
+                if (x < Math.Min(from.X, to.X) || x > Math.Max(from.X, to.X) || from.X == to.X)
+                {
+                    continue;
+                }
+
+                double t = (x - from.X) / (to.X - from.X);
+                Vector3d at = new(x, from.Y + ((to.Y - from.Y) * t), from.Z + ((to.Z - from.Z) * t));
+                double distance = (at - from).Length;
+                Igi2Intersection hit = trace.Intersections[i];
+                if (hit.IsHit && !(distance < hit.Distance))
+                {
+                    continue;
+                }
+
+                hit.IsHit = true;
+                hit.HitObject = this;
+                hit.Distance = distance;
+                hit.Position = at;
+                hit.Normal = new Vector3f(-1f, 0f, 0f);
+                hit.LocalNormal = hit.Normal;
             }
         }
     }

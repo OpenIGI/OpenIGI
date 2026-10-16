@@ -54,6 +54,33 @@ public sealed class Igi2HumanTurnTests
         Assert.Equal(0f, player.TurningSpeed);
     }
 
+    /// <summary>
+    /// Lying flat, a turn that would swing the head into a wall is refused whole (<c>Human_IsGammaRotationAllowed</c>), and pushes
+    /// the body off the wall by the size of the turn times 81.92; with open ground around, the same turn is taken.
+    /// </summary>
+    [Fact]
+    public void Lying_flat_a_wall_refuses_the_turn()
+    {
+        (Igi2HumanPlayer open, _, _) = Igi2PlayerFakes.Player();
+        open.Pose = Igi2HumanPose.LyingFlat;
+        Look(open, x: -0.05f, y: 0f);
+        open.UpdateBody();
+        Assert.NotEqual(0f, open.TurningSpeed);
+
+        (Igi2HumanPlayer boxed, _, Igi2PlayerFakes.FakeSurroundings surroundings) = Igi2PlayerFakes.Player();
+        boxed.Pose = Igi2HumanPose.LyingFlat;
+        surroundings.World.Others.Add(new Igi2PlayerFakes.FakeWall(100.0));
+        float before = boxed.IdealGamma;
+        Look(boxed, x: -0.05f, y: 0f);
+
+        boxed.UpdateBody();
+
+        Assert.Equal(0f, boxed.TurningSpeed);
+        Assert.Equal(before, boxed.IdealGamma);
+        float size = Math.Abs(open.TurningSpeed);
+        Assert.Equal(((Fpu)size * -1f * 81.91999816894531f).F, boxed.DeltaTranslation.X);
+    }
+
     /// <summary>At the default field of view the pitch input is averaged over two ticks; the step is π times it.</summary>
     [Fact]
     public void The_pitch_averages_two_ticks_of_input()
