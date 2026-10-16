@@ -256,7 +256,10 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// what the tick let go of.
     /// </para>
     /// <para>A soldier riding something (a mounted gun) is carried with it instead of moving (<c>Human_Attach</c>).</para>
-    /// <para>Not ported yet, and skipped where it falls: the AI's notice (<c>Human_Notify</c>).</para>
+    /// <para>
+    /// <c>Human_Notify</c> is left out: only fences listen to it, and only the player answers their shock
+    /// (<c>HumanPlayer_ElectricDamageHandler</c>), so a soldier's notice changes nothing.
+    /// </para>
     /// </remarks>
     public void Update()
     {
