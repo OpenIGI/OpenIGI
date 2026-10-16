@@ -11,8 +11,14 @@ namespace OpenIGI.Game.Igi2.Hud;
 /// </content>
 public sealed partial class Igi2HudRenderer
 {
-    /// <summary>The line filter's alpha, packed with the camera's colour (<c>LineFilter_D3DDraw</c>).</summary>
-    public const byte LineAlpha = 0x4C;
+    /// <summary>The line filter's alpha at the screen's left, packed with the camera's colour (<c>LineFilter_D3DDraw</c>).</summary>
+    public const byte LineAlphaLeft = 0x19;
+
+    /// <summary>Its alpha at the right.</summary>
+    public const byte LineAlphaRight = 0x7F;
+
+    /// <summary>The hand-held camera filter's rows' alpha (<c>HandiCamFilter_D3DDraw</c>).</summary>
+    public const byte HandiCamAlpha = 0x4C;
 
     /// <summary>How far apart the line filter's rows are, in pixels.</summary>
     public const int LineSpacing = 4;
@@ -27,13 +33,13 @@ public sealed partial class Igi2HudRenderer
         switch (view.FilterId)
         {
             case Igi2CutsceneCameras.LineFilter:
-                DrawLines(batch, view, width, height);
+                DrawLines(batch, view, LineAlphaLeft, LineAlphaRight, view.FilterNoise, width, height);
                 break;
             case Igi2CutsceneCameras.BandFilter or Igi2CutsceneCameras.BandUpdateFilter:
                 DrawBand(batch, title, view, width, height);
                 break;
             case Igi2CutsceneCameras.HandiCamFilter:
-                DrawLines(batch, view, width, height);
+                DrawLines(batch, view, HandiCamAlpha, HandiCamAlpha, 0f, width, height);
                 DrawHandiCam(batch, width, height);
                 break;
         }
@@ -49,13 +55,50 @@ public sealed partial class Igi2HudRenderer
         }
     }
 
-    // LineFilter_D3DDraw: a one-pixel row every fourth pixel down the picture, the camera's colour at a fixed alpha.
-    private static void DrawLines(SpriteBatch batch, Igi2CutsceneView view, int width, int height)
+    // LineFilter_D3DDraw: two one-pixel rows every fourth pixel down the picture in the camera's colour, faint at the left
+    // (alpha 25) and stronger at the right (127); then, with noise, grey streaks at random across the rows, ten a row at full
+    // noise and a row in so many at little, each up to fifty pixels long, as opaque as the noise.
+    // HandiCamFilter_D3DDraw draws the rows at one alpha, without the noise.
+    private void DrawLines(SpriteBatch batch, Igi2CutsceneView view, byte alphaLeft, byte alphaRight, float noise, int width, int height)
     {
-        Bgra32 line = new(Channel(view.FilterColor.Z), Channel(view.FilterColor.Y), Channel(view.FilterColor.X), LineAlpha);
-        for (int y = 0; y < height; y += LineSpacing)
+        byte r = Channel(view.FilterColor.X), g = Channel(view.FilterColor.Y), b = Channel(view.FilterColor.Z);
+        Bgra32 left = Bgra32.FromRgba(r, g, b, alphaLeft), right = Bgra32.FromRgba(r, g, b, alphaRight);
+        for (float y = 0f; height >= y + 4f; y += LineSpacing)
         {
-            Rectangle(batch, 0f, y, width, Math.Min(height, y + 1), line);
+            for (int row = 0; row < 2; row++)
+            {
+                float top = (int)y + row;
+                batch.DrawQuad(
+                    TextureHandle.None,
+                    new Vertex2D(0f, top, 0f, 0f, left),
+                    new Vertex2D(width, top, 1f, 0f, right),
+                    new Vertex2D(width, top + 1f, 1f, 1f, right),
+                    new Vertex2D(0f, top + 1f, 0f, 1f, left));
+            }
+        }
+
+        if (noise <= 0f)
+        {
+            return;
+        }
+
+        float step = 1f, lines = noise * 10f;
+        if (lines < 1f)
+        {
+            step = 1f / lines;
+            lines = 1f;
+        }
+
+        byte alpha = (byte)(int)(noise * 255f);
+        for (float y = 0f, next = step; height >= next; y = next, next += step)
+        {
+            for (int i = 0; i < (int)lines; i++)
+            {
+                float x = (float)(_filterRandom.NextDouble() * width);
+                byte grey = (byte)(int)(255.0 * _filterRandom.NextDouble());
+                float end = Math.Min(width, (float)(_filterRandom.NextDouble() * 50.0) + x);
+                Rectangle(batch, x, (int)y, end, (int)y + 1, Bgra32.FromRgba(grey, grey, grey, alpha));
+            }
         }
     }
 
