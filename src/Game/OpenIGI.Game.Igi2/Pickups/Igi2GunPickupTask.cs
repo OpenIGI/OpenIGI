@@ -30,4 +30,26 @@ public sealed partial class Igi2GunPickupTask : Igi2Task
     /// <summary>Gets or sets how long the pickup takes to come back, as an expression: a multiplayer game's.</summary>
     [ScriptParam(ScriptParamType.String32, "Respawn Time")]
     public string RespawnTime { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the pickup the task lies as, or <see langword="null"/> before the level's pickups are made.</summary>
+    public Igi2GunPickup? Pickup { get; set; }
+
+    /// <summary>Gets or sets the level's pickups, which the pickup is on.</summary>
+    public Igi2PickupList? Pickups { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>GunPickup_RunHandler</c> (<c>igi2 0x46A760</c>), in the task's place in the level's tree: the pickup falls, or, taken, is
+    /// gone. From the first such run the pickups' own pass leaves it be.
+    /// </remarks>
+    public override void Run(Flow.Igi2LevelRun level)
+    {
+        if (Pickup is not { } pickup || Pickups is not { } pickups || pickup.IsDelete && !pickups.Items.Contains(pickup))
+        {
+            return;
+        }
+
+        pickup.IsDriven = true;
+        pickups.Step(pickup);
+    }
 }

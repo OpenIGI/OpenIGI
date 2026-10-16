@@ -142,6 +142,9 @@ public sealed class Igi2GunPickup
     /// <summary>Gets a value indicating whether it was taken and is to be deleted, <c>isDelete</c> (<c>+0x1FC</c>).</summary>
     public bool IsDelete { get; private set; }
 
+    /// <summary>Gets or sets a value indicating whether its own run handler runs it, in the level's tree or its dynamic tasks.</summary>
+    public bool IsDriven { get; set; }
+
     /// <summary>Gets a value indicating whether it is falling, <c>isMoving</c> (<c>+0x1FD</c>): a dropped weapon's.</summary>
     public bool IsMoving { get; private set; }
 

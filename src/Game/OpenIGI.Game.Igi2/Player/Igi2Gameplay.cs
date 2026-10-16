@@ -166,6 +166,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             {
                 player.Human.Pickups = Pickups.Igi2PickupList.Build(request.World.LevelRoot, armoury.Tables, models, world, materials);
                 player.Human.Pickups.Collision = world;
+                player.Human.Pickups.Dynamic = player.Dynamic;
                 player.Human.Pickups.Random = player.Human.Random;
                 player.Human.Pickups.PlaySound = (name, at) => sounds.New(name, at);
             }

@@ -131,6 +131,37 @@ public sealed class RetailIgi2WaterModuleTests
         Assert.InRange(floating.Position.Z, body.Position.Z, body.Position.Z + 1024.0);
     }
 
+    /// <summary>
+    /// A weapon thrown at run time is run in the level's dynamic tasks, as <c>GunPickup_New</c> parents it to
+    /// <c>Level_ptDynamicQTask</c>: it falls there, and the pickups' own pass leaves it be.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_thrown_pickup_falls_in_the_dynamic_tasks()
+    {
+        (Igi2CollisionWorld world, _, Igi2WaterBody body) = Build();
+        Weapons.Igi2WeaponTables tables = Igi2Session.Start().Require<Weapons.Igi2HumanWeapons>().Tables;
+        Weapons.Igi2WeaponTypeTask gun = tables.WeaponTypes.First(static t => t.WeaponId != Pickups.Igi2GunPickup.FlatWeaponId && t.FixedModel.Length > 0);
+        Igi2DynamicTasks dynamic = new();
+        Pickups.Igi2PickupList pickups = new([], new BlindSight(), new Igi2GameMaterials())
+        {
+            Collision = world,
+            Random = new IgiRandom(),
+            Dynamic = dynamic,
+        };
+        float[] level = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+        Pickups.Igi2GunPickup thrown = Pickups.Igi2GunPickup.Thrown(
+            gun, tables, new Vector3d(body.Position.X, body.Position.Y, body.Position.Z + 8192.0), level, 0f, isMoving: true, isThrowShort: true, 0, null, 100f);
+        pickups.Add(thrown);
+
+        Assert.True(thrown.IsDriven);
+        Assert.Single(dynamic.Tasks);
+        Vector3d before = thrown.Position;
+        pickups.Run();
+        Assert.Equal(before, thrown.Position);
+        dynamic.Run();
+        Assert.NotEqual(before, thrown.Position);
+    }
+
     private static (Igi2CollisionWorld World, Igi2Water Water, Igi2WaterBody Body) Build()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
@@ -145,5 +176,10 @@ public sealed class RetailIgi2WaterModuleTests
 
         Assert.NotEmpty(water.Bodies);
         return (world, water, water.Bodies.OrderByDescending(static b => b.Size).First());
+    }
+
+    private sealed class BlindSight : IIgi2SightQuery
+    {
+        public bool LineOfSight(Igi2LineOfSight sight, uint groups) => true;
     }
 }

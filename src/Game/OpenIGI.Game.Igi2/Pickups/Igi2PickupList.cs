@@ -55,12 +55,50 @@ public sealed class Igi2PickupList
     /// <summary>Gets or sets what plays a sound at a point.</summary>
     public Action<string, Vector3d>? PlaySound { get; set; }
 
+    /// <summary>
+    /// Gets or sets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>, which a pickup made at run time is run in; or
+    /// <see langword="null"/> to leave it to <see cref="Run"/>.
+    /// </summary>
+    public World.Igi2DynamicTasks? Dynamic { get; set; }
+
+    /// <summary>
+    /// One pickup's run handler, <c>GunPickup_RunHandler</c> (<c>igi2 0x46A760</c>): it falls if it is falling, and if it was taken it
+    /// is deleted and leaves the list.
+    /// </summary>
+    /// <param name="pickup">The pickup.</param>
+    /// <returns>Whether it is still there.</returns>
+    public bool Step(Igi2GunPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        if (pickup.IsMoving && Collision is { } world && Random is { } random)
+        {
+            pickup.Fall(world, random, PlaySound ?? (static (_, _) => { }));
+        }
+
+        if (!pickup.IsDelete)
+        {
+            return true;
+        }
+
+        if (_items.Remove(pickup))
+        {
+            Deleted?.Invoke(pickup);
+        }
+
+        return false;
+    }
+
     /// <summary>Puts a pickup made at run time on the list, as <c>GunPickup_CreateHandler</c> (<c>igi2 0x46A729</c>) registers it.</summary>
     /// <param name="pickup">The pickup.</param>
     public void Add(Igi2GunPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
         _items.Add(pickup);
+        if (Dynamic is { } dynamic)
+        {
+            pickup.IsDriven = true;
+            dynamic.Add(new Driver(this, pickup));
+        }
     }
 
     /// <summary>Makes the pickups a level places, as <c>GunPickup_CreateHandler</c> and its internal data make each.</summary>
@@ -97,33 +135,51 @@ public sealed class Igi2PickupList
 
             float radius = weaponType.FixedModel.Length > 0 && models(weaponType.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
             Igi2Pose pose = Igi2Pose.FromAngles(placed.Position, placed.Orientation);
-            items.Add(new Igi2GunPickup(placed, weaponType, tables, placed.Position, pose.Orientation, radius));
+            Igi2GunPickup pickup = new(placed, weaponType, tables, placed.Position, pose.Orientation, radius);
+            placed.Pickup = pickup;
+            items.Add(pickup);
         }
 
-        return new Igi2PickupList(items, sight, materials);
+        Igi2PickupList list = new(items, sight, materials);
+        foreach (Igi2GunPickup pickup in items)
+        {
+            if (pickup.Task is Igi2GunPickupTask placed)
+            {
+                placed.Pickups = list;
+            }
+        }
+
+        return list;
     }
 
     /// <summary>
     /// The pickups' run pass, <c>GunPickup_RunHandler</c> (<c>igi2 0x46A760</c>): each falling one falls, and each taken one is
     /// deleted and leaves the list.
     /// </summary>
+    /// <remarks>
+    /// Only the pickups nothing else runs: a level's own run in its task's place in the level's tree once the level runs it
+    /// (<see cref="Igi2GunPickupTask.Run"/>), and one made at run time in the level's dynamic tasks.
+    /// </remarks>
     public void Run()
     {
         for (int i = 0; i < _items.Count; i++)
         {
             Igi2GunPickup pickup = _items[i];
-            if (pickup.IsMoving && Collision is { } world && Random is { } random)
-            {
-                pickup.Fall(world, random, PlaySound ?? (static (_, _) => { }));
-            }
-
-            if (!pickup.IsDelete)
+            if (pickup.IsDriven)
             {
                 continue;
             }
 
-            _items.RemoveAt(i--);
-            Deleted?.Invoke(pickup);
+            if (!Step(pickup))
+            {
+                i--;
+            }
         }
+    }
+
+    // A pickup made at run time, run in the level's dynamic tasks.
+    private sealed class Driver(Igi2PickupList list, Igi2GunPickup pickup) : World.IIgi2DynamicTask
+    {
+        public bool Run() => list.Step(pickup);
     }
 }
