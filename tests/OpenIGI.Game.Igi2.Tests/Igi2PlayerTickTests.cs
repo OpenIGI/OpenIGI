@@ -32,6 +32,36 @@ public sealed class Igi2PlayerTickTests
         Assert.Equal(((Fpu)1f * 0.6000000238418579).F, player.VisibilityFactor);
     }
 
+    /// <summary>
+    /// Running rattles the kit and builds fatigue a six-hundredth a tick; past seven tenths the player pants, and once it stops
+    /// the pant ends on a last breath (<c>HumanPlayer_MaintainRunningSound</c>, <c>HumanPlayer_MaintainFatigue</c>).
+    /// </summary>
+    [Fact]
+    public void A_long_run_leaves_the_player_panting()
+    {
+        (Igi2HumanPlayer player, _, Igi2PlayerFakes.FakeSurroundings surroundings) = OnFloor();
+        for (int tick = 0; tick < 500; tick++)
+        {
+            Tick(player, Igi2PlayerAction.MoveForwards);
+            player.RunDelayed();
+        }
+
+        Assert.Contains(surroundings.Started, static s => s.Name == Igi2HumanPlayer.RunningSound && s.IsAlive);
+        Assert.InRange(player.Fatigue, 0.7f, 0.85f);
+        Igi2PlayerFakes.FakeSound pant = Assert.Single(surroundings.Started, static s => s.Name == Igi2HumanPlayer.BreatheLoopSound);
+
+        for (int tick = 0; tick < 30; tick++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+            player.RunDelayed();
+        }
+
+        Assert.True(pant.Deleted);
+        Assert.DoesNotContain(surroundings.Started, static s => s.Name == Igi2HumanPlayer.RunningSound && s.IsAlive);
+        Assert.Contains(surroundings.Started, static s => s.Name == Igi2HumanPlayer.BreatheStopSound);
+        Assert.True(player.Fatigue < 0.7f);
+    }
+
     [Fact]
     public void Standing_still_stays_put()
     {

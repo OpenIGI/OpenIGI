@@ -60,13 +60,14 @@ public sealed partial class Igi2HumanPlayer
     /// (<see cref="Weapons.Igi2WeaponFiring.RunDelayed"/>).
     /// </para>
     /// <para>
-    /// Not ported yet: the scope's breathing sway (<c>HumanPlayer_HandleBreathViewOffset</c>, <c>igi2 0x4B4710</c>, a
-    /// <c>Zoom</c> weapon's), the save and load slots, the cheat keys, the inventory toggle,
-    /// the running and fatigue sounds (<c>0x4BF140</c>, <c>0x4BF1C0</c>) and the sector lookup.
+    /// First the scope sways with the breath (<see cref="HandleBreathViewOffset"/>); after the zoom check the kit rattles and the
+    /// player pants as it runs (<see cref="MaintainRunningSound"/>, <see cref="MaintainFatigue"/>). Not ported yet: the save and
+    /// load slots, the cheat keys, the inventory toggle and the sector lookup.
     /// </para>
     /// </remarks>
     public void RunDelayed()
     {
+        HandleBreathViewOffset();
         float slowDown = Weapon.SummedMovementSlowDown;
         Fpu scale = (Fpu)1.0 - (slowDown < MaxMovementSlowDown ? slowDown : MaxMovementSlowDown);
         MovementSpeedScale = JumpWaitTimer != 0 ? (scale * 0.5).F : scale.F;
@@ -78,6 +79,9 @@ public sealed partial class Igi2HumanPlayer
         {
             Weapon.LeaveZoomAlternateFireMode();
         }
+
+        MaintainRunningSound();
+        MaintainFatigue();
 
         IsInfraEnabled = Weapon.Inventory?.Current?.WeaponType.WeaponType == Weapons.Igi2WeaponTypeKind.Special;
 

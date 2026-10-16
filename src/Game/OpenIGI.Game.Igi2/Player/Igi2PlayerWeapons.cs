@@ -126,6 +126,28 @@ public sealed class Igi2PlayerWeapons : IIgi2PlayerWeaponControl
     public bool IsZoomFireModeActive =>
         _firing.OverlayStatus != Igi2WeaponOverlayStatus.None && Held is { } held && held.FireTaskType(1) == _taskTypes.Zoom;
 
+    /// <inheritdoc/>
+    public Igi2ZoomTask? ActiveScope
+    {
+        get
+        {
+            if (_firing.OverlayStatus == Igi2WeaponOverlayStatus.None || Held is not { } held)
+            {
+                return null;
+            }
+
+            for (int slot = 0; slot < Igi2WeaponTypeTask.FireTypeSlots; slot++)
+            {
+                if (held.FireTaskType(slot) == _taskTypes.Zoom && held.FireType(slot) is Igi2ZoomTask zoom)
+                {
+                    return zoom;
+                }
+            }
+
+            return null;
+        }
+    }
+
     private Igi2WeaponTypeTask? Held => _inventory.Current?.WeaponType;
 
     /// <inheritdoc/>

@@ -66,6 +66,12 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
     /// <summary>Gets a value indicating whether the held weapon is in its zoomed fire mode (<c>Human_IsZoomFireModeActive</c>).</summary>
     bool IsZoomFireModeActive { get; }
 
+    /// <summary>
+    /// Gets the scope up on the weapon in hand, as <c>HumanPlayer_HandleBreathViewOffset</c> finds it: the weapon's zoom is up and a
+    /// fire type, the first before the second, is a <c>Zoom</c>; otherwise <see langword="null"/>.
+    /// </summary>
+    Weapons.Igi2ZoomTask? ActiveScope => null;
+
     /// <summary>Clears the held weapon's delay between shots, <c>nDelay</c> (<c>Weapon+0x48</c>).</summary>
     void ClearDelay();
 
