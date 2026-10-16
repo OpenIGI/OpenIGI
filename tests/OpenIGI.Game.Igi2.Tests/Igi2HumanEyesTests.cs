@@ -86,7 +86,8 @@ public sealed class Igi2HumanEyesTests
 
         player.CheckViewCollision();
 
-        Assert.Equal((-Fpu.Atan2(0.5, 1.0)).F, player.View.IdealPitch);
+        // Real32_Acos of the cosine to a point a reach ahead and half a reach down: 2048 / sqrt(2048² + 1024²).
+        Assert.Equal(-0.463647485f, player.View.IdealPitch);
     }
 
     /// <summary>Lying flat under something low, the view cannot look up into it.</summary>
@@ -100,7 +101,7 @@ public sealed class Igi2HumanEyesTests
 
         player.CheckViewCollision();
 
-        Assert.Equal(Fpu.Atan2(0.5, 1.0).F, player.View.IdealPitch);
+        Assert.Equal(0.463647485f, player.View.IdealPitch);
     }
 
     /// <summary>Standing, the view is not limited.</summary>
