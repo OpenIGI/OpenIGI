@@ -596,6 +596,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // The level's cars, in the order they are made: the vehicle list areas count.
         Vehicles.Igi2CarTask[] levelCars = [.. Descendants(root).OfType<Vehicles.Igi2CarTask>()];
+        player.MapVehicles = levelCars;
+        player.MapGunHolders = [.. Descendants(root).OfType<Weapons.Igi2AiStationaryGunHolderTask>()];
         foreach (Igi2AreaActivateTask area in Descendants(root).OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
@@ -1340,6 +1342,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     ];
 
     private readonly Igi2PlayerInputReader _reader = new();
+
+    /// <summary>Keeps the click that chose something on a screen from firing the gun, the input's <c>isFreezeFire</c>.</summary>
+    internal void FreezeFire() => _reader.FreezeFire = true;
     private readonly float[] _frame = new float[Igi2HumanChannels.Count];
     private readonly Igi2FirstPersonFrame _firstPerson = new();
     private long _ticks;
@@ -1858,6 +1863,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.RunDelayed();
 
         // The computer's menu, a task of the game screen, runs after the player, and its screens with it.
+        RunComputerSaves();
         Computer?.Run();
         RunComputerDisplay();
     }

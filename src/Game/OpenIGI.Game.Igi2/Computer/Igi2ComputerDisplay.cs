@@ -58,13 +58,25 @@ public readonly record struct Igi2ComputerInput(
 /// <see cref="Height"/> the presentation chooses, the casing's 480 lines high, so the menu's fonts sit on it as they sat on a 640 by
 /// 480 display.
 /// </remarks>
-public sealed class Igi2ComputerDisplay
+public sealed partial class Igi2ComputerDisplay
 {
     /// <summary>The font of the menu's items and the objectives' labels, <c>g_zFontName_1</c>.</summary>
     public const string LabelFont = "font3.fnt";
 
     /// <summary>The font of the objectives' text, <c>g_zFontName_0</c>'s second.</summary>
     public const string TextFont = "font4.fnt";
+
+    /// <summary>The font of the log's lines, <c>g_zFontName_0</c>.</summary>
+    public const string LogFont = "font1.fnt";
+
+    /// <summary>The log's lines on its screen at once.</summary>
+    public const int LogLines = 15;
+
+    /// <summary>The log screen's scroll-up button, <c>ComputerLog_ButtonItemActivateCB</c>'s case 5.</summary>
+    public const int LogUpId = 5;
+
+    /// <summary>Its scroll-down button.</summary>
+    public const int LogDownId = 6;
 
     /// <summary>The objectives screen's map buttons' first id, <c>ComputerObjectives_ButtonItemActivateCB</c>'s case 5.</summary>
     public const int ObjectiveButtonId = 5;
@@ -110,6 +122,12 @@ public sealed class Igi2ComputerDisplay
 
     /// <summary>Gets or sets a value indicating whether the casing is the broken one, mission 17's (<c>ComputerMenu_isBroken</c>).</summary>
     public bool IsBroken { get; set; }
+
+    /// <summary>Gets or sets the log's lines, oldest first, <c>ComputerLog_ptQVector</c>.</summary>
+    public IReadOnlyList<string> Log { get; set; } = [];
+
+    /// <summary>Gets how many of the newest lines the log screen is scrolled past, <c>nDisplayLog</c>.</summary>
+    public int LogScroll { get; private set; }
 
     /// <summary>Gets or sets the map, which keeps where it looked between openings; <see langword="null"/> before the first.</summary>
     public Igi2ComputerMap? Map { get; set; }
@@ -298,6 +316,11 @@ public sealed class Igi2ComputerDisplay
         _previousButtons = buttons;
 
         Items.Run();
+        if (Screen == Igi2ComputerMenu.Save)
+        {
+            RunSave();
+        }
+
         if (IsMapShown && Map is { } map)
         {
             map.Run(this, input, world, random);
@@ -319,6 +342,12 @@ public sealed class Igi2ComputerDisplay
                 break;
             case Igi2ComputerMenu.Objectives:
                 CreateObjectives();
+                break;
+            case Igi2ComputerMenu.Log:
+                CreateLog();
+                break;
+            case Igi2ComputerMenu.Save:
+                CreateSave();
                 break;
             default:
                 CreateScreenMenuItems(screen);
@@ -475,7 +504,7 @@ public sealed class Igi2ComputerDisplay
             return;
         }
 
-        bool pressed = (EdgeButtons & Igi2ComputerButtons.Select) != 0;
+        bool pressed = (Buttons & Igi2ComputerButtons.Select) != 0;
         item.WasPressed = item.IsPressed;
         item.IsPressed = pressed;
         if (!pressed)
@@ -491,6 +520,99 @@ public sealed class Igi2ComputerDisplay
             Map.PositionTaskId = objective.LinkToPosition;
             _computer.RequestMenu(Igi2ComputerMenu.Map);
         }
+    }
+
+    /// <summary>
+    /// The log screen, <c>ComputerLog_CreateHandler</c>: its title, the menu, and the two arrows that scroll it, the newest line at
+    /// its top.
+    /// </summary>
+    private void CreateLog()
+    {
+        LogScroll = 0;
+        CreateScreenMenuItems(Igi2ComputerMenu.Log);
+        float x = ((Fpu)Width * 0.14687499403953552).F, y = ((Fpu)Height * 0.14166666567325592).F;
+        Items.Add(new Igi2ComputerMenuItem(LogUpId, LogButtonActivated)
+        {
+            X = x,
+            Y = y,
+            Sprites = ["arrowup_1.spr", "arrowup_2.spr", "arrowup_3.spr"],
+            Width = 34f,
+            Height = 34f,
+        });
+        Items.Add(new Igi2ComputerMenuItem(LogDownId, LogButtonActivated)
+        {
+            X = x,
+            Y = y + 36f,
+            Sprites = ["arrowdown_1.spr", "arrowdown_2.spr", "arrowdown_3.spr"],
+            Width = 34f,
+            Height = 34f,
+        });
+    }
+
+    // ComputerLog_ButtonItemActivateCB: newly lit, it clicks; pressed, not held from before, the up arrow shows a newer line and
+    // the down arrow an older one, the oldest fifteen being as far as it goes.
+    private void LogButtonActivated(Igi2ComputerMenuItem item, Igi2ComputerActivation activation)
+    {
+        if (item.IsActivated && !item.IsActive)
+        {
+            PlaySound?.Invoke("mapcomp_05");
+        }
+
+        if (item.Id != activation.MenuItem)
+        {
+            return;
+        }
+
+        bool pressed = (Buttons & Igi2ComputerButtons.Select) != 0;
+        item.WasPressed = item.IsPressed;
+        item.IsPressed = pressed;
+        if (!pressed)
+        {
+            return;
+        }
+
+        PlaySound?.Invoke("mapcomp_01");
+        if (item.WasPressed)
+        {
+            return;
+        }
+
+        if (item.Id == LogUpId && LogScroll > 0)
+        {
+            LogScroll--;
+        }
+        else if (item.Id == LogDownId && LogScroll < Log.Count - LogLines)
+        {
+            LogScroll++;
+        }
+    }
+
+    /// <summary>
+    /// Lays the log out as its screen's draw does (<c>ComputerLog_DrawHandler</c>): from an eighth of the way down, at most fifteen
+    /// lines, newest first past the scroll, each wrapped and underlined.
+    /// </summary>
+    /// <param name="rules">Where each line's underline is put: its left and its Y.</param>
+    /// <returns>The words.</returns>
+    public IReadOnlyList<Igi2ComputerObjectiveLine> LayoutLog(List<(int X, int Y)> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        _objectiveLines.Clear();
+        int x = (int)(long)((Fpu)Width * 0.228125).Value;
+        int y = (int)(long)((Fpu)Height * 0.12083333333333333).Value;
+        for (int i = 0; i < Log.Count && i < LogLines; i++)
+        {
+            int index = Log.Count - LogScroll - i - 1;
+            if (index < 0)
+            {
+                break;
+            }
+
+            int under = Print(x, y, Log[index], LogFont, Igi2ComputerColour.Green) + 2;
+            rules.Add((x, under));
+            y = under + 2;
+        }
+
+        return _objectiveLines;
     }
 
     /// <summary>
@@ -530,11 +652,27 @@ public sealed class Igi2ComputerDisplay
         return _objectiveLines;
     }
 
-    // ComputerObjectives_Print: word by word, each word with the space after it, a word that does not fit on what is left of
-    // the line (400 pixels) starting the next; the Y under the last line.
-    private int Print(int x, int y, string text, string font, Igi2ComputerColour colour)
+    /// <summary>Lays a text out as <c>ComputerObjectives_Print</c> does, for the map's labels.</summary>
+    /// <param name="x">Its left.</param>
+    /// <param name="y">Its top.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="font">Its font.</param>
+    /// <param name="lineWidth">How wide a line may run.</param>
+    /// <param name="colour">Its colour.</param>
+    /// <param name="words">Where its words are put.</param>
+    /// <returns>The Y under its last line.</returns>
+    public int Wrap(int x, int y, string text, string font, int lineWidth, Igi2ComputerColour colour, List<Igi2ComputerObjectiveLine> words)
     {
-        const int lineWidth = 400;
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(words);
+        return Print(x, y, text, font, colour, lineWidth, words);
+    }
+
+    // ComputerObjectives_Print: word by word, each word with the space after it, a word that does not fit on what is left of
+    // the line (400 pixels on the objectives screen) starting the next; the Y under the last line.
+    private int Print(int x, int y, string text, string font, Igi2ComputerColour colour, int lineWidth = 400, List<Igi2ComputerObjectiveLine>? words = null)
+    {
+        words ??= _objectiveLines;
         int lineHeight = LineHeight(font);
         int printX = x, left = lineWidth;
         int index = 0;
@@ -556,7 +694,7 @@ public sealed class Igi2ComputerDisplay
                 left -= width;
             }
 
-            _objectiveLines.Add(new Igi2ComputerObjectiveLine(word, font, printX, y, colour));
+            words.Add(new Igi2ComputerObjectiveLine(word, font, printX, y, colour));
             printX += width;
             if (complete)
             {

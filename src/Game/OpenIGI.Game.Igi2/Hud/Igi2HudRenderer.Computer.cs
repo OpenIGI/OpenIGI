@@ -23,7 +23,10 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
     /// <summary>Its tiles down.</summary>
     public const int FilterRows = 30;
 
+    private readonly List<Igi2ComputerObjectiveLine> _markWords = [];
+    private readonly List<(int X, int Y)> _logRules = [];
     private BitmapTextRenderer? _textFont;
+    private BitmapTextRenderer? _logFont;
     private float _computerScale = 1f;
     private uint _drawRandom = 0x2545F491u;
     private uint _drawRandomB = 0x9E3779B9u;
@@ -44,6 +47,16 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
 
     private BitmapTextRenderer? Font(string font)
     {
+        if (string.Equals(font, Igi2ComputerDisplay.LogFont, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_logFont is null && _assets?.Get(Igi2ComputerDisplay.LogFont) is { IsFont: true } log)
+            {
+                _logFont = new BitmapTextRenderer(log);
+            }
+
+            return _logFont ?? _font;
+        }
+
         if (string.Equals(font, Igi2ComputerDisplay.TextFont, StringComparison.OrdinalIgnoreCase))
         {
             if (_textFont is null && _assets?.Get(Igi2ComputerDisplay.TextFont) is { IsFont: true } loaded)
@@ -76,11 +89,20 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
         ComputerRect(batch, w * 0.14375f, h * 0.675f, w * 0.15625f, h * 0.125f, Bgra32.FromRgba(80, 80, 80, 255), BlendMode.Modulate2X);
         if (display.IsMapShown)
         {
+            DrawComputerMarks(batch, title, display, w, h);
             DrawComputerMap(batch, w, h);
         }
         else if (display.Screen == Igi2ComputerMenu.Objectives)
         {
             DrawObjectives(batch, display, w, h);
+        }
+        else if (display.Screen == Igi2ComputerMenu.Log)
+        {
+            DrawLog(batch, display, w, h);
+        }
+        else if (display.Screen == Igi2ComputerMenu.Save)
+        {
+            DrawSave(batch, display, w, h);
         }
 
         DrawComputerItems(batch, display);
@@ -161,6 +183,115 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
         ComputerStretch(batch, "COMPUTER:compass.spr", left, top, right, bottom, Colour128(128f, 128f, 128f), BlendMode.AlphaBlend);
     }
 
+    // ComputerObject's marks: each projected through the map's camera. A sprite and a text are held inside the glass; a
+    // triangle or a diamond is a sprite pulsing, sized by the object's radius and turned its way; a box is an outline.
+    private void DrawComputerMarks(SpriteBatch batch, Igi2TitlePlayer title, Igi2ComputerDisplay display, float w, float h)
+    {
+        if (display.Map is not { } map)
+        {
+            return;
+        }
+
+        int ticks = title.Level?.LevelFlow?.Tick ?? 0;
+        _markWords.Clear();
+        foreach (Igi2ComputerMapMark mark in title.ComputerMapMarks())
+        {
+            double depth = map.Position.Z - mark.Position.Z;
+            double z = depth > 1.0 ? depth : 1.0;
+            double scale = w * 0.5 / (z * map.FieldOfView);
+            float x = (float)(((mark.Position.X - map.Position.X) * scale) + (w * 0.5));
+            float y = (float)((-(mark.Position.Y - map.Position.Y) * scale) + (h * 0.5));
+            switch (mark.Kind)
+            {
+                case Igi2ComputerMarkKind.Sprite:
+                {
+                    (x, y) = (Math.Clamp(x, w * 0.15f, w * 0.85f), Math.Clamp(y, h * 0.1f, h * 0.8f));
+                    if (_assets?.Get("COMPUTER:" + mark.Name + ".spr") is { } sprite)
+                    {
+                        SpriteFrame frame = sprite.Asset.Frames[0];
+                        (float r, float g, float b) = Igi2ComputerMapMark.Colours[(int)Igi2ComputerMarkerColour.BrightBlue];
+                        ComputerSprite(batch, "COMPUTER:" + mark.Name + ".spr", x - (frame.Width * 0.5f), y - (frame.Height * 0.5f), Colour128(r * 0.5f, g * 0.5f, b * 0.5f));
+                    }
+
+                    break;
+                }
+
+                case Igi2ComputerMarkKind.Text:
+                    (x, y) = (Math.Clamp(x, w * 0.15f, w * 0.85f), Math.Clamp(y, h * 0.1f, h * 0.8f));
+                    display.Wrap((int)x + 10, (int)y, mark.Name, Igi2ComputerDisplay.TextFont, 128, Igi2ComputerColour.DarkRed, _markWords);
+                    break;
+                default:
+                    DrawMarker(batch, mark, x, y, (float)(w * 0.5 / map.FieldOfView / z), ticks);
+                    break;
+            }
+        }
+
+        foreach (Igi2ComputerObjectiveLine word in _markWords)
+        {
+            ComputerText(batch, word.Font, word.Text, word.X, word.Y, Colour(word.Colour));
+        }
+    }
+
+    // ComputerObject_DrawMarker.
+    private void DrawMarker(SpriteBatch batch, Igi2ComputerMapMark mark, float x, float y, float perUnit, int ticks)
+    {
+        if (mark.Marker == Igi2ComputerMarker.None || mark.Colour == Igi2ComputerMarkerColour.None)
+        {
+            return;
+        }
+
+        float radius = Math.Max(mark.Radius, Igi2ComputerMapMark.MinimumRadius);
+        float sx = perUnit * radius, sy = perUnit * radius;
+        (float r, float g, float b) = Igi2ComputerMapMark.Colours[(int)mark.Colour];
+        float s = MathF.Sin(mark.Gamma), c = MathF.Cos(mark.Gamma);
+        if (mark.Marker is Igi2ComputerMarker.Triangle or Igi2ComputerMarker.LargeTriangle or Igi2ComputerMarker.Diamond)
+        {
+            float across = ((sx - 128f) * 0.9f) + 128f, along = ((sy - 128f) * 0.9f) + 128f;
+            if (mark.Marker == Igi2ComputerMarker.LargeTriangle)
+            {
+                across *= 1.5f;
+                along *= 1.5f;
+            }
+
+            float cx = x - (s * along * 0.33333334f), cy = y - (c * along * 0.33333334f);
+            float bx = c * across, sa = s * across, sl = s * along, cl = c * along;
+            float alpha = (float)((Math.Sin(ticks * 0.10000000149011612) * 0.20000000298023224) + 0.5);
+            string name = mark.Marker == Igi2ComputerMarker.Diamond ? "diamond.spr" : "triangle.spr";
+            if (_assets?.Get(name) is not { } sprite)
+            {
+                return;
+            }
+
+            SpriteFrame frame = sprite.Asset.Frames[0];
+            Bgra32 colour = Bgra32.FromRgba(Channel(r / 255f), Channel(g / 255f), Channel(b / 255f), Channel(alpha));
+            float k = _computerScale;
+            batch.DrawQuad(
+                sprite.Textures[frame.TextureIndex],
+                new Vertex2D((cx - bx - sl) * k, (cy + sa - cl) * k, frame.U0, frame.V0, colour),
+                new Vertex2D((bx + cx - sl) * k, (cy - sa - cl) * k, frame.U1, frame.V0, colour),
+                new Vertex2D((bx + cx + sl) * k, (cy - sa + cl) * k, frame.U1, frame.V1, colour),
+                new Vertex2D((cx - bx + sl) * k, (cy + sa + cl) * k, frame.U0, frame.V1, colour));
+            return;
+        }
+
+        // QSprite_RegisterLineMesh: the outline scaled about the object and turned by its heading, three quarters opaque.
+        Bgra32 line = Bgra32.FromRgba(Channel(r / 255f), Channel(g / 255f), Channel(b / 255f), Channel(0.75f));
+        IReadOnlyList<(float X, float Y)> outline = Igi2ComputerMapMark.BoxOutline;
+        for (int i = 1; i < outline.Count; i++)
+        {
+            (float ax, float ay) = Turn(outline[i - 1], sx, sy, s, c);
+            (float ex, float ey) = Turn(outline[i], sx, sy, s, c);
+            Stroke(batch, new Igi2SightLine((x + ax) * _computerScale, (y + ay) * _computerScale, (x + ex) * _computerScale, (y + ey) * _computerScale, 1f), 1f, line);
+        }
+    }
+
+    // An outline's point scaled and turned by minus the heading.
+    private static (float X, float Y) Turn((float X, float Y) point, float sx, float sy, float s, float c)
+    {
+        float px = point.X * sx, py = point.Y * sy;
+        return ((px * c) + (py * s), (py * c) - (px * s));
+    }
+
     // ComputerObjectives_DrawHandler: the screen's title centred near the top, then each objective as the display laid it out.
     private void DrawObjectives(SpriteBatch batch, Igi2ComputerDisplay display, float w, float h)
     {
@@ -169,6 +300,31 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
         foreach (Igi2ComputerObjectiveLine line in display.LayoutObjectives())
         {
             ComputerText(batch, line.Font, line.Text, line.X, line.Y, Colour(line.Colour));
+        }
+    }
+
+    // ComputerLog_DrawHandler: its title, then its lines as the display laid them out, each underlined by a line from the
+    // screen's own green fading to dark over a hundred pixels.
+    private void DrawLog(SpriteBatch batch, Igi2ComputerDisplay display, float w, float h)
+    {
+        string heading = display.Text("computer/LOG");
+        ComputerText(batch, Igi2ComputerDisplay.LabelFont, heading, (w * 0.5f) - StringWidth(Igi2ComputerDisplay.LabelFont, heading), h * 0.078125f, Colour128(128f, 128f, 128f));
+        _logRules.Clear();
+        foreach (Igi2ComputerObjectiveLine line in display.LayoutLog(_logRules))
+        {
+            ComputerText(batch, line.Font, line.Text, line.X, line.Y, Colour(line.Colour));
+        }
+
+        Bgra32 from = Colour128(48f, 96f, 48f), to = Colour128(0f, 16f, 0f);
+        foreach ((int x, int y) in _logRules)
+        {
+            float left = x * _computerScale, right = (x + 100) * _computerScale, top = y * _computerScale, bottom = top + Math.Max(1f, _computerScale);
+            batch.DrawQuad(
+                TextureHandle.None,
+                new Vertex2D(left, top, 0f, 0f, from),
+                new Vertex2D(right, top, 1f, 0f, to),
+                new Vertex2D(right, bottom, 1f, 1f, to),
+                new Vertex2D(left, bottom, 0f, 1f, from));
         }
     }
 
@@ -184,8 +340,69 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
                 continue;
             }
 
-            ComputerText(batch, item.Font, item.Text, item.X, item.Y, Colour(item.IsActive ? item.HighlightColour : item.Colour));
+            Bgra32 colour = Colour(item.IsActive && !item.IsDisabled ? item.HighlightColour : item.Colour);
+            ComputerText(batch, item.Font, item.Text, item.X, item.Y, colour);
+
+            // ComputerSaveMenu_SaveSlotDrawHandler: a used slot's date under its line, in its colour.
+            if (display.Screen == Igi2ComputerMenu.Save && item.Id - 10 is >= 0 and < Igi2ComputerDisplay.SaveSlots and var slot
+                && display.SaveSlotLabels[slot].When is { Length: > 0 } when)
+            {
+                ComputerText(batch, item.Font, when, (int)item.X, (int)(item.Y + LineHeight(item.Font)), colour);
+            }
         }
+    }
+
+    // ComputerSaveMenu_DrawHandler: the title centred, what the slots are for, the battery's label right of its gauge; on the
+    // overwrite page the question; the gauge filling from the bottom under the battery's outline; while uploading, its bar and
+    // its count.
+    private void DrawSave(SpriteBatch batch, Igi2ComputerDisplay display, float w, float h)
+    {
+        string label = Igi2ComputerDisplay.LabelFont, text = Igi2ComputerDisplay.TextFont;
+        string title = display.Text("computer/IGI HQ");
+        ComputerText(batch, label, title, (int)((w - StringWidth(label, title)) * 0.5f), (int)(h * 0.1041666641831398f), Colour128(128f, 128f, 128f));
+        ComputerText(batch, label, display.SaveSubtitle, (int)(w * 0.15625f), (int)(h * 0.1875f), Colour128(128f, 128f, 128f));
+        bool flat = display.Battery == 0f;
+        string battery = display.Text(flat ? "computer/BATTERY LOW" : "computer/Battery Level");
+        ComputerText(batch, text, battery, (int)((w * 0.78125f) - StringWidth(text, battery)), (int)((h * 0.6458333134651184f) + 64f - LineHeight(text)),
+            Colour(flat ? Igi2ComputerColour.DarkRed : Igi2ComputerColour.Green));
+        if (display.SaveState == Igi2ComputerSaveState.Overwrite)
+        {
+            ComputerText(batch, text, display.Text("computer/Overwrite?"), display.OverwriteX, display.OverwriteY, Colour(Igi2ComputerColour.DarkRed));
+            ComputerText(batch, text, Igi2ComputerDisplay.SaveSlash, display.SlashX, display.OverwriteY, Colour(Igi2ComputerColour.Green));
+        }
+
+        // The gauge: yellow at the top shading to the charge's green below, its height the charge.
+        float charge = display.Battery, left = w * 0.78125f;
+        float top = ((1f - charge) * 64f) + (h * 0.6458333134651184f), height = charge * 64f;
+        Bgra32 yellow = Colour128(128f, 128f, 0f), low = Colour128(128f, charge * 128f, 0f);
+        ComputerGradient(batch, left, top, 64f, height, yellow, yellow, low, low);
+        ComputerStretch(batch, "COMPUTER:battery.spr", left, h * 0.6458333134651184f, left + 64f, (h * 0.6458333134651184f) + 64f,
+            Colour(Igi2ComputerColour.Green), BlendMode.AlphaBlend);
+
+        if (display.SaveState is Igi2ComputerSaveState.Uploading or Igi2ComputerSaveState.Complete)
+        {
+            float progress = display.UploadProgress;
+            Bgra32 from = Colour128(0f, progress * 128f, 128f), to = Colour128(0f, 128f, 128f);
+            ComputerGradient(batch, w * 0.15625f, h * 0.7916666865348816f, progress * 0.65625f * w, h * 0.01666666753590107f, from, to, from, to);
+            string uploading = display.Text("computer/Uploading") + ":";
+            float labelY = (int)((h * 0.7916666865348816f) - LineHeight(text) - 2f), labelX = (int)(w * 0.15625f);
+            ComputerText(batch, text, uploading, labelX, labelY, Colour(Igi2ComputerColour.Green));
+            string count = display.SaveState == Igi2ComputerSaveState.Complete
+                ? display.Text("computer/Complete")
+                : ((int)(progress * 100f)).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+            ComputerText(batch, text, count, (int)(StringWidth(text, uploading) + labelX), labelY, Colour(Igi2ComputerColour.White));
+        }
+    }
+
+    private void ComputerGradient(SpriteBatch batch, float x, float y, float width, float height, Bgra32 topLeft, Bgra32 topRight, Bgra32 bottomLeft, Bgra32 bottomRight)
+    {
+        float k = _computerScale;
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(x * k, y * k, 0f, 0f, topLeft),
+            new Vertex2D((x + width) * k, y * k, 1f, 0f, topRight),
+            new Vertex2D((x + width) * k, (y + height) * k, 1f, 1f, bottomRight),
+            new Vertex2D(x * k, (y + height) * k, 0f, 1f, bottomLeft));
     }
 
     // ComputerMenu_atColor, 128 for full.

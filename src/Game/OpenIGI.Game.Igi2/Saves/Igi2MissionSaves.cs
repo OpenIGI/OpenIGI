@@ -79,6 +79,47 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
         return _slots.Save(whose, slot, _level.Root, _player.MissionTime, Glass);
     }
 
+    /// <summary>
+    /// Writes a slot the player's computer has already counted against the battery, <c>Game_SaveToSlot</c> as the player's delayed
+    /// run calls it once <c>HumanPlayer_FinishSaveToSlot</c> has named the slot.
+    /// </summary>
+    /// <param name="slot">The slot.</param>
+    /// <returns><see langword="true"/> once written.</returns>
+    public bool Write(int slot) => slot >= 0 && slot < Igi2SaveSlots.MenuSlots && _slots.Save(_owner(), slot, _level.Root, _player.MissionTime, Glass);
+
+    /// <summary>
+    /// A slot as the computer's save screen names it (<c>ComputerSaveMenu_NewSaveSlot</c>): its mission time, <c>Mission Time: h:mm:ss</c>
+    /// (<c>Game_GetSaveGameInfoString</c>), and when it was written, <c>(date time)</c> (<c>Game_GetSaveGameTimeDateString</c>); an
+    /// empty slot neither.
+    /// </summary>
+    /// <param name="slot">The slot.</param>
+    /// <param name="translate">The localized text of a key.</param>
+    /// <returns>Whether it holds a save, its time and its date.</returns>
+    public (bool IsUsed, string Info, string When) SlotLabel(int slot, Func<string, string> translate)
+    {
+        ArgumentNullException.ThrowIfNull(translate);
+        Igi2SaveOwner whose = _owner();
+        Igi2SaveInfo info = _slots.Check(whose, slot);
+        if (!info.IsValid)
+        {
+            return (false, string.Empty, string.Empty);
+        }
+
+        DateTime written = File.GetLastWriteTime(_slots.PathOf(Igi2SaveSlots.SlotFileName(whose, slot)));
+        string when = string.Create(System.Globalization.CultureInfo.CurrentCulture, $"({written:d} {written:T})");
+        return (true, $"{translate(Igi2SaveSlots.MissionTimeKey)}: {Igi2SaveSlots.MissionTime(info.Ticks)}", when);
+    }
+
+    /// <summary>The battery's charge as a share, <c>HumanPlayer_GetBatteryLevel</c>: the saves left of the difficulty's, none on hard.</summary>
+    public float BatteryLevel
+    {
+        get
+        {
+            int allowed = SavesAllowed(_owner().Difficulty);
+            return allowed <= 0 ? 0f : Math.Max((allowed - _player.SavesUsed) / (float)allowed, 0f);
+        }
+    }
+
     /// <inheritdoc/>
     /// <remarks>A load that succeeds adds one to the games loaded, <c>nGameLoads</c>, after the save's own count is put back.</remarks>
     public bool Load(int slot)

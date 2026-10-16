@@ -58,6 +58,7 @@ public sealed partial class Igi2HudRenderer
     {
         _font = null;
         _textFont = null;
+        _logFont = null;
         _assets?.Dispose();
         _assets = null;
     }

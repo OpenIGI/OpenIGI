@@ -63,6 +63,85 @@ public sealed class Igi2ComputerDisplayTests
         Assert.Equal(40f, display.PointerY, 3);
     }
 
+    private sealed class FakeSaves : IIgi2ComputerSaves
+    {
+        public List<string> Calls { get; } = [];
+
+        public bool[] Used { get; } = new bool[5];
+
+        public float BatteryLevel => 1f;
+
+        public bool IsSaveAllowed => true;
+
+        public int QuickLoadSlot => 0;
+
+        public (bool IsUsed, string Info, string When) Slot(int slot) => (Used[slot], "Mission Time: 0:01:00", "(today)");
+
+        public void BeginSave(int slot) => Calls.Add($"begin {slot}");
+
+        public void FinishSave(int slot) => Calls.Add($"finish {slot}");
+
+        public void Load(int slot) => Calls.Add($"load {slot}");
+
+        public void FreezeFire() => Calls.Add("freeze");
+
+        public void QuitComputer() => Calls.Add("quit");
+    }
+
+    [Fact]
+    public void AnUploadGoesToTheFirstFreeSlotAndSavesWhenItsBarIsFull()
+    {
+        Igi2Computer computer = new() { StartupMode = Igi2ComputerMenu.Save };
+        computer.Open();
+        FakeSaves saves = new();
+        saves.Used[0] = true;
+        Igi2ComputerDisplay display = new(computer) { Saves = saves };
+        display.Open(() => default);
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        Assert.Equal(Igi2ComputerSaveState.Main, display.SaveState);
+        Assert.Equal(5, display.Items.Active?.Id);
+
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f, Enter: true));
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        Assert.Equal(Igi2ComputerSaveState.Uploading, display.SaveState);
+        Assert.Equal(1, display.ChosenSlot);
+
+        for (int i = 0; i < 101 && display.SaveState == Igi2ComputerSaveState.Uploading; i++)
+        {
+            Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        }
+
+        Assert.Equal(Igi2ComputerSaveState.Complete, display.SaveState);
+        Assert.Equal(["begin 1"], saves.Calls);
+        for (int i = 0; i < Igi2ComputerDisplay.CompleteTicks + 1; i++)
+        {
+            Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        }
+
+        Assert.Equal(["begin 1", "finish 1", "quit"], saves.Calls);
+    }
+
+    [Fact]
+    public void TheLogShowsTheNewestLineFirstAndItsDownArrowScrollsOlder()
+    {
+        Igi2Computer computer = new() { StartupMode = Igi2ComputerMenu.Log };
+        computer.Open();
+        Igi2ComputerDisplay display = new(computer) { Log = [.. Enumerable.Range(0, 20).Select(static i => $"line{i}")] };
+        display.Open(() => default);
+        List<(int X, int Y)> rules = [];
+        Assert.StartsWith("line19", display.LayoutLog(rules)[0].Text, StringComparison.Ordinal);
+        Assert.Equal(Igi2ComputerDisplay.LogLines, rules.Count);
+
+        Igi2ComputerMenuItem down = display.Items.Find(Igi2ComputerDisplay.LogDownId)!;
+        int x = (int)down.X + 4, y = (int)down.Y + 4;
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        display.HoldPointer(x, y);
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f, MouseLeft: true));
+        Tick(computer, display, new Igi2ComputerInput(0f, 0f));
+        Assert.Equal(1, display.LogScroll);
+    }
+
     [Fact]
     public void TheMapZoomsOnAWheelTurnAndDrawsItsNoiseFromTheRunStream()
     {

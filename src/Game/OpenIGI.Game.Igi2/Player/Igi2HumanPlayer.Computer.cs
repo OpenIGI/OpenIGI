@@ -20,11 +20,41 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>Gets or sets the slot the save screen chose, one past it, nought for none, <c>nTempSaveSlot</c>.</summary>
     public int TempSaveSlot { get; set; }
 
-    /// <summary>Gets the slot last saved to from the computer, one past it, <c>nSaveSlot</c>.</summary>
-    public int SaveSlot { get; private set; }
+    /// <summary>Gets or sets the slot to be saved to, one past it, nought for none, <c>nSaveSlot</c>: the delayed run writes it.</summary>
+    public int SaveSlot { get; set; }
+
+    /// <summary>Gets or sets the slot to be loaded, one past it, nought for none, <c>nLoadSlot</c>: the delayed run reads it.</summary>
+    public int LoadSlot { get; set; }
 
     /// <summary>Gets the slot the quick load reads, one past it, nought for none (<c>HumanPlayer_GetQuickLoadSlot</c>).</summary>
     public int QuickLoadSlot { get; private set; }
+
+    /// <summary>Gets a value indicating whether the computer may save, <c>HumanPlayer_IsSaveAllowed</c>: the action not locked.</summary>
+    public bool IsSaveAllowed => !IsLockAction;
+
+    /// <summary>The save screen starts a save, <c>HumanPlayer_BeginSaveToSlot</c>: the slot chosen, one of the battery's charges used.</summary>
+    /// <param name="slot">The slot.</param>
+    public void BeginSaveToSlot(int slot)
+    {
+        TempSaveSlot = slot + 1;
+        SavesUsed++;
+    }
+
+    /// <summary>The save screen finishes it, <c>HumanPlayer_FinishSaveToSlot</c>: the slot to be written, and quick-loaded from.</summary>
+    /// <param name="slot">The slot.</param>
+    public void FinishSaveToSlot(int slot)
+    {
+        SaveSlot = slot + 1;
+        QuickLoadSlot = slot + 1;
+    }
+
+    /// <summary>The save screen asks for a load, <c>HumanPlayer_LoadFromSlot</c>: the slot to be read, and quick-loaded from.</summary>
+    /// <param name="slot">The slot.</param>
+    public void LoadFromSlot(int slot)
+    {
+        LoadSlot = slot + 1;
+        QuickLoadSlot = slot + 1;
+    }
 
     /// <summary>
     /// Asks the computer to close, <c>HumanPlayer_QuitComputer</c>, as its screens' own close buttons do.
