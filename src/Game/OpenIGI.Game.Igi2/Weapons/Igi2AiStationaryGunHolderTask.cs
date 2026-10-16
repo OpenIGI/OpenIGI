@@ -162,7 +162,7 @@ public sealed partial class Igi2AiStationaryGunHolderTask : Igi2Task, IIgi2Place
             {
                 if (magic.Find(attachment.Name) is { TaskType: Igi2AiStationaryGun.TypeName } type)
                 {
-                    Gun = new Igi2AiStationaryGun(GunParameters, type.Model, weapons, models) { Sounds = sounds, Random = random ?? new() };
+                    Gun = new Igi2AiStationaryGun(GunParameters, type.Model, weapons, models) { Sounds = sounds, Random = random ?? new(), Holder = this };
                     Gun.Mount(holder.Attach(attachment));
                     break;
                 }

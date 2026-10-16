@@ -556,6 +556,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
                     {
                         Sounds = Sounds,
                         Random = random ?? new(),
+                        Holder = this,
                     };
                     break;
             }

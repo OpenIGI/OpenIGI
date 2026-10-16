@@ -136,6 +136,16 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
     /// <summary>Gets its weapon.</summary>
     public Igi2WeaponFiring Firing => _firing;
 
+    /// <summary>
+    /// Gets or sets what carries it, whose own body its bullets pass through: the shot's ignored task, which
+    /// <c>AIStationaryGun_CreateHandler</c> sets to the carrier it is told of.
+    /// </summary>
+    public object? Holder
+    {
+        get => _firing.GunShot.Ignore;
+        set => _firing.GunShot.Ignore = value;
+    }
+
     /// <summary>Gets the barrel's tilt, in radians.</summary>
     public float Tilt => _tilt;
 
