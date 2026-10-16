@@ -88,7 +88,7 @@ public static class Igi2WeaponConstants
     ];
 
     /// <summary>The task types a weapon's fire types and projectiles are named by, as <c>TASKTYPE_*</c> constant and type name.</summary>
-    private static readonly (string Constant, string Type)[] TaskTypes =
+    internal static readonly (string Constant, string Type)[] TaskTypes =
     [
         ("TASKTYPE_GUN", Igi2GunTask.TypeName),
         ("TASKTYPE_KNIFE", Igi2KnifeTask.TypeName),

@@ -80,6 +80,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.ModelAttachments = new Igi2ModelAttachments(models,
             request.Services.TryGet(out Igi2MagicObjTypes? attachmentTypes) ? attachmentTypes : null);
         player.Casings = new Weapons.Igi2GunCasings(models);
+        player.OverlayTypeNames = OverlayTypeNames(request.Natives);
         if (request.Services.TryGet(out Igi2WhizzbyClock? clock))
         {
             player.Human.WhizzbyClock = clock;
@@ -306,6 +307,27 @@ public sealed class Igi2Gameplay : ITitleGameplay
     }
 
     // The session's AI, which hears what the level's weapons and explosions do (HumanAI_SendEvent); none when it has none.
+    /// <summary>The overlay task types' names by the ids the session's <c>TASKTYPE_*</c> constants give them.</summary>
+    private static Dictionary<int, string> OverlayTypeNames(OpenIGI.Scripting.Runtime.NativeRegistry? natives)
+    {
+        Dictionary<int, string> names = [];
+        if (natives is null)
+        {
+            return names;
+        }
+
+        foreach ((string constant, string type) in Weapons.Igi2WeaponConstants.TaskTypes)
+        {
+            if (type.EndsWith("Overlay", StringComparison.Ordinal)
+                && natives.TryResolve(constant, out OpenIGI.Scripting.Runtime.QvmSymbol? symbol))
+            {
+                names.TryAdd(symbol.Read().ToInt32(), type);
+            }
+        }
+
+        return names;
+    }
+
     private static Ai.Runtime.Igi2AiWorld? LevelAi(Engine.Titles.IServiceCatalog services) =>
         services.TryGet(out Ai.Runtime.Igi2AiWorld? ai) ? ai : null;
 
@@ -580,6 +602,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // Each line's pieces are counted once its parameters are read, in the language the screens load.
         Igi2Strings strings = new(request.World.Resources);
+        player.Strings = strings;
         foreach (Igi2StatusMessageTask message in Descendants(root).OfType<Igi2StatusMessageTask>())
         {
             message.Strings = strings;
@@ -1729,6 +1752,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);
         ResetLook();
         Casings?.Run();
+        ReadBinoculars();
         Sounds.Run();
         _ticks++;
     }

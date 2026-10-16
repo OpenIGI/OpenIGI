@@ -49,7 +49,7 @@ public sealed partial class Igi2HudRenderer
         // Upload persistent status art before gameplay draws it.
         string[] names = ["stance_standing.spr", "stance_crouching.spr", "stance_lying.spr", "stance_flying.spr", "stance_running.spr",
             "powerbarbackground.spr", "powerbar.spr", "visibilitymeter.spr", "visibilitybar.spr", "visibilityalert.spr", "progressbar.spr",
-            "action_picklock.spr", "action_searchcab.spr", "action_comput.spr", "action_pressbutton.spr", "a_door.spr", "a_fence.spr", "a_ladder.spr", "a_wire.spr", "a_gun.spr", "a_codepad.spr"];
+            "action_picklock.spr", "action_searchcab.spr", "action_comput.spr", "action_pressbutton.spr", BinocularSprite, InfraredSprite, "a_door.spr", "a_fence.spr", "a_ladder.spr", "a_wire.spr", "a_gun.spr", "a_codepad.spr"];
         foreach (string name in names) { _assets.Get(name); }
     }
 

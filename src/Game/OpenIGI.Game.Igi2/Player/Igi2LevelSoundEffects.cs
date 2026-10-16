@@ -203,14 +203,13 @@ internal sealed class Igi2LevelWeaponEffects(
     }
 
     /// <inheritdoc/>
-    public void ShowOverlay(Igi2ZoomTask zoom)
-    {
-    }
+    public void ShowOverlay(Igi2ZoomTask zoom) => Overlay = zoom;
 
     /// <inheritdoc/>
-    public void RemoveOverlay()
-    {
-    }
+    public void RemoveOverlay() => Overlay = null;
+
+    /// <summary>Gets the zoom whose overlay is up, the weapon's overlay task (<c>Weapon+0xA4</c>), or <see langword="null"/>.</summary>
+    public Igi2ZoomTask? Overlay { get; private set; }
 
     /// <inheritdoc/>
     public void PlayViewSound(string sound) => sounds.New(sound, view(), view);
