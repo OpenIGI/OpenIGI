@@ -68,6 +68,18 @@ public sealed class RetailIgi2StationaryGunTests
         Assert.Same(player.Human, gun.Operator);
         Assert.True(gun.IsActivated);
         Assert.True(player.Human.View.IsOverride);
+        Assert.Same(gun, player.Human.AttachParent);
+
+        // The gunner rides the gun (Human_Attach): as the holder turns, the body turns and is carried round with it.
+        for (int tick = 0; tick < 30; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle with { MouseX = 1f });
+            gun.Run(run);
+        }
+
+        Assert.NotEqual(0f, gun.Turn);
+        player.Tick(RetailIgi2Mission1.Idle);
+        Assert.Equal(World.Igi2Pose.Angles(gun.ModelFrame).Gamma, player.Human.Gamma, 3);
 
         for (int tick = 0; tick < 300; tick++)
         {
@@ -93,6 +105,7 @@ public sealed class RetailIgi2StationaryGunTests
         Assert.NotEqual(Igi2PlayerState.ActivateStationaryGun, player.Human.Locomotion.CurrentState);
         Assert.False(gun.IsActivated);
         Assert.Null(gun.Operator);
+        Assert.Null(player.Human.AttachParent);
         Assert.False(player.Human.View.IsOverride);
     }
 

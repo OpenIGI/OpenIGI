@@ -125,6 +125,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
             CameraMode = 3;
             IsLockAction = true;
             LadderSteps = ladder.Steps;
+            AttachTo(ladder, Position, OrientationRows);
             Go(IsLadderActivateTop ? Igi2PlayerState.ClimbLadderGetOnTop : Igi2PlayerState.ClimbLadder);
             return;
         }
@@ -144,6 +145,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
         CameraMode = 1;
         IsLockAction = false;
         Animation.PlayState(Igi2PlayerState.Stand, 0, 0f);
+        Detach();
         if (Has(Igi2PlayerSignal.Dead))
         {
             Go(Igi2PlayerState.Die);

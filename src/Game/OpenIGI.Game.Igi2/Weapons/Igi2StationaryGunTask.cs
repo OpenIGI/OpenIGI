@@ -68,7 +68,7 @@ public interface IIgi2GunOperator
 /// in radians, to the gun's.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2WeaponOwner, IIgi2AiMountedGun, IIgi2Mover
+public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2WeaponOwner, IIgi2AiMountedGun, IIgi2Mover, IIgi2AttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StationaryGun";
@@ -246,6 +246,13 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
 
     /// <inheritdoc/>
     public IReadOnlyList<float> CurrentOrientation => _modelFrame;
+
+    /// <inheritdoc/>
+    /// <remarks>Its operator rides it, and swings round with the holder as the gun turns.</remarks>
+    public Vector3d AttachPosition => Position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> AttachOrientation => _modelFrame;
 
     /// <inheritdoc/>
     public Vector3d LastPosition => Position;

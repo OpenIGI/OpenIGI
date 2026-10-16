@@ -23,16 +23,6 @@ public sealed partial class Igi2HumanSoldier
     /// <summary>Gets the seat it sees from when on a gun, or <see langword="null"/>.</summary>
     public Igi2SeatView? SeatView => MountedGun?.Seat;
 
-    /// <summary>Gets its frame, row by row, as the mind's maths reads <c>tOrientation</c>.</summary>
-    public float[] OrientationRows
-    {
-        get
-        {
-            Matrix3f o = Orientation;
-            return [o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33];
-        }
-    }
-
     /// <summary>Gets a value indicating whether every blend of its body has finished, <c>HumanAnim_IsBlendFinished</c>.</summary>
     public bool IsBlendFinished => Animation.IsBlendFinished;
 

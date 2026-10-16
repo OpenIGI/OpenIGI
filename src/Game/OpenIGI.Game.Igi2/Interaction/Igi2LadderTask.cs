@@ -30,7 +30,7 @@ public interface IIgi2LadderClimber
 /// A blocked line forgets the best target found so far.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable
+public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2AttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Ladder";
@@ -60,6 +60,13 @@ public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Act
 
     /// <summary>Gets its frame, row by row.</summary>
     public IReadOnlyList<float> Frame => _frame;
+
+    /// <inheritdoc/>
+    /// <remarks>A climber rides it (<c>HumanPlayer_ClimbLadder</c>'s <c>Human_AttachToTask</c>).</remarks>
+    public Vector3d AttachPosition => Position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> AttachOrientation => _frame;
 
     /// <summary>Gets or sets the level's models.</summary>
     public Func<string, MefModel?>? Models { get; set; }

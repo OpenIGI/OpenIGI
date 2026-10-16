@@ -25,6 +25,9 @@ public sealed partial class Igi2HumanPlayer
     /// <summary>The water the player swims in.</summary>
     public const float SwimDepth = 5734.3999f;
 
+    /// <summary>How far below the feet the footing of a player riding something still counts, 0.2 m.</summary>
+    public const float AttachedGroundTolerance = 819.2000122070312f;
+
     /// <summary>Gets or sets the ticks before the player may jump again, <c>nJumpWaitTimer</c>.</summary>
     public int JumpWaitTimer { get; set; }
 
@@ -245,6 +248,15 @@ public sealed partial class Igi2HumanPlayer
         int state = Locomotion.CurrentState;
         if (state is Igi2PlayerState.NetworkWait or Igi2PlayerState.Fly)
         {
+            return;
+        }
+
+        // Riding a ladder or a gun: the footing is still looked for, under where it stands, then it is carried along.
+        if (AttachParent is not null)
+        {
+            Vector3d at = Position;
+            GroundCollision(at, ref at, AttachedGroundTolerance);
+            FollowAttachment();
             return;
         }
 

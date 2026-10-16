@@ -52,6 +52,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2GunOperator
         IsLockOrientation = true;
         IsDisableDeltaTranslation = true;
         DeltaTranslation = default;
+        AttachTo(gun, Position, f);
         Locomotion.Current = (_, _) => RunStationaryGun(gun);
     }
 
@@ -80,6 +81,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2GunOperator
         View.IsLockOrientation = false;
         IsLockOrientation = false;
         gun.Deactivate();
+        Detach();
         MountedGun = null;
         ActivateTarget = null;
     }

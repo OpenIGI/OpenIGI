@@ -42,6 +42,7 @@ public sealed class RetailIgi2LadderTests
         Assert.True(player.Human.IsDisableCollision);
         Assert.Equal(3, player.Human.CameraMode);
         Assert.Equal(ladder.Steps, player.Human.LadderSteps);
+        Assert.Same(ladder, player.Human.AttachParent);
         int firstStep = player.Human.LadderStep;
         double startZ = player.Human.Position.Z;
 
@@ -72,6 +73,7 @@ public sealed class RetailIgi2LadderTests
 
         Assert.True(wasOffTop);
         Assert.False(player.Human.IsClimbLadder);
+        Assert.Null(player.Human.AttachParent);
         Assert.False(player.Human.IsDisableCollision);
         Assert.Equal(1, player.Human.CameraMode);
         Assert.True(player.Human.Position.Z > ladder.MagicVertex(3).Z - 4096.0);

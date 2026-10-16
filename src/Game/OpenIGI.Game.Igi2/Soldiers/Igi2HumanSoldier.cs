@@ -255,7 +255,8 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// human: the body turns, the view aims, the main clip steps, the body moves, the eyes are placed, and the weapon lets go
     /// what the tick let go of.
     /// </para>
-    /// <para>Not ported yet, and skipped where they fall: riding (<c>Human_Attach</c>) and the AI's notice (<c>Human_Notify</c>).</para>
+    /// <para>A soldier riding something (a mounted gun) is carried with it instead of moving (<c>Human_Attach</c>).</para>
+    /// <para>Not ported yet, and skipped where it falls: the AI's notice (<c>Human_Notify</c>).</para>
     /// </remarks>
     public void Update()
     {
@@ -271,7 +272,15 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         View.UpdateView(Channels);
         Animation.StepMain();
         TouchPose();
-        Move();
+        if (AttachParent is not null)
+        {
+            FollowAttachment();
+        }
+        else
+        {
+            Move();
+        }
+
         UpdateViewBody();
         Weapon.UpdateStatus();
     }

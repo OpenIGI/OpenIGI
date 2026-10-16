@@ -36,11 +36,24 @@ public abstract partial class Igi2Human
     /// </para>
     /// <para>
     /// A lying body's turn is first checked for room (<see cref="CheckTurnRoom"/>) and refused whole when it has none.
-    /// Not yet ported: a body riding something takes its orientation from what it rides.
+    /// A body riding something (<see cref="AttachParent"/>) reads no turn input: its angles are those of what it rides times its
+    /// own orientation there.
     /// </para>
     /// </remarks>
     public void UpdateBody()
     {
+        if (AttachParent is { } parent)
+        {
+            // Riding: the angles of the parent's frame times the body's own in it; no turn input is read.
+            (float alpha, float beta, float gamma) = Igi2Pose.Angles(RiddenOrientation(parent));
+            Alpha = alpha;
+            Beta = beta;
+            Gamma = gamma;
+            IdealGamma = gamma;
+            BuildOrientation(turnsOnPlatform: false);
+            return;
+        }
+
         float input = IsLockOrientation ? 0f : Channels[Igi2HumanChannel.LookX];
         bool turnsOnPlatform = false;
         if (input != 0f && !float.IsNaN(input))
@@ -62,7 +75,12 @@ public abstract partial class Igi2Human
         IdealGamma = heading.F;
         TurningSpeed = turn.F;
         Gamma = IdealGamma;
+        BuildOrientation(turnsOnPlatform);
+    }
 
+    /// <summary>The orientation from the angles, tilted onto the ground when lying or dead (<c>Human_UpdateBody</c>'s end).</summary>
+    private void BuildOrientation(bool turnsOnPlatform)
+    {
         float[] orientation = Igi2Pose.Rotation(Alpha, Beta, Gamma);
         if (IsDead || Pose == Igi2HumanPose.LyingFlat)
         {
