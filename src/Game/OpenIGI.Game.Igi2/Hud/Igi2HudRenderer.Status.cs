@@ -58,6 +58,8 @@ public sealed partial class Igi2HudRenderer
     {
         _font = null;
         _textFont = null;
+        if (_bandStripes != TextureHandle.None) { _device.DestroyTexture(_bandStripes); _bandStripes = TextureHandle.None; }
+        if (_bandPlain != TextureHandle.None) { _device.DestroyTexture(_bandPlain); _bandPlain = TextureHandle.None; }
         _logFont = null;
         _assets?.Dispose();
         _assets = null;

@@ -28,9 +28,9 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
     private BitmapTextRenderer? _textFont;
     private BitmapTextRenderer? _logFont;
     private float _computerScale = 1f;
-    private uint _drawRandom = 0x2545F491u;
-    private uint _drawRandomB = 0x9E3779B9u;
-    private uint _drawRandomC = 0x7F4A7C15u;
+    // Game_ptGame->tDrawRandomState and Filter_tRandomState, as Game_Open and Filter_Open seed them.
+    private readonly Core.Numerics.IgiRandom _drawRandom = new(unchecked((uint)-923067897), 971667286u, 2146516173u);
+    private readonly Core.Numerics.IgiRandom _filterRandom = new(277206966u, 1200274863u, 2120272633u);
     private int _filterFrame;
     private int _filterGlitch;
     private bool _brokenSound;
@@ -468,15 +468,9 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
             blend);
     }
 
-    // Game_ptGame->tDrawRandomState: the presentation's own stream, the step the run stream takes.
-    private uint DrawRandom()
-    {
-        _drawRandomC ^= _drawRandom >> 7;
-        _drawRandomB ^= _drawRandomC;
-        _drawRandom += _drawRandomB;
-        return _drawRandom;
-    }
+    // Game_ptGame->tDrawRandomState: the presentation's own stream.
+    private uint DrawRandom() => _drawRandom.NextRaw();
 
-    // Filter_tRandomState, the same step over its own words.
-    private uint FilterRandom() => DrawRandom();
+    // Filter_tRandomState: the screen filters' stream.
+    private uint FilterRandom() => _filterRandom.NextRaw();
 }
