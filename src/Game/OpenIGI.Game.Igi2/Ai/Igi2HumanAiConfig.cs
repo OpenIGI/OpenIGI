@@ -362,10 +362,13 @@ public sealed class Igi2HumanAiConfig
                 distance = 1f;
             }
 
-            return (float)(Math.Pow(maxRangeAccuracyFactor, distance - (double)accuracyMedRange) * medRangeAccuracy);
+            // The subtraction and the product are x87 operations at the client's precision; pow is the C runtime's.
+            double far = Math.Pow(maxRangeAccuracyFactor, ((Fpu)distance - accuracyMedRange).Value);
+            return (new Fpu(Fpu.Chop(far)) * medRangeAccuracy).F;
         }
 
-        return (float)(Math.Pow(medRangeAccuracyFactor, distance) * minRangeAccuracy);
+        double near = Math.Pow(medRangeAccuracyFactor, distance);
+        return (new Fpu(Fpu.Chop(near)) * minRangeAccuracy).F;
     }
 
     private readonly Igi2HumanAiConfigItemTask[] _base = new Igi2HumanAiConfigItemTask[Igi2AiConstants.AiTypes.Count];
