@@ -107,7 +107,7 @@ public sealed class Igi2Glass : IIgi2WeaponHitTarget, IIgi2ExplosionTarget
         Fpu x = ((Fpu)m[1] * c.Y) + ((Fpu)m[2] * c.Z) + ((Fpu)c.X * m[0]);
         // Y stays on the FPU's stack; Z is kept in a float local first (igi2_frame.v8).
         Vector3d centre = new((x + Solid.Position.X).Value, (y + Solid.Position.Y).Value, ((Fpu)z.F + Solid.Position.Z).Value);
-        Fpu damage = hit.Resolve(centre, model.RenderSphereRadius);
+        Fpu damage = hit.Resolve(centre, model.RenderSphereRadius, this);
         Damage = (damage + Damage).F;
         if (damage.Value != 0.0 && !IsBroken)
         {

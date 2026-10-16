@@ -173,7 +173,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
         Damage.LastPart = Igi2DamagePart.Chest;
         Vector3f root = RootTranslation;
         float radius = ((Fpu.Sqrt((((Fpu)root.X * root.X) + ((Fpu)root.Y * root.Y)) + ((Fpu)root.Z * root.Z)) + ModelRadius) * 0.33333334f).F;
-        Fpu blast = hit.Resolve(eyes, radius);
+        Fpu blast = hit.Resolve(eyes, radius, this);
         if (blast.Value == 0.0)
         {
             return;

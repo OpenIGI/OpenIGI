@@ -38,7 +38,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2ExplosionTarget
         Damage.LastPart = Igi2DamagePart.Chest;
         Vector3f root = RootTranslation;
         float radius = ((Fpu.Sqrt((((Fpu)root.X * root.X) + ((Fpu)root.Y * root.Y)) + ((Fpu)root.Z * root.Z)) + ModelRadius) * 0.33333334f).F;
-        Fpu damage = hit.Resolve(Position, radius);
+        Fpu damage = hit.Resolve(Position, radius, this);
         if (damage.Value != 0.0)
         {
             damage *= Damage.Multiplier(Igi2DamagePart.Chest);

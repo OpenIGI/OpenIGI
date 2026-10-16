@@ -252,7 +252,7 @@ public sealed class Igi2Explosive
 
         // Its size is its model's radius times its largest scale, its solid's bounding radius.
         float radius = _solids[0].BoundingRadius;
-        _damage = (hit.Resolve(_parameters.Position, radius) + _damage).F;
+        _damage = (hit.Resolve(_parameters.Position, radius, _owner) + _damage).F;
         if (_damage >= _maxDamage)
         {
             _delay = Fpu.ToInt32((Fpu)_parameters.ExplosionDelay * 30.0);

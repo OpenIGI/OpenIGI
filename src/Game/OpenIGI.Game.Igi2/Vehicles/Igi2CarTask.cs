@@ -457,7 +457,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             return;
         }
 
-        if (hit.Resolve(CurrentPosition, Radius).Value != 0.0)
+        if (hit.Resolve(CurrentPosition, Radius, this).Value != 0.0)
         {
             _isExplode = true;
         }

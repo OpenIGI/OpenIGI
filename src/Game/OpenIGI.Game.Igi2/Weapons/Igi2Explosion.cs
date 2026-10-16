@@ -88,7 +88,14 @@ public readonly record struct Igi2ExplosionHit(
     /// <param name="target">Where the target is, <c>tPos</c>.</param>
     /// <param name="radius">How big the target is.</param>
     /// <returns>The damage.</returns>
-    public Fpu Resolve(Vector3d target, float radius) => World.Resolve(this, target, radius);
+    public Fpu Resolve(Vector3d target, float radius) => World.Resolve(this, target, radius, null);
+
+    /// <summary>The damage it does a target, as <see cref="Resolve(Vector3d, float)"/>, the target named so the line through walls passes it.</summary>
+    /// <param name="target">Where the target is.</param>
+    /// <param name="radius">The target's size.</param>
+    /// <param name="self">The target, <c>ptQTask</c>.</param>
+    /// <returns>The damage.</returns>
+    public Fpu Resolve(Vector3d target, float radius, object? self) => World.Resolve(this, target, radius, self);
 }
 
 /// <summary>Something an explosion can hurt: a member of <c>GameFunctions_ptExplosionQTaskList</c>.</summary>
@@ -724,13 +731,15 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// <param name="hit">The blast.</param>
     /// <param name="target">Where the target is.</param>
     /// <param name="radius">How big the target is.</param>
+    /// <param name="self">The target, which the line passes, or <see langword="null"/>.</param>
     /// <returns>The damage.</returns>
     /// <remarks>
+    /// A timed action's object is not traced. The line, a weapon's, passes the target and the blast's owner.
     /// The line between runs 409.6 units above both. The blast starts with the full range over 4096 of penetration and
     /// loses each face's material's penetration power; stopped short, it does nothing. A target of no size or a blast of no
     /// range is not traced.
     /// </remarks>
-    public Fpu Resolve(in Igi2ExplosionHit hit, Vector3d target, float radius)
+    public Fpu Resolve(in Igi2ExplosionHit hit, Vector3d target, float radius, object? self = null)
     {
         Vector3d e = hit.Position;
         Fpu dx = (Fpu)e.X - target.X, dy = (Fpu)e.Y - target.Y;
@@ -769,10 +778,14 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
         Vector3d end = new(target.X, target.Y, ((Fpu)target.Z + BlastLift).Value);
         float tx = ((Fpu)end.X - start.X).F, ty = ((Fpu)end.Y - start.Y).F, tz = ((Fpu)end.Z - start.Z).F;
         float length = Fpu.Sqrt((((Fpu)tx * tx) + ((Fpu)ty * ty)) + ((Fpu)tz * tz)).F;
-        if (length == 0f || penetration == 0f)
+        // A timed action's object is not shielded by what stands between (QTask_IsQTaskTypeDerived(..., GenericTBA_eQTaskType)).
+        if (length == 0f || penetration == 0f || self is Interaction.Igi2GenericTbaTask)
         {
             return damage;
         }
+
+        // The line is a weapon's: the target and the explosion's owner never stop it, other objects as they answer a bullet.
+        _blast.Includes = Igi2GunShot.WeaponCollisionIncludes(new Igi2WeaponCollisionQuery(hit.Owner, self, 1f));
 
         Fpu step = (Fpu)StillStep / length;
         tx = ((Fpu)tx * step).F;

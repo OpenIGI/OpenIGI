@@ -399,7 +399,7 @@ public sealed partial class Igi2SecurityCameraTask
 
         float radius = _solids.FirstOrDefault(static s => s.Owner is Igi2CollisionOwner { Depth: > 0 })?.BoundingRadius
             ?? Models?.Invoke(CameraModel)?.NativeMarkerBound ?? 1f;
-        _lens.Damage = (hit.Resolve(_lens.Position, radius) + _lens.Damage).F;
+        _lens.Damage = (hit.Resolve(_lens.Position, radius, this) + _lens.Damage).F;
         if (!(_lens.Damage < _lens.MaxDamage))
         {
             _lens.IsExplode = true;
