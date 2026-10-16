@@ -22,5 +22,12 @@ public sealed partial class Igi2HumanSoldier
         Igi2HumanSaveExtras extras = ReadHumanState(reader);
         WeaponHitProbability = extras.WeaponHitProbability;
         VisibilityFactor = extras.VisibilityFactor;
+
+        // HumanSoldier_DeSerializeHandler: a body read back dead lies in its pool, already spread.
+        if (IsDead)
+        {
+            Shadow.BecomePool(Lightmap, spread: false);
+            IsBloodPuddle = true;
+        }
     }
 }

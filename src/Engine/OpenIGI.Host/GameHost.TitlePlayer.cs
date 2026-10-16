@@ -331,6 +331,18 @@ internal sealed partial class GameHost
         }
     }
 
+    /// <summary>Draws the marks the title's player has lying on the ground, over the lit picture.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    /// <remarks>They blend, so they follow the lit world as the water does; drawn into the G-buffer they would be opaque squares.</remarks>
+    private void DrawTitleGroundDecals(in Camera3D eye, in Matrix4f projection)
+    {
+        if (_titlePlayer is ITitleWorldModels owned && _titleArms is ITitleWorldModelPresenter models)
+        {
+            models.DrawGroundDecals(owned.GroundDecals, eye, projection);
+        }
+    }
+
     /// <summary>The camera the title's player looks through, in metres.</summary>
     private static Camera3D TitleCamera(ITitlePlayer player)
     {

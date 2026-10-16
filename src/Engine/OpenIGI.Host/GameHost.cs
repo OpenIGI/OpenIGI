@@ -5941,6 +5941,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // G-buffer it was written as if opaque and then lit away: the deferred frame showed no sea.
                 _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
                 EndStageIfSlow("the water");
+                DrawTitleGroundDecals(eye, projection);
 
                 // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
                 // the geometry pass they are written into the g-buffer as scenery and come out lit

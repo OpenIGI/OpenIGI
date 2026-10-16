@@ -143,6 +143,12 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets a value indicating whether a dead body has come to rest, <c>Human_s.isDeathPositionStabilized</c>.</summary>
     public bool IsDeathPositionStabilized { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the body has left its pool of blood, <c>isBloodPuddle</c>.</summary>
+    public bool IsBloodPuddle { get; set; }
+
+    /// <summary>Gets the body's mark on the ground, which becomes its pool of blood.</summary>
+    public Igi2HumanShadow Shadow { get; } = new();
+
     /// <summary>Gets or sets a value indicating whether the body bleeds no sprites, <c>isBloodSpriteDisabled</c>.</summary>
     public bool IsBloodSpriteDisabled { get; set; }
 

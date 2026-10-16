@@ -182,6 +182,20 @@ public abstract partial class Igi2Human
         }
 
         GroundIntersection.CopyFrom(ground);
+        PlaceShadow(ground);
+    }
+
+    /// <summary>The body's mark goes where the ground was struck, or is lost with no ground (<c>Human_GroundCollision</c>'s end).</summary>
+    private void PlaceShadow(Igi2Intersection ground)
+    {
+        if (ground.IsHit)
+        {
+            Shadow.Place(ground.Position, ground.Normal, (float)DistanceToGround);
+        }
+        else
+        {
+            Shadow.Lose();
+        }
     }
 
     /// <summary>
@@ -197,7 +211,8 @@ public abstract partial class Igi2Human
         DistanceToGround = 0.0;
         Igi2Intersection ground = _graphFooting;
         ground.Clear();
-        if (brain.TryGetFooting(from, ground, out float light))
+        bool footed = brain.TryGetFooting(from, ground, out float light);
+        if (footed)
         {
             Lightmap = light;
             DistanceToGround = ((Fpu)to.Z - ground.Position.Z).Value;
@@ -205,6 +220,15 @@ public abstract partial class Igi2Human
 
         Settle(ground, from, ref to);
         GroundIntersection.CopyFrom(ground);
+        if (footed)
+        {
+            // The graph's footing is the ground the mark lies on.
+            Shadow.Place(ground.Position, ground.Normal.Z == 0f && ground.Normal.X == 0f && ground.Normal.Y == 0f ? new Vector3f(0f, 0f, 1f) : ground.Normal, (float)DistanceToGround);
+        }
+        else
+        {
+            Shadow.Lose();
+        }
     }
 
     /// <summary>The material probe and the distance test: whether the human stands on what the footing struck.</summary>

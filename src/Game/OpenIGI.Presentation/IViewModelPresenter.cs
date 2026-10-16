@@ -103,6 +103,12 @@ public interface ITitleWorldModelPresenter
     /// <param name="camera">The world camera.</param>
     /// <param name="projection">The world projection.</param>
     void DrawWorldSprites(IReadOnlyList<TitleWorldSprite> sprites, in Camera3D camera, in Matrix4f projection) { }
+
+    /// <summary>Draws marks lying on the ground, blended over the world and tested against its depth.</summary>
+    /// <param name="decals">The marks.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawGroundDecals(IReadOnlyList<TitleGroundDecal> decals, in Camera3D camera, in Matrix4f projection) { }
 }
 
 /// <summary>Draws the weapon the player is holding.</summary>

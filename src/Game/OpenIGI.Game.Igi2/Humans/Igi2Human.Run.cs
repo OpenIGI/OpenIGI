@@ -56,7 +56,8 @@ public abstract partial class Igi2Human
     /// While a shot keeps the human visible regardless of the light (<see cref="IgnoreLightEffectOnVisibilityTimer"/>), the
     /// timer counts down and the flash it lit the human by fades to four fifths a tick; once it has run out the flash is gone.
     /// While it is active its mission clock counts the tick (<c>tMissionScoreData.nTime</c>), which a save game keeps as its time.
-    /// Not ported: the blood puddle under a body that has come to rest.
+    /// A dead body that has come to rest leaves its pool of blood, once and if blood is shown, its mark spreading over five
+    /// seconds from under it; the mark then runs, as the body's child.
     /// </remarks>
     protected void RunHuman()
     {
@@ -77,6 +78,17 @@ public abstract partial class Igi2Human
             FlashEffect = default;
         }
 
+        if (IsDead && !IsBloodPuddle && IsDeathPositionStabilized)
+        {
+            if (Surroundings.IsBlood)
+            {
+                Shadow.BecomePool(Lightmap, spread: true);
+            }
+
+            IsBloodPuddle = true;
+        }
+
         MaintainCough();
+        Shadow.Run();
     }
 }

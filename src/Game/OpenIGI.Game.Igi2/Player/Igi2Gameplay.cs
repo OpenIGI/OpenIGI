@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Audio;
@@ -1343,6 +1343,47 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             }
             return _lights;
         }
+    }
+
+    private TitleGroundDecal[] _decals = [];
+    private long _decalsTick = -1;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Each body's mark where it shows (<see cref="Humans.Igi2HumanShadow"/>), the player's and the soldiers': coloured by the
+    /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>).
+    /// </remarks>
+    public IReadOnlyList<TitleGroundDecal> GroundDecals
+    {
+        get
+        {
+            if (_decalsTick != _ticks)
+            {
+                IEnumerable<Humans.Igi2Human> bodies = Soldiers?.Bodies ?? [];
+                _decals = [.. bodies.Prepend(Human).Select(static h => Decal(h.Shadow)).OfType<TitleGroundDecal>()];
+                _decalsTick = _ticks;
+            }
+
+            return _decals;
+        }
+    }
+
+    private static TitleGroundDecal? Decal(Humans.Igi2HumanShadow shadow)
+    {
+        if (!shadow.IsEnabled || !shadow.IsPositionValid || shadow.Size <= 0f)
+        {
+            return null;
+        }
+
+        float shade = (shadow.Light ?? 0.9f) * shadow.Strength;
+        byte channel = (byte)Math.Clamp((int)(shade * 255f), 0, 255);
+        return new TitleGroundDecal(
+            "LOCAL:common/textures/" + shadow.Texture,
+            shadow.Position,
+            shadow.Normal,
+            shadow.Size,
+            Humans.Igi2HumanShadow.Hover,
+            OpenIGI.Core.Graphics.Bgra32.FromRgba(channel, channel, channel, 255));
     }
 
     private readonly Igi2LevelSurroundings _surroundings;

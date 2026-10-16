@@ -16,7 +16,19 @@ public interface ITitleWorldModels
 
     /// <summary>Gets depth-tested light sprites as of the last tick.</summary>
     IReadOnlyList<TitleWorldSprite> WorldSprites => [];
+
+    /// <summary>Gets the marks lying on the ground as of the last tick: shadows and pools of blood.</summary>
+    IReadOnlyList<TitleGroundDecal> GroundDecals => [];
 }
+
+/// <summary>A square laid on the ground, blended over it.</summary>
+/// <param name="Texture">The resource name of its texture.</param>
+/// <param name="Position">Where it lies, in world units.</param>
+/// <param name="Normal">The ground's normal there, of unit length.</param>
+/// <param name="HalfSize">Half its width, in world units.</param>
+/// <param name="Hover">How far above the ground it is drawn, in world units.</param>
+/// <param name="Colour">The colour its texture is multiplied by; the texture's alpha is multiplied by the colour's.</param>
+public sealed record TitleGroundDecal(string Texture, Vector3d Position, Vector3f Normal, float HalfSize, float Hover, OpenIGI.Core.Graphics.Bgra32 Colour);
 
 /// <summary>A camera-facing world sprite, with its position and half-size in world units.</summary>
 /// <param name="Sprite">The title's sprite resource name.</param>
