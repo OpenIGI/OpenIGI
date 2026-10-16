@@ -618,7 +618,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         World.Igi2MagicObjTypes? magicTypes = request.Services.TryGet(out World.Igi2MagicObjTypes? loadedMagic) ? loadedMagic : null;
         // Fences hum while live with an ambient area of their own, are told where the player is, and are climbed while dead.
-        List<Interaction.IIgi2Notified> notified = [];
+        Weapons.Igi2NotifyList notified = new();
         // The level's water, in the order it is made (Water_ptQTaskList): its surface in the collision world, its depth asked by
         // the humans' surroundings, its splashes made by bullets and blasts. The module outlives the level, as its stream does.
         World.Igi2Water water = request.Services.TryGet(out World.Igi2Water? sessionWater) ? sessionWater : new World.Igi2Water();
@@ -658,7 +658,19 @@ public sealed class Igi2Gameplay : ITitleGameplay
             notified.Add(fence);
         }
 
-        player.Human.Notified = notified;
+        // Human_Notify's list, which every human tells its place to; the mines laid while the level runs join it.
+        player.Notified = notified;
+        foreach (Igi2Human human in LevelHumans(root, player))
+        {
+            human.Notified = notified.Items;
+        }
+
+        Igi2LevelMines mines = new(player, player.CollisionWorld, models, notified);
+        player.Mines = mines;
+        if (player.Weapons is { } layer)
+        {
+            layer.Firing.Mines = mines;
+        }
 
         // Cabinets are searched from their first magic vertex, their drawers sliding on the search clip's triggers.
         foreach (Interaction.Igi2CabinetTask cabinet in Descendants(root).OfType<Interaction.Igi2CabinetTask>())
@@ -1461,6 +1473,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the level's mounted guns, whose barrels are drawn with the soldiers.</summary>
     public IReadOnlyList<Weapons.Igi2StationaryGunTask> StationaryGuns { get; set; } = [];
 
+    /// <summary>Gets or sets the level's list of what humans tell their place to, <c>GameFunctions_ptNotifyQTaskList</c>.</summary>
+    public Weapons.Igi2NotifyList Notified { get; set; } = new();
+
+    /// <summary>Gets or sets the level the player's mines are laid in, or <see langword="null"/>.</summary>
+    public Igi2LevelMines? Mines { get; set; }
+
     /// <summary>Gets or sets the overlay the scripts have put on the game screen, which the HUD draws.</summary>
     public Igi2ScreenOverlay? ScreenOverlay { get; set; }
 
@@ -1488,11 +1506,14 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
                 IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
                 IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+                IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
+                    ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
+                    : [];
                 // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
                 // interaction mode draws the working body rather than the first-person weapon.
                 IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
                     ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks) : [];
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. working];
+                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working];
                 _lyingTick = _ticks;
             }
 
@@ -1853,4 +1874,65 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
         {
         }
     }
+}
+
+/// <summary>
+/// The level the player's proximity mines are laid in: each joins the dynamic task, the collision world, the blasts' targets and the
+/// notify list, and leaves them all once it has exploded.
+/// </summary>
+/// <param name="player">The player, whose dynamic task and explosions the mines use.</param>
+/// <param name="collision">The collision world.</param>
+/// <param name="models">The level's models.</param>
+/// <param name="notified">The list humans tell their place to.</param>
+public sealed class Igi2LevelMines(Igi2TitlePlayer player, Igi2CollisionWorld collision, Func<string, Formats.World.MefModel?> models, Weapons.Igi2NotifyList notified)
+    : Weapons.IIgi2MineWorld
+{
+    private readonly List<Weapons.Igi2Mine> _laid = [];
+
+    /// <summary>Gets the mines lying in the level, in the order they were laid.</summary>
+    public IReadOnlyList<Weapons.Igi2Mine> Laid => _laid;
+
+    /// <inheritdoc/>
+    public Igi2CollisionWorld Collision => collision;
+
+    /// <inheritdoc/>
+    public Func<string, Formats.World.MefModel?> Models => models;
+
+    /// <inheritdoc/>
+    public Weapons.Igi2ExplosionWorld? Explosions => player.Explosions;
+
+    /// <inheritdoc/>
+    public Weapons.Igi2NotifyList Notified => notified;
+
+    /// <inheritdoc/>
+    public void Lay(Weapons.Igi2Mine mine)
+    {
+        ArgumentNullException.ThrowIfNull(mine);
+        _laid.Add(mine);
+        player.Dynamic.Add(mine);
+        if (mine.Solid is { } solid)
+        {
+            collision.AddObject(solid);
+        }
+
+        player.Explosions?.AddTarget(mine);
+        notified.Add(mine);
+    }
+
+    /// <inheritdoc/>
+    public void Remove(Weapons.Igi2Mine mine)
+    {
+        ArgumentNullException.ThrowIfNull(mine);
+        _laid.Remove(mine);
+        if (mine.Solid is { } solid)
+        {
+            collision.RemoveObject(solid);
+        }
+
+        player.Explosions?.RemoveTarget(mine);
+        notified.Remove(mine);
+    }
+
+    /// <inheritdoc/>
+    public void PlaySoundAt(string sound, Vector3d position) => player.Sounds.New(sound, position);
 }

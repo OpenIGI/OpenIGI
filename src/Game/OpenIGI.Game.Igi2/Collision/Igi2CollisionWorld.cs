@@ -94,7 +94,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
         "GunPickup", "SCamera", "Wire", "EditorRigidObj", "EditCamera", "Origo",
     };
 
-    private readonly Igi2RigidObject[] _objects;
+    private readonly List<Igi2RigidObject> _objects;
     private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
     private readonly List<Igi2BoneCollider> _bodies = [];
@@ -127,6 +127,18 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
 
     /// <summary>Gets the stands of trees.</summary>
     public IReadOnlyList<Igi2ForestCollider> Forests => _forests;
+
+    /// <summary>Puts a solid made while the level runs in the world, after the level's own.</summary>
+    /// <param name="solid">The solid.</param>
+    public void AddObject(Igi2RigidObject solid)
+    {
+        ArgumentNullException.ThrowIfNull(solid);
+        _objects.Add(solid);
+    }
+
+    /// <summary>Takes a solid out of the world, as its object's delete handler does.</summary>
+    /// <param name="solid">The solid.</param>
+    public void RemoveObject(Igi2RigidObject solid) => _objects.Remove(solid);
 
     /// <summary>Gets the boned objects in the world, the humans: line traces meet them as they stand.</summary>
     public IReadOnlyList<Igi2BoneCollider> Bodies => _bodies;

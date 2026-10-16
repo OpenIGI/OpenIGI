@@ -149,11 +149,13 @@ public sealed class Igi2Explosive
     /// Readies it whole, as <c>ExplodeObject_UpdateInternalDataHandler</c> (<c>igi2 0x49CA00</c>) leaves it: its model and frame
     /// its parameters', no damage, nothing counting down, and its two damages taken from its scales.
     /// </summary>
-    public void Reset()
+    /// <param name="frame">Its frame, row by row, for an object placed by a matrix rather than by angles; <see langword="null"/> takes
+    /// its parameters' angles.</param>
+    public void Reset(IReadOnlyList<float>? frame = null)
     {
         Model = _parameters.Model;
         Vector3f angles = _parameters.Orientation;
-        _frame = Igi2Pose.Rotation(angles.X, angles.Y, angles.Z);
+        _frame = frame is null ? Igi2Pose.Rotation(angles.X, angles.Y, angles.Z) : [.. frame];
         _isExplode = 0;
         _isExploded = 0;
         _damage = 0f;
@@ -163,19 +165,21 @@ public sealed class Igi2Explosive
     }
 
     /// <summary>Its tick, after its owner's children have run.</summary>
-    /// <param name="level">The level's tick.</param>
-    public void Run(Igi2LevelRun level)
+    /// <param name="level">The level's tick; <see langword="null"/> for an object made while the level runs, which has no script.</param>
+    public void Run(Igi2LevelRun? level)
     {
-        ArgumentNullException.ThrowIfNull(level);
         if (_isExploded != 0)
         {
             return;
         }
 
-        _expression ??= new Igi2LevelExpression(_parameters.ExplosionScript, _owner.Name, level.Natives);
-        if (!_expression.IsEmpty)
+        if (level is not null && _parameters.ExplosionScript.Length != 0)
         {
-            _isExplode = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_expression));
+            _expression ??= new Igi2LevelExpression(_parameters.ExplosionScript, _owner.Name, level.Natives);
+            if (!_expression.IsEmpty)
+            {
+                _isExplode = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_expression));
+            }
         }
 
         if (_isExplode == 0 && _delay != 0)
@@ -194,6 +198,9 @@ public sealed class Igi2Explosive
             _delay--;
         }
     }
+
+    /// <summary>Asks it to explode on its next tick, as a kind of it that sets its own <c>isExplode</c> does.</summary>
+    public void Trigger() => _isExplode = 1;
 
     /// <summary>A bullet's hit: its damage added, and enough of it explodes the object the next tick.</summary>
     /// <param name="damage">The damage the bullet still does.</param>

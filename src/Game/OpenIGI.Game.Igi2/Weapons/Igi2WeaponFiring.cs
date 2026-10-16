@@ -80,6 +80,9 @@ public sealed class Igi2WeaponFiring
     /// <summary>Gets or sets the level the weapon's bullets and stabs strike, or <see langword="null"/> for none: then nothing is struck.</summary>
     public IIgi2GunShotWorld? World { get; set; }
 
+    /// <summary>Gets or sets the level a proximity mine is laid in, or <see langword="null"/>: then none is laid.</summary>
+    public IIgi2MineWorld? Mines { get; set; }
+
     /// <summary>Gets or sets the laser designator's module state a designator's fire marks its target in, or <see langword="null"/>.</summary>
     public Igi2LaserDesignatorState? LaserDesignator { get; set; }
 

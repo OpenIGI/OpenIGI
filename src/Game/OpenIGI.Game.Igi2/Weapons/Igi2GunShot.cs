@@ -256,12 +256,7 @@ public sealed class Igi2GunShot
         _trace.Mesh = 0;
         _trace.TracePortals = false;
         _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
-        _trace.Includes = owner => owner switch
-        {
-            IIgi2WeaponCollisionTarget target => target.EvaluateWeaponCollision(query),
-            Igi2CollisionOwner solid => EvaluateSolid(solid, query),
-            _ => true,
-        };
+        _trace.Includes = WeaponCollisionIncludes(query);
 
         bool rung = false;
         foreach (Igi2GunShotInstant bullet in _instants)
@@ -271,6 +266,20 @@ public sealed class Igi2GunShot
 
         _instants.Clear();
     }
+
+    /// <summary>
+    /// What a weapon's line may strike, <c>GameFunctions_eWeaponCollisionEvaluateQTaskEvent</c> as each kind answers it: an object
+    /// with its own answer gives it, a placed solid of a kind with a handler spares the shooter and the ignored task, and anything
+    /// else is struck.
+    /// </summary>
+    /// <param name="query">The line's context.</param>
+    /// <returns>The filter, given what a collider stands for.</returns>
+    public static Func<object, bool> WeaponCollisionIncludes(Igi2WeaponCollisionQuery query) => owner => owner switch
+    {
+        IIgi2WeaponCollisionTarget target => target.EvaluateWeaponCollision(query),
+        Igi2CollisionOwner solid => EvaluateSolid(solid, query),
+        _ => true,
+    };
 
     /// <summary>
     /// Whether a bullet may strike a placed solid, the weapon-collision evaluate handlers of the types that link one

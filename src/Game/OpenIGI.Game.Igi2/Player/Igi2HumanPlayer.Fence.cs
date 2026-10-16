@@ -23,9 +23,6 @@ public sealed partial class Igi2HumanPlayer : IIgi2ElectricTarget
     /// </summary>
     public int ElectricDamageTimeout { get; set; }
 
-    /// <summary>Gets or sets the objects the player tells its position to each tick, <c>GameFunctions_ptNotifyQTaskList</c>.</summary>
-    public IReadOnlyList<IIgi2Notified> Notified { get; set; } = [];
-
     /// <summary>Gets a value indicating whether the player is about to climb a fence, <c>isInitClimbFence</c>.</summary>
     public bool IsInitClimbFence { get; private set; }
 
@@ -61,21 +58,6 @@ public sealed partial class Igi2HumanPlayer : IIgi2ElectricTarget
         if (Damage.Damage < Damage.MaxDamage)
         {
             Surroundings.StartSound(ElectricSparkSound);
-        }
-    }
-
-    /// <summary>
-    /// Tells the notified objects where the player is, <c>Human_Notify</c>: its feet raised a metre, with the radius of its root bone's
-    /// reach and its model.
-    /// </summary>
-    private void Notify()
-    {
-        Vector3f r = RootTranslation;
-        float radius = (Fpu.Sqrt((((Fpu)r.X * r.X) + ((Fpu)r.Y * r.Y)) + ((Fpu)r.Z * r.Z)) + ModelRadius).F;
-        Vector3d at = new(Position.X, Position.Y, ((Fpu)Position.Z + 4096.0).Value);
-        foreach (IIgi2Notified notified in Notified)
-        {
-            notified.Notify(this, at, radius);
         }
     }
 

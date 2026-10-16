@@ -280,6 +280,71 @@ public sealed class Igi2Pose
     }
 
     /// <summary>
+    /// A frame whose Y axis is a direction, <c>gamefunctions.c GameFunctions_CreateOrientationFromDirection</c>: its X axis the
+    /// direction crossed with the world's up, or, for a direction within about eighteen degrees of straight up or down, its Z
+    /// axis across the world's X first; every axis made unit where it can be.
+    /// </summary>
+    /// <param name="y">The direction, already unit.</param>
+    /// <returns>The frame, row by row.</returns>
+    public static float[] FromDirection(Vector3f y)
+    {
+        float yx = y.X, yy = y.Y, yz = y.Z;
+        Fpu flatZ = (Fpu)yz * 0.0;
+        float xx, xy, xz, zx, zy, zz;
+        if (Math.Abs(yz) > 0.949999988079071)
+        {
+            Fpu flatX = (Fpu)yx * 0.0;
+            zx = (flatZ - ((Fpu)yy * 0.0)).F;
+            zy = (-((Fpu)yz - flatX)).F;
+            zz = ((Fpu)yy - flatX).F;
+            if (zx != 0f || zy != 0f || zz != 0f)
+            {
+                Fpu inverse = (Fpu)1.0 / Fpu.Sqrt((((Fpu)zy * zy) + ((Fpu)zz * zz)) + ((Fpu)zx * zx));
+                zx = ((Fpu)zx * inverse).F;
+                zy = ((Fpu)zy * inverse).F;
+                zz = ((Fpu)zz * inverse).F;
+            }
+
+            xx = (((Fpu)yy * zz) - ((Fpu)yz * zy)).F;
+            xy = (-(((Fpu)yx * zz) - ((Fpu)yz * zx))).F;
+            xz = (((Fpu)yx * zy) - ((Fpu)yy * zx)).F;
+            Unit(ref xx, ref xy, ref xz);
+        }
+        else
+        {
+            xx = ((Fpu)yy - flatZ).F;
+            xy = (-((Fpu)yx - flatZ)).F;
+            xz = (((Fpu)yx * 0.0) - ((Fpu)yy * 0.0)).F;
+            Unit(ref xx, ref xy, ref xz);
+            zx = (((Fpu)yz * xy) - ((Fpu)yy * xz)).F;
+            zy = (-(((Fpu)yz * xx) - ((Fpu)yx * xz))).F;
+            zz = (((Fpu)yy * xx) - ((Fpu)yx * xy)).F;
+            if (zx != 0f || zy != 0f || zz != 0f)
+            {
+                Fpu inverse = (Fpu)1.0 / Fpu.Sqrt((((Fpu)zx * zx) + ((Fpu)zy * zy)) + ((Fpu)zz * zz));
+                zx = ((Fpu)zx * inverse).F;
+                zy = ((Fpu)zy * inverse).F;
+                zz = ((Fpu)zz * inverse).F;
+            }
+        }
+
+        return [xx, yx, zx, xy, yy, zy, xz, yz, zz];
+
+        static void Unit(ref float x, ref float y, ref float z)
+        {
+            if (x == 0f && y == 0f && z == 0f)
+            {
+                return;
+            }
+
+            Fpu length = Fpu.Sqrt((((Fpu)x * x) + ((Fpu)y * y)) + ((Fpu)z * z));
+            x = ((Fpu)x * ((Fpu)1.0 / length)).F;
+            y = ((Fpu)y * ((Fpu)1.0 / length)).F;
+            z = (((Fpu)1.0 / length) * z).F;
+        }
+    }
+
+    /// <summary>
     /// The arc cosine, <c>Real32_Acos</c> (<c>igi2 0x5612C0</c>): a ratio of two polynomials in x² between ±1/√2, and beyond
     /// them in 1 − x² times its square root, clamped to ±1.
     /// </summary>

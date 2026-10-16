@@ -259,10 +259,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// what the tick let go of.
     /// </para>
     /// <para>A soldier riding something (a mounted gun) is carried with it instead of moving (<c>Human_Attach</c>).</para>
-    /// <para>
-    /// <c>Human_Notify</c> is left out: only fences listen to it, and only the player answers their shock
-    /// (<c>HumanPlayer_ElectricDamageHandler</c>), so a soldier's notice changes nothing.
-    /// </para>
+    /// <para>Last it tells the level's listeners where it is (<c>Human_Notify</c>): a mine before it is set off by a soldier too.</para>
     /// </remarks>
     public void Update()
     {
@@ -289,6 +286,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
 
         UpdateViewBody();
         Weapon.UpdateStatus();
+        Notify();
     }
 
     /// <summary>
