@@ -487,6 +487,24 @@ public sealed class RetailIgi2FiringTests
         Assert.Equal(rounds + 1, inventory.TotalBulletsFired);
     }
 
+    /// <summary>The SOCOM's second fire type turns its laser dot on, and again off, as the trigger is let go (<c>LaserDotSwitch_WeaponReleaseHandler</c>).</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_socoms_switch_toggles_its_laser_dot()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        Assert.True(inventory.EnableWeaponType("WEAPON_ID_SOCOM", addAmmo: true));
+        Igi2WeaponItem socom = inventory.FindWeapon("WEAPON_ID_SOCOM")!;
+        Assert.True(inventory.Activate(socom));
+        Assert.IsType<Igi2LaserDotSwitchTask>(socom.WeaponType.FireType(1));
+        bool before = socom.IsLaserDotOn;
+
+        player.Weapon.Fire(1);
+        player.Weapon.ReleaseTriggers();
+        Tick(player, Igi2PlayerAction.None);
+        Assert.Equal(!before, socom.IsLaserDotOn);
+    }
+
     /// <summary>
     /// The drop key on a weapon its type lets be dropped in a single-player game puts it away for another: the AI hears it handled,
     /// it lands as a pickup, not thrown short, with its load, and is carried no more.

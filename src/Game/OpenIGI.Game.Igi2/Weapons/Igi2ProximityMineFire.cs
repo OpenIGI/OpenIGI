@@ -4,7 +4,10 @@ using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
-/// <summary>Laying a proximity mine: <c>proximitymine.c ProximityMine_WeaponFireHandler</c>.</summary>
+/// <summary>
+/// Laying a proximity mine: <c>proximitymine.c ProximityMine_WeaponFireHandler</c>; or, in its remote mode,
+/// <c>RemoteMine_WeaponFireHandler</c>, which lays one that no passer-by sets off and sounds nothing.
+/// </summary>
 /// <remarks>
 /// <para>
 /// A line goes out along the aim for the fire type's effective range, against everything a weapon may strike. A surface it
@@ -15,7 +18,8 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// </para>
 /// <para>Laid or not, the view kicks a hundredth of a degree each way, damped by a tenth.</para>
 /// </remarks>
-internal sealed class Igi2ProximityMineFire : IIgi2FireHandler
+/// <param name="remote">Whether it lays remote mines.</param>
+internal sealed class Igi2ProximityMineFire(bool remote) : IIgi2FireHandler
 {
     /// <summary>The kick each way, <c>0x3C23D70A</c>.</summary>
     internal const float Kick = 0.01f;
@@ -34,7 +38,12 @@ internal sealed class Igi2ProximityMineFire : IIgi2FireHandler
     /// <inheritdoc/>
     public Igi2FireResult Fire(in Igi2FireRequest request)
     {
-        Igi2ProximityMineTask mine = (Igi2ProximityMineTask)request.FireTypeParameters;
+        MineParameters mine = request.FireTypeParameters switch
+        {
+            Igi2RemoteMineTask r => new(r.EffectiveRangeMeters, r.TimeBeforeArmingSeconds, r.CountdownTimeSeconds, r.ActivateRadiusMeters, r.ExplosionRadiusMeters, r.RoundsPerMinute, r.FireSound),
+            Igi2ProximityMineTask p => new(p.EffectiveRangeMeters, p.TimeBeforeArmingSeconds, p.CountdownTimeSeconds, p.ActivateRadiusMeters, p.ExplosionRadiusMeters, p.RoundsPerMinute, p.FireSound),
+            _ => throw new ArgumentException("Not a mine's fire type.", nameof(request)),
+        };
         int laid = 0;
         int delay = 0;
         if (request.Weapon.World is { } world && request.Weapon.Mines is { } mines)
@@ -73,10 +82,13 @@ internal sealed class Igi2ProximityMineFire : IIgi2FireHandler
                     mine.CountdownTimeSeconds,
                     mine.ActivateRadiusMeters,
                     mine.ExplosionRadiusMeters,
-                    isRemote: false));
+                    isRemote: remote));
                 laid = 1;
                 delay = Fpu.ToInt32(((Fpu)60.0 / (double)mine.RoundsPerMinute) * 30.0);
-                request.Weapon.Effects.PlaySound(Igi2WeaponFiring.FireSoundSlot, mine.FireSound, looped: false);
+                if (!remote)
+                {
+                    request.Weapon.Effects.PlaySound(Igi2WeaponFiring.FireSoundSlot, mine.FireSound, looped: false);
+                }
             }
         }
 
@@ -85,6 +97,15 @@ internal sealed class Igi2ProximityMineFire : IIgi2FireHandler
 
     /// <inheritdoc/>
     public Igi2FireResult Release(in Igi2FireRequest request) => Igi2FireResult.Nothing;
+
+    private readonly record struct MineParameters(
+        float EffectiveRangeMeters,
+        float TimeBeforeArmingSeconds,
+        float CountdownTimeSeconds,
+        float ActivateRadiusMeters,
+        float ExplosionRadiusMeters,
+        int RoundsPerMinute,
+        string FireSound);
 
     // A human, glass, a door or a vehicle takes no mine.
     private static bool Refuses(IIgi2Collider? struck, IIgi2GunShotWorld world) =>
