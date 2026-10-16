@@ -5199,11 +5199,6 @@ if (retailFog)
                     MathF.Tan(verticalFieldOfView * 0.5f)));
                 EndStageIfSlow("the forest");
 
-                // And the water last of the opaque world, because it is translucent and has to sort
-                // against everything already in the depth buffer -- the ground under it above all.
-                _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
-                EndStageIfSlow("the water");
-
                 // With the world and the terrain both in the depth buffer, the world's occlusion
                 // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.
                 _world.IssueOcclusionQueries(eye);
@@ -5940,6 +5935,12 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         captured ? sceneTarget.Width : _window.Width,
                         captured ? sceneTarget.Height : _window.Height));
                 }
+
+                // The water is translucent, so it is drawn over the lit picture as the glazing is, testing the
+                // depth of everything under it -- the ground above all -- and writing none. Recorded into the
+                // G-buffer it was written as if opaque and then lit away: the deferred frame showed no sea.
+                _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
+                EndStageIfSlow("the water");
 
                 // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
                 // the geometry pass they are written into the g-buffer as scenery and come out lit

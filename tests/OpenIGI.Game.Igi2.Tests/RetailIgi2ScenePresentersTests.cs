@@ -87,10 +87,11 @@ public sealed class RetailIgi2ScenePresentersTests
 
             water.Draw(new WaterFrame(new Camera3D(default, Camera3D.LookRotation(0f, -0.3f)), Matrix4f.Identity, 3.0));
 
-            // One draw per sheet, translucent, depth-tested but not written, and both facings -- a
-            // camera under the surface has to see it from below.
+            // One draw per sheet, laid over what is under it at the sheet's alpha (WaterRender_SetBlendState's ONE,
+            // SRCALPHA), depth-tested but not written, and both facings -- a camera under the surface has to see it
+            // from below.
             Assert.Equal(water.SheetCount, device.MeshDraws.Count);
-            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.AlphaBlend, draw.Blend));
+            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.SourcePlusAttenuatedDestination, draw.Blend));
             Assert.All(device.MeshDraws, draw => Assert.Equal(DepthState.TestOnly, draw.DepthState));
             Assert.All(device.MeshDraws, draw => Assert.Equal(CullMode.None, draw.CullMode));
 

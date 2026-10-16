@@ -20,4 +20,12 @@ public enum BlendMode
     /// lightmap's neutral is a half rather than white: the doubling is in the blend, not in the texels.
     /// </remarks>
     Modulate2X,
+
+    /// <summary>The source added in whole over the destination kept at the source's alpha: <c>src + dst * srcA</c>.</summary>
+    /// <remarks>
+    /// I.G.I. 2's water above quality nought. <c>WaterRender_SetBlendState</c> sets <c>SRCBLEND = D3DBLEND_ONE</c> with
+    /// <c>DESTBLEND = D3DBLEND_SRCALPHA</c>, so a sheet's <c>Alpha</c> is how much of what lies under it shows through and
+    /// its own colour is laid on top undimmed: a sea of alpha 0.13 is a dark, nearly opaque surface, not a faint one.
+    /// </remarks>
+    SourcePlusAttenuatedDestination,
 }

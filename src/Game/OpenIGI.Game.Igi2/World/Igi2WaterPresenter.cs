@@ -227,7 +227,9 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
             frame.Camera.CreateModelView(WorldScene.ToMetres(sheet.Definition.Centre), Matrix3f.Identity),
             sheet.Texture,
             TextureHandle.None,
-            BlendMode.AlphaBlend);
+            // WaterRender_SetBlendState above quality nought: the sheet's colour over what is under it, which keeps only
+            // the sheet's Alpha of its light.
+            BlendMode.SourcePlusAttenuatedDestination);
     }
 
     /// <summary>One sheet: its grid, the mesh behind it, and what it is drawn with.</summary>
