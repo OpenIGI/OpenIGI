@@ -370,12 +370,11 @@ public sealed class WorldRenderer : IWorldPresenter
         _device.SetProjection(projection);
         _device.SetDepthState(rotorsOnly || glassOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
 
-        // Back faces are culled once the mesh builder has repaired winding (r_world_cull): every triangle
-        // is rewound to agree with its outward vertex normals there, so CCW is reliably the front and
-        // culling the back removes a thin object's inward face rather than letting the two fight over a
-        // pixel -- and halves the indoor fill. Off falls back to drawing both facings, which is what the
-        // port did before the repair existed and does not wind uniformly on its own.
-        _device.SetCullMode(RenderCVars.WorldCull.Value != 0 ? CullMode.CounterClockwise : CullMode.None);
+        // Interior sectors and meshes without authored normals have no reliable outward facing.
+        // Choose culling per mesh below, including when an archived r_world_cull enables it.
+        bool cullBackFaces = RenderCVars.WorldCull.Value != 0;
+        CullMode appliedCull = CullMode.None;
+        _device.SetCullMode(appliedCull);
 
         // The lightmap headroom for the objects' pages -- one unless an exclusive HDR bake is applied.
         // Reset to one at the end of the pass so the terrain, which keeps its shipped LDR lightmaps, is not
@@ -547,6 +546,13 @@ public sealed class WorldRenderer : IWorldPresenter
             }
 
             SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, entry.Displayed!);
+
+            CullMode cull = cullBackFaces && model.CanCullBackFaces ? CullMode.CounterClockwise : CullMode.None;
+            if (cull != appliedCull)
+            {
+                _device.SetCullMode(cull);
+                appliedCull = cull;
+            }
 
             // Named by its place in the scene, so its draws pair with its own from the frame before whatever
             // the occlusion and the frustum dropped ahead of it this time.
@@ -945,7 +951,7 @@ public sealed class WorldRenderer : IWorldPresenter
         MeshHandle mesh = GetMesh(
             displayed.BentGeometry is null ? displayed.Instance.Name : displayed.TaskName,
             geometry);
-        return mesh.IsValid ? new ResolvedModel(geometry, mesh) : null;
+        return mesh.IsValid ? new ResolvedModel(geometry, mesh, displayed.Model.IsSector) : null;
     }
 
     /// <summary>The same surface with its lamp turned down, or turned off altogether.</summary>
@@ -1167,11 +1173,20 @@ public sealed class WorldRenderer : IWorldPresenter
     }
 
     /// <summary>A placement's uploaded mesh and, once first drawn, its per-subset draw state.</summary>
-    private sealed class ResolvedModel(MeshGeometry geometry, MeshHandle mesh)
+    private sealed class ResolvedModel(MeshGeometry geometry, MeshHandle mesh, bool isSector)
     {
         public MeshGeometry Geometry { get; } = geometry;
 
         public MeshHandle Mesh { get; } = mesh;
+
+        /// <summary>Whether winding repair has usable normals and the mesh is not an interior sector.</summary>
+        /// <remarks>
+        /// IGI2 lightmapped MEFs omit normals. Their authored winding must remain two-sided; applying
+        /// the prop optimization erases mission 2's cave. IGI1 sectors likewise enclose the viewer.
+        /// Evaluate once at residency, rather than scanning vertices in every render pass.
+        /// </remarks>
+        public bool CanCullBackFaces { get; } = !isSector && Array.TrueForAll(
+            geometry.Vertices, vertex => float.IsFinite(vertex.Normal.LengthSquared) && vertex.Normal.LengthSquared > 0.000001f);
 
         public SubsetDraw[]? Subsets { get; set; }
 

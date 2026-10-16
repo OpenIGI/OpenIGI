@@ -977,15 +977,11 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>Whether the world pass culls back faces, now that the mesh builder repairs triangle winding.</summary>
+    /// <summary>Whether the world pass culls back faces of eligible meshes after repairing triangle winding.</summary>
     /// <remarks>
-    /// Culling was off because the port's flattened index order did not wind uniformly, so removing either
-    /// facing dropped real walls. The mesh builder now rewinds each triangle to agree with its vertices' own
-    /// outward normals, which gives back-face culling a consistent facing to remove -- and that is what stops
-    /// a thin object's two coincident faces from fighting over a pixel (the glittering z-fight on thin
-    /// geometry), while roughly halving the indoor fill. Off leaves both facings drawn, the old behaviour.
-    /// A true single-quad, two-sided surface (a chain-link fence read as one plane) loses its far side under
-    /// this; those are rare enough that the trade is worth the thin-geometry fix and the fill it saves.
+    /// The mesh builder repairs winding using authored vertex normals. Interior sectors and meshes
+    /// without usable normals remain two-sided even when this setting is enabled: in particular,
+    /// IGI2 lightmapped geometry carries no normals. Off draws both facings for every world mesh.
     /// </remarks>
     public static readonly NumericCVar<int> WorldCull = Presets.Define(
         CVar.Int(
@@ -994,14 +990,12 @@ public static class RenderCVars
             0,
             1,
             CVarOptions.Archive,
-            "Cull back faces in the world pass. Fixes thin-geometry z-fighting; needs the winding repair."),
+            "Cull back faces of normal-bearing world meshes; interior sectors remain two-sided."),
         vanilla: "0",
         enhanced: "0",
         high: "0",
 
-        // On at ultra, where the winding repair makes it safe: validated on mission 1 (the office window's
-        // thin mullions stop z-fighting and read clean, and no wall is lost indoors or out). The lower
-        // presets stay off until the repair is validated across the other missions.
+        // The renderer retains two-sided drawing for sectors and meshes winding repair cannot orient.
         ultra: "1");
 
     /// <summary>Calibration on the radiance cache's stored bounce, where 1 is the raw traced radiance.</summary>
