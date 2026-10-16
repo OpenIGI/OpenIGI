@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// the origin puts the segment a quarter unit or so off the true middle.
 /// </para>
 /// </remarks>
-public sealed class Igi2SplineSegment : IIgi2Collider
+public sealed partial class Igi2SplineSegment : IIgi2Collider
 {
     /// <summary>How many level-of-detail models a name may chain to, <c>MTP_CreateLODVirModel</c> (<c>igi2 0x4F4D20</c>).</summary>
     public const int MaximumLevelsOfDetail = 5;

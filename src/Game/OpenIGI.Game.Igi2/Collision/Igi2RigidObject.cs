@@ -34,6 +34,19 @@ public sealed class Igi2CollisionMesh
         }
     }
 
+    /// <summary>Initializes a new instance of the <see cref="Igi2CollisionMesh"/> class: another level's lightmaps, portals and rows over new arrays.</summary>
+    /// <param name="source">The level whose per-face and per-material fields are shared.</param>
+    /// <param name="arrays">The faces, vertices and sphere tree.</param>
+    public Igi2CollisionMesh(Igi2CollisionMesh source, RetailRayMesh arrays)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(arrays);
+        Arrays = arrays;
+        Lightmaps = source.Lightmaps;
+        Portals = source.Portals;
+        Rows = source.Rows;
+    }
+
     /// <summary>Gets the faces, vertices, sphere tree and material rows.</summary>
     public RetailRayMesh Arrays { get; }
 

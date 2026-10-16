@@ -57,6 +57,23 @@ public sealed class RetailRayMesh
         }
     }
 
+    /// <summary>Initializes a new instance of the <see cref="RetailRayMesh"/> class: another mesh's faces, tree and materials over vertices and spheres of its own, as a mesh bent into a new shape keeps them.</summary>
+    /// <param name="source">The mesh whose faces, tree links and materials are shared.</param>
+    /// <param name="vertices">The vertices, three floats each.</param>
+    /// <param name="spheres">The spheres, four floats each.</param>
+    public RetailRayMesh(RetailRayMesh source, float[] vertices, float[] spheres)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(spheres);
+        Faces = source.Faces;
+        Links = source.Links;
+        Portal = source.Portal;
+        GlobalMaterial = source.GlobalMaterial;
+        Vertices = vertices;
+        Spheres = spheres;
+    }
+
     /// <summary>Gets the faces, four ints each: three vertex indices and the mesh material.</summary>
     public int[] Faces { get; }
 

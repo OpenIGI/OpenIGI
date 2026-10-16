@@ -114,6 +114,54 @@ public sealed class RetailIgi2SplineSegmentTests
         Assert.Equal(5, Igi2SplineSegment.LevelsOfDetail("a1", static _ => true).Count());
     }
 
+    /// <summary>
+    /// Mission 2's curved segments are bent colliders (<c>SplineObjSegment_TransformVertex</c>): a short line through the middle
+    /// of every bent face, along its normal, is stopped by the segment no later than the face and the tie window behind it.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Mission_2_curves_are_bent_colliders()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level2");
+        Igi2CollisionWorld world = Igi2CollisionWorld.Build(level.Scene, level.ModelFor, null, "terrain");
+        Igi2SplineSegment[] bent = [.. world.Segments.Where(static s => s.IsBent)];
+        Assert.Equal(43, bent.Length);
+
+        int faces = 0, struck = 0;
+        foreach (Igi2SplineSegment segment in bent)
+        {
+            Assert.True(segment.Radius >= 1f);
+            Igi2CollisionMesh mesh = segment.Mesh(0)!;
+            float[] v = mesh.Arrays.Vertices;
+            int[] f = mesh.Arrays.Faces;
+            for (int face = 0; face < mesh.Arrays.FaceCount; face++)
+            {
+                int i0 = 3 * f[4 * face], i1 = 3 * f[(4 * face) + 1], i2 = 3 * f[(4 * face) + 2];
+                Vector3d a = new(v[i0], v[i0 + 1], v[i0 + 2]), b = new(v[i1], v[i1 + 1], v[i1 + 2]), c = new(v[i2], v[i2 + 1], v[i2 + 2]);
+                Vector3d n = Vector3d.Cross(b - a, c - a);
+                if (n.Length < 1.0)
+                {
+                    continue;
+                }
+
+                n /= n.Length;
+                Vector3d middle = ((a + b + c) / 3.0) + segment.Position;
+                Igi2LineTrace trace = new(1);
+                trace.Starts[0] = middle + (n * 64.0);
+                trace.Ends[0] = middle - (n * 64.0);
+                Igi2SplineSegmentTrace.Trace(segment, trace);
+                faces++;
+                if (trace.Intersections[0] is { IsHit: true } hit)
+                {
+                    Assert.Same(segment, hit.HitObject);
+                    Assert.InRange(hit.Distance, 0.0, 64.0 + 40.96 + 1.0);
+                    struck++;
+                }
+            }
+        }
+
+        Assert.True(struck >= faces * 0.98, $"only {struck} of {faces} bent faces stopped a line through them.");
+    }
+
     /// <summary>Mission 1's three fences are straight runs; every segment of them is a collider.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Mission_1_fences_become_colliders()

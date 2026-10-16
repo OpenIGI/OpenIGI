@@ -49,11 +49,106 @@ public static class Igi2SplineSegmentTrace
 
         for (int i = 0; i < trace.Count; i++)
         {
-            if (!Line(segment, mesh, trace, trace.Starts[i], trace.Ends[i], trace.Intersections[i]))
+            bool reached = segment.IsBent
+                ? BentLine(segment, mesh, trace, trace.Starts[i], trace.Ends[i], trace.Intersections[i])
+                : Line(segment, mesh, trace, trace.Starts[i], trace.Ends[i], trace.Intersections[i]);
+            if (!reached)
             {
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// One line against a bent segment, the handler's bent path: the line taken from the segment's position, unturned, through the
+    /// bent sphere tree and faces; the box around its two ends; the faces' normals reversed on a flipped segment.
+    /// </summary>
+    /// <remarks>
+    /// An earlier hit is taken into the segment by its frame's transpose and its scale's inverse, both unit for a bent segment, and
+    /// measured from the start z, x, y. A hit is the crossing put back at the segment's position, its normal the bent face's.
+    /// </remarks>
+    private static bool BentLine(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, Vector3d e, Igi2Intersection hit)
+    {
+        Vector3d p = o.Position;
+        float r = o.Radius;
+        if (!Igi2MeshSearch.Straddles(((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
+            || !Igi2MeshSearch.Straddles(((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
+            || !Igi2MeshSearch.Straddles(((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
+        {
+            return false;
+        }
+
+        Vector3f start = new(((Fpu)s.X - p.X).F, ((Fpu)s.Y - p.Y).F, ((Fpu)s.Z - p.Z).F);
+        Vector3f end = new(((Fpu)e.X - p.X).F, ((Fpu)e.Y - p.Y).F, ((Fpu)e.Z - p.Z).F);
+        float lineLength = Distance(s, e).F;
+        Igi2MeshSearch search = new()
+        {
+            IsHit = hit.IsHit,
+            PreviousFront = hit.IsHit && hit.EnterMaterial is not null,
+            Point = end,
+        };
+
+        bool wasHit = hit.IsHit;
+        if (wasHit)
+        {
+            float hx = ((Fpu)hit.Position.X - p.X).F, hy = ((Fpu)hit.Position.Y - p.Y).F, hz = ((Fpu)hit.Position.Z - p.Z).F;
+            Fpu cz = (Fpu)hz - start.Z, cx = (Fpu)hx - start.X, cy = (Fpu)hy - start.Y;
+            search.Closest = Fpu.Sqrt((cz * cz) + (cx * cx) + (cy * cy)).Value;
+        }
+
+        search.Box(start, end);
+        Fpu iz = (Fpu)end.Z - start.Z, ix = (Fpu)end.X - start.X, iy = (Fpu)end.Y - start.Y;
+        Fpu inverse = (Fpu)1.0 / ((iz * iz) + (ix * ix) + (iy * iy));
+        Vector3f d = new(((Fpu)e.X - s.X).F, ((Fpu)e.Y - s.Y).F, ((Fpu)e.Z - s.Z).F);
+        if (mesh.Arrays.SphereCount == 0)
+        {
+            return true;
+        }
+
+        BentFaces faces = new(mesh.Arrays, start, d, lineLength, search, o.IsFlipped);
+        search.Walk(mesh.Arrays, start, d, inverse, uniformSums: true, ref faces);
+        if (search.HitThisObject && (!wasHit || search.Closest < hit.Distance))
+        {
+            RecordBent(o, mesh, trace, search, hit);
+        }
+
+        return true;
+    }
+
+    /// <summary>The bent segment's hit: the crossing at the segment's position, the bent face's normal, reversed when flipped.</summary>
+    private static void RecordBent(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Igi2MeshSearch search, Igi2Intersection hit)
+    {
+        int[] faces = mesh.Arrays.Faces;
+        float[] v = mesh.Arrays.Vertices;
+        int f = search.Face;
+        int i0 = 3 * faces[4 * f], i1 = 3 * faces[(4 * f) + 1], i2 = 3 * faces[(4 * f) + 2];
+        int levelMaterial = mesh.Arrays.GlobalMaterial[faces[(4 * f) + 3]];
+        Fpu a2x = (Fpu)v[i2] - v[i0], a2y = (Fpu)v[i2 + 1] - v[i0 + 1], a2z = (Fpu)v[i2 + 2] - v[i0 + 2];
+        float b1x = ((Fpu)v[i1] - v[i0]).F, b1y = ((Fpu)v[i1 + 1] - v[i0 + 1]).F;
+        Fpu b1z = (Fpu)v[i1 + 2] - v[i0 + 2];
+        Vector3f normal = Igi2MeshSearch.UnitNormal(a2x, a2y, a2z, b1x, b1y, b1z);
+        if (o.IsFlipped)
+        {
+            normal = new Vector3f(-normal.X, -normal.Y, -normal.Z);
+        }
+
+        Vector3f point = search.Point;
+        Vector3d p = o.Position;
+        hit.HitObject = o;
+        hit.Position = new Vector3d(point.X + p.X, point.Y + p.Y, point.Z + p.Z);
+        hit.LocalPosition = point;
+        hit.LocalNormal = normal;
+        hit.Normal = normal;
+        hit.IsHit = true;
+        hit.EnterMaterial = search.PreviousFront ? levelMaterial : null;
+        hit.LeaveMaterial = search.PreviousFront ? null : levelMaterial;
+        hit.IsDoubleFace = true;
+        hit.Distance = search.Closest;
+        hit.Face = f;
+        hit.Light = Igi2MeshSearch.Light(
+            o.IsBuildingMesh && mesh.Lightmaps[f] != Igi2MeshSearch.None && o.IsLightmapped,
+            normal,
+            trace.Lighting);
     }
 
     /// <summary>One line; <see langword="false"/> when its bounds miss the segment, which ends the call.</summary>
@@ -190,6 +285,28 @@ public static class Igi2SplineSegmentTrace
     {
         Fpu dx = (Fpu)a.X - b.X, dy = (Fpu)a.Y - b.Y, dz = (Fpu)a.Z - b.Z;
         return Fpu.Sqrt((dz * dz) + (dy * dy) + (dx * dx));
+    }
+
+    /// <summary>One bent face against the line: the shared crossing, its normal reversed on a flipped segment, and the tie rules.</summary>
+    private readonly struct BentFaces(RetailRayMesh mesh, Vector3f s, Vector3f d, float lineLength, Igi2MeshSearch search, bool flip)
+        : IIgi2FaceVisitor
+    {
+        public void Visit(int face)
+        {
+            int[] faces = mesh.Faces;
+            int i0 = 3 * faces[4 * face], i1 = 3 * faces[(4 * face) + 1], i2 = 3 * faces[(4 * face) + 2];
+            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip, Igi2PlaneSum.ZYX, out Igi2FaceCrossing crossing))
+            {
+                return;
+            }
+
+            Fpu distance = (Fpu)crossing.T * lineLength;
+            bool front = crossing.Dot.Value < 0.0;
+            if (search.Accept(distance, front))
+            {
+                search.Take(distance, front, crossing.Point, face, s);
+            }
+        }
     }
 
     /// <summary>One face against the line: the shared crossing and the tie rules, nothing skipped.</summary>

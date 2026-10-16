@@ -193,8 +193,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     /// </para>
     /// <para>
     /// A straight spline segment becomes an <see cref="Igi2SplineSegment"/>, its radius taken over the model's levels
-    /// of detail. Segments bent along a curve, and wires, have handlers of their own that are not ported yet; they are
-    /// left out.
+    /// of detail; one bent along its curve has its meshes bent along it (<see cref="Igi2SplineSegment.Bent"/>).
     /// </para>
     /// </remarks>
     public static Igi2CollisionWorld Build(
@@ -213,7 +212,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
         List<Igi2SplineSegment> segments = [];
         foreach (Igi2Placement placement in scene.StaticPlacements)
         {
-            if (placement.Geometry is Igi2SplineSweep { IsLinear: true } sweep)
+            if (placement.Geometry is Igi2SplineSweep sweep)
             {
                 AddSegment(placement, sweep);
                 continue;
@@ -318,13 +317,11 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                 }
             }
 
-            if (Igi2SplineSegment.Straight(
-                new Igi2CollisionOwner(placement.TypeName, placement.LevelId, placement.Model, 0),
-                sweep.Start,
-                sweep.Stop,
-                sweep.IsFlipped,
-                meshes,
-                radius) is { } segment)
+            Igi2CollisionOwner owner = new(placement.TypeName, placement.LevelId, placement.Model, 0);
+            Igi2SplineSegment? made = sweep.IsLinear
+                ? Igi2SplineSegment.Straight(owner, sweep.Start, sweep.Stop, sweep.IsFlipped, meshes, radius)
+                : Igi2SplineSegment.Bent(owner, sweep, meshes);
+            if (made is { } segment)
             {
                 segments.Add(segment);
             }
