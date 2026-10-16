@@ -79,7 +79,7 @@ public abstract partial class Igi2Human
     /// </summary>
     private void FeetSound()
     {
-        if (GroundIntersection.HitObject is null || IsDead)
+        if (!GroundIntersection.IsHit || IsDead)
         {
             return;
         }
@@ -116,7 +116,7 @@ public abstract partial class Igi2Human
     /// <summary>The body landing as it falls dead: the ground material's next of its three dead-body sounds.</summary>
     private void DeadBodySound()
     {
-        if (GroundIntersection.HitObject is null || GroundMaterial() is not { } material)
+        if (!GroundIntersection.IsHit || GroundMaterial() is not { } material)
         {
             return;
         }
@@ -133,7 +133,7 @@ public abstract partial class Igi2Human
     /// <summary>Gets a value indicating whether the player is turning on the spot, whose steps make no sound.</summary>
     protected virtual bool IsTurningOnTheSpot => false;
 
-    /// <summary>The game material of the footing, the ground intersection's.</summary>
+    /// <summary>The game material of the footing: the one the ground intersection entered (<c>ptEnterMaterial</c>), if any.</summary>
     private Igi2GameMaterial? GroundMaterial() =>
-        (GroundIntersection.EnterMaterial ?? GroundIntersection.LeaveMaterial) is int row ? Surroundings.Material(row) : null;
+        GroundIntersection.EnterMaterial is int row ? Surroundings.Material(row) : null;
 }
