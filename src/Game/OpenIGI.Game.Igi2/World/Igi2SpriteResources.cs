@@ -15,6 +15,7 @@ public sealed class Igi2SpriteResources : IDisposable
     private readonly Dictionary<string, IresEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IresEntry> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Loads the archives used by status screens and game sprites.</summary>
     /// <param name="device">The upload device.</param>
@@ -25,7 +26,7 @@ public sealed class Igi2SpriteResources : IDisposable
         _device = device;
         _logger = logger;
         // statusscreen.c StatusScreen_CreateHandler; scamera.c SCamera_Open; fontmanager.c FontManager_Open.
-        string[] archives = ["LOCAL:screens/game/status/status.res", "LOCAL:common/sprites/sprites.res", "LOCAL:common/fonts/fonts_med.res", "LOCAL:weapons/weapons.res"];
+        string[] archives = ["LOCAL:screens/game/status/status.res", "LOCAL:common/sprites/sprites.res", "LOCAL:common/fonts/fonts_med.res", "LOCAL:weapons/weapons.res", "LOCAL:computer/computer.res", "LOCAL:common/textures/textures.res"];
         foreach (string path in archives)
         {
             if (!files.Exists(path)) { continue; }
@@ -62,6 +63,30 @@ public sealed class Igi2SpriteResources : IDisposable
         return sprite;
     }
 
+    /// <summary>Gets a Targa texture by its full resource name, uploading it only on its first use.</summary>
+    /// <param name="name">The name, such as <c>LOCAL:common/textures/linefilter1.tga</c>.</param>
+    /// <returns>The texture, or <see cref="TextureHandle.None"/> when the archives do not hold it.</returns>
+    public TextureHandle GetTexture(string name)
+    {
+        if (_textures.TryGetValue(name, out TextureHandle cached)) { return cached; }
+        TextureHandle texture = TextureHandle.None;
+        if (_paths.TryGetValue(name, out IresEntry? entry) && Formats.Textures.TgaImage.IsTga(entry.Data.Span))
+        {
+            try
+            {
+                Formats.Textures.TextureImage image = Formats.Textures.TgaImage.Read(entry.Data.Span);
+                texture = _device.CreateTexture(
+                    new TextureDescription(image.Width, image.Height, 1, TextureFilter.Linear, TextureAddressMode.Clamp), image.Pixels);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EngineFatalException)
+            {
+                _logger.Warning("igi2.hud", $"Could not load {name}: {ex.Message}");
+            }
+        }
+        _textures[name] = texture;
+        return texture;
+    }
+
     // An alias names one of the game's folders: WEAPONS:x is LOCAL:weapons/x.
     private static string Qualified(string name, int colon)
     {
@@ -76,6 +101,11 @@ public sealed class Igi2SpriteResources : IDisposable
     {
         foreach (SpriteResource? sprite in _sprites.Values) { sprite?.Dispose(); }
         _sprites.Clear();
+        foreach (TextureHandle texture in _textures.Values)
+        {
+            if (texture != TextureHandle.None) { _device.DestroyTexture(texture); }
+        }
+        _textures.Clear();
         _entries.Clear();
         _paths.Clear();
     }

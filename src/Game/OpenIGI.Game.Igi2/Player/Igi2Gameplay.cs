@@ -256,6 +256,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        player.MapHumans = humans;
+        player.MissionId = request.World.Mission.Descriptor.Id;
+        Engine.Tasks.GameTask? taskRoot = request.World.LevelRoot;
+        player.TaskById = id => taskRoot?.Tree.FromId(id);
         player.Level = LevelRun(request, player);
         player.Saves = MissionSaves(request, player);
         return player;
@@ -1495,6 +1499,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// </remarks>
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
+        : IsMapShown && ComputerDisplay?.Map is { } map ? map.Position
         : Human.CameraMode is 3 or 5 ? _movementCamera.Position
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position;
 
@@ -1517,6 +1522,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                     new Vector3f(c[2], c[5], c[8]));
             }
 
+            if (IsMapShown)
+            {
+                return OpenIGI.Game.Igi2.Computer.Igi2ComputerMap.Orientation;
+            }
+
             Matrix3f m = Human.CameraMode is 3 or 5 ? _movementCamera.Orientation
                 : Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
@@ -1528,7 +1538,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
-    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
+    public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView
+        : IsMapShown && ComputerDisplay?.Map is { } map ? map.FieldOfView
+        : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -1539,7 +1551,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     {
         get
         {
-            if (Level?.CutsceneView is not null || Human.CameraMode != 1 || Human.IsThirdPerson)
+            if (Level?.CutsceneView is not null || Human.CameraMode != 1 || Human.IsThirdPerson || IsComputerShown)
             {
                 return null;
             }
@@ -1787,6 +1799,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.InvertMouse = input.InvertMouse;
         Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;
         _lookInput = input;
+        _rawKeys = input.Raw;
         _reader.Read(new Igi2PlayerInputState(
             Analog(input.MouseX, Human.UnfilteredMouse), Analog(input.MouseY, Human.UnfilteredMouse), held, pressed), _frame);
         if (Level is { } level)
@@ -1844,8 +1857,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.Update(_frame);
         Human.RunDelayed();
 
-        // The computer's menu, a task of the game screen, runs after the player.
+        // The computer's menu, a task of the game screen, runs after the player, and its screens with it.
         Computer?.Run();
+        RunComputerDisplay();
     }
 
     /// <summary>Nine floats row by row as a matrix.</summary>

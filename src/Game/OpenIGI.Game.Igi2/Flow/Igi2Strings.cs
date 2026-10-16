@@ -29,6 +29,7 @@ public sealed class Igi2Strings(ResourceRegistry resources, string language = Ig
     [
         "LOCAL:language/english/messages.res",
         "LOCAL:language/english/objectives.res",
+        "LOCAL:language/english/computer.res",
     ];
 
     private readonly ResourceRegistry _resources = resources ?? throw new ArgumentNullException(nameof(resources));

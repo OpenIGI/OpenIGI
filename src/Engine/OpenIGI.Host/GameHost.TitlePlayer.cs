@@ -40,6 +40,8 @@ internal sealed partial class GameHost
     private float _titleMouseY;
     private PlayerAction _titlePressed;
     private ulong _titleExtraPressed;
+    private float _titleWheel;
+    private TitleRawKeys _titleScriptRaw;
     private PlayerAction _titleScriptHeld;
     private double _titleTickMilliseconds;
     private double _titleTickMaximumMilliseconds;
@@ -122,6 +124,7 @@ internal sealed partial class GameHost
     {
         _titleMouseX += _window.Input.Mouse.DeltaX;
         _titleMouseY += _window.Input.Mouse.DeltaY;
+        _titleWheel += _window.Input.Mouse.WheelDelta;
         if (_titlePlayer is ITitlePlayerLook look)
         {
             if (RenderCVars.SmoothPresentation.Value && !_options.Lockstep)
@@ -184,7 +187,8 @@ internal sealed partial class GameHost
             TitleBreakKey(),
             UnfilteredMouse: RenderCVars.SmoothPresentation.Value && !_options.Lockstep,
             TitleHeld: _gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
-            TitlePressed: _titleExtraPressed));
+            TitlePressed: _titleExtraPressed,
+            Raw: SampleRawKeys()));
         _titlePresentation.CaptureTick(player);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;
@@ -192,9 +196,30 @@ internal sealed partial class GameHost
         _titleMeasuredTicks++;
         _titleMouseX = 0f;
         _titleMouseY = 0f;
+        _titleWheel = 0f;
         _titlePressed = default;
         _titleExtraPressed = 0;
         return true;
+    }
+
+    /// <summary>The fixed keys and buttons a title's own screens read, held now, and the wheel turned since the last tick.</summary>
+    private TitleRawKeys SampleRawKeys()
+    {
+        OpenIGI.Input.KeyboardState keys = _window.Input.Keyboard;
+        OpenIGI.Input.MouseState mouse = _window.Input.Mouse;
+        TitleRawKeys raw = _titleScriptRaw;
+        if (mouse.IsDown(OpenIGI.Input.MouseButton.Left)) { raw |= TitleRawKeys.MouseLeft; }
+        if (mouse.IsDown(OpenIGI.Input.MouseButton.Right)) { raw |= TitleRawKeys.MouseRight; }
+        if (_titleWheel > 0f) { raw |= TitleRawKeys.WheelUp; }
+        if (_titleWheel < 0f) { raw |= TitleRawKeys.WheelDown; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.Up)) { raw |= TitleRawKeys.Up; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.Down)) { raw |= TitleRawKeys.Down; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.Left)) { raw |= TitleRawKeys.Left; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.Right)) { raw |= TitleRawKeys.Right; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.Return)) { raw |= TitleRawKeys.Enter; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.Home)) { raw |= TitleRawKeys.Home; }
+        if (keys.IsDown(OpenIGI.Input.KeyCode.LeftControl) || keys.IsDown(OpenIGI.Input.KeyCode.RightControl)) { raw |= TitleRawKeys.Control; }
+        return raw;
     }
 
     private void RestoreTitleInputBindings()
@@ -225,7 +250,7 @@ internal sealed partial class GameHost
     /// </remarks>
     private bool TitleBreakKey() =>
         !_options.PlayCutscenes
-        || _window.Input.Keyboard.IsDown(Input.KeyCode.Escape)
+        || _window.Input.Keyboard.IsDown(OpenIGI.Input.KeyCode.Escape)
         || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal);
 
     /// <summary>Registers the console's hold on the title player's controls, for a capture to drive it without keys.</summary>
@@ -271,10 +296,11 @@ internal sealed partial class GameHost
 
         console.Commands.Add(
             "title_hold",
-            "Holds the title player's controls as if their keys were down: action names (Fire, Reload, MoveUp, ...) or none. Not in the original.",
+            "Holds the title player's controls as if their keys were down: action names (Fire, Reload, MoveUp, ...), the fixed keys a title's screens read (Up, Enter, MouseLeft, WheelUp, ...) or none. Not in the original.",
             context =>
             {
                 PlayerAction held = default;
+                TitleRawKeys raw = TitleRawKeys.None;
                 for (int i = 0; i < context.Count; i++)
                 {
                     if (string.Equals(context[i], "none", StringComparison.OrdinalIgnoreCase))
@@ -282,17 +308,24 @@ internal sealed partial class GameHost
                         continue;
                     }
 
-                    if (!Enum.TryParse(context[i], ignoreCase: true, out PlayerAction action))
+                    if (Enum.TryParse(context[i], ignoreCase: true, out PlayerAction action))
                     {
-                        context.Warn($"'{context[i]}' is not a player action.");
+                        held |= action;
+                    }
+                    else if (Enum.TryParse(context[i], ignoreCase: true, out TitleRawKeys key))
+                    {
+                        raw |= key;
+                    }
+                    else
+                    {
+                        context.Warn($"'{context[i]}' is neither a player action nor a fixed key.");
                         return;
                     }
-
-                    held |= action;
                 }
 
                 _titleScriptHeld = held;
-                context.Print($"Title player holds {held}.");
+                _titleScriptRaw = raw;
+                context.Print($"Title player holds {held}, keys {raw}.");
             },
             "<action ...|none>");
     }

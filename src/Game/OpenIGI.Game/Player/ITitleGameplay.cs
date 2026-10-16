@@ -59,6 +59,7 @@ public readonly record struct TitlePlayerRequest(
 /// <param name="UnfilteredMouse">Whether Smooth Motion uses linear mouse counts instead of the title's tick filters.</param>
 /// <param name="TitleHeld">Additional held actions in the title's vocabulary.</param>
 /// <param name="TitlePressed">Additional actions pressed since the last tick.</param>
+/// <param name="Raw">The fixed keys and buttons held, and the wheel's turns since the last tick, which a title's own screens read past the bindings.</param>
 public readonly record struct TitlePlayerInput(
     float MouseX,
     float MouseY,
@@ -69,7 +70,52 @@ public readonly record struct TitlePlayerInput(
     bool BreakCutscene = false,
     bool UnfilteredMouse = false,
     ulong TitleHeld = 0,
-    ulong TitlePressed = 0);
+    ulong TitlePressed = 0,
+    TitleRawKeys Raw = TitleRawKeys.None);
+
+/// <summary>
+/// Keys and buttons a title's own screens read directly, as the originals read the keyboard and the mouse past their bindings: held at
+/// the tick, the wheel's flags set when it turned since the last.
+/// </summary>
+[Flags]
+public enum TitleRawKeys
+{
+    /// <summary>None.</summary>
+    None = 0,
+
+    /// <summary>The left mouse button.</summary>
+    MouseLeft = 0x1,
+
+    /// <summary>The right mouse button.</summary>
+    MouseRight = 0x2,
+
+    /// <summary>The wheel turned away from the user.</summary>
+    WheelUp = 0x4,
+
+    /// <summary>The wheel turned toward the user.</summary>
+    WheelDown = 0x8,
+
+    /// <summary>The up arrow.</summary>
+    Up = 0x10,
+
+    /// <summary>The down arrow.</summary>
+    Down = 0x20,
+
+    /// <summary>The left arrow.</summary>
+    Left = 0x40,
+
+    /// <summary>The right arrow.</summary>
+    Right = 0x80,
+
+    /// <summary>Enter.</summary>
+    Enter = 0x100,
+
+    /// <summary>Home.</summary>
+    Home = 0x200,
+
+    /// <summary>Either Ctrl.</summary>
+    Control = 0x400,
+}
 
 /// <summary>A title's own player, as the host steps it and looks through it.</summary>
 public interface ITitlePlayer
