@@ -46,9 +46,9 @@ public sealed partial class Igi2HumanPlayer : IIgi2GunOperator
         Pose = Igi2HumanPose.Standing;
         Vector3d at = gun.ActivatePosition(out IReadOnlyList<float> f);
         PopPosition(new Vector3d(
-            (((Fpu)f[2] * -GunStance.Down) - ((Fpu)f[1] * GunStance.Back) + ((Fpu)f[0] * 0.0)).Value + at.X,
-            (((Fpu)f[5] * -GunStance.Down) - ((Fpu)f[4] * GunStance.Back) + ((Fpu)f[3] * 0.0)).Value + at.Y,
-            (((Fpu)f[8] * -GunStance.Down) - ((Fpu)f[7] * GunStance.Back) + ((Fpu)f[6] * 0.0)).Value + at.Z));
+            ((((Fpu)at.X + ((Fpu)f[2] * -GunStance.Down)) - ((Fpu)f[1] * GunStance.Back)) + ((Fpu)f[0] * 0.0)).Value,
+            ((((Fpu)at.Y + ((Fpu)f[5] * -GunStance.Down)) - ((Fpu)f[4] * GunStance.Back)) + ((Fpu)f[3] * 0.0)).Value,
+            (((((Fpu)f[8] * -GunStance.Down) - ((Fpu)f[7] * GunStance.Back)) + ((Fpu)f[6] * 0.0)) + at.Z).Value));
         GroundMovementSpeed = default;
         PopOrientation(Igi2Pose.Angles(f).Gamma);
         CurrentUpperBody = 0;

@@ -300,7 +300,7 @@ public static partial class Igi2AiContent
         {
             double seen = ai.World.LevelTick() - item.BecameVisibleTick;
             seen = seen >= 240.0 ? 240.0 : seen;
-            chance = ((Fpu)(double)(int)seen * 0.004166666883975267 + 1.0).Value * accuracy;
+            chance = (((Fpu)(double)(int)seen * 0.004166666883975267 + 1.0) * accuracy).Value;
         }
 
         firing.HitProbability = (float)(chance >= 0.0 ? (chance > 1.0 ? 1.0 : chance) : 0.0);

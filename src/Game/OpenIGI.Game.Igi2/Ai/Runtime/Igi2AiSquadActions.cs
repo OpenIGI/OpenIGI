@@ -465,7 +465,7 @@ public sealed class Igi2AiSquadSearchArea : Igi2AiSquadAction
                 Vector3f offset = Pattern[_patternIndex[i]];
                 float scale = Scales[_scale];
                 Vector3d at = new(
-                    ((Fpu)offset.X * scale).Value + _center.X, ((Fpu)offset.Y * scale).Value + _center.Y, ((Fpu)offset.Z * scale).F + _center.Z);
+                    (((Fpu)offset.X * scale) + _center.X).Value, (((Fpu)offset.Y * scale) + _center.Y).Value, ((Fpu)offset.Z * scale).F + _center.Z);
                 if (leader.Graph is { } graph && graph.Nearest(at, false) is { } node)
                 {
                     _destination[i] = node.Id;
@@ -899,7 +899,7 @@ public sealed class Igi2AiSpreadOut
         Fpu share = 1.0 / count;
         dy = (share * dy).F;
         dz = (share * dz).F;
-        return new Vector3d(((Fpu)dx * share).Value + center.X, (double)dy + center.Y, (double)dz + center.Z);
+        return new Vector3d((((Fpu)dx * share) + center.X).Value, ((Fpu)dy + center.Y).Value, ((Fpu)dz + center.Z).Value);
     }
 
     /// <summary>
@@ -952,7 +952,7 @@ public sealed class Igi2AiSpreadOut
             {
                 double side = (i & 1) == 0 ? -4096.0 : 4096.0;
                 _places[i] = new Vector3d(
-                    (((Fpu)across * distance) * side).Value + Center.X, ((along * distance) * side).Value + Center.Y, Center.Z);
+                    ((((Fpu)across * distance) * side) + Center.X).Value, (((along * distance) * side) + Center.Y).Value, Center.Z);
             }
         }
 

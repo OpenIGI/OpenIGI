@@ -56,7 +56,7 @@ public sealed partial class Igi2HumanSoldier
         }
 
         Vector3d at = Position;
-        return new Vector3d(x.Value + at.X, y.Value + at.Y, z.F + at.Z);
+        return new Vector3d((x + at.X).Value, (y + at.Y).Value, ((Fpu)z.F + at.Z).Value);
     }
 
     /// <summary>Where the animated head bone is from the body's origin, in world axes.</summary>

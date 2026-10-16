@@ -135,8 +135,8 @@ public sealed class Igi2DeathZone
         Vector3f r = human.RootTranslation;
         Vector3d p = human.Position;
         return new Vector3d(
-            ((((Fpu)o.M12 * r.Y) + ((Fpu)o.M11 * r.X)) + ((Fpu)o.M13 * r.Z)).Value + p.X,
-            ((((Fpu)o.M22 * r.Y) + ((Fpu)o.M21 * r.X)) + ((Fpu)o.M23 * r.Z)).Value + p.Y,
-            ((((Fpu)o.M32 * r.Y) + ((Fpu)o.M31 * r.X)) + ((Fpu)o.M33 * r.Z)).Value + p.Z);
+            (((((Fpu)o.M12 * r.Y) + ((Fpu)o.M11 * r.X)) + ((Fpu)o.M13 * r.Z)) + p.X).Value,
+            (((((Fpu)o.M22 * r.Y) + ((Fpu)o.M21 * r.X)) + ((Fpu)o.M23 * r.Z)) + p.Y).Value,
+            (((((Fpu)o.M32 * r.Y) + ((Fpu)o.M31 * r.X)) + ((Fpu)o.M33 * r.Z)) + p.Z).Value);
     }
 }

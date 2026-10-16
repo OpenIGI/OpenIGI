@@ -41,8 +41,8 @@ public sealed partial class Igi2HumanSoldier : IIgi2GunOperator
         Vector3d at = gun.ActivatePosition(out IReadOnlyList<float> f);
         const double Back = -204.8, Down = -6348.8;
         PopPosition(new Vector3d(
-            ((((Fpu)f[2] * Down) + ((Fpu)f[1] * Back)) + ((Fpu)f[0] * 0.0)).Value + at.X,
-            ((((Fpu)f[5] * Down) + ((Fpu)f[4] * Back)) + ((Fpu)f[3] * 0.0)).Value + at.Y,
+            ((Fpu)at.X + ((((Fpu)f[2] * Down) + ((Fpu)f[1] * Back)) + ((Fpu)f[0] * 0.0))).Value,
+            ((Fpu)at.Y + ((((Fpu)f[5] * Down) + ((Fpu)f[4] * Back)) + ((Fpu)f[3] * 0.0))).Value,
             ((((Fpu)at.Z + ((Fpu)f[8] * Down)) + ((Fpu)f[7] * Back)) + ((Fpu)f[6] * 0.0)).Value));
         PopOrientation(Igi2Pose.Angles(f).Gamma);
         UpperBodyFlags |= 1;

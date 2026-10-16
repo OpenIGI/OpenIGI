@@ -488,9 +488,9 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
             float[] o = [seat.M11, seat.M12, seat.M13, seat.M21, seat.M22, seat.M23, seat.M31, seat.M32, seat.M33];
             Vector3d eye = player.View.OverridePosition;
             Vector3d from = new(
-                ((((Fpu)o[0] + o[2]) * 0.0) + ((Fpu)o[1] * 8192.0)).Value + eye.X,
-                ((((Fpu)o[3] + o[5]) * 0.0) + ((Fpu)o[4] * 8192.0)).Value + eye.Y,
-                ((((Fpu)o[6] + o[8]) * 0.0) + ((Fpu)o[7] * 8192.0)).Value + eye.Z);
+                (((((Fpu)o[0] + o[2]) * 0.0) + ((Fpu)o[1] * 8192.0)) + eye.X).Value,
+                (((((Fpu)o[3] + o[5]) * 0.0) + ((Fpu)o[4] * 8192.0)) + eye.Y).Value,
+                (((((Fpu)o[6] + o[8]) * 0.0) + ((Fpu)o[7] * 8192.0)) + eye.Z).Value);
             float far = (float)player.Random.NextDouble();
             float round = ((Fpu)(float)player.Random.NextDouble() * 6.2831854820251465).F;
             float spread = ((Fpu)_precision * DegreesToRadians * far).F;
@@ -508,9 +508,9 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
 
         float[] g = _gunFrame;
         Vector3d ahead = new(
-            ((((Fpu)g[2] + g[0]) * 0.0) + ((Fpu)g[1] * 4096.0)).Value + _mount.X,
-            ((((Fpu)g[5] + g[3]) * 0.0) + ((Fpu)g[4] * 4096.0)).Value + _mount.Y,
-            ((((Fpu)g[8] + g[6]) * 0.0) + ((Fpu)g[7] * 4096.0)).Value + _mount.Z);
+            (((((Fpu)g[2] + g[0]) * 0.0) + ((Fpu)g[1] * 4096.0)) + _mount.X).Value,
+            (((((Fpu)g[5] + g[3]) * 0.0) + ((Fpu)g[4] * 4096.0)) + _mount.Y).Value,
+            (((((Fpu)g[8] + g[6]) * 0.0) + ((Fpu)g[7] * 4096.0)) + _mount.Z).Value);
         return Operator?.AimFrame is { } aim ? new Igi2FireFrame(ahead, [.. aim]) : new Igi2FireFrame(ahead, [.. g]);
     }
 
@@ -679,9 +679,9 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     {
         float[] m = _gunFrame;
         return new Vector3d(
-            (((Fpu)m[2] * 819.2000122070312) - ((Fpu)m[1] * 2048.0) + ((Fpu)m[0] * 0.0)).Value + _mount.X,
-            (((Fpu)m[5] * 819.2000122070312) - ((Fpu)m[4] * 2048.0) + ((Fpu)m[3] * 0.0)).Value + _mount.Y,
-            (((Fpu)m[8] * 819.2000122070312) - ((Fpu)m[7] * 2048.0) + ((Fpu)m[6] * 0.0)).Value + _mount.Z);
+            ((((Fpu)m[2] * 819.2000122070312) - ((Fpu)m[1] * 2048.0) + ((Fpu)m[0] * 0.0)) + _mount.X).Value,
+            ((((Fpu)m[5] * 819.2000122070312) - ((Fpu)m[4] * 2048.0) + ((Fpu)m[3] * 0.0)) + _mount.Y).Value,
+            ((((Fpu)m[8] * 819.2000122070312) - ((Fpu)m[7] * 2048.0) + ((Fpu)m[6] * 0.0)) + _mount.Z).Value);
     }
 
     // Three products summed in the order the original sums them.
