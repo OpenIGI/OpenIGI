@@ -63,18 +63,21 @@ public sealed class Igi2SpriteResources : IDisposable
         return sprite;
     }
 
-    /// <summary>Gets a Targa texture by its full resource name, uploading it only on its first use.</summary>
-    /// <param name="name">The name, such as <c>LOCAL:common/textures/linefilter1.tga</c>.</param>
+    /// <summary>Gets a Targa or JPEG picture by its full resource name, uploading it only on its first use.</summary>
+    /// <param name="name">The name, such as <c>LOCAL:common/textures/linefilter1.tga</c> or <c>computer/blueprint.jpg</c>.</param>
     /// <returns>The texture, or <see cref="TextureHandle.None"/> when the archives do not hold it.</returns>
     public TextureHandle GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out TextureHandle cached)) { return cached; }
         TextureHandle texture = TextureHandle.None;
-        if (_paths.TryGetValue(name, out IresEntry? entry) && Formats.Textures.TgaImage.IsTga(entry.Data.Span))
+        if (_paths.TryGetValue(name, out IresEntry? entry)
+            && (Formats.Textures.TgaImage.IsTga(entry.Data.Span) || Formats.Textures.JpegImage.IsJpeg(entry.Data.Span)))
         {
             try
             {
-                Formats.Textures.TextureImage image = Formats.Textures.TgaImage.Read(entry.Data.Span);
+                Formats.Textures.TextureImage image = Formats.Textures.JpegImage.IsJpeg(entry.Data.Span)
+                    ? Formats.Textures.JpegImage.Read(entry.Data.Span)
+                    : Formats.Textures.TgaImage.Read(entry.Data.Span);
                 texture = _device.CreateTexture(
                     new TextureDescription(image.Width, image.Height, 1, TextureFilter.Linear, TextureAddressMode.Clamp), image.Pixels);
             }

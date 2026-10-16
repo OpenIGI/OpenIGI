@@ -335,7 +335,10 @@ public sealed partial class Igi2ComputerDisplay
         Items = new Igi2ComputerMenuItems();
         switch (screen)
         {
-            case Igi2ComputerMenu.Map when _computer.Plans.Count == 0:
+            case Igi2ComputerMenu.Map when _computer.Plans.Count != 0:
+                CreatePlans();
+                break;
+            case Igi2ComputerMenu.Map:
                 Map ??= new Igi2ComputerMap();
                 Map.Enter(this);
                 CreateScreenMenuItems(screen);
@@ -519,6 +522,73 @@ public sealed partial class Igi2ComputerDisplay
             Map ??= new Igi2ComputerMap();
             Map.PositionTaskId = objective.LinkToPosition;
             _computer.RequestMenu(Igi2ComputerMenu.Map);
+        }
+    }
+
+    /// <summary>Gets the building plan shown, <c>ComputerPlanMenu</c>'s index.</summary>
+    public int PlanIndex { get; private set; }
+
+    /// <summary>Gets the picture of the plan shown, or <see langword="null"/> while the map is shown instead.</summary>
+    public string? PlanPicture => IsOpen && Screen == Igi2ComputerMenu.Map && PlanIndex < _computer.Plans.Count ? _computer.Plans[PlanIndex].PictureFile : null;
+
+    // ComputerPlanMenu_CreateHandler: in the map's place, the first plan with the menu and two arrows that turn through them.
+    private void CreatePlans()
+    {
+        PlanIndex = 0;
+        CreateScreenMenuItems(Igi2ComputerMenu.Map);
+        float x = ((Fpu)Width * 0.14687499403953552).F, y = ((Fpu)Height * 0.14166666567325592).F;
+        Items.Add(new Igi2ComputerMenuItem(LogUpId, PlanButtonActivated)
+        {
+            X = x,
+            Y = y,
+            Sprites = ["arrowup_1.spr", "arrowup_2.spr", "arrowup_3.spr"],
+            Width = 34f,
+            Height = 34f,
+        });
+        Items.Add(new Igi2ComputerMenuItem(LogDownId, PlanButtonActivated)
+        {
+            X = x,
+            Y = y + 36f,
+            Sprites = ["arrowdown_1.spr", "arrowdown_2.spr", "arrowdown_3.spr"],
+            Width = 34f,
+            Height = 34f,
+        });
+    }
+
+    // The plans' arrows (the log's callback over the plans): pressed, not held from before, the previous or the next plan.
+    private void PlanButtonActivated(Igi2ComputerMenuItem item, Igi2ComputerActivation activation)
+    {
+        if (item.IsActivated && !item.IsActive)
+        {
+            PlaySound?.Invoke("mapcomp_05");
+        }
+
+        if (item.Id != activation.MenuItem)
+        {
+            return;
+        }
+
+        bool pressed = (Buttons & Igi2ComputerButtons.Select) != 0;
+        item.WasPressed = item.IsPressed;
+        item.IsPressed = pressed;
+        if (!pressed)
+        {
+            return;
+        }
+
+        PlaySound?.Invoke("mapcomp_01");
+        if (item.WasPressed)
+        {
+            return;
+        }
+
+        if (item.Id == LogUpId && PlanIndex > 0)
+        {
+            PlanIndex--;
+        }
+        else if (item.Id == LogDownId && PlanIndex < _computer.Plans.Count - 1)
+        {
+            PlanIndex++;
         }
     }
 

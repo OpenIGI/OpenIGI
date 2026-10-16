@@ -25,6 +25,12 @@ public interface IIgi2ComputerMapWorld
 
     /// <summary>The level's humans: where they stand, and as something the map may follow when it may follow them.</summary>
     IEnumerable<(Vector3d Position, IIgi2CameraTarget? Followable)> Humans { get; }
+
+    /// <summary>Sets off the first remote mine near a point, the single-player game's click on the map.</summary>
+    /// <param name="at">The point.</param>
+    /// <param name="reachSquared">How near, squared.</param>
+    /// <returns>Whether one was set off.</returns>
+    bool DetonateRemoteMine(Vector3d at, double reachSquared);
 }
 
 /// <summary>
@@ -110,6 +116,7 @@ public sealed class Igi2ComputerMap
     private bool _isEntering;
     private int _zoomInClick;
     private int _zoomOutClick;
+    private bool _isMouseLeft;
     private float _traceX;
     private float _traceY;
 
@@ -165,6 +172,7 @@ public sealed class Igi2ComputerMap
             }
         }
 
+        _isMouseLeft = input.MouseLeft;
         Trace(display, input, world, random);
         if (world?.GroundBelow(Position, GroundReach) is { } ground)
         {
@@ -453,13 +461,15 @@ public sealed class Igi2ComputerMap
             }
         }
 
+        // The single-player game: a click by a remote mine sets it off.
+        bool picked = _isMouseLeft && world.DetonateRemoteMine(hit, reach);
         if (!isHit)
         {
             Following = null;
             return;
         }
 
-        if (centre && InsideLimit(display.Computer.Limit, hit))
+        if (!picked && centre && InsideLimit(display.Computer.Limit, hit))
         {
             TargetPosition = hit;
         }

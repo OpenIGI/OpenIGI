@@ -23,6 +23,9 @@ public sealed partial class Igi2TitlePlayer
     /// <summary>Gets a value indicating whether the computer's screens cover the view.</summary>
     public bool IsComputerShown => ComputerDisplay is { IsOpen: true };
 
+    /// <summary>Gets a value indicating whether the weather is hidden: the open computer turns the rain off (<c>Computer_isRain</c>).</summary>
+    public bool IsWeatherHidden => IsComputerShown;
+
     /// <summary>Gets a value indicating whether the player looks through the map's camera.</summary>
     public bool IsMapShown => ComputerDisplay is { IsMapShown: true, Map: not null };
 
@@ -142,6 +145,15 @@ public sealed partial class Igi2TitlePlayer
             if (ids.Count == 0 && sprite is not null)
             {
                 _mapMarks.Add(new Igi2ComputerMapMark(Igi2ComputerMarkKind.Sprite, SnapToObject(hilight.Position), sprite));
+            }
+        }
+
+        // The notified list's (Mine_DrawComputerObjectHandler): each remote mine still to explode.
+        foreach (Weapons.Igi2Mine mine in Mines?.Laid ?? [])
+        {
+            if (mine.IsRemote && !mine.IsExploded)
+            {
+                _mapMarks.Add(new Igi2ComputerMapMark(Igi2ComputerMarkKind.Sprite, SnapToObject(mine.Position), "h_mine"));
             }
         }
 
@@ -329,6 +341,21 @@ public sealed partial class Igi2TitlePlayer
                     yield return (human.Position, human.Team == 1 ? new Target(() => human.Position) : null);
                 }
             }
+        }
+
+        public bool DetonateRemoteMine(Vector3d at, double reachSquared)
+        {
+            foreach (Weapons.Igi2Mine mine in player.Mines?.Laid ?? [])
+            {
+                double dx = mine.Position.X - at.X, dy = mine.Position.Y - at.Y, dz = mine.Position.Z - at.Z;
+                if (mine.IsRemote && reachSquared > (dz * dz) + (dy * dy) + (dx * dx))
+                {
+                    mine.DetonateFromMap();
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public Vector3d? GroundBelow(Vector3d from, double distance)

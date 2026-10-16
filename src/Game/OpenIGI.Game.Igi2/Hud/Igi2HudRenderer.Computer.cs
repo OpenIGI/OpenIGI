@@ -79,10 +79,16 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
 
         float w = display.Width, h = display.Height;
 
-        // Only the map shows the world (the game screen's world flag); the other screens black it out.
+        // Only the map shows the world (the game screen's world flag); the other screens black it out. A plan fills the screen
+        // (ComputerPlan_DrawHandler).
         if (!display.IsMapShown)
         {
             batch.FillRect(new RectF(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgba(0, 0, 0, 255));
+        }
+
+        if (display.PlanPicture is { Length: > 0 } plan && _assets?.GetTexture(plan) is { } picture && picture != TextureHandle.None)
+        {
+            batch.Draw(picture, new RectF(0f, 0f, screenWidth, screenHeight), RectF.Unit, Bgra32.FromRgba(255, 255, 255, 255));
         }
 
         DrawComputerFilter(batch, display, screenWidth, screenHeight);

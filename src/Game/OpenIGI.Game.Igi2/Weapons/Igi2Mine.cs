@@ -281,6 +281,19 @@ public sealed class Igi2Mine : IIgi2DynamicTask, IIgi2ExplosiveParameters, IIgi2
         }
     }
 
+    /// <summary>The computer's map sets a remote mine off, <c>ComputerMap_Trace</c>: it explodes nine ticks on.</summary>
+    public void DetonateFromMap()
+    {
+        IsTriggered = true;
+        _explodeTimer = MapDetonationTicks;
+    }
+
+    /// <summary>The ticks a mine set off from the map waits.</summary>
+    public const int MapDetonationTicks = 9;
+
+    /// <summary>Gets a value indicating whether it has exploded.</summary>
+    public bool IsExploded => _explosive.IsExploded;
+
     /// <inheritdoc/>
     public void WeaponHit(in Igi2WeaponHit hit) => _explosive.WeaponHit(hit, this);
 

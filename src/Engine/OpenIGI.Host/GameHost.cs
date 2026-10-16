@@ -5149,7 +5149,9 @@ internal sealed partial class GameHost : IDisposable
                 // fewer. Where the order does decide the picture, the render group is honoured: the sky
                 // is drawn first, the water last, and the world's own objects come out grouped, which is
                 // what BuildDrawOrder is for.
-                bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
+                // A title's own screen over the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a
+                // building's shell does.
+                bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || _titlePlayer?.IsWeatherHidden == true;
                 _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
                 EndStageIfSlow("the sky and the world's objects");
 

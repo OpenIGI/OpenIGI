@@ -138,6 +138,9 @@ public interface ITitlePlayer
     /// <summary>Gets a value indicating whether the title's level lets the in-game menu open.</summary>
     bool IsMenuEnabled => true;
 
+    /// <summary>Gets a value indicating whether the title hides the weather, as a screen of its own over the view does.</summary>
+    bool IsWeatherHidden => false;
+
     /// <summary>Gets where the title's own objects move what they placed, or <see langword="null"/> when nothing it placed moves.</summary>
     IPlacementMotion? Motions => null;
 
