@@ -9,7 +9,7 @@ namespace OpenIGI.Game.Igi2.Soldiers;
 
 /// <summary>
 /// The death clip a soldier's death plays next, <c>HumanSoldier_iDeathAnimCycle</c> (<c>igi2 0x7D46188</c>): one counter every soldier
-/// shares, going round eleven clips.
+/// shares, going round eleven clips. It lives as long as the game, so the session keeps one for every level.
 /// </summary>
 public sealed class Igi2DeathAnimCycle
 {

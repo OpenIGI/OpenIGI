@@ -342,6 +342,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         services.TryGet(out Igi2GameMaterials? materials);
         services.TryGet(out Igi2AnimTriggers? triggers);
         services.TryGet(out Igi2DeadBodySoundCycle? deadBodySounds);
+        services.TryGet(out Soldiers.Igi2DeathAnimCycle? deathCycle);
         Soldiers.Igi2Soldiers soldiers = Soldiers.Igi2Soldiers.Spawn(
             root,
             (task, rig) =>
@@ -383,6 +384,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (deadBodySounds is not null)
             {
                 body.DeadBodySounds = deadBodySounds;
+            }
+
+            if (deathCycle is not null)
+            {
+                body.DeathCycle = deathCycle;
             }
 
             if (body.Animation is Igi2HumanAnimation animation)

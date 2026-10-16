@@ -408,6 +408,9 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
 
         // iDeadBodySoundIndex (igi2 0x7D460CC) likewise.
         context.Services.GetOrProvide(static () => new Humans.Igi2DeadBodySoundCycle());
+
+        // HumanSoldier_iDeathAnimCycle (igi2 0x7D46188) likewise: the death clips go round across levels and loads.
+        context.Services.GetOrProvide(static () => new Soldiers.Igi2DeathAnimCycle());
     }
 
     /// <inheritdoc/>
