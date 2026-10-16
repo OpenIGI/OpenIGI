@@ -352,8 +352,10 @@ public sealed partial class Igi2HumanPlayer
 
         IReadOnlyList<float> m = action.CurrentOrientation;
         Vector3d vertex = action.MagicVertex;
-        Fpu x = ((((Fpu)m[2] + m[0]) * 0.0) + ((Fpu)m[1] * reach)) + vertex.X;
-        Fpu y = ((((Fpu)m[5] + m[3]) * 0.0) + ((Fpu)m[4] * reach)) + vertex.Y;
+        // X and Y add the zero term to the vertex first, rounding it to the client's precision (humanplayer.c
+        // HumanPlayer_InitStateActivateTerminal / InitStateActivateGenericTBA); Z adds the vertex last.
+        Fpu x = ((Fpu)vertex.X + (((Fpu)m[2] + m[0]) * 0.0)) + ((Fpu)m[1] * reach);
+        Fpu y = ((Fpu)vertex.Y + (((Fpu)m[5] + m[3]) * 0.0)) + ((Fpu)m[4] * reach);
         Fpu z = (((Fpu)m[8] + m[6]) * 0.0) + ((Fpu)m[7] * reach);
         PopPosition(new Vector3d(x.Value, y.Value, (vertex.Z + z).Value));
         GroundMovementSpeed = default;
