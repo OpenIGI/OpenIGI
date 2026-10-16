@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Runtime;
@@ -18,10 +19,23 @@ public sealed partial class Igi2AiGraphNode
 
     private readonly List<Igi2AiGraphLink> _links = [];
 
-    internal Igi2AiGraphNode(int id, Vector3d position, float gamma, float radius, int material, float light, int terrain, string criteriaText, int criteria)
+    private readonly IIgi2AttachParent? _parent;
+
+    internal Igi2AiGraphNode(
+        int id,
+        Vector3d position,
+        float gamma,
+        float radius,
+        int material,
+        float light,
+        int terrain,
+        string criteriaText,
+        int criteria,
+        IIgi2AttachParent? parent = null)
     {
         Id = id;
-        Position = position;
+        LocalPosition = position;
+        _parent = parent;
         Gamma = gamma;
         Radius = radius;
         Diameter = ((Fpu)radius + radius).F;
@@ -35,8 +49,32 @@ public sealed partial class Igi2AiGraphNode
     /// <summary>Gets its id, its slot in the graph.</summary>
     public int Id { get; }
 
-    /// <summary>Gets where it is, in the graph's frame.</summary>
-    public Vector3d Position { get; }
+    /// <summary>Gets where it is as the graph holds it: in its parent's frame when the graph hangs from one, else in the world.</summary>
+    public Vector3d LocalPosition { get; }
+
+    /// <summary>
+    /// Gets where it is in the world now, <c>Graph_GetNodePos</c> (<c>igi2 0x59A2A0</c>): under a parent its held position turned by
+    /// the parent's frame as it stands (each axis summing z, then y, then x against the frame's rows) and the parent's position
+    /// added, so the node rides with the parent; otherwise as held.
+    /// </summary>
+    public Vector3d Position
+    {
+        get
+        {
+            if (_parent is not { } parent)
+            {
+                return LocalPosition;
+            }
+
+            Vector3d p = LocalPosition;
+            IReadOnlyList<float> m = parent.AttachOrientation;
+            Vector3d at = parent.AttachPosition;
+            double x = (((Fpu)m[2] * p.Z) + ((Fpu)m[1] * p.Y) + ((Fpu)m[0] * p.X)).Value;
+            double y = (((Fpu)m[5] * p.Z) + ((Fpu)m[4] * p.Y) + ((Fpu)m[3] * p.X)).Value;
+            double z = (((Fpu)m[8] * p.Z) + ((Fpu)m[7] * p.Y) + ((Fpu)m[6] * p.X)).Value;
+            return new Vector3d(((Fpu)at.X + x).Value, ((Fpu)at.Y + y).Value, ((Fpu)at.Z + z).Value);
+        }
+    }
 
     /// <summary>Gets the heading a soldier standing on it faces.</summary>
     public float Gamma { get; }
@@ -120,6 +158,9 @@ public sealed partial class Igi2AiGraph
 
     private Igi2AiGraph(int maxNodes) => MaxNodes = maxNodes;
 
+    /// <summary>Gets the object the graph hangs from, whose frame its nodes ride in, or <see langword="null"/>.</summary>
+    public IIgi2AttachParent? Parent { get; private init; }
+
     /// <summary>Gets how many node slots the graph has, <c>nMaxNodes</c>.</summary>
     public int MaxNodes { get; private set; }
 
@@ -154,7 +195,7 @@ public sealed partial class Igi2AiGraph
             throw new GraphFormatException("An I.G.I. 2 graph is the named stream.");
         }
 
-        Igi2AiGraph graph = new(placement.MaxNodes);
+        Igi2AiGraph graph = new(placement.MaxNodes) { Parent = placement.Parent };
         List<uint> skipped = [];
         int id = 0;
         Vector3d position = default;
@@ -254,7 +295,7 @@ public sealed partial class Igi2AiGraph
             throw new GraphFormatException(string.Create(CultureInfo.InvariantCulture, $"Graph node {id} is made twice (GRAPHNODE ID ALREADY USED)."));
         }
 
-        _nodes[id] = new Igi2AiGraphNode(id, position, gamma, radius, material, light, terrain, text, criteria(text));
+        _nodes[id] = new Igi2AiGraphNode(id, position, gamma, radius, material, light, terrain, text, criteria(text), Parent);
     }
 
     private void Link(int a, int b, int type)
@@ -264,7 +305,8 @@ public sealed partial class Igi2AiGraph
             throw new GraphFormatException(string.Create(CultureInfo.InvariantCulture, $"Graph link {a}-{b} names a node the graph lacks."));
         }
 
-        // The length is the two nodes' distance: x and y stored as floats, z kept on the stack, summed in that order.
+        // The length is the two nodes' distance in the world as they stand when the link is made: x and y stored as floats, z kept
+        // on the stack, summed in that order.
         float dx = ((Fpu)first.Position.X - second.Position.X).F;
         float dy = ((Fpu)first.Position.Y - second.Position.Y).F;
         Fpu dz = (Fpu)first.Position.Z - second.Position.Z;
@@ -280,9 +322,11 @@ public sealed partial class Igi2AiGraph
 /// <param name="MaxNodes">The node slots it starts with, its <c>Graphdata</c>'s second value.</param>
 /// <param name="IsRelative">Whether node positions are already in the graph's frame.</param>
 /// <param name="Position">The graph's position, added to a node's when it is not relative.</param>
-/// <param name="ParentPosition">The position of the object it hangs from, or <see langword="null"/> for none.</param>
-/// <param name="ParentOrientation">That object's frame, its rows, when it has one.</param>
-public sealed record Igi2AiGraphPlacement(int MaxNodes, bool IsRelative, Vector3d Position, Vector3d? ParentPosition = null, Matrix3f? ParentOrientation = null)
+/// <param name="Parent">
+/// The object it hangs from when that object answers the attach event (<c>Graph_CreateHandler</c>'s <c>Attach_eAttachEvent</c>; a
+/// model object does, a container does not), or <see langword="null"/>.
+/// </param>
+public sealed record Igi2AiGraphPlacement(int MaxNodes, bool IsRelative, Vector3d Position, IIgi2AttachParent? Parent = null)
 {
     /// <summary>Places a node read from the file, <c>Graph_NodePositionCallback</c> (<c>igi2 0x59AA50</c>).</summary>
     /// <param name="read">The position as read.</param>
@@ -301,18 +345,20 @@ public sealed record Igi2AiGraphPlacement(int MaxNodes, bool IsRelative, Vector3
         double x = ((Fpu)read.X + Position.X).Value;
         double y = ((Fpu)read.Y + Position.Y).Value;
         double z = ((Fpu)read.Z + Position.Z).Value;
-        if (ParentPosition is not { } parent || ParentOrientation is not { } m)
+        if (Parent is not { } owner)
         {
             return new Vector3d(x, y, z);
         }
 
+        Vector3d parent = owner.AttachPosition;
+        IReadOnlyList<float> m = owner.AttachOrientation;
         x = ((Fpu)x - parent.X).Value;
         y = ((Fpu)y - parent.Y).Value;
         z = ((Fpu)z - parent.Z).Value;
         return new Vector3d(
-            (((Fpu)m.M31 * z) + ((Fpu)m.M21 * y) + ((Fpu)m.M11 * x)).Value,
-            (((Fpu)m.M32 * z) + ((Fpu)m.M22 * y) + ((Fpu)m.M12 * x)).Value,
-            (((Fpu)m.M33 * z) + ((Fpu)m.M23 * y) + ((Fpu)m.M13 * x)).Value);
+            (((Fpu)m[6] * z) + ((Fpu)m[3] * y) + ((Fpu)m[0] * x)).Value,
+            (((Fpu)m[7] * z) + ((Fpu)m[4] * y) + ((Fpu)m[1] * x)).Value,
+            (((Fpu)m[8] * z) + ((Fpu)m[5] * y) + ((Fpu)m[2] * x)).Value);
     }
 }
 
@@ -379,7 +425,7 @@ public sealed partial class Igi2AiGraphTask : Igi2Task
     public bool IsUpdateCover { get; set; }
 
     /// <summary>Gets where its nodes are read into.</summary>
-    public Igi2AiGraphPlacement Placement => new(GraphData.Length > 1 ? (int)GraphData[1] : 0, IsRelative, GraphPosition);
+    public Igi2AiGraphPlacement Placement => new(GraphData.Length > 1 ? (int)GraphData[1] : 0, IsRelative, GraphPosition, Parent as IIgi2AttachParent);
 
     /// <summary>The file a graph is read from, <c>Graph_ParseGraphHandler</c> (<c>igi2 0x599110</c>), by its task id.</summary>
     /// <param name="taskId">The graph's level id.</param>

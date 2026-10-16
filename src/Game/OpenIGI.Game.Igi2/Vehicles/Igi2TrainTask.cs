@@ -29,7 +29,7 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// whether that thrust is over a thousandth; its children run.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget
+public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IIgi2AttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = Igi2Train.TrainType;
@@ -142,6 +142,13 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
 
     /// <inheritdoc/>
     public IReadOnlyList<float> CurrentOrientation => _orientation;
+
+    /// <inheritdoc/>
+    /// <remarks>A train is a model object, which answers the attach event with where it stands (<c>ModelObj_AttachHandler</c>).</remarks>
+    public Vector3d AttachPosition => _at;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> AttachOrientation => _orientation;
 
     /// <inheritdoc/>
     public Vector3d LastPosition => _lastAt;
