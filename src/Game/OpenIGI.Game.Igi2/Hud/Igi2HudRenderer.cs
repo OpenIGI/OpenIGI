@@ -18,6 +18,7 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         // Keep the authored status art readable at modern resolutions; world-space sights and view flashes stay in pixels.
         _scale = screenHeight / 720f;
         float width = screenWidth / _scale, height = screenHeight / _scale;
+        DrawCutsceneFraming(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawZoomOverlay(batch, title, width, height); }
         DrawMessages(batch, title, width, height);
         if (!title.IsCutscenePlaying && !title.Human.IsDead)
