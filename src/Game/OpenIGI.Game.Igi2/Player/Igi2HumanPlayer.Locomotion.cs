@@ -44,6 +44,7 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.ActivateStationaryGun] = (_, _) => EnterActivateStationaryGun();
         states[Igi2PlayerState.ClimbWire] = (_, _) => EnterClimbWire();
         states[Igi2PlayerState.SlideWire] = (_, _) => EnterSlideWire();
+        states[Igi2PlayerState.Peek] = (_, _) => EnterPeek();
         foreach (Gait gait in Gaits)
         {
             states[gait.State] = (_, _) => EnterGait(gait);

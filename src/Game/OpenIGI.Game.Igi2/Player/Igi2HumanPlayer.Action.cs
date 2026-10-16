@@ -37,8 +37,8 @@ public enum Igi2PlayerWeaponStatus
 /// <para>
 /// Ported: locked (0), idle (1), firing (2, 3, 4), reloading (5), the weapon change (6) and firing empty (9), with the
 /// upper-body modes the states set (<c>HumanPlayer_SetUpperBody</c>, <c>0x4BD2E0</c>) and the weapon selection the
-/// update runs before the machines. Not yet: peeking (7), the computer (8) and throwing (10), and from the idle state the
-/// binoculars, activating objects and dropping the weapon. Where idle would go to one of those it stays idle.
+/// update runs before the machines, peeking (7) and throwing (10). Not yet: the computer (8), whose screens the shell
+/// presents.
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
@@ -108,6 +108,7 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerActionState.ChangeWeapon] = (_, _) => EnterChangeWeapon();
         states[Igi2PlayerActionState.FireEmpty] = (_, _) => EnterFireEmpty();
         states[Igi2PlayerActionState.ThrowGrenade] = (_, _) => EnterThrowGrenade();
+        states[Igi2PlayerActionState.Peek] = (_, _) => EnterPeekAction();
         return new TaskStateMachine((_, _) => PackActionSignal(), states, Igi2PlayerActionState.Idle, exits: new TaskStateFunction?[Igi2PlayerActionState.Count]);
     }
 
@@ -435,6 +436,18 @@ public sealed partial class Igi2HumanPlayer
         }
 
         CheckBinoculars(forceChangeWeapon: false);
+
+        // The peek key, on the ground, peeks; without the binoculars up the zoom comes off first.
+        if (Channels[Igi2HumanChannel.Peek] != 0f && Has(Igi2PlayerSignal.Grounded))
+        {
+            if (PreviousWeaponType is null)
+            {
+                View.DisableZoomMode();
+            }
+
+            GoAction(Igi2PlayerActionState.Peek);
+            return;
+        }
 
         // With the binoculars up -- the weapon they replaced still remembered -- idle goes no further: no firing,
         // reloading, activating or changing, and the bomb-area flag is left as it is (the rest of RunActionIdle sits

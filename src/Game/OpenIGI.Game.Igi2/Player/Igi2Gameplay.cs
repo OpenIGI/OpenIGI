@@ -1587,6 +1587,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
         _reader.InvertMouse = input.InvertMouse;
+        Human.InvertMouse = input.InvertMouse;
         Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;
         _lookInput = input;
         _reader.Read(new Igi2PlayerInputState(

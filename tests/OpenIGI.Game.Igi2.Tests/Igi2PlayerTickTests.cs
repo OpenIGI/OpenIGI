@@ -62,6 +62,40 @@ public sealed class Igi2PlayerTickTests
         Assert.True(player.Fatigue < 0.7f);
     }
 
+    /// <summary>
+    /// Holding the peek key locks the body and leans the view across with the mouse, no further than the peek's reach; letting go
+    /// takes the lean back and returns to standing and to idle (<c>HumanPlayer_RunStatePeek</c>, <c>HumanPlayer_RunActionPeek</c>).
+    /// </summary>
+    [Fact]
+    public void The_peek_key_leans_the_view_out_and_back()
+    {
+        (Igi2HumanPlayer player, _, _) = OnFloor();
+        player.General = player.General with { PeekOffsetX = 2000f, PeekOffsetZ = 1500f, PeekTime = 10 };
+        Tick(player, Igi2PlayerAction.None);
+        for (int tick = 0; tick < 4; tick++)
+        {
+            Tick(player, Igi2PlayerAction.Peek, mouseX: 0.02f);
+        }
+
+        Assert.Equal(Igi2PlayerState.Peek, player.Locomotion.CurrentState);
+        Assert.Equal(Igi2PlayerActionState.Peek, player.Action.CurrentState);
+        Assert.True(player.View.PeekOffset.X > 0f);
+        Assert.True(player.View.PeekOffset.X <= 2000f);
+        Assert.Equal(0f, player.Gamma);
+
+        for (int tick = 0; tick < 40; tick++)
+        {
+            Tick(player, Igi2PlayerAction.Peek, mouseX: 0.02f);
+        }
+
+        Assert.Equal(2000f, player.View.PeekOffset.X);
+
+        Tick(player, Igi2PlayerAction.None);
+        Assert.Equal(default, player.View.PeekOffset);
+        Assert.Equal(Igi2PlayerActionState.Idle, player.Action.CurrentState);
+        Assert.Equal(Igi2PlayerState.Stand, player.Locomotion.CurrentState);
+    }
+
     [Fact]
     public void Standing_still_stays_put()
     {

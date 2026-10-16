@@ -103,6 +103,9 @@ public static class Igi2PlayerState
     /// <summary>Working a mounted gun (<c>HumanPlayer_InitStateActivateStationaryGun</c>).</summary>
     public const int ActivateStationaryGun = 41;
 
+    /// <summary>Peeking, leaning the view out from where the player stands (<c>HumanPlayer_InitStatePeek</c>).</summary>
+    public const int Peek = 52;
+
     /// <summary>Climbing along a wire hand over hand (<c>HumanPlayer_InitStateClimbWire</c>).</summary>
     public const int ClimbWire = 50;
 
