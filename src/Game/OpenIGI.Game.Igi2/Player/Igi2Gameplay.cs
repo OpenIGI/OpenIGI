@@ -558,6 +558,24 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 else if (node is Ai.Igi2HumanSoldierTask { Body: { } soldier })
                 {
                     detection.Detectables.Add(soldier);
+                    if (soldier.Surroundings is Igi2LevelSurroundings around)
+                    {
+                        around.Detection = detection;
+                    }
+                }
+            }
+
+            // HumanSoldier_UpdateInternalDataAfterLoadHandler: a living soldier of team 1 is no business of the detectors, but in
+            // missions 21 and 22; it is listed again as it dies.
+            int missionId = request.World.Mission.Descriptor.Id;
+            if (missionId is not (21 or 22))
+            {
+                foreach (Ai.Igi2HumanSoldierTask soldierTask in Descendants(root).OfType<Ai.Igi2HumanSoldierTask>())
+                {
+                    if (soldierTask.Body is { Team: 1, IsDead: false } living)
+                    {
+                        detection.Remove(living);
+                    }
                 }
             }
 
@@ -1594,6 +1612,11 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     public Igi2Human? Owner { get; set; }
 
     public IIgi2CollisionQuery Collision { get; } = world;
+
+    /// <summary>Gets or sets the list detection looks over, which a dying soldier joins.</summary>
+    public Detection.Igi2DetectionWorld? Detection { get; set; }
+
+    public void RegisterDetectable(Igi2Human body) => Detection?.Register(body);
 
     /// <summary>Gets the collision world itself, whose placed solids the level's moving objects carry.</summary>
     public Igi2CollisionWorld World { get; } = world;

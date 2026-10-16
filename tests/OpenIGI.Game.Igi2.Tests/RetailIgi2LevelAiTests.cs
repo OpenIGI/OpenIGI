@@ -69,6 +69,10 @@ public sealed class RetailIgi2LevelAiTests
         Igi2HumanAi[] minds = [.. player.Soldiers!.Bodies.Select(static body => body.Mind).OfType<Igi2HumanAi>()];
         Assert.NotEmpty(minds);
         Assert.All(minds, static mind => Assert.NotNull(mind.Script));
+        // HumanSoldier_UpdateInternalDataAfterLoadHandler: living soldiers of team 1 are off the detection list in mission 11.
+        Assert.All(player.Soldiers!.Bodies.Where(static body => body.Team == 1 && !body.IsDead),
+            body => Assert.DoesNotContain(body, player.Ai.Detection!.Detectables));
+        Assert.Contains(player.Human, player.Ai.Detection!.Detectables);
         player.Human.Damage.MaxDamage = 1000000f;
         Vector3d[] initialPositions = [.. minds.Select(static mind => mind.Soldier.Position)];
         for (int tick = 0; tick < 1200; tick++)

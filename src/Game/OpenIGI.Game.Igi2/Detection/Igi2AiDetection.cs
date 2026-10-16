@@ -222,6 +222,34 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     /// <summary>Gets the detectables, in the order they were listed.</summary>
     public List<IIgi2Detectable> Detectables { get; } = [];
 
+    /// <summary>Lists a detectable at the end, unless it is listed already (<c>QTaskList_IsQTaskRegistered</c>, <c>QTaskList_Register</c>).</summary>
+    /// <param name="detectable">The detectable.</param>
+    public void Register(IIgi2Detectable detectable)
+    {
+        if (!Detectables.Contains(detectable))
+        {
+            Detectables.Add(detectable);
+        }
+    }
+
+    /// <summary>
+    /// Takes a detectable off the list, the last one moved into its place (<c>QTaskList_Remove</c>, <c>tasklist.c</c>), which
+    /// changes the order the detectors look over the rest in.
+    /// </summary>
+    /// <param name="detectable">The detectable.</param>
+    public void Remove(IIgi2Detectable detectable)
+    {
+        int index = Detectables.IndexOf(detectable);
+        if (index < 0)
+        {
+            return;
+        }
+
+        int last = Detectables.Count - 1;
+        Detectables[index] = Detectables[last];
+        Detectables.RemoveAt(last);
+    }
+
     /// <summary>Gets or sets the game's tick count, <c>Flow_ptFlow->nTicks</c>, which spreads detectors over four ticks.</summary>
     public Func<int> FlowTicks { get; set; } = static () => 0;
 
