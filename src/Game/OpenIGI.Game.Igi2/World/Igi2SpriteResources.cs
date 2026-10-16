@@ -13,6 +13,7 @@ public sealed class Igi2SpriteResources : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, IresEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IresEntry> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Loads the archives used by status screens and game sprites.</summary>
@@ -31,19 +32,25 @@ public sealed class Igi2SpriteResources : IDisposable
             foreach (IresEntry entry in IresArchive.Read(files.ReadAllBytes(path)).Entries)
             {
                 _entries.TryAdd(Path.GetFileName(entry.Name.Replace('\\', '/')), entry);
+                _paths.TryAdd(entry.Name.Replace('\\', '/'), entry);
             }
         }
     }
 
     /// <summary>Gets a sprite by resource name, uploading it only on its first use.</summary>
-    /// <param name="name">The resource name, with an optional alias or path.</param>
+    /// <param name="name">
+    /// The resource name. A bare file name finds the first archive's file of that name; an alias-qualified one
+    /// (<c>WEAPONS:binoculars.spr</c>, <c>LOCAL:weapons/binoculars.spr</c>) finds only that file, as <c>QSprite_Load</c>
+    /// loads it, because the common sprites and the weapons' icons share names.
+    /// </param>
     /// <returns>The uploaded sprite, or null when the archive does not contain it.</returns>
     public SpriteResource? Get(string name)
     {
-        string key = Path.GetFileName(name[(name.IndexOf(':') + 1)..].Replace('\\', '/'));
+        int colon = name.IndexOf(':');
+        string key = colon < 0 ? Path.GetFileName(name.Replace('\\', '/')) : Qualified(name, colon);
         if (_sprites.TryGetValue(key, out SpriteResource? cached)) { return cached; }
         SpriteResource? sprite = null;
-        if (_entries.TryGetValue(key, out IresEntry? entry))
+        if ((colon < 0 ? _entries : _paths).TryGetValue(key, out IresEntry? entry))
         {
             try { sprite = SpriteResource.Upload(_device, SpriteLoader.Load(entry.Data, entry.Name)); }
             catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EngineFatalException)
@@ -55,11 +62,21 @@ public sealed class Igi2SpriteResources : IDisposable
         return sprite;
     }
 
+    // An alias names one of the game's folders: WEAPONS:x is LOCAL:weapons/x.
+    private static string Qualified(string name, int colon)
+    {
+        string alias = name[..colon], rest = name[(colon + 1)..].Replace('\\', '/');
+        return alias.Equals("LOCAL", StringComparison.OrdinalIgnoreCase)
+            ? "LOCAL:" + rest
+            : "LOCAL:" + alias.ToLowerInvariant() + "/" + rest;
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
         foreach (SpriteResource? sprite in _sprites.Values) { sprite?.Dispose(); }
         _sprites.Clear();
         _entries.Clear();
+        _paths.Clear();
     }
 }
