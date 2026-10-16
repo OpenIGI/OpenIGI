@@ -761,6 +761,21 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
+        // Each linked cutscene camera notes where its link stands as the level is made (EditCamera_UpdateInternalDataHandler).
+        Dictionary<int, Engine.Tasks.GameTask> linkable = [];
+        foreach (Engine.Tasks.GameTask placed in Descendants(root))
+        {
+            if (placed.Id != Engine.Tasks.GameTask.NoId)
+            {
+                linkable.TryAdd(placed.Id, placed);
+            }
+        }
+
+        foreach (Flow.Igi2EditCameraTask camera in Descendants(root).OfType<Flow.Igi2EditCameraTask>().Where(static c => c.LinkTaskId >= 0))
+        {
+            camera.NoteLink(linkable.GetValueOrDefault(camera.LinkTaskId));
+        }
+
         // Scripted overlays go up on the game screen.
         if (request.Services.TryGet(out Igi2ScreenOverlay? screenOverlay))
         {

@@ -88,11 +88,35 @@ public sealed partial class Igi2EditCameraTask : Igi2Task
         level.RunChildren(this);
     }
 
+    /// <summary>Gets where the link stood when the level was made, <c>tTargetPos</c>.</summary>
+    public Vector3d LinkedPosition { get; private set; }
+
+    /// <summary>Gets which way the link faced then, row by row, <c>tTargetOrientation</c>.</summary>
+    public IReadOnlyList<float> LinkedOrientation { get; private set; } = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+
+    /// <summary>
+    /// Notes the link's pose as the level stands made (<c>EditCamera_UpdateInternalDataHandler</c>): a link that cannot tell where
+    /// it is (no camera-target handler) leaves the camera unlinked.
+    /// </summary>
+    /// <param name="link">The task the link names, or <see langword="null"/>.</param>
+    public void NoteLink(object? link)
+    {
+        if (link is IIgi2CameraTarget target)
+        {
+            LinkedPosition = target.CameraTargetPosition;
+            LinkedOrientation = [.. target.CameraTargetOrientation];
+        }
+        else
+        {
+            LinkTaskId = -1;
+        }
+    }
+
     /// <inheritdoc/>
     /// <remarks>
     /// <c>EditCamera_UpdateInternalDataHandler</c> (<c>igi2 0x580C20</c>): its filter's name read as the constant it is, its field
-    /// of view held between a thousandth and three, and a target that is itself dropped. Its link's pose is cached there for the
-    /// link's transform, which is not ported.
+    /// of view held between a thousandth and three, and a target that is itself dropped. Its link's pose is noted once the level is
+    /// made (<see cref="NoteLink"/>).
     /// </remarks>
     protected override void OnParsed()
     {

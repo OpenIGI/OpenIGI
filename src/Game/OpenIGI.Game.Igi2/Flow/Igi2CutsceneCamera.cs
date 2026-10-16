@@ -151,6 +151,61 @@ public static class Igi2CutsceneCameras
     }
 
     /// <summary>
+    /// A linked camera carried with its link, <c>EditCamera_TransformRelativeToLinkQTask</c> (<c>igi2 0x5815E0</c>): the camera's
+    /// position taken into the frame the link stood in when the level was made, then out of the frame the link stands in now; its
+    /// frame turned back by the first and on by the second.
+    /// </summary>
+    /// <param name="position">The camera's position, moved.</param>
+    /// <param name="frame">The camera's frame, row by row, turned.</param>
+    /// <param name="linkedAt">Where the link stood when the level was made.</param>
+    /// <param name="linkedFrame">Which way it faced then, row by row.</param>
+    /// <param name="link">The link now.</param>
+    public static void TransformRelativeToLink(
+        ref Vector3d position,
+        float[] frame,
+        Vector3d linkedAt,
+        IReadOnlyList<float> linkedFrame,
+        IIgi2CameraTarget link)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        ArgumentNullException.ThrowIfNull(linkedFrame);
+        ArgumentNullException.ThrowIfNull(link);
+        IReadOnlyList<float> o = linkedFrame;
+        IReadOnlyList<float> l = link.CameraTargetOrientation;
+        Vector3d now = link.CameraTargetPosition;
+
+        // Into the old frame: the offset turned by the old frame's transpose.
+        double dx = position.X - linkedAt.X, dy = position.Y - linkedAt.Y, dz = position.Z - linkedAt.Z;
+        double x = (o[6] * dz) + (o[3] * dy) + (o[0] * dx);
+        double y = (o[7] * dz) + (o[1] * dx) + (o[4] * dy);
+        double z = (o[5] * dy) + (o[8] * dz) + (o[2] * dx);
+
+        // Out of the new one.
+        double nx = (l[1] * y) + (l[0] * x) + (l[2] * z);
+        double ny = (l[4] * y) + (l[3] * x) + (l[5] * z);
+        double nz = (l[7] * y) + (l[6] * x) + (l[8] * z);
+        position = new Vector3d(((Fpu)now.X + nx).Value, ((Fpu)now.Y + ny).Value, ((Fpu)now.Z + nz).Value);
+
+        // The frame: the old frame's transpose times it, then the new frame times that.
+        float[] back = new float[9];
+        for (int row = 0; row < 3; row++)
+        {
+            for (int column = 0; column < 3; column++)
+            {
+                back[(row * 3) + column] = ((((Fpu)o[row] * frame[column]) + ((Fpu)o[6 + row] * frame[6 + column])) + ((Fpu)o[3 + row] * frame[3 + column])).F;
+            }
+        }
+
+        for (int row = 0; row < 3; row++)
+        {
+            for (int column = 0; column < 3; column++)
+            {
+                frame[(row * 3) + column] = ((((Fpu)l[row * 3] * back[column]) + ((Fpu)l[(row * 3) + 2] * back[6 + column])) + ((Fpu)l[(row * 3) + 1] * back[3 + column])).F;
+            }
+        }
+    }
+
+    /// <summary>
     /// The frame that looks from a point at a target, <c>EditCamera_FollowTarget</c> (<c>igi2 0x581290</c>): forward to the
     /// target, right across the world's up, and down the forward across that; columns right, down and forward.
     /// </summary>

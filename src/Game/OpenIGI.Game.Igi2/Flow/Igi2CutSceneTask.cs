@@ -370,11 +370,16 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
 
         float[] frame = Igi2Pose.Rotation(alpha, beta, gamma);
 
-        // Linked, the position is held from the tick the camera changed unless it updates; the link's transform is not ported.
+        // Linked, the camera is carried with its link when it changes or updates, and its position held from then otherwise.
         if (from.LinkTaskId >= 0)
         {
             if (changed || from.UpdateLinkContinuously)
             {
+                if ((uint)from.LinkTaskId < LevelIds && Tree.FromId(from.LinkTaskId) is IIgi2CameraTarget link)
+                {
+                    Igi2CutsceneCameras.TransformRelativeToLink(ref position, frame, from.LinkedPosition, from.LinkedOrientation, link);
+                }
+
                 _lastPosition = position;
             }
             else
