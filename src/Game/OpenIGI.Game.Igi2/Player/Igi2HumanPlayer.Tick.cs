@@ -85,10 +85,7 @@ public sealed partial class Igi2HumanPlayer
     /// </item>
     /// </list>
     /// <para>
-    /// Not ported yet, and skipped where they fall: activation (<c>Human_UpdateActivate</c>), climbing, the dead body
-    /// rising in water (<c>Human_PopPosition</c>), riding (<c>Human_Attach</c>), the lying body's tilt to the ground (<c>Human_InterpolateZAxisToAveragedGroundNormal</c>), the AI's notice,
-    /// the action menu's pickups and the screen flashes. The degraded-copy slowdown is inert: its
-    /// factor is one.
+    /// Not ported yet: the action menu's pickups. The degraded-copy slowdown is inert: its factor is one.
     /// </para>
     /// </remarks>
     public void Update()
@@ -175,6 +172,19 @@ public sealed partial class Igi2HumanPlayer
                 ((Fpu)scale * DeltaTranslation.X).F,
                 ((Fpu)scale * DeltaTranslation.Y).F,
                 ((Fpu)scale * DeltaTranslation.Z).F);
+        }
+
+        // A dead swimmer floats: held at swimming depth, still, whenever it drifts from it.
+        if (IsDead && IsSwimming)
+        {
+            Fpu off = (Fpu)WaterDepth - SwimDepth;
+            if (Fpu.Abs(off).Value > 4.096)
+            {
+                Speed = default;
+                ImpactSpeed = default;
+                PopPosition(new Vector3d(Position.X, Position.Y, (off + Position.Z).Value));
+                GroundMovementSpeed = default;
+            }
         }
 
         MoveBody();
