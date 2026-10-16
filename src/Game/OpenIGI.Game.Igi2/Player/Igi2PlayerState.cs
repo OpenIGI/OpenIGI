@@ -106,6 +106,9 @@ public static class Igi2PlayerState
     /// <summary>Peeking, leaning the view out from where the player stands (<c>HumanPlayer_InitStatePeek</c>).</summary>
     public const int Peek = 52;
 
+    /// <summary>At the computer, the player still (<c>HumanPlayer_InitStateComputer</c>).</summary>
+    public const int Computer = 53;
+
     /// <summary>Climbing along a wire hand over hand (<c>HumanPlayer_InitStateClimbWire</c>).</summary>
     public const int ClimbWire = 50;
 

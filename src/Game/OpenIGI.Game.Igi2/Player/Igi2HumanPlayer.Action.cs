@@ -37,8 +37,7 @@ public enum Igi2PlayerWeaponStatus
 /// <para>
 /// Ported: locked (0), idle (1), firing (2, 3, 4), reloading (5), the weapon change (6) and firing empty (9), with the
 /// upper-body modes the states set (<c>HumanPlayer_SetUpperBody</c>, <c>0x4BD2E0</c>) and the weapon selection the
-/// update runs before the machines, peeking (7) and throwing (10). Not yet: the computer (8), whose screens the shell
-/// presents.
+/// update runs before the machines, peeking (7), the computer (8) and throwing (10).
 /// </para>
 /// </remarks>
 public sealed partial class Igi2HumanPlayer
@@ -109,6 +108,7 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerActionState.FireEmpty] = (_, _) => EnterFireEmpty();
         states[Igi2PlayerActionState.ThrowGrenade] = (_, _) => EnterThrowGrenade();
         states[Igi2PlayerActionState.Peek] = (_, _) => EnterPeekAction();
+        states[Igi2PlayerActionState.Computer] = (_, _) => EnterComputerAction();
         return new TaskStateMachine((_, _) => PackActionSignal(), states, Igi2PlayerActionState.Idle, exits: new TaskStateFunction?[Igi2PlayerActionState.Count]);
     }
 
@@ -447,6 +447,12 @@ public sealed partial class Igi2HumanPlayer
 
             GoAction(Igi2PlayerActionState.Peek);
             return;
+        }
+
+        // A computer key, on the ground, opens the computer; the rest of idle still runs.
+        if (IsActivateComputer() && Has(Igi2PlayerSignal.Grounded))
+        {
+            ActivateComputer();
         }
 
         // With the binoculars up -- the weapon they replaced still remembered -- idle goes no further: no firing,

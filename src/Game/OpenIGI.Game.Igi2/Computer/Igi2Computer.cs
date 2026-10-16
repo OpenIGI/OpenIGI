@@ -62,9 +62,79 @@ public sealed class Igi2Computer
         return found;
     }
 
+    /// <summary>Gets a value indicating whether the player has the computer open, <c>Computer_ptComputerQTask</c> existing.</summary>
+    public bool IsOpen { get; private set; }
+
+    /// <summary>Gets the screen the computer shows, <c>ComputerMenu_eActiveMenu</c>; it outlives the computer's closing.</summary>
+    public Igi2ComputerMenu ActiveMenu { get; private set; }
+
+    /// <summary>Gets the screen asked for, which the menu's next run turns to, <c>tComputerMenu.eRequestMenu</c>.</summary>
+    public Igi2ComputerMenu RequestedMenu { get; private set; }
+
+    /// <summary>Gets or sets the screen the computer opens on, <c>Computer_eStartupMode</c>.</summary>
+    public Igi2ComputerMenu StartupMode { get; set; } = Igi2ComputerMenu.Map;
+
+    /// <summary>
+    /// Opens the computer, <c>Computer_CreateHandler</c>: on the screen it was opened for, but on the objectives when it was opened
+    /// for the map and the map is not enabled.
+    /// </summary>
+    public void Open()
+    {
+        IsOpen = true;
+        RequestedMenu = Igi2ComputerMenu.None;
+        ActiveMenu = StartupMode is >= Igi2ComputerMenu.Objectives and <= Igi2ComputerMenu.Save || IsEnabled
+            ? StartupMode
+            : Igi2ComputerMenu.Objectives;
+    }
+
+    /// <summary>Asks the computer's next run to turn to a screen, <c>ComputerMenu_RequestMenu</c>.</summary>
+    /// <param name="menu">The screen.</param>
+    public void RequestMenu(Igi2ComputerMenu menu) => RequestedMenu = menu;
+
+    /// <summary>
+    /// Turns to a screen, <c>ComputerMenu_GotoMenu</c>: there already, or the map asked for while it is not enabled and the
+    /// objectives are shown, it is where it should be; otherwise the screen is asked for.
+    /// </summary>
+    /// <param name="menu">The screen.</param>
+    /// <returns>Whether the computer is already where it should be.</returns>
+    public bool GotoMenu(Igi2ComputerMenu menu)
+    {
+        if (ActiveMenu == menu)
+        {
+            return true;
+        }
+
+        if (menu == Igi2ComputerMenu.Map && !IsEnabled)
+        {
+            return ActiveMenu == Igi2ComputerMenu.Objectives;
+        }
+
+        RequestedMenu = menu;
+        return false;
+    }
+
+    /// <summary>The menu's own tick, <c>ComputerMenu_RunHandler</c>: a screen asked for replaces the one shown.</summary>
+    public void Run()
+    {
+        if (IsOpen && RequestedMenu != Igi2ComputerMenu.None)
+        {
+            ActiveMenu = RequestedMenu;
+            RequestedMenu = Igi2ComputerMenu.None;
+        }
+    }
+
+    /// <summary>Closes the computer, <c>Computer_DeleteHandler</c>.</summary>
+    public void Close()
+    {
+        IsOpen = false;
+        RequestedMenu = Igi2ComputerMenu.None;
+    }
+
     /// <summary>Forgets the last level's computer, as its tasks' deletes do.</summary>
     public void BeginLevel()
     {
+        IsOpen = false;
+        RequestedMenu = Igi2ComputerMenu.None;
         Objectives = null;
         InactiveObjectives = null;
         Limit = null;
@@ -94,6 +164,25 @@ public sealed class Igi2Computer
         natives.RegisterConstant("MARKER_COLOR_GREEN", 2);
         natives.RegisterConstant("MARKER_COLOR_BLUE", 4);
     }
+}
+
+/// <summary>The computer's screens, <c>ComputerMenu_e</c>.</summary>
+public enum Igi2ComputerMenu
+{
+    /// <summary>None asked for.</summary>
+    None = 0,
+
+    /// <summary>The map, or the building plans when the level has some.</summary>
+    Map = 1,
+
+    /// <summary>The objectives.</summary>
+    Objectives = 2,
+
+    /// <summary>The message log.</summary>
+    Log = 3,
+
+    /// <summary>The save screen.</summary>
+    Save = 4,
 }
 
 /// <summary>One objective of a <c>DefineComputerObjective</c>, <c>Objective_t</c>.</summary>

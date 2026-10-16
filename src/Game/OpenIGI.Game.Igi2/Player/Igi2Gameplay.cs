@@ -1352,8 +1352,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the player's input task, or <see langword="null"/> when the level gives the player none.</summary>
     public Igi2HumanPlayerInputTask? Input { get; set; }
 
-    /// <summary>Gets or sets the map computer, or <see langword="null"/>.</summary>
-    public Computer.Igi2Computer? Computer { get; set; }
+    /// <summary>Gets or sets the map computer, or <see langword="null"/>; the player opens it.</summary>
+    public Computer.Igi2Computer? Computer
+    {
+        get => Human.Computer;
+        set => Human.Computer = value;
+    }
 
     /// <inheritdoc/>
     /// <remarks><c>CutScene_isRunning</c> as the last tick left it.</remarks>
@@ -1644,6 +1648,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
+
+        // The computer's menu, a task of the game screen, runs after the player.
+        Computer?.Run();
     }
 
     /// <summary>Nine floats row by row as a matrix.</summary>

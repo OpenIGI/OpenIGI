@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using Xunit;
@@ -94,6 +95,42 @@ public sealed class Igi2PlayerTickTests
         Assert.Equal(default, player.View.PeekOffset);
         Assert.Equal(Igi2PlayerActionState.Idle, player.Action.CurrentState);
         Assert.Equal(Igi2PlayerState.Stand, player.Locomotion.CurrentState);
+    }
+
+    /// <summary>
+    /// The map key opens the computer on the map with the player held still; the objectives' key turns to them; that key again
+    /// closes it, and the player stands and idles again (<c>HumanPlayer_RunStateComputer</c>).
+    /// </summary>
+    [Fact]
+    public void A_computer_key_opens_switches_and_closes_the_computer()
+    {
+        (Igi2HumanPlayer player, _, _) = OnFloor();
+        Igi2Computer computer = new();
+        player.Computer = computer;
+        Tick(player, Igi2PlayerAction.None);
+        Tick(player, Igi2PlayerAction.ComputerMap);
+        Tick(player, Igi2PlayerAction.None);
+        computer.Run();
+
+        Assert.True(computer.IsOpen);
+        Assert.Equal(Igi2ComputerMenu.Map, computer.ActiveMenu);
+        Assert.Equal(Igi2PlayerState.Computer, player.Locomotion.CurrentState);
+        Assert.Equal(Igi2PlayerActionState.Computer, player.Action.CurrentState);
+        Assert.True(player.View.IsLockOrientation);
+
+        Tick(player, Igi2PlayerAction.ComputerObjectives);
+        computer.Run();
+        Assert.True(computer.IsOpen);
+        Assert.Equal(Igi2ComputerMenu.Objectives, computer.ActiveMenu);
+
+        Tick(player, Igi2PlayerAction.None);
+        Tick(player, Igi2PlayerAction.ComputerObjectives);
+        Assert.False(computer.IsOpen);
+        Assert.Equal(Igi2PlayerState.Stand, player.Locomotion.CurrentState);
+        Assert.False(player.View.IsLockOrientation);
+
+        Tick(player, Igi2PlayerAction.None);
+        Assert.Equal(Igi2PlayerActionState.Idle, player.Action.CurrentState);
     }
 
     [Fact]
