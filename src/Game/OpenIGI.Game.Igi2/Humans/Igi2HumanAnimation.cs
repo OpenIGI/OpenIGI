@@ -149,7 +149,7 @@ public sealed class Igi2HumanAnimation : IIgi2HumanAnimation
     /// <summary>Gets the active upper-body controller, or <see langword="null"/> when the main clip plays on the whole body.</summary>
     public Igi2AnimController? UpperBody { get; private set; }
 
-    /// <summary>Gets the state the main clip was last set from, <c>iStateLastUsedToSetMainAnimation</c>.</summary>
+    /// <inheritdoc/>
     public int LastState { get; private set; } = -1;
 
     /// <inheritdoc/>

@@ -277,7 +277,8 @@ public sealed partial class Igi2HumanSoldier
     {
         Surroundings.RegisterDetectable(this);
         Pose = Igi2HumanPose.Standing;
-        Animation.PlayStateAtEnd(Locomotion.CurrentState, 0f);
+        // The row the main clip was last set from, not this state's (humansoldier.c HumanSoldier_InitStateDead).
+        Animation.PlayStateAtEnd(Animation.LastState, 0f);
         CameraMode = 3;
         View.IsLockOrientation = true;
         IsLockOrientation = true;

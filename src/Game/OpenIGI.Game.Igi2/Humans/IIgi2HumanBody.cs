@@ -73,6 +73,9 @@ public interface IIgi2HumanAnimation
     /// <summary>Gets or sets the state the upper-body clip was last set from, <c>iStateLastUsedToSetUpperBodyAnimation</c>.</summary>
     int LastUpperBodyState { get; set; }
 
+    /// <summary>Gets the state the main clip was last set from, <c>iStateLastUsedToSetMainAnimation</c>.</summary>
+    int LastState { get; }
+
     /// <summary>Plays a clip on the whole body, noting the state it stands for (<c>HumanAnim_SetAnimation</c>, <c>igi2 0x58F110</c>).</summary>
     /// <param name="clip">The clip.</param>
     /// <param name="time">The time to play it from, in clip ticks.</param>

@@ -74,8 +74,11 @@ internal static class Igi2PlayerFakes
 
         public void ClearUpperBody(float blendSeconds) => UpperBodyClears.Add(blendSeconds);
 
+        public int LastState { get; set; } = -1;
+
         public void PlayState(int state, int time, float blendSeconds)
         {
+            LastState = state;
             Played.Add((state, time, blendSeconds));
             Looping = false;
         }
