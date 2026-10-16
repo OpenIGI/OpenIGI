@@ -224,8 +224,11 @@ public sealed partial class Igi2AiSquadTask : Igi2Task
     /// <summary>Gets the script the squad's events run, by its task id.</summary>
     public string ScriptName => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MISSION:AI/Squad_{Id}.qsc");
 
-    /// <summary>Gets the squad's soldiers, the <c>HumanSoldier</c> tasks under it, in order.</summary>
-    public IEnumerable<Igi2HumanSoldierTask> Soldiers => Igi2TaskTree.Descendants(this).OfType<Igi2HumanSoldierTask>();
+    /// <summary>
+    /// Gets the squad's soldiers: its own <c>HumanSoldier</c> children, in sibling order (<c>aisquad.c AISquad_BuildTeamFromChildren</c>);
+    /// a soldier further down the tree is not a member.
+    /// </summary>
+    public IEnumerable<Igi2HumanSoldierTask> Soldiers => Children.OfType<Igi2HumanSoldierTask>();
 
     /// <summary>Gets or sets the squad the level's AI made for it, or <see langword="null"/>.</summary>
     public Runtime.Igi2AiSquad? Squad { get; set; }
