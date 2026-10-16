@@ -257,6 +257,30 @@ public sealed class RetailIgi2LevelAiTests
     }
 
     /// <summary>
+    /// From behind, an enemy soldier is offered to the activate search and, first on the action menu, the activate key kills him
+    /// silently: he goes to his silent death and the kill is the player's (<c>HumanSoldier_EvaluateActivateHandler</c>,
+    /// <c>HumanPlayer_InitStateSilentKill</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_player_kills_a_soldier_silently_from_behind()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, _, Igi2TitlePlayer player) = Build(behind: 400);
+        Igi2HumanSoldier target = m.Tree.OfType<Igi2HumanSoldierTask>().Single(static t => t.Id == 400).Body!;
+        player.Activatables.AddRange(soldiers.Bodies);
+        for (int tick = 0; tick < 4; tick++)
+        {
+            player.Tick(RetailIgi2Mission1.Idle);
+        }
+
+        Assert.Same(target, player.Human.EvaluateTarget);
+        player.Tick(RetailIgi2Mission1.Idle with { Held = PlayerAction.Activate, Pressed = PlayerAction.Activate });
+
+        Assert.True(target.IsDead);
+        Assert.Equal(Igi2SoldierState.SilentKill, target.Locomotion.CurrentState);
+        Assert.Equal(1, player.Human.MissionKills);
+    }
+
+    /// <summary>
     /// Three hundred ticks in with the intro skipped, the soldiers, their minds and their squads are saved, and loaded into the mission built afresh: each
     /// soldier stands where it stood, alive or dead as it was; each mind is on its node with its flags and its patrols at the same
     /// commands; each squad has its flags, suspicion and actions.
@@ -575,7 +599,7 @@ public sealed class RetailIgi2LevelAiTests
         Assert.True(broken.IsRemoved);
     }
 
-    private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null)
+    private static (RetailIgi2Mission1 Mission, Igi2Soldiers Soldiers, Igi2AiWorld Ai, Igi2TitlePlayer Player) Build(int? facing = null, int? behind = null)
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
         (List<LoadedPack> packs, ResourceRegistry packResources) = Igi2LevelScene.Packs(m.Level);
@@ -602,6 +626,15 @@ public sealed class RetailIgi2LevelAiTests
             float[] frame = Igi2Pose.Rotation(0f, 0f, soldier.Gamma);
             at = new Vector3d(soldier.Position.X + (frame[1] * 61440.0), soldier.Position.Y + (frame[4] * 61440.0), soldier.Position.Z);
             gamma = soldier.Gamma + MathF.PI;
+        }
+
+        if (behind is { } back)
+        {
+            // A metre and a half behind the soldier, facing the way he faces.
+            Igi2HumanSoldierTask soldier = m.Tree.OfType<Igi2HumanSoldierTask>().Single(t => t.Id == back);
+            float[] frame = Igi2Pose.Rotation(0f, 0f, soldier.Gamma);
+            at = new Vector3d(soldier.Position.X - (frame[1] * 3072.0), soldier.Position.Y - (frame[4] * 3072.0), soldier.Position.Z);
+            gamma = soldier.Gamma;
         }
 
         Formats.World.MefModel model = m.Level.ModelFor(spawn.Model)!;

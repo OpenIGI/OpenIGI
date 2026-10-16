@@ -109,6 +109,9 @@ public static class Igi2PlayerState
     /// <summary>At the computer, the player still (<c>HumanPlayer_InitStateComputer</c>).</summary>
     public const int Computer = 53;
 
+    /// <summary>Killing a soldier silently from behind (<c>HumanPlayer_InitStateSilentKill</c>).</summary>
+    public const int SilentKill = 108;
+
     /// <summary>Climbing along a wire hand over hand (<c>HumanPlayer_InitStateClimbWire</c>).</summary>
     public const int ClimbWire = 50;
 

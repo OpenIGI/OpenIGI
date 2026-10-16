@@ -35,6 +35,9 @@ public enum Igi2ActivateKind
 
     /// <summary>A timed action at a code pad or a padlock, <c>GenericTBA_GetActivateHandler</c> (<c>igi2 0x4C2940</c>).</summary>
     GenericTba = 10,
+
+    /// <summary>A soldier killed silently from behind, <c>HumanSoldier_GetActivateHandler</c>.</summary>
+    SilentKill = 13,
 }
 
 /// <summary>Something a human may activate: it says whether a human's view finds it, and what activating it does.</summary>

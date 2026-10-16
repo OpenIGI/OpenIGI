@@ -242,6 +242,10 @@ public sealed partial class Igi2HumanPlayer
 
                 Go(target.Kind == Igi2ActivateKind.Terminal ? Igi2PlayerState.ActivateTerminal : Igi2PlayerState.ActivateGenericTba);
                 break;
+
+            case Igi2ActivateKind.SilentKill:
+                Go(Igi2PlayerState.SilentKill);
+                break;
         }
     }
 

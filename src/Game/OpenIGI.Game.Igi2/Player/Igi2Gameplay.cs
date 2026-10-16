@@ -1011,6 +1011,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Activatables.AddRange(activatables);
         if (player.Soldiers is { } soldiers)
         {
+            // Soldiers stand in the world's tree with everything else, and answer the activate search with a silent kill.
+            player.Activatables.AddRange(soldiers.Bodies);
             Dictionary<int, Interaction.IIgi2Activatable> byId = [];
             foreach (Interaction.IIgi2Activatable thing in activatables)
             {
