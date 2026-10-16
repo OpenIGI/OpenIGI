@@ -20,6 +20,13 @@ public sealed record Igi2CollisionOwner(string TypeName, int LevelId, string Mod
     /// container, and the placed model's name and level id (<c>0-600_00_1-3581</c>).
     /// </summary>
     public string? GlassKey { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the solid is a building's room, a <c>Sector</c>: a plain model, not a magic one, attached to a
+    /// building, whose mesh has portals (<c>modelobj.c</c>'s attach, <c>igi2 0x4DFA50</c>). A dropped weapon comes to rest on one as
+    /// on the ground.
+    /// </summary>
+    public bool IsSector { get; init; }
 }
 
 /// <summary>An object an attach point makes of a magic type: the type, where the point puts it, and the solid it is made of.</summary>
@@ -230,6 +237,8 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
                         new Igi2CollisionOwner(placement.TypeName, placement.LevelId, modelName, depth)
                         {
                             GlassKey = step.Type?.TaskType == GlassType ? step.Key : null,
+                            IsSector = step.Type is null && depth > 0 && model.IsSector
+                                && string.Equals(placement.TypeName, World.Igi2BuildingTask.TypeName, StringComparison.Ordinal),
                         },
                         meshes,
                         model.NativeMarkerBound,

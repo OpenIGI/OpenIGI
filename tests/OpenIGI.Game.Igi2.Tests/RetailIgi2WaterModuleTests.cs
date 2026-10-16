@@ -105,6 +105,32 @@ public sealed class RetailIgi2WaterModuleTests
         Assert.Single(body.Waves);
     }
 
+    /// <summary>
+    /// A weapon dropped over the water passes its surface and sinks; the C4 bomb alone comes to rest on it
+    /// (<c>GunPickup_RunHandler</c>).
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_dropped_gun_sinks_and_the_c4_bomb_floats()
+    {
+        (Igi2CollisionWorld world, _, Igi2WaterBody body) = Build();
+        Weapons.Igi2WeaponTables tables = Igi2Session.Start().Require<Weapons.Igi2HumanWeapons>().Tables;
+        Weapons.Igi2WeaponTypeTask gun = tables.WeaponTypes.First(static t => t.WeaponId != Pickups.Igi2GunPickup.FlatWeaponId && t.FixedModel.Length > 0);
+        Weapons.Igi2WeaponTypeTask bomb = tables.WeaponTypes.First(static t => t.WeaponId == Pickups.Igi2GunPickup.FlatWeaponId);
+        Vector3d above = new(body.Position.X, body.Position.Y, body.Position.Z + 4096.0);
+        float[] level = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+        Pickups.Igi2GunPickup sinking = Pickups.Igi2GunPickup.Thrown(gun, tables, above, level, 0f, isMoving: true, isThrowShort: true, 0, null, 100f);
+        Pickups.Igi2GunPickup floating = Pickups.Igi2GunPickup.Thrown(bomb, tables, above, level, 0f, isMoving: true, isThrowShort: true, 0, null, 100f);
+        IgiRandom random = new();
+        for (int tick = 0; tick < 120; tick++)
+        {
+            sinking.Fall(world, random, static (_, _) => { });
+            floating.Fall(world, random, static (_, _) => { });
+        }
+
+        Assert.True(sinking.Position.Z < body.Position.Z - 1024.0, $"the gun stayed at {sinking.Position.Z} over water at {body.Position.Z}.");
+        Assert.InRange(floating.Position.Z, body.Position.Z, body.Position.Z + 1024.0);
+    }
+
     private static (Igi2CollisionWorld World, Igi2Water Water, Igi2WaterBody Body) Build()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);

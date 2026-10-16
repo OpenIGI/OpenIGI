@@ -247,7 +247,10 @@ public sealed class Igi2GunPickup
     /// otherwise it stops there, ceases falling if it is the ground, and is turned to lie along it. Its height ends 122.88 above
     /// what is below. If it fell through, the line up puts it back 2048 above what it struck. It never falls faster than 1228.8 a tick.
     /// </para>
-    /// <para>Not yet: water, and the building sectors that end a fall as the ground does.</para>
+    /// <para>
+    /// Water is no surface to it: the probes pass over it and, below, it lets the pickup sink (the C4 bomb alone lands on it, and if it
+    /// falls under, comes back up). It comes to rest only on the ground or a building's room.
+    /// </para>
     /// </remarks>
     public void Fall(IIgi2CollisionQuery world, IgiRandom random, Action<string, Vector3d> playSound)
     {
@@ -311,7 +314,7 @@ public sealed class Igi2GunPickup
             for (int i = 0; i < 4; i++)
             {
                 Igi2Intersection hit = _fall.Intersections[i];
-                if (!hit.IsHit || hit.HitObject is Igi2TerrainCollider)
+                if (!hit.IsHit || hit.HitObject is Igi2TerrainCollider or World.Igi2WaterBody)
                 {
                     continue;
                 }
@@ -336,7 +339,9 @@ public sealed class Igi2GunPickup
             }
 
             p = new Vector3d((cx + p.X).Value, (cy + p.Y).Value, ((Fpu)cz + p.Z).Value);
-            if (below.IsHit)
+            // Water below lets it sink, unless it is the C4 bomb, which floats.
+            bool isFlat = string.Equals(WeaponType.WeaponId, FlatWeaponId, StringComparison.Ordinal);
+            if (below.IsHit && (below.HitObject is not World.Igi2WaterBody || isFlat))
             {
                 GroundNormal = Unit(below.Normal);
                 Fpu height = (Fpu)_fall.Starts[4].Z - below.Position.Z;
@@ -365,7 +370,7 @@ public sealed class Igi2GunPickup
                     else
                     {
                         sx = sy = sz = 0f;
-                        if (below.HitObject is Igi2TerrainCollider)
+                        if (below.HitObject is Igi2TerrainCollider || (below.HitObject?.Owner as Igi2CollisionOwner)?.IsSector == true)
                         {
                             IsMoving = false;
                         }
@@ -379,9 +384,22 @@ public sealed class Igi2GunPickup
                 }
             }
 
-            if (above.IsHit && above.Normal.Z > 0f && (!below.IsHit || !(below.Normal.Z > 0f)))
+            if (above.IsHit && above.Normal.Z > 0f)
             {
-                p = new Vector3d(p.X, p.Y, ((Fpu)above.Position.Z + 2048.0).Value);
+                // Fallen under water, the C4 bomb comes back up to float; under anything else, a pickup with no floor beneath is put
+                // back on top.
+                if (above.HitObject is World.Igi2WaterBody)
+                {
+                    if (isFlat)
+                    {
+                        IsMoving = true;
+                        p = new Vector3d(p.X, p.Y, ((Fpu)above.Position.Z + 2048.0).Value);
+                    }
+                }
+                else if (!below.IsHit || !(below.Normal.Z > 0f))
+                {
+                    p = new Vector3d(p.X, p.Y, ((Fpu)above.Position.Z + 2048.0).Value);
+                }
             }
         }
 
