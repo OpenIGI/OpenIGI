@@ -150,6 +150,10 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     public IIgi2SoldierMind? Mind { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>A HumanAI mind keeps its soldier on its graph; the stand-in mind does not.</remarks>
+    protected override IIgi2GraphFooting? GraphFooting => Mind as IIgi2GraphFooting;
+
+    /// <inheritdoc/>
     protected override IIgi2HumanWeapon HumanWeapon => Weapon;
 
     /// <summary>Gets or sets the locomotion signal word, <c>tState.bSignal</c>.</summary>

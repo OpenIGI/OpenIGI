@@ -129,7 +129,8 @@ public sealed class RetailIgi2LevelAiTests
         }
         Assert.All(minds, static mind => Assert.True(mind.HasStarted,
             $"AI {mind.Task.Id}: graph={mind.Task.GraphId}/{mind.Graph is not null}, active={mind.Soldier.IsActive}, time={mind.Soldier.MissionTime}"));
-        Assert.All(minds, static mind => Assert.True(mind.Soldier.Animation.MainTime > 0,
+        // A looping clip can wrap to exactly nought on the last tick; what matters is that its clock runs.
+        Assert.All(minds, static mind => Assert.True(mind.Soldier.Animation.MainTime > 0 || mind.Soldier.Animation.MainTimeStep > 0,
             $"AI {mind.Task.Id}: animation={mind.Soldier.Animation.MainTime}, step={mind.Soldier.Animation.MainTimeStep}, state={mind.Soldier.Locomotion.CurrentState}"));
     }
 
@@ -185,6 +186,43 @@ public sealed class RetailIgi2LevelAiTests
             Igi2HumanAi mind = (Igi2HumanAi)body.Mind!;
             Assert.True(mind.HasStarted, $"the mind of soldier {mind.Task.Id} never started");
         }
+    }
+
+    /// <summary>
+    /// A living soldier with a mind stands on its graph, not on the world (<c>human.c Human_GroundCollision</c>): the graph is its
+    /// ground, the footing faces straight up, and its feet and its light lie between those of the nodes around the one it stands on.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_soldier_with_a_mind_stands_on_its_graph()
+    {
+        (RetailIgi2Mission1 m, Igi2Soldiers soldiers, Igi2AiWorld _, _) = Build();
+        m.Tree.OfType<Flow.Igi2EditVariableTask>().Single(static v => v.Id == 2112).Value = 1;
+        for (int tick = 0; tick < 600; tick++)
+        {
+            m.Run.Tick();
+        }
+
+        int checkedSoldiers = 0;
+        foreach (Igi2HumanSoldier body in soldiers.Bodies.Where(static b => !b.IsDead && b.Mind is Igi2HumanAi { Graph: not null }))
+        {
+            Igi2HumanAi mind = (Igi2HumanAi)body.Mind!;
+            Igi2AiGraph graph = mind.Graph!;
+            Assert.Same(graph.Ground, body.GroundCollider);
+            Assert.Equal(new Vector3f(0f, 0f, 1f), body.GroundIntersection.Normal);
+            Igi2AiGraphNode node = graph.NodeAt(mind.CurrentNode)!;
+            List<Igi2AiGraphNode> around = [node, .. node.Links.Select(link => graph.NodeAt(link.Other(node.Id))).OfType<Igi2AiGraphNode>()];
+            if (graph.NodeAt(mind.PreviousNode) is { } previous)
+            {
+                around.Add(previous);
+                around.AddRange(previous.Links.Select(link => graph.NodeAt(link.Other(previous.Id))).OfType<Igi2AiGraphNode>());
+            }
+
+            Assert.InRange(body.Position.Z, around.Min(static n => n.Position.Z) - 1.0, around.Max(static n => n.Position.Z) + 1.0);
+            Assert.InRange(body.Lightmap, around.Min(static n => n.LightValue), around.Max(static n => n.LightValue));
+            checkedSoldiers++;
+        }
+
+        Assert.True(checkedSoldiers > 0);
     }
 
     /// <summary>

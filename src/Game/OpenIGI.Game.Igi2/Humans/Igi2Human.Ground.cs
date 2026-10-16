@@ -41,6 +41,7 @@ public abstract partial class Igi2Human
     private readonly Igi2LineTrace _footing = new(2) { Mesh = FootingMesh };
     private readonly Igi2LineTrace _buried = new(1) { Mesh = FootingMesh };
     private readonly Igi2LineTrace _material = new(1);
+    private readonly Igi2Intersection _graphFooting = new();
 
     /// <summary>Gets or sets where the human stands, <c>tModelObj.tPos</c>, in world units.</summary>
     public Vector3d Position { get; set; }
@@ -81,8 +82,11 @@ public abstract partial class Igi2Human
     /// <summary>Gets or sets a value indicating whether the platform underfoot moved, <c>Human_s.isPlatformMoving</c>.</summary>
     public bool IsPlatformMoving { get; set; }
 
-    /// <summary>Gets a value indicating whether a brain drives the human; one that has it takes its footing from its graph.</summary>
-    protected virtual bool HasBrain => false;
+    /// <summary>
+    /// Gets the brain that drives the human, if it has one that keeps it on a graph (<c>Human_s.ptHumanAIQTask</c>); a living human
+    /// with one takes its footing from the graph.
+    /// </summary>
+    protected virtual IIgi2GraphFooting? GraphFooting => null;
 
     /// <summary>Gets where the rigid object underfoot stands now, if the human stands on one.</summary>
     /// <param name="position">The object's position.</param>
@@ -108,8 +112,7 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>
-    /// Finds the ground under a move and settles the feet on it: <c>Human_GroundCollision</c> (<c>igi2 0x4FD130</c>), for a
-    /// human without a brain, or a dead one.
+    /// Finds the ground under a move and settles the feet on it: <c>Human_GroundCollision</c> (<c>igi2 0x4FD130</c>).
     /// </summary>
     /// <param name="from">Where the move started.</param>
     /// <param name="to">Where it ends; its height is moved onto the ground when the human lands there.</param>
@@ -124,6 +127,7 @@ public abstract partial class Igi2Human
     /// <para>
     /// The struck object alone is then probed again, from 1638.4 above the hit down through it, on its finest
     /// collision level. That probe's material replaces the footing's, and its light is averaged into the human's.
+    /// A living human with a brain on a graph casts nothing and stands on the graph instead (<see cref="GraphFooting"/>).
     /// The human stands when the drop to the ground is within the tolerance, or within two metres while a slope
     /// slides it. Standing puts the feet on the ground, turns the ground's normals up, keeps hold of what is
     /// underfoot, and measures the slope of the step.
@@ -131,6 +135,12 @@ public abstract partial class Igi2Human
     /// </remarks>
     public void GroundCollision(Vector3d from, ref Vector3d to, float tolerance)
     {
+        if (!IsDead && GraphFooting is { } brain)
+        {
+            GraphGroundCollision(brain, from, ref to);
+            return;
+        }
+
         GroundIntersection.Clear();
         DistanceToGround = 1073741824.0;
 
@@ -174,10 +184,33 @@ public abstract partial class Igi2Human
         GroundIntersection.CopyFrom(ground);
     }
 
+    /// <summary>
+    /// A living human's footing from its brain's graph, <c>human.c Human_GroundCollision</c> (<c>igi2 0x4FD130</c>, its HumanAI
+    /// half): no line is cast and no roof is looked for; the light is the graph's, not averaged; and the human always stands.
+    /// </summary>
+    /// <remarks>
+    /// With no graph the footing stays empty and the human still stands, on it: retail puts its feet at height nought.
+    /// </remarks>
+    private void GraphGroundCollision(IIgi2GraphFooting brain, Vector3d from, ref Vector3d to)
+    {
+        GroundIntersection.Clear();
+        DistanceToGround = 0.0;
+        Igi2Intersection ground = _graphFooting;
+        ground.Clear();
+        if (brain.TryGetFooting(from, ground, out float light))
+        {
+            Lightmap = light;
+            DistanceToGround = ((Fpu)to.Z - ground.Position.Z).Value;
+        }
+
+        Settle(ground, from, ref to);
+        GroundIntersection.CopyFrom(ground);
+    }
+
     /// <summary>The material probe and the distance test: whether the human stands on what the footing struck.</summary>
     private bool Stands(Igi2Intersection ground, ref Vector3d to, float tolerance)
     {
-        if (ground.HitObject is { } struck && (!HasBrain || IsDead))
+        if (ground.HitObject is { } struck)
         {
             Vector3d start = new(ground.Position.X, ground.Position.Y, ((Fpu)ground.Position.Z + MaterialProbeAbove).Value);
             _material.Starts[0] = start;
