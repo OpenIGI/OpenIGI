@@ -91,6 +91,7 @@ public sealed class Igi2PlayerLocomotionTests
 
         Tick(player, Igi2PlayerAction.MoveForwards, grounded: true);
         Assert.Equal(1, surroundings.WalkEvents);
+        Assert.Equal(20480f, surroundings.AiEvents[^1].Radius);
 
         Tick(player, Igi2PlayerAction.None, grounded: true);
         Assert.Equal(Igi2PlayerState.Stand, player.Locomotion.CurrentState);

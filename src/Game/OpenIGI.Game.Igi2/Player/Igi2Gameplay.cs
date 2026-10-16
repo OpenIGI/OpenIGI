@@ -1646,9 +1646,10 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     public bool FitsLyingFlat() => Owner?.FitsWhereItStands() ?? true;
 
-    public void SendWalkEvent()
-    {
-    }
+    public float? SoundFalloffEnd(string name) =>
+        sounds.Definitions.TryResolve(name, out Engine.Audio.SoundDefinition? definition) && definition!.Kind == Engine.Audio.SoundDefinitionKind.Sound
+            ? definition.MaximumDistanceMetres
+            : null;
 
     public void SendLandingEvent()
     {

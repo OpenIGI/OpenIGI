@@ -118,11 +118,9 @@ internal static class Igi2PlayerFakes
 
         public bool Fits { get; set; } = true;
 
-        public int WalkEvents { get; private set; }
+        public int WalkEvents => AiEvents.Count(static e => e.Event == Ai.Igi2AiEvent.Walk);
 
         public bool FitsLyingFlat() => Fits;
-
-        public void SendWalkEvent() => WalkEvents++;
 
         public int LandingEvents { get; private set; }
 

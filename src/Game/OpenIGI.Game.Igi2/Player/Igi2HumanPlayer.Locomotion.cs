@@ -598,7 +598,7 @@ public sealed partial class Igi2HumanPlayer
         }
         else if (!TryCrouch() && !TryLieDown(Igi2PlayerSignal.LieDown))
         {
-            Surroundings.SendWalkEvent();
+            SendWalkEvent(gait.Family == GaitFamily.Run);
         }
     }
 

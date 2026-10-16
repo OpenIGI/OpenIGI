@@ -164,8 +164,13 @@ public interface IIgi2HumanSurroundings
     /// </remarks>
     bool FitsLyingFlat();
 
-    /// <summary>Tells the AI the human is moving, so it can be heard (<c>HumanPlayer_SendWalkEvent</c>).</summary>
-    void SendWalkEvent();
+    /// <summary>
+    /// Gets how far a sound definition carries, <c>SoundDefSound.vFalloffEnd</c>, or <see langword="null"/> when no sound
+    /// definition (as opposed to a group, graph or trigger) has the name (<c>SoundSys_GetSoundDef</c>).
+    /// </summary>
+    /// <param name="name">The definition's name.</param>
+    /// <returns>Its farthest distance.</returns>
+    float? SoundFalloffEnd(string name) => null;
 
     /// <summary>Tells the AI the human has landed, so it can be heard.</summary>
     /// <remarks>Event 10 with flags <c>0x442</c> and radius 16384, sent by every landing (<c>HumanPlayer_InAirControl</c>).</remarks>

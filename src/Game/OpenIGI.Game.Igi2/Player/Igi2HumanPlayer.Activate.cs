@@ -479,6 +479,26 @@ public sealed partial class Igi2HumanPlayer
     private void SendHandleWeaponAiEvent() =>
         Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.HandleWeapon, Team, 1090, 20480f, Position, default, this));
 
+    /// <summary>
+    /// The player's steps heard by the AI, <c>humanplayer.c HumanPlayer_SendWalkEvent</c>: event 9 from its team, carrying as far
+    /// as the first running (or walking) step sound of the material it stands on carries, times 3072, or five metres when that
+    /// material, or a sound definition of the step, is missing.
+    /// </summary>
+    /// <param name="isRun">Whether it runs; every running gait says so, every walking gait does not.</param>
+    private void SendWalkEvent(bool isRun)
+    {
+        float radius = 20480f;
+        if (GroundIntersection.EnterMaterial is int row && Surroundings.Material(row) is { } material)
+        {
+            IReadOnlyList<string> steps = isRun ? material.RunSounds : material.WalkSounds;
+            radius = steps.Count > 0 && Surroundings.SoundFalloffEnd(steps[0]) is float farthest
+                ? ((Fpu)farthest * 3072f).F
+                : 20480f;
+        }
+
+        Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.Walk, Team, 1090, radius, Position, default, this));
+    }
+
     // Human_SendDoorAIEvent (igi2 0x49F6F0): AIEVENT_DOOR from the player's team, heard within five metres of where it stands.
     private void SendDoorAiEvent(object door) =>
         Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.Door, Team, 1090, 20480f, Position, default, this, door));

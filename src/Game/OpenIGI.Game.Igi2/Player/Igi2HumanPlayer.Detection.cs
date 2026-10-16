@@ -17,5 +17,5 @@ public sealed partial class Igi2HumanPlayer
     /// (<c>Human_HumanCollision</c>).
     /// </remarks>
     protected override void OnBlockedByHuman() =>
-        Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.HumanBump, Team, 1090, 12288f, View.Position, default, this, this));
+        Surroundings.SendAiEvent(new Ai.Igi2AiEvent(Ai.Igi2AiEvent.Walk, Team, 1090, 12288f, View.Position, default, this, this));
 }

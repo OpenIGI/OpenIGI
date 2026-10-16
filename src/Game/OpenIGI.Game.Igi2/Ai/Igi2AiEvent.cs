@@ -50,8 +50,11 @@ public readonly record struct Igi2AiEvent(
     /// <summary>A human climbing a ladder other than at a walk, event 13, <c>AIEVENT_LADDER</c> (<c>HumanPlayer_RunStateClimbLadder</c>).</summary>
     public const int Ladder = 13;
 
-    /// <summary>The player bumping into another human, event 9 (<c>Human_HumanCollision</c>).</summary>
-    public const int HumanBump = 9;
+    /// <summary>
+    /// A human heard moving, <c>AIEVENT_WALK</c>, event 9: the player's steps (<c>HumanPlayer_SendWalkEvent</c>) and its bumping
+    /// into another human (<c>Human_HumanCollision</c>).
+    /// </summary>
+    public const int Walk = 9;
 
     /// <summary>A human landing or a body hitting the ground, <c>AIEVENT_GROUNDIMPACT</c>.</summary>
     public const int GroundImpact = 10;
