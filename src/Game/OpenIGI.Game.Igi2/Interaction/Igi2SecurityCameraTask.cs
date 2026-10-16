@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// <remarks>
 /// <para>
 /// Its tick (<c>SCamera_RunHandler</c>, <c>igi2 0x48F9E0</c>): its lens first, then, destroyed, it is off and tells the AI every
-/// thirty ticks (not ported); otherwise its script, where it has one, says whether it is on.
+/// thirty ticks; otherwise its script, where it has one, says whether it is on.
 /// </para>
 /// <para>
 /// The lens's tick (<c>SCamera_SCameraLensRunHandler</c>, <c>0x48EF20</c>): on, it tilts back to its authored tilt, looks
@@ -578,15 +578,28 @@ public sealed partial class Igi2SecurityCameraTask
         _isDeadFriend = false;
         IIgi2Detectable? target = null;
 
-        // A dead friend in plain sight; a soldier's body only until it has once been seen (HumanSoldier +0xBDD), and not ported.
+        // A dead friend in plain sight. A soldier's body only the first time a camera sees it, or while this one is already
+        // counting down to a detection; once seen it is marked (HumanSoldier +0xBDD) and passed over after.
         foreach (Igi2DetectionItem item in lens.Detection?.Friends ?? [])
         {
-            if (item.IsFullVisible)
+            if (!item.IsFullVisible)
             {
-                target = item.Target;
-                _isDeadFriend = true;
-                break;
+                continue;
             }
+
+            if (item.Target is Soldiers.Igi2HumanSoldier body)
+            {
+                if (body.IsSeenByCamera && _detectionTime == 0)
+                {
+                    continue;
+                }
+
+                body.IsSeenByCamera = true;
+            }
+
+            target = item.Target;
+            _isDeadFriend = true;
+            break;
         }
 
         // The first enemy in plain sight over any friend.

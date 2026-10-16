@@ -156,6 +156,9 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// <inheritdoc/>
     public override bool IsAi => Mind is Ai.Runtime.Igi2HumanAi;
 
+    /// <summary>Gets or sets a value indicating whether a security camera has seen the soldier's body, <c>HumanSoldier +0xBDD</c>.</summary>
+    public bool IsSeenByCamera { get; set; }
+
     /// <inheritdoc/>
     public override bool IsSideKick => Mind is Ai.Runtime.Igi2HumanAi { Flags: var flags } && (flags & 1) != 0;
 
