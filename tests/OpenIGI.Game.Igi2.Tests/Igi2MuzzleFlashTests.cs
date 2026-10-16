@@ -38,3 +38,26 @@ public sealed class Igi2MuzzleFlashTests
         Assert.True(Assert.Single(flashes.Active).IsDrawn);
     }
 }
+
+/// <summary><c>GunCasing_RunHandler</c>: a casing flies nineteen ticks, falling, then goes.</summary>
+public sealed class Igi2GunCasingTests
+{
+    [Fact]
+    public void A_casing_falls_for_nineteen_ticks()
+    {
+        Igi2GunCasings casings = new(static _ => null);
+        casings.Eject(new Igi2CasingEjection(0, "1123_01_1", 0f, true, (0, 0, 0)), "gun", default, Core.Numerics.Matrix3f.Identity, default);
+        Igi2GunCasing casing = Assert.Single(casings.Flying);
+        Assert.Equal(Igi2GunCasings.EjectionSpeed, casing.Speed.X, 3);
+        Assert.Equal(Igi2GunCasings.EjectionSpeed, casing.Speed.Y, 3);
+
+        int ticks = 0;
+        while (casings.Flying.Count > 0)
+        {
+            casings.Run();
+            ticks++;
+        }
+
+        Assert.Equal(Igi2GunCasing.Lifetime + 1, ticks);
+    }
+}

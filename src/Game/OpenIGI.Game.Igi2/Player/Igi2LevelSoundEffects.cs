@@ -106,7 +106,12 @@ internal sealed class Igi2LevelExplosionEffects(Igi2Sounds sounds, Ai.Runtime.Ig
 /// <param name="sounds">The level's sounds.</param>
 /// <param name="view">Where the holder's view is.</param>
 /// <param name="ai">The session's AI, which hears the events, or <see langword="null"/>.</param>
-internal sealed class Igi2LevelWeaponEffects(Igi2Sounds sounds, Func<Vector3d> view, Ai.Runtime.Igi2AiWorld? ai = null) : IIgi2WeaponEffects
+/// <param name="casings">Throws a shot's casing from the holder's weapon object, or <see langword="null"/> for none.</param>
+internal sealed class Igi2LevelWeaponEffects(
+    Igi2Sounds sounds,
+    Func<Vector3d> view,
+    Ai.Runtime.Igi2AiWorld? ai = null,
+    Action<Igi2CasingEjection>? casings = null) : IIgi2WeaponEffects
 {
     /// <summary>The most sounds a sequence holds, <c>Weapon_s + 0x28C</c> against ten.</summary>
     public const int SequenceLength = 10;
@@ -132,9 +137,7 @@ internal sealed class Igi2LevelWeaponEffects(Igi2Sounds sounds, Func<Vector3d> v
     }
 
     /// <inheritdoc/>
-    public void EjectCasing(in Igi2CasingEjection casing)
-    {
-    }
+    public void EjectCasing(in Igi2CasingEjection casing) => casings?.Invoke(casing);
 
     /// <inheritdoc/>
     /// <remarks>

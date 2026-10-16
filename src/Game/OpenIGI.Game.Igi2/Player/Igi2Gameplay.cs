@@ -79,6 +79,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.GameConfig = request.Services.TryGet(out Config.Igi2GameConfig? gameConfig) ? gameConfig : null;
         player.ModelAttachments = new Igi2ModelAttachments(models,
             request.Services.TryGet(out Igi2MagicObjTypes? attachmentTypes) ? attachmentTypes : null);
+        player.Casings = new Weapons.Igi2GunCasings(models);
         if (request.Services.TryGet(out Igi2WhizzbyClock? clock))
         {
             player.Human.WhizzbyClock = clock;
@@ -97,7 +98,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.Glass = Interaction.Igi2GlassContainer.Build(world, models, player.Human.Random, explosions: null);
         if (weapons is not null)
         {
-            weapons.Effects = new Igi2LevelWeaponEffects(sounds, () => player.Human.View.Position, LevelAi(request.Services));
+            weapons.Effects = new Igi2LevelWeaponEffects(sounds, () => player.Human.View.Position, LevelAi(request.Services), player.EjectCasing);
             weapons.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(request.Services));
         }
 
@@ -205,7 +206,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 player.Grenades,
                 request.Natives,
                 request.Services.TryGet(out Scripting.Igi2ScriptFunctions? lineFunctions) ? lineFunctions : null,
-                worn)
+                worn,
+                player.Casings)
             : null;
 
         // The level's figures: each its face, its clips and its first pause, from the module's blink stream; then its weapon expression.
@@ -322,6 +324,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <param name="natives">The session's script namespace, which the minds' type names are read in; <see langword="null"/> to leave them unread.</param>
     /// <param name="functions">The natives those names may call.</param>
     /// <param name="worn">The model each soldier wears, its face given (<see cref="Igi2HumanFaces.Assign"/>).</param>
+    /// <param name="casings">Where the soldiers' spent casings fly, or <see langword="null"/> for nowhere.</param>
     /// <returns>The soldiers.</returns>
     /// <remarks>
     /// Every human's inventory is made within the ammunition limits (<c>Human_CreateHandler</c>, <c>igi2 0x4FDC90</c>) and filled by
@@ -342,7 +345,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Weapons.Igi2Grenades? grenades = null,
         OpenIGI.Scripting.Runtime.NativeRegistry? natives = null,
         Scripting.Igi2ScriptFunctions? functions = null,
-        IReadOnlyDictionary<Engine.Tasks.GameTask, string>? worn = null)
+        IReadOnlyDictionary<Engine.Tasks.GameTask, string>? worn = null,
+        Weapons.Igi2GunCasings? casings = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(services);
@@ -382,7 +386,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
             // A soldier's rounds go into the same world as the player's, its weapon sounds at its head.
             if (body.Weapon is Igi2PlayerWeapons arms)
             {
-                arms.Effects = new Igi2LevelWeaponEffects(sounds, body.CheapHeadBonePosition, LevelAi(services));
+                Soldiers.Igi2HumanSoldier shooter = body;
+                arms.Effects = new Igi2LevelWeaponEffects(sounds, body.CheapHeadBonePosition, LevelAi(services), casing =>
+                {
+                    if (casings is not null && shooter.Model is { } dress && arms.Inventory?.Current?.WeaponType.FixedModel is { } held)
+                    {
+                        Igi2TitlePlayer.EjectFrom(casings, casing, Igi2BodyFrame.Build(shooter, shooter.BodyPose(), dress.Name, held, 0), held, shooter.TotalSpeed);
+                    }
+                });
                 arms.ImpactEffects = new Igi2LevelImpactEffects(sounds, LevelAi(services)) { Explosions = grenades?.Explosions };
                 if (materials is not null)
                 {
@@ -1467,6 +1478,74 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the mission's resolver for the held model's nested magic objects.</summary>
     public Igi2ModelAttachments? ModelAttachments { get; set; }
 
+    /// <summary>Gets or sets the spent casings in flight, the player's and the soldiers'; <see langword="null"/> for none.</summary>
+    public Weapons.Igi2GunCasings? Casings { get; set; }
+
+    /// <summary>
+    /// Throws a casing from the player's weapon object: the one the first-person view holds, or, while the body is drawn working,
+    /// the one in the body's hand.
+    /// </summary>
+    /// <param name="ejection">What the shot drew for it.</param>
+    internal void EjectCasing(Weapons.Igi2CasingEjection ejection)
+    {
+        if (Casings is not { } casings || Inventory?.Current?.WeaponType.FixedModel is not { } held)
+        {
+            return;
+        }
+
+        if (Human.CameraMode is 3 or 5 && Human.Model is { } body)
+        {
+            EjectFrom(casings, ejection, Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, held, _ticks), held, Human.TotalSpeed);
+            return;
+        }
+
+        if (_firstPerson.Build(Human, held, _ticks, ModelAttachments) is not { } view)
+        {
+            return;
+        }
+
+        int index = 0;
+        foreach (TitleViewModelPart part in view.Parts)
+        {
+            if (part.Pose is not null || !string.Equals(part.Model, held, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (index++ == ejection.WeaponObject)
+            {
+                Vector3f local = view.Orientation.Transposed().Transform(part.Position);
+                Vector3d at = new(view.Origin.X + local.X, view.Origin.Y + local.Y, view.Origin.Z + local.Z);
+                casings.Eject(ejection, part.Model, at, view.Orientation * part.Orientation, Human.TotalSpeed);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Throws a casing from the weapon object a body's frame holds, the weapon objects counted in the frame's order.</summary>
+    /// <param name="casings">Where it flies.</param>
+    /// <param name="ejection">What the shot drew for it.</param>
+    /// <param name="frame">The body's models as this tick poses them.</param>
+    /// <param name="held">The weapon in hand's model.</param>
+    /// <param name="holderSpeed">The holder's speed.</param>
+    internal static void EjectFrom(
+        Weapons.Igi2GunCasings casings,
+        in Weapons.Igi2CasingEjection ejection,
+        IReadOnlyList<TitleWorldModel> frame,
+        string held,
+        Vector3f holderSpeed)
+    {
+        int index = 0;
+        foreach (TitleWorldModel model in frame)
+        {
+            if (model.Pose is null && string.Equals(model.Model, held, StringComparison.OrdinalIgnoreCase) && index++ == ejection.WeaponObject)
+            {
+                casings.Eject(ejection, model.Model, model.Position, model.Orientation, holderSpeed);
+                return;
+            }
+        }
+    }
+
     /// <summary>Gets or sets the level's automatic guns.</summary>
     public IReadOnlyList<Weapons.Igi2AiStationaryGunHolderTask> Turrets { get; set; } = [];
 
@@ -1552,7 +1631,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 // interaction mode draws the working body rather than the first-person weapon.
                 IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
                     ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working];
+                IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
+                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings];
                 _lyingTick = _ticks;
             }
 
@@ -1648,6 +1728,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);
         ResetLook();
+        Casings?.Run();
         Sounds.Run();
         _ticks++;
     }
