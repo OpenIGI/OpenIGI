@@ -78,6 +78,11 @@ public interface IIgi2WeaponEffects
     /// <param name="looped">Whether it loops.</param>
     void PlaySound(int slot, string sound, bool looped);
 
+    /// <summary>Stops every sound the weapon has playing, its slots' and its sequence's (<c>Weapon_StopAllSound</c>).</summary>
+    void StopAllSounds()
+    {
+    }
+
     /// <summary>Empties the weapon's sound sequence (<c>Weapon_ClearSoundSequence</c>, <c>igi2 0x51F680</c>).</summary>
     void ClearSoundSequence();
 

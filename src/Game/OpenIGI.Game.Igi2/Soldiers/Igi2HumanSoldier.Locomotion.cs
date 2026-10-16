@@ -685,24 +685,8 @@ public sealed partial class Igi2HumanSoldier
         }
     }
 
-    /// <summary>
-    /// The soldier's own step along the ground, <c>Human_MoveOnGround</c> (<c>igi2 0x503570</c>): a speed forward, turned by a
-    /// heading off the body's and then by the body, as the animation's step.
-    /// </summary>
-    /// <param name="speed">The step forward.</param>
-    /// <param name="gamma">The heading off the body's the step is taken at.</param>
-    private void MoveOnGround(float speed, float gamma)
-    {
-        float[] r = Igi2Pose.Rotation(0f, 0f, gamma);
-        Fpu a = (((Fpu)r[2] + r[0]) * 0f) + ((Fpu)r[1] * speed);
-        Fpu b = (((Fpu)r[5] + r[3]) * 0f) + ((Fpu)r[4] * speed);
-        Fpu c = (((Fpu)r[8] + r[6]) * 0f) + ((Fpu)r[7] * speed);
-        Matrix3f o = Orientation;
-        float x = ((c * o.M13) + (b * o.M12) + (a * o.M11)).F;
-        float y = ((c * o.M23) + (b * o.M22) + (a * o.M21)).F;
-        float z = ((c * o.M33) + (b * o.M32) + (a * o.M31)).F;
-        DeltaTranslation = new Vector3f(x, y, z);
-    }
+    /// <summary>The soldier's own step along the ground (<see cref="Humans.Igi2Human.StepOnGround"/>).</summary>
+    private void MoveOnGround(float speed, float gamma) => StepOnGround(speed, gamma);
 
     /// <summary>
     /// Whether the weapon's clip for a gait is its own, named for the weapon's family or animation (<c>rifl</c>, <c>pistol</c>,

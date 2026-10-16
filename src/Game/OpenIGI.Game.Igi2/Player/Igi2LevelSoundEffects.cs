@@ -158,6 +158,18 @@ internal sealed class Igi2LevelWeaponEffects(
     }
 
     /// <inheritdoc/>
+    public void StopAllSounds()
+    {
+        foreach (Igi2Sound playing in _slots.Values)
+        {
+            playing.Delete();
+        }
+
+        _slots.Clear();
+        ClearSoundSequence();
+    }
+
+    /// <inheritdoc/>
     /// <remarks><c>Weapon_DeleteFirstSoundInSoundSequence</c> (<c>igi2 0x51F610</c>) until none is left: each one's sound is deleted.</remarks>
     public void ClearSoundSequence()
     {

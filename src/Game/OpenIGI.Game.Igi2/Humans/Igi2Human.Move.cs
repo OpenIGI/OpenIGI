@@ -25,6 +25,25 @@ public abstract partial class Igi2Human
     /// <summary>What is left of an impact after a tick, <c>0x3F666666</c>.</summary>
     private const float ImpactDecay = 0.9f;
 
+    /// <summary>
+    /// A step along the ground, <c>Human_MoveOnGround</c> (<c>igi2 0x503570</c>): a speed forward, turned by a heading off the
+    /// body's and then by the body, taken as the animation's step.
+    /// </summary>
+    /// <param name="speed">The step forward.</param>
+    /// <param name="gamma">The heading off the body's the step is taken at.</param>
+    protected void StepOnGround(float speed, float gamma)
+    {
+        float[] r = Igi2Pose.Rotation(0f, 0f, gamma);
+        Fpu a = (((Fpu)r[2] + r[0]) * 0f) + ((Fpu)r[1] * speed);
+        Fpu b = (((Fpu)r[5] + r[3]) * 0f) + ((Fpu)r[4] * speed);
+        Fpu c = (((Fpu)r[8] + r[6]) * 0f) + ((Fpu)r[7] * speed);
+        Matrix3f o = Orientation;
+        float x = ((c * o.M13) + (b * o.M12) + (a * o.M11)).F;
+        float y = ((c * o.M23) + (b * o.M22) + (a * o.M21)).F;
+        float z = ((c * o.M33) + (b * o.M32) + (a * o.M31)).F;
+        DeltaTranslation = new Vector3f(x, y, z);
+    }
+
     /// <summary>Gets or sets the step the animation takes this tick, <c>Human_s.tDeltaTranslation</c>.</summary>
     public Vector3f DeltaTranslation { get; set; }
 

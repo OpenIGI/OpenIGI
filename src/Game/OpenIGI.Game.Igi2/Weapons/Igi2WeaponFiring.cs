@@ -507,6 +507,17 @@ public sealed class Igi2WeaponFiring
         }
     }
 
+    /// <summary>An automatic weapon still firing lets go of both triggers, as the water makes it (<c>HumanPlayer_InitStateSwim</c>).</summary>
+    public void ReleaseAutoFire()
+    {
+        if (IsAutoFire)
+        {
+            IsAutoFire = false;
+            _fireTypes[0].IsReleaseFire = true;
+            _fireTypes[1].IsReleaseFire = true;
+        }
+    }
+
     /// <summary>Lets go of both triggers and clears the status, as death and water do.</summary>
     public void ReleaseTriggers()
     {

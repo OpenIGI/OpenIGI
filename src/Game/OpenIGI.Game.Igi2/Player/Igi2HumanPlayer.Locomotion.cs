@@ -47,6 +47,9 @@ public sealed partial class Igi2HumanPlayer
         states[Igi2PlayerState.Peek] = (_, _) => EnterPeek();
         states[Igi2PlayerState.Computer] = (_, _) => EnterComputer();
         states[Igi2PlayerState.SilentKill] = (_, _) => EnterSilentKill();
+        states[Igi2PlayerState.SwimForward] = (_, _) => EnterSwim();
+        states[Igi2PlayerState.SwimBackward] = (_, _) => EnterSwim();
+        states[Igi2PlayerState.TreadWater] = (_, _) => EnterSwim();
         foreach (Gait gait in Gaits)
         {
             states[gait.State] = (_, _) => EnterGait(gait);
