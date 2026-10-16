@@ -1529,6 +1529,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                     : [];
                 IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
                     ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
+                        .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
+                            .Where(static g => g.Parameters.Model.Length != 0)
+                            .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
+                        .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
+                            .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
                     : [];
                 IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
                 IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
