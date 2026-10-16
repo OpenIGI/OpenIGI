@@ -311,12 +311,13 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             device,
             surface,
             textures.Resolve,
-            sheet => LoadCube(device, resources, tasks, sheet, logger),
-            logger);
+            sheet => LoadCubes(device, resources, tasks, sheet, logger),
+            logger,
+            taskId => tasks.TryGetValue(taskId, out WaterTask? water) ? water.EnvmapSlot : 0);
     }
 
-    /// <summary>Loads one sheet's baked reflection, or hands back nothing.</summary>
-    private static TextureHandle LoadCube(
+    /// <summary>Loads one sheet's baked reflections, one a slot of its resource list (<c>Water_LoadEnvmapData</c>).</summary>
+    private static List<TextureHandle> LoadCubes(
         IGraphicsDevice device,
         ResourceRegistry resources,
         Dictionary<int, WaterTask> tasks,
@@ -325,27 +326,43 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     {
         if (sheet.EnvmapIndices.Count == 0 || !tasks.TryGetValue(sheet.TaskId, out WaterTask? water))
         {
-            return TextureHandle.None;
+            return [];
         }
 
         string name = "MISSION:" + Igi2EnvironmentMap.ArchiveDirectory + "/" + Igi2EnvironmentMap.ArchiveName(sheet.TaskId);
         if (!resources.TryLoad(name, out ReadOnlyMemory<byte> bytes))
         {
-            return TextureHandle.None;
+            return [];
         }
 
+        IresArchive archive;
         try
         {
-            IresArchive archive = IresArchive.Read(bytes);
-            return Igi2EnvironmentMap.Load(water, sheet.EnvmapIndices[0], archive).Upload(device);
+            archive = IresArchive.Read(bytes);
         }
-        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or GraphicsDeviceException)
+        catch (InvalidDataException ex)
         {
-            logger.Warning(
-                Igi2WaterPresenter.LogCategory,
-                $"Water {sheet.TaskId}'s reflection did not load: {ex.Message}");
-            return TextureHandle.None;
+            logger.Warning(Igi2WaterPresenter.LogCategory, $"Water {sheet.TaskId}'s reflections did not load: {ex.Message}");
+            return [];
         }
+
+        List<TextureHandle> cubes = [];
+        foreach (int index in sheet.EnvmapIndices)
+        {
+            try
+            {
+                cubes.Add(Igi2EnvironmentMap.Load(water, index, archive).Upload(device));
+            }
+            catch (Exception ex) when (ex is InvalidDataException or ArgumentException or GraphicsDeviceException)
+            {
+                logger.Warning(
+                    Igi2WaterPresenter.LogCategory,
+                    $"Water {sheet.TaskId}'s reflection {index} did not load: {ex.Message}");
+                cubes.Add(TextureHandle.None);
+            }
+        }
+
+        return cubes;
     }
 
     /// <summary>Walks the level's water tasks.</summary>

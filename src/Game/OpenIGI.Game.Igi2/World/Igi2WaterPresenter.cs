@@ -68,6 +68,7 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
 
     private readonly IGraphicsDevice _device;
     private readonly IOpenIgiLogger _logger;
+    private readonly Func<int, int>? _envmapSlot;
     private readonly Sheet[] _sheets;
     private bool _disposed;
 
@@ -75,15 +76,17 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
     /// <param name="device">The device to upload through and draw with.</param>
     /// <param name="surface">The sheets the level places.</param>
     /// <param name="textures">Resolves a sheet's texture to a loaded texture.</param>
-    /// <param name="cubes">Resolves a sheet's baked reflection to a cube map, or returns the null handle.</param>
+    /// <param name="cubes">Resolves a sheet's baked reflections to cube maps, one a slot of its resource list; empty for none.</param>
     /// <param name="logger">Where load diagnostics go.</param>
+    /// <param name="envmapSlot">The slot a water task reflects now, by its id; the first without.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public Igi2WaterPresenter(
         IGraphicsDevice device,
         Igi2WaterSurface surface,
         Func<string, TextureHandle> textures,
-        Func<Igi2WaterSheet, TextureHandle>? cubes = null,
-        IOpenIgiLogger? logger = null)
+        Func<Igi2WaterSheet, IReadOnlyList<TextureHandle>>? cubes = null,
+        IOpenIgiLogger? logger = null,
+        Func<int, int>? envmapSlot = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
@@ -91,6 +94,7 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
 
         _device = device;
         _logger = logger ?? NullLogger.Instance;
+        _envmapSlot = envmapSlot;
 
         List<Sheet> sheets = [];
         long vertices = 0;
@@ -101,7 +105,7 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
                 Igi2WaterWaveField.For(sheet),
                 EdgeVerticesFor(sheet),
                 textures(sheet.Texture),
-                cubes?.Invoke(sheet) ?? TextureHandle.None);
+                cubes?.Invoke(sheet) ?? []);
 
             sheets.Add(built);
             vertices += built.VertexCount;
@@ -216,8 +220,9 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
         }
 
         // The sheet's own reflection, or none — which leaves the draw unreflective rather than
-        // reflecting whatever the last sheet used.
-        _device.SetEnvironmentCube(sheet.Cube);
+        // reflecting whatever the last sheet used. Water_EnterHandler reflects the slot its index expression chose; one that
+        // did not load falls back to the first.
+        _device.SetEnvironmentCube(sheet.CubeFor(_envmapSlot?.Invoke(sheet.Definition.TaskId) ?? 0));
         _device.DrawMesh(
             sheet.Mesh,
             0,
@@ -252,11 +257,11 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
             Igi2WaterWaveField field,
             int edge,
             TextureHandle texture,
-            TextureHandle cube)
+            IReadOnlyList<TextureHandle> cubes)
         {
             Definition = definition;
             Texture = texture;
-            Cube = cube;
+            _cubes = [.. cubes];
             _field = field;
             _edge = edge;
             _vertices = new Vertex3D[edge * edge];
@@ -281,7 +286,12 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
 
         public TextureHandle Texture { get; }
 
-        public TextureHandle Cube { get; }
+        public TextureHandle Cube => _cubes.Length > 0 ? _cubes[0] : TextureHandle.None;
+
+        private readonly TextureHandle[] _cubes;
+
+        public TextureHandle CubeFor(int slot) =>
+            slot >= 0 && slot < _cubes.Length && _cubes[slot].IsValid ? _cubes[slot] : Cube;
 
         public MeshHandle Mesh { get; private set; } = MeshHandle.None;
 

@@ -187,9 +187,29 @@ public sealed partial class WaterTask : Igi2Task
     /// <summary>Gets or sets the body the level runs for it, or <see langword="null"/> when no level runs it.</summary>
     public Igi2WaterBody? Body { get; set; }
 
+    /// <summary>
+    /// Gets the slot of the environment maps <see cref="ResourceList"/> loads that the water reflects, as its
+    /// <see cref="EnvmapIndexExpression"/> last said (<c>nEnvmapIndex</c>).
+    /// </summary>
+    public int EnvmapSlot { get; private set; }
+
+    private Flow.Igi2LevelExpression? _envmapIndex;
+
     /// <inheritdoc/>
-    /// <remarks><c>Water_RunHandler</c>: its ripples spread, its splashes rise and fall, and its tick counts.</remarks>
-    public override void Run(Flow.Igi2LevelRun level) => Body?.Run();
+    /// <remarks>
+    /// <c>Water_RunHandler</c>: its ripples spread, its splashes rise and fall; its environment map index is evaluated, the
+    /// value truncated; and its tick counts.
+    /// </remarks>
+    public override void Run(Flow.Igi2LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        Body?.Run();
+        _envmapIndex ??= new Flow.Igi2LevelExpression(EnvmapIndexExpression, Name, level.Natives);
+        if (!_envmapIndex.IsEmpty)
+        {
+            EnvmapSlot = (int)(long)level.Evaluate(_envmapIndex);
+        }
+    }
 
     /// <summary>Gets the environment map indices <see cref="ResourceList"/> names.</summary>
     /// <remarks>
