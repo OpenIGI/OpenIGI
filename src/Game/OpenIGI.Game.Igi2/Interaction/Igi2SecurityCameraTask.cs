@@ -360,7 +360,14 @@ public sealed partial class Igi2SecurityCameraTask
     /// <c>SCamera_SCameraLensWeaponHitHandler</c> (<c>igi2 0x48F5E0</c>): while whole, the lens adds the bullet's damage, and enough
     /// of it explodes the lens on its next tick. The shooter is told it hit something, which only counts towards the score.
     /// </remarks>
-    public void WeaponHit(in Igi2WeaponHit hit) => BulletDamage(hit.Damage);
+    public void WeaponHit(in Igi2WeaponHit hit)
+    {
+        BulletDamage(hit.Damage);
+        if (hit.Shooter is Humans.Igi2Human scorer && hit.AmmoType is { UsedForAccuracyScore: true })
+        {
+            scorer.HitByYou(this);
+        }
+    }
 
     /// <summary>A bullet's damage to the lens, as <see cref="WeaponHit"/> takes it.</summary>
     /// <param name="damage">The damage the bullet still does.</param>

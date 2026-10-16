@@ -46,12 +46,6 @@ public sealed class Igi2HumanSaveExtras
     /// <summary>Gets or sets the mission, <c>iMissionID</c>.</summary>
     public int MissionId { get; set; }
 
-    /// <summary>Gets or sets its kills, <c>nKills</c>.</summary>
-    public int Kills { get; set; }
-
-    /// <summary>Gets or sets its hits, <c>nHits</c>.</summary>
-    public int Hits { get; set; }
-
     /// <summary>Gets or sets the alarms it set off, <c>nTimesAlarmTriggered</c>.</summary>
     public int TimesAlarmTriggered { get; set; }
 
@@ -136,8 +130,8 @@ public abstract partial class Igi2Human
         writer.Int(extras.MissionId);
         writer.Int(TimesSpotted);
         writer.Int(MissionShots);
-        writer.Int(extras.Kills);
-        writer.Int(extras.Hits);
+        writer.Int(MissionKills);
+        writer.Int(MissionHits);
         writer.Int(GameLoads);
         writer.Int(MissionTime);
         writer.Int(extras.TimesAlarmTriggered);
@@ -243,9 +237,9 @@ public abstract partial class Igi2Human
         extras.Difficulty = reader.Int();
         extras.MissionId = reader.Int();
         TimesSpotted = reader.Int();
-        reader.Int();
-        extras.Kills = reader.Int();
-        extras.Hits = reader.Int();
+        MissionShots = reader.Int();
+        MissionKills = reader.Int();
+        MissionHits = reader.Int();
         GameLoads = reader.Int();
         MissionTime = reader.Int();
         extras.TimesAlarmTriggered = reader.Int();

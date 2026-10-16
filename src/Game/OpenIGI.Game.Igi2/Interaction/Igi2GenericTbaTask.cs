@@ -281,7 +281,7 @@ public sealed partial class Igi2GenericTbaTask
     }
 
     /// <inheritdoc/>
-    public void WeaponHit(in Igi2WeaponHit hit) => Explosive.WeaponHit(hit.Damage);
+    public void WeaponHit(in Igi2WeaponHit hit) => Explosive.WeaponHit(hit, this);
 
     /// <inheritdoc/>
     public void ExplosionHit(in Igi2ExplosionHit hit) => Explosive.ExplosionHit(hit);

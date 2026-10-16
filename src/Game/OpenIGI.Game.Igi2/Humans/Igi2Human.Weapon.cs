@@ -53,4 +53,32 @@ public abstract partial class Igi2Human : IIgi2WeaponOwner
 
     /// <inheritdoc/>
     public void CountShots(int shots) => MissionShots += shots;
+
+    /// <summary>Gets the humans of another side the human has killed, <c>tMissionScoreData.nKills</c>.</summary>
+    public int MissionKills { get; private set; }
+
+    /// <summary>Gets the hits the human's shots have scored, <c>tMissionScoreData.nHits</c>.</summary>
+    public int MissionHits { get; private set; }
+
+    /// <summary>
+    /// Counts a hit the human scored, <c>Human_HitByYouHandler</c>: on anything but a human of its own side.
+    /// </summary>
+    /// <param name="target">What was hit.</param>
+    public void HitByYou(object target)
+    {
+        if (target is not Igi2Human human || human.Team != Team)
+        {
+            MissionHits++;
+        }
+    }
+
+    /// <summary>Counts a kill the human made, <c>Human_KilledByYouHandler</c>: of a human of another side.</summary>
+    /// <param name="target">Who died.</param>
+    public void KilledByYou(object target)
+    {
+        if (target is Igi2Human human && human.Team != Team)
+        {
+            MissionKills++;
+        }
+    }
 }

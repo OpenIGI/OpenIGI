@@ -282,7 +282,7 @@ public sealed class Igi2Mine : IIgi2DynamicTask, IIgi2ExplosiveParameters, IIgi2
     }
 
     /// <inheritdoc/>
-    public void WeaponHit(in Igi2WeaponHit hit) => _explosive.WeaponHit(hit.Damage);
+    public void WeaponHit(in Igi2WeaponHit hit) => _explosive.WeaponHit(hit, this);
 
     /// <inheritdoc/>
     public void ExplosionHit(in Igi2ExplosionHit hit) => _explosive.ExplosionHit(hit);

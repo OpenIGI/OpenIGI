@@ -202,7 +202,28 @@ public sealed class Igi2Explosive
     /// <summary>Asks it to explode on its next tick, as a kind of it that sets its own <c>isExplode</c> does.</summary>
     public void Trigger() => _isExplode = 1;
 
-    /// <summary>A bullet's hit: its damage added, and enough of it explodes the object the next tick.</summary>
+    /// <summary>
+    /// A bullet's hit, <c>ExplodeObject_WeaponHitHandler</c>: the shooter scores a hit with ammunition that counts toward accuracy,
+    /// the damage is added, and enough of it explodes the object the next tick.
+    /// </summary>
+    /// <param name="hit">The hit.</param>
+    /// <param name="target">The object hit, which the shooter is told of.</param>
+    public void WeaponHit(in Weapons.Igi2WeaponHit hit, object target)
+    {
+        if (_isExploded != 0 || _maxDamage < 0f)
+        {
+            return;
+        }
+
+        if (hit.Shooter is Humans.Igi2Human scorer && hit.AmmoType is { UsedForAccuracyScore: true })
+        {
+            scorer.HitByYou(target);
+        }
+
+        WeaponHit(hit.Damage);
+    }
+
+    /// <summary>A bullet's damage: added, and enough of it explodes the object the next tick.</summary>
     /// <param name="damage">The damage the bullet still does.</param>
     public void WeaponHit(float damage)
     {
@@ -212,7 +233,6 @@ public sealed class Igi2Explosive
             return;
         }
 
-        // The shooter is told it hit something (Human_eHitByYouQTaskEvent), which only counts towards the score.
         _damage = ((Fpu)damage + _damage).F;
         if (_damage >= _maxDamage)
         {

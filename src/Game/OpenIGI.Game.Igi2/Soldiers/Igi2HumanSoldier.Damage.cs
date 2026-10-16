@@ -66,10 +66,16 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
     /// it died are kept and the dead bit is raised. Short of it the soldier flinches and cries out, and the AI hears it take damage.
     /// Unless one hit killed it, its mind says a line.
     /// </para>
-    /// <para>Blood is thrown once the damage is taken (<see cref="Igi2Human.CreateFleshEnterEffect"/>). Not yet: the player's tally of hits and kills, and the knife's bruise.</para>
+    /// <para>Blood is thrown once the damage is taken (<see cref="Igi2Human.CreateFleshEnterEffect"/>). The shooter's tally counts the hit and the kill (<see cref="Igi2Human.HitByYou"/>, <see cref="Igi2Human.KilledByYou"/>). The knife's bruise is the renderer's.</para>
     /// </remarks>
     public void WeaponHit(in Igi2WeaponHit hit)
     {
+        // The shooter scores a hit with ammunition that counts toward accuracy, until the body has finished falling.
+        if (hit.Shooter is Igi2Human scorer && hit.AmmoType is { UsedForAccuracyScore: true } && !IsDeathAnimationDone)
+        {
+            scorer.HitByYou(this);
+        }
+
         if (IsDead)
         {
             return;
@@ -102,6 +108,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
         Vector3d? shooterAt = hit.Shooter is Igi2Human from ? from.Position : null;
         if (Damage.IsFatal)
         {
+            (hit.Shooter as Igi2Human)?.KilledByYou(this);
             Vector3f towardShooter = shooterAt is { } s ? Toward(s) : default;
             SendAiEvent(new Igi2AiEvent(Igi2AiEvent.FriendlyDying, Team, 419, 122880f, Position, towardShooter, this));
             if (damage >= Damage.MaxDamage)
@@ -151,7 +158,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
     /// <param name="hit">The blast.</param>
     /// <remarks>
     /// The soldier's size for the blast is a third of its model's radius and its root's distance from its origin, the root as the
-    /// animation last left it. Not yet: the player's tally of kills, and the soldier's <c>isActive</c> (<c>Human+0x4A5</c>), taken
+    /// animation last left it. A kill counts to the blast's owner. Not yet: the soldier's <c>isActive</c> (<c>Human+0x4A5</c>), taken
     /// as set.
     /// </remarks>
     public void ExplosionHit(in Igi2ExplosionHit hit)
@@ -177,6 +184,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
         RecoilMeter = ((Fpu)damage + RecoilMeter).F;
         if (Damage.IsFatal)
         {
+            (hit.Owner as Igi2Human)?.KilledByYou(this);
             DeathByType = 0;
             DeathDirection = new Vector3f(
                 ((Fpu)Position.X - hit.Position.X).F, ((Fpu)Position.Y - hit.Position.Y).F, ((Fpu)Position.Z - hit.Position.Z).F);

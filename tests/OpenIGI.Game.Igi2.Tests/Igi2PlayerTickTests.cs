@@ -133,6 +133,31 @@ public sealed class Igi2PlayerTickTests
         Assert.Equal(Igi2PlayerActionState.Idle, player.Action.CurrentState);
     }
 
+    /// <summary>
+    /// The mission score's tally: a hit counts on anything but a human of the player's own side, a kill only of a human of another
+    /// (<c>Human_HitByYouHandler</c>, <c>Human_KilledByYouHandler</c>).
+    /// </summary>
+    [Fact]
+    public void Hits_and_kills_count_against_other_sides()
+    {
+        (Igi2HumanPlayer player, _, _) = OnFloor();
+        (Igi2HumanPlayer friend, _, _) = OnFloor();
+        (Igi2HumanPlayer enemy, _, _) = OnFloor();
+        player.Team = 0;
+        friend.Team = 0;
+        enemy.Team = 1;
+
+        player.HitByYou(new object());
+        player.HitByYou(friend);
+        player.HitByYou(enemy);
+        player.KilledByYou(friend);
+        player.KilledByYou(enemy);
+        player.KilledByYou(new object());
+
+        Assert.Equal(2, player.MissionHits);
+        Assert.Equal(1, player.MissionKills);
+    }
+
     [Fact]
     public void Standing_still_stays_put()
     {
