@@ -232,6 +232,22 @@ public sealed class Igi2HumanSoldierTests
     }
 
     /// <summary>
+    /// Whichever of the six prone-death slots a soldier enters, row 43 plays at once (<c>humansoldier.c
+    /// HumanSoldier_InitStateLieDownDie</c>).
+    /// </summary>
+    [Fact]
+    public void Every_prone_death_plays_row_43()
+    {
+        for (int slot = Igi2SoldierState.FirstLieDownDie; slot <= Igi2SoldierState.LastLieDownDie; slot++)
+        {
+            (Igi2HumanSoldier soldier, FakeAnimation animation, _, _) = OnFloor();
+            soldier.RunDelayed();
+            soldier.Locomotion.Enter(slot, soldier);
+            Assert.Equal((Igi2SoldierState.FirstLieDownDie, 0, 0f), animation.Played[^1]);
+        }
+    }
+
+    /// <summary>
     /// Tense and strafing left it runs aside at 267.6 a tick (<c>HumanSoldier_RunStateTenseRunLeft</c>, <c>igi2 0x4E54E0</c>); asked to
     /// roll it rolls left crouched (<c>InitStateStandRollLeft</c>, <c>0x4E61D0</c>) and kneels when the roll's clip ends.
     /// </summary>

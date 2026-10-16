@@ -90,6 +90,12 @@ public sealed partial class Igi2HumanSoldier
     /// <summary>The animation row a walk plays, <c>7</c>: not its own slot's.</summary>
     public const int WalkRow = 7;
 
+    /// <summary>The row a forward run plays, <c>5</c> (<c>humansoldier.c HumanSoldier_InitStateRunForward</c>).</summary>
+    public const int RunForwardRow = 5;
+
+    /// <summary>The row a forward run plays when the weapon in hand has its own running gait, <c>4</c>.</summary>
+    public const int WeaponRunForwardRow = 4;
+
     /// <summary>The animation row a kneel plays, <c>28</c>: not its own slot's.</summary>
     public const int KneelRow = 28;
 
@@ -384,13 +390,15 @@ public sealed partial class Igi2HumanSoldier
         Pose = Igi2HumanPose.Standing;
         IsRunning = true;
         ReleaseUpperBody();
+        int row = RunForwardRow;
         if (IsWeaponsOwnGait(RunWeaponAnim))
         {
             UpperBodyFlags |= 1;
+            row = WeaponRunForwardRow;
             Animation.ClearUpperBody(0f);
         }
 
-        PlayCurrentState(0f);
+        PlayRow(row, 0f);
         IsDisableDeltaTranslation = false;
         Locomotion.Current = (_, _) => RunRunForward();
     }

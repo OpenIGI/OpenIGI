@@ -244,7 +244,8 @@ public sealed partial class Igi2HumanSoldier
 
     /// <summary>
     /// A prone death, <c>HumanSoldier_InitStateLieDownDie</c> (<c>igi2 0x4E8AB0</c>): the body becomes something detection can see, the
-    /// trigger is let go and the weapons drop, and its row plays at once flat; the upper body is left as it was.
+    /// trigger is let go and the weapons drop, and row 43 plays at once flat whichever of the six slots entered it; the upper body
+    /// is left as it was.
     /// </summary>
     private void EnterLieDownDie()
     {
@@ -257,7 +258,7 @@ public sealed partial class Igi2HumanSoldier
         }
 
         Pose = Igi2HumanPose.LyingFlat;
-        PlayCurrentState(0f);
+        PlayRow(Igi2SoldierState.FirstLieDownDie, 0f);
         CameraMode = 3;
         View.IsLockOrientation = true;
         IsLockOrientation = true;
