@@ -379,7 +379,7 @@ public sealed class Igi2PhysicsObject
             bool passes = false;
             if (hit.HitObject is { } owner)
             {
-                letThrough = world.Hit?.Invoke(owner, this) == true;
+                letThrough = world.Hit?.Invoke(owner.Owner, this) == true;
                 passes = letThrough;
             }
 

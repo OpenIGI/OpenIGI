@@ -119,12 +119,19 @@ public sealed class Igi2Gameplay : ITitleGameplay
                         explosions.AddTarget(pane);
                     }
 
-                    // A thrown object breaks the glass it strikes and goes on through it (Glass_PhysicsObjHitHandler).
+                    // A thrown object breaks the glass it strikes and goes on through it (Glass_PhysicsObjHitHandler), and goes on
+                    // through water.
                     Interaction.Igi2GlassContainer panes = player.Glass;
                     Physics.Igi2PhysicsWorld flight = new(world, materials, static owner => !Igi2ObjectCollision.PassesThrough(owner))
                     {
                         Hit = (owner, thrown) =>
                         {
+                            // Water_PhysicsObjHitHandler: water lets a thrown object through.
+                            if (owner is World.WaterTask)
+                            {
+                                return true;
+                            }
+
                             if (owner is Collision.Igi2CollisionOwner { GlassKey: { } key } && panes.Find(key) is { } glass)
                             {
                                 glass.PhysicsHit(thrown.Position);
