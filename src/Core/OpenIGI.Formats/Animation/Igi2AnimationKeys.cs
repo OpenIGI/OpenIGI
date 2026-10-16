@@ -50,16 +50,20 @@ public readonly record struct Igi2TranslationKey(int Time, Vector3f Translation)
 /// <param name="Rotation">The bone's orientation at the key.</param>
 /// <param name="IncomingTangent">The SQUAD tangent of the segment ending at this key.</param>
 /// <param name="OutgoingTangent">The SQUAD tangent of the segment starting at this key.</param>
+/// <param name="Ops">
+/// The orientation's operation count as the file stores it, its <c>Quat32_t.nOps</c>, which a turn built on the key counts
+/// on from.
+/// </param>
 /// <remarks>
-/// <c>AnimEvent_RotationKey_t</c>: orientation at <c>+0x0C</c>, incoming tangent at <c>+0x20</c>,
-/// outgoing at <c>+0x34</c>, each a <c>Quat32_t</c> whose fifth dword (<c>nOps</c>) is bookkeeping and
-/// not read here.
+/// <c>AnimEvent_RotationKey_t</c>: orientation at <c>+0x0C</c> with its <c>nOps</c> at <c>+0x1C</c>, incoming tangent at
+/// <c>+0x20</c>, outgoing at <c>+0x34</c>.
 /// </remarks>
 public readonly record struct Igi2RotationKey(
     int Time,
     Quaternion32 Rotation,
     Quaternion32 IncomingTangent,
-    Quaternion32 OutgoingTangent);
+    Quaternion32 OutgoingTangent,
+    int Ops = 0);
 
 /// <summary>One key of an attach object's own track.</summary>
 /// <param name="Time">The key's time, in the clip's integer units.</param>

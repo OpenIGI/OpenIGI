@@ -200,7 +200,12 @@ public sealed class Igi2AnimController : IIgi2PoseSource
     /// </summary>
     /// <param name="bone">The bone.</param>
     /// <returns>The key's orientation, or <see langword="null"/> with no clip or key.</returns>
-    public Quaternion32? ActiveRotation(int bone)
+    public Quaternion32? ActiveRotation(int bone) => ActiveRotationKey(bone)?.Rotation;
+
+    /// <summary>A bone's active rotation key whole, with its stored operation count.</summary>
+    /// <param name="bone">The bone.</param>
+    /// <returns>The key, or <see langword="null"/> with no clip or key.</returns>
+    public Igi2RotationKey? ActiveRotationKey(int bone)
     {
         if (Clip is not { } clip || (uint)bone >= (uint)clip.BoneCount)
         {
@@ -208,7 +213,7 @@ public sealed class Igi2AnimController : IIgi2PoseSource
         }
 
         IReadOnlyList<Igi2RotationKey> track = clip.Rotations(bone);
-        return Active(track, static k => k.Time) is int key ? track[key].Rotation : null;
+        return Active(track, static k => k.Time) is int key ? track[key] : null;
     }
 
     /// <summary>The active key: the last whose time the controller has reached.</summary>

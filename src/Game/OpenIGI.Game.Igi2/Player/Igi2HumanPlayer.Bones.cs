@@ -51,9 +51,9 @@ public sealed partial class Igi2HumanPlayer : IIgi2BoneCallbacks
     /// <summary><c>HumanPlayer_LowerBackCallback</c> (<c>igi2 0x4B93F0</c>).</summary>
     private void TurnLowerBack(Igi2BoneBuffer bones, int bone, int parent)
     {
-        if (Animation is Igi2HumanAnimation { UpperBody: { } upper } && upper.ActiveRotation(0) is { } key)
+        if (Animation is Igi2HumanAnimation { UpperBody: { } upper } && upper.ActiveRotationKey(0) is { } key)
         {
-            Igi2BoneMath.SwapParentTurn(bones, bone, parent, key);
+            Igi2BoneMath.SwapParentTurn(bones, bone, parent, key.Rotation, key.Ops);
         }
 
         int state = Locomotion.CurrentState;

@@ -247,7 +247,7 @@ public sealed class Igi2AnimationClip
         new(time, ReadVector(record, 0x0C));
 
     private static Igi2RotationKey ReadRotationKey(ReadOnlySpan<byte> record, int time) =>
-        new(time, ReadQuaternion(record, 0x0C), ReadQuaternion(record, 0x20), ReadQuaternion(record, 0x34));
+        new(time, ReadQuaternion(record, 0x0C), ReadQuaternion(record, 0x20), ReadQuaternion(record, 0x34), BinaryPrimitives.ReadInt32LittleEndian(record[0x1C..]));
 
     private static Igi2AttachKey ReadAttachKey(ReadOnlySpan<byte> record, int time) =>
         new(time, ReadVector(record, 0x0C), ReadQuaternion(record, 0x18));

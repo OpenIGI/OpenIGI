@@ -95,9 +95,9 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
         AimGamma = gamma < -AimGammaLimit ? -AimGammaLimit : gamma > AimGammaLimit ? AimGammaLimit : gamma;
         AimAlpha = alpha;
 
-        if (Animation is Igi2HumanAnimation { UpperBody: { } upper } && upper.ActiveRotation(0) is { } key)
+        if (Animation is Igi2HumanAnimation { UpperBody: { } upper } && upper.ActiveRotationKey(0) is { } key)
         {
-            Igi2BoneMath.SwapParentTurn(bones, bone, parent, key);
+            Igi2BoneMath.SwapParentTurn(bones, bone, parent, key.Rotation, key.Ops);
         }
 
         Quaternion32 q = bones.Orientations[bone];

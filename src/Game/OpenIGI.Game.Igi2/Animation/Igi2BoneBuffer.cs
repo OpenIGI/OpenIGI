@@ -174,7 +174,8 @@ public static class Igi2BoneMath
     /// <param name="bone">The lower back.</param>
     /// <param name="parent">Its parent.</param>
     /// <param name="key">The upper-body clip's active root key.</param>
-    public static void SwapParentTurn(Igi2BoneBuffer bones, int bone, int parent, Quaternion32 key)
+    /// <param name="keyOps">That key's stored operation count, which the turn counts on from.</param>
+    public static void SwapParentTurn(Igi2BoneBuffer bones, int bone, int parent, Quaternion32 key, int keyOps = 0)
     {
         ArgumentNullException.ThrowIfNull(bones);
         Quaternion32 p = bones.Orientations[parent];
@@ -188,7 +189,7 @@ public static class Igi2BoneMath
         }
 
         Quaternion32 q = Multiply(key, local);
-        int ops = localOps + 1;
+        int ops = keyOps + localOps + 1;
         if (ops > RenormaliseOps)
         {
             ops = 0;
