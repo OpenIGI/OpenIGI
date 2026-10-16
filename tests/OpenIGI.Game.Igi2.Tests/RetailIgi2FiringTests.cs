@@ -454,6 +454,40 @@ public sealed class RetailIgi2FiringTests
     }
 
     /// <summary>
+    /// A medipack takes its factor of the holder's greatest damage off the damage it has taken and uses a round
+    /// (<c>Medipack_WeaponFireHandler</c>); an unhurt holder uses nothing.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_medipack_heals_its_holder()
+    {
+        (Igi2HumanPlayer player, Igi2PlayerWeapons weapons, _) = ArmedPlayer();
+        Igi2Inventory inventory = weapons.Inventory;
+        Assert.True(inventory.EnableWeaponType("WEAPON_ID_MEDIPACK", addAmmo: true));
+        Igi2WeaponItem medipack = inventory.FindWeapon("WEAPON_ID_MEDIPACK")!;
+        Assert.True(inventory.Activate(medipack));
+        Igi2MedipackTask parameters = Assert.IsType<Igi2MedipackTask>(medipack.WeaponType.FireType(0));
+        float max = player.Damage.MaxDamage;
+
+        player.Damage.Damage = 0f;
+        int rounds = inventory.TotalBulletsFired;
+        player.Weapon.Fire(0);
+        Assert.Equal(0f, player.Damage.Damage);
+        Assert.Equal(rounds, inventory.TotalBulletsFired);
+        player.Weapon.ReleaseTriggers();
+        for (int tick = 0; tick < 60; tick++)
+        {
+            Tick(player, Igi2PlayerAction.None);
+        }
+
+        float hurt = max * 0.75f;
+        player.Damage.Damage = hurt;
+        player.Weapon.Fire(0);
+        float expected = ((Fpu)hurt - ((Fpu)parameters.FactorOfHumanMaxDamageToAddForEachRound * max)).F;
+        Assert.Equal(expected < 0f ? 0f : expected, player.Damage.Damage);
+        Assert.Equal(rounds + 1, inventory.TotalBulletsFired);
+    }
+
+    /// <summary>
     /// The drop key on a weapon its type lets be dropped in a single-player game puts it away for another: the AI hears it handled,
     /// it lands as a pickup, not thrown short, with its load, and is carried no more.
     /// </summary>
