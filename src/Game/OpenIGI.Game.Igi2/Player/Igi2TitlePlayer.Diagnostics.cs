@@ -15,6 +15,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerDiagnostics
             + $"nativeNamespaceMatches={ReferenceEquals(Ai?.Natives, Level?.Natives)}, cutscene={IsCutscenePlaying}";
         yield return $"playerTeam={Human.Team}, playerActive={Human.DetectionInfo().IsActive}, playerDead={Human.IsDead}, "
             + $"aiPlayerMatches={ReferenceEquals(Ai?.Player, Human)}, playerPosition={Human.Position}";
+        yield return $"playerState={Human.Locomotion.CurrentState}, action={Human.ActionState}, held={Inventory?.Current?.WeaponType.WeaponName}, "
+            + $"zoomAllowed={Human.IsZoomedModeAllowed}, overlayStatus={Weapons?.Firing.OverlayStatus}, overlay={ZoomOverlay}";
         if (Soldiers is not { } soldiers) { yield break; }
         foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies.OrderBy(body =>
             (body.Position - Human.Position).LengthSquared).Take(8))

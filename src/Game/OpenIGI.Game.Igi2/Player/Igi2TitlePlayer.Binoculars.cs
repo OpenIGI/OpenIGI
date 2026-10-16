@@ -17,8 +17,17 @@ public sealed partial class Igi2TitlePlayer
     /// <summary>How far the binoculars range, in world units: a thousand metres (<c>BinocularOverlay_Draw</c>).</summary>
     public const double BinocularReach = 4096000.0;
 
-    /// <summary>The query groups the range is traced through.</summary>
+    /// <summary>The laser designator's overlay task type's name.</summary>
+    public const string LaserDesignatorOverlayType = "LaserDesignatorOverlay";
+
+    /// <summary>The query groups the binoculars' range is traced through.</summary>
     public const uint BinocularRangeGroups = 0xD8000000;
+
+    /// <summary>
+    /// The query groups a scope's and the laser designator's range is traced through, the forests' and <c>0x98000000</c>
+    /// (<c>SniperOverlay_DrawRangeMeter</c>, <c>LaserDesignatorOverlay_Draw</c>).
+    /// </summary>
+    public const uint ScopeRangeGroups = Igi2CollisionWorld.ForestGroup | 0x98000000;
 
     /// <summary>The most people the binoculars pick out at once.</summary>
     public const int BinocularSlots = 10;
@@ -45,10 +54,10 @@ public sealed partial class Igi2TitlePlayer
             : null;
 
     /// <summary>
-    /// Gets the distance to what the binoculars are trained on, in world units, or <see langword="null"/> when nothing is within
-    /// a thousand metres.
+    /// Gets the distance to what the zoom's overlay is trained on, in world units, or <see langword="null"/> when nothing is within
+    /// a thousand metres or no overlay is up.
     /// </summary>
-    public double? BinocularRange { get; private set; }
+    public double? ZoomRange { get; private set; }
 
     /// <summary>Gets the people the binoculars pick out, by slot; an empty slot is <see langword="null"/>.</summary>
     public IReadOnlyList<Igi2BinocularMark?> BinocularMarks => _marks;
@@ -63,24 +72,35 @@ public sealed partial class Igi2TitlePlayer
     /// </summary>
     private void ReadBinoculars()
     {
-        if (ZoomOverlay != BinocularOverlayType)
+        string? overlay = ZoomOverlay;
+        if (overlay is null)
         {
-            BinocularRange = null;
+            ZoomRange = null;
             return;
         }
 
         Vector3d eye = Human.View.Position;
         Matrix3f view = Human.View.Orientation;
         Vector3f forward = new(view.M12, view.M22, view.M32);
+        bool binoculars = overlay == BinocularOverlayType;
         Igi2LineTrace trace = new(1)
         {
             Includes = owner => !ReferenceEquals(owner, Human),
         };
         trace.Starts[0] = eye;
         trace.Ends[0] = new Vector3d(eye.X + (forward.X * BinocularReach), eye.Y + (forward.Y * BinocularReach), eye.Z + (forward.Z * BinocularReach));
-        CollisionWorld.TraceLines(trace, BinocularRangeGroups);
+        CollisionWorld.TraceLines(trace, binoculars ? BinocularRangeGroups : ScopeRangeGroups);
         Igi2Intersection hit = trace.Intersections[0];
-        BinocularRange = hit.IsHit ? hit.Distance : null;
+        ZoomRange = hit.IsHit ? hit.Distance : null;
+        if (overlay == LaserDesignatorOverlayType)
+        {
+            ForgetFarTarget();
+        }
+
+        if (!binoculars)
+        {
+            return;
+        }
 
         long now = BinocularClock;
         for (int i = 0; i < _marks.Length; i++)
@@ -126,6 +146,25 @@ public sealed partial class Igi2TitlePlayer
         }
 
         Forget(now);
+    }
+
+    /// <summary>
+    /// The designator's target is forgotten while what it is trained on lies past its range, whole metres against its
+    /// <c>Range</c> (<c>LaserDesignatorOverlay_Draw</c>).
+    /// </summary>
+    private void ForgetFarTarget()
+    {
+        if (ZoomRange is not { } range || Weapons?.Firing.LaserDesignator is not { } designator
+            || Inventory?.Current?.WeaponType.FireType(0) is not Igi2LaserDesignatorTask parameters)
+        {
+            return;
+        }
+
+        if (parameters.Range < Math.Floor(range * 0.000244140625))
+        {
+            designator.TickFirstHit = 0;
+            designator.HitTask = null;
+        }
     }
 
     private void Register(Igi2Human body, double distance, bool occluded, bool friendly, long now)

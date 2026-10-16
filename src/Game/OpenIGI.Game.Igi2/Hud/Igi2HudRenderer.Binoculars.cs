@@ -34,13 +34,30 @@ public sealed partial class Igi2HudRenderer
     private string _range = string.Empty;
     private long _rangeMetres = long.MinValue;
 
-    private void DrawBinoculars(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
+    /// <summary>The overlay the player's zoom has up, drawn over the view as its status display draws it.</summary>
+    private void DrawZoomOverlay(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
-        if (title.ZoomOverlay != Igi2TitlePlayer.BinocularOverlayType || title.Human.IsDead)
+        if (title.Human.IsDead)
         {
             return;
         }
 
+        switch (title.ZoomOverlay)
+        {
+            case Igi2TitlePlayer.BinocularOverlayType:
+                DrawBinoculars(batch, title, width, height);
+                break;
+            case Igi2TitlePlayer.LaserDesignatorOverlayType:
+                DrawLaserDesignator(batch, title, width, height);
+                break;
+            case { } scope:
+                DrawScope(batch, title, scope, width, height);
+                break;
+        }
+    }
+
+    private void DrawBinoculars(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
+    {
         bool infrared = title.ScreenOverlay?.IsInfrared == true;
         DrawBinocularFrame(batch, infrared ? InfraredSprite : BinocularSprite, width, height);
         if (infrared)
@@ -80,7 +97,14 @@ public sealed partial class Igi2HudRenderer
     /// <summary>The range to what the view is trained on, in whole metres, or a thousand and more.</summary>
     private void DrawRange(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
-        long metres = title.BinocularRange is { } range ? (long)Math.Round(range / OpenIGI.Game.World.WorldScene.UnitsPerMetre) : -1;
+        float lineHeight = _font?.LineHeight ?? 0;
+        Text(batch, RangeText(title), MathF.Floor(width * 0.46875f), MathF.Floor((height * 0.7291667f) - lineHeight), Bgra32.White);
+    }
+
+    /// <summary>The range line, <c>"%s: %0.fm"</c>, or a thousand and more with nothing in reach.</summary>
+    private string RangeText(Igi2TitlePlayer title)
+    {
+        long metres = title.ZoomRange is { } range ? (long)Math.Round(range / OpenIGI.Game.World.WorldScene.UnitsPerMetre) : -1;
         if (metres != _rangeMetres)
         {
             _rangeMetres = metres;
@@ -90,8 +114,7 @@ public sealed partial class Igi2HudRenderer
                 : string.Create(CultureInfo.InvariantCulture, $"{label}: {metres}m");
         }
 
-        float lineHeight = _font?.LineHeight ?? 0;
-        Text(batch, _range, MathF.Floor(width * 0.46875f), MathF.Floor((height * 0.7291667f) - lineHeight), Bgra32.White);
+        return _range;
     }
 
     /// <summary>
@@ -99,7 +122,10 @@ public sealed partial class Igi2HudRenderer
     /// falls, every sixteenth long and lettered above and below, every eighth longer than the rest, wrapping round; and a notch
     /// at the strip's middle, top and bottom.
     /// </summary>
-    private void DrawCompass(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
+    private void DrawCompass(SpriteBatch batch, Igi2TitlePlayer title, float width, float height) =>
+        DrawCompass(batch, title, width * 0.625f, height * 0.7916667f, width * 0.28125f, CompassGreen, Bgra32.White);
+
+    private void DrawCompass(SpriteBatch batch, Igi2TitlePlayer title, float left, float top, float span, Bgra32 ticks, Bgra32 letters)
     {
         Matrix3f view = title.Human.View.Orientation;
         float heading = Igi2Pose.DirectionGamma(new Vector3f(view.M12, view.M22, view.M32));
@@ -109,21 +135,20 @@ public sealed partial class Igi2HudRenderer
         }
 
         float lineHeight = _font?.LineHeight ?? 0;
-        float left = width * 0.625f, top = height * 0.7916667f, span = width * 0.28125f;
         float strip = (lineHeight * 2f) + 26f, middle = top + (strip * 0.5f), pitch = span * 0.015625f;
         float x = span * heading * 0.15915494f;
         for (int i = 0; i < 64; i++)
         {
             float length = (i & 15) == 0 ? 12f : (i & 7) == 0 ? 8f : 4f;
             float tick = x + left;
-            Line(batch, tick, middle - (length * 0.5f), tick, middle + (length * 0.5f), CompassGreen);
+            Line(batch, tick, middle - (length * 0.5f), tick, middle + (length * 0.5f), ticks);
             if ((i & 15) == 0)
             {
                 string letter = CompassLetters[i >> 4];
                 float letterWidth = _font?.Measure(letter).Width ?? 0f;
                 float letterX = MathF.Floor(tick - (letterWidth * 0.5f));
-                Text(batch, letter, letterX, MathF.Floor(middle - (length * 0.5f) - lineHeight - 2f), Bgra32.White);
-                Text(batch, letter, letterX, MathF.Floor(middle + (length * 0.5f) + 2f), Bgra32.White);
+                Text(batch, letter, letterX, MathF.Floor(middle - (length * 0.5f) - lineHeight - 2f), letters);
+                Text(batch, letter, letterX, MathF.Floor(middle + (length * 0.5f) + 2f), letters);
             }
 
             x += pitch;
@@ -134,8 +159,8 @@ public sealed partial class Igi2HudRenderer
         }
 
         float centre = left + (span * 0.5f);
-        Triangle(batch, (centre, top + 4f), (centre - 4f, top), (centre + 4f, top), CompassGreen);
-        Triangle(batch, (centre, top + strip - 4f), (centre - 4f, top + strip), (centre + 4f, top + strip), CompassGreen);
+        Triangle(batch, (centre, top + 4f), (centre - 4f, top), (centre + 4f, top), ticks);
+        Triangle(batch, (centre, top + strip - 4f), (centre - 4f, top + strip), (centre + 4f, top + strip), ticks);
     }
 
     /// <summary>
@@ -195,8 +220,8 @@ public sealed partial class Igi2HudRenderer
         }
     }
 
-    private void Line(SpriteBatch batch, float x1, float y1, float x2, float y2, Bgra32 colour) =>
-        Stroke(batch, new Igi2SightLine(x1 * _scale, y1 * _scale, x2 * _scale, y2 * _scale, 1f), MathF.Max(1f, _scale), colour);
+    private void Line(SpriteBatch batch, float x1, float y1, float x2, float y2, Bgra32 colour, float thickness = 1f) =>
+        Stroke(batch, new Igi2SightLine(x1 * _scale, y1 * _scale, x2 * _scale, y2 * _scale, 1f), MathF.Max(1f, thickness * _scale), colour);
 
     private void Triangle(SpriteBatch batch, (float X, float Y) a, (float X, float Y) b, (float X, float Y) c, Bgra32 colour) =>
         batch.DrawQuad(TextureHandle.None,
