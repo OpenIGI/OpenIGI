@@ -102,13 +102,20 @@ public sealed partial class Igi2HumanSoldier
         UpperBodyState = Igi2SoldierUpperBody.Idle;
     }
 
-    /// <summary>Lets go of the primary trigger and the fire type, as the fire handler does.</summary>
+    /// <summary>
+    /// Lets go of the primary trigger (<c>Weapon+0x70</c>) and puts the weapon's status back to idle (<c>Weapon+0x38</c>), as
+    /// <c>humansoldier.c HumanSoldier_FireUpperBodySignalHandler</c> does; the fire type last fired is kept.
+    /// </summary>
     private void ReleasePrimary()
     {
         if (Weapon.Firing is { } firing)
         {
             firing.FireTypeState(0).IsReleaseFire = true;
-            firing.FireType = 0;
+        }
+
+        if (Weapon.Inventory is { } inventory)
+        {
+            inventory.Status = default;
         }
     }
 
@@ -225,7 +232,7 @@ public sealed partial class Igi2HumanSoldier
 
     /// <summary>Aiming, <c>HumanSoldier_AimUpperBodySignalHandler</c> (<c>igi2 0x4E36E0</c>).</summary>
     /// <remarks>
-    /// Lowering the weapon, for whatever reason, sounds one of the four change sounds. A hit lowers it too: the handler tests the
+    /// Lowering the weapon, for whatever reason, sounds one of the four change sounds and blends the arms down over a second. A hit lowers it too: the handler tests the
     /// hit and dead bits together first, so its own hit branch never runs, nor does the reload handler's.
     /// </remarks>
     private void RunAimUpperBody()
@@ -236,7 +243,8 @@ public sealed partial class Igi2HumanSoldier
             || (UpperBodyFlags & 1) != 0)
         {
             Surroundings.PlaySound(ChangeWeaponSounds[(int)(Random.NextRaw() & 3)]);
-            BackToIdle();
+            Animation.ClearUpperBody(1f);
+            UpperBodyState = Igi2SoldierUpperBody.Idle;
         }
         else if ((s & Igi2SoldierSignal.Fire) != 0)
         {
@@ -351,7 +359,7 @@ public sealed partial class Igi2HumanSoldier
             }
         }
 
-        Animation.ClearUpperBody(1f);
+        Animation.ClearUpperBody(0f);
         UpperBodyState = Igi2SoldierUpperBody.Idle;
     }
 
