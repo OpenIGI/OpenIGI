@@ -39,7 +39,7 @@ public sealed class LevelExpressionRuntime
     /// opposite of what the engine says.
     /// </para>
     /// </remarks>
-    public const string AlwaysTrueField = ".isExists";
+    public const string AlwaysTrueField = LevelExpressionNames.ExistsField;
 
     /// <summary>Evaluates an authored condition; an empty condition uses the caller's default.</summary>
     public bool EvaluateCondition(string? source, bool emptyValue, GameTask? owner = null)
@@ -49,18 +49,7 @@ public sealed class LevelExpressionRuntime
             return emptyValue;
         }
 
-        if (!_cache.TryGetValue(source, out ScriptExpression? expression))
-        {
-            try
-            {
-                expression = ScriptExpressionParser.Parse(source, ResolveConstant);
-            }
-            catch (ScriptExpressionException)
-            {
-                expression = null;
-            }
-            _cache[source] = expression;
-        }
+        ScriptExpression? expression = Parse(source);
 
         // Task condition slots are evaluated by sub_4F16E0, which calls Expr_EvalFloat
         // (IGI.exe 0x4F1725 -> 0x4B9660). Using the integer walk here truncates a departing
@@ -160,7 +149,7 @@ public sealed class LevelExpressionRuntime
         public bool TryGetValue(string name, out QvmValue value)
         {
             string resolved = Resolve(name);
-            if (resolved.Contains(AlwaysTrueField, StringComparison.Ordinal))
+            if (LevelExpressionNames.IsExistsProbe(resolved))
             {
                 value = QvmValue.FromInt32(1);
                 return true;
@@ -172,7 +161,7 @@ public sealed class LevelExpressionRuntime
         public QvmValueKind GetValueKind(string name)
         {
             string resolved = Resolve(name);
-            return resolved.Contains(AlwaysTrueField, StringComparison.Ordinal)
+            return LevelExpressionNames.IsExistsProbe(resolved)
                 ? QvmValueKind.Integer
                 : variables.GetValueKind(resolved);
         }
@@ -184,8 +173,6 @@ public sealed class LevelExpressionRuntime
             return invoked.HasValue;
         }
 
-        private string Resolve(string name) => owner is not null && name.StartsWith("this.", StringComparison.Ordinal)
-            ? string.Concat(owner.Name, name.AsSpan("this".Length))
-            : name;
+        private string Resolve(string name) => owner is null ? name : LevelExpressionNames.ResolveThis(name, owner.Name);
     }
 }

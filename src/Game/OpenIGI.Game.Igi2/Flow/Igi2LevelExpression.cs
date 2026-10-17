@@ -81,12 +81,8 @@ public sealed class Igi2LevelExpression
 
             if (TryWord(source, ref at, out string word))
             {
-                if (word.StartsWith("this.", StringComparison.Ordinal))
-                {
-                    word = $"{owner}.{word[5..]}";
-                }
-
-                target.Append(word.Contains(".isExists", StringComparison.Ordinal) ? "1" : word);
+                word = LevelExpressionNames.ResolveThis(word, owner);
+                target.Append(LevelExpressionNames.IsExistsProbe(word) ? "1" : word);
                 continue;
             }
 
