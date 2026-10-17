@@ -73,9 +73,6 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     /// </remarks>
     public const int MaxLayers = 1024;
 
-    // The layout the array rests in between uploads: general, where the RHI keeps every texture it binds.
-    private const ImageLayout Resting = ImageLayout.General;
-
     /// <summary>How much video memory the whole array is allowed to take, in bytes.</summary>
     /// <remarks>
     /// <b>A budget, because the cap alone was the wrong control.</b> A thousand and twenty-four layers is
@@ -121,19 +118,12 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
 
     private readonly Vk _vk;
     private readonly Device _device;
-    private readonly VulkanAllocator _allocator;
-    private readonly VulkanCommands _commands;
-    private readonly VulkanDevice _owner;
-    private readonly DeviceMemory _memory;
-    private readonly Dictionary<uint, int> _layers = [];
-    private readonly Stack<int> _free = [];
-    private int _next;
+
+    // The array. How many layers it has follows from the budget and the chosen resolution rather than from a constant;
+    // see LayerBudgetBytes.
+    private readonly VulkanTextureLayers _layers;
     private bool _overflow;
     private bool _disposed;
-
-    // How many layers this array actually has, which follows from the budget and the chosen resolution
-    // rather than from a constant. See LayerBudgetBytes.
-    private readonly int _capacity;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanTracedAlbedo"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -164,46 +154,23 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
         // and forty-eight. Asking for more is not a soft failure: the create call is invalid.
         PhysicalDeviceProperties properties;
         vk.GetPhysicalDeviceProperties(device.PhysicalDevice, &properties);
-        _capacity = Math.Min(LayersFor(Resolution), (int)properties.Limits.MaxImageArrayLayers);
+        int capacity = Math.Min(LayersFor(Resolution), (int)properties.Limits.MaxImageArrayLayers);
         _vk = vk;
-        _owner = device;
         _device = device.Device;
-        _allocator = allocator;
-        _commands = commands;
 
-        ImageCreateInfo imageInfo = new()
-        {
-            SType = StructureType.ImageCreateInfo,
-            ImageType = ImageType.Type2D,
-
-            // SRGB, so the hardware decodes on read and the shader is handed linear light without a curve
-            // of its own. The raster path decodes the same textures in the shader; doing it in the format
-            // here keeps the two from disagreeing by a gamma, which reads as a reflection that is too
-            // dark rather than as a bug.
-            Format = Format.R8G8B8A8Srgb,
-            Extent = new Extent3D((uint)Resolution, (uint)Resolution, 1),
-            MipLevels = 1,
-            ArrayLayers = (uint)_capacity,
-            Samples = SampleCountFlags.Count1Bit,
-            Tiling = ImageTiling.Optimal,
-            Usage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-            SharingMode = SharingMode.Exclusive,
-            InitialLayout = ImageLayout.Undefined,
-        };
-
-        Image image;
-        VkCheck.Ok(_vk.CreateImage(_device, &imageInfo, null, &image), "vkCreateImage (traced albedo)");
-        Image = image;
-
-        _vk.GetImageMemoryRequirements(_device, image, out MemoryRequirements requirements);
-        _memory = _allocator.Allocate(requirements, MemoryPropertyFlags.DeviceLocalBit);
-        VkCheck.Ok(_vk.BindImageMemory(_device, image, _memory, 0), "vkBindImageMemory (traced albedo)");
-
-        // A mid grey, so a layer nothing was ever written into reflects as an unremarkable surface rather
-        // than as a black hole -- which is the failure this whole array exists to remove.
-        ClearToGrey();
-
-        View = CreateView();
+        // SRGB, so the hardware decodes on read and the shader is handed linear light without a curve of its own. The raster
+        // path decodes the same textures in the shader; doing it in the format here keeps the two from disagreeing by a
+        // gamma, which reads as a reflection that is too dark rather than as a bug.
+        //
+        // A mid grey, so a layer nothing was ever written into reflects as an unremarkable surface rather than as a black
+        // hole -- which is the failure this whole array exists to remove.
+        ClearColorValue grey = default;
+        grey.Float32_0 = 0.5f;
+        grey.Float32_1 = 0.5f;
+        grey.Float32_2 = 0.5f;
+        grey.Float32_3 = 1f;
+        _layers = new VulkanTextureLayers(
+            vk, device, allocator, commands, Format.R8G8B8A8Srgb, Resolution, capacity, grey, "traced albedo");
         Sampler = CreateSampler();
     }
 
@@ -216,10 +183,10 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     public int Resolution { get; }
 
     /// <summary>Gets the array image.</summary>
-    public Image Image { get; }
+    public Image Image => _layers.Image;
 
     /// <summary>Gets the view a ray shader reads the array through.</summary>
-    public ImageView View { get; }
+    public ImageView View => _layers.View;
 
     /// <summary>Gets the sampler this array must be read through.</summary>
     /// <remarks>
@@ -239,7 +206,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     public int Count => _layers.Count;
 
     /// <summary>Gets how many layers the array was allocated with.</summary>
-    public int Capacity => _capacity;
+    public int Capacity => _layers.Capacity;
 
     /// <summary>Gets whether the array ever turned a texture away for want of a layer.</summary>
     /// <remarks>
@@ -259,7 +226,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_layers.TryGetValue(textureId, out int existing))
+        if (_layers.TryGetLayer(textureId, out int existing))
         {
             return existing;
         }
@@ -269,16 +236,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
             return -1;
         }
 
-        int layer;
-        if (_free.Count > 0)
-        {
-            layer = _free.Pop();
-        }
-        else if (_next < _capacity)
-        {
-            layer = _next++;
-        }
-        else
+        if (!_layers.TryAllocate(textureId, out int layer))
         {
             // Said once. A ray that finds no layer falls back to the frame and the cards, which is what
             // it did before this existed, so the cost is a reflection that is missing rather than wrong.
@@ -286,8 +244,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
             return -1;
         }
 
-        _layers[textureId] = layer;
-        Upload(layer, Reduce(pixels, width, height, Resolution));
+        _layers.Upload(layer, Reduce(pixels, width, height, Resolution));
         return layer;
     }
 
@@ -299,19 +256,17 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     /// </remarks>
     public void Release(uint textureId)
     {
-        if (_disposed || !_layers.Remove(textureId, out int layer))
+        if (!_disposed)
         {
-            return;
+            _layers.Release(textureId);
         }
-
-        _free.Push(layer);
     }
 
     /// <summary>Finds the layer a texture was reduced to.</summary>
     /// <param name="textureId">The texture's identifier.</param>
     /// <param name="layer">Receives the layer.</param>
     /// <returns><see langword="true"/> when the texture has an albedo layer.</returns>
-    public bool TryGetLayer(uint textureId, out int layer) => _layers.TryGetValue(textureId, out layer);
+    public bool TryGetLayer(uint textureId, out int layer) => _layers.TryGetLayer(textureId, out layer);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -323,9 +278,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
 
         _disposed = true;
         _vk.DestroySampler(_device, Sampler, null);
-        _vk.DestroyImageView(_device, View, null);
-        _vk.DestroyImage(_device, Image, null);
-        _allocator.Free(_memory);
+        _layers.Dispose();
     }
 
     /// <summary>Box-filters a texture down to one layer-sized plane.</summary>
@@ -390,156 +343,6 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
         return reduced;
     }
 
-    /// <summary>Fills every layer with a mid grey, before any texture has been written.</summary>
-    private void ClearToGrey()
-    {
-        Image image = Image;
-        _commands.SingleTime(cmd =>
-        {
-            Transition(
-                cmd,
-                image,
-                ImageLayout.Undefined,
-                ImageLayout.TransferDstOptimal,
-                PipelineStageFlags.TopOfPipeBit,
-                PipelineStageFlags.TransferBit,
-                0,
-                AccessFlags.TransferWriteBit,
-                0,
-                (uint)_capacity);
-
-            ClearColorValue clear = default;
-            clear.Float32_0 = 0.5f;
-            clear.Float32_1 = 0.5f;
-            clear.Float32_2 = 0.5f;
-            clear.Float32_3 = 1f;
-
-            ImageSubresourceRange range = new()
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = (uint)_capacity,
-            };
-
-            _vk.CmdClearColorImage(cmd, image, ImageLayout.TransferDstOptimal, &clear, 1, &range);
-
-            Transition(
-                cmd,
-                image,
-                ImageLayout.TransferDstOptimal,
-                Resting,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.ComputeShaderBit,
-                AccessFlags.TransferWriteBit,
-                AccessFlags.ShaderReadBit,
-                0,
-                (uint)_capacity);
-        });
-    }
-
-    /// <summary>Writes one reduced texture into its layer.</summary>
-    /// <param name="layer">The layer to write.</param>
-    /// <param name="texels">The reduced texture, <see cref="Resolution"/> squared RGBA bytes.</param>
-    private void Upload(int layer, byte[] texels)
-    {
-        VulkanBuffer staging = new(
-            _vk,
-            _owner,
-            _allocator,
-            (ulong)texels.Length,
-            BufferUsageFlags.TransferSrcBit,
-            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-        staging.Write<byte>(texels);
-
-        // Batched rather than submitted and waited on, one per texture, which made a level's worth of
-        // them a round trip each in the frame that created them. The batch runs before anything submitted
-        // after it and frees the staging when it has; the barriers below are every stage rather than
-        // compute alone, because without the wait they are all that orders this against its readers.
-        Image image = Image;
-        Buffer stagingHandle = staging.Handle;
-        _commands.SingleTimeBatched(
-            cmd =>
-            {
-                Transition(
-                    cmd,
-                    image,
-                    Resting,
-                    ImageLayout.TransferDstOptimal,
-                    PipelineStageFlags.AllCommandsBit,
-                    PipelineStageFlags.TransferBit,
-                    AccessFlags.ShaderReadBit,
-                    AccessFlags.TransferWriteBit,
-                    (uint)layer,
-                    1);
-
-                BufferImageCopy region = new()
-                {
-                    BufferOffset = 0,
-                    ImageSubresource = new ImageSubresourceLayers
-                    {
-                        AspectMask = ImageAspectFlags.ColorBit,
-                        MipLevel = 0,
-                        BaseArrayLayer = (uint)layer,
-                        LayerCount = 1,
-                    },
-                    ImageExtent = new Extent3D((uint)Resolution, (uint)Resolution, 1),
-                };
-
-                _vk.CmdCopyBufferToImage(cmd, stagingHandle, image, ImageLayout.TransferDstOptimal, 1, &region);
-
-                Transition(
-                    cmd,
-                    image,
-                    ImageLayout.TransferDstOptimal,
-                    Resting,
-                    PipelineStageFlags.TransferBit,
-                    PipelineStageFlags.AllCommandsBit,
-                    AccessFlags.TransferWriteBit,
-                    AccessFlags.ShaderReadBit,
-                    (uint)layer,
-                    1);
-            },
-            staging,
-            (ulong)texels.Length);
-    }
-
-    private void Transition(
-        CommandBuffer cmd,
-        Image image,
-        ImageLayout oldLayout,
-        ImageLayout newLayout,
-        PipelineStageFlags sourceStage,
-        PipelineStageFlags destinationStage,
-        AccessFlags sourceAccess,
-        AccessFlags destinationAccess,
-        uint baseLayer,
-        uint layerCount)
-    {
-        ImageMemoryBarrier barrier = new()
-        {
-            SType = StructureType.ImageMemoryBarrier,
-            OldLayout = oldLayout,
-            NewLayout = newLayout,
-            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            Image = image,
-            SubresourceRange = new ImageSubresourceRange
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = baseLayer,
-                LayerCount = layerCount,
-            },
-            SrcAccessMask = sourceAccess,
-            DstAccessMask = destinationAccess,
-        };
-
-        _vk.CmdPipelineBarrier(cmd, sourceStage, destinationStage, 0, 0, null, 0, null, 1, &barrier);
-    }
-
     /// <summary>Builds the wrapping sampler these layers are read through. See <see cref="Sampler"/>.</summary>
     private Sampler CreateSampler()
     {
@@ -567,30 +370,4 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
         return sampler;
     }
 
-    private ImageView CreateView()
-    {
-        ImageViewCreateInfo createInfo = new()
-        {
-            SType = StructureType.ImageViewCreateInfo,
-            Image = Image,
-            ViewType = ImageViewType.Type2DArray,
-            Format = Format.R8G8B8A8Srgb,
-            SubresourceRange = new ImageSubresourceRange
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-
-                // Every layer the image has. The view covered the first thousand and twenty-four while the
-                // array could hold four times that, so a texture given a layer past it was sampled outside
-                // the view -- and the clear left those layers in the copy layout the uploads did not expect.
-                LayerCount = (uint)_capacity,
-            },
-        };
-
-        ImageView view;
-        VkCheck.Ok(_vk.CreateImageView(_device, &createInfo, null, &view), "vkCreateImageView (traced albedo)");
-        return view;
-    }
 }
