@@ -333,7 +333,7 @@ internal sealed partial class GameHost
     {
         _soldiersInWalk = false;
         _playerInWalk = false;
-        if (_cutscenes is not { } cutscenes)
+        if (_mission.Cutscenes is not { } cutscenes)
         {
             return;
         }
@@ -370,7 +370,7 @@ internal sealed partial class GameHost
         }
 
         if (_playerTicked
-            || _cutscenes?.IsPlaying == true
+            || _mission.Cutscenes?.IsPlaying == true
             || !_playerMode
             || _player is not { } player
             || _playerDead
@@ -417,7 +417,7 @@ internal sealed partial class GameHost
         bool body = _playerMode && _player is not null;
         Vector3d eye = body ? _player!.Body.Eye : _camera?.Position ?? _player?.Body.Eye ?? default;
         Vector3d feet = body ? _player!.Body.Position : eye;
-        return new SoldierEnemy(eye, !_playerDead && _cutscenes?.IsPlaying != true, feet, body && _player!.IsCrouched);
+        return new SoldierEnemy(eye, !_playerDead && _mission.Cutscenes?.IsPlaying != true, feet, body && _player!.IsCrouched);
     }
 
     /// <summary>The player as an area counts it at the moment the area updates.</summary>
@@ -428,7 +428,7 @@ internal sealed partial class GameHost
     /// </remarks>
     private AreaPlayer AreaPlayerNow()
     {
-        Vector3d? cutsceneView = _cutscenes?.Frame?.Camera.Position;
+        Vector3d? cutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
         Vector3d? freeView = !_playerMode ? _camera?.Position : null;
         return new AreaPlayer(
             AreaActivationOccupant(_player?.Body.Origin, cutsceneView, freeView),
@@ -584,7 +584,7 @@ internal sealed partial class GameHost
         // The objective runtime owns the message slots but is built after the cutscene runtime, which
         // needs it for StatusMessageScreen_ClearMessages. The native reads the build's rather than the
         // field so a clear during construction cannot reach the previous mission's messages.
-        _cutscenes = new CutsceneRuntime(
+        _mission.Cutscenes = new CutsceneRuntime(
             levelRoot,
             _loop.Variables,
             (name, arguments) =>
@@ -656,7 +656,7 @@ internal sealed partial class GameHost
                 return null;
             },
             vehicleObstacleReleased: obstacle =>
-                _doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true,
+                _mission.Doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true,
             walker: b.Walker);
         bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
@@ -682,7 +682,7 @@ internal sealed partial class GameHost
     /// <summary>The objective runtime, the intro skipped when cinematics are off, and the test captures' script writes.</summary>
     private void MissionObjectives(MissionBuild b)
     {
-        if (_cutscenes is null)
+        if (_mission.Cutscenes is null)
         {
             throw MissingSystem(MissionSystemNames.Cutscenes);
         }
@@ -693,18 +693,18 @@ internal sealed partial class GameHost
         // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
         // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
         MissionObjectiveRuntime objectives;
-        _missionObjectives = b.Objectives = objectives = new MissionObjectiveRuntime(
+        _mission.Objectives = b.Objectives = objectives = new MissionObjectiveRuntime(
             levelRoot,
             _loop.Variables,
             missionText.Get,
-            _cutscenes.TryInvokeNative,
+            _mission.Cutscenes.TryInvokeNative,
             difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
             isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
         // The areas and edit variables update inside the level's one walk, where the tree places them.
         objectives.AttachTo(
-            _cutscenes.Walker,
-            _cutscenes.VehicleOccupants,
+            _mission.Cutscenes.Walker,
+            _mission.Cutscenes.VehicleOccupants,
             () => _soldiers?.LiveOccupants() ?? [],
             AreaPlayerNow);
 
@@ -713,12 +713,12 @@ internal sealed partial class GameHost
         // later. Instead take the exact path Escape takes in retail. The objective flow observes the
         // break key, closes the intro container, and the cutscene tick applies that transition before
         // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
-        if (!_options.PlayCutscenes && _cutscenes.IsPlaying)
+        if (!_options.PlayCutscenes && _mission.Cutscenes.IsPlaying)
         {
-            _cutscenes.RequestBreak();
-            _missionObjectives.TickLevelState();
-            _cutscenes.Tick();
-            _cutscenes.FinishExpressionTick();
+            _mission.Cutscenes.RequestBreak();
+            _mission.Objectives.TickLevelState();
+            _mission.Cutscenes.Tick();
+            _mission.Cutscenes.FinishExpressionTick();
             StopCutsceneSounds();
         }
 
@@ -728,12 +728,12 @@ internal sealed partial class GameHost
                 Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
                 "1",
                 StringComparison.Ordinal)
-            && _cutscenes.IsPlaying)
+            && _mission.Cutscenes.IsPlaying)
         {
-            _cutscenes.RequestBreak();
-            _missionObjectives.TickLevelState();
-            _cutscenes.Tick();
-            _cutscenes.FinishExpressionTick();
+            _mission.Cutscenes.RequestBreak();
+            _mission.Objectives.TickLevelState();
+            _mission.Cutscenes.Tick();
+            _mission.Cutscenes.FinishExpressionTick();
             StopCutsceneSounds();
         }
 
@@ -760,11 +760,11 @@ internal sealed partial class GameHost
                 _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
             }
 
-            _cutscenes.RequestBreak();
-            _cutscenes.Tick();
-            _missionObjectives.TickLevelState();
-            _missionObjectives.TickAfterLevelState();
-            _cutscenes.FinishExpressionTick();
+            _mission.Cutscenes.RequestBreak();
+            _mission.Cutscenes.Tick();
+            _mission.Objectives.TickLevelState();
+            _mission.Objectives.TickAfterLevelState();
+            _mission.Cutscenes.FinishExpressionTick();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
     }
@@ -826,7 +826,7 @@ internal sealed partial class GameHost
     /// <summary>The scene walk, the world renderer and the collision index; the vehicles on it, what can be destroyed, and the weather.</summary>
     private void MissionScene(MissionBuild b)
     {
-        if (_cutscenes is null)
+        if (_mission.Cutscenes is null)
         {
             throw MissingSystem(MissionSystemNames.Cutscenes);
         }
@@ -893,21 +893,21 @@ internal sealed partial class GameHost
         // behavior explicitly here; CutsceneRuntime remains generic and does not infer it from ids.
         if (id == 4 && levelRoot.Tree.FromId(800) is { } getawayBell)
         {
-            _cutscenes.EnableTerminalTerrainLanding(getawayBell);
+            _mission.Cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
 
         // Every mission: a car's suspension reads this for the surface under each wheel, and much
         // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
         // garage floor above the dirt. Re-seating the helicopters on it stays Mission 4's.
-        _cutscenes.CollisionIndex = solids;
+        _mission.Cutscenes.CollisionIndex = solids;
         if (id == 4)
         {
-            _cutscenes.RestHelicoptersOnSupport();
+            _mission.Cutscenes.RestHelicoptersOnSupport();
         }
 
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
+        _mission.Cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
 
         // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
         if (loaded.Terrain is { } carTerrain)
@@ -918,8 +918,8 @@ internal sealed partial class GameHost
                 TerrainDiscardBinding.For(carTerrain).Regions,
                 TerrainHeightBindings.Bind(carTerrain, levelRoot));
             Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
-            CutsceneRuntime cutscenes = _cutscenes;
-            _cutscenes.ConfigureRetailCars(
+            CutsceneRuntime cutscenes = _mission.Cutscenes;
+            _mission.Cutscenes.ConfigureRetailCars(
                 new RetailCarWorld(
                     carRays,
                     RetailWorldObjects.Build(
@@ -934,16 +934,16 @@ internal sealed partial class GameHost
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
-        _destructibles = DestructibleObjectRegistry.Build(
+        _mission.Destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,
             _loop.Variables,
             _vehiclePhysics,
             random: _soundRandom);
-        world.Destructibles = _destructibles;
-        solids.Destructibles = _destructibles;
-        _cutscenes.Destructibles = _destructibles;
-        world.Cutscenes = _cutscenes;
+        world.Destructibles = _mission.Destructibles;
+        solids.Destructibles = _mission.Destructibles;
+        _mission.Cutscenes.Destructibles = _mission.Destructibles;
+        world.Cutscenes = _mission.Cutscenes;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
         // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
@@ -1023,30 +1023,30 @@ internal sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
 
-        _soldiers.Cutscenes = _cutscenes;
+        _soldiers.Cutscenes = _mission.Cutscenes;
 
         // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
         // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
         // knife leaves: KnifeStab itself never reaches the decal message.
         _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
-        _cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
+        _mission.Cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
-        _doors = DoorRegistry.Build(levelRoot);
-        _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
-        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
-        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
-        world.GenericPickups = _genericPickups;
+        _mission.Doors = DoorRegistry.Build(levelRoot);
+        _mission.Elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
+        _mission.Interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _mission.Doors, _loop.Variables, _mission.Elevators);
+        _mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
+        world.GenericPickups = _mission.GenericPickups;
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
-        world.Interactions = _interactions;
-        solids.GenericPickups = _genericPickups;
-        _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
-        _soldiers.UseInteractions(_interactions);
-        _soldiers.SetDoors(_doors, solids);
-        _soldiers.SetElevators(_elevators);
+        world.Interactions = _mission.Interactions;
+        solids.GenericPickups = _mission.GenericPickups;
+        _soldiers.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
+        _soldiers.UseInteractions(_mission.Interactions);
+        _soldiers.SetDoors(_mission.Doors, solids);
+        _soldiers.SetElevators(_mission.Elevators);
 
         // The first genuinely world-positioned sound in the port. Its distances are the definition's
         // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
@@ -1055,11 +1055,11 @@ internal sealed partial class GameHost
             HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
-        _ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
+        _mission.Ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
         _ambientVoices.Clear();
-        if (_ambience.Areas.Count > 0)
+        if (_mission.Ambience.Areas.Count > 0)
         {
-            _logger.Information("Audio", $"{_ambience.Areas.Count} ambient area(s).");
+            _logger.Information("Audio", $"{_mission.Ambience.Areas.Count} ambient area(s).");
         }
 
         // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
@@ -1082,14 +1082,14 @@ internal sealed partial class GameHost
         _soldiers.SetFootstepSound(step => PlayFootstep(step));
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
-        _doors.SetSoundSink(PlayDoorSound);
-        _doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
-        _elevators.SetSoundSink(PlayElevatorSound);
-        world.Doors = _doors;
-        world.Elevators = _elevators;
-        if (_doors.Doors.Count > 0)
+        _mission.Doors.SetSoundSink(PlayDoorSound);
+        _mission.Doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
+        _mission.Elevators.SetSoundSink(PlayElevatorSound);
+        world.Doors = _mission.Doors;
+        world.Elevators = _mission.Elevators;
+        if (_mission.Doors.Doors.Count > 0)
         {
-            _logger.Information("World", $"{_doors.Doors.Count} door(s) available to players and AI.");
+            _logger.Information("World", $"{_mission.Doors.Doors.Count} door(s) available to players and AI.");
         }
 
         EndStage("the doors, elevators and world interactions");
@@ -1112,9 +1112,9 @@ internal sealed partial class GameHost
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         StopCutsceneSounds();
-        _securityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
-        _securityCameras.BindScene(scene.Placements);
-        world.SecurityCameras = _securityCameras;
+        _mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
+        _mission.SecurityCameras.BindScene(scene.Placements);
+        world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
         _cameraStatusLights = _presentation.CreateCameraStatusLights(EffectsRequest());
         if (_cameraStatusLights is not null && !_cameraStatusLights.Load(_fileSystem))
@@ -1124,13 +1124,13 @@ internal sealed partial class GameHost
         }
         _logger.Information(
             "Ai",
-            $"{_securityCameras.Cameras.Count} security camera(s), "
-                + $"{_securityCameras.ControlCount} camera control(s) placed.");
+            $"{_mission.SecurityCameras.Cameras.Count} security camera(s), "
+                + $"{_mission.SecurityCameras.ControlCount} camera control(s) placed.");
 
         // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
         // what turns them: the walk gives a placement, this gives it an angle per tick.
-        _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
-        world.RotatingObjects = _rotatingObjects;
+        _mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
+        world.RotatingObjects = _mission.RotatingObjects;
 
         b.WorldTrace = worldTrace;
     }
@@ -1241,7 +1241,7 @@ internal sealed partial class GameHost
                 // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
                 // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
                 // PatrolPath route. d843661b dropped this call and left every one of them parked.
-                _cutscenes?.ConfigureCarAi(graphs);
+                _mission.Cutscenes?.ConfigureCarAi(graphs);
 
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
@@ -1556,13 +1556,13 @@ internal sealed partial class GameHost
                 // the same live variables the controls export through.
                 _sirenVoices.Clear();
                 _reportedSirenFailures.Clear();
-                _alarmSpeakers = AlarmSpeakerRegistry.Build(
+                _mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
                     levelRoot,
                     _loop.Variables,
                     () => _soldiers.AnyAlarmOn);
-                _alarmSpeakers.BindScene(scene.Placements);
-                world.AlarmSpeakers = _alarmSpeakers;
-                _logger.Information("Ai", $"{_alarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
+                _mission.AlarmSpeakers.BindScene(scene.Placements);
+                world.AlarmSpeakers = _mission.AlarmSpeakers;
+                _logger.Information("Ai", $"{_mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
                 // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
                 // where it becomes a cast. The AI's hit probability decides whether the round is on
@@ -2221,7 +2221,7 @@ internal sealed partial class GameHost
                 candidate.UseLadders(_scene.Ladders);
                 _logger.Information("Player", $"{_scene.Ladders.Count} ladder(s) to climb.");
             }
-            if (_interactions is { } interactions)
+            if (_mission.Interactions is { } interactions)
             {
                 candidate.UseInteractions(interactions);
                 candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
@@ -2231,7 +2231,7 @@ internal sealed partial class GameHost
                     $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
                 _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
             }
-            if (_genericPickups is { } genericPickups)
+            if (_mission.GenericPickups is { } genericPickups)
             {
                 candidate.UseGenericPickups(genericPickups);
                 candidate.GenericPickedUp += PlayGenericPickupSound;
@@ -2309,14 +2309,14 @@ internal sealed partial class GameHost
                     _logger.Information("Material", $"Terrain walks on '{groundRow.Name}' (row {row}).");
                 }
 
-                _gunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
-                GunPickupRegistry gunPickups = _gunPickups;
+                _mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
+                GunPickupRegistry gunPickups = _mission.GunPickups;
                 candidate.UseGunPickups(gunPickups);
                 candidate.GunPickedUp += pickup =>
                 {
                     PlayGunPickupSound(pickup);
                     string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
-                    _missionObjectives?.ShowTransientMessage(missionText.Get(key));
+                    _mission.Objectives?.ShowTransientMessage(missionText.Get(key));
                 };
                 _soldiers?.UseDroppedWeaponPickups(gunPickups);
                 _soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
@@ -2339,9 +2339,9 @@ internal sealed partial class GameHost
                         }
                     },
                     _worldTrace is { } dropTrace ? WorldTrace.AsRayCast(dropTrace) : null);
-                if (_gunPickups.Items.Count > 0)
+                if (_mission.GunPickups.Items.Count > 0)
                 {
-                    _logger.Information("Weapon", $"{_gunPickups.Items.Count} gun pickup(s) available.");
+                    _logger.Information("Weapon", $"{_mission.GunPickups.Items.Count} gun pickup(s) available.");
                 }
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
@@ -2580,7 +2580,7 @@ internal sealed partial class GameHost
                 }
             }
 
-            if (_gunPickups is { } pickups)
+            if (_mission.GunPickups is { } pickups)
             {
                 _gunPickupRenderer = _presentation.CreateGunPickups(ViewModelRequest());
                 if (_gunPickupRenderer is not null)
@@ -2984,12 +2984,12 @@ internal sealed partial class GameHost
         _messages?.Dispose();
         _messages = null;
         _computerHighlights = null;
-        _missionObjectives?.Release();
-        _missionObjectives = null;
-        _cutscenes = null;
+        _mission.Objectives?.Release();
+        _mission.Objectives = null;
+        _mission.Cutscenes = null;
         _soldiersInWalk = false;
         _playerInWalk = false;
-        _securityCameras = null;
+        _mission.SecurityCameras = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         StopCutsceneSounds();
@@ -3080,13 +3080,13 @@ internal sealed partial class GameHost
         _ground = null;
         _effectWalls = null;
         _worldSolids = null;
-        _destructibles = null;
+        _mission.Destructibles = null;
         _worldMaterials = null;
-        _doors = null;
-        _elevators = null;
-        _interactions = null;
-        _gunPickups = null;
-        _genericPickups = null;
+        _mission.Doors = null;
+        _mission.Elevators = null;
+        _mission.Interactions = null;
+        _mission.GunPickups = null;
+        _mission.GenericPickups = null;
         _loadedMissionForWeapon = null;
 
         // Rockets a vehicle fired in the run being left must not keep flying into the next one, nor its engines
@@ -3630,7 +3630,7 @@ internal sealed partial class GameHost
 
     private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
     {
-        if (_cutscenes is not { } runtime || _magic is not { } magic)
+        if (_mission.Cutscenes is not { } runtime || _magic is not { } magic)
         {
             return;
         }
@@ -3753,7 +3753,7 @@ internal sealed partial class GameHost
     /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
     private void CheckRunOver()
     {
-        if (_player is null || _playerDead || _cutscenes is not { } runtime)
+        if (_player is null || _playerDead || _mission.Cutscenes is not { } runtime)
         {
             return;
         }

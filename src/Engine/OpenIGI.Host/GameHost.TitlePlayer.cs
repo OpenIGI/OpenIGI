@@ -157,7 +157,7 @@ internal sealed partial class GameHost
             return false;
         }
 
-        if (_playerTicked || !_playerMode || _cutscenes?.IsPlaying == true)
+        if (_playerTicked || !_playerMode || _mission.Cutscenes?.IsPlaying == true)
         {
             return true;
         }
@@ -285,7 +285,7 @@ internal sealed partial class GameHost
 
                 string gates = $"r_smooth={RenderCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
                     + $"walking={_playerMode}, computer={_computerOpen}, entry={_entry.IsCameraActive}, "
-                    + $"hostCutscene={_cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
+                    + $"hostCutscene={_mission.Cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
                     + $"canPreview={player is ITitlePlayerLook { CanPreviewLook: true }}, "
                     + $"lastGameplayLiveLook={_titleLastLiveLook}, lastGameplayCameraMatches={_titleLastCameraMatches}";
                 context.Print(gates);
@@ -340,7 +340,7 @@ internal sealed partial class GameHost
     private void DrawTitleFirstPerson(in Camera3D eye)
     {
         if (_titlePlayer is not ITitleFirstPerson hands || _titleArms is not { } arms
-            || !_playerMode || _computerOpen || _entry.IsCameraActive || _cutscenes?.IsPlaying == true
+            || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Cutscenes?.IsPlaying == true
             || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {
             return;

@@ -204,15 +204,11 @@ internal sealed partial class GameHost : IDisposable
     private int _ricochetSoundQuietUntil;
     private int _tracerSkipsLogged;
 
-    private AlarmSpeakerRegistry? _alarmSpeakers;
-    private DestructibleObjectRegistry? _destructibles;
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
     private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
-    private SecurityCameraRegistry? _securityCameras;
     private IPlacementSpin? _spins;
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
-    private RotatingObjectRegistry? _rotatingObjects;
 
     // --- Global illumination, distance fields and the surface cache ---
     private IrradianceVolume? _probeField;
@@ -304,6 +300,9 @@ internal sealed partial class GameHost : IDisposable
     // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
     // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
     private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
+
+    // The played mission's registries and runtimes, each null until the system that makes it has run.
+    private readonly MissionWorld _mission = new();
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -600,8 +599,6 @@ internal sealed partial class GameHost : IDisposable
     private long _benchmarkAllocStart;
     private (int, int, int) _benchmarkGcStart;
     private IComputerHighlightCatalogue? _computerHighlights;
-    private MissionObjectiveRuntime? _missionObjectives;
-    private CutsceneRuntime? _cutscenes;
     private MissionDescriptor? _activeMission;
     private LevelTask? _activeLevelRoot;
     private bool _computerOpen;
@@ -680,11 +677,6 @@ internal sealed partial class GameHost : IDisposable
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
     private WorldTraceCast? _worldTrace;
-    private DoorRegistry? _doors;
-    private ElevatorRegistry? _elevators;
-    private WorldInteractionRegistry? _interactions;
-    private GunPickupRegistry? _gunPickups;
-    private GenericPickupRegistry? _genericPickups;
 
     // --- Built once and re-registered into every title's namespace ---
     // Locals until the shell could change games. All three outlive a title: the config host and the menu
@@ -1393,8 +1385,8 @@ internal sealed partial class GameHost : IDisposable
         _worldMaterials = null;
         _ammoTypes = null;
         _weaponTypes = null;
-        _alarmSpeakers = null;
-        _destructibles = null;
+        _mission.AlarmSpeakers = null;
+        _mission.Destructibles = null;
         _sirenVoices.Clear();
         _playerMode = false;
 
@@ -2026,7 +2018,7 @@ internal sealed partial class GameHost : IDisposable
                     && !pauseMenu
                     && _activeMission is not null
                     && !PresentationHoldsLevel
-                    && _cutscenes?.IsPlaying != true);
+                    && _mission.Cutscenes?.IsPlaying != true);
             _device.BeginLatencyFrame();
 
             _window.PumpEvents();
@@ -2405,19 +2397,19 @@ internal sealed partial class GameHost : IDisposable
             // still-pressed Escape and pause the game in the same breath.
             if (!menuMode
                 && !console.IsOpen
-                && _cutscenes?.IsPlaying == true
+                && _mission.Cutscenes?.IsPlaying == true
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
-                _cutscenes.RequestBreak();
+                _mission.Cutscenes.RequestBreak();
                 StopCutsceneSounds();
-                _missionObjectives?.ClearCutsceneMessages();
+                _mission.Objectives?.ClearCutsceneMessages();
             }
 
             if (!menuMode
                 && !console.IsOpen
                 && !_computerOpen
                 && !_missionFailedMenu
-                && _cutscenes?.IsPlaying != true
+                && _mission.Cutscenes?.IsPlaying != true
                 && _titlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
                 && shell is not null
                 && _activeMission is not null
@@ -2972,7 +2964,7 @@ internal sealed partial class GameHost : IDisposable
                     _window.CursorLocked = false;
                     _player?.ReleaseLook();
                 }
-                else if (_cutscenes?.IsPlaying == true)
+                else if (_mission.Cutscenes?.IsPlaying == true)
                 {
                     _player?.HoldStill();
                     _window.CursorLocked = false;
@@ -3086,7 +3078,7 @@ internal sealed partial class GameHost : IDisposable
 
                 // The lifts step ahead of the walk, so they still move before the doors that ride them and before
                 // the player they carry; they do not yet update at their own place in the tree.
-                if (_elevators is { } elevators)
+                if (_mission.Elevators is { } elevators)
                 {
                     // Feed the player's current position to the elevators so their start gate can refuse
                     // to move an empty car or one with an open door. Provider is read every tick.
@@ -3113,10 +3105,10 @@ internal sealed partial class GameHost : IDisposable
                 // During an authored cinematic the area occupant is the cutscene camera rather than the
                 // stationary player body; a diagnostic free camera must not impersonate a player that exists
                 // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
-                _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
-                Vector3d? areaCutsceneView = _cutscenes?.Frame?.Camera.Position;
+                _mission.Objectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
+                Vector3d? areaCutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
                 Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
-                _missionObjectives?.SetLevelStateInputs(
+                _mission.Objectives?.SetLevelStateInputs(
                     AreaActivationOccupant(_player?.Body.Origin, areaCutsceneView, areaFreeView),
                     _soldiers?.PlayerTeam ?? 0,
                     AreaActivationExtraOccupant(_player?.Body.Origin, areaCutsceneView),
@@ -3128,8 +3120,8 @@ internal sealed partial class GameHost : IDisposable
                     _soldiers?.BeginTick(_soldierEnemy ??= SoldierEnemyNow);
                 }
 
-                _cutscenes?.Tick();
-                if (_cutscenes is { } soundingVehicles && _sounds is { } vehicleSoundSystem)
+                _mission.Cutscenes?.Tick();
+                if (_mission.Cutscenes is { } soundingVehicles && _sounds is { } vehicleSoundSystem)
                 {
                     _vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
                     _vehicleSounds.Tick(
@@ -3138,7 +3130,7 @@ internal sealed partial class GameHost : IDisposable
                         _audio.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
                 }
 
-                if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
+                if (_mission.Cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
                 {
                     foreach (WorldPlacement placement in cinematicScene.Placements)
                     {
@@ -3159,7 +3151,7 @@ internal sealed partial class GameHost : IDisposable
             // the player's position (fed above), so it can report whether they're inside.
             if (_player is { } playerWithJump)
             {
-                playerWithJump.CanJump = _elevators is { } jumpElevators
+                playerWithJump.CanJump = _mission.Elevators is { } jumpElevators
                     ? (Func<bool>)(() => !jumpElevators.IsPlayerInsideElevator(
                         playerWithJump.Body.Position, out _))
                     : null;
@@ -3172,7 +3164,7 @@ internal sealed partial class GameHost : IDisposable
             }
 
             if (outcome is FrameOutcome.Tick
-                && _cutscenes?.IsPlaying != true
+                && _mission.Cutscenes?.IsPlaying != true
                 && _playerMode && _player is not null)
             {
                 // What the player's update set in motion this tick -- its sounds, effects and detonations.
@@ -3291,7 +3283,7 @@ internal sealed partial class GameHost : IDisposable
 
                     // The alarm speakers, following their own level expressions -- the siren the
                     // room hears when a guard reaches a switch.
-                    if (_destructibles is { } destructibles)
+                    if (_mission.Destructibles is { } destructibles)
                     {
                         destructibles.Tick();
                         foreach (DestructibleObject ready in destructibles.ConsumeReadyExplosions())
@@ -3309,7 +3301,7 @@ internal sealed partial class GameHost : IDisposable
 
                         // A generator that exploded this tick loses its power this tick, as Generator::Run
                         // (0x43B500) sees its own explosion before it reads the On expression.
-                        _interactions?.SettleGenerators();
+                        _mission.Interactions?.SettleGenerators();
                     }
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();
@@ -3382,7 +3374,7 @@ internal sealed partial class GameHost : IDisposable
             // interactions to advance, but never more than once per simulation tick.
             if (outcome is FrameOutcome.Tick && !_interactionsTickedByPlayer)
             {
-                _interactions?.Tick();
+                _mission.Interactions?.Tick();
             }
 
             // Lifts advance before perception and AI consume this tick's player position. A passenger
@@ -3432,12 +3424,12 @@ internal sealed partial class GameHost : IDisposable
                         writeName,
                         QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
                 }
-                _cutscenes?.FinishExpressionTick();
+                _mission.Cutscenes?.FinishExpressionTick();
 
                 // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
                 // is a counter, and the renderer turns the transform from it when it draws.
                 _spins?.Advance();
-                if (_securityCameras is { } cameras)
+                if (_mission.SecurityCameras is { } cameras)
                 {
                     bool crouching = _playerMode && _player is not null && _player.IsCrouched;
 
@@ -3466,7 +3458,7 @@ internal sealed partial class GameHost : IDisposable
                     }
                 }
 
-                if (_rotatingObjects is { } rotatingObjects)
+                if (_mission.RotatingObjects is { } rotatingObjects)
                 {
                     rotatingObjects.Tick();
                     if (_worldSolids is { } rotatingSolids)
@@ -3484,7 +3476,7 @@ internal sealed partial class GameHost : IDisposable
                 {
                     _soldiers?.Tick(
                         watched,
-                        enemyAlive: !_playerDead && _cutscenes?.IsPlaying != true,
+                        enemyAlive: !_playerDead && _mission.Cutscenes?.IsPlaying != true,
                         enemyFeet: watchedFeet,
                         enemyCrouching: _playerMode && _player is not null && _player.IsCrouched);
                 }
@@ -3732,7 +3724,7 @@ internal sealed partial class GameHost : IDisposable
                         && !_missionFailedMenu
                         && !_computerOpen
                         && !_entry.IsCameraActive
-                        && _cutscenes?.IsPlaying != true
+                        && _mission.Cutscenes?.IsPlaying != true
                         && (!menuMode || pauseMenu)
                         && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
 
@@ -3774,7 +3766,7 @@ internal sealed partial class GameHost : IDisposable
                     }
                 }
 
-                if (_missionObjectives is { } objectiveTick)
+                if (_mission.Objectives is { } objectiveTick)
                 {
                     // The remaster holds a message three seconds longer than the original does, because
                     // the authored durations are short and the hold only starts once the last character
@@ -3784,13 +3776,13 @@ internal sealed partial class GameHost : IDisposable
                         RemasteredHudPresentation.UsesTacticalMessages(
                             RenderCVars.RemasteredHud.Value,
                             RenderCVars.TacticalMessages.Value)
-                        && _cutscenes?.IsPlaying != true
+                        && _mission.Cutscenes?.IsPlaying != true
                             ? RemasteredMessageHoldSeconds
                             : 0f;
                 }
 
-                _missionObjectives?.TickAfterLevelState();
-                if (_missionObjectives is { IsFailed: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Failed })
+                _mission.Objectives?.TickAfterLevelState();
+                if (_mission.Objectives is { IsFailed: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Failed })
                 {
                     // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
                     // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
@@ -3830,7 +3822,7 @@ internal sealed partial class GameHost : IDisposable
                     _missionFailureTicks = 0;
                 }
                 if (!_missionResultHandled
-                    && (_missionObjectives is { IsComplete: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Completed })
+                    && (_mission.Objectives is { IsComplete: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Completed })
                     && _activeMission is { } completedMission)
                 {
                     _missionResultHandled = true;
@@ -3951,7 +3943,7 @@ internal sealed partial class GameHost : IDisposable
                 // backwards after every tick, then glide forwards again. Retail presents the cinematic
                 // transform set atomically, so keep the actor on that same current tick as its plane/train.
                 bool smoothPresentation = !pauseMenu
-                    && _cutscenes?.IsPlaying != true
+                    && _mission.Cutscenes?.IsPlaying != true
                     && !_options.Lockstep
                     && RenderCVars.SmoothPresentation.Value;
                 double pacingWall = _loop.Clock.FrameInstantMilliseconds;
@@ -3968,7 +3960,7 @@ internal sealed partial class GameHost : IDisposable
                     pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
                 Diagnostics.PresentationPacingProbe.SampleGate(
                     pauseMenu,
-                    _cutscenes?.IsPlaying == true,
+                    _mission.Cutscenes?.IsPlaying == true,
                     _options.Lockstep,
                     RenderCVars.SmoothPresentation.Value);
                 if (_loop.Clock.FrameCount % 600 == 0)
@@ -4001,7 +3993,7 @@ internal sealed partial class GameHost : IDisposable
                 // has no other way to know the lens the frame was actually drawn with.
                 _inspectorTangent = horizontalTangent;
                 _inspectorAspect = aspectRatio;
-                if (_cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
+                if (_mission.Cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
                 {
                     // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
                     // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
@@ -4233,7 +4225,7 @@ internal sealed partial class GameHost : IDisposable
                     && !_missionFailedMenu
                     && !_computerOpen
                     && !_entry.IsCameraActive
-                    && _cutscenes?.IsPlaying != true
+                    && _mission.Cutscenes?.IsPlaying != true
                     && mapScene is null
                     && (!menuMode || pauseMenu)
                     && _player is not null;
@@ -4257,7 +4249,7 @@ internal sealed partial class GameHost : IDisposable
                     && !_missionFailedMenu
                     && !_computerOpen
                     && !_entry.IsCameraActive
-                    && _cutscenes?.IsPlaying != true
+                    && _mission.Cutscenes?.IsPlaying != true
                     && mapScene is null
                     && (!menuMode || pauseMenu)
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
@@ -4372,7 +4364,7 @@ internal sealed partial class GameHost : IDisposable
                 {
                     eye = _entry.Camera;
                 }
-                else if (_cutscenes?.Frame is { } cutsceneView)
+                else if (_mission.Cutscenes?.Frame is { } cutsceneView)
                 {
                     eye = cutsceneView.Camera;
                 }
@@ -5277,7 +5269,7 @@ if (retailFog)
                     remasterHud,
                     RenderCVars.TacticalMessages.Value);
                 bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
-                    && _cutscenes?.IsPlaying != true
+                    && _mission.Cutscenes?.IsPlaying != true
                     && !(_playerDead && _deathCamera.IsActive)
                     && _player is { View: not null, IsMountedStationaryGun: false };
 
@@ -6112,7 +6104,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                 // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
                 // red while confirming/detecting, and attached to the head as it pans.
-                if (_securityCameras is { } statusCameras)
+                if (_mission.SecurityCameras is { } statusCameras)
                 {
                     _cameraStatusLights?.Draw(
                         statusCameras.Cameras,
@@ -6332,7 +6324,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // affect the world and first-person rig. The damage and flash washes intentionally remain
                 // later in the draw order and still cover the HUD exactly as they did before this separation.
                 if (_titlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
-                    && _playerMode && !_computerOpen && !_entry.IsCameraActive && _cutscenes?.IsPlaying != true
+                    && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Cutscenes?.IsPlaying != true
                     && _thirdPerson.ShowsViewModel)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -6414,7 +6406,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // over it would be the same information twice.
                 if (!tacticalMessages
                     && showFirstPersonHud
-                    && _missionObjectives is { } messageRuntime
+                    && _mission.Objectives is { } messageRuntime
                     && _hud is { IsReady: true } retailMessages)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -6442,14 +6434,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         batch,
                         _playerHealth.RemainingFraction,
                         retailPlayer.InteractionProgress,
-                        _missionObjectives?.InterfaceTimerRemainingTicks,
+                        _mission.Objectives?.InterfaceTimerRemainingTicks,
                         _window.Width,
                         _window.Height,
                         UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
                     batch.End();
                 }
 
-                if (_cutscenes?.Frame is { } cinematicFraming)
+                if (_mission.Cutscenes?.Frame is { } cinematicFraming)
                 {
                     DrawCutsceneFraming(batch, cinematicFraming);
                 }
@@ -6493,7 +6485,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 }
 
                 if (_computerOpen
-                    && _missionObjectives is { } objectiveRuntime
+                    && _mission.Objectives is { } objectiveRuntime
                     && _player is { } computerPlayer)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -6647,7 +6639,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                             inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
                             modernCarried.State,
                             _player.ActionSprite,
-                            _missionObjectives?.Objectives ?? [],
+                            _mission.Objectives?.Objectives ?? [],
                             _player.IsSniperScoped,
                             worldInteractionPrompt),
                         _window.Width,
@@ -6692,7 +6684,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 if (tacticalMessages
                     && showFirstPersonHud
                     && _remasteredHud is { } messageHud
-                    && _missionObjectives is { } modernMessages
+                    && _mission.Objectives is { } modernMessages
                     && _messages is { IsReady: true } modernCards)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -6710,7 +6702,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                 // Cutscene StatusMessages are subtitles, not HUD. They remain visible while the authored
                 // camera owns the frame even though the arms, weapon and ordinary mission UI are hidden.
-                if (_cutscenes?.IsPlaying == true && _missionObjectives is { } subtitleRuntime)
+                if (_mission.Cutscenes?.IsPlaying == true && _mission.Objectives is { } subtitleRuntime)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
@@ -7170,7 +7162,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             // (3 s) up to the still budget. Test-only; driven by environment variables.
             // A chained intro resets its scene-local clock. Do not carry the previous scene's next
             // capture threshold into the next scene and silently miss its early/short shots.
-            if (captureCutscene && _cutscenes?.ActiveScene is { } observedScene
+            if (captureCutscene && _mission.Cutscenes?.ActiveScene is { } observedScene
                 && !ReferenceEquals(previousCapturedScene, observedScene))
             {
                 previousCapturedScene = observedScene;
@@ -7178,7 +7170,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             }
             if (captureCutscene
                 && cutsceneCaptureCount < cutsceneCaptureLimit
-                && _cutscenes?.ActiveScene is { } activeCutscene
+                && _mission.Cutscenes?.ActiveScene is { } activeCutscene
                 && (cutsceneCaptureScene <= 0 || activeCutscene.Id == cutsceneCaptureScene)
                 && activeCutscene.Ticks >= cutsceneCaptureTick)
             {

@@ -112,8 +112,6 @@ internal sealed partial class GameHost
         _cutsceneOneShotVoices.Clear();
     }
 
-    /// <summary>The level's authored ambience boxes. Null until a mission is up.</summary>
-    private AmbientAreaRegistry? _ambience;
 
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
@@ -608,7 +606,7 @@ internal sealed partial class GameHost
     /// </remarks>
     private void TickAmbience(Vector3d listenerInUnits)
     {
-        if (_ambience is not { } ambience || _sounds is null)
+        if (_mission.Ambience is not { } ambience || _sounds is null)
         {
             return;
         }
@@ -834,7 +832,7 @@ internal sealed partial class GameHost
     /// </remarks>
     private void PlayWeaponDropSounds()
     {
-        if (_sounds is null || _gunPickups is not { } pickups)
+        if (_sounds is null || _mission.GunPickups is not { } pickups)
         {
             return;
         }
@@ -1270,7 +1268,7 @@ internal sealed partial class GameHost
     /// <summary>Consumes and presents authored GenericTBA explosions once per completed interaction.</summary>
     private void ResolveGenericTbaExplosions()
     {
-        if (_interactions is { } interactions)
+        if (_mission.Interactions is { } interactions)
         {
             foreach ((WorldInteraction interaction, GenericTbaExplosionParameters parameters) in interactions.ConsumeExplosions())
             {
@@ -1367,12 +1365,12 @@ internal sealed partial class GameHost
         WorldPlacement? placement,
         float destructibleDamage = 1f)
     {
-        if (_destructibles?.TryDestroy(owner, placement, destructibleDamage) is { } destructible)
+        if (_mission.Destructibles?.TryDestroy(owner, placement, destructibleDamage) is { } destructible)
         {
             HandleDestructibleImpact(destructible, impactUnits);
         }
 
-        if (_alarmSpeakers?.TryDestroy(owner, destructibleDamage) is { } speaker)
+        if (_mission.AlarmSpeakers?.TryDestroy(owner, destructibleDamage) is { } speaker)
         {
             ShootOutSpeaker(speaker);
         }
@@ -1385,12 +1383,12 @@ internal sealed partial class GameHost
     /// <param name="damageFactor">The blast's damage factor.</param>
     private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits, float falloffUnits, float damageFactor)
     {
-        if (_alarmSpeakers is null)
+        if (_mission.AlarmSpeakers is null)
         {
             return;
         }
 
-        foreach (AlarmSpeaker speaker in _alarmSpeakers.ApplyExplosion(impactUnits, radiusUnits, falloffUnits, damageFactor))
+        foreach (AlarmSpeaker speaker in _mission.AlarmSpeakers.ApplyExplosion(impactUnits, radiusUnits, falloffUnits, damageFactor))
         {
             ShootOutSpeaker(speaker);
         }
@@ -1415,8 +1413,8 @@ internal sealed partial class GameHost
             _sounds?.PlayDefinition(destroyed.DestructionSound, destroyed.PositionUnits, priority: 60);
         }
 
-        if (_securityCameras?.Destroy(destroyed.Task) == true
-            && _securityCameras.TryGetCamera(destroyed.Task, out SecurityCamera? camera)
+        if (_mission.SecurityCameras?.Destroy(destroyed.Task) == true
+            && _mission.SecurityCameras.TryGetCamera(destroyed.Task, out SecurityCamera? camera)
             && camera is not null)
         {
             if (_cameraBeepVoices.Remove(camera, out var beep))
@@ -1456,7 +1454,7 @@ internal sealed partial class GameHost
         float damageFactor = 1f,
         int sourceWeaponId = 0)
     {
-        if (_destructibles is not { } registry)
+        if (_mission.Destructibles is not { } registry)
         {
             return;
         }
@@ -1507,7 +1505,7 @@ internal sealed partial class GameHost
             return;
         }
 
-        if (_destructibles is not { } registry || !registry.ScheduleExplosion(item))
+        if (_mission.Destructibles is not { } registry || !registry.ScheduleExplosion(item))
         {
             return;
         }
@@ -1656,14 +1654,14 @@ internal sealed partial class GameHost
     /// </remarks>
     private void TickAlarmSpeakers()
     {
-        if (_sounds is null || _alarmSpeakers is null)
+        if (_sounds is null || _mission.AlarmSpeakers is null)
         {
             return;
         }
 
-        foreach (AlarmSpeaker speaker in _alarmSpeakers.Speakers)
+        foreach (AlarmSpeaker speaker in _mission.AlarmSpeakers.Speakers)
         {
-            bool on = _alarmSpeakers.IsOn(speaker) && speaker.SirenSound.Length > 0;
+            bool on = _mission.AlarmSpeakers.IsOn(speaker) && speaker.SirenSound.Length > 0;
             bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
             bool playing = sounding && _sounds.IsPlaying(voice);
 
@@ -1714,7 +1712,7 @@ internal sealed partial class GameHost
     /// <summary>Keeps the detection and motor loops owned by each <c>SCameraLens</c> in sync.</summary>
     private void TickSecurityCameraSounds()
     {
-        if (_securityCameras is not { } cameras || _sounds is null)
+        if (_mission.SecurityCameras is not { } cameras || _sounds is null)
         {
             return;
         }
@@ -1864,12 +1862,12 @@ internal sealed partial class GameHost
     /// <summary>Keeps each retail elevator travel loop attached to the moving car.</summary>
     private void UpdateElevatorSoundPositions()
     {
-        if (_sounds is null || _elevators is null)
+        if (_sounds is null || _mission.Elevators is null)
         {
             return;
         }
 
-        foreach (PlacedElevator elevator in _elevators.Elevators)
+        foreach (PlacedElevator elevator in _mission.Elevators.Elevators)
         {
             if (!_elevatorVoices.TryGetValue(elevator, out AudioVoiceHandle voice))
             {

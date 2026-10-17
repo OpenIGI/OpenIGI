@@ -345,7 +345,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void AddDoors(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<PlacedDoor>? doors = _doors?.Doors;
+        IReadOnlyList<PlacedDoor>? doors = _mission.Doors?.Doors;
         for (int i = 0; doors is not null && i < doors.Count; i++)
         {
             PlacedDoor door = doors[i];
@@ -368,7 +368,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void AddElevators(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<PlacedElevator>? elevators = _elevators?.Elevators;
+        IReadOnlyList<PlacedElevator>? elevators = _mission.Elevators?.Elevators;
         for (int i = 0; elevators is not null && i < elevators.Count; i++)
         {
             PlacedElevator elevator = elevators[i];
@@ -391,7 +391,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void AddInteractions(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<WorldInteraction>? items = _interactions?.Items;
+        IReadOnlyList<WorldInteraction>? items = _mission.Interactions?.Items;
         for (int i = 0; items is not null && i < items.Count; i++)
         {
             WorldInteraction interaction = items[i];
@@ -415,7 +415,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void AddPickups(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<GunPickup>? guns = _gunPickups?.Items;
+        IReadOnlyList<GunPickup>? guns = _mission.GunPickups?.Items;
         for (int i = 0; guns is not null && i < guns.Count; i++)
         {
             GunPickup pickup = guns[i];
@@ -436,7 +436,7 @@ internal sealed partial class GameHost : IWorldInspector
                 Vector3d.Distance(eye, gunAt)));
         }
 
-        IReadOnlyList<GenericPickup>? items = _genericPickups?.Items;
+        IReadOnlyList<GenericPickup>? items = _mission.GenericPickups?.Items;
         for (int i = 0; items is not null && i < items.Count; i++)
         {
             GenericPickup pickup = items[i];
@@ -460,7 +460,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void AddCameras(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<SecurityCamera>? cameras = _securityCameras?.Cameras;
+        IReadOnlyList<SecurityCamera>? cameras = _mission.SecurityCameras?.Cameras;
         for (int i = 0; cameras is not null && i < cameras.Count; i++)
         {
             SecurityCamera camera = cameras[i];
@@ -484,7 +484,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void AddSpeakers(List<InspectableEntity> into, string needle, Vector3d eye)
     {
-        IReadOnlyList<AlarmSpeaker>? speakers = _alarmSpeakers?.Speakers;
+        IReadOnlyList<AlarmSpeaker>? speakers = _mission.AlarmSpeakers?.Speakers;
         for (int i = 0; speakers is not null && i < speakers.Count; i++)
         {
             AlarmSpeaker speaker = speakers[i];
@@ -599,7 +599,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void DetailDoor(List<string> into, int index)
     {
-        IReadOnlyList<PlacedDoor>? doors = _doors?.Doors;
+        IReadOnlyList<PlacedDoor>? doors = _mission.Doors?.Doors;
         if (doors is null || index < 0 || index >= doors.Count)
         {
             return;
@@ -614,7 +614,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void DetailElevator(List<string> into, int index)
     {
-        IReadOnlyList<PlacedElevator>? elevators = _elevators?.Elevators;
+        IReadOnlyList<PlacedElevator>? elevators = _mission.Elevators?.Elevators;
         if (elevators is null || index < 0 || index >= elevators.Count)
         {
             return;
@@ -628,7 +628,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void DetailInteraction(List<string> into, int index)
     {
-        IReadOnlyList<WorldInteraction>? items = _interactions?.Items;
+        IReadOnlyList<WorldInteraction>? items = _mission.Interactions?.Items;
         if (items is null || index < 0 || index >= items.Count)
         {
             return;
@@ -644,7 +644,7 @@ internal sealed partial class GameHost : IWorldInspector
     {
         if (kind == KindWeaponPickup)
         {
-            IReadOnlyList<GunPickup>? guns = _gunPickups?.Items;
+            IReadOnlyList<GunPickup>? guns = _mission.GunPickups?.Items;
             if (guns is null || index < 0 || index >= guns.Count)
             {
                 return;
@@ -656,7 +656,7 @@ internal sealed partial class GameHost : IWorldInspector
             return;
         }
 
-        IReadOnlyList<GenericPickup>? items = _genericPickups?.Items;
+        IReadOnlyList<GenericPickup>? items = _mission.GenericPickups?.Items;
         if (items is null || index < 0 || index >= items.Count)
         {
             return;
@@ -669,7 +669,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void DetailCamera(List<string> into, int index)
     {
-        IReadOnlyList<SecurityCamera>? cameras = _securityCameras?.Cameras;
+        IReadOnlyList<SecurityCamera>? cameras = _mission.SecurityCameras?.Cameras;
         if (cameras is null || index < 0 || index >= cameras.Count)
         {
             return;
@@ -684,7 +684,7 @@ internal sealed partial class GameHost : IWorldInspector
 
     private void DetailSpeaker(List<string> into, int index)
     {
-        IReadOnlyList<AlarmSpeaker>? speakers = _alarmSpeakers?.Speakers;
+        IReadOnlyList<AlarmSpeaker>? speakers = _mission.AlarmSpeakers?.Speakers;
         if (speakers is null || index < 0 || index >= speakers.Count)
         {
             return;
@@ -740,13 +740,13 @@ internal sealed partial class GameHost : IWorldInspector
             case KindObject when _scene is { } scene && index >= 0 && index < scene.Placements.Count:
                 position = scene.Placements[index].Position;
                 return true;
-            case KindDoor when _doors is { } doors && index >= 0 && index < doors.Doors.Count:
+            case KindDoor when _mission.Doors is { } doors && index >= 0 && index < doors.Doors.Count:
                 position = doors.Doors[index].DrawPosition;
                 return true;
-            case KindElevator when _elevators is { } lifts && index >= 0 && index < lifts.Elevators.Count:
+            case KindElevator when _mission.Elevators is { } lifts && index >= 0 && index < lifts.Elevators.Count:
                 position = lifts.Elevators[index].DrawPosition;
                 return true;
-            case KindInteraction when _interactions is { } actions && index >= 0 && index < actions.Items.Count:
+            case KindInteraction when _mission.Interactions is { } actions && index >= 0 && index < actions.Items.Count:
                 position = Metres(actions.Items[index].Anchor);
                 return true;
             case KindLadder when _scene is { } world && index >= 0 && index < world.Ladders.Count:
