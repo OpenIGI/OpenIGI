@@ -51,7 +51,7 @@ namespace OpenIGI.Host;
 /// the frame loop, and tears everything down. The startup and per-frame body lives in <see cref="Run"/>;
 /// mission loading, lighting and the menu shell are in the sibling partials.
 /// </summary>
-public sealed partial class GameHost : IDisposable, IInspectedWorld
+public sealed partial class GameHost : IDisposable
 {
     // The camera's clip planes, both measured out of the original's own renderer setup -- see
     // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly
@@ -250,37 +250,6 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
 
     // The console's inspector, over what IInspectedWorld shows it of the host.
     private readonly WorldInspector _inspector;
-
-    // What the inspector reads of the host.
-    PlayerCamera? IInspectedWorld.Player => _player;
-
-    bool IInspectedWorld.PlayerMode => _playerMode;
-
-    bool IInspectedWorld.PlayerDead => _playerDead;
-
-    FreeCamera? IInspectedWorld.Camera => _camera;
-
-    WorldScene? IInspectedWorld.Scene => _scene;
-
-    IWorldPresenter? IInspectedWorld.World => _world;
-
-    ITerrainPresenter? IInspectedWorld.Terrain => _terrain;
-
-    IGroundHeightField? IInspectedWorld.Ground => _ground;
-
-    ISoldierPresenter? IInspectedWorld.Soldiers => _soldiers;
-
-    MissionWorld IInspectedWorld.Mission => _mission;
-
-    Camera3D IInspectedWorld.InspectorEye => _inspectorEye;
-
-    float IInspectedWorld.InspectorAspect => _inspectorAspect;
-
-    float IInspectedWorld.InspectorTangent => _inspectorTangent;
-
-    int IInspectedWorld.WindowWidth => _window.Width;
-
-    int IInspectedWorld.WindowHeight => _window.Height;
 
     // The player's flashlight, and what its lens is kept out of.
     private readonly PlayerFlashlight _flashlight;
@@ -691,7 +660,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _device = device;
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
-        _inspector = new WorldInspector(this);
+        _inspector = new WorldInspector(new InspectedWorld(this));
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,
