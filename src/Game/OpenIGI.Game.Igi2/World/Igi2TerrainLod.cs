@@ -211,10 +211,10 @@ public readonly struct Igi2TerrainView
 
         Span<Vector3f> view =
         [
-            Normalise(new Vector3f(-1f, 0f, -tanX)),
-            Normalise(new Vector3f(1f, 0f, -tanX)),
-            Normalise(new Vector3f(0f, -1f, -tanY)),
-            Normalise(new Vector3f(0f, 1f, -tanY)),
+            (new Vector3f(-1f, 0f, -tanX)).NormalizedOrSelf(),
+            (new Vector3f(1f, 0f, -tanX)).NormalizedOrSelf(),
+            (new Vector3f(0f, -1f, -tanY)).NormalizedOrSelf(),
+            (new Vector3f(0f, 1f, -tanY)).NormalizedOrSelf(),
         ];
 
         // Camera3D.Orientation's rows are the view axes in world space, so it maps world to view by
@@ -229,11 +229,6 @@ public readonly struct Igi2TerrainView
         return new Igi2TerrainView(frame.Camera.Position, world);
     }
 
-    private static Vector3f Normalise(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f ? value / length : value;
-    }
 }
 
 /// <summary>The lowest and highest height over every power-of-two block of a tile.</summary>

@@ -234,7 +234,7 @@ public sealed class M203Simulation
             if (struckHuman || struckWall)
             {
                 Vector3f normal = struckHuman
-                    ? Normalize(projectile.Velocity * -1f)
+                    ? (projectile.Velocity * -1f).ReciprocalNormalizedOrSelf(float.Epsilon)
                     : wallHit.Normal;
                 _detonations.Add(new M203Detonation(
                     struckHuman ? humanHit.Position : wallHit.Position,
@@ -259,12 +259,6 @@ public sealed class M203Simulation
         _detonations.Clear();
     }
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt(
-            (value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > float.Epsilon ? value * (1f / length) : value;
-    }
 }
 
 /// <summary>Mutable presentation and physics state for one M203 round.</summary>

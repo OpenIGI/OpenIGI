@@ -44,7 +44,7 @@ public sealed partial class Igi2ViewModelRenderer
             }
 
             Vector3f n = decal.Normal;
-            Vector3f across = MathF.Abs(n.X) < 0.9f ? Normalise(Vector3f.Cross(n, new Vector3f(1f, 0f, 0f))) : Normalise(Vector3f.Cross(n, new Vector3f(0f, 1f, 0f)));
+            Vector3f across = MathF.Abs(n.X) < 0.9f ? Vector3f.Cross(n, new Vector3f(1f, 0f, 0f)).NormalizedOrSelf() : Vector3f.Cross(n, new Vector3f(0f, 1f, 0f)).NormalizedOrSelf();
             Vector3f along = Vector3f.Cross(n, across);
             float s = decal.HalfSize * metres, h = decal.Hover * metres;
             Vector3f up = n * h, a = across * s, b = along * s;

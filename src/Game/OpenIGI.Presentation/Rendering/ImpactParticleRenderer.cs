@@ -1773,12 +1773,6 @@ public sealed class ImpactParticleRenderer : IDisposable
         return !(length > 1e-6f) ? new Vector3f(0f, 0f, 1f) : direction / length;
     }
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = value.Length;
-        return !(length > 1e-6f) ? new Vector3f(0f, 0f, 1f) : value / length;
-    }
-
     private void AddDustQuad(ref Particle p, Vector3d eye, float alpha)
     {
         // Thins as it ages and as it grows -- a plume spreads its matter, it does not mint more.

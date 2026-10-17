@@ -270,12 +270,12 @@ public static class GunShotImpactEffects
 
         float speed = FragmentSpeed(random.NextSingle());
 
-        Vector3f axis = Normalize(direction);
+        Vector3f axis = direction.ReciprocalNormalizedOr(Vector3f.UnitZ);
         Vector3f helper = axis.X == 0f && axis.Y == 0f
             ? new Vector3f(0f, 1f, 0f)
-            : Normalize(new Vector3f(axis.Y, -axis.X, 0f));
-        Vector3f u = Normalize(Vector3f.Cross(helper, axis));
-        Vector3f w = Normalize(Vector3f.Cross(axis, u));
+            : (new Vector3f(axis.Y, -axis.X, 0f)).ReciprocalNormalizedOr(Vector3f.UnitZ);
+        Vector3f u = (Vector3f.Cross(helper, axis)).ReciprocalNormalizedOr(Vector3f.UnitZ);
+        Vector3f w = (Vector3f.Cross(axis, u)).ReciprocalNormalizedOr(Vector3f.UnitZ);
 
         float roll = random.NextSingle() * MathF.PI;
         float pitch = random.NextSingle() * FragmentConeRadians;
@@ -284,10 +284,10 @@ public static class GunShotImpactEffects
         float pitchSin = MathF.Sin(pitch);
         float pitchCos = MathF.Cos(pitch);
 
-        Vector3f launch = Normalize(new Vector3f(
+        Vector3f launch = (new Vector3f(
             (axis.X * pitchCos) + (pitchSin * ((rollSin * u.X) - (rollCos * w.X))),
             (axis.Y * pitchCos) + (pitchSin * ((rollSin * u.Y) - (rollCos * w.Y))),
-            (axis.Z * pitchCos) + (pitchSin * ((rollSin * u.Z) - (rollCos * w.Z)))));
+            (axis.Z * pitchCos) + (pitchSin * ((rollSin * u.Z) - (rollCos * w.Z))))).ReciprocalNormalizedOr(Vector3f.UnitZ);
 
         return launch * speed;
     }
@@ -298,15 +298,4 @@ public static class GunShotImpactEffects
     public static float FragmentSpeed(float uniformSample) =>
         (uniformSample * (FragmentSpeedMaximum - FragmentSpeedMinimum)) + FragmentSpeedMinimum;
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float lengthSquared = value.LengthSquared;
-        if (!(lengthSquared > 0f))
-        {
-            return new Vector3f(0f, 0f, 1f);
-        }
-
-        float inverse = 1f / MathF.Sqrt(lengthSquared);
-        return new Vector3f(value.X * inverse, value.Y * inverse, value.Z * inverse);
-    }
 }

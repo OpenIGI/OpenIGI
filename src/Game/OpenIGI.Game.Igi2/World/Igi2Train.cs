@@ -135,17 +135,17 @@ public static class Igi2Train
     /// </remarks>
     public static Matrix3f Facing(Vector3d front, Vector3d back)
     {
-        Vector3f along = Normalize(new Vector3f(
+        Vector3f along = (new Vector3f(
             (float)(front.X - back.X),
             (float)(front.Y - back.Y),
-            (float)(front.Z - back.Z)));
+            (float)(front.Z - back.Z))).NormalizedOrSelf();
         if (along.X == 0f && along.Y == 0f && along.Z == 0f)
         {
             return Matrix3f.Identity;
         }
 
-        Vector3f side = Normalize(new Vector3f(along.Y, -along.X, 0f));
-        Vector3f up = Normalize(Vector3f.Cross(side, along));
+        Vector3f side = (new Vector3f(along.Y, -along.X, 0f)).NormalizedOrSelf();
+        Vector3f up = (Vector3f.Cross(side, along)).NormalizedOrSelf();
         return new Matrix3f(
             side.X, along.X, up.X,
             side.Y, along.Y, up.Y,
@@ -171,14 +171,6 @@ public static class Igi2Train
             point.X + (facing.M11 * x) + (facing.M13 * z),
             point.Y + (facing.M21 * x) + (facing.M23 * z),
             point.Z + (facing.M31 * x) + (facing.M33 * z));
-    }
-
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : value;
     }
 
 }

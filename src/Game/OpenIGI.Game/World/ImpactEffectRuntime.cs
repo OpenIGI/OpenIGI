@@ -139,7 +139,7 @@ public sealed class ImpactEffectRuntime
             return;
         }
 
-        Vector3f lift = Normalize(normal) * GunShotImpactEffects.PuffLiftInUnits;
+        Vector3f lift = normal.ReciprocalNormalizedOr(Vector3f.UnitZ) * GunShotImpactEffects.PuffLiftInUnits;
         Vector3d first = new(position.X + lift.X, position.Y + lift.Y, position.Z + lift.Z);
         Vector3d second = new(
             first.X,
@@ -194,7 +194,7 @@ public sealed class ImpactEffectRuntime
             return new BloodReport(false, false, -1, false, 0.0);
         }
 
-        Vector3f line = Normalize(direction);
+        Vector3f line = direction.ReciprocalNormalizedOr(Vector3f.UnitZ);
 
         // 0x463B9C: the splash on whatever stood behind the target, three metres on.
         BloodReport report = StampBackstop(position, line, walls, marks, materials);
@@ -414,15 +414,4 @@ public sealed class ImpactEffectRuntime
         hit.Position.Y + (hit.Normal.Y * Weapons.GunShotBallistics.PenetrationStepOffUnits),
         hit.Position.Z + (hit.Normal.Z * Weapons.GunShotBallistics.PenetrationStepOffUnits));
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float lengthSquared = value.LengthSquared;
-        if (!(lengthSquared > 0f))
-        {
-            return new Vector3f(0f, 0f, 1f);
-        }
-
-        float inverse = 1f / MathF.Sqrt(lengthSquared);
-        return new Vector3f(value.X * inverse, value.Y * inverse, value.Z * inverse);
-    }
 }

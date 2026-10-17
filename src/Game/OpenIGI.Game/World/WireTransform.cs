@@ -134,10 +134,10 @@ public readonly record struct WireTransform(
         for (int i = 0; i < vertices.Length; i++)
         {
             Vertex3D vertex = source.Vertices[i];
-            Vector3f normal = Normalize(new Vector3f(
+            Vector3f normal = (new Vector3f(
                 vertex.Normal.X,
                 scaleY != 0f ? vertex.Normal.Y / scaleY : vertex.Normal.Y,
-                vertex.Normal.Z));
+                vertex.Normal.Z)).NormalizedOrSelf();
             vertices[i] = new Vertex3D(
                 new Vector3f(vertex.Position.X, vertex.Position.Y * scaleY, vertex.Position.Z),
                 normal,
@@ -189,11 +189,4 @@ public readonly record struct WireTransform(
         return false;
     }
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : value;
-    }
 }

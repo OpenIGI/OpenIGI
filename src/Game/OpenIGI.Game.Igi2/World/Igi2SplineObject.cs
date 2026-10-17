@@ -179,11 +179,11 @@ public static class Igi2SplineObject
 
         Vector3f side = along.X == 0f && along.Y == 0f
             ? new Vector3f(0f, 1f, 0f)
-            : Normalize(new Vector3f(along.Y, -along.X, 0f));
+            : (new Vector3f(along.Y, -along.X, 0f)).NormalizedOrSelf();
 
-        Vector3f first = Normalize(along);
-        Vector3f second = Normalize(Vector3f.Cross(Vector3f.Cross(side, along), along));
-        Vector3f third = Normalize(Vector3f.Cross(first, second));
+        Vector3f first = along.NormalizedOrSelf();
+        Vector3f second = (Vector3f.Cross(Vector3f.Cross(side, along), along)).NormalizedOrSelf();
+        Vector3f third = (Vector3f.Cross(first, second)).NormalizedOrSelf();
 
         // Stored transposed, which puts the three axes in the COLUMNS -- and the direction of travel in
         // the first column, where the curve reads its tangent from.
@@ -198,14 +198,6 @@ public static class Igi2SplineObject
 
     private static int Number(GameTask task, string name, int fallback) =>
         task.TryGetScriptValue(name, out object? raw) && raw is int value ? value : fallback;
-
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : value;
-    }
 
     /// <summary>One waypoint, as the segments either side of it need it.</summary>
     private readonly record struct Waypoint(

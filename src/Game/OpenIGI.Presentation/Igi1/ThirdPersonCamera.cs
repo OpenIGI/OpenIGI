@@ -214,14 +214,14 @@ public sealed class ThirdPersonCamera
             (right.X * ShoulderInMetres) + (up.X * HeightInMetres),
             (right.Y * ShoulderInMetres) + (up.Y * HeightInMetres),
             (right.Z * ShoulderInMetres) + (up.Z * HeightInMetres));
-        double lateralLength = Length(lateral);
+        double lateralLength = lateral.Length;
         double lateralShare = 1.0;
         if (walls is { } lateralWalls && lateralLength > 0.0)
         {
             Vector3d target = Add(pivot, lateral, 1.0);
             if (lateralWalls(ToUnits(pivot), ToUnits(target), out Vector3d hit))
             {
-                double reach = Length(Subtract(FromUnits(hit), pivot)) - CollisionMarginInMetres;
+                double reach = (Subtract(FromUnits(hit), pivot)).Length - CollisionMarginInMetres;
                 lateralShare = Math.Clamp(reach / lateralLength, 0.0, 1.0);
             }
         }
@@ -238,7 +238,7 @@ public sealed class ThirdPersonCamera
             if (backWalls(ToUnits(shoulder), ToUnits(target), out Vector3d hit))
             {
                 allowed = Math.Clamp(
-                    Length(Subtract(FromUnits(hit), shoulder)) - CollisionMarginInMetres,
+                    (Subtract(FromUnits(hit), shoulder)).Length - CollisionMarginInMetres,
                     0.0,
                     DistanceInMetres);
             }
@@ -253,7 +253,7 @@ public sealed class ThirdPersonCamera
         double back = _limitInMetres * eased;
         Vector3d eye = Add(Add(pivot, lateral, lateralShare * eased), forward, -back);
 
-        OffsetInMetres = Length(Subtract(eye, pivot));
+        OffsetInMetres = (Subtract(eye, pivot)).Length;
         _showsBody = OffsetInMetres >= (_showsBody ? BodyHiddenInMetres : BodyShownInMetres);
         _showsViewModel = OffsetInMetres < (_showsViewModel ? ArmsAwayInMetres : ArmsBackInMetres);
 
@@ -280,9 +280,6 @@ public sealed class ThirdPersonCamera
 
     private static Vector3d Subtract(Vector3d left, Vector3d right) =>
         new(left.X - right.X, left.Y - right.Y, left.Z - right.Z);
-
-    private static double Length(Vector3d value) =>
-        Math.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
 
     private static Vector3d ToUnits(Vector3d metres) =>
         new(metres.X * UnitsPerMetre, metres.Y * UnitsPerMetre, metres.Z * UnitsPerMetre);

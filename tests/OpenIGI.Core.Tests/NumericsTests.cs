@@ -7,6 +7,27 @@ namespace OpenIGI.Core.Tests;
 public sealed class NumericsTests
 {
     [Fact]
+    public void Vector3f_NormalizedOr_divides_each_component_and_falls_back_at_or_below_the_minimum()
+    {
+        Vector3f v = new(3f, 0f, 4f);
+        Assert.Equal(new Vector3f(3f / 5f, 0f, 4f / 5f), v.NormalizedOr(Vector3f.UnitZ));
+        Assert.Equal(Vector3f.UnitZ, Vector3f.Zero.NormalizedOr(Vector3f.UnitZ));
+        Assert.Equal(Vector3f.UnitX, new Vector3f(1e-7f, 0f, 0f).NormalizedOr(Vector3f.UnitX, 1e-6f));
+        Assert.Equal(Vector3f.UnitX, new Vector3f(float.NaN, 0f, 0f).NormalizedOr(Vector3f.UnitX));
+        Assert.Equal(Vector3f.Zero, Vector3f.Zero.NormalizedOrSelf());
+    }
+
+    [Fact]
+    public void Vector3f_ReciprocalNormalizedOr_multiplies_by_one_over_the_length()
+    {
+        Vector3f v = new(1f, 2f, 3f);
+        float inverse = 1f / v.Length;
+        Assert.Equal(new Vector3f(1f * inverse, 2f * inverse, 3f * inverse), v.ReciprocalNormalizedOr(Vector3f.UnitZ));
+        Assert.Equal(Vector3f.UnitZ, Vector3f.Zero.ReciprocalNormalizedOr(Vector3f.UnitZ));
+        Assert.Equal(new Vector3f(1e-40f, 0f, 0f), new Vector3f(1e-40f, 0f, 0f).ReciprocalNormalizedOrSelf(float.Epsilon));
+    }
+
+    [Fact]
     public void Vector3d_ArithmeticIsComponentWise()
     {
         var a = new Vector3d(1.0, 2.0, 3.0);

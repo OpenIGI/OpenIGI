@@ -383,10 +383,10 @@ public sealed class BulletMarks
     {
         ArgumentNullException.ThrowIfNull(probe);
 
-        Vector3f n = Normalise(normal);
+        Vector3f n = normal.NormalizedOr(Vector3f.UnitZ, 1e-6f);
         Vector3f reference = MathF.Abs(n.Z) < 0.9f ? new Vector3f(0f, 0f, 1f) : new Vector3f(1f, 0f, 0f);
-        Vector3f right = Normalise(Vector3f.Cross(reference, n));
-        Vector3f up = Normalise(Vector3f.Cross(n, right));
+        Vector3f right = (Vector3f.Cross(reference, n)).NormalizedOr(Vector3f.UnitZ, 1e-6f);
+        Vector3f up = (Vector3f.Cross(n, right)).NormalizedOr(Vector3f.UnitZ, 1e-6f);
 
         for (int corner = 0; corner < 4; corner++)
         {
@@ -453,8 +453,8 @@ public sealed class BulletMarks
             double dz = a.Z - b.Z;
             if ((reach * reach) > ((dx * dx) + (dy * dy) + (dz * dz))
                 && Vector3f.Dot(
-                    Normalise(local ? existing.LocalNormal : existing.Normal),
-                    Normalise(local ? mark.LocalNormal : mark.Normal)) > OverlapAlignment)
+                    (local ? existing.LocalNormal : existing.Normal).NormalizedOr(Vector3f.UnitZ, 1e-6f),
+                    (local ? mark.LocalNormal : mark.Normal).NormalizedOr(Vector3f.UnitZ, 1e-6f)) > OverlapAlignment)
             {
                 return false;
             }
@@ -549,9 +549,4 @@ public sealed class BulletMarks
             || materials.TryGetByName(FallbackMaterial, out material);
     }
 
-    private static Vector3f Normalise(Vector3f v)
-    {
-        float length = MathF.Sqrt(Vector3f.Dot(v, v));
-        return length > 1e-6f ? new Vector3f(v.X / length, v.Y / length, v.Z / length) : new Vector3f(0f, 0f, 1f);
-    }
 }

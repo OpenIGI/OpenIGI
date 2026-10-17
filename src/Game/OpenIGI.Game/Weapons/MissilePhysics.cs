@@ -218,7 +218,7 @@ public sealed class MissileSimulation
             if (struckHuman || struckWall)
             {
                 // The scorch faces off the surface for a wall, or back along the flight for a body.
-                Vector3f normal = struckHuman ? Normalize(missile.Velocity * -1f) : wallHit.Normal;
+                Vector3f normal = struckHuman ? (missile.Velocity * -1f).ReciprocalNormalizedOrSelf(float.Epsilon) : wallHit.Normal;
                 _detonations.Add(new MissileDetonation(
                     struckHuman ? humanHit.Position : wallHit.Position,
                     MissileExplosion.DamageFactor,
@@ -267,7 +267,7 @@ public sealed class MissileSimulation
             return;
         }
 
-        Vector3f facing = Normalize(missile.Velocity);
+        Vector3f facing = missile.Velocity.ReciprocalNormalizedOrSelf(float.Epsilon);
 
         // Guided types re-aim at the type's loft/dive point each tick; Direct and keyboard rockets hold
         // the launch line their steering was cleared to.
@@ -275,7 +275,7 @@ public sealed class MissileSimulation
             or MissileType.MissileAntiTank
             or MissileType.HindHelicopter)
         {
-            float speed = Length(missile.Velocity);
+            float speed = missile.Velocity.Length;
             if (speed > 0f)
             {
                 Vector3f steered = MissileFlight.LaunchVelocity(
@@ -285,7 +285,7 @@ public sealed class MissileSimulation
                     speed * MissileFlight.TicksPerSecond / MissileFlight.UnitsPerMetre);
                 if (steered != default)
                 {
-                    facing = Normalize(steered);
+                    facing = steered.ReciprocalNormalizedOrSelf(float.Epsilon);
                 }
             }
         }
@@ -300,7 +300,7 @@ public sealed class MissileSimulation
 
         float cruiseUnitsPerTick = config.CruiseMetresPerSecond
             * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond;
-        float currentSpeed = Length(missile.Velocity);
+        float currentSpeed = missile.Velocity.Length;
 
         // While the motor burns, thrust drives the speed up toward cruise — faster as the throttle
         // climbs — so the rocket visibly accelerates away from the tube. After burnout it coasts on drag.
@@ -319,15 +319,6 @@ public sealed class MissileSimulation
             facing.X * newSpeed,
             facing.Y * newSpeed,
             facing.Z * newSpeed);
-    }
-
-    private static float Length(Vector3f v) =>
-        MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
-
-    private static Vector3f Normalize(Vector3f v)
-    {
-        float length = Length(v);
-        return length > float.Epsilon ? v * (1f / length) : v;
     }
 
     /// <summary>Removes all live missiles and pending detonations.</summary>

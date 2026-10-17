@@ -516,7 +516,7 @@ public static class LightFixtureExtractor
         extent = Math.Sqrt(extent);
 
         string texture = Dominant(byTexture);
-        Vector3f tint = Normalise(colour is null ? new Vector3f(1f, 1f, 1f) : colour(texture));
+        Vector3f tint = NonNegative(colour is null ? new Vector3f(1f, 1f, 1f) : colour(texture));
 
         Vector3f direction = Facing(facing, facingArea);
         (Vector3f axis, float halfLength, float halfWidth) = EmittingRect(triangles, cluster, position, direction);
@@ -716,7 +716,7 @@ public static class LightFixtureExtractor
     /// than propagated. Values above one are left alone: an over-bright colour is a legitimate way for a
     /// caller to say a source is strong.
     /// </remarks>
-    private static Vector3f Normalise(Vector3f colour) =>
+    private static Vector3f NonNegative(Vector3f colour) =>
         new(MathF.Max(colour.X, 0f), MathF.Max(colour.Y, 0f), MathF.Max(colour.Z, 0f));
 
     private static int Compare(LightFixture left, LightFixture right)

@@ -158,7 +158,7 @@ public sealed class LadderPlacement
         // point within the same radius and in front of the human, and chooses the most head-on result.
         Vector3d fromTop = Subtract(playerPosition, ActivationTop);
         Vector3d toTop = Subtract(ActivationTop, playerPosition);
-        double topDistance = Length(toTop);
+        double topDistance = toTop.Length;
         double topForward = (forwardX * toTop.X) + (forwardY * toTop.Y);
         bool topCandidate = Dot(fromTop, columnTwo) < 0.0
             && topDistance < ActivateRadiusUnits
@@ -191,6 +191,4 @@ public sealed class LadderPlacement
     private static double Dot(Vector3d value, Vector3f axis) =>
         (value.X * axis.X) + (value.Y * axis.Y) + (value.Z * axis.Z);
 
-    private static double Length(Vector3d value) =>
-        Math.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
 }

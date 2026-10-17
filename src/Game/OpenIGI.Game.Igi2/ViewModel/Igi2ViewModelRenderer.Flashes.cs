@@ -72,7 +72,7 @@ public sealed partial class Igi2ViewModelRenderer
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(at), pending.Orientation);
 
             // The eye's axis in the weapon object's frame; its sign falls out of both the square and the side quad's symmetry.
-            Vector3f eye = Normalise((camera.Orientation * pending.Orientation).Transposed().Transform(new Vector3f(0f, 0f, 1f)));
+            Vector3f eye = ((camera.Orientation * pending.Orientation).Transposed().Transform(new Vector3f(0f, 0f, 1f))).NormalizedOrSelf();
             foreach (TitleMuzzleFlash flash in pending.Flashes)
             {
                 DrawFlash(flash, eye, modelView, firstPerson);
@@ -153,12 +153,6 @@ public sealed partial class Igi2ViewModelRenderer
     }
 
     private static Bgra32 White(float alpha) => new(255, 255, 255, (byte)Math.Clamp((int)((alpha * 255f) + 0.5f), 0, 255));
-
-    private static Vector3f Normalise(Vector3f v)
-    {
-        float length = MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
-        return length > 0f ? new Vector3f(v.X / length, v.Y / length, v.Z / length) : v;
-    }
 
     private sealed record PendingFlash(IReadOnlyList<TitleMuzzleFlash> Flashes, string Model, Vector3d Position, Matrix3f Orientation);
 }
