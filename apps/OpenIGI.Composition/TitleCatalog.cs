@@ -24,21 +24,36 @@ namespace OpenIGI.Composition;
 /// that game can use, however well factored everything underneath it is.
 /// </para>
 /// <para>
-/// Written by hand rather than discovered. A container that found these by reflection would buy nothing
-/// — there are two, and the list is three lines — and would cost the AOT targets their static call
-/// graph.
+/// Written by hand rather than discovered: a container that found these by reflection would cost the AOT
+/// targets their static call graph. A mod edits <see cref="Titles"/>.
 /// </para>
 /// </remarks>
 public static class TitleCatalog
 {
+    /// <summary>Gets the titles this build plays, each with everything it brings to the host.</summary>
+    /// <remarks>
+    /// The one list naming both games. A mod adds a title here, or replaces one's package -- its renderers, its scene walk,
+    /// its player -- keeping its place.
+    /// </remarks>
+    public static TitleRegistry Titles { get; } = new TitleRegistry()
+        .Register(new TitlePackage(
+            Igi1Runtime.Instance,
+            Igi1PresentationProvider.Instance,
+            Igi1WorldBuilder.Instance,
+            static log => new MissionRegistry(log)))
+        .Register(new TitlePackage(
+            Igi2Runtime.Instance,
+            Igi2PresentationProvider.Instance,
+            Igi2WorldBuilder.Instance,
+            static log => new Igi2MissionCatalogue(log),
+            Igi2Gameplay.Instance));
+
     /// <summary>Gets the catalogue the host resolves titles through.</summary>
     /// <remarks>
-    /// The same four lookups below, bundled per title, so the host can be handed a different
-    /// game's set while it is running. Everything here is a shared instance and a path read from
-    /// the environment, so resolving is free and can happen on the frame a player picks a game.
-    /// Made on first use: an initialiser would run before <see cref="All"/>'s, which is declared below it.
+    /// Every registered package, bound to where the desktop finds it installed. Resolving is free, so it can happen on the
+    /// frame a player picks a game.
     /// </remarks>
-    public static ITitleCatalog Catalog => field ??= new HostCatalog(All, DiscoverDataRoot);
+    public static ITitleCatalog Catalog => field ??= new HostCatalog(Titles.Packages, DiscoverDataRoot);
 
     /// <summary>Gets a catalogue of one title, installed at a root the host already knows.</summary>
     /// <param name="runtime">The title.</param>
@@ -52,21 +67,14 @@ public static class TitleCatalog
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrEmpty(dataRoot);
-        return new HostCatalog([runtime], _ => dataRoot);
+        return new HostCatalog([Titles.Get(runtime.Title)], _ => dataRoot);
     }
 
     /// <summary>Gets every title this build knows how to run.</summary>
-    public static IReadOnlyList<IGameTitleRuntime> All { get; } =
-    [
-        Igi1Runtime.Instance,
-        Igi2Runtime.Instance,
-    ];
+    public static IReadOnlyList<IGameTitleRuntime> All => [.. Titles.Packages.Select(static p => p.Runtime)];
 
     /// <summary>Gets the title used when nothing selects one.</summary>
-    /// <remarks>
-    /// Project I.G.I., because it is the title this port actually plays. I.G.I. 2 is selectable and its
-    /// levels load, but it has no gameplay yet, so defaulting to it would be a worse first run.
-    /// </remarks>
+    /// <remarks>Project I.G.I., the first title the port played.</remarks>
     public static IGameTitleRuntime Default => Igi1Runtime.Instance;
 
     /// <summary>Names the environment variable that says where one title is installed.</summary>
@@ -94,26 +102,12 @@ public static class TitleCatalog
     /// </remarks>
     public static bool TryResolve(string? id, [NotNullWhen(true)] out IGameTitleRuntime? runtime)
     {
-        runtime = null;
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            return false;
-        }
-
-        foreach (IGameTitleRuntime candidate in All)
-        {
-            if (string.Equals(candidate.Title.Id, id.Trim(), StringComparison.OrdinalIgnoreCase))
-            {
-                runtime = candidate;
-                return true;
-            }
-        }
-
-        return false;
+        runtime = Titles.TryGet(id, out TitlePackage? package) ? package.Runtime : null;
+        return runtime is not null;
     }
 
     /// <summary>Gets the ids <see cref="TryResolve"/> accepts, for an error message.</summary>
-    public static string KnownTitleIds => string.Join(", ", All.Select(static r => r.Title.Id));
+    public static string KnownTitleIds => string.Join(", ", Titles.Packages.Select(static p => p.Title.Id));
 
     /// <summary>Finds a title that is actually installed, when nothing selected one.</summary>
     /// <param name="candidates">Directories to look in, in order of preference.</param>
@@ -122,9 +116,8 @@ public static class TitleCatalog
     /// <remarks>
     /// <para>
     /// Each title is tried against its own environment variable first and the shared candidates after,
-    /// in the order <see cref="All"/> lists them — so a machine with both installed runs the one this
-    /// port actually plays, and a machine with only the sequel still starts rather than reporting the
-    /// first game missing.
+    /// in the order <see cref="Titles"/> lists them -- so a machine with both installed runs the first, and a
+    /// machine with only the sequel still starts rather than reporting the first game missing.
     /// </para>
     /// <para>
     /// A probe rather than a default, because the failure it replaces is a confusing one: pointing the
@@ -137,15 +130,15 @@ public static class TitleCatalog
         ArgumentNullException.ThrowIfNull(candidates);
 
         string?[] shared = [.. candidates];
-        foreach (IGameTitleRuntime runtime in All)
+        foreach (TitlePackage package in Titles.Packages)
         {
             string?[] withOwn =
-                [Environment.GetEnvironmentVariable(GamePathVariableFor(runtime.Title)), .. shared];
+                [Environment.GetEnvironmentVariable(package.Title.GamePathVariable), .. shared];
 
-            if (GameProfileResolver.DiscoverDataRoot(withOwn, runtime.Title) is { } found)
+            if (GameProfileResolver.DiscoverDataRoot(withOwn, package.Title) is { } found)
             {
                 dataRoot = found;
-                return runtime;
+                return package.Runtime;
             }
         }
 
@@ -157,152 +150,47 @@ public static class TitleCatalog
     /// <param name="title">The title to run.</param>
     /// <returns>Its runtime.</returns>
     /// <exception cref="ArgumentException">This build has no runtime for that title.</exception>
-    public static IGameTitleRuntime For(GameTitle title)
-    {
-        ArgumentNullException.ThrowIfNull(title);
-
-        foreach (IGameTitleRuntime runtime in All)
-        {
-            if (runtime.Title == title)
-            {
-                return runtime;
-            }
-        }
-
-        throw new ArgumentException($"This build has no runtime for '{title.Id}'.", nameof(title));
-    }
+    public static IGameTitleRuntime For(GameTitle title) => Titles.Get(title).Runtime;
 
     /// <summary>Finds the mission catalogue for a title.</summary>
     /// <param name="title">The title to run.</param>
     /// <param name="logger">Where scan diagnostics go.</param>
     /// <returns>Its catalogue.</returns>
-    /// <exception cref="ArgumentException">This build has no catalogue for that title.</exception>
-    /// <remarks>
-    /// A fourth lookup, and the reason is the same each time: the reference graph forbids joining them.
-    /// What differs between the two is the reader, not the walk — <c>DefineMission</c> takes eleven
-    /// arguments in one game and fourteen in the other, and the fourth argument of the first is a next
-    /// mission id the second does not have.
-    /// </remarks>
-    public static IMissionCatalogue<MissionDescriptor> MissionCatalogueFor(GameTitle title, IOpenIgiLogger? logger = null)
-    {
-        ArgumentNullException.ThrowIfNull(title);
-
-        if (title == GameTitle.Igi1)
-        {
-            return new MissionRegistry(logger);
-        }
-
-        if (title == GameTitle.Igi2)
-        {
-            return new Igi2MissionCatalogue(logger);
-        }
-
-        throw new ArgumentException($"This build has no mission catalogue for '{title.Id}'.", nameof(title));
-    }
+    /// <exception cref="ArgumentException">This build has no such title.</exception>
+    public static IMissionCatalogue<MissionDescriptor> MissionCatalogueFor(GameTitle title, IOpenIgiLogger? logger = null) =>
+        Titles.Get(title).Missions(logger);
 
     /// <summary>Finds the scene walk for a title.</summary>
     /// <param name="title">The title to run.</param>
     /// <returns>Its world builder.</returns>
-    /// <exception cref="ArgumentException">This build has no scene walk for that title.</exception>
-    /// <remarks>
-    /// A third lookup, for the same reason there is a second: <c>OpenIGI.Game</c> references
-    /// <c>OpenIGI.Engine</c>, so <c>Engine</c> cannot name a <c>WorldScene</c> and
-    /// <see cref="IGameTitleRuntime"/> cannot carry this. All three are resolved here, from the same
-    /// title, in the one place allowed to name either game.
-    /// </remarks>
-    public static ITitleWorldBuilder WorldBuilderFor(GameTitle title)
-    {
-        ArgumentNullException.ThrowIfNull(title);
-
-        if (title == GameTitle.Igi1)
-        {
-            return Igi1WorldBuilder.Instance;
-        }
-
-        if (title == GameTitle.Igi2)
-        {
-            return Igi2WorldBuilder.Instance;
-        }
-
-        throw new ArgumentException($"This build has no scene walk for {title}.", nameof(title));
-    }
+    /// <exception cref="ArgumentException">This build has no such title.</exception>
+    public static ITitleWorldBuilder WorldBuilderFor(GameTitle title) => Titles.Get(title).WorldBuilder;
 
     /// <summary>Finds the renderers for a title.</summary>
     /// <param name="title">The title to run.</param>
     /// <returns>Its presentation provider.</returns>
-    /// <exception cref="ArgumentException">This build has no renderers for that title.</exception>
-    /// <remarks>
-    /// A second lookup rather than a member of <see cref="IGameTitleRuntime"/>, because the reference
-    /// graph forbids joining them: <c>OpenIGI.Presentation</c> references <c>OpenIGI.Engine</c>, so
-    /// <c>Engine</c> cannot name a presenter. What matters is that both are resolved here, from the same
-    /// title, in the one place allowed to name either game.
-    /// </remarks>
-    public static ITitlePresentationProvider PresentationFor(GameTitle title)
-    {
-        ArgumentNullException.ThrowIfNull(title);
-
-        if (title == GameTitle.Igi1)
-        {
-            return Igi1PresentationProvider.Instance;
-        }
-
-        if (title == GameTitle.Igi2)
-        {
-            return Igi2PresentationProvider.Instance;
-        }
-
-        throw new ArgumentException($"This build has no renderers for '{title.Id}'.", nameof(title));
-    }
+    /// <exception cref="ArgumentException">This build has no such title.</exception>
+    public static ITitlePresentationProvider PresentationFor(GameTitle title) => Titles.Get(title).Presentation;
 
     /// <summary>Finds a title's own player, for a title that brings one.</summary>
     /// <param name="title">The title to run.</param>
     /// <returns>Its gameplay, or <see langword="null"/> for a title that walks the host's own rig.</returns>
-    /// <remarks>
-    /// A fifth lookup, for the reason of the other four. Project I.G.I. walks the host's rig, which was built
-    /// over that game; I.G.I. 2 brings the player ported from its own <c>HumanPlayer</c>.
-    /// </remarks>
-    public static ITitleGameplay? GameplayFor(GameTitle title)
-    {
-        ArgumentNullException.ThrowIfNull(title);
-        return title == GameTitle.Igi2 ? Igi2Gameplay.Instance : null;
-    }
+    /// <exception cref="ArgumentException">This build has no such title.</exception>
+    public static ITitleGameplay? GameplayFor(GameTitle title) => Titles.Get(title).Gameplay;
 
-    /// <summary>The catalogue as the host sees it.</summary>
-    /// <remarks>
-    /// A nested type rather than a second class, because it is this class read through an interface: the
-    /// list, the path variable and the four lookups are all already here, and a separate implementation
-    /// would be a second place naming both games.
-    /// </remarks>
+    /// <summary>The catalogue as the host sees it: packages bound to where their titles are installed.</summary>
     private sealed class HostCatalog(
-        IReadOnlyList<IGameTitleRuntime> runtimes,
+        IReadOnlyList<TitlePackage> packages,
         Func<GameTitle, string> dataRoot) : ITitleCatalog
     {
-        public IReadOnlyList<GameTitle> Titles => [.. runtimes.Select(static r => r.Title)];
+        public IReadOnlyList<GameTitle> Titles => [.. packages.Select(static p => p.Title)];
 
         public bool TryResolve(GameTitle title, [NotNullWhen(true)] out TitleBinding? binding)
         {
             ArgumentNullException.ThrowIfNull(title);
-            binding = null;
-
-            foreach (IGameTitleRuntime runtime in runtimes)
-            {
-                if (runtime.Title != title)
-                {
-                    continue;
-                }
-
-                binding = new TitleBinding(
-                    runtime,
-                    PresentationFor(title),
-                    WorldBuilderFor(title),
-                    log => MissionCatalogueFor(title, log),
-                    dataRoot(title),
-                    GameplayFor(title));
-
-                return true;
-            }
-
-            return false;
+            TitlePackage? package = packages.FirstOrDefault(p => p.Title == title);
+            binding = package?.Bind(dataRoot(title));
+            return binding is not null;
         }
     }
 
@@ -313,7 +201,7 @@ public static class TitleCatalog
     /// installations at once.
     /// </remarks>
     private static string DiscoverDataRoot(GameTitle title) =>
-        Environment.GetEnvironmentVariable(GamePathVariableFor(title))
+        Environment.GetEnvironmentVariable(title.GamePathVariable)
             ?? GameProfileResolver.DiscoverDataRoot(SearchPaths, title)
             ?? string.Empty;
 
