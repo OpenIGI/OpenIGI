@@ -34,10 +34,10 @@ public sealed class AnimTriggerRegistry
     public const string DefineNative = "DefineAnimTrigger";
 
     /// <summary>The prefix of the task-type constants the script's second argument uses.</summary>
-    public const string TaskTypeConstantPrefix = "TASKTYPE_";
+    public const string TaskTypeConstantPrefix = Config.TaskTypeConstants.Prefix;
 
     private readonly Dictionary<int, AnimTriggerDefinition> _byId = [];
-    private readonly Dictionary<int, string> _taskTypeNames = [];
+    private readonly Config.TaskTypeConstants _taskTypes = new();
     private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="AnimTriggerRegistry"/> class.</summary>
@@ -76,7 +76,7 @@ public sealed class AnimTriggerRegistry
         ArgumentNullException.ThrowIfNull(natives);
 
         _byId.Clear();
-        _taskTypeNames.Clear();
+        _taskTypes.Clear();
 
         if (!resources.TryLoad(ScriptResource, out ReadOnlyMemory<byte> bytes))
         {
@@ -96,7 +96,7 @@ public sealed class AnimTriggerRegistry
             throw new EngineFatalException($"Couldn't load script: {ScriptResource}", ex);
         }
 
-        DeclareTaskTypeConstants(program, natives);
+        _taskTypes.Declare(program, natives);
 
         QvmInterpreter interpreter = new(program, natives);
         QvmError error = interpreter.Run();
@@ -120,33 +120,7 @@ public sealed class AnimTriggerRegistry
     /// <summary>Gets the script constant a task type id came from, for diagnostics.</summary>
     /// <param name="taskType">The id.</param>
     /// <returns>The constant's name, or an empty string when it is not one this registry allocated.</returns>
-    public string TaskTypeName(int taskType) => _taskTypeNames.GetValueOrDefault(taskType, string.Empty);
-
-    /// <summary>
-    /// Declares the <c>TASKTYPE_*</c> constants the script's second argument uses.
-    /// </summary>
-    /// <remarks>
-    /// The same deliberate divergence as <see cref="World.MagicObjectRegistry"/>: the original's task
-    /// classes export their own ids at start-up, so the numbers depend only on registration order and
-    /// appear in no data file. Until those classes exist the ids are allocated in symbol-table order.
-    /// </remarks>
-    private void DeclareTaskTypeConstants(QvmProgram program, NativeRegistry natives)
-    {
-        int next = 1;
-        foreach (string? symbol in program.SymbolNames)
-        {
-            if (symbol is null
-                || !symbol.StartsWith(TaskTypeConstantPrefix, StringComparison.Ordinal)
-                || natives.Contains(symbol))
-            {
-                continue;
-            }
-
-            natives.RegisterConstant(symbol, next);
-            _taskTypeNames[next] = symbol;
-            next++;
-        }
-    }
+    public string TaskTypeName(int taskType) => _taskTypes.NameOf(taskType);
 
     private QvmValue Define(QvmCallContext call)
     {
