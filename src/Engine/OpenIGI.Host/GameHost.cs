@@ -881,15 +881,31 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _frames = null;
     }
 
+    // How long the field takes to replace the ambient it stands in for. Long enough that the eye reads
+    // it as light settling rather than as a cut, short enough that nobody waits for it -- and well
+    // under the several seconds the bake itself takes, so the two do not read as one long event.
+    private const float ProbeFadeMilliseconds = 600f;
+
+    private const int ShowcaseMissionId = 1;
+
+    // How long a mission has to stay selected before its level is built. Every selection re-arms the
+    // timer, so running down the list faster than this builds nothing at all. It can be short now that
+    // building costs the render thread nothing -- it is a debounce against pointless work, not a shield
+    // for the frame rate.
+    private const int PreviewSettleMs = 260;
+
     /// <summary>The whole of the game's run, one frame per step.</summary>
     /// <returns>An element at the top of every frame, before it runs.</returns>
     /// <remarks>
-    /// An iterator so that the frame loop's own state -- its pacers, its timestamps, the shell and the
-    /// preview loader, forty-odd locals the loop reads -- lives exactly where it always did, in the order
-    /// it always did, and a step is one pass of the loop. The compiler keeps them between steps.
+    /// An iterator, so that a step is one pass of the loop. The loop's own state -- its pacers, its timestamps, the
+    /// shell and the preview loader, the screen GI's history -- is one <see cref="FrameLoopState"/>, made as the loop
+    /// starts and set up in the order it always was.
     /// </remarks>
     private IEnumerable<bool> Frames()
     {
+        // What the loop keeps from one frame to the next.
+        FrameLoopState state = new();
+
         // The UI is authored against the original's 640x480 back buffer and is centred, NEVER SCALED, so
         // the projection is the back buffer's own size and MenuLayout.ToScreen does the centring. Passing
         // the authored size here instead scales 640x480 up to fill the window AND then scales the centring
@@ -968,13 +984,13 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // descriptor's own Name is the table KEY -- it reads "Mission 1 Name" -- so a loading panel that
         // showed it would be showing the campaign screen a different title than the one it just listed.
         _menuStrings = strings;
-        SpriteBatch batch = new(_device);
+        state.Batch = new(_device);
 
         // Held so a loading frame can be drawn and swapped from outside this loop, before a mission
         // load blocks it. See GameHost.MissionWarmUp.cs.
-        _batch = batch;
+        _batch = state.Batch;
         _renderer = null;
-        bool running = true;
+        state.Running = true;
 
         // The developer console: the CVar registry, settings.cfg and the on-screen view. Brought up before
         // anything reads a setting, so the saved file and the command line's +statements are already in
@@ -986,7 +1002,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             console.AttachLog(router);
         }
 
-        console.QuitRequested += (_, _) => running = false;
+        console.QuitRequested += (_, _) => state.Running = false;
 
         // The console reaches the system clipboard through the window, which is what owns the handle,
         // rather than taking a platform reference of its own.
@@ -1070,11 +1086,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
         _menuHost = new MenuHost(
             _window.Input,
-            batch,
+            state.Batch,
             () => _renderer,
             () => _window.Width,
             () => _window.Height,
-            () => running = false,
+            () => state.Running = false,
             _logger)
         {
             // The menu and its hit-test have to agree about the magnification -- this is the inverse of
@@ -1095,14 +1111,14 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // different soldier and animation states, which measured at 9% of pixels differing. Everything
         // else in the simulation is already deterministic (IgiRandom is seeded, not time-seeded), so this
         // is the whole of what a reference capture needs.
-        ManualTimeSource? lockstepClock = _options.Lockstep ? new ManualTimeSource() : null;
+        state.LockstepClock = _options.Lockstep ? new ManualTimeSource() : null;
 
         // Held as a field, and built here rather than left to GameLoop's own default, because a second
         // loop is created for every mission the menu previews and one of those eventually takes the
         // session over. Two loops that each defaulted to their own SystemTimeSource would read
         // milliseconds from different origins, and every `last*Milliseconds` delta in the frame loop
         // would jump the moment the swap happened. One source, shared, keeps the handover invisible.
-        _timeSource = lockstepClock is not null ? lockstepClock : new SystemTimeSource();
+        _timeSource = state.LockstepClock is not null ? state.LockstepClock : new SystemTimeSource();
         // Baked global illumination: a mission's probe field is loaded from the shipped cache (Assets/gi)
         // when present, else traced and written to the per-user cache so the next load is fast. This is what
         // turns a level load from a few-seconds lighting trace into an instant read -- see GiBakeCache.
@@ -1141,8 +1157,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         LoadTitleSession();
         GameMusicNatives musicNatives = new(_music!);
 
-        bool reportedWorld = false;
-        bool reportedShot = false;
+        state.ReportedWorld = false;
+        state.ReportedShot = false;
         _guardRounds = 0;
         _guardHits = 0;
 
@@ -1175,10 +1191,10 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
         // own third-person rig, which SoldierRenderer loads and poses with the death fall.
         _deathCamera = new();
-        InteractionCamera interactionCamera = new();
-        bool climbActive = false;
-        bool worldInteractionActive = false;
-        int temporalFrame = 0;
+        state.InteractionCamera = new();
+        state.ClimbActive = false;
+        state.WorldInteractionActive = false;
+        state.TemporalFrame = 0;
 
         // Test-only authored-cutscene capture harness. Set OPENIGI_CUTSCENE_CAPTURE_DIR to enable;
         // OPENIGI_CUTSCENE_CAPTURE_SCENE selects one scene id (unset/0 captures whichever scene is
@@ -1187,24 +1203,25 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // 90 logic ticks (3 s) while the scene runs, named mission-NN-scene-ID-tick-NNNNNN.bmp;
         // OPENIGI_CUTSCENE_CAPTURE_EVERY changes the interval, and 0 writes every rendered frame (the
         // name then carries the frame too), for flicker that changes between frames of one tick.
-        string? cutsceneCaptureDirectory = Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_DIR");
-        int cutsceneCaptureScene = 0;
-        bool captureCutscene = cutsceneCaptureDirectory is not null;
-        _ = int.TryParse(Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_SCENE"), out cutsceneCaptureScene);
-        int cutsceneCaptureTick = int.TryParse(
+        state.CutsceneCaptureDirectory = Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_DIR");
+        state.CutsceneCaptureScene = 0;
+        state.CaptureCutscene = state.CutsceneCaptureDirectory is not null;
+        _ = int.TryParse(Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_SCENE"), out int captureScene);
+        state.CutsceneCaptureScene = captureScene;
+        state.CutsceneCaptureTick = int.TryParse(
             Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_START_TICK"),
             out int configuredCaptureTick)
             ? Math.Max(0, configuredCaptureTick)
             : 90;
-        int cutsceneCaptureEvery = int.TryParse(
+        state.CutsceneCaptureEvery = int.TryParse(
             Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_EVERY"),
             out int configuredCaptureEvery)
             ? Math.Max(0, configuredCaptureEvery)
             : 90;
-        int cutsceneCaptureCount = 0;
-        int cutsceneCaptureStartTick = cutsceneCaptureTick;
-        CutSceneTask? previousCapturedScene = null;
-        int cutsceneCaptureLimit = int.TryParse(
+        state.CutsceneCaptureCount = 0;
+        state.CutsceneCaptureStartTick = state.CutsceneCaptureTick;
+        state.PreviousCapturedScene = null;
+        state.CutsceneCaptureLimit = int.TryParse(
             Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_COUNT"),
             out int configuredCaptureCount) && configuredCaptureCount > 0
             ? configuredCaptureCount
@@ -1213,12 +1230,12 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // A scripted free-camera flight (-camend), if one was asked for. The opening pose is captured on
         // the first rendered frame and the camera is moved along a straight line to the end pose across the
         // frame budget, so the temporal filters (GI, TAA) can be seen resolving under real motion -- which a
-        // static capture cannot show. flightFrame is the rendered-frame index, and the sequence's frame number.
-        bool flightStarted = false;
-        Vector3d flightStartPos = default;
-        float flightStartYaw = 0f;
-        float flightStartPitch = 0f;
-        int flightFrame = 0;
+        // static capture cannot show. state.FlightFrame is the rendered-frame index, and the sequence's frame number.
+        state.FlightStarted = false;
+        state.FlightStartPos = default;
+        state.FlightStartYaw = 0f;
+        state.FlightStartPitch = 0f;
+        state.FlightFrame = 0;
 
         _probeField = null;
 
@@ -1235,12 +1252,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         //
         // A lockstep capture never fades: it waits for the field at load, so there is nothing to blend from
         // and nothing time-dependent for a reference image to disagree about.
-        long probeArrivedAt = -1;
+        state.ProbeArrivedAt = -1;
 
-        // How long the field takes to replace the ambient it stands in for. Long enough that the eye reads
-        // it as light settling rather than as a cut, short enough that nobody waits for it -- and well
-        // under the several seconds the bake itself takes, so the two do not read as one long event.
-        const float ProbeFadeMilliseconds = 600f;
 
 
         // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
@@ -1248,7 +1261,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // on the render thread once the bake lands.
         _cardLighting = null;
         _cardLookup = null;
-        bool cardLightingDumped = false;
+        state.CardLightingDumped = false;
 
         // How many times the bounce has been re-lit this mission. Zero converges in one shot; each relight
         // after that accumulates over frames. Reset when a mission loads.
@@ -1256,10 +1269,10 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
         // One screen-space indirect dump per run, to verify the gather reads the G-buffer and reconstructs
         // world positions correctly before it feeds the frame.
-        bool screenGiDumped = false;
+        state.ScreenGiDumped = false;
 
         // What the screen-space GI keeps from one frame to the next.
-        ScreenGiHistory screenGi = new();
+        state.ScreenGi = new();
 
         _capturedCards = null;
         _cardInstances = null;
@@ -1267,9 +1280,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _sdfScene = null;
         _sdfClipmaps = null;
         _sdfValidated = false;
-        bool climbSlideArmed = false;
+        state.ClimbSlideArmed = false;
         _shotRandom = new(20000101);
-        int reportedHumanHits = 0;
+        state.ReportedHumanHits = 0;
         _scene = null;
         _world = null;
         _terrain = null;
@@ -1277,7 +1290,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _shadowPass = null;
 
         // Authored atmosphere. Levels with no entry fall back to what their own FlatSky task asks for.
-        FogPresets fogPresets = FogPresets.Load(
+        state.FogPresets = FogPresets.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "fog-presets.json"),
             _logger);
 
@@ -1314,7 +1327,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // The loop assigns this every pass so that turning r_material_detail up mid-session starts
         // deriving for whatever loads next -- but a level reached with -mission loads its textures BEFORE
         // the first pass, so every one of them saw the default of false and cached the answer "no map".
-        // A mission started from the menu never hit it, because the loop is already running by then.
+        // A mission started from the menu never hit it, because the loop is already state.Running by then.
         // Measured: 27 maps derived over 600 frames of -mission, against a level's worth of textures.
         _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
         _detailMaps.Enabled = _detailMaps.DeriveMissing;
@@ -1389,7 +1402,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // collision index is kept here so the overlay can name the object under the crosshair.
         _worldSolids = null;
         _worldTrace = null;
-        bool showDebug = false;
+        state.ShowDebug = false;
 
         _menuHost.StartGame = () => StartMission(_missionState.PendingMissionId);
 
@@ -1431,47 +1444,46 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             menu.Manager.Initialize(menu, _menuHost, _logger);
         };
 
-        // R11: the cinematic shell (OpenIGI.Frontend) is the default front end; -vanilla and -vanillamenu
+        // R11: the cinematic state.Shell (OpenIGI.Frontend) is the default front end; -vanilla and -vanillamenu
         // reach the byte-for-byte retail menus instead. -mission still skips the menus straight into a level.
-        Shell? shell = null;
+        state.Shell = null;
         _showcaseCamera = null;
-        MissionWarmer? missionWarmer = null;
-        MissionPreviewLoader? previewLoader = null;
+        state.MissionWarmer = null;
+        state.PreviewLoader = null;
         _menuCameras = MenuCameraLibrary.Empty;
-        IgiTypography? shellTypography = null;
+        state.ShellTypography = null;
 
-        // Hoisted so a title switch can rebuild the shell around them. Neither belongs to a game: the
+        // Hoisted so a title switch can rebuild the state.Shell around them. Neither belongs to a game: the
         // host seam calls back into this class, and the save store is the player's, one directory for
-        // the session. What the rebuilt shell does get anew is its CONTEXT -- the game list and the
+        // the session. What the rebuilt state.Shell does get anew is its CONTEXT -- the game list and the
         // mission list, which are the two things that change when the game does.
-        ShellHost? shellHost = null;
-        SaveSlotStore? saves = null;
+        state.ShellHost = null;
+        state.Saves = null;
 
         // What the mission-entry shot types over its vantage. Filled when the shot begins.
 
         // Where the shot's character stands, in engine units, and which way it faces.
-        bool menuMode = false;
+        state.MenuMode = false;
 
-        // The shell is up over a LIVE mission -- the pause menu -- rather than over the showcase. It always
-        // implies menuMode; what it adds is that the backdrop is already the right picture. So nothing is
+        // The state.Shell is up over a LIVE mission -- the pause menu -- rather than over the showcase. It always
+        // implies state.MenuMode; what it adds is that the backdrop is already the right picture. So nothing is
         // streamed in behind the menu, the showcase orbit does not take the camera off the player, and the
         // world is frozen instead of advanced. Escape opens it and Escape closes it again.
-        bool pauseMenu = false;
-        bool showcasePending = false;
-        bool firstFrameReported = false;
+        state.PauseMenu = false;
+        state.ShowcasePending = false;
+        state.FirstFrameReported = false;
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
-        bool entryCamPending = false;
-        long entryTimeChosenAt = -1;
-        ShellHost? shellHostForEntryCam = null;
+        state.EntryCamPending = false;
+        state.EntryTimeChosenAt = -1;
+        state.ShellHostForEntryCam = null;
 
         // When the mission-entry shot last read the clock.
-        int lastEntryMilliseconds = 0;
-        int lastComputerMilliseconds = 0;
-        const int ShowcaseMissionId = 1;
-        int currentShowcaseMissionId = ShowcaseMissionId;
+        state.LastEntryMilliseconds = 0;
+        state.LastComputerMilliseconds = 0;
+        state.CurrentShowcaseMissionId = ShowcaseMissionId;
         int? pendingPreviewMissionId = null;
-        int previewRequestedAtMs = 0;
+        state.PreviewRequestedAtMs = 0;
 
         // The backdrop cross-dissolve. 1 is the outgoing level's held frame fully covering the incoming
         // one, 0 is the incoming level alone; it runs on an eased tween on real elapsed time. There is no
@@ -1482,37 +1494,32 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // runs on the frame after, so what was captured is the OLD level. The very first backdrop has no
         // outgoing level to hold — the menu is over its dark clear — so there is nothing to dissolve from
         // and it simply appears.
-        bool holdFrameForDissolve = false;
-        bool heldFrameReady = false;
-        bool missionsSwept = false;
-        int backdropSwaps = 0;
-        bool heldFrameIsPicture = false;
-        bool dissolveRevealPending = false;
+        state.HoldFrameForDissolve = false;
+        state.HeldFrameReady = false;
+        state.MissionsSwept = false;
+        state.BackdropSwaps = 0;
+        state.HeldFrameIsPicture = false;
+        state.DissolveRevealPending = false;
 
         // A field that finished baking for the backdrop, waiting for the frame after the hold to be
         // adopted -- see the collect further down.
-        DistanceFieldBake.Result? bakedFieldForBackdrop = null;
+        state.BakedFieldForBackdrop = null;
 
         // The menu is held to the display's rate rather than rendering as fast as it can, where the
         // platform leaves the rate to the loop. See IFramePacer.
-        IFramePacer menuPacer = _platform.CreateFramePacer();
-        bool lastPassRendered = false;
+        state.MenuPacer = _platform.CreateFramePacer();
+        state.LastPassRendered = false;
 
-        // How long a mission has to stay selected before its level is built. Every selection re-arms the
-        // timer, so running down the list faster than this builds nothing at all. It can be short now that
-        // building costs the render thread nothing -- it is a debounce against pointless work, not a shield
-        // for the frame rate.
-        const int PreviewSettleMs = 260;
 
 
         // -vanillamenu reaches the retail menus, which carry their own in-game menu; everything else runs
-        // the cinematic shell. -mission still opens straight into a level — what it no longer does is leave
-        // the shell unbuilt, because the pause menu IS the shell and Escape has to reach it from a mission
+        // the cinematic state.Shell. -mission still opens straight into a level — what it no longer does is leave
+        // the state.Shell unbuilt, because the pause menu IS the state.Shell and Escape has to reach it from a mission
         // the menus were skipped into.
         if (_options.BakeAll)
         {
             // The bake sweep runs after the window is shown (the probe wait pumps the message queue); the
-            // shell and menus are skipped entirely.
+            // state.Shell and menus are skipped entirely.
         }
         else if (_options.VanillaMenu && _options.StartMission <= 0)
         {
@@ -1522,28 +1529,28 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         {
             _menuCameras = MenuCameraLibrary.Load(
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
-            missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
-            previewLoader = new MissionPreviewLoader(
+            state.MissionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
+            state.PreviewLoader = new MissionPreviewLoader(
                 _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
             // The design's four faces — Barlow, Barlow Condensed in two weights, JetBrains Mono — the same
-            // set the launcher draws with, uploaded once and shared by every page of the shell.
-            shellTypography = UiFontLibrary.Typography(_device);
-            UiTheme shellTheme = shellTypography.CreateTheme();
+            // set the launcher draws with, uploaded once and shared by every page of the state.Shell.
+            state.ShellTypography = UiFontLibrary.Typography(_device);
+            UiTheme shellTheme = state.ShellTypography.CreateTheme();
 
-            // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
-            _shellBodyFont = shellTypography.Body;
-            _shellHeadingFont = shellTypography.Display;
-            _shellType = shellTypography;
+            // Held so the mission-entry shot can typeset its title with the same faces the state.Shell uses.
+            _shellBodyFont = state.ShellTypography.Body;
+            _shellHeadingFont = state.ShellTypography.Display;
+            _shellType = state.ShellTypography;
 
             // The real DefineMission data, resolved to display strings through the language table, in the
             // order the CAMPAIGN CHAIN gives — each descriptor names its successor. The registry's own
             // order is the startup scan's, which is a directory walk and therefore alphabetical, so it
             // listed level 10 between level 1 and level 2. The retail menu walks the chain (0x405660) and
             // so does this.
-            saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "saves"));
+            state.Saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "state.Saves"));
 
-            shellHost = new ShellHost(
+            state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
                     if (_configuration.Active is { } activeProfile)
@@ -1558,14 +1565,14 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     }
 
                     // Reachable from the pause menu as well as from the front end — the campaign is in the
-                    // bar either way — so the shell is told it is no longer over a mission it was paused on.
+                    // bar either way — so the state.Shell is told it is no longer over a mission it was paused on.
                     // Deferred where a sequence covers the load: the menu keeps drawing under the departure
                     // and is put away on the frame the load actually runs.
                     void LeaveTheMenu()
                     {
-                        shell?.ClosePauseMenu();
-                        menuMode = false;
-                        pauseMenu = false;
+                        state.Shell?.ClosePauseMenu();
+                        state.MenuMode = false;
+                        state.PauseMenu = false;
                         ApplyGameplayMotionBlur();
                     }
 
@@ -1647,7 +1654,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // the briefing is still being read. Never over a mission being played: the sky is not
                     // to change under a player halfway through a level, and the hour they chose is picked
                     // up by the next level they load.
-                    if (menuMode && !pauseMenu)
+                    if (state.MenuMode && !state.PauseMenu)
                     {
                         _dayNight.ResetForLevel(_sun, RenderCVars.TimeOfDay.Value);
                     }
@@ -1656,9 +1663,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 {
                     // Nothing is reloaded and nobody is placed again: the level was never torn down, only
                     // left un-ticked, so resuming is this loop putting the menu away.
-                    shell?.ClosePauseMenu();
-                    menuMode = false;
-                    pauseMenu = false;
+                    state.Shell?.ClosePauseMenu();
+                    state.MenuMode = false;
+                    state.PauseMenu = false;
                     _window.CursorVisible = false;
                 },
                 restartMission: () =>
@@ -1669,9 +1676,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         // menu leaves, the place falls out of focus, and it comes back reset.
                         void Restart()
                         {
-                            shell?.ClosePauseMenu();
-                            menuMode = false;
-                            pauseMenu = false;
+                            state.Shell?.ClosePauseMenu();
+                            state.MenuMode = false;
+                            state.PauseMenu = false;
                             ApplyGameplayMotionBlur();
                             StartMission(mission.Id);
                             _window.CursorVisible = false;
@@ -1693,26 +1700,26 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // hold a loading panel over the campaign screen.
                     CancelMissionWarmUp();
                     ReleasePlayedMission();
-                    shell?.ClosePauseMenu();
-                    shell?.OpenOn("campaign");
-                    menuMode = true;
+                    state.Shell?.ClosePauseMenu();
+                    state.Shell?.OpenOn("campaign");
+                    state.MenuMode = true;
 
-                    // The shell is over the showcase again from here, so the backdrop has to be streamed:
+                    // The state.Shell is over the showcase again from here, so the backdrop has to be streamed:
                     // the level it was drawing over has just been released, and it is framed as a
                     // backdrop again rather than as something being played through.
-                    pauseMenu = false;
-                    showcasePending = true;
+                    state.PauseMenu = false;
+                    state.ShowcasePending = true;
                     _window.CursorVisible = true;
                 },
-                quit: () => running = false,
+                quit: () => state.Running = false,
                 switchTitle: RequestTitle,
                 previewMission: id =>
                 {
                     // Never over a live mission. Adopting a preview disposes the world renderer and drops
-                    // the player, which from the pause menu would be the shell demolishing the mission it
+                    // the player, which from the pause menu would be the state.Shell demolishing the mission it
                     // is drawn over. The screens already know not to ask (ShellContext.InGame); this is the
                     // guarantee rather than the manners.
-                    if (pauseMenu)
+                    if (state.PauseMenu)
                     {
                         return;
                     }
@@ -1726,15 +1733,15 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         wanted = _options.EntryCamMission;
                     }
 
-                    if (wanted != currentShowcaseMissionId)
+                    if (wanted != state.CurrentShowcaseMissionId)
                     {
                         // Warm the level's files on a worker now, and note the moment: once the selection
                         // has held for the settle window the loop asks the preview loader to build it, also
                         // on a worker. Nothing here touches the render thread, so a selection that keeps
                         // moving simply keeps re-arming this.
                         pendingPreviewMissionId = wanted;
-                        previewRequestedAtMs = _loop.TimeSource.Milliseconds;
-                        missionWarmer?.Warm(wanted);
+                        state.PreviewRequestedAtMs = _loop.TimeSource.Milliseconds;
+                        state.MissionWarmer?.Warm(wanted);
                     }
                     else
                     {
@@ -1763,20 +1770,20 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
                 });
 
-            shellHostForEntryCam = shellHost;
+            state.ShellHostForEntryCam = state.ShellHost;
 
-            shell = new Shell(BuildShellContext(shellHost, shellTheme, saves));
+            state.Shell = new Shell(BuildShellContext(state.ShellHost, shellTheme, state.Saves));
 
-            // -shelltab is a development shortcut, not a game feature, and the shell's counterpart to
+            // -shelltab is a development shortcut, not a game feature, and the state.Shell's counterpart to
             // -screen: it opens straight on a section so a capture does not need someone to click there.
-            if (_options.ShellTab is { Length: > 0 } openOn && !shell.OpenOn(openOn))
+            if (_options.ShellTab is { Length: > 0 } openOn && !state.Shell.OpenOn(openOn))
             {
                 _logger.Warning("Menu", $"-shelltab '{openOn}' is not a section; opening on the main menu.");
             }
 
             if (_options.StartMission > 0)
             {
-                // Straight into the level, with the shell built and waiting behind Escape rather than shown.
+                // Straight into the level, with the state.Shell built and waiting behind Escape rather than shown.
                 // Once its files can be read: on the desktop that is now, in a browser it is when the page
                 // has fetched them -- a level started before that opened with no terrain and no models.
                 ResumeConditions();
@@ -1791,17 +1798,17 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // asking and the backdrop appearing is that worker's -- so asking now rather than two
                 // frames later is the whole of it earlier. The menu still draws over its dark backdrop
                 // in the meantime, which is what the deferral was protecting.
-                menuMode = true;
+                state.MenuMode = true;
                 int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
-                currentShowcaseMissionId = firstShowcase;
+                state.CurrentShowcaseMissionId = firstShowcase;
 
-                if (previewLoader is { } opening)
+                if (state.PreviewLoader is { } opening)
                 {
                     RequestBackdrop(opening, firstShowcase);
                 }
                 else
                 {
-                    showcasePending = true;
+                    state.ShowcasePending = true;
                 }
 
                 // -entrycam: open on the campaign and remember that Play is to be pressed as soon as this
@@ -1809,8 +1816,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // path below, so what gets measured is the real thing rather than a special case.
                 if (_options.EntryCamMission > 0)
                 {
-                    shell.OpenOn("campaign");
-                    entryCamPending = true;
+                    state.Shell.OpenOn("campaign");
+                    state.EntryCamPending = true;
                 }
             }
         }
@@ -1820,15 +1827,15 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // without saying when, and "when" is the whole question: a cost paid behind the menu is free and
         // the same cost paid on the frame Play is pressed is the bug.
         BeginWatchingFramePasses("Session");
-        long passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-        FramePerformanceTracker framePerformance = new();
+        state.PassStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        state.FramePerformance = new();
 
         _logger.Information(
             "Render",
             FormattableString.Invariant(
                 $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
 
-        _window.CloseRequested += (_, _) => running = false;
+        _window.CloseRequested += (_, _) => state.Running = false;
         _window.Show();
         _logger.Information(
             "Desktop",
@@ -1840,7 +1847,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         if (_options.ShowcasePointDump is { Length: > 0 } dumpPath)
         {
             DumpShowcasePoints(dumpPath, strings);
-            running = false;
+            state.Running = false;
         }
 
         // -bakeall: trace every mission's probe field into the cache, then quit. Each StartMission loads the
@@ -1866,7 +1873,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 "Bake",
                 $"Baked {baked} mission(s). To ship them, copy the .giv files from "
                     + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Composition/Assets/gi.");
-            running = false;
+            state.Running = false;
         }
 
         // The distance-field shader is compiled here, when the feature is on, rather than when a level
@@ -1878,25 +1885,25 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         }
 
         // Reused every frame rather than reallocated; the fit writes into it in place.
-        ShadowCascade[] cascadeStorage = new ShadowCascade[ShadowSettings.MaxCascades];
+        state.CascadeStorage = new ShadowCascade[ShadowSettings.MaxCascades];
 
-        int lastCameraMilliseconds = _loop.TimeSource.Milliseconds;
-        int lastConsoleMilliseconds = _loop.TimeSource.Milliseconds;
-        int lastShellMilliseconds = _loop.TimeSource.Milliseconds;
-        int lastMenuCameraMilliseconds = _loop.TimeSource.Milliseconds;
-        int lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
-        int probeChaseFrame = 0;
+        state.LastCameraMilliseconds = _loop.TimeSource.Milliseconds;
+        state.LastConsoleMilliseconds = _loop.TimeSource.Milliseconds;
+        state.LastShellMilliseconds = _loop.TimeSource.Milliseconds;
+        state.LastMenuCameraMilliseconds = _loop.TimeSource.Milliseconds;
+        state.LastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+        state.ProbeChaseFrame = 0;
 
         // A capture run is a background process as far as the person at the keyboard is concerned: it must
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
-        bool captureMode = _options.Lockstep;
+        state.CaptureMode = _options.Lockstep;
 
         // What the last pass of the loop did, and how many ticks in a row have run without a step
         // returning to its host. See the top of the loop.
-        FrameOutcome lastOutcome = FrameOutcome.Idle;
-        int ticksSinceStep = 0;
+        state.LastOutcome = FrameOutcome.Idle;
+        state.TicksSinceStep = 0;
 
-        while (running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
+        while (state.Running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
             // The top of a frame is where a step returns to its host: everything since the last step is
             // one frame, and nothing of the next has started. A host that asked to stop while it was away
@@ -1907,14 +1914,14 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // picture in it made a clock that had fallen behind catch up at one tick a refresh; a
             // headless browser then throttles a page that has stopped drawing to once a second, and it
             // never caught up again. Bounded, so a long catch-up still returns now and then.
-            if (lastOutcome != FrameOutcome.Tick || ++ticksSinceStep >= MaxTicksPerStep)
+            if (state.LastOutcome != FrameOutcome.Tick || ++state.TicksSinceStep >= MaxTicksPerStep)
             {
-                ticksSinceStep = 0;
+                state.TicksSinceStep = 0;
                 yield return true;
             }
 
             // Until this pass runs the loop: one that ends before it has drawn nothing and ticked nothing.
-            lastOutcome = FrameOutcome.Idle;
+            state.LastOutcome = FrameOutcome.Idle;
 
             if (_stopRequested)
             {
@@ -1930,7 +1937,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // early -- and a measurement at the bottom silently skips every pass that took one. The
             // promotion happens on a pass that does exactly that, so the first version of this timed
             // everything except the one frame it existed to measure.
-            NoteFramePass(passStartedAt);
+            NoteFramePass(state.PassStartedAt);
             FlushWatchedFramePasses();
 
             // A load whose departure has played out runs here, between frames, where the picture it
@@ -1940,33 +1947,33 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
             // And a change of game, at the same boundary and for the same reason -- this one disposes
             // the task loop, the resource registry and every presenter, so it must not happen while a
-            // pass is drawing them. The shell is rebuilt around the new title rather than told about it:
+            // pass is drawing them. The state.Shell is rebuilt around the new title rather than told about it:
             // its game list, its campaign and which entry is current are all the title's.
             if (SwitchTitleIfDue())
             {
                 // The outgoing title's sweep stops with it, and the new title's missions are swept once its
                 // first backdrop is up.
-                missionWarmer?.Dispose();
-                missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
-                missionsSwept = false;
+                state.MissionWarmer?.Dispose();
+                state.MissionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
+                state.MissionsSwept = false;
 
                 // Closed rather than dropped: it owns a worker that may be part way through building the
                 // outgoing game's backdrop, and the replacement below would otherwise race it.
-                previewLoader?.Dispose();
-                previewLoader = new MissionPreviewLoader(
+                state.PreviewLoader?.Dispose();
+                state.PreviewLoader = new MissionPreviewLoader(
                     _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
-                if (shellHost is not null && shellTypography is not null && saves is not null)
+                if (state.ShellHost is not null && state.ShellTypography is not null && state.Saves is not null)
                 {
-                    shell = new Shell(BuildShellContext(shellHost, shellTypography.CreateTheme(), saves));
-                    shell.OpenOn("campaign");
+                    state.Shell = new Shell(BuildShellContext(state.ShellHost, state.ShellTypography.CreateTheme(), state.Saves));
+                    state.Shell.OpenOn("campaign");
                 }
 
                 // Back to the front end with no level up: the outgoing game's was released and the
                 // incoming one has not been asked for.
-                menuMode = true;
-                pauseMenu = false;
-                showcasePending = true;
+                state.MenuMode = true;
+                state.PauseMenu = false;
+                state.ShowcasePending = true;
             }
 
             // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
@@ -1975,28 +1982,28 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // A level held behind the loading screen while its field bakes is paced harder still: the
             // withheld frames exist to advance the temporal passes, which thirty a second does as well as
             // a hundred, and every core the render thread is not spinning on is one the bake gets.
-            if (lastPassRendered && !_options.Lockstep && !_options.IsBenchmark)
+            if (state.LastPassRendered && !_options.Lockstep && !_options.IsBenchmark)
             {
                 if (IsWarmingUp && _sdfBake is not null)
                 {
-                    menuPacer.Pace(30);
+                    state.MenuPacer.Pace(30);
                 }
-                else if (menuMode && !RenderCVars.VSync.Value)
+                else if (state.MenuMode && !RenderCVars.VSync.Value)
                 {
-                    menuPacer.Pace(_window.RefreshRate > 0 ? _window.RefreshRate : 60);
+                    state.MenuPacer.Pace(_window.RefreshRate > 0 ? _window.RefreshRate : 60);
                 }
                 else
                 {
-                    menuPacer.Reset();
+                    state.MenuPacer.Reset();
                 }
             }
             else
             {
-                menuPacer.Reset();
+                state.MenuPacer.Reset();
             }
 
-            lastPassRendered = false;
-            passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            state.LastPassRendered = false;
+            state.PassStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             // NVIDIA Reflex, where its runtime runs: its mode, and the frame it paces. The frame begins only
             // once the last one has been presented, so the passes that only tick neither sleep nor count, and
@@ -2009,8 +2016,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // the top of the pass, because loading or unloading it rebuilds the swapchain between frames.
             _device.SetFrameGeneration(
                 RenderCVars.FrameGeneration.Value,
-                gameplay: !menuMode
-                    && !pauseMenu
+                gameplay: !state.MenuMode
+                    && !state.PauseMenu
                     && _activeMission is not null
                     && !PresentationHoldsLevel
                     && _mission.Cutscenes?.IsPlaying != true);
@@ -2042,7 +2049,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         _probeField = streamedField;
                         _probeTarget = streamedField;
                         _device.SetIrradianceVolume(_probeField);
-                        probeArrivedAt = _loop.TimeSource.Milliseconds;
+                        state.ProbeArrivedAt = _loop.TimeSource.Milliseconds;
                     }
                     else
                     {
@@ -2079,7 +2086,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             }
 
             // Ease the displayed field towards the newest baked pass. Framerate-independent, so the fill
-            // looks the same however fast frames go out, and it keeps running after the bake handle is gone
+            // looks the same however fast frames go out, and it keeps state.Running after the bake handle is gone
             // until the last pass has settled -- at which point the field points straight at the target and
             // the per-frame re-upload stops.
             if (_probeTarget is not null && _probeField is not null && !ReferenceEquals(_probeField, _probeTarget)
@@ -2088,11 +2095,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // re-upload sends the four probe volumes over again -- together roughly ten milliseconds
                 // and half a gigabyte a second while a bake streams. The ease runs over about a second, so
                 // a quarter-rate step is invisible; the elapsed-time step below keeps the pace identical.
-                && (++probeChaseFrame & 3) == 0)
+                && (++state.ProbeChaseFrame & 3) == 0)
             {
                 int chaseNow = _loop.TimeSource.Milliseconds;
-                float chaseSeconds = MathF.Max(0f, (chaseNow - lastProbeChaseMilliseconds) / 1000f);
-                lastProbeChaseMilliseconds = chaseNow;
+                float chaseSeconds = MathF.Max(0f, (chaseNow - state.LastProbeChaseMilliseconds) / 1000f);
+                state.LastProbeChaseMilliseconds = chaseNow;
 
                 float step = 1f - MathF.Exp(-ProbeChaseRate * chaseSeconds);
                 float moved = _probeField.BlendToward(_probeTarget, step);
@@ -2107,7 +2114,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             {
                 // Keep the clock current while idle, so the first frame of the next ease steps by one
                 // frame's worth of time rather than the whole idle gap.
-                lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+                state.LastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
             }
 
             // Whatever the real-time lighting model needs and does not have yet. Every frame rather than
@@ -2132,9 +2139,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             if (_sdfBake is { } pendingField && pendingField.TryCollect(out DistanceFieldBake.Result baked))
             {
                 _sdfBake = null;
-                if (menuMode && !pauseMenu && _backdrop is not null)
+                if (state.MenuMode && !state.PauseMenu && _backdrop is not null)
                 {
-                    bakedFieldForBackdrop = baked;
+                    state.BakedFieldForBackdrop = baked;
                 }
                 else
                 {
@@ -2145,11 +2152,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
             // an accumulated step so the schedule cannot drift. Per loop pass would be wrong: the loop
             // pumps many times per frame, so the clock would jump a whole tick each pump and the catch-up
-            // cap would fire every pass -- measured at 200 ticks for 20 frames, a world running ten times
+            // cap would fire every pass -- measured at 200 ticks for 20 frames, a world state.Running ten times
             // too fast. Deterministic either way, but a capture should show the moment it claims to.
-            if (lockstepClock is not null)
+            if (state.LockstepClock is not null)
             {
-                lockstepClock.Milliseconds = _options.IsBenchmark
+                state.LockstepClock.Milliseconds = _options.IsBenchmark
                     ? BenchmarkSchedule.MillisecondsForFrame(_loop.Clock.FrameCount)
                     : (int)(((_loop.Clock.FrameCount + 1L) * 1000L) / GameClock.DefaultTickRate);
 
@@ -2164,18 +2171,18 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // and every other reader below -- the debug keys, the cameras, the player, the menu -- sees an
             // idle keyboard and mouse. That is why none of them had to learn the console exists.
             int consoleNow = _loop.TimeSource.Milliseconds;
-            console.Update(_window.Input, Math.Clamp((consoleNow - lastConsoleMilliseconds) / 1000f, 0f, 0.25f));
-            lastConsoleMilliseconds = consoleNow;
+            console.Update(_window.Input, Math.Clamp((consoleNow - state.LastConsoleMilliseconds) / 1000f, 0f, 0.25f));
+            state.LastConsoleMilliseconds = consoleNow;
 
             // Console key bindings fire with the console shut. The bind table, the `bind` command and
             // their tests have existed since the console was written, but nothing ever asked the table
             // whether a key had been pressed -- so a binding could be declared and saved and would
             // never once fire. Skipped during a capture run, whose input must stay exactly scripted.
             //
-            // In menu mode the shell runs first (below) so a listening rebind row sees the press
-            // queue before anything consumes it (issue #230). The shell then owns the frame — it sets
+            // In menu mode the state.Shell runs first (below) so a listening rebind row sees the press
+            // queue before anything consumes it (issue #230). The state.Shell then owns the frame — it sets
             // Captured right below — so game binds must not execute against the sim beneath a menu:
-            // what the shell leaves queued is discarded, never fired. Menu navigation is unaffected
+            // what the state.Shell leaves queued is discarded, never fired. Menu navigation is unaffected
             // either way because it reads WasPressed shadow edges, not the queue.
             void DrainPressQueue(bool executeBinds)
             {
@@ -2191,22 +2198,22 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 }
             }
 
-            if (!(menuMode && shell is not null))
+            if (!(state.MenuMode && state.Shell is not null))
             {
                 DrainPressQueue(executeBinds: true);
             }
 
-            // The cinematic shell reads the frame's input after the console and, like it, marks the frame
+            // The cinematic state.Shell reads the frame's input after the console and, like it, marks the frame
             // captured so the free camera and the game beneath see an idle keyboard and pad. When the console
-            // is open it owns the frame and the shell only advances its animation.
-            if (menuMode && shell is not null)
+            // is open it owns the frame and the state.Shell only advances its animation.
+            if (state.MenuMode && state.Shell is not null)
             {
                 int shellNow = _loop.TimeSource.Milliseconds;
-                float shellElapsed = Math.Clamp((shellNow - lastShellMilliseconds) / 1000f, 0f, 0.1f);
-                lastShellMilliseconds = shellNow;
+                float shellElapsed = Math.Clamp((shellNow - state.LastShellMilliseconds) / 1000f, 0f, 0.1f);
+                state.LastShellMilliseconds = shellNow;
 
                 var shellFrame = new LayoutContext(_window.Width, _window.Height);
-                shell.Update(shellFrame, _window.Input, shellElapsed);
+                state.Shell.Update(shellFrame, _window.Input, shellElapsed);
                 DrainPressQueue(executeBinds: false);
                 if (!console.IsOpen)
                 {
@@ -2220,23 +2227,23 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // Not while a load is departing: the held frame is the sequence's picture from here, and
                 // a backdrop swapped under a departure would be a different place from the one the card
                 // is over.
-                bool changeWanted = !pauseMenu
+                bool changeWanted = !state.PauseMenu
                     && !_loadSequence.IsActive
-                    && (previewLoader is { HasResult: true }
+                    && (state.PreviewLoader is { HasResult: true }
                         || _showcaseCamera is { IsCutDue: true }
-                        || bakedFieldForBackdrop is not null);
-                if (changeWanted && !holdFrameForDissolve && !heldFrameReady)
+                        || state.BakedFieldForBackdrop is not null);
+                if (changeWanted && !state.HoldFrameForDissolve && !state.HeldFrameReady)
                 {
-                    holdFrameForDissolve = true;
+                    state.HoldFrameForDissolve = true;
                 }
 
                 // The held picture stays up until the incoming level has converged its lighting, so what
                 // the dissolve reveals is the settled backdrop rather than one still lighting up. A field
                 // that is still baking is not waited for -- that is seconds, and it crosses over under its
                 // own hold when it lands.
-                if (dissolveRevealPending && !IsGiConverging)
+                if (state.DissolveRevealPending && !IsGiConverging)
                 {
-                    dissolveRevealPending = false;
+                    state.DissolveRevealPending = false;
                     dissolve.Retarget(0f);
                 }
 
@@ -2245,12 +2252,12 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
             // The mission-entry shot. It runs on real elapsed time, like the menu's orbit and the
             // interface's own animation, because it is presentation: it must look the same whatever rate
-            // the display is running at, and it must not be tied to the simulation's fixed tick.
+            // the display is state.Running at, and it must not be tied to the simulation's fixed tick.
             if (_entry.IsRunning)
             {
                 int entryNow = _loop.TimeSource.Milliseconds;
-                float entryElapsed = Math.Clamp((entryNow - lastEntryMilliseconds) / 1000f, 0f, 0.1f);
-                lastEntryMilliseconds = entryNow;
+                float entryElapsed = Math.Clamp((entryNow - state.LastEntryMilliseconds) / 1000f, 0f, 0.1f);
+                state.LastEntryMilliseconds = entryNow;
 
                 // The orbit keeps turning under the start of the shot so the rise can leave at the speed
                 // the menu was already moving at, rather than from a standstill.
@@ -2290,8 +2297,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     _entry.NotifyReady();
                 }
 
-                // Nothing takes input for the length of the shot -- not the shell, not the player, not
-                // the free camera. The shell still ANIMATES, so its fade plays out; it just hears nothing.
+                // Nothing takes input for the length of the shot -- not the state.Shell, not the player, not
+                // the free camera. The state.Shell still ANIMATES, so its fade plays out; it just hears nothing.
                 if (_entry.IsCameraActive && !console.IsOpen)
                 {
                     _window.Input.Captured = true;
@@ -2353,7 +2360,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // paths the pause menu's Abandon and the campaign's Play take. It is here so it runs against
             // a fully built frame rather than during start-up, and it is latched on the frame count so
             // both legs happen once each rather than every frame past the mark.
-            if (_options.MissionCycleFrames > 0 && shell is not null)
+            if (_options.MissionCycleFrames > 0 && state.Shell is not null)
             {
                 long leg = _loop.Clock.FrameCount / _options.MissionCycleFrames;
                 if (leg != _missionCycleLeg)
@@ -2364,33 +2371,33 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         _logger.Information("Mission", $"-missioncycle: abandoning {cycling.Id}.");
                         _missionCycleMission = cycling.Id;
                         ReleasePlayedMission();
-                        shell.ClosePauseMenu();
-                        shell.OpenOn("campaign");
-                        menuMode = true;
-                        pauseMenu = false;
-                        showcasePending = true;
+                        state.Shell.ClosePauseMenu();
+                        state.Shell.OpenOn("campaign");
+                        state.MenuMode = true;
+                        state.PauseMenu = false;
+                        state.ShowcasePending = true;
                     }
                     else if (_missionCycleMission > 0)
                     {
                         _logger.Information("Mission", $"-missioncycle: playing {_missionCycleMission} again.");
-                        shell.ClosePauseMenu();
-                        menuMode = false;
-                        pauseMenu = false;
+                        state.Shell.ClosePauseMenu();
+                        state.MenuMode = false;
+                        state.PauseMenu = false;
                         ApplyGameplayMotionBlur();
                         StartMission(_missionCycleMission);
                     }
                 }
             }
 
-            // Escape brings the shell up over the level as a pause menu. It goes AFTER the shell's own
+            // Escape brings the state.Shell up over the level as a pause menu. It goes AFTER the state.Shell's own
             // update, so the frame that opens the menu is not also the frame the menu reads a back press
-            // on -- and after it the shell has marked the frame captured, which is what stops the Escape
+            // on -- and after it the state.Shell has marked the frame captured, which is what stops the Escape
             // that closed the menu from opening it again on the same pass.
             //
             // It also goes BEFORE the handheld computer below, which owns Escape while it is open: closing
             // the computer clears the flag, so a check placed after it would see a closed computer and a
             // still-pressed Escape and pause the game in the same breath.
-            if (!menuMode
+            if (!state.MenuMode
                 && !console.IsOpen
                 && _mission.Cutscenes?.IsPlaying == true
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
@@ -2400,19 +2407,19 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 _mission.Objectives?.ClearCutsceneMessages();
             }
 
-            if (!menuMode
+            if (!state.MenuMode
                 && !console.IsOpen
                 && !_computerOpen
                 && !_missionFailedMenu
                 && _mission.Cutscenes?.IsPlaying != true
                 && _titlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
-                && shell is not null
+                && state.Shell is not null
                 && _activeMission is not null
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
-                menuMode = true;
-                pauseMenu = true;
-                shell.OpenPauseMenu();
+                state.MenuMode = true;
+                state.PauseMenu = true;
+                state.Shell.OpenPauseMenu();
 
                 // The pointer belongs to the menu now. The look is what holds the cursor captive, so the
                 // player is told to let go of it rather than the lock being fought over each frame.
@@ -2445,11 +2452,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
             // The remaster's flashlight, before the map computer's key: it is read only while the player's
             // own view is on screen, which the computer opening this frame has not yet changed.
-            UpdateFlashlightSwitch(menuMode, console.IsOpen);
+            UpdateFlashlightSwitch(state.MenuMode, console.IsOpen);
 
             // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
             // freezes player/camera input while the world continues its fixed-tick simulation.
-            if (!menuMode && !console.IsOpen && _player is not null
+            if (!state.MenuMode && !console.IsOpen && _player is not null
                 && (TacticalComputer is not null || _mapComputer is { IsReady: true }))
             {
                 // -computercam presses C on a named frame, so the transition can be captured from a
@@ -2470,11 +2477,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 if (TacticalComputer is { } tacticalComputer)
                 {
                     // Real elapsed time, on its own clock. The transition is presentation: it must take
-                    // the same wall-clock second whatever the frame rate, and it must keep running while
+                    // the same wall-clock second whatever the frame rate, and it must keep state.Running while
                     // the simulation is paused behind it.
                     int computerNow = _loop.TimeSource.Milliseconds;
-                    float computerElapsed = Math.Clamp((computerNow - lastComputerMilliseconds) / 1000f, 0f, 0.1f);
-                    lastComputerMilliseconds = computerNow;
+                    float computerElapsed = Math.Clamp((computerNow - state.LastComputerMilliseconds) / 1000f, 0f, 0.1f);
+                    state.LastComputerMilliseconds = computerNow;
 
                     CameraPose eye = CameraPose.FromCamera(_player.Camera);
 
@@ -2567,24 +2574,24 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 }
             }
 
-            // The showcase's first backdrop, asked for a couple of menu frames in so the shell is already on
+            // The showcase's first backdrop, asked for a couple of menu frames in so the state.Shell is already on
             // screen. It is built on a worker like every other one; until it arrives the menu sits over its
             // dark backdrop rather than over a blank blue clear.
-            if (menuMode && !pauseMenu && showcasePending && _loop.Clock.FrameCount >= 2)
+            if (state.MenuMode && !state.PauseMenu && state.ShowcasePending && _loop.Clock.FrameCount >= 2)
             {
-                showcasePending = false;
+                state.ShowcasePending = false;
 
                 // -entrycam's mission stands in for the default showcase, so the backdrop it presses Play
                 // over is built through exactly the path a player's selection would have built it through.
                 int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
-                currentShowcaseMissionId = firstShowcase;
-                RequestBackdrop(previewLoader, firstShowcase);
+                state.CurrentShowcaseMissionId = firstShowcase;
+                RequestBackdrop(state.PreviewLoader, firstShowcase);
             }
 
             // The backdrop is made playable here, on the frames where nothing is happening but a menu.
             // A couple of milliseconds is invisible at the uncapped rate the menu runs at, and the work
             // is finished long before anybody has finished reading a briefing.
-            if (menuMode && !pauseMenu && _arming is { IsArmed: false })
+            if (state.MenuMode && !state.PauseMenu && _arming is { IsArmed: false })
             {
                 _arming.Step(IdleArmingBudgetMilliseconds);
 
@@ -2599,26 +2606,26 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // -entrycam presses Play the moment the backdrop it was pointed at is armed, which is the
             // state a player's press would find it in after a second of reading. Waiting for the arming
             // rather than only for the backdrop is what keeps the measurement honest.
-            if (entryCamPending && menuMode && !pauseMenu && _backdrop is { } entryBackdrop
+            if (state.EntryCamPending && state.MenuMode && !state.PauseMenu && _backdrop is { } entryBackdrop
                 && entryBackdrop.MissionId == _options.EntryCamMission
                 && _arming is { IsArmed: true })
             {
                 // -entrytime: the time chosen first, as the dropdown chooses it, and Play a second later
                 // over the backdrop that choice re-lit.
-                if (_options.EntryTime != MissionTimeOfDay.Default && entryTimeChosenAt < 0)
+                if (_options.EntryTime != MissionTimeOfDay.Default && state.EntryTimeChosenAt < 0)
                 {
-                    entryTimeChosenAt = _loop.Clock.FrameCount;
-                    shellHostForEntryCam?.SetMissionConditions(_conditions with { TimeOfDay = _options.EntryTime });
+                    state.EntryTimeChosenAt = _loop.Clock.FrameCount;
+                    state.ShellHostForEntryCam?.SetMissionConditions(_conditions with { TimeOfDay = _options.EntryTime });
                 }
 
-                bool settled = entryTimeChosenAt < 0
-                    || _loop.Clock.FrameCount - entryTimeChosenAt >= EntryTimeSettleFrames;
+                bool settled = state.EntryTimeChosenAt < 0
+                    || _loop.Clock.FrameCount - state.EntryTimeChosenAt >= EntryTimeSettleFrames;
 
                 if (settled)
                 {
-                    entryCamPending = false;
+                    state.EntryCamPending = false;
                     _logger.Information("Menu", $"-entrycam is pressing Play on mission {entryBackdrop.MissionId}.");
-                    shellHostForEntryCam?.StartMission(
+                    state.ShellHostForEntryCam?.StartMission(
                         entryBackdrop.MissionId,
                         _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
                 }
@@ -2628,7 +2635,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // moving down the mission list takes: it asks the preview loader for the next mission and
             // lets the ordinary handover below adopt it. Latched on the frame count so each row is asked
             // for once, and only while the menu is actually up over a backdrop.
-            if (_options.BackdropCycleFrames > 0 && menuMode && !pauseMenu && previewLoader is not null)
+            if (_options.BackdropCycleFrames > 0 && state.MenuMode && !state.PauseMenu && state.PreviewLoader is not null)
             {
                 long row = _loop.Clock.FrameCount / _options.BackdropCycleFrames;
                 if (row != _backdropCycleRow)
@@ -2638,12 +2645,12 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     if (order.Length > 0)
                     {
                         int next = order[(int)(row % order.Length)];
-                        if (next != currentShowcaseMissionId)
+                        if (next != state.CurrentShowcaseMissionId)
                         {
                             _logger.Information("Menu", $"-backdropcycle: selecting mission {next}.");
                             pendingPreviewMissionId = null;
-                            currentShowcaseMissionId = next;
-                            RequestBackdrop(previewLoader, next);
+                            state.CurrentShowcaseMissionId = next;
+                            RequestBackdrop(state.PreviewLoader, next);
                         }
                     }
                 }
@@ -2669,32 +2676,32 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // The build request, once the campaign selection has held still for a moment. The debounce is
             // only there to stop a run down the list queueing fourteen builds; it costs the render thread
             // nothing either way, because the build happens on a worker.
-            if (menuMode
-                && !pauseMenu
+            if (state.MenuMode
+                && !state.PauseMenu
                 && pendingPreviewMissionId is { } previewMissionId
-                && _loop.TimeSource.Milliseconds - previewRequestedAtMs > PreviewSettleMs)
+                && _loop.TimeSource.Milliseconds - state.PreviewRequestedAtMs > PreviewSettleMs)
             {
                 pendingPreviewMissionId = null;
-                RequestBackdrop(previewLoader, previewMissionId);
+                RequestBackdrop(state.PreviewLoader, previewMissionId);
             }
 
             // A backdrop whose mission's files were still arriving, asked for again until they are there.
-            if (menuMode && !pauseMenu && _backdropAwaitingFiles is { } awaitingFiles)
+            if (state.MenuMode && !state.PauseMenu && _backdropAwaitingFiles is { } awaitingFiles)
             {
-                RequestBackdrop(previewLoader, awaitingFiles);
+                RequestBackdrop(state.PreviewLoader, awaitingFiles);
             }
 
             // The handover. Everything a backdrop is made of was built off the render thread; what is left
             // is the part that cannot be — a GL texture belongs to the context that made it — so the
             // renderers are constructed here, on the frame after the outgoing picture was held. Same shape
             // as the probe and distance-field bakes above.
-            if (menuMode && !pauseMenu && heldFrameReady)
+            if (state.MenuMode && !state.PauseMenu && state.HeldFrameReady)
             {
                 bool changed = false;
-                if (previewLoader is { } loader
+                if (state.PreviewLoader is { } loader
                     && loader.TryCollect(out MissionPreview? readyPreview) && readyPreview is not null)
                 {
-                    currentShowcaseMissionId = readyPreview.MissionId;
+                    state.CurrentShowcaseMissionId = readyPreview.MissionId;
                     AdoptPreview(readyPreview);
                     changed = true;
 
@@ -2703,17 +2710,17 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     TrimAfterLoad();
 
                     // A soak reports where memory stands every tenth swap, so growth shows as a trend.
-                    if (_options.BackdropCycleFrames > 0 && ++backdropSwaps % 10 == 0)
+                    if (_options.BackdropCycleFrames > 0 && ++state.BackdropSwaps % 10 == 0)
                     {
-                        _logger.Information(MemoryLogCategory, $"After {backdropSwaps} backdrop swap(s):\n{DescribeMemory()}");
+                        _logger.Information(MemoryLogCategory, $"After {state.BackdropSwaps} backdrop swap(s):\n{DescribeMemory()}");
                     }
 
                     // Once the first backdrop is up, every other mission's files are read through in the
                     // background, so whichever the player settles on next builds from memory.
-                    if (!missionsSwept)
+                    if (!state.MissionsSwept)
                     {
-                        missionsSwept = true;
-                        missionWarmer?.WarmAll(_missions.InCampaignOrder().Select(mission => mission.Id));
+                        state.MissionsSwept = true;
+                        state.MissionWarmer?.WarmAll(_missions.InCampaignOrder().Select(mission => mission.Id));
                     }
                 }
                 else if (_showcaseCamera is { IsCutDue: true } showcase)
@@ -2723,23 +2730,23 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     showcase.CommitCut();
                     changed = true;
                 }
-                else if (bakedFieldForBackdrop is { } landedField)
+                else if (state.BakedFieldForBackdrop is { } landedField)
                 {
                     // The backdrop's field, baked behind the menu, adopted under the held frame so the
                     // level's cross-over to its real-time lighting is dissolved to rather than watched.
-                    bakedFieldForBackdrop = null;
+                    state.BakedFieldForBackdrop = null;
                     AdoptDistanceField(landedField.Scene, landedField.Atlas, fromCache: false);
                     changed = true;
                 }
 
-                heldFrameReady = false;
+                state.HeldFrameReady = false;
 
                 // The held frame is now the whole picture; it dissolves off to reveal what is behind it,
                 // once the lighting behind it has converged.
                 if (changed)
                 {
-                    dissolve.SnapTo(heldFrameIsPicture ? 1f : 0f);
-                    dissolveRevealPending = heldFrameIsPicture;
+                    dissolve.SnapTo(state.HeldFrameIsPicture ? 1f : 0f);
+                    state.DissolveRevealPending = state.HeldFrameIsPicture;
                 }
             }
 
@@ -2752,7 +2759,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // whatever is under it — an object (with its task), a soldier, or nothing.
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F12))
             {
-                showDebug = !showDebug;
+                state.ShowDebug = !state.ShowDebug;
             }
 
             // F11 re-bakes the lighting from scratch, live. It throws away every cached field and the one
@@ -2794,8 +2801,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 _probeField = null;
                 _probeTarget = null;
                 _device.SetIrradianceVolume(null);
-                probeArrivedAt = -1;
-                lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+                state.ProbeArrivedAt = -1;
+                state.LastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
 
                 _probeBake = IrradianceProbeBake.Start(
                     _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _work, _logger);
@@ -2838,14 +2845,14 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // The keyboard's own capture flag keeps the console's typing out of it.
             //
             // The automatic cycle, on top of the scrub, runs only while a mission is actually being played:
-            // menuMode covers the front end and the pause menu alike, and neither is time the player is
+            // state.MenuMode covers the front end and the pause menu alike, and neither is time the player is
             // spending in the level. The cycle banks the paused seconds nowhere, so coming back does not
             // release a jump in the sun.
             {
                 int dayNightNow = _loop.TimeSource.Milliseconds;
                 float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
                 _dayNightMilliseconds = dayNightNow;
-                bool clockRuns = RenderCVars.DayNightCycle.Value && !menuMode && _activeMission is not null;
+                bool clockRuns = RenderCVars.DayNightCycle.Value && !state.MenuMode && _activeMission is not null;
                 _dayNight.Update(
                     _window.Input.Keyboard,
                     dayNightElapsed,
@@ -2858,7 +2865,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
             // steady lamps and returns. The daylight's photocells ride on the same pass, reading the sun
             // the sweep above has just moved.
-            UpdateLamps(_loop.TimeSource.Milliseconds, audible: !menuMode && _activeMission is not null);
+            UpdateLamps(_loop.TimeSource.Milliseconds, audible: !state.MenuMode && _activeMission is not null);
 
             // G shows the sun gizmo, but only while flying: it takes the cursor to drag its rings, which the
             // walking player needs for looking. Leaving the free camera puts it away.
@@ -2875,8 +2882,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             if (_camera is not null)
             {
                 int nowMilliseconds = _loop.TimeSource.Milliseconds;
-                float elapsed = Math.Clamp((nowMilliseconds - lastCameraMilliseconds) / 1000f, 0f, 0.1f);
-                lastCameraMilliseconds = nowMilliseconds;
+                float elapsed = Math.Clamp((nowMilliseconds - state.LastCameraMilliseconds) / 1000f, 0f, 0.1f);
+                state.LastCameraMilliseconds = nowMilliseconds;
 
                 float rawX = _window.Input.Mouse.DeltaX;
                 float rawY = _window.Input.Mouse.DeltaY;
@@ -2891,7 +2898,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 }
 
                 _deathCamera.LookSettings = look;
-                interactionCamera.LookSettings = look;
+                state.InteractionCamera.LookSettings = look;
 
                 if (console.WantsPointer)
                 {
@@ -2901,13 +2908,13 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // later and the cursor would snap back to the centre under the reader's hand.
                     // HoldStill matters just as much here: taking the cursor back on close warps the
                     // pointer, and without re-arming the settling frame that warp is read as aim.
-                    // The system cursor stays hidden: the console draws its own, as the shell does,
+                    // The system cursor stays hidden: the console draws its own, as the state.Shell does,
                     // so the pointer looks the same everywhere and is drawn over the panels rather
                     // than by the compositor on top of them.
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (MenuOwnsPointer(pauseMenu, _missionFailedMenu))
+                else if (MenuOwnsPointer(state.PauseMenu, _missionFailedMenu))
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
                     // release is repeated every pass rather than done once on the way in, so nothing can
@@ -2931,7 +2938,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                     // so the orbit keeps turning however far the mouse is moved.
                     _deathCamera.Control(rawX, rawY);
-                    _window.CursorLocked = !captureMode;
+                    _window.CursorLocked = !state.CaptureMode;
 
                     // The look is not driving the view this frame, so it must not consider itself
                     // capturing: whenever the orbit hands control back, the first frame of look is a
@@ -2947,8 +2954,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // On a ladder the mouse orbits the third-person interaction camera around the climbing
                     // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
                     // you can look around while you climb rather than being locked behind the character.
-                    interactionCamera.Control(rawX, rawY);
-                    _window.CursorLocked = !captureMode;
+                    state.InteractionCamera.Control(rawX, rawY);
+                    _window.CursorLocked = !state.CaptureMode;
                     _player?.ReleaseLook();
                 }
                 else if (_computerOpen)
@@ -2969,14 +2976,14 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // A title's own player takes its look on the tick, as the original does; the frame only
                     // gathers what the mouse and the keys did since the last one.
                     GatherTitleInput();
-                    _window.CursorLocked = !captureMode;
+                    _window.CursorLocked = !state.CaptureMode;
                 }
                 else if (_playerMode && _player is not null)
                 {
                     // Looking is per frame so the view is as smooth as the display allows; the body itself
                     // moves on the fixed tick below, so it steps identically whatever the frame rate.
                     _player.Look(_window.Input, elapsed);
-                    _window.CursorLocked = !captureMode && _player.IsCapturingMouse;
+                    _window.CursorLocked = !state.CaptureMode && _player.IsCapturingMouse;
                 }
                 else if (_sunGizmo.Active)
                 {
@@ -2991,7 +2998,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
                     // The cursor is locked away while a mouse button is held, the way a scene editor's is,
                     // so the view keeps turning however far the mouse is dragged. It comes back on release.
-                    _window.CursorLocked = !captureMode && _camera.IsCapturingMouse;
+                    _window.CursorLocked = !state.CaptureMode && _camera.IsCapturingMouse;
                 }
 
                 if (_options.LogCamera && (right || rawX != 0f || rawY != 0f))
@@ -3009,11 +3016,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // tick deadlines, the catch-up budget and everything the simulation observes are untouched.
             // Lockstep keeps the original pairing -- its synthetic clock advances per frame and the
             // reference captures depend on the one-to-one schedule.
-            // The cinematic shell always renders uncapped so the menu is smooth whatever the render preset's
+            // The cinematic state.Shell always renders uncapped so the menu is smooth whatever the render preset's
             // r_smooth is; the orbit and the tweens run on real time and want every frame the display offers.
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
             _loop.Clock.UncappedRenders = _options.IsBenchmark
-                || menuMode
+                || state.MenuMode
                 || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
 
             // The level's own half of the pause, and the reason the frozen picture behind the menu really is
@@ -3027,21 +3034,21 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // is one the player never gets to watch.
             if (_activeLevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = pauseMenu || PresentationHoldsLevel;
+                pausableLevel.IsPaused = state.PauseMenu || PresentationHoldsLevel;
             }
 
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
-            lastOutcome = outcome;
+            state.LastOutcome = outcome;
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
 
             // The number that says how long the player waited for a picture, said once. Everything above
             // it -- the runtime coming up, the window, the device, the swapchain, the first pipelines --
             // is time nobody can do anything during, and it is the only start-up figure that is about
             // what a person experiences rather than about where the CPU went.
-            if (!firstFrameReported && outcome != FrameOutcome.Tick)
+            if (!state.FirstFrameReported && outcome != FrameOutcome.Tick)
             {
-                firstFrameReported = true;
+                state.FirstFrameReported = true;
                 _logger.Information(
                     "Desktop",
                     FormattableString.Invariant($"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
@@ -3057,7 +3064,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || pauseMenu || PresentationHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || state.PauseMenu || PresentationHoldsLevel))
             {
                 continue;
             }
@@ -3336,9 +3343,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // draw uses. It is what says the whole chain arrived: the trigger reached the state
                 // machine, the machine reached the gun, the gun's clock let a round out, and the round
                 // went somewhere.
-                if (!reportedShot && _player.FiredThisTick && _player.HeldWeaponType is { } fired)
+                if (!state.ReportedShot && _player.FiredThisTick && _player.HeldWeaponType is { } fired)
                 {
-                    reportedShot = true;
+                    state.ReportedShot = true;
                     string where = _player.Impacts.Count == 0
                         ? "nowhere"
                         : _player.Impacts[0].HitSomething
@@ -3354,13 +3361,13 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
                 // Every round that lands on a guard, reported once each so the zone and the kill are
                 // visible without a per-shot log.
-                if (_player.HumanHits != reportedHumanHits)
+                if (_player.HumanHits != state.ReportedHumanHits)
                 {
-                    reportedHumanHits = _player.HumanHits;
+                    state.ReportedHumanHits = _player.HumanHits;
                     _logger.Information(
                         "Weapon",
                         $"Hit a guard in zone {_player.LastHumanZone} "
-                            + $"({reportedHumanHits} hit(s), {_soldiers?.Killed ?? 0} killed).");
+                            + $"({state.ReportedHumanHits} hit(s), {_soldiers?.Killed ?? 0} killed).");
                 }
             }
 
@@ -3393,7 +3400,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
                 // you leave walking mode, so feeding its eye meant every guard in the level was watching an
                 // immobile figure at the spawn point while you flew past them: they never saw you because
-                // there was nothing of you to see. A shell affordance, not engine behaviour.
+                // there was nothing of you to see. A state.Shell affordance, not engine behaviour.
                 Vector3d watched = _playerMode && _player is not null
                     ? _player.Body.Eye
                     : _camera?.Position ?? _player?.Body.Eye ?? default;
@@ -3498,12 +3505,12 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     bool climbDown = _player.IsActionDown(_window.Input, PlayerAction.MoveDown);
                     bool climbUse = _player.IsActionDown(_window.Input, PlayerAction.Activate);
 
-                    // Mount and use share E. The release gate is a shell detail that prevents the mounting press
+                    // Mount and use share E. The release gate is a state.Shell detail that prevents the mounting press
                     // from becoming state 40 on the immediately following tick.
-                    if (!climbActive)
+                    if (!state.ClimbActive)
                     {
-                        climbActive = true;
-                        climbSlideArmed = false;
+                        state.ClimbActive = true;
+                        state.ClimbSlideArmed = false;
                         if (_player.LadderPhase == LadderTraversalPhase.GettingOnTop)
                         {
                             _soldiers?.StartPlayerLadderAnimation(
@@ -3518,10 +3525,10 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
                     if (!climbUse)
                     {
-                        climbSlideArmed = true;
+                        state.ClimbSlideArmed = true;
                     }
 
-                    bool climbSlide = climbUse && climbSlideArmed;
+                    bool climbSlide = climbUse && state.ClimbSlideArmed;
                     LadderStepResult decision = _player.DecideLadderStep(
                         climbUp, climbDown, climbSlide, _ground!);
                     switch (decision)
@@ -3602,10 +3609,10 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     if (_player.IsOnLadder)
                     {
                         _soldiers?.PlacePlayerBodyClimbing(_player.LadderFeet, _player.LadderFacing);
-                        if (!interactionCamera.IsActive)
+                        if (!state.InteractionCamera.IsActive)
                         {
                             WorldRayCast? cameraCast = _worldSolids?.Caster();
-                            interactionCamera.Begin(
+                            state.InteractionCamera.Begin(
                                 _player.LadderFeet,
                                 _player.LadderFacing,
                                 cameraCast is null
@@ -3619,18 +3626,18 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         }
                         else
                         {
-                            interactionCamera.Follow(_player.LadderFeet);
+                            state.InteractionCamera.Follow(_player.LadderFeet);
                         }
 
-                        interactionCamera.Tick();
+                        state.InteractionCamera.Tick();
                     }
                 }
 
                 if (_player is { IsInWorldInteraction: true } interacting)
                 {
-                    if (!worldInteractionActive)
+                    if (!state.WorldInteractionActive)
                     {
-                        worldInteractionActive = true;
+                        state.WorldInteractionActive = true;
                         if (interacting.InteractionAnimation >= 0)
                         {
                             _soldiers?.StartPlayerInteractionAnimation(
@@ -3664,12 +3671,12 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // the view its own sight (0x474420), so no orbit is started behind the body.
                     if (interacting.IsMountedStationaryGun)
                     {
-                        interactionCamera.Reset();
+                        state.InteractionCamera.Reset();
                     }
-                    else if (!interactionCamera.IsActive)
+                    else if (!state.InteractionCamera.IsActive)
                     {
                         WorldRayCast? cameraCast = _worldSolids?.Caster();
-                        interactionCamera.Begin(
+                        state.InteractionCamera.Begin(
                             interactionCameraFeet,
                             interacting.InteractionFacing,
                             cameraCast is null
@@ -3683,27 +3690,27 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     }
                     else
                     {
-                        interactionCamera.Follow(interactionCameraFeet);
+                        state.InteractionCamera.Follow(interactionCameraFeet);
                     }
 
-                    if (interactionCamera.IsActive)
+                    if (state.InteractionCamera.IsActive)
                     {
-                        interactionCamera.Tick();
+                        state.InteractionCamera.Tick();
                     }
                 }
 
                 if ((_player is null || (!_player.IsOnLadder && !_player.IsInWorldInteraction))
-                    && (climbActive || worldInteractionActive || interactionCamera.IsActive))
+                    && (state.ClimbActive || state.WorldInteractionActive || state.InteractionCamera.IsActive))
                 {
                     _soldiers?.HidePlayerBodyClimbing();
-                    interactionCamera.Reset();
-                    climbActive = false;
-                    worldInteractionActive = false;
+                    state.InteractionCamera.Reset();
+                    state.ClimbActive = false;
+                    state.WorldInteractionActive = false;
                 }
 
                 // The character the third-person view looks at, walked with the player on the same tick
                 // their own legs are -- see SoldierRenderer.FollowPlayerBody for why it must be the tick
-                // and not the frame. Kept running for the whole of the move back as well as out, so the
+                // and not the frame. Kept state.Running for the whole of the move back as well as out, so the
                 // body is already in step whenever the camera is far enough away to show it.
                 //
                 // The states with a body of their own are left alone: the ladder and the world
@@ -3720,7 +3727,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         && !_computerOpen
                         && !_entry.IsCameraActive
                         && _mission.Cutscenes?.IsPlaying != true
-                        && (!menuMode || pauseMenu)
+                        && (!state.MenuMode || state.PauseMenu)
                         && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
 
                         // ...and in FIRST person too, unconditionally, which it did not used to be.
@@ -3781,7 +3788,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 {
                     // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
                     // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
-                    if (!_missionFailedMenu && ++_missionFailureTicks > 151 && shell is not null)
+                    if (!_missionFailedMenu && ++_missionFailureTicks > 151 && state.Shell is not null)
                     {
                         _missionFailedMenu = true;
 
@@ -3796,16 +3803,16 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         _computerFlight.Reset();
                         _player?.SetMapComputerOpen(false);
 
-                        // The result is a shell page, not a drawn card, so its two choices can be clicked
-                        // and navigated like every other page and the shell's own cursor is the one on
-                        // screen. menuMode hands it the frame's input and draw; pauseMenu holds the
+                        // The result is a state.Shell page, not a drawn card, so its two choices can be clicked
+                        // and navigated like every other page and the state.Shell's own cursor is the one on
+                        // screen. state.MenuMode hands it the frame's input and draw; state.PauseMenu holds the
                         // showcase off, because the level this is drawn over is still loaded -- the same
                         // pair the pause menu sets.
-                        menuMode = true;
-                        pauseMenu = true;
-                        shell.OpenMissionFailed();
+                        state.MenuMode = true;
+                        state.PauseMenu = true;
+                        state.Shell.OpenMissionFailed();
 
-                        // The platform cursor stays hidden: the shell draws its own, so revealing this one
+                        // The platform cursor stays hidden: the state.Shell draws its own, so revealing this one
                         // would put a second, unrelated pointer beside it.
                         _window.CursorVisible = false;
                         _player?.HoldStill();
@@ -3842,14 +3849,14 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     {
                         _logger.Information("Mission", $"Completed final mission {completedMission.Id}; campaign complete.");
                         ReleasePlayedMission();
-                        if (shell is not null)
+                        if (state.Shell is not null)
                         {
                             // Event 7 is the retail outro-screen path. The authored final cutscene has
-                            // completed before LevelFlow reaches here, so the shell now continues to its
+                            // completed before LevelFlow reaches here, so the state.Shell now continues to its
                             // campaign-complete destination.
-                            shell.OpenOn("extras");
-                            menuMode = true;
-                            showcasePending = true;
+                            state.Shell.OpenOn("extras");
+                            state.MenuMode = true;
+                            state.ShowcasePending = true;
                         }
                     }
                 }
@@ -3860,7 +3867,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 continue;
             }
 
-            lastPassRendered = true;
+            state.LastPassRendered = true;
 
             // Everything the frame simulated has run; recording its commands starts now.
             _device.MarkLatency(LatencyMarker.SimulationEnd);
@@ -3868,13 +3875,13 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
             if (_options.IsBenchmark && _loop.Clock.FrameCount == BenchmarkSchedule.WarmUpFrames)
             {
-                framePerformance.Reset();
+                state.FramePerformance.Reset();
                 _benchmarkAllocStart = GC.GetTotalAllocatedBytes();
                 _benchmarkGcStart = (GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
             }
             if (!_options.IsBenchmark || _loop.Clock.FrameCount <= BenchmarkSchedule.MeasurementEndFrame)
             {
-                framePerformance.NoteFrame();
+                state.FramePerformance.NoteFrame();
             }
 
             if (_scene is not null && _world is not null && _camera is not null)
@@ -3886,12 +3893,12 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // in place. Only in the free camera -- a flight forces -freecam, so _playerMode is false.
                 if (_options.HasFlight && !_playerMode)
                 {
-                    if (!flightStarted)
+                    if (!state.FlightStarted)
                     {
-                        flightStartPos = _camera.Position;
-                        flightStartYaw = _camera.Yaw;
-                        flightStartPitch = _camera.Pitch;
-                        flightStarted = true;
+                        state.FlightStartPos = _camera.Position;
+                        state.FlightStartYaw = _camera.Yaw;
+                        state.FlightStartPitch = _camera.Pitch;
+                        state.FlightStarted = true;
                     }
 
                     // -flightframes shortens the move without shortening the capture, so the frames past it
@@ -3900,27 +3907,27 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         1,
                         (_options.FlightFrames
                             ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
-                    float t = Math.Clamp((float)(flightFrame - _options.FlightDelay) / span, 0f, 1f);
+                    float t = Math.Clamp((float)(state.FlightFrame - _options.FlightDelay) / span, 0f, 1f);
 
                     Vector3d endPos = _options.CameraEnd is { } e
                         ? new Vector3d(e.X, e.Y, e.Z)
-                        : flightStartPos;
-                    float endYaw = _options.CameraYawEnd ?? flightStartYaw;
-                    float endPitch = _options.CameraPitchEnd ?? flightStartPitch;
+                        : state.FlightStartPos;
+                    float endYaw = _options.CameraYawEnd ?? state.FlightStartYaw;
+                    float endPitch = _options.CameraPitchEnd ?? state.FlightStartPitch;
 
-                    (float shakeYaw, float shakePitch) = HandheldShake(flightFrame, _options.CameraShake);
-                    if ((flightFrame & 1) == 1)
+                    (float shakeYaw, float shakePitch) = HandheldShake(state.FlightFrame, _options.CameraShake);
+                    if ((state.FlightFrame & 1) == 1)
                     {
                         shakeYaw += _options.CameraSwing * (MathF.PI / 180f);
                     }
 
                     _camera.MoveTo(
                         new Vector3d(
-                            flightStartPos.X + ((endPos.X - flightStartPos.X) * t),
-                            flightStartPos.Y + ((endPos.Y - flightStartPos.Y) * t),
-                            flightStartPos.Z + ((endPos.Z - flightStartPos.Z) * t)),
-                        flightStartYaw + ((endYaw - flightStartYaw) * t) + shakeYaw,
-                        flightStartPitch + ((endPitch - flightStartPitch) * t) + shakePitch);
+                            state.FlightStartPos.X + ((endPos.X - state.FlightStartPos.X) * t),
+                            state.FlightStartPos.Y + ((endPos.Y - state.FlightStartPos.Y) * t),
+                            state.FlightStartPos.Z + ((endPos.Z - state.FlightStartPos.Z) * t)),
+                        state.FlightStartYaw + ((endYaw - state.FlightStartYaw) * t) + shakeYaw,
+                        state.FlightStartPitch + ((endPitch - state.FlightStartPitch) * t) + shakePitch);
                 }
 
                 // How far this frame sits between the last two simulation ticks. Compute it before
@@ -3937,7 +3944,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // camera and its parent vehicle stay on the current record makes a seated actor sweep
                 // backwards after every tick, then glide forwards again. Retail presents the cinematic
                 // transform set atomically, so keep the actor on that same current tick as its plane/train.
-                bool smoothPresentation = !pauseMenu
+                bool smoothPresentation = !state.PauseMenu
                     && _mission.Cutscenes?.IsPlaying != true
                     && !_options.Lockstep
                     && RenderCVars.SmoothPresentation.Value;
@@ -3954,7 +3961,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 Diagnostics.PresentationPacingProbe.Sample(
                     pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
                 Diagnostics.PresentationPacingProbe.SampleGate(
-                    pauseMenu,
+                    state.PauseMenu,
                     _mission.Cutscenes?.IsPlaying == true,
                     _options.Lockstep,
                     RenderCVars.SmoothPresentation.Value);
@@ -4158,7 +4165,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
                 if (wantsTemporal)
                 {
-                    (jitterX, jitterY) = TemporalJitter.At(temporalFrame, resolution.JitterPhases);
+                    (jitterX, jitterY) = TemporalJitter.At(state.TemporalFrame, resolution.JitterPhases);
 
                     // In RENDER pixels, not window pixels: the offset has to be half a pixel of the buffer
                     // being rasterised into, or at a render scale below one it moves the sample by less
@@ -4167,7 +4174,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         jitterX * 2f / resolution.RenderWidth,
                         jitterY * 2f / resolution.RenderHeight,
                         0f) * unjitteredProjection;
-                    temporalFrame++;
+                    state.TemporalFrame++;
                 }
 
                 // The sky is behind everything and writes no depth, so it goes first; then terrain, which
@@ -4184,9 +4191,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // interpolated between its tick pair, so leaving the camera on the tick made a smoothly
                 // climbing Jones judder against a camera that stepped thirty times a second. This is the
                 // other half of that smoothing, and it must run BEFORE the eye is read below.
-                if (interactionCamera.IsActive)
+                if (state.InteractionCamera.IsActive)
                 {
-                    interactionCamera.Present(smoothPresentation ? tickBlend : 1f);
+                    state.InteractionCamera.Present(smoothPresentation ? tickBlend : 1f);
                 }
                 if (_deathCamera.IsActive)
                 {
@@ -4196,8 +4203,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 Camera3D eye = _playerDead && _deathCamera.IsActive
                     ? _deathCamera.Camera
                     : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
-                        && interactionCamera.IsActive
-                        ? interactionCamera.Camera
+                        && state.InteractionCamera.IsActive
+                        ? state.InteractionCamera.Camera
                         : _playerMode && _titlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend)
                         : _playerMode && _player is not null ? _player.Camera : _camera.Camera;
 
@@ -4222,7 +4229,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     && !_entry.IsCameraActive
                     && _mission.Cutscenes?.IsPlaying != true
                     && mapScene is null
-                    && (!menuMode || pauseMenu)
+                    && (!state.MenuMode || state.PauseMenu)
                     && _player is not null;
 
                 // The over-the-shoulder view, built off whatever camera the player would have had. It is
@@ -4232,7 +4239,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 //
                 // The four states that own the view outright are excluded rather than blended out of: a
                 // cutscene, the entry shot, the map computer and the menu orbit each replace the eye
-                // below, and running the move underneath one of them would only decide where the camera
+                // below, and state.Running the move underneath one of them would only decide where the camera
                 // was when it was handed back.
                 //
                 // The front end is excluded but the PAUSE is not, and the difference is the whole reason
@@ -4246,7 +4253,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     && !_entry.IsCameraActive
                     && _mission.Cutscenes?.IsPlaying != true
                     && mapScene is null
-                    && (!menuMode || pauseMenu)
+                    && (!state.MenuMode || state.PauseMenu)
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
 
                 if (thirdPersonEligible && _player is { } thirdPersonPlayer)
@@ -4270,7 +4277,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // A paused view does not move. Advancing the blend behind the menu would have the
                     // camera quietly travel while the player was reading, and arrive somewhere else.
                     eye = _thirdPerson.Update(
-                        menuMode ? 0f : thirdPersonElapsed,
+                        state.MenuMode ? 0f : thirdPersonElapsed,
                         wantsThirdPerson,
                         eye,
                         ThirdPersonWalls());
@@ -4324,7 +4331,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // stale while the sun is being scrubbed, which does not matter for standing still.
                     Vector3f loggedSun = _effectiveSun?.Direction ?? Vector3f.UnitZ;
 
-                    // Warning rather than Information, which reads wrong and is not: the shell's logger
+                    // Warning rather than Information, which reads wrong and is not: the state.Shell's logger
                     // is built at Warning, so every Information call in the app is discarded and this
                     // flag produced no output at all -- the flag existed and did nothing. It is opt-in
                     // and its whole purpose is to be read, so it has to be emitted at a level that
@@ -4336,16 +4343,16 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                             + $" -sundir {loggedSun.X:0.######},{loggedSun.Y:0.######},{loggedSun.Z:0.######}");
                 }
 
-                // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
+                // Behind the cinematic state.Shell the eye is the slow menu orbit, on real elapsed time, whatever
                 // camera the scene would otherwise have used. Not behind the pause menu: the camera the
                 // scene would otherwise have used is the player's own, and orbiting away from where they
                 // were standing is the one thing a pause must not do. The showcase camera outlives the menu
                 // it was built for -- starting a mission does not clear it -- so this has to say so.
-                if (menuMode && !pauseMenu && _showcaseCamera is not null)
+                if (state.MenuMode && !state.PauseMenu && _showcaseCamera is not null)
                 {
                     int menuCameraNow = _loop.TimeSource.Milliseconds;
-                    float menuCameraElapsed = Math.Clamp((menuCameraNow - lastMenuCameraMilliseconds) / 1000f, 0f, 0.1f);
-                    lastMenuCameraMilliseconds = menuCameraNow;
+                    float menuCameraElapsed = Math.Clamp((menuCameraNow - state.LastMenuCameraMilliseconds) / 1000f, 0f, 0.1f);
+                    state.LastMenuCameraMilliseconds = menuCameraNow;
                     eye = _showcaseCamera.Update(menuCameraElapsed);
                 }
                 else if (mapScene is { } liveMap)
@@ -4367,7 +4374,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // The eye has settled by here -- every camera that could have claimed the frame has
                 // had its say -- so this is where the inspector's projection can read it.
                 _inspectorEye = eye;
-                if (_titlePlayer is not null && _playerMode && !console.WantsPointer && !menuMode)
+                if (_titlePlayer is not null && _playerMode && !console.WantsPointer && !state.MenuMode)
                 {
                     _titleLastLiveLook = _titlePresentation.HasLookPreview;
                     Camera3D titleEye = _titlePresentation.Camera(_titlePresentationBlend);
@@ -4513,11 +4520,11 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     verticalFieldOfView,
                     aspectRatio,
                     NearPlane,
-                    cascadeStorage);
+                    state.CascadeStorage);
 
                 _device.SetShadows(
                     shadowSettings,
-                    cascadeStorage.AsSpan(0, cascadeCount),
+                    state.CascadeStorage.AsSpan(0, cascadeCount),
                     DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
 
                     // View space back into camera-relative world space, which is the frame the cascades
@@ -4569,7 +4576,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // The sky plane's height is an offset above the ground, not a world Z: a level's
                     // coordinates carry a kilometres-large absolute offset, so it has to be anchored to
                     // the scene's own ground before the march can compare a sample against it.
-                    medium = fogPresets.Resolve(
+                    medium = state.FogPresets.Resolve(
                         fogMission,
                         authoredDensity,
                         (float)(_scene.GroundHeight + (_sky is { HasSky: true } ? _sky.PlaneHeight : 0f)),
@@ -4658,7 +4665,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // worker: the same command produced two dumps on one run and one on the next, and when
                     // it produced one the file held the UNSHADOWED load-time pass while looking exactly
                     // like the shadowed one. That is how a probe came back reporting nothing at all.
-                    bool wantDump = !cardLightingDumped
+                    bool wantDump = !state.CardLightingDumped
                         && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 }
 
                         // Not the first qualifying frame. On a backend that records a frame's compute and
@@ -4740,7 +4747,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         // the clipmap scrolling new coverage under a card as the camera moves -- and doing
                         // that over the whole cache on the scroll frame was a seventy-millisecond stall that
                         // read as the game lurching every few steps. Sliced, the new shadows arrive over a
-                        // handful of frames with no spike, and the bounce keeps its long-running history
+                        // handful of frames with no spike, and the bounce keeps its long-state.Running history
                         // instead of being re-seeded from scratch on every scroll.
                         // Skipped once the cache has settled and nothing is scrolling or scrubbing: the sun
                         // is fixed and no new coverage is arriving, so the slice would re-trace the direct
@@ -4768,7 +4775,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // a clipmap rebuild, so a stationary interior never got past its first couple of bounces
                     // -- which is most of why a sunless room read dark: bounces three, four and five are
                     // what fill a room the sun never reaches. The feedback is clamped below one in the
-                    // shader, so it converges rather than running away, and the 1/(1+frames) blend gives the
+                    // shader, so it converges rather than state.Running away, and the 1/(1+frames) blend gives the
                     // ramp for free. Only when no diagnostic probe owns the direct atlas.
                     // Same stand-down as the relight: once settled with nothing scrolling or scrubbing, the
                     // scene has reached its multi-bounce equilibrium and folding another bounce in re-derives
@@ -4787,7 +4794,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         // there is any field to trace against and would show the unshadowed answer.
                         if (wantDump && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
                         {
-                            cardLightingDumped = true;
+                            state.CardLightingDumped = true;
                             SurfaceCacheDebugDumps.CardLighting(
                                 _device, bounceCards, shadowInto, _logger, RenderCVars.SurfaceCacheProbe.Value);
                         }
@@ -4813,7 +4820,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         cacheCards.UpdateRadianceCache(
                             liveField,
                             SkyFillColour(),
-                            // A short running average while the level is warming up, so the cache climbs to
+                            // A short state.Running average while the level is warming up, so the cache climbs to
                             // its converged value in a handful of frames rather than easing there over a
                             // couple of seconds -- which is what read as the scene loading bright and dimming.
                             // A long one after, where a slow average is what keeps the steady field from
@@ -4848,7 +4855,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // seed only has to change each frame for the dither to differ; the jitter counter does that.
                 _device.SetAlphaHash(
                     RenderCVars.HashedAlpha.Value && wantsTemporal
-                        ? 1f + (float)(temporalFrame & 63)
+                        ? 1f + (float)(state.TemporalFrame & 63)
                         : 0f);
 
                 // The derived detail is a deferred-path feature: it changes the normal and the roughness
@@ -4893,9 +4900,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
                 // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
                 // stop as a second, smaller event -- which is the thing this exists to remove.
-                float probeFade = probeArrivedAt < 0
+                float probeFade = state.ProbeArrivedAt < 0
                     ? 1f
-                    : Math.Clamp((_loop.TimeSource.Milliseconds - probeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
+                    : Math.Clamp((_loop.TimeSource.Milliseconds - state.ProbeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
                 probeFade = probeFade * probeFade * (3f - (2f * probeFade));
 
                 _device.SetIrradianceVolumeSettings(
@@ -4935,10 +4942,10 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 _device.SetVolumetricFog(
                     medium,
                     new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
-                    wantsFog ? fogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
+                    wantsFog ? state.FogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
 
                 // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
-                // beginning a capture first would leave the shell holding two render targets at once.
+                // beginning a capture first would leave the state.Shell holding two render targets at once.
                 //
                 // And not filled at all on a frame where nothing can read it: with the traced sun the
                 // ray mask is the ONLY sun shadow the lighting samples, and with the sun faded to
@@ -4958,7 +4965,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // draws whichever game supplied them. The title becomes injected in phase 1.
                     Igi1Presentation casters = new(_world, shadowCasters);
                     _shadowPass.Render(
-                        cascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters, _terrain);
+                        state.CascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters, _terrain);
                 }
 
                 // The nearest lamps' own shadow maps, where the device marches lamp shadows rather than
@@ -5170,7 +5177,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // is drawn first, the water last, and the world's own objects come out grouped, which is
                 // what BuildDrawOrder is for.
                 // A title's own screen over the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a
-                // building's shell does.
+                // building's state.Shell does.
                 bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || _titlePlayer?.IsWeatherHidden == true;
                 _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
                 EndStageIfSlow("the sky and the world's objects");
@@ -5350,7 +5357,7 @@ if (retailFog)
                     && armedBody.Weapons?.HideFirstPersonWeapon != true)
                 {
                     // The cycle changes the model as well as the animation, and out here nothing else is
-                    // watching for that: the first-person block that normally does is not running.
+                    // watching for that: the first-person block that normally does is not state.Running.
                     if (_loadedMissionForWeapon is { } missionForBody)
                     {
                         FollowHeldWeapon(armedBody, _heldWeapon, missionForBody);
@@ -5384,7 +5391,7 @@ if (retailFog)
                 // there is no ambient to zero and nothing runs after the lighting.
                 const int giStep = 8;
                 UpdateTerrainRaster();
-                // The probes' running average, capped at a temporal limit of ten frames. It was
+                // The probes' state.Running average, capped at a temporal limit of ten frames. It was
                 // thirty-two, and a history that long outlives every turn of the view -- each frame of
                 // motion resamples it through the reprojection and clamps it into the window of one
                 // frame's rays, and at one part in thirty-three the bias that leaves takes the better part
@@ -5452,17 +5459,17 @@ if (retailFog)
                     _device.EndStageTiming();
                     _device.BeginStageTiming(RenderStage.GlobalIllumination);
 
-                    if (screenGi.PixelsWidth != sceneTarget.Width || screenGi.PixelsHeight != sceneTarget.Height)
+                    if (state.ScreenGi.PixelsWidth != sceneTarget.Width || state.ScreenGi.PixelsHeight != sceneTarget.Height)
                     {
-                        if (screenGi.Pixels.IsValid)
+                        if (state.ScreenGi.Pixels.IsValid)
                         {
-                            _device.DestroyTexture(screenGi.Pixels);
+                            _device.DestroyTexture(state.ScreenGi.Pixels);
                         }
 
-                        screenGi.Pixels = _device.CreateStorageTexture(
+                        state.ScreenGi.Pixels = _device.CreateStorageTexture(
                             sceneTarget.Width, sceneTarget.Height, VolumeFormat.Rgba16F, "cards.pixel");
-                        screenGi.PixelsWidth = sceneTarget.Width;
-                        screenGi.PixelsHeight = sceneTarget.Height;
+                        state.ScreenGi.PixelsWidth = sceneTarget.Width;
+                        state.ScreenGi.PixelsHeight = sceneTarget.Height;
                     }
 
                     Vector3f pixelCameraToCache = new(
@@ -5480,26 +5487,26 @@ if (retailFog)
                         sceneTarget.Width,
                         sceneTarget.Height,
                         SkyFillColour(),
-                        screenGi.PixelFrame++,
-                        screenGi.Pixels,
+                        state.ScreenGi.PixelFrame++,
+                        state.ScreenGi.Pixels,
 
                         // Last frame's lit picture and the camera it was rendered from, as the probes read it.
                         _device.SceneColour,
                         RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
                         giTraceDistance,
                         giTraceThickness,
-                        screenGi.ResolvePrevWorldToView,
-                        screenGi.ResolvePrevCameraToCache);
+                        state.ScreenGi.ResolvePrevWorldToView,
+                        state.ScreenGi.ResolvePrevCameraToCache);
 
                     if (giPixelsRan)
                     {
                         // The probes' histories go with the else below: they describe frames they did not see.
-                        _device.SetScreenIndirect(screenGi.Pixels, giStrength, fullResolution: true);
-                        screenGi.ContinuityValid = false;
+                        _device.SetScreenIndirect(state.ScreenGi.Pixels, giStrength, fullResolution: true);
+                        state.ScreenGi.ContinuityValid = false;
 
                         // This frame's camera is what next frame's lit picture will have been rendered from.
-                        screenGi.ResolvePrevWorldToView = eye.Orientation;
-                        screenGi.ResolvePrevCameraToCache = pixelCameraToCache;
+                        state.ScreenGi.ResolvePrevWorldToView = eye.Orientation;
+                        state.ScreenGi.ResolvePrevCameraToCache = pixelCameraToCache;
                     }
 
                     _device.EndStageTiming();
@@ -5525,49 +5532,49 @@ if (retailFog)
                     int wantWidth = (giSourceWidth + giStep - 1) / giStep;
                     int wantHeight = (giSourceHeight + giStep - 1) / giStep;
 
-                    if (screenGi.IndirectWidth != wantWidth || screenGi.IndirectHeight != wantHeight)
+                    if (state.ScreenGi.IndirectWidth != wantWidth || state.ScreenGi.IndirectHeight != wantHeight)
                     {
                         // A resize drops the history: the atlases are a different shape, so nothing in them
                         // reprojects onto the new frame.
                         for (int i = 0; i < 2; i++)
                         {
-                            if (screenGi.Accum[i].IsValid)
+                            if (state.ScreenGi.Accum[i].IsValid)
                             {
-                                _device.DestroyTexture(screenGi.Accum[i]);
+                                _device.DestroyTexture(state.ScreenGi.Accum[i]);
                             }
 
-                            if (screenGi.Position[i].IsValid)
+                            if (state.ScreenGi.Position[i].IsValid)
                             {
-                                _device.DestroyTexture(screenGi.Position[i]);
+                                _device.DestroyTexture(state.ScreenGi.Position[i]);
                             }
 
-                            screenGi.Accum[i] = _device.CreateStorageTexture(
+                            state.ScreenGi.Accum[i] = _device.CreateStorageTexture(
                                 wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum");
-                            screenGi.Position[i] = _device.CreateStorageTexture(
+                            state.ScreenGi.Position[i] = _device.CreateStorageTexture(
                                 wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum.pos");
                         }
 
                         // The spatial denoise's output, regenerated each frame from the accumulation, so a
                         // single buffer rather than a ping-pong pair.
-                        if (screenGi.Filtered.IsValid)
+                        if (state.ScreenGi.Filtered.IsValid)
                         {
-                            _device.DestroyTexture(screenGi.Filtered);
+                            _device.DestroyTexture(state.ScreenGi.Filtered);
                         }
 
-                        screenGi.Filtered = _device.CreateStorageTexture(
+                        state.ScreenGi.Filtered = _device.CreateStorageTexture(
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.filtered");
 
-                        if (screenGi.Raw.IsValid)
+                        if (state.ScreenGi.Raw.IsValid)
                         {
-                            _device.DestroyTexture(screenGi.Raw);
+                            _device.DestroyTexture(state.ScreenGi.Raw);
                         }
 
-                        screenGi.Raw = _device.CreateStorageTexture(
+                        state.ScreenGi.Raw = _device.CreateStorageTexture(
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.raw");
 
-                        screenGi.IndirectWidth = wantWidth;
-                        screenGi.IndirectHeight = wantHeight;
-                        screenGi.HasHistory = false;
+                        state.ScreenGi.IndirectWidth = wantWidth;
+                        state.ScreenGi.IndirectHeight = wantHeight;
+                        state.ScreenGi.HasHistory = false;
                     }
 
                     // Both histories describe the scene as the last frames saw it. A camera cut (a cutscene, a
@@ -5581,21 +5588,21 @@ if (retailFog)
                     // a tick, and the GI threw its whole history away thirty times a second -- the interior went
                     // dark, noisy and flickering for the length of the shot.
                     DepthUnprojection giUnprojection = DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane);
-                    bool giContinuous = screenGi.ContinuityValid
-                        && ReferenceEquals(screenGi.LastCards, liveGiCards)
-                        && MathF.Abs(giUnprojection.XScale - screenGi.LastUnprojection.XScale) < GiCutZoom * screenGi.LastUnprojection.XScale
-                        && MathF.Abs(giUnprojection.YScale - screenGi.LastUnprojection.YScale) < GiCutZoom * screenGi.LastUnprojection.YScale
-                        && (eye.Position - screenGi.LastEye).LengthSquared < GiCutDistance * GiCutDistance;
+                    bool giContinuous = state.ScreenGi.ContinuityValid
+                        && ReferenceEquals(state.ScreenGi.LastCards, liveGiCards)
+                        && MathF.Abs(giUnprojection.XScale - state.ScreenGi.LastUnprojection.XScale) < GiCutZoom * state.ScreenGi.LastUnprojection.XScale
+                        && MathF.Abs(giUnprojection.YScale - state.ScreenGi.LastUnprojection.YScale) < GiCutZoom * state.ScreenGi.LastUnprojection.YScale
+                        && (eye.Position - state.ScreenGi.LastEye).LengthSquared < GiCutDistance * GiCutDistance;
                     if (!giContinuous)
                     {
-                        screenGi.HasHistory = false;
-                        screenGi.ResolveHasHistory = false;
+                        state.ScreenGi.HasHistory = false;
+                        state.ScreenGi.ResolveHasHistory = false;
                     }
 
-                    screenGi.ContinuityValid = true;
-                    screenGi.LastEye = eye.Position;
-                    screenGi.LastUnprojection = giUnprojection;
-                    screenGi.LastCards = liveGiCards;
+                    state.ScreenGi.ContinuityValid = true;
+                    state.ScreenGi.LastEye = eye.Position;
+                    state.ScreenGi.LastUnprojection = giUnprojection;
+                    state.ScreenGi.LastCards = liveGiCards;
 
                     Vector3f giCameraToCache = new(
                         (float)(eye.Position.X - liveGiCards.Origin.X),
@@ -5606,10 +5613,10 @@ if (retailFog)
                     // See r_screen_gi_cadence for why that is sound and why it beats cutting the ray count.
                     int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
                     int giCadence = Math.Max(RenderCVars.ScreenGatherCadence.Value, 1);
-                    bool giTraceThisFrame = !screenGi.HasHistory || (screenGi.CadenceCursor % giCadence) == 0;
-                    screenGi.CadenceCursor++;
+                    bool giTraceThisFrame = !state.ScreenGi.HasHistory || (state.ScreenGi.CadenceCursor % giCadence) == 0;
+                    state.ScreenGi.CadenceCursor++;
 
-                    int write = screenGi.Frame & 1;
+                    int write = state.ScreenGi.Frame & 1;
                     int read = 1 - write;
 
                     if (giTraceThisFrame)
@@ -5624,15 +5631,15 @@ if (retailFog)
                             giSourceWidth,
                             giSourceHeight,
                             giStep,
-                            screenGi.Accum[write],
-                            screenGi.Position[write],
-                            screenGi.Accum[read],
-                            screenGi.Position[read],
-                            screenGi.PrevWorldToView,
-                            screenGi.PrevCameraToCache,
-                            screenGi.Frame,
+                            state.ScreenGi.Accum[write],
+                            state.ScreenGi.Position[write],
+                            state.ScreenGi.Accum[read],
+                            state.ScreenGi.Position[read],
+                            state.ScreenGi.PrevWorldToView,
+                            state.ScreenGi.PrevCameraToCache,
+                            state.ScreenGi.Frame,
                             giMaxAccum,
-                            screenGi.HasHistory,
+                            state.ScreenGi.HasHistory,
 
                             // The screen trace tier (L5b): the previous frame's lit scene, read at on-screen hits
                             // before the ray falls through to the surface cache. device.SceneColour holds last
@@ -5650,73 +5657,73 @@ if (retailFog)
                             // The camera the lit target was rendered through: the LAST frame's, which the
                             // resolve carries forward every frame -- unlike the gather's own previous camera,
                             // which only moves on a frame that traced.
-                            screenGi.ResolvePrevWorldToView,
-                            screenGi.ResolvePrevCameraToCache,
-                            screenGi.Raw,
+                            state.ScreenGi.ResolvePrevWorldToView,
+                            state.ScreenGi.ResolvePrevCameraToCache,
+                            state.ScreenGi.Raw,
 
                             // Where a moving car's surface really came from, not where the camera alone
                             // would put it. Asking derives it: every G-buffer draw is in by now.
                             _device.SceneVelocity,
-                            screenGi.PrevUnprojection);
+                            state.ScreenGi.PrevUnprojection);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
                         if (giFilterRadius > 0)
                         {
                             liveGiCards.FilterScreen(
-                                screenGi.Accum[write],
-                                screenGi.Position[write],
+                                state.ScreenGi.Accum[write],
+                                state.ScreenGi.Position[write],
                                 _device.SceneNormal,
-                                screenGi.Filtered,
-                                screenGi.IndirectWidth,
-                                screenGi.IndirectHeight,
+                                state.ScreenGi.Filtered,
+                                state.ScreenGi.IndirectWidth,
+                                state.ScreenGi.IndirectHeight,
                                 giFilterRadius);
                         }
 
                         // What this frame becomes to the NEXT GATHER: only a frame that actually traced moves
                         // the gather's history and its camera on.
-                        screenGi.LastWrite = write;
-                        screenGi.PrevWorldToView = eye.Orientation;
-                        screenGi.PrevCameraToCache = giCameraToCache;
-                        screenGi.PrevUnprojection = giUnprojection;
-                        screenGi.HasHistory = true;
-                        screenGi.Frame++;
+                        state.ScreenGi.LastWrite = write;
+                        state.ScreenGi.PrevWorldToView = eye.Orientation;
+                        state.ScreenGi.PrevCameraToCache = giCameraToCache;
+                        state.ScreenGi.PrevUnprojection = giUnprojection;
+                        state.ScreenGi.HasHistory = true;
+                        state.ScreenGi.Frame++;
                     }
 
-                    TextureHandle giRead = giFilterRadius > 0 ? screenGi.Filtered : screenGi.Accum[screenGi.LastWrite];
+                    TextureHandle giRead = giFilterRadius > 0 ? state.ScreenGi.Filtered : state.ScreenGi.Accum[state.ScreenGi.LastWrite];
 
                     // The full-resolution temporal resolve: upsample the sparse atlas once and accumulate
                     // it per pixel, reprojecting against each surface's own world position, so the
                     // indirect is pinned to the world instead of sliding with the coarse sparse-probe
                     // reprojection. The deferred fill reads the full-res result.
-                    int resolveWrite = screenGi.ResolveFrame & 1;
+                    int resolveWrite = state.ScreenGi.ResolveFrame & 1;
                     int resolveRead = 1 - resolveWrite;
 
                     int resolveW = giSourceWidth;
                     int resolveH = giSourceHeight;
-                    if (screenGi.ResolveWidth != resolveW || screenGi.ResolveHeight != resolveH)
+                    if (state.ScreenGi.ResolveWidth != resolveW || state.ScreenGi.ResolveHeight != resolveH)
                     {
                         for (int i = 0; i < 2; i++)
                         {
-                            if (screenGi.Resolve[i].IsValid)
+                            if (state.ScreenGi.Resolve[i].IsValid)
                             {
-                                _device.DestroyTexture(screenGi.Resolve[i]);
+                                _device.DestroyTexture(state.ScreenGi.Resolve[i]);
                             }
 
-                            if (screenGi.ResolvePosition[i].IsValid)
+                            if (state.ScreenGi.ResolvePosition[i].IsValid)
                             {
-                                _device.DestroyTexture(screenGi.ResolvePosition[i]);
+                                _device.DestroyTexture(state.ScreenGi.ResolvePosition[i]);
                             }
 
-                            screenGi.Resolve[i] = _device.CreateStorageTexture(
+                            state.ScreenGi.Resolve[i] = _device.CreateStorageTexture(
                                 resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve");
-                            screenGi.ResolvePosition[i] = _device.CreateStorageTexture(
+                            state.ScreenGi.ResolvePosition[i] = _device.CreateStorageTexture(
                                 resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve.pos");
                         }
 
-                        screenGi.ResolveWidth = resolveW;
-                        screenGi.ResolveHeight = resolveH;
-                        screenGi.ResolveHasHistory = false;
+                        state.ScreenGi.ResolveWidth = resolveW;
+                        state.ScreenGi.ResolveHeight = resolveH;
+                        state.ScreenGi.ResolveHasHistory = false;
                     }
 
                     liveGiCards.ResolveScreenTemporal(
@@ -5726,50 +5733,50 @@ if (retailFog)
                         DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                         eye.Orientation.Transposed(),
                         giCameraToCache,
-                        screenGi.ResolvePrevWorldToView,
-                        screenGi.ResolvePrevCameraToCache,
-                        screenGi.Resolve[resolveWrite],
-                        screenGi.ResolvePosition[resolveWrite],
-                        screenGi.Resolve[resolveRead],
-                        screenGi.ResolvePosition[resolveRead],
+                        state.ScreenGi.ResolvePrevWorldToView,
+                        state.ScreenGi.ResolvePrevCameraToCache,
+                        state.ScreenGi.Resolve[resolveWrite],
+                        state.ScreenGi.ResolvePosition[resolveWrite],
+                        state.ScreenGi.Resolve[resolveRead],
+                        state.ScreenGi.ResolvePosition[resolveRead],
                         resolveW,
                         resolveH,
-                        screenGi.ResolveHasHistory,
+                        state.ScreenGi.ResolveHasHistory,
                         16,
 
                         // The probes' own traced positions and the frame they were traced in -- the last
                         // frame that traced, which is not this one whenever the gather's cadence skipped.
-                        screenGi.Position[screenGi.LastWrite],
-                        screenGi.PrevWorldToView,
-                        screenGi.PrevCameraToCache,
+                        state.ScreenGi.Position[state.ScreenGi.LastWrite],
+                        state.ScreenGi.PrevWorldToView,
+                        state.ScreenGi.PrevCameraToCache,
                         giStep,
                         _device.SceneVelocity,
-                        screenGi.ResolvePrevUnprojection,
+                        state.ScreenGi.ResolvePrevUnprojection,
 
                         // The frame the atlas being read was traced in -- the counter has moved past it --
                         // which places its probes in their tiles.
-                        screenGi.Frame - 1);
-                    screenGi.ResolveHasHistory = true;
+                        state.ScreenGi.Frame - 1);
+                    state.ScreenGi.ResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
                     // it is read straight rather than upsampled from the sparse atlas a second time.
-                    _device.SetScreenIndirect(screenGi.Resolve[resolveWrite], giStrength, fullResolution: true);
+                    _device.SetScreenIndirect(state.ScreenGi.Resolve[resolveWrite], giStrength, fullResolution: true);
 
                     // The resolve's own carry-forward, every frame: this camera is what the next frame's
                     // per-pixel reprojection measures its motion against. The gather's equivalent is set
                     // above, inside the branch, because only a frame that traced may move it.
-                    screenGi.ResolvePrevWorldToView = eye.Orientation;
-                    screenGi.ResolvePrevCameraToCache = giCameraToCache;
-                    screenGi.ResolvePrevUnprojection = giUnprojection;
-                    screenGi.ResolveFrame++;
+                    state.ScreenGi.ResolvePrevWorldToView = eye.Orientation;
+                    state.ScreenGi.ResolvePrevCameraToCache = giCameraToCache;
+                    state.ScreenGi.ResolvePrevUnprojection = giUnprojection;
+                    state.ScreenGi.ResolveFrame++;
 
                     _device.EndStageTiming();
                 }
                 else
                 {
                     // The gather did not run this frame, so next frame has nothing coherent to reproject onto.
-                    screenGi.HasHistory = false;
-                    screenGi.ResolveHasHistory = false;
+                    state.ScreenGi.HasHistory = false;
+                    state.ScreenGi.ResolveHasHistory = false;
                 }
 
                 // The level's lamp fixtures, submitted as real point lights for the deferred pass that
@@ -5883,7 +5890,7 @@ if (retailFog)
                 // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
                 _flashlight.Submit(
                     captured && flashlightShown && _player is not null && !_playerDead,
-                    menuMode && pauseMenu,
+                    state.MenuMode && state.PauseMenu,
                     flashlightBody,
                     eye,
                     _thirdPerson.IsEngaged,
@@ -6015,14 +6022,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 _explosions?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
                 // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
-                // While the camera is inside a building's shell the rain is suppressed, exactly as the
+                // While the camera is inside a building's state.Shell the rain is suppressed, exactly as the
                 // reference editor does per frame — buildings keep the weather outside.
                 _stormEyeMetres = eye.Position;
                 if (_storm is { } liveStorm)
                 {
                     // Assigned BEFORE the active test, never inside it. IsActive reads Indoors, so
                     // setting it under `if (IsActive)` latches: the first frame the eye passes through a
-                    // building shell turns the storm off, and the assignment that would turn it back on
+                    // building state.Shell turns the storm off, and the assignment that would turn it back on
                     // is inside the branch that no longer runs. That is what stuck the free camera on
                     // the original's rain for the rest of the mission.
                     liveStorm.Indoors = cameraIndoors;
@@ -6134,7 +6141,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // original draws it out of the human's own render and the free camera is not a human -- and
                 // NOT once the player is dead, when the death camera is watching the body from the outside
                 // and a pair of arms hanging in front of it would be exactly wrong.
-                // Not while the entry shot is running: the camera is somewhere over the level, and a pair
+                // Not while the entry shot is state.Running: the camera is somewhere over the level, and a pair
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
                 bool binocularsOpen = _player is { IsBinocularsOpen: true };
@@ -6185,7 +6192,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         _player.AcknowledgePose();
                     }
 
-                    // The view model gets its OWN projection: 0x49F700 saves the current view block,
+                    // The view model gets its OWN projection: 0x49F700 state.Saves the current view block,
                     // rebuilds [16..19] from dword_B81700 -- HumanCamera+220, filled from HumanView+488 =
                     // tan(30 degrees) -- and restores it afterwards, for any bone model with no LOD chain,
                     // which the HumanView is (0x464660 leaves +212 at zero). The rebuild is sub_497D70's
@@ -6280,15 +6287,15 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
                 // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
                 // depth-to-world reconstruction before the gather feeds the frame. Only when no card probe is
-                // running, since that fills the cache atlas with a diagnostic rather than light.
+                // state.Running, since that fills the cache atlas with a diagnostic rather than light.
                 if (captured
-                    && !screenGiDumped
+                    && !state.ScreenGiDumped
                     && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
                     && _sdfClipmaps is { } giField
                     && _cardLighting is { } giCards
                     && RenderCVars.SurfaceCacheProbe.Value == 0)
                 {
-                    screenGiDumped = true;
+                    state.ScreenGiDumped = true;
                     SurfaceCacheDebugDumps.ScreenGather(
                         _device, giCards, giField, eye, unjitteredProjection, FarPlane,
                         _window.Width, _window.Height, giInto, _logger);
@@ -6323,9 +6330,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _thirdPerson.ShowsViewModel)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    titleHud.Draw(batch, titleHudPlayer, _window.Width, _window.Height);
-                    batch.End();
+                    state.Batch.Begin();
+                    titleHud.Draw(state.Batch, titleHudPlayer, _window.Width, _window.Height);
+                    state.Batch.End();
                 }
 
                 if (RemasteredHudPresentation.UsesRetailWeaponHud(
@@ -6337,13 +6344,13 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _hud is { IsReady: true } retailHud)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
                     // never calls the parent handler.
                     if (_player.IsBinocularsOpen)
                     {
                         retailHud.DrawBinocularOverlay(
-                            batch,
+                            state.Batch,
                             _window.Width,
                             _window.Height,
                             binocularTargets,
@@ -6353,7 +6360,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     }
                     else if (_player.IsSniperScoped)
                     {
-                        retailHud.DrawSniperScope(batch, _window.Width, _window.Height);
+                        retailHud.DrawSniperScope(state.Batch, _window.Width, _window.Height);
                     }
                     else
                     {
@@ -6364,7 +6371,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                             ? carried.Ammunition.Count(m203.AmmoId)
                             : 0;
                         retailHud.Draw(
-                            batch,
+                            state.Batch,
                             held?.Weapon,
                             held?.Gun.RoundsInClip ?? 0,
                             held is { } primary ? primary.Gun.Reserve(carried.Ammunition) : 0,
@@ -6375,7 +6382,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                             UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
                     }
 
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // Retail action sprites are deliberately retained for the faithful UI. The remaster's
@@ -6386,14 +6393,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _player?.ActionSprite is { } actionSprite)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     retailActions.DrawAction(
-                        batch,
+                        state.Batch,
                         actionSprite,
                         _window.Width,
                         _window.Height,
                         UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // The mission's status messages. Kept off screen while the computer is up, as the rest
@@ -6405,14 +6412,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _hud is { IsReady: true } retailMessages)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     retailMessages.DrawStatusMessages(
-                        batch,
+                        state.Batch,
                         messageRuntime.DisplayedMessages.Where(static message => !message.IsCutscene),
                         _window.Width,
                         _window.Height,
                         UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // The human-owned retail display remains alive when a full-body interaction hides the
@@ -6424,22 +6431,22 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _hud is { IsReady: true } retailStatus)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     retailStatus.DrawPlayerStatus(
-                        batch,
+                        state.Batch,
                         _playerHealth.RemainingFraction,
                         retailPlayer.InteractionProgress,
                         _mission.Objectives?.InterfaceTimerRemainingTicks,
                         _window.Width,
                         _window.Height,
                         UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 if (_mission.Cutscenes?.Frame is { } cinematicFraming)
                 {
                     CutsceneFramingRenderer.Draw(
-                        _device, batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);
+                        _device, state.Batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);
                 }
 
                 // ComputerMap renders the terrain through its own top-down camera and turns only that
@@ -6485,11 +6492,11 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _player is { } computerPlayer)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     if (TacticalComputer is { } tacticalChrome)
                     {
                         tacticalChrome.Draw(
-                            batch,
+                            state.Batch,
                             objectiveRuntime,
                             computerPlayer.Body.Position,
                             _soldiers?.MapContacts() ?? [],
@@ -6501,7 +6508,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     else if (_mapComputer is { IsReady: true } computer)
                     {
                         computer.Draw(
-                            batch,
+                            state.Batch,
                             objectiveRuntime,
                             computerPlayer.Body.Position,
                             _soldiers?.MapContacts() ?? [],
@@ -6510,7 +6517,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                             _window.Height);
                     }
 
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
@@ -6531,14 +6538,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         new(0, 0, 255, (byte)Math.Clamp((int)(alpha * flashStrength * 255f), 0, 255));
 
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    batch.DrawQuad(
+                    state.Batch.Begin();
+                    state.Batch.DrawQuad(
                         TextureHandle.None,
                         new Vertex2D(0f, 0f, 0f, 0f, Red(_damageFlash.TopLeft)),
                         new Vertex2D(flashWidth, 0f, 1f, 0f, Red(_damageFlash.TopRight)),
                         new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(_damageFlash.BottomRight)),
                         new Vertex2D(0f, flashHeight, 0f, 1f, Red(_damageFlash.BottomLeft)));
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // The native player flash handler writes a uniform white screen field. It is stronger
@@ -6553,14 +6560,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         255);
                     Bgra32 white = new(255, 255, 255, whiteAlpha);
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    batch.DrawQuad(
+                    state.Batch.Begin();
+                    state.Batch.DrawQuad(
                         TextureHandle.None,
                         new Vertex2D(0f, 0f, 0f, 0f, white),
                         new Vertex2D(_window.Width, 0f, 1f, 0f, white),
                         new Vertex2D(_window.Width, _window.Height, 1f, 1f, white),
                         new Vertex2D(0f, _window.Height, 0f, 1f, white));
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // HumanPlayer_DrawStatus keeps drawing states 30/31/32/35/36 in third person and adds
@@ -6574,10 +6581,10 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _remasteredHud is { IsReady: true } interactionHud)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     interactionHud.DrawInteractionProgress(
-                        batch, interactionProgress, _window.Width, _window.Height);
-                    batch.End();
+                        state.Batch, interactionProgress, _window.Width, _window.Height);
+                    state.Batch.End();
                 }
 
                 // The modern HUD is intentionally the last gameplay overlay. Rendering it only after the
@@ -6591,9 +6598,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _hud is { IsReady: true } scopeHud)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    scopeHud.DrawSniperScope(batch, _window.Width, _window.Height);
-                    batch.End();
+                    state.Batch.Begin();
+                    scopeHud.DrawSniperScope(state.Batch, _window.Width, _window.Height);
+                    state.Batch.End();
                 }
 
                 if (remasteredOptics
@@ -6603,9 +6610,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _remasteredHud is { IsReady: true } binocularHud)
                 {
                     _device.Set2DProjection(_window.Width, _window.Height);
-                    batch.Begin();
+                    state.Batch.Begin();
                     binocularHud.DrawBinocularOverlay(
-                        batch,
+                        state.Batch,
                         _player.Yaw,
                         binocularView.TanX,
                         _window.Width,
@@ -6613,7 +6620,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         binocularTargets,
                         _binocularOptics.Seconds,
                         binocularRangeMetres);
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 if (remasterHud
@@ -6624,9 +6631,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 {
                     CarriedWeapon? inHand = modernCarried.InHand;
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     modernHud.Draw(
-                        batch,
+                        state.Batch,
                         new RemasteredHudSnapshot(
                             _playerHealth.RemainingFraction,
                             _player.Yaw,
@@ -6640,7 +6647,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                             worldInteractionPrompt),
                         _window.Width,
                         _window.Height);
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // The marker itself, over the finished frame and over the HUD. It is a surface standing
@@ -6651,9 +6658,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _remasteredHud is { IsReady: true } promptHud)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     promptHud.DrawInteractionPrompt(
-                        batch,
+                        state.Batch,
                         new InteractionPromptView(
                             promptTarget.AnchorUnits / WorldScene.UnitsPerMetre,
                             _interactionPrompt.Opacity,
@@ -6670,7 +6677,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         aspectRatio,
                         SafeWindowWidth,
                         SafeWindowHeight);
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // The HUD is in the condition, not asserted inside it. Every presenter is nullable so a
@@ -6684,16 +6691,16 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     && _messages is { IsReady: true } modernCards)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     float topOffset = new LayoutContext(_window.Width, _window.Height)
                         .Px(messageHud.MessageTopInset);
                     modernCards.Draw(
-                        batch,
+                        state.Batch,
                         modernMessages.DisplayedMessages.Where(static message => !message.IsCutscene),
                         _window.Width,
                         _window.Height,
                         topOffset);
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 // Cutscene StatusMessages are subtitles, not HUD. They remain visible while the authored
@@ -6701,14 +6708,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 if (_mission.Cutscenes?.IsPlaying == true && _mission.Objectives is { } subtitleRuntime)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     // Retail cutscenes always use StatusMessageScreen's shipped bitmap face and its
                     // left-aligned 620/640-width line. TacticalMessages only replaces the in-game feed;
                     // letting it replace dialogue produced a centred modern subtitle unlike the original.
                     if (_hud is { IsReady: true } subtitleHud)
                     {
                         subtitleHud.DrawStatusMessages(
-                            batch,
+                            state.Batch,
                             subtitleRuntime.DisplayedMessages,
                             _window.Width,
                             _window.Height,
@@ -6721,9 +6728,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     }
                     else if (_messages is { IsReady: true } subtitleCards)
                     {
-                        subtitleCards.Draw(batch, subtitleRuntime.DisplayedMessages, _window.Width, _window.Height);
+                        subtitleCards.Draw(state.Batch, subtitleRuntime.DisplayedMessages, _window.Width, _window.Height);
                     }
-                    batch.End();
+                    state.Batch.End();
                 }
 
                 float debugPanelHeight = 0f;
@@ -6735,16 +6742,16 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 if (_sunGizmo.Active)
                 {
                     _device.BeginStageTiming(RenderStage.DebugRendering);
-                    batch.Begin();
-                    _sunGizmo.Draw(batch);
-                    batch.End();
+                    state.Batch.Begin();
+                    _sunGizmo.Draw(state.Batch);
+                    state.Batch.End();
                     _device.EndStageTiming();
                 }
 
                 // The F12 debug overlay and crosshair. Works in both the walking player and the free (flying)
                 // camera: the state lines come from whichever is active, the crosshair readout and the reticle
                 // are cast from the eye that is actually drawing.
-                if (showDebug && _debugOverlay is { IsReady: true } debugOverlay)
+                if (state.ShowDebug && _debugOverlay is { IsReady: true } debugOverlay)
                 {
                     _device.BeginStageTiming(RenderStage.DebugRendering);
                     static string I(FormattableString s) => FormattableString.Invariant(s);
@@ -6868,8 +6875,8 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     }
 
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    debugPanelHeight = debugOverlay.Draw(batch, lines, _window.Width, _window.Height);
+                    state.Batch.Begin();
+                    debugPanelHeight = debugOverlay.Draw(state.Batch, lines, _window.Width, _window.Height);
 
                     // A centre reticle so the target readout can be aimed — the crosshair the free camera lacks.
                     float cx = _window.Width * 0.5f;
@@ -6877,7 +6884,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     const float Len = 9f;
                     const float Th = 1f;
                     static Bgra32 White() => new(255, 255, 255, 220);
-                    void Bar(float x0, float y0, float x1, float y1) => batch.DrawQuad(
+                    void Bar(float x0, float y0, float x1, float y1) => state.Batch.DrawQuad(
                         TextureHandle.None,
                         new Vertex2D(x0, y0, 0f, 0f, White()),
                         new Vertex2D(x1, y0, 1f, 0f, White()),
@@ -6886,7 +6893,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     Bar(cx - Len, cy - Th, cx + Len, cy + Th);
                     Bar(cx - Th, cy - Len, cx + Th, cy + Len);
 
-                    batch.End();
+                    state.Batch.End();
                     _device.EndStageTiming();
                 }
 
@@ -6903,7 +6910,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                     IReadOnlyList<RenderStageTiming> timings = _device.StageTimings();
                     GpuFrameTiming gpu = _device.GpuTiming();
-                    FramePerformanceStatistics frame = framePerformance.Statistics();
+                    FramePerformanceStatistics frame = state.FramePerformance.Statistics();
                     GraphicsPreset preset = GraphicsPresetRegistry.Default.Current;
                     List<string> perf =
                     [
@@ -6982,23 +6989,23 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     perf.Add(I($"cpu {cpuMilliseconds,5:0.00} ms   alloc {_perfAllocRate,6:0} MB/s   gc {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}"));
 
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
+                    state.Batch.Begin();
                     float performanceTopOffset = debugPanelHeight > 0f
                         ? debugPanelHeight + DebugOverlayRenderer.PanelGapPixels(_window.Width, _window.Height)
                         : 0f;
                     performanceOverlay.DrawTopRight(
-                        batch,
+                        state.Batch,
                         perf,
                         _window.Width,
                         _window.Height,
                         performanceTopOffset);
-                    batch.End();
+                    state.Batch.End();
                     _device.EndStageTiming();
                 }
 
-                if (!reportedWorld)
+                if (!state.ReportedWorld)
                 {
-                    reportedWorld = true;
+                    state.ReportedWorld = true;
                     List<string> world = [];
                     _world.Describe(world);
                     _logger.Information("World", $"{string.Join("; ", world)}, from {_camera.Position}.");
@@ -7014,20 +7021,20 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 }
             }
 
-            // The cinematic shell draws over the resolved showcase scene, in 2D on the back buffer, before
-            // the console (which goes over even the shell).
-            // The shell keeps being DRAWN through the mission-entry shot even though the menu is over, so
+            // The cinematic state.Shell draws over the resolved showcase scene, in 2D on the back buffer, before
+            // the console (which goes over even the state.Shell).
+            // The state.Shell keeps being DRAWN through the mission-entry shot even though the menu is over, so
             // that it can fade rather than vanish. It hears nothing while it does.
-            if ((menuMode || _entry.IsRunning) && shell is not null)
+            if ((state.MenuMode || _entry.IsRunning) && state.Shell is not null)
             {
                 // Exactly one layer may draw a pointer. The console is drawn after this and over it,
                 // so while it is up it owns the cursor; otherwise the reader sees two arrows.
-                shell.Stack.PointerSuppressed = console.IsOpen;
+                state.Shell.Stack.PointerSuppressed = console.IsOpen;
 
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                var shellPainter = UiPainter.Create(batch, new LayoutContext(_window.Width, _window.Height));
-                batch.Begin();
+                var shellPainter = UiPainter.Create(state.Batch, new LayoutContext(_window.Width, _window.Height));
+                state.Batch.Begin();
 
                 // The going-in sequence's picture: the level exactly as it is drawn, before any of the
                 // interface goes over it. Taken here for the same reason the dissolve's hold is.
@@ -7035,7 +7042,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                 // None of the backdrop machinery applies to the pause menu: its backdrop is the mission,
                 // already drawn on this very frame, and there is no swap for it to dissolve between.
-                if (!pauseMenu)
+                if (!state.PauseMenu)
                 {
                     // Before the showcase level has loaded there is no scene to draw, so fill a dark backdrop
                     // rather than leaving the frame's blue clear behind the menu.
@@ -7045,26 +7052,26 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                         // Nothing on screen to dissolve from, so the hold is a no-op and the first backdrop is
                         // simply revealed. Without this the swap would wait forever on a hold that never came.
-                        if (holdFrameForDissolve)
+                        if (state.HoldFrameForDissolve)
                         {
-                            holdFrameForDissolve = false;
-                            heldFrameReady = true;
-                            heldFrameIsPicture = false;
+                            state.HoldFrameForDissolve = false;
+                            state.HeldFrameReady = true;
+                            state.HeldFrameIsPicture = false;
                         }
                     }
                     else
                     {
                         // The outgoing level, caught here: after the 3D pass, before any of the menu is drawn
                         // over it, so what is held is the picture alone.
-                        if (holdFrameForDissolve)
+                        if (state.HoldFrameForDissolve)
                         {
                             HoldFrameForDissolve();
-                            holdFrameForDissolve = false;
-                            heldFrameReady = true;
-                            heldFrameIsPicture = true;
+                            state.HoldFrameForDissolve = false;
+                            state.HeldFrameReady = true;
+                            state.HeldFrameIsPicture = true;
                         }
 
-                        // The dissolve, over the resolved scene and UNDER the shell: the two levels blend into
+                        // The dissolve, over the resolved scene and UNDER the state.Shell: the two levels blend into
                         // each other while the menu stays lit and responsive on top of both.
                         DrawDissolve(shellPainter, dissolve.Value);
                     }
@@ -7080,15 +7087,15 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 if (shellOpacity > 0.001f)
                 {
                     // The frame so far — the level, the dissolve over it — blurred into the levels the
-                    // shell's backdrop and every glass panel sample. The blur closes the 2D pass, so the
-                    // batch is flushed around it and the shell draws on a painter that knows the levels.
-                    batch.End();
-                    shellPainter = UiPainter.Create(batch, shellPainter.Context, BackdropFor(_device.BlurFrameForBackdrop()));
-                    batch.Begin();
+                    // state.Shell's backdrop and every glass panel sample. The blur closes the 2D pass, so the
+                    // state.Batch is flushed around it and the state.Shell draws on a painter that knows the levels.
+                    state.Batch.End();
+                    shellPainter = UiPainter.Create(state.Batch, shellPainter.Context, BackdropFor(_device.BlurFrameForBackdrop()));
+                    state.Batch.Begin();
 
                     shellPainter.PushOpacity(shellOpacity);
-                    shell.DrawBackdrop(shellPainter);
-                    shell.Draw(shellPainter);
+                    state.Shell.DrawBackdrop(shellPainter);
+                    state.Shell.Draw(shellPainter);
                     shellPainter.PopOpacity();
                 }
 
@@ -7099,18 +7106,18 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     DrawEntryFraming(shellPainter);
                 }
 
-                batch.End();
+                state.Batch.End();
                 _device.EndStageTiming();
             }
 
             // The level, withheld while it settles. Over the HUD and the menus because it stands in for
             // the whole picture, and under the console because the console has to be usable while a level
             // is warming -- that is exactly when somebody is looking into why it is.
-            DrawMissionWarmUp(batch);
+            DrawMissionWarmUp(state.Batch);
 
             // The mission's caption, standing in the level under the shot: over the defocus, so it is the
             // one sharp thing while the lighting settles, and under the console.
-            DrawWorldTitle(batch);
+            DrawWorldTitle(state.Batch);
 
             // The console goes over everything, including the menus, so it is the last thing drawn.
             // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up
@@ -7120,9 +7127,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             {
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                batch.Begin();
-                console.Draw(batch, _window.Width, _window.Height, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                batch.End();
+                state.Batch.Begin();
+                console.Draw(state.Batch, _window.Width, _window.Height, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                state.Batch.End();
                 _device.EndStageTiming();
             }
 
@@ -7139,7 +7146,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // Not while a flight still waits out its -flightdelay: those frames are the opening still, the
                 // same picture hundreds of times over, eight megabytes each at 1080p -- a capture that held the
                 // view for six hundred frames before moving filled the disk with them.
-                if (!_options.HasFlight || flightFrame >= _options.FlightDelay)
+                if (!_options.HasFlight || state.FlightFrame >= _options.FlightDelay)
                 {
                     Bgra32[] frame = new Bgra32[_window.Width * _window.Height];
                     _device.CaptureFrame(_window.Width, _window.Height, frame);
@@ -7147,42 +7154,42 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     string directory = Path.GetDirectoryName(flightPath) ?? string.Empty;
                     string stem = Path.GetFileNameWithoutExtension(flightPath);
                     string extension = Path.GetExtension(flightPath);
-                    string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{flightFrame:0000}{extension}"));
+                    string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{state.FlightFrame:0000}{extension}"));
                     BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
                 }
 
-                flightFrame++;
+                state.FlightFrame++;
             }
 
             // Authored-scene capture: write numbered stills of the requested scene every 90 logic ticks
             // (3 s) up to the still budget. Test-only; driven by environment variables.
             // A chained intro resets its scene-local clock. Do not carry the previous scene's next
             // capture threshold into the next scene and silently miss its early/short shots.
-            if (captureCutscene && _mission.Cutscenes?.ActiveScene is { } observedScene
-                && !ReferenceEquals(previousCapturedScene, observedScene))
+            if (state.CaptureCutscene && _mission.Cutscenes?.ActiveScene is { } observedScene
+                && !ReferenceEquals(state.PreviousCapturedScene, observedScene))
             {
-                previousCapturedScene = observedScene;
-                cutsceneCaptureTick = cutsceneCaptureStartTick;
+                state.PreviousCapturedScene = observedScene;
+                state.CutsceneCaptureTick = state.CutsceneCaptureStartTick;
             }
-            if (captureCutscene
-                && cutsceneCaptureCount < cutsceneCaptureLimit
+            if (state.CaptureCutscene
+                && state.CutsceneCaptureCount < state.CutsceneCaptureLimit
                 && _mission.Cutscenes?.ActiveScene is { } activeCutscene
-                && (cutsceneCaptureScene <= 0 || activeCutscene.Id == cutsceneCaptureScene)
-                && activeCutscene.Ticks >= cutsceneCaptureTick)
+                && (state.CutsceneCaptureScene <= 0 || activeCutscene.Id == state.CutsceneCaptureScene)
+                && activeCutscene.Ticks >= state.CutsceneCaptureTick)
             {
-                Directory.CreateDirectory(cutsceneCaptureDirectory!);
+                Directory.CreateDirectory(state.CutsceneCaptureDirectory!);
                 Bgra32[] capture = new Bgra32[_window.Width * _window.Height];
                 _device.CaptureFrame(_window.Width, _window.Height, capture);
                 int missionId = _activeMission?.Id ?? 0;
                 string path = Path.Combine(
-                    cutsceneCaptureDirectory!,
-                    cutsceneCaptureEvery > 0
+                    state.CutsceneCaptureDirectory!,
+                    state.CutsceneCaptureEvery > 0
                         ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp")
                         : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
                 BitmapWriter.Write(path, _window.Width, _window.Height, capture);
                 _logger.Information("CutsceneCapture", $"Wrote {path}.");
-                cutsceneCaptureTick += cutsceneCaptureEvery;
-                cutsceneCaptureCount++;
+                state.CutsceneCaptureTick += state.CutsceneCaptureEvery;
+                state.CutsceneCaptureCount++;
             }
 
             AdvanceRendererSwitch();
@@ -7201,7 +7208,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 {
                     _logger.Information(
                         "Desktop",
-                        $"Wrote {flightFrame} flight frame(s) at {_window.Width}x{_window.Height} beside {_options.ScreenshotPath}.");
+                        $"Wrote {state.FlightFrame} flight frame(s) at {_window.Width}x{_window.Height} beside {_options.ScreenshotPath}.");
                 }
 
                 if (_options.LightingDumpPath is { } lightingDumpPath)
@@ -7210,7 +7217,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 }
 
                 _soldiers?.LogAiSummary();
-                running = false;
+                state.Running = false;
             }
 
             // The frame's commands are all recorded. Under NVIDIA's latency layer it goes to the GPU and the
@@ -7227,7 +7234,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         if (_options.BenchmarkPath is { } benchmarkPath)
         {
             IReadOnlyList<RenderStageTiming> gpuStages = _device.StageTimings();
-            FramePerformanceStatistics frame = framePerformance.Statistics();
+            FramePerformanceStatistics frame = state.FramePerformance.Statistics();
             GpuFrameTiming gpu = _device.GpuTiming();
 
             if (_benchmarkAllocStart > 0)
@@ -7235,7 +7242,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 long allocated = GC.GetTotalAllocatedBytes() - _benchmarkAllocStart;
                 int measured = Math.Max(1, frame.SampleCount);
 
-                // Warning, not Information: the shell builds its logger at Warning, so an Information call
+                // Warning, not Information: the state.Shell builds its logger at Warning, so an Information call
                 // here is discarded and the benchmark's allocation report -- the one number that says
                 // whether a stutter is the collector rather than the GPU -- was written to nothing. The
                 // camera log had the same hole for the same reason.
@@ -7359,14 +7366,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             HostConfiguration.Save(_configuration, _logger);
             console.SaveSettings();
         }
-        missionWarmer?.Dispose();
-        previewLoader?.Dispose();
+        state.MissionWarmer?.Dispose();
+        state.PreviewLoader?.Dispose();
         if (_dissolveTexture.IsValid)
         {
             _device.DestroyTexture(_dissolveTexture);
         }
 
-        // The shell's faces are the device's shared set; the device's teardown takes their textures.
+        // The state.Shell's faces are the device's shared set; the device's teardown takes their textures.
         _logger.Information(
             "Desktop",
             $"Shutting down after {_loop.Clock.TickCount} ticks and {_loop.Clock.FrameCount} frames.");
