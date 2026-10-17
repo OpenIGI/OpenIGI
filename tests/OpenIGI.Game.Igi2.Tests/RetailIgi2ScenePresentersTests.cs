@@ -87,16 +87,12 @@ public sealed class RetailIgi2ScenePresentersTests
 
             water.Draw(new WaterFrame(new Camera3D(default, Camera3D.LookRotation(0f, -0.3f)), Matrix4f.Identity, 3.0));
 
-            // One draw per sheet, laid over what is under it at the sheet's alpha (WaterRender_SetBlendState's ONE,
-            // SRCALPHA), depth-tested but not written, and both facings -- a camera under the surface has to see it
-            // from below.
-            Assert.Equal(water.SheetCount, device.MeshDraws.Count);
-            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.SourcePlusAttenuatedDestination, draw.Blend));
-            Assert.All(device.MeshDraws, draw => Assert.Equal(DepthState.TestOnly, draw.DepthState));
-            Assert.All(device.MeshDraws, draw => Assert.Equal(CullMode.None, draw.CullMode));
+            // One water draw per sheet, and nothing through the world pipeline: the original's water is its own
+            // shader. How much of a sheet is drawn is the view's business; see Igi2WaterTessellationTests.
+            Assert.Equal(water.SheetCount, device.WaterDraws.Count);
+            Assert.Empty(device.MeshDraws);
 
-            // The cube is cleared after the pass, so the next thing drawn does not reflect this level's
-            // sky. Left set, every wall in the frame would.
+            // The world pipeline's cube is never touched, so nothing else in the frame reflects this level's sky.
             Assert.Equal(TextureHandle.None, device.EnvironmentCube);
         }
 
@@ -108,86 +104,35 @@ public sealed class RetailIgi2ScenePresentersTests
         Assert.True(reflecting > 0, "not one sheet loaded its baked cube map.");
     }
 
-    /// <summary>The surface moves with the clock, and stays where the sheet is.</summary>
+    /// <summary>Somewhere a shipped sheet thins towards the ground under it.</summary>
     /// <remarks>
-    /// The half that says the wave field is actually being sampled per frame. A presenter that built its
-    /// grid once would draw a frozen sea, and every count above would still pass.
+    /// The shallowness is what keeps a shore clear and the open water opaque. A ground query that never answered
+    /// would leave every sheet opaque to its edge, and every count above would still pass.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void The_surface_moves_with_the_clock()
+    public void Some_water_thins_towards_the_ground()
     {
+        int shores = 0;
         foreach (Igi2Level level in Igi2Level.All())
         {
-            RecordingGraphicsDevice device = new();
-            using IWaterPresenter? water = Igi2PresentationProvider.Instance.CreateWater(RequestFor(level, device));
-            if (water is null || water.SheetCount == 0)
+            ScenePresentationRequest request = RequestFor(level, new RecordingGraphicsDevice());
+            Igi2TerrainSurface ground = Igi2TerrainSurface.Build(level.Root, request.Resources);
+            foreach (Igi2WaterSheet sheet in Igi2WaterSurface.Build(level.Root).Sheets)
             {
-                continue;
+                for (double y = -sheet.Radius; y <= sheet.Radius; y += sheet.Radius / 40)
+                {
+                    for (double x = -sheet.Radius; x <= sheet.Radius; x += sheet.Radius / 40)
+                    {
+                        float shallowness = Igi2WaterPresenter.ShallownessAt(
+                            sheet.Centre.Z, ground.WaterGroundAt(sheet.Centre.X + x, sheet.Centre.Y + y), sheet.AbsorptionLength);
+                        Assert.InRange(shallowness, 0f, 1f);
+                        shores += shallowness > 0f ? 1 : 0;
+                    }
+                }
             }
-
-            Camera3D camera = new(default, Camera3D.LookRotation(0f, -0.3f));
-            water.Draw(new WaterFrame(camera, Matrix4f.Identity, 0.0));
-
-            uint mesh = device.MeshDraws[0].Mesh.Id;
-            Vertex3D[] first = [.. device.Meshes[mesh].Vertices];
-            if (first.Length <= 4)
-            {
-                // A sheet with no waves is flat by construction and has nothing to move.
-                continue;
-            }
-
-            water.Draw(new WaterFrame(camera, Matrix4f.Identity, 5.0));
-            Vertex3D[] later = device.Meshes[mesh].Vertices;
-
-            // The grid stays put in X and Y -- it is the sheet's own square -- and only the height and
-            // the normal move.
-            Assert.Equal(first.Length, later.Length);
-            for (int i = 0; i < first.Length; i++)
-            {
-                Assert.Equal(first[i].Position.X, later[i].Position.X);
-                Assert.Equal(first[i].Position.Y, later[i].Position.Y);
-            }
-
-            Assert.Contains(
-                Enumerable.Range(0, first.Length),
-                i => first[i].Position.Z != later[i].Position.Z);
-            return;
         }
 
-        Assert.Fail("no level placed water with a wave in it.");
-    }
-
-    /// <summary>A grid is cut finely enough to carry the shortest wave the sheet has.</summary>
-    /// <remarks>
-    /// The tessellation is this port's rather than the original's — <c>WaterRender_Draw</c>'s adaptive
-    /// walk is not ported — so what can be pinned is the rule it follows: eight vertices across the
-    /// shortest wavelength, and never more than a 16-bit index space allows.
-    /// </remarks>
-    [Fact]
-    public void The_grid_carries_the_shortest_wave_the_sheet_has()
-    {
-        // A 50 m half-extent with a 4 m wave: 100 m of span, half a metre a step, 201 across.
-        Igi2WaterSheet fine = Sheet(50f, new Igi2WaterWave(4f, 0.2f, 1f, 0f));
-        Assert.Equal(Igi2WaterPresenter.MaximumEdgeVertices, Igi2WaterPresenter.EdgeVerticesFor(fine));
-
-        // The same sheet with a much longer wave needs far fewer.
-        Igi2WaterSheet coarse = Sheet(50f, new Igi2WaterWave(80f, 0.2f, 1f, 0f));
-        int edge = Igi2WaterPresenter.EdgeVerticesFor(coarse);
-        Assert.InRange(edge, Igi2WaterPresenter.MinimumEdgeVertices, Igi2WaterPresenter.MaximumEdgeVertices);
-        Assert.True(edge < Igi2WaterPresenter.MaximumEdgeVertices);
-
-        // Eight across the wave, which is the stated rule.
-        Assert.Equal(
-            (int)Math.Ceiling(100.0 / (80.0 / Igi2WaterPresenter.SamplesPerWavelength)) + 1,
-            edge);
-
-        // A sheet with no waves is flat, and four corners describe a flat square exactly.
-        Assert.Equal(Igi2WaterPresenter.MinimumEdgeVertices, Igi2WaterPresenter.EdgeVerticesFor(Sheet(50f)));
-
-        // And so is one whose only train has no height, which the corpus does author.
-        Assert.Equal(
-            Igi2WaterPresenter.MinimumEdgeVertices,
-            Igi2WaterPresenter.EdgeVerticesFor(Sheet(50f, new Igi2WaterWave(4f, 0f, 1f, 0f))));
+        Assert.True(shores > 0, "no shipped sheet thins anywhere towards the ground under it.");
     }
 
     /// <summary>A host that cannot resolve a model still loads, and plants nothing.</summary>
@@ -217,20 +162,6 @@ public sealed class RetailIgi2ScenePresentersTests
 
         Assert.Fail("no level plants a forest.");
     }
-
-    private static Igi2WaterSheet Sheet(float halfExtentMetres, params Igi2WaterWave[] waves) => new(
-        1,
-        default,
-        halfExtentMetres * 4096.0,
-        1f,
-        1f,
-        0f,
-        1f,
-        default,
-        [],
-        string.Empty,
-        string.Empty,
-        waves);
 
     private static ScenePresentationRequest RequestFor(Igi2Level level, RecordingGraphicsDevice device)
     {

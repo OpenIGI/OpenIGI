@@ -502,6 +502,10 @@
     {
       "id": "FlashlightShadowFilter",
       "source": "Deferred/FlashlightShadowFilter.slang"
+    },
+    {
+      "id": "Water",
+      "source": "World/Water.slang"
     }
   ]
 }

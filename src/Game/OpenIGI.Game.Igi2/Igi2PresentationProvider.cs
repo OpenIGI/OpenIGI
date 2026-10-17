@@ -276,13 +276,13 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// <remarks>
     /// <para>
     /// Water needs nothing from the model packs — a sheet is a surface, not an instance of anything — so
-    /// the only part of the request it reads beyond the level is the registry, which is where its
-    /// texture and its baked reflection both live.
+    /// the only part of the request it reads beyond the level is the registry, which is where its baked
+    /// reflections and the ground under it live.
     /// </para>
     /// <para>
-    /// The reflection is the first cube map in the sheet's own <c>water_&lt;id&gt;.res</c>. A level lists
-    /// several and the original picks between them by which the camera is nearest; picking the first is
-    /// this port's simplification, and a sheet whose archive is absent simply does not reflect.
+    /// The reflections are the cube maps in the sheet's own <c>water_&lt;id&gt;.res</c>, one a slot of its
+    /// resource list, and the slot drawn is the one its index expression picks. A sheet whose archive is
+    /// absent is not drawn, as the original returns before drawing one with no valid reflection.
     /// </para>
     /// </remarks>
     public IWaterPresenter? CreateWater(in ScenePresentationRequest request)
@@ -306,14 +306,22 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         ResourceRegistry resources = request.Resources;
         IOpenIgiLogger logger = request.Logger;
 
-        Igi2TextureLoader textures = new(device, resources, logger);
+        // How shallow the water is reads the ground under it (Water_VertexFunction); the light is the level's sun
+        // and the objects' ambient, as WaterRender_Draw hands them to the shader.
+        Igi2TerrainSurface ground = Igi2TerrainSurface.Build(request.LevelRoot, resources, logger);
+        Vector3f ambient = Igi2SceneAtmosphere.TryRead(request.LevelRoot, out Igi2SceneAtmosphere air) ? air.ObjectAmbient : Vector3f.Zero;
+        Igi2WaterLight light = Igi2FixedFunctionSun.TryRead(request.LevelRoot, out Igi2FixedFunctionSun sun)
+            ? new Igi2WaterLight(sun.Direction, sun.Colour, ambient)
+            : new Igi2WaterLight(Vector3f.Zero, Vector3f.Zero, ambient);
+
         return new Igi2WaterPresenter(
             device,
             surface,
-            textures.Resolve,
             sheet => LoadCubes(device, resources, tasks, sheet, logger),
             logger,
-            taskId => tasks.TryGetValue(taskId, out WaterTask? water) ? water.EnvmapSlot : 0);
+            taskId => tasks.TryGetValue(taskId, out WaterTask? water) ? water.EnvmapSlot : 0,
+            ground.WaterGroundAt,
+            light);
     }
 
     /// <summary>Loads one sheet's baked reflections, one a slot of its resource list (<c>Water_LoadEnvmapData</c>).</summary>

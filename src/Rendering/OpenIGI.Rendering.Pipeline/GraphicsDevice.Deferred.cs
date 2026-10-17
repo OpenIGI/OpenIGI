@@ -997,6 +997,7 @@ public sealed partial class GraphicsDevice
         DisposeShadows();
         DisposeGlazing();
         DisposeRain();
+        DisposeLitWater();
         DisposeGlazingReflection();
         DisposeFog();
         _motionBlur?.Dispose();

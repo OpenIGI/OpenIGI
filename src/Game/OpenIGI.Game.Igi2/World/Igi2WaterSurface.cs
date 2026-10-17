@@ -29,6 +29,9 @@ public readonly record struct Igi2WaterWave(float Frequency, float Amplitude, fl
 /// <param name="Texture">Its surface texture, named as the task carries it.</param>
 /// <param name="Envmap">Its environment map, named as the task carries it.</param>
 /// <param name="Waves">Its wave trains, at most four of which are ever active.</param>
+/// <param name="Specular">The colour of the sun's glint on it, <c>Specular color</c>.</param>
+/// <param name="AbsorptionLength">How deep, in metres, the water takes to hide what is under it.</param>
+/// <param name="MaxReflectionAngle">The smallest cosine its reflection is built with.</param>
 public readonly record struct Igi2WaterSheet(
     int TaskId,
     Vector3d Centre,
@@ -41,7 +44,10 @@ public readonly record struct Igi2WaterSheet(
     IReadOnlyList<int> EnvmapIndices,
     string Texture,
     string Envmap,
-    IReadOnlyList<Igi2WaterWave> Waves);
+    IReadOnlyList<Igi2WaterWave> Waves,
+    Vector3f Specular = default,
+    float AbsorptionLength = 0f,
+    float MaxReflectionAngle = 0f);
 
 /// <summary>
 /// The water a level places: where each sheet is, and what animates it.
@@ -134,7 +140,10 @@ public sealed class Igi2WaterSurface
                 water.EnvmapIndices,
                 water.Texture,
                 water.Envmap,
-                waves));
+                waves,
+                water.SpecularColour,
+                water.AbsorptionLength,
+                water.MaxReflectionAngle));
         }
 
         log.Information(LogCategory, $"Water: {sheets.Count} sheet(s).");

@@ -1882,6 +1882,30 @@ public interface IGraphicsDevice : IDisposable
         TextureHandle lightmap,
         BlendMode blend);
 
+    /// <summary>Draws part of a sheet of I.G.I. 2's water, as its own vertex shader lights it.</summary>
+    /// <param name="mesh">The sheet's mesh: a position and a normal a vertex, with how shallow the water is there in the diffuse U.</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw; a multiple of three.</param>
+    /// <param name="modelView">The model-to-view transform, from <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/>.</param>
+    /// <param name="cube">The baked reflection, from <see cref="CreateCubeTexture"/>.</param>
+    /// <param name="shading">What the sheet is lit by.</param>
+    /// <remarks>
+    /// Its own draw rather than <see cref="DrawMesh"/> with a cube set: the water's colour is a Fresnel blend of
+    /// the reflection and its own light, and its alpha how much of the scene behind shows, which no texture of
+    /// the world pipeline carries. Tested and written into depth, blended <c>ONE</c> and <c>SRCALPHA</c>, and
+    /// fogged against the frame's fog. A device that cannot draw it draws nothing, and so does a draw without a
+    /// cube: the original returns before drawing a sheet whose reflection is not valid.
+    /// </remarks>
+    void DrawWater(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        TextureHandle cube,
+        in WaterShading shading)
+    {
+    }
+
     /// <summary>Offers a mesh to the ray-traced world for this frame only, as a shadow caster that is not drawn.</summary>
     /// <param name="mesh">A mesh from <see cref="CreateMeshStorage"/> whose first <paramref name="indexCount"/> indices are the caster.</param>
     /// <param name="modelView">The transform the mesh would be drawn with.</param>

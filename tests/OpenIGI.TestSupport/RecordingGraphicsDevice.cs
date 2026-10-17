@@ -26,6 +26,9 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public List<MeshDrawCall> MeshDraws { get; } = [];
 
+    /// <summary>Gets every <see cref="DrawWater"/>: the mesh, its transform, the cube and what it was lit by.</summary>
+    public List<(MeshHandle Mesh, int IndexCount, Matrix4f ModelView, TextureHandle Cube, WaterShading Shading)> WaterDraws { get; } = [];
+
     public Dictionary<uint, (Vertex3D[] Vertices, ushort[] Indices)> Meshes { get; } = [];
 
     public Matrix4f Projection { get; private set; } = Matrix4f.Identity;
@@ -1104,6 +1107,15 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
             VertexSun,
             FogTarget));
     }
+
+    public void DrawWater(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        TextureHandle cube,
+        in WaterShading shading) =>
+        WaterDraws.Add((mesh, indexCount, modelView, cube, shading));
 
     public void DrawMeshRanges(
         MeshHandle mesh,

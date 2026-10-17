@@ -409,6 +409,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _cube.Dispose();
         _cubeSampler.Dispose();
         _sprites.Dispose();
+        DisposeWater();
         _pipelines.Dispose();
         _materials.Dispose();
         _cubeLayout.Dispose();

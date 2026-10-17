@@ -423,6 +423,47 @@ public sealed class Igi2TerrainSurface
     /// <returns><see langword="true"/> when the level cuts its ground away there.</returns>
     public bool IsDiscarded(double x, double y) => Igi2TerrainDiscard.AnyContains(Discards, x, y);
 
+    /// <summary>Gets the ground's height under a point as the water reads its depth from it.</summary>
+    /// <param name="x">The world X, in world units.</param>
+    /// <param name="y">The world Y.</param>
+    /// <returns>The height in world units, or <see langword="null"/> where the level has no ground at all.</returns>
+    /// <remarks>
+    /// <c>Terrain_GetZFromWorldCoordinates</c>, which is not the ground a body stands on: it walks the tiles from
+    /// the last down to the second for one that covers the point and otherwise takes the first, clamps the point
+    /// onto that tile's samples rather than refusing it, and knows nothing of the discard boxes.
+    /// </remarks>
+    public double? WaterGroundAt(double x, double y)
+    {
+        if (Tiles.Count == 0)
+        {
+            return null;
+        }
+
+        int index = Tiles.Count - 1;
+        while (index > 0 && !Tiles[index].CoversPoint(x, y))
+        {
+            index--;
+        }
+
+        Igi2TerrainTile tile = Tiles[index];
+        double column = Math.Clamp(tile.ColumnAt(x), 0.0, tile.Width - 1);
+        double row = Math.Clamp(tile.RowAt(y), 0.0, tile.Height - 1);
+        int left = (int)column, top = (int)row;
+        int right = Math.Min(left + 1, tile.Width - 1), bottom = Math.Min(top + 1, tile.Height - 1);
+        double across = column - left, down = row - top;
+        double east = tile.Heights.GetHeight(right, top), south = tile.Heights.GetHeight(left, bottom);
+
+        // The cell's two triangles, split on the diagonal from its east corner to its south one.
+        if (1.0 - across < down)
+        {
+            double far = tile.Heights.GetHeight(right, bottom);
+            return far + ((east - far) * (1.0 - down)) + ((south - far) * (1.0 - across)) + tile.BaseHeight;
+        }
+
+        double near = tile.Heights.GetHeight(left, top);
+        return ((south - near) * down) + ((east - near) * across) + tile.BaseHeight + near;
+    }
+
     /// <summary>Loads the ground a level declares, opening its archive through the registry.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="resources">The registry the level's own files are read from.</param>
