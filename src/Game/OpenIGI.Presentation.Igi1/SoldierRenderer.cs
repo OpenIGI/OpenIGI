@@ -611,6 +611,36 @@ public sealed class SoldierRenderer : IDisposable
         };
     }
 
+    // Every textured subset of a body's own mesh, opaque, through the material the caller set.
+    private void DrawSubsets(Group group, Member member, in Matrix4f modelView)
+    {
+        foreach (MeshSubset subset in group.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && group.Instance is { } instance
+                && group.Pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = Textures.Get(texture);
+            }
+
+            _device.DrawMesh(
+                member.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                diffuse,
+                TextureHandle.None,
+                BlendMode.Opaque);
+        }
+    }
+
     /// <summary>Primes immutable hit-test and corpse-rig data before the first round can arrive.</summary>
     /// <remarks>
     /// Collision geometry and ragdoll rigs are shared by every member of a group. They used to be
@@ -1498,31 +1528,7 @@ public sealed class SoldierRenderer : IDisposable
                     NoHistory = member.NoHistoryThisFrame,
                 });
 
-                foreach (MeshSubset subset in group.Geometry.Subsets)
-                {
-                    if (subset.IndexCount == 0)
-                    {
-                        continue;
-                    }
-
-                    TextureHandle diffuse = TextureHandle.None;
-                    if (subset.HasMaterial
-                        && group.Instance is { } instance
-                        && group.Pack is { } pack
-                        && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
-                    {
-                        diffuse = Textures.Get(texture);
-                    }
-
-                    _device.DrawMesh(
-                        member.Mesh,
-                        subset.IndexOffset,
-                        subset.IndexCount,
-                        modelView,
-                        diffuse,
-                        TextureHandle.None,
-                        BlendMode.Opaque);
-                }
+                DrawSubsets(group, member, modelView);
 
                 _device.SetMaterialOverride(SurfaceMaterial.Default);
                 _device.ClearPoseInterpolation();
@@ -2393,31 +2399,7 @@ public sealed class SoldierRenderer : IDisposable
         // which is the one way it differs from a guard's.
         _device.SetMaterialOverride(new SurfaceMaterial(NoHistory: member.NoHistoryThisFrame, Matte: true));
 
-        foreach (MeshSubset subset in group.Geometry.Subsets)
-        {
-            if (subset.IndexCount == 0)
-            {
-                continue;
-            }
-
-            TextureHandle diffuse = TextureHandle.None;
-            if (subset.HasMaterial
-                && group.Instance is { } instance
-                && group.Pack is { } pack
-                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
-            {
-                diffuse = Textures.Get(texture);
-            }
-
-            _device.DrawMesh(
-                member.Mesh,
-                subset.IndexOffset,
-                subset.IndexCount,
-                modelView,
-                diffuse,
-                TextureHandle.None,
-                BlendMode.Opaque);
-        }
+        DrawSubsets(group, member, modelView);
 
         _device.SetMaterialOverride(SurfaceMaterial.Default);
 
