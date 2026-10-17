@@ -18,7 +18,7 @@ namespace OpenIGI.Host;
 /// <remarks>
 /// <para>
 /// Present only for a title whose composition root supplies an <see cref="ITitleGameplay"/>. Everything here is
-/// behind <see cref="_titlePlayer"/>, which stays <see langword="null"/> for a title that walks the host's own rig,
+/// behind <see cref="TitlePlayer"/>, which stays <see langword="null"/> for a title that walks the host's own rig,
 /// so that rig's path is the one it always was.
 /// </para>
 /// <para>
@@ -31,10 +31,16 @@ public sealed partial class GameHost
     private const double TitleUnitsPerMetre = 4096.0;
 
     private ITitleGameplay? _gameplay;
-    private ITitlePlayer? _titlePlayer;
+    // The title's own player, with what it can do; null when the host's rig is the player.
+    private TitlePlayerFeatures? _titleFeatures;
+
+    private ITitlePlayer? TitlePlayer => _titleFeatures?.Player;
     private readonly OpenIGI.Presentation.Cameras.TitlePlayerPresentation _titlePresentation = new();
     private float _titlePresentationBlend = 1f;
     private ITitleViewModelPresenter? _titleArms;
+
+    // The same presenter, when it also draws what the player has lying in its level.
+    private ITitleWorldModelPresenter? TitleWorldModelPresenter => _titleArms as ITitleWorldModelPresenter;
     private ITitleHudPresenter? _titleHud;
     private float _titleMouseX;
     private float _titleMouseY;
@@ -56,7 +62,7 @@ public sealed partial class GameHost
     private void StandTitlePlayer(LoadedMission loaded, LevelTask levelRoot, WorldScene scene)
     {
         RestoreTitleInputBindings();
-        _titlePlayer = null;
+        _titleFeatures = null;
         _titleHud?.Dispose();
         _titleHud = null;
         _titleArms?.Dispose();
@@ -79,7 +85,7 @@ public sealed partial class GameHost
             return;
         }
 
-        _titlePlayer = player;
+        _titleFeatures = new TitlePlayerFeatures(player);
         _titleHud = _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
         _titleHud?.Load(_resources.FileSystem);
         _titleTickMilliseconds = 0;
@@ -87,13 +93,13 @@ public sealed partial class GameHost
         _titleMeasuredTicks = 0;
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
-        _titlePresentation.Reset(player);
+        _titlePresentation.Reset(_titleFeatures);
         _player = null;
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
 
         // What the title's player holds in front of its eyes, drawn from the title's own packs.
-        if (player is ITitleFirstPerson)
+        if (_titleFeatures.FirstPerson is not null)
         {
             _titleArms = _presentation.Presenters.Create<ViewModelPresentationRequest, ITitleViewModelPresenter>(ViewModelRequest());
             if (_titleArms is not null && !_titleArms.Load(loaded))
@@ -125,7 +131,7 @@ public sealed partial class GameHost
         _titleMouseX += _window.Input.Mouse.DeltaX;
         _titleMouseY += _window.Input.Mouse.DeltaY;
         _titleWheel += _window.Input.Mouse.WheelDelta;
-        if (_titlePlayer is ITitlePlayerLook look)
+        if (_titleFeatures?.Look is { } look)
         {
             if (RenderCVars.SmoothPresentation.Value && !_options.Lockstep)
             {
@@ -152,7 +158,7 @@ public sealed partial class GameHost
     /// <returns><see langword="true"/> when the title has its own player, whether or not it ran this tick.</returns>
     private bool TickTitlePlayer()
     {
-        if (_titlePlayer is not { } player)
+        if (TitlePlayer is not { } player)
         {
             return false;
         }
@@ -189,7 +195,7 @@ public sealed partial class GameHost
             TitleHeld: _gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
-        _titlePresentation.CaptureTick(player);
+        _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;
         _titleTickMaximumMilliseconds = Math.Max(_titleTickMaximumMilliseconds, milliseconds);
@@ -235,8 +241,8 @@ public sealed partial class GameHost
         PlayerProfile? profile = _configuration.Active;
         bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
             && !_missionFailedMenu;
-        if (!available && _titlePlayer is ITitlePlayerLook stopped) { stopped.ResetLook(); }
-        _titlePresentation.SetLookPreview(available && _titlePlayer is ITitlePlayerLook { CanPreviewLook: true } look
+        if (!available && _titleFeatures?.Look is { } stopped) { stopped.ResetLook(); }
+        _titlePresentation.SetLookPreview(available && _titleFeatures?.Look is { CanPreviewLook: true } look
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
                 profile?.InvertMouse ?? false)
             : null);
@@ -263,7 +269,7 @@ public sealed partial class GameHost
     {
         console.Commands.Add("title_ai", "Reports title guards' AI startup, script, graph and animation state.", context =>
         {
-            if (_titlePlayer is not ITitlePlayerDiagnostics diagnostics)
+            if (_titleFeatures?.Diagnostics is not { } diagnostics)
             {
                 context.Print("The active title player exposes no actor diagnostics.");
                 return;
@@ -277,7 +283,7 @@ public sealed partial class GameHost
             context =>
             {
                 context.Print($"Game directory: {AppContext.BaseDirectory}; process: {Environment.ProcessPath}");
-                if (_titlePlayer is not { } player)
+                if (TitlePlayer is not { } player)
                 {
                     context.Print("No title player is active; the host player or fly camera supplies the view.");
                     return;
@@ -286,7 +292,7 @@ public sealed partial class GameHost
                 string gates = $"r_smooth={RenderCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
                     + $"walking={_playerMode}, computer={_computerOpen}, entry={_entry.IsCameraActive}, "
                     + $"hostCutscene={_mission.Cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
-                    + $"canPreview={player is ITitlePlayerLook { CanPreviewLook: true }}, "
+                    + $"canPreview={_titleFeatures?.Look is { CanPreviewLook: true }}, "
                     + $"lastGameplayLiveLook={_titleLastLiveLook}, lastGameplayCameraMatches={_titleLastCameraMatches}";
                 context.Print(gates);
                 context.Print(FormattableString.Invariant(
@@ -339,7 +345,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void DrawTitleFirstPerson(in Camera3D eye)
     {
-        if (_titlePlayer is not ITitleFirstPerson hands || _titleArms is not { } arms
+        if (_titleFeatures?.FirstPerson is not { } hands || _titleArms is not { } arms
             || !_playerMode || _computerOpen || _entry.IsCameraActive || _mission.Cutscenes?.IsPlaying == true
             || _titlePresentation.FirstPerson(_titlePresentationBlend) is not { } held)
         {
@@ -357,7 +363,7 @@ public sealed partial class GameHost
     /// <param name="projection">The world's projection.</param>
     private void DrawTitleWorldModels(in Camera3D eye, in Matrix4f projection)
     {
-        if (_titlePlayer is ITitleWorldModels owned && _titleArms is ITitleWorldModelPresenter models)
+        if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
             models.DrawWorld(owned.WorldModels, eye, projection);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);
@@ -370,7 +376,7 @@ public sealed partial class GameHost
     /// <remarks>They blend, so they follow the lit world as the water does; drawn into the G-buffer they would be opaque squares.</remarks>
     private void DrawTitleGroundDecals(in Camera3D eye, in Matrix4f projection)
     {
-        if (_titlePlayer is ITitleWorldModels owned && _titleArms is ITitleWorldModelPresenter models)
+        if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
             models.DrawGroundDecals(owned.GroundDecals, eye, projection);
         }
@@ -388,7 +394,7 @@ public sealed partial class GameHost
     /// <summary>F1 swaps cameras; returning places the title's player beneath the free camera as IGI1 does.</summary>
     private void ToggleTitlePlayer()
     {
-        if (_titlePlayer is not { } player || _camera is null)
+        if (TitlePlayer is not { } player || _camera is null)
         {
             return;
         }
@@ -402,7 +408,7 @@ public sealed partial class GameHost
             float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
             _camera.MoveTo(eye.Position, yaw, pitch);
         }
-        else if (player is ITitlePlayerPlacement placement)
+        else if (_titleFeatures?.Placement is { } placement)
         {
             if (!placement.TryPlace(_camera.Position * TitleUnitsPerMetre, _camera.Yaw))
             {
@@ -411,7 +417,7 @@ public sealed partial class GameHost
             }
             else
             {
-                _titlePresentation.Reset(player);
+                _titlePresentation.Reset(_titleFeatures);
                 _titlePresentationBlend = 1f;
             }
         }
@@ -420,7 +426,7 @@ public sealed partial class GameHost
         _titleMouseY = 0f;
         _titlePressed = default;
         _titleExtraPressed = 0;
-        if (player is ITitlePlayerLook look) { look.ResetLook(); }
+        _titleFeatures?.Look?.ResetLook();
 
         _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
     }

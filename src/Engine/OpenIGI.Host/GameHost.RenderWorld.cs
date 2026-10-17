@@ -125,7 +125,7 @@ public sealed partial class GameHost
         float tickBlend = smoothPresentation
             ? _loop.Clock.TickFraction(pacingWall)
             : 1f;
-        _titlePresentationBlend = _titlePlayer is { IsCutscenePlaying: true } ? 1f : tickBlend;
+        _titlePresentationBlend = TitlePlayer is { IsCutscenePlaying: true } ? 1f : tickBlend;
         PresentTitleLook(smoothPresentation && !console.WantsPointer);
 
         // Whether the picture's own clock keeps step with the wall clock, behind
@@ -144,7 +144,7 @@ public sealed partial class GameHost
         }
         SightZoomFrame sight = _playerMode && _player is not null
             ? _player.SmoothedSightZoom(tickBlend)
-            : _playerMode && _titlePlayer is { } titleLens
+            : _playerMode && TitlePlayer is { } titleLens
                 ? new SightZoomFrame(_titlePresentation.FieldOfView(_titlePresentationBlend), HumanView.DefaultViewModelTanX)
                 : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
@@ -378,7 +378,7 @@ public sealed partial class GameHost
             : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                 && state.InteractionCamera.IsActive
                 ? state.InteractionCamera.Camera
-                : _playerMode && _titlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend)
+                : _playerMode && TitlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend)
                 : _playerMode && _player is not null ? _player.Camera : _camera.Camera;
 
         // The walking eye glides between its tick pair, and so does the recoil kick inside its
@@ -547,7 +547,7 @@ public sealed partial class GameHost
         // The eye has settled by here -- every camera that could have claimed the frame has
         // had its say -- so this is where the inspector's projection can read it.
         _inspectorEye = eye;
-        if (_titlePlayer is not null && _playerMode && !console.WantsPointer && !state.MenuMode)
+        if (TitlePlayer is not null && _playerMode && !console.WantsPointer && !state.MenuMode)
         {
             _titleLastLiveLook = _titlePresentation.HasLookPreview;
             Camera3D titleEye = _titlePresentation.Camera(_titlePresentationBlend);
@@ -1346,7 +1346,7 @@ public sealed partial class GameHost
         // what BuildDrawOrder is for.
         // A title's own screen over the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a
         // building's state.Shell does.
-        bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || _titlePlayer?.IsWeatherHidden == true;
+        bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || TitlePlayer?.IsWeatherHidden == true;
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
         EndStageIfSlow("the sky and the world's objects");
 
@@ -2499,7 +2499,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         // captured scene so camera motion blur, depth of field, bloom and tone mapping can only
         // affect the world and first-person rig. The damage and flash washes intentionally remain
         // later in the draw order and still cover the HUD exactly as they did before this separation.
-        if (_titlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
+        if (TitlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
             && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Cutscenes?.IsPlaying != true
             && _thirdPerson.ShowsViewModel)
         {

@@ -16,9 +16,9 @@ public sealed class TitlePlayerPresentationTests
     {
         LookPlayer player = new();
         TitlePlayerPresentation presentation = new();
-        presentation.Reset(player);
+        presentation.Reset(new TitlePlayerFeatures(player));
         player.Heading = 0.4f;
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         Matrix3f preview = LookPlayer.Rotation(0.6f);
         presentation.SetLookPreview(preview);
         AssertDirection(preview.Column2, presentation.Camera(0.25f).Orientation.Row3);
@@ -29,7 +29,7 @@ public sealed class TitlePlayerPresentationTests
         Assert.Equal(expectedOffset.Y, (float)origin.Y, 4);
         Assert.Equal(0.4f, player.Heading);
         player.Heading = 0.6f;
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         presentation.SetLookPreview(player.LookOrientation);
         AssertDirection(preview.Column2, presentation.Camera(0f).Orientation.Row3);
         presentation.SetLookPreview(null);
@@ -76,12 +76,12 @@ public sealed class TitlePlayerPresentationTests
     {
         Player player = new();
         TitlePlayerPresentation presentation = new();
-        presentation.Reset(player);
+        presentation.Reset(new TitlePlayerFeatures(player));
         BonePose previous = player.FirstPerson.Parts[0].Pose!;
         player.EyePosition = new Vector3d(8192.0, 0.0, 0.0);
         player.FieldOfViewScale = 0.5f;
         player.TickNumber++;
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         Camera3D eye = presentation.Camera(0.5f);
         Assert.Equal(new Vector3d(1.0, 0.0, 0.0), eye.Position);
         Assert.Equal(Camera3D.Default.Orientation.Row3, eye.Orientation.Row3);
@@ -101,19 +101,19 @@ public sealed class TitlePlayerPresentationTests
     {
         Player player = new();
         TitlePlayerPresentation presentation = new();
-        presentation.Reset(player);
+        presentation.Reset(new TitlePlayerFeatures(player));
         player.EyePosition = new Vector3d(4096.0, 0.0, 0.0);
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         Assert.Equal(new Vector3d(1.0, 0.0, 0.0), presentation.Camera(1f).Position);
         Assert.Equal(1f, presentation.FirstPerson(1f)!.PoseInterpolation);
         player.IsCutscenePlaying = true;
         player.EyePosition = new Vector3d(8192.0, 0.0, 0.0);
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         Assert.Equal(new Vector3d(2.0, 0.0, 0.0), presentation.Camera(0.25f).Position);
         player.IsCutscenePlaying = false;
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         player.EyePosition = new Vector3d(409600.0, 0.0, 0.0);
-        presentation.CaptureTick(player);
+        presentation.CaptureTick(new TitlePlayerFeatures(player));
         Assert.Equal(new Vector3d(100.0, 0.0, 0.0), presentation.Camera(0.25f).Position);
     }
 

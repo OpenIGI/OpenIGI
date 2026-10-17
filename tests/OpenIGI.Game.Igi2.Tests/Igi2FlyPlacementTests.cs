@@ -43,7 +43,7 @@ public sealed class Igi2FlyPlacementTests
         Assert.True(PlayerSpawn.TryFindGameplay(Level.Value.Root, out PlayerSpawnPoint spawn));
         Igi2TitlePlayer player = Player(spawn.Position);
         TitlePlayerPresentation presentation = new();
-        presentation.Reset(player);
+        presentation.Reset(new TitlePlayerFeatures(player));
         Vector3d camera = new(spawn.Position.X + 40960.0, spawn.Position.Y + 40960.0, spawn.Position.Z + 409600.0);
         player.Human.Speed = new(20f, 30f, -400f);
         player.Human.AccumulatedSpeed = new(40f, 50f, 60f);
@@ -68,7 +68,7 @@ public sealed class Igi2FlyPlacementTests
         Assert.Equal(player.LookOrientation, player.PreviewLook(0f, 0f, 0.4f, false));
         Assert.Equal(0f, player.Human.View.ImpactOffset);
         Assert.Equal(0f, player.Human.View.ShakeFactor);
-        presentation.Reset(player);
+        presentation.Reset(new TitlePlayerFeatures(player));
         foreach (float alpha in new[] { 0f, 0.5f, 1f })
         {
             Assert.Equal(player.EyePosition * (1.0 / 4096.0), presentation.Camera(alpha).Position);

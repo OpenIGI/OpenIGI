@@ -1740,7 +1740,7 @@ public sealed partial class GameHost
             }
             : null;
         _player = null;
-        _titlePlayer = null;
+        _titleFeatures = null;
         _titleHud?.Dispose();
         _titleHud = null;
         _playerMode = false;
@@ -2655,7 +2655,7 @@ public sealed partial class GameHost
         _missileRenderer = null;
         _arms = null;
         _player = null;
-        _titlePlayer = null;
+        _titleFeatures = null;
         _titleArms = null;
         _playerMode = false;
         _scene = null;
@@ -4098,7 +4098,7 @@ public sealed partial class GameHost
             }
 
             _mission.Objectives?.TickAfterLevelState();
-            if (_mission.Objectives is { IsFailed: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Failed })
+            if (_mission.Objectives is { IsFailed: true } || TitlePlayer is { Outcome: TitleMissionOutcome.Failed })
             {
                 // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
                 // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
@@ -4138,7 +4138,7 @@ public sealed partial class GameHost
                 _missionFailureTicks = 0;
             }
             if (!_missionResultHandled
-                && (_mission.Objectives is { IsComplete: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Completed })
+                && (_mission.Objectives is { IsComplete: true } || TitlePlayer is { Outcome: TitleMissionOutcome.Completed })
                 && _activeMission is { } completedMission)
             {
                 _missionResultHandled = true;
@@ -4156,7 +4156,7 @@ public sealed partial class GameHost
                     }
 
                     _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
-                    _titlePlayer?.MissionCompleted(nextMissionId);
+                    TitlePlayer?.MissionCompleted(nextMissionId);
                     StartMission(nextMissionId);
                 }
                 else

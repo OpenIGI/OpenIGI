@@ -20,8 +20,8 @@ public sealed class TitlePlayerPresentation
     public void SetLookPreview(Matrix3f? orientation) => _previewLook = orientation;
 
     /// <summary>Starts a new camera history, including after loading or changing camera mode.</summary>
-    /// <param name="player">The title player.</param>
-    public void Reset(ITitlePlayer player)
+    /// <param name="player">The title player, with what it can do.</param>
+    public void Reset(TitlePlayerFeatures player)
     {
         ArgumentNullException.ThrowIfNull(player);
         _current = Capture(player);
@@ -30,8 +30,8 @@ public sealed class TitlePlayerPresentation
     }
 
     /// <summary>Captures a completed tick without changing simulation state.</summary>
-    /// <param name="player">The title player.</param>
-    public void CaptureTick(ITitlePlayer player)
+    /// <param name="player">The title player, with what it can do.</param>
+    public void CaptureTick(TitlePlayerFeatures player)
     {
         ArgumentNullException.ThrowIfNull(player);
         Frame frame = Capture(player);
@@ -149,10 +149,14 @@ public sealed class TitlePlayerPresentation
         };
     }
 
-    private static Frame Capture(ITitlePlayer player) => new(
-        new Camera3D(player.EyePosition * (1.0 / 4096.0), player.ViewOrientation), player.FieldOfViewScale,
-        (player as ITitleFirstPerson)?.FirstPerson, player.IsCutscenePlaying,
-        player is ITitlePlayerLook { CanPreviewLook: true } look ? look.LookOrientation : null);
+    private static Frame Capture(TitlePlayerFeatures features)
+    {
+        ITitlePlayer player = features.Player;
+        return new(
+            new Camera3D(player.EyePosition * (1.0 / 4096.0), player.ViewOrientation), player.FieldOfViewScale,
+            features.FirstPerson?.FirstPerson, player.IsCutscenePlaying,
+            features.Look is { CanPreviewLook: true } look ? look.LookOrientation : null);
+    }
 
     private static Matrix3f CameraOrientation(Matrix3f look) => Matrix3f.FromRows(look.Column1, look.Column3, look.Column2);
 

@@ -1770,7 +1770,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                     return pixels;
                 },
                 settingUnavailable: SettingUnavailable,
-                missionSaves: () => _titlePlayer?.SaveGames,
+                missionSaves: () => TitlePlayer?.SaveGames,
                 inputBindingLabel: action => TitleInputBindings.Label(action, _gameplay?.InputBindings ?? []),
                 resetInputBindings: profile =>
                 {
@@ -2419,7 +2419,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                 && !_computerOpen
                 && !_missionFailedMenu
                 && _mission.Cutscenes?.IsPlaying != true
-                && _titlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
+                && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
                 && state.Shell is not null
                 && _activeMission is not null
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
@@ -2820,7 +2820,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
 
             // F1 swaps between flying and walking. The player takes the camera's position when it is
             // switched on, so the swap happens where you were looking.
-            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && _titlePlayer is not null)
+            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && TitlePlayer is not null)
             {
                 ToggleTitlePlayer();
             }
@@ -2978,7 +2978,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (_playerMode && _titlePlayer is not null)
+                else if (_playerMode && TitlePlayer is not null)
                 {
                     // A title's own player takes its look on the tick, as the original does; the frame only
                     // gathers what the mouse and the keys did since the last one.
