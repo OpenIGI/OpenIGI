@@ -52,19 +52,11 @@ public sealed record Igi2CutsceneView(
 /// </summary>
 public sealed class Igi2CutsceneShake
 {
-    private uint _a = 0xC8FB1A07;
-    private uint _b = 0x39EA7756;
-    private uint _c = 0x7FF13CCD;
+    private readonly IgiRandom _random = new(0xC8FB1A07, 0x39EA7756, 0x7FF13CCD);
 
     /// <summary>The next draw, the low half of the first word once each is stirred into the next.</summary>
     /// <returns>A value from 0 to 65535.</returns>
-    public int Next()
-    {
-        _c ^= _a >> 7;
-        _b ^= _c;
-        _a += _b;
-        return (int)(_a & 0xFFFF);
-    }
+    public int Next() => (int)(_random.NextRaw() & 0xFFFF);
 }
 
 /// <summary>The arithmetic of a cutscene's camera, in the FPU's chopped single precision and its instructions' order.</summary>
