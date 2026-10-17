@@ -18,7 +18,6 @@
   <ItemGroup>
     <!-- Rendering's value types (vertices, the camera), which the game's own geometry is made of. How the game is
          drawn is OpenIGI.Presentation.Igi2. -->
-    <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
   <ItemGroup>
