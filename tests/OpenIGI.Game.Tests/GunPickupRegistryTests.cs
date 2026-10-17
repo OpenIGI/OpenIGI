@@ -11,13 +11,13 @@ public sealed class GunPickupRegistryTests
     {
         Vector3d pickup = new(1000.0, 2000.0, 3000.0);
 
-        Assert.True(GunPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0 + GunPickupRegistry.PickupRadius - 0.1, 2000.0, 3000.0), pickup));
-        Assert.False(GunPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0 + GunPickupRegistry.PickupRadius, 2000.0, 3000.0), pickup));
-        Assert.True(GunPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0, 2000.0, 3000.0 + GunPickupRegistry.VerticalTolerance - 0.1), pickup));
-        Assert.False(GunPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0, 2000.0, 3000.0 + GunPickupRegistry.VerticalTolerance), pickup));
+        Assert.True(PickupReach.IsWithinRange(
+            new Vector3d(1000.0 + PickupReach.Radius - 0.1, 2000.0, 3000.0), pickup));
+        Assert.False(PickupReach.IsWithinRange(
+            new Vector3d(1000.0 + PickupReach.Radius, 2000.0, 3000.0), pickup));
+        Assert.True(PickupReach.IsWithinRange(
+            new Vector3d(1000.0, 2000.0, 3000.0 + PickupReach.VerticalTolerance - 0.1), pickup));
+        Assert.False(PickupReach.IsWithinRange(
+            new Vector3d(1000.0, 2000.0, 3000.0 + PickupReach.VerticalTolerance), pickup));
     }
 }

@@ -79,7 +79,7 @@ public sealed class LampPhotocells
             Vector3d at = fixtures[i].Position;
 
             int circuit;
-            if (NextFloat(ref own) < OwnCellShare)
+            if (XorShift32.NextUnit(ref own) < OwnCellShare)
             {
                 circuit = circuits.Count;
                 circuits.Add(NewCircuit(ref rng));
@@ -273,17 +273,17 @@ public sealed class LampPhotocells
     private static Circuit NewCircuit(ref uint rng)
     {
         uint own = (rng = (rng * 0x2C9277B5u) + 0xAC564B05u) | 1u;
-        float onSine = NextFloat(ref own) * 0.07f;
+        float onSine = XorShift32.NextUnit(ref own) * 0.07f;
 
-        if (NextFloat(ref own) < 0.12f)
+        if (XorShift32.NextUnit(ref own) < 0.12f)
         {
-            onSine += 0.04f + (NextFloat(ref own) * 0.05f);
+            onSine += 0.04f + (XorShift32.NextUnit(ref own) * 0.05f);
         }
 
         return new Circuit
         {
             OnSine = onSine,
-            OffSine = onSine + 0.025f + (NextFloat(ref own) * 0.045f),
+            OffSine = onSine + 0.025f + (XorShift32.NextUnit(ref own) * 0.045f),
             Rng = own,
         };
     }
@@ -297,8 +297,8 @@ public sealed class LampPhotocells
     /// </remarks>
     private static float ReactionDelay(ref uint rng, bool on)
     {
-        float roll = NextFloat(ref rng);
-        float delay = NextFloat(ref rng) < 0.1f
+        float roll = XorShift32.NextUnit(ref rng);
+        float delay = XorShift32.NextUnit(ref rng) < 0.1f
             ? 2f + (roll * 3f)
             : 0.3f + (roll * roll * 1.7f);
 
@@ -308,16 +308,7 @@ public sealed class LampPhotocells
 
     /// <summary>One lamp's own share of the wait: its ballast, its starter, its place on the cable.</summary>
     private static float Jitter(ref uint rng, bool on) =>
-        on ? 0.05f + (NextFloat(ref rng) * 0.9f) : NextFloat(ref rng) * 0.35f;
-
-    private static float NextFloat(ref uint state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-
-        return (state >> 8) * (1f / 16777216f);
-    }
+        on ? 0.05f + (XorShift32.NextUnit(ref rng) * 0.9f) : XorShift32.NextUnit(ref rng) * 0.35f;
 
     /// <summary>One photocell and the contactor it drives.</summary>
     private struct Circuit

@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Game.Player;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Host.Audio;
 
@@ -133,7 +134,7 @@ public static class FlashlightClick
         {
             float t = i / (float)SampleRate;
             float envelope = (1f - MathF.Exp(-t / 0.00008f)) * MathF.Exp(-t / 0.0005f);
-            float noise = Noise(ref state);
+            float noise = XorShift32.NextSigned(ref state);
 
             // Differenced, so the burst is a tick and not a thump.
             excitation[i] = (noise - previous) * envelope;
@@ -149,7 +150,7 @@ public static class FlashlightClick
         {
             // The top modes are what makes a snap bright; a dull strike barely reaches them.
             float tilt = MathF.Pow(brightness, m * 0.6f);
-            float hertz = ModeHertz[m] * detune * (1f + (0.02f * Noise(ref state)));
+            float hertz = ModeHertz[m] * detune * (1f + (0.02f * XorShift32.NextSigned(ref state)));
             Resonate(samples, first, excitation, hertz, ModeQ[m], gain * ModeGain[m] * tilt);
         }
     }
@@ -169,7 +170,7 @@ public static class FlashlightClick
         for (int i = 0; i < length; i++)
         {
             float t = i / (float)SampleRate;
-            excitation[i] = Noise(ref state) * (1f - MathF.Exp(-t / 0.0006f)) * MathF.Exp(-t / 0.002f);
+            excitation[i] = XorShift32.NextSigned(ref state) * (1f - MathF.Exp(-t / 0.0006f)) * MathF.Exp(-t / 0.002f);
         }
 
         Resonate(samples, first, excitation, hertz, 1.5f, gain);
@@ -200,11 +201,4 @@ public static class FlashlightClick
         }
     }
 
-    private static float Noise(ref uint state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        return ((state & 0xFFFF) / 32767.5f) - 1f;
-    }
 }

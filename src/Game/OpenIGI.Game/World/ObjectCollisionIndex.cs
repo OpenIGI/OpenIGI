@@ -295,7 +295,7 @@ public sealed class ObjectCollisionIndex
         {
             foreach (Entry entry in set)
             {
-                if (!IsSelfOrDescendant(entry.Owner, ancestor)
+                if (!entry.Owner.IsSelfOrDescendantOf(ancestor)
                     || Destructibles?.IsDestroyed(entry.Placement) == true
                     || _passable.Contains(entry.Owner)
                     || !ConditionalContainerGate.IsTaskActive(entry.Owner)
@@ -311,19 +311,6 @@ public sealed class ObjectCollisionIndex
                 {
                     return true;
                 }
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsSelfOrDescendant(GameTask owner, GameTask ancestor)
-    {
-        for (GameTask? current = owner; current is not null; current = current.Parent)
-        {
-            if (ReferenceEquals(current, ancestor))
-            {
-                return true;
             }
         }
 

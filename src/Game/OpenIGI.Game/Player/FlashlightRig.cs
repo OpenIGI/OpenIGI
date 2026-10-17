@@ -281,12 +281,6 @@ public sealed class FlashlightRig
     private static float Overshoot(float s) => 1f + (0.06f * MathF.Exp(-s / 0.18f));
 
     // A small xorshift, so the chatter is rolled the same way every run and never from the clock.
-    private float NextFloat()
-    {
-        _rng ^= _rng << 13;
-        _rng ^= _rng >> 17;
-        _rng ^= _rng << 5;
-        return (_rng & 0xFFFFFF) / 16777216f;
-    }
+    private float NextFloat() => (XorShift32.Next(ref _rng) & 0xFFFFFF) / 16777216f;
 
 }

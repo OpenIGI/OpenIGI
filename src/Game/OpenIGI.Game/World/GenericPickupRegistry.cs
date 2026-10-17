@@ -41,12 +41,6 @@ public sealed class GenericPickup
 /// </remarks>
 public sealed class GenericPickupRegistry
 {
-    /// <summary>The original's horizontal pickup radius, in engine units.</summary>
-    public const double PickupRadius = 2867.2;
-
-    /// <summary>The original's vertical pickup tolerance, in engine units.</summary>
-    public const double VerticalTolerance = 4096.0;
-
     private readonly List<GenericPickup> _items = [];
     private readonly Dictionary<GameTask, GenericPickup> _byTask = [];
 
@@ -76,7 +70,7 @@ public sealed class GenericPickupRegistry
         {
             if (pickup.IsCollected
                 || !ConditionalContainerGate.IsTaskActive(pickup.Task)
-                || !IsWithinRange(position, pickup.Position))
+                || !PickupReach.IsWithinRange(position, pickup.Position))
             {
                 continue;
             }
@@ -92,21 +86,12 @@ public sealed class GenericPickupRegistry
     public bool IsCollected(GameTask owner) =>
         owner is not null && _byTask.TryGetValue(owner, out GenericPickup? pickup) && pickup.IsCollected;
 
-    /// <summary>Tests the exact horizontal/vertical split used by retail.</summary>
-    public static bool IsWithinRange(Vector3d player, Vector3d pickup)
-    {
-        double x = pickup.X - player.X;
-        double y = pickup.Y - player.Y;
-        return Math.Sqrt((x * x) + (y * y)) < PickupRadius
-            && Math.Abs(pickup.Z - player.Z) < VerticalTolerance;
-    }
-
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
         if (task is DeclaredTask declared
             && (string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
                 || string.Equals(declared.Type.Name, "AmmoPickup", StringComparison.Ordinal))
-            && TryReadPosition(declared, out Vector3d position))
+            && declared.TryGet("Position", out Vector3d position))
         {
             string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model
                 ? ResolveModelName(model)
@@ -128,18 +113,6 @@ public sealed class GenericPickupRegistry
         {
             Collect(child, variables);
         }
-    }
-
-    private static bool TryReadPosition(DeclaredTask task, out Vector3d position)
-    {
-        if (task.TryGetValue("Position", out object? raw) && raw is Vector3d value)
-        {
-            position = value;
-            return true;
-        }
-
-        position = default;
-        return false;
     }
 
     private static string ResolveModelName(string model) =>

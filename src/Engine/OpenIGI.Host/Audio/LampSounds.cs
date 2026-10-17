@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Game.World;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Host.Audio;
 
@@ -107,7 +108,7 @@ public static class LampSounds
         for (int i = 0; i < spit.Length; i++)
         {
             float t = i / (float)SampleRate;
-            spit[i] = Noise(ref state) * (1f - MathF.Exp(-t / 0.0002f)) * MathF.Exp(-t / 0.0025f);
+            spit[i] = XorShift32.NextSigned(ref state) * (1f - MathF.Exp(-t / 0.0002f)) * MathF.Exp(-t / 0.0025f);
         }
 
         Resonate(s, (int)(0.001f * SampleRate), spit, 3500f * detune, 1.2f, 0.9f);
@@ -180,7 +181,7 @@ public static class LampSounds
             float t = i / (float)SampleRate;
 
             // The whump: low-passed noise, a few tens of milliseconds.
-            low = (low * keep) + (Noise(ref state) * (1f - keep));
+            low = (low * keep) + (XorShift32.NextSigned(ref state) * (1f - keep));
             s[i] += 2.2f * low * (1f - MathF.Exp(-t / 0.005f)) * MathF.Exp(-t / 0.06f);
 
             float envelope = (1f - MathF.Exp(-t / 0.04f))
@@ -194,7 +195,7 @@ public static class LampSounds
         for (int i = 0; i < hiss.Length; i++)
         {
             float t = i / (float)SampleRate;
-            hiss[i] = Noise(ref state) * MathF.Exp(-t / 0.8f) * Fade(t, 1.6f, 2.6f);
+            hiss[i] = XorShift32.NextSigned(ref state) * MathF.Exp(-t / 0.8f) * Fade(t, 1.6f, 2.6f);
         }
 
         Resonate(s, 0, hiss, 5200f, 0.8f, 0.05f);
@@ -288,7 +289,7 @@ public static class LampSounds
         for (int i = 0; i < length; i++)
         {
             float t = i / (float)SampleRate;
-            float noise = Noise(ref state);
+            float noise = XorShift32.NextSigned(ref state);
             burst[i] = (noise - previous) * MathF.Exp(-t / 0.0004f);
             previous = noise;
         }
@@ -320,7 +321,7 @@ public static class LampSounds
         for (int i = 0; i < length; i++)
         {
             float t = i / (float)SampleRate;
-            float noise = Noise(ref state);
+            float noise = XorShift32.NextSigned(ref state);
             excitation[i] = (noise - previous) * (1f - MathF.Exp(-t / 0.00008f)) * MathF.Exp(-t / 0.0005f);
             previous = noise;
         }
@@ -333,7 +334,7 @@ public static class LampSounds
         for (int m = 0; m < hertz.Length; m++)
         {
             float tilt = MathF.Pow(0.8f, m);
-            Resonate(samples, first, excitation, hertz[m] * (1f + (0.02f * Noise(ref state))), q[m], gain * 0.7f * tilt);
+            Resonate(samples, first, excitation, hertz[m] * (1f + (0.02f * XorShift32.NextSigned(ref state))), q[m], gain * 0.7f * tilt);
         }
     }
 
@@ -352,7 +353,7 @@ public static class LampSounds
         for (int i = 0; i < length; i++)
         {
             float t = i / (float)SampleRate;
-            excitation[i] = Noise(ref state) * (1f - MathF.Exp(-t / 0.0006f)) * MathF.Exp(-t / 0.002f);
+            excitation[i] = XorShift32.NextSigned(ref state) * (1f - MathF.Exp(-t / 0.0006f)) * MathF.Exp(-t / 0.002f);
         }
 
         Resonate(samples, first, excitation, hertz, 1.5f, gain);
@@ -435,13 +436,5 @@ public static class LampSounds
         return pcm;
     }
 
-    private static float Noise(ref uint state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        return ((state & 0xFFFF) / 32767.5f) - 1f;
-    }
-
-    private static float Unit(ref uint state) => (Noise(ref state) + 1f) * 0.5f;
+    private static float Unit(ref uint state) => (XorShift32.NextSigned(ref state) + 1f) * 0.5f;
 }

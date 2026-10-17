@@ -155,6 +155,22 @@ public abstract class GameTask
         }
     }
 
+    /// <summary>Gets whether this task is a given task or lies anywhere below it.</summary>
+    /// <param name="ancestor">The task to look for on the way up.</param>
+    /// <returns><see langword="true"/> when <paramref name="ancestor"/> is this task or one of its ancestors.</returns>
+    public bool IsSelfOrDescendantOf(GameTask ancestor)
+    {
+        for (GameTask? current = this; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Walks the tasks above this one, its parent first.</summary>
     /// <returns>The ancestors, this task excluded.</returns>
     public IEnumerable<GameTask> Ancestors()

@@ -41,6 +41,24 @@ public sealed class DeclaredTask : GameTask
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     public bool TryGetValue(string name, out object? value) => TryGetScriptValue(name, out value);
 
+    /// <summary>Gets the parsed value of a parameter by its declared name, when it is of the type asked for.</summary>
+    /// <typeparam name="T">The type the value is wanted as.</typeparam>
+    /// <param name="name">The parameter name as level data declares it.</param>
+    /// <param name="value">Receives the value, or the type's default.</param>
+    /// <returns><see langword="true"/> when the type declares the parameter and its value is a <typeparamref name="T"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    public bool TryGet<T>(string name, out T value)
+    {
+        if (TryGetScriptValue(name, out object? raw) && raw is T typed)
+        {
+            value = typed;
+            return true;
+        }
+
+        value = default!;
+        return false;
+    }
+
     /// <inheritdoc/>
     public override bool TryGetScriptValue(string name, out object? value)
     {

@@ -559,10 +559,10 @@ public sealed class ElevatorRegistry
                 || solids.IsPointInTaskVolume(shin, elevator.Task)
                 || (solids.TryFindContainingDynamicOwner(passenger, includeInactiveOwners: false, out GameTask? owner)
                     && owner is not null
-                    && IsSelfOrDescendant(owner, elevator.Task))
+                    && owner.IsSelfOrDescendantOf(elevator.Task))
                 || (solids.TryFindContainingDynamicOwner(shin, includeInactiveOwners: false, out GameTask? lifted)
                     && lifted is not null
-                    && IsSelfOrDescendant(lifted, elevator.Task)))
+                    && lifted.IsSelfOrDescendantOf(elevator.Task)))
             {
                 return true;
             }
@@ -581,19 +581,6 @@ public sealed class ElevatorRegistry
     private static bool IsDoorTask(GameTask task) =>
         task is DeclaredTask declared
         && string.Equals(declared.Type.Name, "Door", StringComparison.Ordinal);
-
-    private static bool IsSelfOrDescendant(GameTask owner, GameTask ancestor)
-    {
-        for (GameTask? current = owner; current is not null; current = current.Parent)
-        {
-            if (ReferenceEquals(current, ancestor))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     private static List<ExteriorSwitchCall> FindExteriorSwitchCalls(
         GameTask root,

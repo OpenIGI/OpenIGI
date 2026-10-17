@@ -221,12 +221,6 @@ public sealed class GunPickup
 /// </remarks>
 public sealed class GunPickupRegistry
 {
-    /// <summary>The original's horizontal pickup radius, in engine units.</summary>
-    public const double PickupRadius = 2867.2;
-
-    /// <summary>The original's vertical pickup tolerance, in engine units.</summary>
-    public const double VerticalTolerance = 4096.0;
-
     private readonly List<GunPickup> _items = [];
     private readonly List<GunPickupImpact> _impacts = [];
     private readonly AmmoTypeRegistry _ammunition;
@@ -262,7 +256,7 @@ public sealed class GunPickupRegistry
         List<GunPickup>? collected = null;
         foreach (GunPickup pickup in _items)
         {
-            if (pickup.IsCollected || !IsWithinRange(position, pickup.Position))
+            if (pickup.IsCollected || !PickupReach.IsWithinRange(position, pickup.Position))
             {
                 continue;
             }
@@ -323,15 +317,6 @@ public sealed class GunPickupRegistry
     /// <summary>Gets the landings dropped guns made on the last tick, for their sound.</summary>
     public IReadOnlyList<GunPickupImpact> Impacts => _impacts;
 
-    /// <summary>Tests the exact horizontal/vertical split used by retail.</summary>
-    public static bool IsWithinRange(Vector3d player, Vector3d pickup)
-    {
-        double x = pickup.X - player.X;
-        double y = pickup.Y - player.Y;
-        return Math.Sqrt((x * x) + (y * y)) < PickupRadius
-            && Math.Abs(pickup.Z - player.Z) < VerticalTolerance;
-    }
-
     private static void Collect(
         GameTask task,
         GunPickupRegistry registry,
@@ -340,7 +325,7 @@ public sealed class GunPickupRegistry
     {
         if (task is DeclaredTask declared
             && string.Equals(declared.Type.Name, "GunPickup", StringComparison.Ordinal)
-            && TryReadPosition(declared, out Vector3d position)
+            && declared.TryGet("Position", out Vector3d position)
             && declared.TryGetValue("ID", out object? raw)
             && raw is string id
             && weapons.TryGetByScriptId(id, out WeaponType weapon))
@@ -358,18 +343,6 @@ public sealed class GunPickupRegistry
         {
             Collect(child, registry, weapons, ammunition);
         }
-    }
-
-    private static bool TryReadPosition(DeclaredTask task, out Vector3d position)
-    {
-        if (task.TryGetValue("Position", out object? raw) && raw is Vector3d value)
-        {
-            position = value;
-            return true;
-        }
-
-        position = default;
-        return false;
     }
 
     private static Matrix3f OrientationOf(DeclaredTask task) =>
