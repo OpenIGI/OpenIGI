@@ -65,19 +65,17 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
     private const string LogCategory = "Sound";
 
     private readonly IOpenIgiLogger _logger;
-    private readonly List<SoundDefinition> _roots = [];
-    private readonly Dictionary<string, SoundDefinition> _byName = new(StringComparer.Ordinal);
-    private readonly Stack<List<SoundDefinition>> _open = new();
+    private readonly SoundDefinitionTable _table = new();
 
     /// <summary>Initializes a new instance of the <see cref="Igi2SoundDefinitions"/> class.</summary>
     /// <param name="logger">Where load diagnostics go; defaults to nowhere.</param>
     public Igi2SoundDefinitions(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the top-level definitions, in the order the scripts declared them.</summary>
-    public IReadOnlyList<SoundDefinition> Roots => _roots;
+    public IReadOnlyList<SoundDefinition> Roots => _table.Roots;
 
     /// <summary>Gets the number of names defined, at every depth.</summary>
-    public int Count => _byName.Count;
+    public int Count => _table.Count;
 
     /// <summary>The directories a mission's definitions are read from, in the order they are.</summary>
     /// <param name="mission">The mission.</param>
@@ -107,19 +105,15 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
     public void Register(NativeRegistry natives)
     {
         ArgumentNullException.ThrowIfNull(natives);
-        natives.RegisterFunction(DefineGroupNative, DefineGroup);
+        // SoundDefGroup_ScriptParseCB (igi2ed 0x4349C0) answers how many arguments it evaluated.
+        natives.RegisterFunction(DefineGroupNative, call => QvmValue.FromInt32(_table.DefineGroup(call)));
         natives.RegisterFunction(DefineSoundNative, DefineSound);
         natives.RegisterFunction(DefineGraphNative, DefineGraph);
         natives.RegisterFunction(DefineTriggerOnceNative, DefineTriggerOnce);
     }
 
     /// <summary>Forgets every definition, as a level's end deletes its definition tasks.</summary>
-    public void Clear()
-    {
-        _roots.Clear();
-        _byName.Clear();
-        _open.Clear();
-    }
+    public void Clear() => _table.Clear();
 
     /// <summary>Reads a level's definitions afresh: every directory's script, in order.</summary>
     /// <param name="resources">Where the scripts are read from.</param>
@@ -147,74 +141,16 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
     }
 
     /// <inheritdoc/>
-    public bool TryResolve(string name, out SoundDefinition? definition)
-    {
-        if (string.IsNullOrEmpty(name))
-        {
-            definition = null;
-            return false;
-        }
-
-        return _byName.TryGetValue(name, out definition);
-    }
+    public bool TryResolve(string name, out SoundDefinition? definition) => _table.TryResolve(name, out definition);
 
     private void Run(ResourceRegistry resources, NativeRegistry natives, string resource)
     {
-        if (!resources.TryLoad(resource, out ReadOnlyMemory<byte> bytes))
+        if (!_table.Run(resources, natives, resource))
         {
             _logger.Debug(LogCategory, $"No sound definitions at {resource}.");
-            return;
-        }
-
-        QvmProgram program;
-        try
-        {
-            program = QvmProgram.Read(bytes);
-        }
-        catch (QvmFormatException ex)
-        {
-            throw new EngineFatalException($"Couldn't load script: {resource}", ex);
-        }
-
-        _open.Clear();
-        QvmInterpreter interpreter = new(program, natives);
-        QvmError error = interpreter.Run();
-        if (error != QvmError.None)
-        {
-            throw new EngineFatalException($"{resource} faulted with {error}: {interpreter.ErrorMessage}");
         }
     }
 
-    // SoundDefGroup_ScriptParseCB (igi2ed 0x4349C0): the group is made under the current parent first, the natives are
-    // pointed at it, and only then are its arguments -- the calls defining what it holds -- evaluated, one after another
-    // while there is one.
-    private QvmValue DefineGroup(QvmCallContext call)
-    {
-        List<SoundDefinition> children = [];
-        Add(new SoundDefinition
-        {
-            Name = call.GetString(0),
-            BankKey = string.Empty,
-            Kind = SoundDefinitionKind.Group,
-            Children = children,
-        });
-
-        int argument = 1;
-        _open.Push(children);
-        try
-        {
-            for (; argument < call.ArgumentCount; argument++)
-            {
-                call.GetInt32(argument);
-            }
-        }
-        finally
-        {
-            _open.Pop();
-        }
-
-        return QvmValue.FromInt32(argument);
-    }
 
     // SoundDefSound_ScriptParseCB (igi2ed 0x430B70): name, bank key, offset, volume, nearest and farthest distance; then
     // the parameter indices for volume, pitch and bank key, a real the template keeps (+0x294) and the loop byte.
@@ -228,7 +164,7 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
         }
 
         call.GetSingle(11);
-        Add(Common(call, SoundDefinitionKind.Sound, nearest, farthest) with
+        _table.Add(Common(call, SoundDefinitionKind.Sound, nearest, farthest) with
         {
             VolumeParameterIndex = call.GetInt32(8),
             PitchParameterIndex = call.GetInt32(9),
@@ -256,7 +192,7 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
             pitch[i] = call.GetSingle(argument++);
         }
 
-        Add(Common(call, SoundDefinitionKind.Graph, call.GetSingle(6), call.GetSingle(7)) with
+        _table.Add(Common(call, SoundDefinitionKind.Graph, call.GetSingle(6), call.GetSingle(7)) with
         {
             VolumeParameterIndex = call.GetInt32(8),
             PitchParameterIndex = call.GetInt32(9),
@@ -274,7 +210,7 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
     // (trigger, volume, pitch, bank key), the loop byte and the invert byte.
     private QvmValue DefineTriggerOnce(QvmCallContext call)
     {
-        Add(Common(call, SoundDefinitionKind.TriggerOnce, call.GetSingle(6), call.GetSingle(7)) with
+        _table.Add(Common(call, SoundDefinitionKind.TriggerOnce, call.GetSingle(6), call.GetSingle(7)) with
         {
             DurationSeconds = call.GetSingle(8),
             TriggerParameterIndex = call.GetInt32(9),
@@ -302,12 +238,4 @@ public sealed class Igi2SoundDefinitions : ISoundDefinitionLookup
 
     /// <summary>An argument kept as a byte: set when its low eight bits are.</summary>
     private static bool Byte(QvmCallContext call, int argument) => (call.GetInt32(argument) & 0xFF) != 0;
-
-    private void Add(SoundDefinition definition)
-    {
-        (_open.Count > 0 ? _open.Peek() : _roots).Add(definition);
-
-        // Pre-order and first in: the order the find walk meets them, stopping at the first.
-        _byName.TryAdd(definition.Name, definition);
-    }
 }
