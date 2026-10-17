@@ -51,7 +51,7 @@ namespace OpenIGI.Host;
 /// the frame loop, and tears everything down. The startup and per-frame body lives in <see cref="Run"/>;
 /// mission loading, lighting and the menu shell are in the sibling partials.
 /// </summary>
-internal sealed partial class GameHost : IDisposable
+internal sealed partial class GameHost : IDisposable, IInspectedWorld
 {
     // The camera's clip planes, both measured out of the original's own renderer setup -- see
     // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly
@@ -306,6 +306,40 @@ internal sealed partial class GameHost : IDisposable
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
+
+    // The console's inspector, over what IInspectedWorld shows it of the host.
+    private readonly WorldInspector _inspector;
+
+    // What the inspector reads of the host.
+    PlayerCamera? IInspectedWorld.Player => _player;
+
+    bool IInspectedWorld.PlayerMode => _playerMode;
+
+    bool IInspectedWorld.PlayerDead => _playerDead;
+
+    FreeCamera? IInspectedWorld.Camera => _camera;
+
+    WorldScene? IInspectedWorld.Scene => _scene;
+
+    IWorldPresenter? IInspectedWorld.World => _world;
+
+    ITerrainPresenter? IInspectedWorld.Terrain => _terrain;
+
+    IGroundHeightField? IInspectedWorld.Ground => _ground;
+
+    SoldierRenderer? IInspectedWorld.Soldiers => _soldiers;
+
+    MissionWorld IInspectedWorld.Mission => _mission;
+
+    Camera3D IInspectedWorld.InspectorEye => _inspectorEye;
+
+    float IInspectedWorld.InspectorAspect => _inspectorAspect;
+
+    float IInspectedWorld.InspectorTangent => _inspectorTangent;
+
+    int IInspectedWorld.WindowWidth => _window.Width;
+
+    int IInspectedWorld.WindowHeight => _window.Height;
 
     // The player's flashlight, and what its lens is kept out of.
     private readonly PlayerFlashlight _flashlight;
@@ -744,6 +778,7 @@ internal sealed partial class GameHost : IDisposable
         _device = device;
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
+        _inspector = new WorldInspector(this);
         _audioFactory = audioFactory;
         _work = work;
         _loadGate = loadGate;
@@ -948,7 +983,7 @@ internal sealed partial class GameHost : IDisposable
 
         // Attached once rather than per mission: the inspector asks for a fresh snapshot every frame
         // it draws, and the implementation already answers with nothing when no world is loaded.
-        console.View.AttachWorld(this);
+        console.View.AttachWorld(_inspector);
 
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
@@ -6132,7 +6167,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 // scenery and come back lit and fogged, which is a dull smear rather than a mark. Late
                 // in the pass because it carves its silhouette out of the depth buffer to read through
                 // walls, and the view model clears depth immediately after.
-                DrawInspectorOutline(console, eye);
+                _inspector.DrawOutline(console, eye);
 
                 // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
                 // then ask the human where the weapon is and draw that. Only in player mode, because the
