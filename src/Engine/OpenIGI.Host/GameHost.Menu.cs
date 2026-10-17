@@ -10,6 +10,7 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 
@@ -291,7 +292,7 @@ internal sealed partial class GameHost
     /// order so the file reads down the campaign. A mission that will not build is skipped with a warning
     /// rather than taking the run down; its backdrop then finds its places at load, as it would anyway.
     /// </remarks>
-    private void DumpShowcasePoints(string path, OpenIGI.Game.Menus.MenuStringTable strings)
+    private void DumpShowcasePoints(string path, OpenIGI.Game.Igi1.Menus.MenuStringTable strings)
     {
         MenuCameraLibrary cameras = MenuCameraLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);

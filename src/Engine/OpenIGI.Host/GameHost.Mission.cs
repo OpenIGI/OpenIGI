@@ -11,7 +11,6 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Level;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -26,6 +25,10 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.World;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

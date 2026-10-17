@@ -2,6 +2,7 @@ using System.IO.Compression;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Lighting;
 

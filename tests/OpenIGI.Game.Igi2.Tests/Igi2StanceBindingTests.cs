@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using Xunit;
+using OpenIGI.Game.Igi1.Config;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

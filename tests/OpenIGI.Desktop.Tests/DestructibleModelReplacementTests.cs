@@ -13,6 +13,7 @@ using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 

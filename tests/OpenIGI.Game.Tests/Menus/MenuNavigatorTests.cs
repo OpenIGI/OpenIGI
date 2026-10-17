@@ -1,7 +1,7 @@
-using OpenIGI.Game.Menus;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

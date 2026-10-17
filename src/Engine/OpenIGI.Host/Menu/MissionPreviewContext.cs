@@ -6,6 +6,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 
 using OpenIGI.Formats;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Menu;
 

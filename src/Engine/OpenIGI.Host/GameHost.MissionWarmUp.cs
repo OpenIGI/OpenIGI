@@ -4,7 +4,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
@@ -15,6 +14,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Host;
 

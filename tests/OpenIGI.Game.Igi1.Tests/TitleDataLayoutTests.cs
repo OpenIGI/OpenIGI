@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi1;
 using OpenIGI.Game.Igi2;
 using OpenIGI.Game.World;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Igi1.Tests;
 

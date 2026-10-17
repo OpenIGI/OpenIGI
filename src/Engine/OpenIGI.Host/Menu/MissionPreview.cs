@@ -11,6 +11,7 @@ using OpenIGI.Host.Lighting;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Menu;
 

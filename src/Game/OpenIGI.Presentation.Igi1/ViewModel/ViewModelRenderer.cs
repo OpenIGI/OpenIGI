@@ -10,6 +10,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

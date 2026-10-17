@@ -5,6 +5,7 @@ using OpenIGI.Rendering;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Player;
 using OpenIGI.Host.Audio;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

@@ -12,6 +12,6 @@ src/Game/OpenIGI.Game/Player/HumanHitTest.cs: Normalise
 src/Game/OpenIGI.Game/World/CarDynamics.cs: Cross
 src/Game/OpenIGI.Game/World/CutsceneRuntime.cs: Lerp
 src/Game/OpenIGI.Game/World/LadderPlacement.cs: Dot
-src/Game/OpenIGI.Game/World/MeshDistanceFieldBaker.cs: Distance
+src/Game/OpenIGI.Game.Igi1/World/MeshDistanceFieldBaker.cs: Distance
 src/Game/OpenIGI.Game/World/RayCapsule.cs: Dot
 src/Game/OpenIGI.Game/World/RetailObjectRay.cs: Walk

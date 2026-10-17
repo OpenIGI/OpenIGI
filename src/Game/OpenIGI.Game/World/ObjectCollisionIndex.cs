@@ -1389,7 +1389,7 @@ public sealed class ObjectCollisionIndex
     /// <remarks>
     /// The contact is on the COLLISION mesh, so it carries the game-material row and nothing about what
     /// is drawn. Handing the placement back is what lets a caller go on to ask the render mesh — see
-    /// <see cref="RenderSurfaceProbe"/>, which needs the model, its pack and its transform, all of which
+    /// <c>RenderSurfaceProbe</c>, which needs the model, its pack and its transform, all of which
     /// live on the placement and none of which a label can carry.
     /// </remarks>
     public bool TryIdentify(

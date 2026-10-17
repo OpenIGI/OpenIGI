@@ -95,7 +95,7 @@ public static class GameplayCVars
     /// <remarks>
     /// <para>
     /// One multiplier over the whole impulse model, so the feel of the feature is a single number the
-    /// player can turn. See <see cref="Physics.RagdollImpulse"/> for why the exaggeration underneath it
+    /// player can turn. See <c>RagdollImpulse</c> for why the exaggeration underneath it
     /// is deliberate. Zero makes bodies simply fall.
     /// </para>
     /// <para>
@@ -117,7 +117,7 @@ public static class GameplayCVars
     /// <para>
     /// Seven tenths. <b>The one number in the ragdoll that is a look rather than a measurement</b>, and
     /// it is a variable rather than a constant for exactly that reason. The solver already falls at the
-    /// original's own 9.8 m/s² — see <see cref="Physics.RagdollBody.Gravity"/>, which deliberately picks
+    /// original's own 9.8 m/s² — see <c>Gravity</c>, which deliberately picks
     /// that over the 18.6 the player jumps under — so this is not correcting anything.
     /// </para>
     /// <para>
@@ -232,7 +232,7 @@ public static class GameplayCVars
     /// <remarks>
     /// The sounds are the material table's own six per row — dirt for terrain, the struck row for
     /// objects, the <c>Flesh</c> row for a body — picked and rate-limited exactly as the retail shot
-    /// loop does (<see cref="World.BulletImpactSounds"/>). It applies to hit-scan fire and to the
+    /// loop does (<c>BulletImpactSounds</c>). It applies to hit-scan fire and to the
     /// optional ballistic path.
     /// </remarks>
     public static readonly BoolCVar BallisticsImpactSounds = CVar.Bool(

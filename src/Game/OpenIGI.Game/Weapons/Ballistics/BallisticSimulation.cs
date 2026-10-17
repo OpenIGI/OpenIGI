@@ -47,7 +47,7 @@ public readonly record struct BallisticImpact(
 /// replaces. The cast uses the same two delegates the hit-scan path does, in the same both-then-nearer
 /// order, so a guard in front of a wall still takes the round and the wall stays clean. Like that
 /// path, the first surface stops the round — penetration and ricochet need the per-surface data the
-/// collision index does not carry (see <see cref="GunImpact"/>'s divergence note).
+/// collision index does not carry (see <c>GunImpact</c>'s divergence note).
 /// </para>
 /// </remarks>
 public sealed class BallisticSimulation

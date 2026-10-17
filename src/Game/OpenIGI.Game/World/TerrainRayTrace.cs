@@ -5,7 +5,7 @@ namespace OpenIGI.Game.World;
 
 /// <summary>Segment traversal through the terrain octree's authored triangle leaves.</summary>
 /// <remarks>
-/// Unlike <see cref="TerrainSightBlock"/>, this does not sample a heightfield. It walks every depth-16
+/// Unlike <c>TerrainSightBlock</c>, this does not sample a heightfield. It walks every depth-16
 /// octree cell crossed by the segment and intersects the segment with the exact packed triangles in
 /// that leaf. That preserves cliffs, thin ridges and underside geometry which a fixed-distance height
 /// sample can miss.

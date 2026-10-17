@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Physics;
 /// </para>
 /// <para>
 /// Everything here is a free function over values. What holds the arrays and does the stepping is
-/// <see cref="RagdollBody"/>; this is the part worth testing on its own.
+/// <c>RagdollBody</c>; this is the part worth testing on its own.
 /// </para>
 /// </remarks>
 public static class RagdollSolver

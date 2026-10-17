@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Lighting;
 

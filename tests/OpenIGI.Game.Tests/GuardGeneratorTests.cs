@@ -5,6 +5,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 

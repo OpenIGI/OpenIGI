@@ -7,7 +7,6 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;

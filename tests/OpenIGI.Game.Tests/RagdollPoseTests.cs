@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Physics;
 using Xunit;
+using OpenIGI.Game.Igi1.Physics;
 
 namespace OpenIGI.Game.Tests;
 

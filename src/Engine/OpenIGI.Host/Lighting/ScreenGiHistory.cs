@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Lighting;
 

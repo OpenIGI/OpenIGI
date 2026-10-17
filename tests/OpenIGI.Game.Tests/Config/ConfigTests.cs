@@ -1,11 +1,12 @@
 ﻿using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Config;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Game.Tests.Config;
 

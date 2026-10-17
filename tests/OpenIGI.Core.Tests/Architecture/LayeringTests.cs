@@ -90,6 +90,16 @@ public sealed class LayeringTests
         Assert.True(broken.Count == 0, "Title projects must not meet:\n  " + string.Join("\n  ", broken));
     }
 
+    /// <summary>
+    /// The edges rule 2 still allows while Project I.G.I.'s gameplay is built and driven by the host itself rather than
+    /// through <c>ITitleGameplay</c>, as I.G.I. 2's is. Each goes when the host stops naming that project; none is added.
+    /// </summary>
+    private static readonly string[] TitleReferencesBaseline =
+    [
+        "OpenIGI.Host -> OpenIGI.Game.Igi1",
+        "OpenIGI.Host -> OpenIGI.Presentation.Igi1",
+    ];
+
     /// <summary>Rule 2 — and nothing below an app references a title project either.</summary>
     [Fact]
     public void Only_an_app_references_a_title_project()
@@ -109,9 +119,14 @@ public sealed class LayeringTests
             }
         }
 
+        List<string> added = [.. broken.Except(TitleReferencesBaseline, StringComparer.Ordinal)];
+        List<string> gone = [.. TitleReferencesBaseline.Except(broken, StringComparer.Ordinal)];
         Assert.True(
-            broken.Count == 0,
-            "Only an app composition root may name a title project:\n  " + string.Join("\n  ", broken));
+            added.Count == 0,
+            "Only an app composition root may name a title project:\n  " + string.Join("\n  ", added));
+        Assert.True(
+            gone.Count == 0,
+            "These title references are gone; take them out of TitleReferencesBaseline:\n  " + string.Join("\n  ", gone));
     }
 
     /// <summary>Rule 4 — <c>OpenIGI.Core</c> has no dependencies at all.</summary>

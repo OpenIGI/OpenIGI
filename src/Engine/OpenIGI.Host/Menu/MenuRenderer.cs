@@ -3,8 +3,8 @@ using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
-using OpenIGI.Game.Menus;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Host.Menu;
 

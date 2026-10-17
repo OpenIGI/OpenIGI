@@ -3,6 +3,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
+
 namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>What a human's model gives its body: its bones' names, its collision levels, each bone's damage zone and the groin's mark.</summary>

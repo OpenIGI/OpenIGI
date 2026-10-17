@@ -9,7 +9,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Content;
 using OpenIGI.Host.Configuration;
@@ -22,6 +21,8 @@ using OpenIGI.UI.Screens;
 using OpenIGI.UI.Widgets;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

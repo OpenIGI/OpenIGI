@@ -5,6 +5,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Audio;
 

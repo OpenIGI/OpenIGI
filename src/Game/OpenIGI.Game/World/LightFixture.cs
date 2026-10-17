@@ -9,8 +9,8 @@ namespace OpenIGI.Game.World;
 /// <para>
 /// <b>This is a proposal, not a declaration.</b> I.G.I. declares no point lights at all, so nothing in
 /// the level data corresponds to this type — it is the conclusion of two inferences stacked on each
-/// other. <see cref="EmissiveTextureSurvey"/> infers which <em>textures</em> the artists treated as
-/// sources, from how bright they painted the lightmaps around them; <see cref="LightFixtureExtractor"/>
+/// other. <c>EmissiveTextureSurvey</c> infers which <em>textures</em> the artists treated as
+/// sources, from how bright they painted the lightmaps around them; <c>LightFixtureExtractor</c>
 /// then infers a <em>light</em> from every place such a texture is drawn. Both steps produce a list for
 /// someone to look at rather than an answer to be trusted, and a fixture that turns out to be a
 /// reflective sign rather than a lamp is a normal outcome, not a bug.
@@ -35,7 +35,7 @@ namespace OpenIGI.Game.World;
 /// <param name="Position">The centroid of the cluster's triangles, in world space and in metres.</param>
 /// <param name="Radius">
 /// How far the light is proposed to reach, in metres. Derived from <see cref="Extent"/> and the
-/// colour's luminance — see <see cref="LightFixtureExtractor.DefaultRadiusScale"/> for the derivation
+/// colour's luminance — see <c>DefaultRadiusScale</c> for the derivation
 /// and for how arbitrary the constant in it is.
 /// </param>
 /// <param name="Colour">
@@ -107,7 +107,7 @@ public readonly record struct LightFixture(
 
     /// <summary>Gets the colour's luminance, on the same scale as its brightest channel.</summary>
     /// <remarks>
-    /// Rec. 709 weights, the same ones <see cref="EmissiveTextureSurvey"/> measures lightmap pages
+    /// Rec. 709 weights, the same ones <c>EmissiveTextureSurvey</c> measures lightmap pages
     /// with, so that a colour called bright here and a lightmap called bright there mean the same
     /// thing.
     /// </remarks>

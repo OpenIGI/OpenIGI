@@ -13,6 +13,7 @@ using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
 using System.Globalization;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

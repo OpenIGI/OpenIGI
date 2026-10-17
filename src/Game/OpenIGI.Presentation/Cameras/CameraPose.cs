@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 

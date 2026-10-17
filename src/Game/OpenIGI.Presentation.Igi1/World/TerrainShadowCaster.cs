@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

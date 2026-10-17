@@ -173,7 +173,7 @@ public sealed class PlayerProfile
     /// <summary>The graphics performance flags.</summary>
     /// <remarks>
     /// <c>GOGfxPerformance</c>. A bitmask, not a level — see
-    /// <see cref="GraphicsPerformance"/> for the level table and the nearest-match rule that maps
+    /// <c>GraphicsPerformance</c> for the level table and the nearest-match rule that maps
     /// between them.
     /// </remarks>
     public int PerformanceFlags { get; set; }

@@ -89,7 +89,7 @@ public sealed class WorldInteractionTests
     [InlineData(13, 36)]
     public void RetailSelfDrivingTypesEnterTheirExactState(int type, int state)
     {
-        Assert.Equal(state, OpenIGI.Game.Player.HumanInteractionDispatch.Dispatch(type).LocomotionState);
+        Assert.Equal(state, OpenIGI.Game.Igi1.Player.HumanInteractionDispatch.Dispatch(type).LocomotionState);
     }
 
     private static (ScriptVarRegistry Variables, GameTask First, GameTask Second) BuildDoorTasks()

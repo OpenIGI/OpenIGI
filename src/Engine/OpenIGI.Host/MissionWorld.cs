@@ -1,5 +1,6 @@
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

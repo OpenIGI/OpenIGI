@@ -15,6 +15,8 @@ using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

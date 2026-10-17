@@ -1,5 +1,6 @@
 using OpenIGI.Game.Player;
 using Xunit;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 

@@ -176,7 +176,7 @@ public sealed class WeaponTypeRegistry
     /// <remarks>
     /// This is the lookup a <b>level</b> needs, as opposed to the two the executable does: a mission's
     /// <c>objects.qvm</c> declares its loadout with these symbols rather than with numeric ids, so
-    /// <see cref="Player.PlayerLoadout"/> resolves through here.
+    /// <c>PlayerLoadout</c> resolves through here.
     /// </remarks>
     public bool TryGetByScriptId(string scriptId, out WeaponType weapon)
     {

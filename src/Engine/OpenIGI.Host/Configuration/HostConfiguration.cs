@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Qvm;
+using OpenIGI.Game.Igi1.Config;
 
 namespace OpenIGI.Host.Configuration;
 

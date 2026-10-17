@@ -3,7 +3,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;

@@ -15,7 +15,6 @@ using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -43,6 +42,12 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Config;
+using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Weapons;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

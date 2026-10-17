@@ -2,6 +2,8 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Igi1;
 

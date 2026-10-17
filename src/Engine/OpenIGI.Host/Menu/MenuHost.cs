@@ -3,9 +3,9 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Game.Menus;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Host.Menu;
 

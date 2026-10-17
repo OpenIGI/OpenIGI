@@ -547,7 +547,7 @@ public sealed class PlayerBody
     /// <remarks>
     /// <para>
     /// The faithful path: the input becomes motion flags, the flags pick a locomotion state
-    /// (<see cref="HumanIdleTransitions"/>, transcribed from state zero's own per-tick), the state names
+    /// (<c>HumanIdleTransitions</c>, transcribed from state zero's own per-tick), the state names
     /// an animation, and the animation's root-motion track says how far the body moved. No speed
     /// constant is consulted anywhere.
     /// </para>

@@ -5,6 +5,7 @@ using OpenIGI.Game.World;
 using Xunit;
 using Xunit.Abstractions;
 using OpenIGI.TestSupport;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

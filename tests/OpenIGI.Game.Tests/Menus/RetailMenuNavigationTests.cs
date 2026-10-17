@@ -2,10 +2,10 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Menus;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

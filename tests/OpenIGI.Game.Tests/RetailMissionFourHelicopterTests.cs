@@ -13,6 +13,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

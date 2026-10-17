@@ -5,6 +5,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.Weapons;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

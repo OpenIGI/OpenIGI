@@ -1,10 +1,11 @@
 ﻿using System.Globalization;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.Config;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Host.Configuration;
 

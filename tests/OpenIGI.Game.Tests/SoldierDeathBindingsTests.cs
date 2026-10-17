@@ -11,6 +11,7 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

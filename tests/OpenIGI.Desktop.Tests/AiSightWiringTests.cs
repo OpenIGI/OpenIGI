@@ -3,6 +3,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Desktop.Tests;
 

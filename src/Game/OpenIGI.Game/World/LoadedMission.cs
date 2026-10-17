@@ -23,7 +23,7 @@ namespace OpenIGI.Game.World;
 /// </param>
 /// <param name="Terrain">
 /// The level's terrain, or <see langword="null"/> when the loader was given no
-/// <see cref="TerrainLoader"/> or the level ships none. Check
+/// <c>TerrainLoader</c> or the level ships none. Check
 /// <see cref="TerrainData.IsUsable"/> before drawing it: level 14's files exist but are not live data.
 /// </param>
 public sealed record LoadedMission(

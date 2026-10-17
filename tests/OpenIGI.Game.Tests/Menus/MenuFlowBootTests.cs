@@ -1,9 +1,9 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
-using OpenIGI.Game.Menus;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

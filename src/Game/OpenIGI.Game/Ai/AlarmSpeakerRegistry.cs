@@ -84,7 +84,7 @@ public sealed class AlarmSpeaker(
 /// task's identity; radius damage and legacy contacts use <see cref="TryDestroyAt"/>.
 /// </para>
 /// <para>
-/// The expression machinery is the same one <see cref="AiAlarmControlRegistry"/> evaluates the
+/// The expression machinery is the same one <c>AiAlarmControlRegistry</c> evaluates the
 /// controls through, over the same live level variables — so a speaker whose expression names
 /// <c>AlarmControl_5.isAlarm</c> follows that control exactly as retail's does.
 /// </para>

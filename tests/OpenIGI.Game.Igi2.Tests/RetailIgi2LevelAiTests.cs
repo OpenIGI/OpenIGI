@@ -61,7 +61,7 @@ public sealed class RetailIgi2LevelAiTests
             Core.Diagnostics.NullLogger.Instance, Services: m.Services);
         WorldBuildResult built = Igi2WorldBuilder.Instance.Build(world);
         // The desktop's shared soldier renderer registers the first game's AI before standing the title player.
-        _ = new Game.Ai.AiScriptHost(promoted.Natives);
+        _ = new OpenIGI.Game.Igi1.Ai.AiScriptHost(promoted.Natives);
         Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(Igi2Gameplay.Instance.CreatePlayer(
             new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
         Assert.NotNull(player.Level);

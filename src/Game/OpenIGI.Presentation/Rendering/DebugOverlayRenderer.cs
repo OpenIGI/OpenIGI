@@ -1,6 +1,5 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;

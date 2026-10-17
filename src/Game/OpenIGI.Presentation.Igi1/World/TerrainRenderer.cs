@@ -9,6 +9,7 @@ using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

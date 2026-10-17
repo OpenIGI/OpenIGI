@@ -11,6 +11,7 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -434,7 +435,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     /// <remarks>
     /// Ghidra identifies the retail task as <c>BinocularOverlay_Draw</c>, with separate compass and
     /// distance handlers. The binocular sprite is therefore drawn in place of the ordinary weapon HUD;
-    /// the camera and zoom state remain owned by <see cref="OpenIGI.Game.Player.BinocularsView"/>.
+    /// the camera and zoom state remain owned by <see cref="OpenIGI.Game.Igi1.Player.BinocularsView"/>.
     /// </remarks>
     public void DrawBinocularOverlay(
         SpriteBatch batch,

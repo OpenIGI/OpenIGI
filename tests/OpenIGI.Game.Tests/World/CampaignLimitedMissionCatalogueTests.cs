@@ -6,6 +6,7 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests.World;
 

@@ -1,9 +1,9 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Menus;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

@@ -11,6 +11,7 @@ using OpenIGI.Input;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Weapons;
 
 namespace OpenIGI.Desktop.Tests;
 
