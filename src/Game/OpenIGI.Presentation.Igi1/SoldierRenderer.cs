@@ -500,7 +500,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView view = member.View;
+                SoldierView view = member.Agent.View;
                 bool dead = view.IsDead || (_health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
 
                 into.Add(new SoldierSnapshot(
@@ -509,7 +509,7 @@ public sealed class SoldierRenderer : IDisposable
                     dead,
                     view.CurrentAnimation,
                     _health.TryGetValue(view, out HumanHealth? hp) ? hp.RemainingFraction : -1f,
-                    member.IsCutsceneActor));
+                    member.Agent.IsCutsceneActor));
             }
         }
     }
@@ -609,7 +609,7 @@ public sealed class SoldierRenderer : IDisposable
             foreach (Member member in group.Soldiers)
             {
                 if (!member.HasFrameState
-                    || !_binocularDetected.TryGetValue(member.View, out BinocularMarkerColor marker))
+                    || !_binocularDetected.TryGetValue(member.Agent.View, out BinocularMarkerColor marker))
                 {
                     continue;
                 }
@@ -979,7 +979,7 @@ public sealed class SoldierRenderer : IDisposable
 
     internal IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> BrainPairsForTesting => [.. _brains];
 
-    internal bool IsInViewForTesting(SoldierView view) => FindMember(view)?.InView ?? false;
+    internal bool IsInViewForTesting(SoldierView view) => FindMember(view)?.Agent.InView ?? false;
 
     /// <summary>Marks every soldier drawn close up, as a frame looking at all of them would.</summary>
     internal void ObserveAllForTesting()
@@ -988,7 +988,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                member.InView = true;
+                member.Agent.InView = true;
             }
         }
     }
@@ -999,7 +999,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (ReferenceEquals(member.View, view) && _lastObservedCamera is { } camera)
+                if (ReferenceEquals(member.Agent.View, view) && _lastObservedCamera is { } camera)
                 {
                     Matrix4f mv = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
                     BonePose pose = view.Pose();
@@ -1049,56 +1049,56 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (member.View.Soldier.Id == taskId && ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+                if (member.Agent.View.Soldier.Id == taskId && ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier))
                 {
                     if (Cutscenes?.TryGetAttachedDrawTransform(
-                        member.View.Soldier, out Vector3d attached, out Matrix3f attachedOrientation) == true)
+                        member.Agent.View.Soldier, out Vector3d attached, out Matrix3f attachedOrientation) == true)
                     {
                         return new CutsceneTargetPose(
                             attached * WorldScene.UnitsPerMetre,
                             attachedOrientation);
                     }
 
-                    if (member.IsCutsceneActor)
+                    if (member.Agent.IsCutsceneActor)
                     {
                         // Grounded on its graph, as TickPlacementOf draws it.
-                        if (!member.HasCutsceneGameplayMovement
-                            && _brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
+                        if (!member.Agent.HasCutsceneGameplayMovement
+                            && _brains.TryGetValue(member.Agent.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
                             && !stagedBrain.GraphInParentFrame && stagedBrain.StoodOnGraph)
                         {
                             return new CutsceneTargetPose(
-                                member.View.Position + new Vector3d(0d, 0d, member.View.RootSample.Z),
-                                member.View.Orientation);
+                                member.Agent.View.Position + new Vector3d(0d, 0d, member.Agent.View.RootSample.Z),
+                                member.Agent.View.Orientation);
                         }
 
-                        if (member.HasCutsceneGameplayMovement)
+                        if (member.Agent.HasCutsceneGameplayMovement)
                         {
                             double groundedZ = SnapToGround(
-                                member.View.Position.X,
-                                member.View.Position.Y,
-                                member.View.Position.Z);
+                                member.Agent.View.Position.X,
+                                member.Agent.View.Position.Y,
+                                member.Agent.View.Position.Z);
                             return new CutsceneTargetPose(
                                 new Vector3d(
-                                    member.View.Position.X,
-                                    member.View.Position.Y,
-                                    groundedZ + member.View.RootSample.Z),
-                                member.View.Orientation);
+                                    member.Agent.View.Position.X,
+                                    member.Agent.View.Position.Y,
+                                    groundedZ + member.Agent.View.RootSample.Z),
+                                member.Agent.View.Orientation);
                         }
 
-                        if (member.HasCutsceneRootMotion)
+                        if (member.Agent.HasCutsceneRootMotion)
                         {
-                            return new CutsceneTargetPose(member.View.Position, member.View.Orientation);
+                            return new CutsceneTargetPose(member.Agent.View.Position, member.Agent.View.Orientation);
                         }
 
                         // A stationary staged task retains its authored model origin. Native
                         // 0x462390 derives feet by subtracting the bone/root offset from that origin;
                         // it does not treat the authored origin itself as a floor height.
-                        HumanSoldierTask staged = member.View.Soldier;
+                        HumanSoldierTask staged = member.Agent.View.Soldier;
                         return new CutsceneTargetPose(
                             staged.Position,
                             Matrix3f.FromEngineEulerAngles(0f, 0f, staged.Gamma));
                     }
-                    return new CutsceneTargetPose(member.View.Position, member.View.Orientation);
+                    return new CutsceneTargetPose(member.Agent.View.Position, member.Agent.View.Orientation);
                 }
             }
         }
@@ -1208,9 +1208,8 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d placement = cutsceneActor
                 ? soldier.Position / WorldScene.UnitsPerMetre
                 : Stand(soldier, group, terrain, cast);
-            group.Soldiers.Add(new Member(view, placement, own)
+            group.Soldiers.Add(new Member(new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor }, own)
             {
-                IsCutsceneActor = cutsceneActor,
                 DrawnPose = initialPose,
                 SkinScratch = initialSkin,
                 SkinnedPose = initialSkinReady ? initialPose : null,
@@ -1267,7 +1266,7 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            if (RagdollRigFor(group.Soldiers[0].View.Bones.Set, group.Model) is not null)
+            if (RagdollRigFor(group.Soldiers[0].Agent.View.Bones.Set, group.Model) is not null)
             {
                 ragdollRigs++;
             }
@@ -1333,7 +1332,7 @@ public sealed class SoldierRenderer : IDisposable
 
             foreach (Member member in group.Soldiers)
             {
-                SoldierView view = member.View;
+                SoldierView view = member.Agent.View;
                 if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
                 {
                     continue;
@@ -1426,7 +1425,7 @@ public sealed class SoldierRenderer : IDisposable
         string seen = visible ? "YES" : "no";
         Member? member = nearestView is null ? null : FindMember(nearestView);
         string task = nearestView?.Soldier.Name ?? "?";
-        string weapon = member?.WeaponType?.ScriptId ?? "NONE";
+        string weapon = member?.Agent.WeaponType?.ScriptId ?? "NONE";
         string aim = nearest.Target?.ModeOf(nearest).ToString() ?? "None";
         int aimers = nearest.Target?.Count(AiAimMode.Aiming) ?? 0;
         string patrol = nearest.Arm == AiCombatArm.Patrol ? $"/{nearest.PatrolAction}" : string.Empty;
@@ -1435,7 +1434,7 @@ public sealed class SoldierRenderer : IDisposable
             $"detect: dist={distance}m cone={cone} los={clear} alert={alert} "
             + $"seen={seen} {nearest.Activity} task={task} ai={nearest.Type}/{nearest.Arm} script={(nearest.HasScript ? 1 : 0)} "
             + $"phase={nearest.CombatPhase}{patrol} aim={aim}:{aimers} weapon={weapon} "
-            + $"ammo={member?.AmmoInClip ?? 0} trig={(nearest.Combat.PullTrigger ? 1 : 0)}";
+            + $"ammo={member?.Agent.AmmoInClip ?? 0} trig={(nearest.Combat.PullTrigger ? 1 : 0)}";
         return true;
     }
 
@@ -1658,7 +1657,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView view = member.View;
+                SoldierView view = member.Agent.View;
 
                 // Each soldier walks the graph ITS OWN HumanAI names, not the level's biggest one. A
                 // soldier whose graph the level does not ship still gets a BRAIN -- nothing in detection
@@ -1797,7 +1796,7 @@ public sealed class SoldierRenderer : IDisposable
         PrepareGuardGenerators(levelRoot);
 
         int hasRun = 0, total = 0;
-        foreach (SoldierView v in _groups.SelectMany(g => g.Soldiers).Select(m => m.View))
+        foreach (SoldierView v in _groups.SelectMany(g => g.Soldiers).Select(m => m.Agent.View))
         {
             total++;
             if (v.Bones.Set.TryGet(v.Soldier.Class.RunAnimation, out _))
@@ -1904,14 +1903,14 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                IReadOnlyList<LoadoutWeapon> carried = PlayerLoadout.WeaponsOf(member.View.Soldier);
+                IReadOnlyList<LoadoutWeapon> carried = PlayerLoadout.WeaponsOf(member.Agent.View.Soldier);
 
                 // Human inventory scan 0x44FBA0 examines every carried Weapon task, not only slot 0.
                 // Category 4 publishes HumanAI+15869, which is the patrol grenade chooser's gate.
                 bool hasGrenade = carried.Any(item =>
                     roster.TryGetByScriptId(item.WeaponId, out WeaponType candidate)
                     && candidate.Category == WeaponCategory.Grenade);
-                if (_brains.TryGetValue(member.View, out AiSoldier? brain))
+                if (_brains.TryGetValue(member.Agent.View, out AiSoldier? brain))
                 {
                     brain.SetGrenadeAvailable(hasGrenade);
                 }
@@ -1932,9 +1931,9 @@ public sealed class SoldierRenderer : IDisposable
                 // The Human's held Weapon task exists independently of the third-person mesh. Combat
                 // reads that task directly (IGI1 0x48D8E0; IGI2 HumanAIContent_RunFire), so a missing or
                 // unrenderable model must not turn an armed guard into an unarmed AI that only stares.
-                member.WeaponType = weapon;
-                member.CarriedWeaponType = weapon;
-                member.AmmoInClip = weapon.RoundsPerClip;
+                member.Agent.WeaponType = weapon;
+                member.Agent.CarriedWeaponType = weapon;
+                member.Agent.AmmoInClip = weapon.RoundsPerClip;
 
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
                 {
@@ -2194,10 +2193,10 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         return new AiCombatWeaponState(
-            held.AmmoInClip,
-            held.WeaponType?.RoundsPerClip ?? 0,
-            held.WeaponType?.MaximumRoundsPerBurst ?? 0,
-            held.WeaponType?.Category ?? WeaponCategory.Knife);
+            held.Agent.AmmoInClip,
+            held.Agent.WeaponType?.RoundsPerClip ?? 0,
+            held.Agent.WeaponType?.MaximumRoundsPerBurst ?? 0,
+            held.Agent.WeaponType?.Category ?? WeaponCategory.Knife);
     }
 
     /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
@@ -2240,7 +2239,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         Member? member = FindMember(view);
         AiStationaryGun? mounted = brain.MountedGun;
-        WeaponType? weapon = mounted?.Weapon ?? member?.WeaponType;
+        WeaponType? weapon = mounted?.Weapon ?? member?.Agent.WeaponType;
         if (weapon is null)
         {
             return false;
@@ -2255,14 +2254,14 @@ public sealed class SoldierRenderer : IDisposable
         }
         else if (member is not null)
         {
-            if (member.FireCooldown > 0)
+            if (member.Agent.FireCooldown > 0)
             {
-                member.FireCooldown--;
+                member.Agent.FireCooldown--;
             }
 
-            if (member.ReloadTicks > 0 && --member.ReloadTicks == 0)
+            if (member.Agent.ReloadTicks > 0 && --member.Agent.ReloadTicks == 0)
             {
-                member.AmmoInClip = weapon.RoundsPerClip;
+                member.Agent.AmmoInClip = weapon.RoundsPerClip;
             }
         }
 
@@ -2271,15 +2270,15 @@ public sealed class SoldierRenderer : IDisposable
         // 0x478BA0 zeroes the gun's rounds-this-pull count whenever the trigger is up.
         if (!command.PullTrigger && member is not null)
         {
-            member.RoundsThisPull = 0;
+            member.Agent.RoundsThisPull = 0;
         }
 
         if (mounted is null && member is not null
             && (command.PressReload || command.ReloadWeaponDirectly)
-            && member.ReloadTicks == 0
-            && member.AmmoInClip < weapon.RoundsPerClip)
+            && member.Agent.ReloadTicks == 0
+            && member.Agent.AmmoInClip < weapon.RoundsPerClip)
         {
-            member.ReloadTicks = Math.Max(1, (int)(weapon.ReloadTimeSeconds * 30f));
+            member.Agent.ReloadTicks = Math.Max(1, (int)(weapon.ReloadTimeSeconds * 30f));
             return false;
         }
 
@@ -2290,7 +2289,7 @@ public sealed class SoldierRenderer : IDisposable
             || (!brain.CombatStateChangedThisTick && brain.Body.IsFiring);
         bool blocked = mounted is not null
             ? mounted.FireCooldownTicks > 0 || mounted.AmmunitionSample <= 0
-            : member is null || member.FireCooldown > 0 || member.AmmoInClip <= 0 || member.ReloadTicks > 0;
+            : member is null || member.Agent.FireCooldown > 0 || member.Agent.AmmoInClip <= 0 || member.Agent.ReloadTicks > 0;
         if (!command.PullTrigger || !bodyForwardsTrigger || blocked)
         {
             return false;
@@ -2306,14 +2305,14 @@ public sealed class SoldierRenderer : IDisposable
         }
         else
         {
-            member!.AmmoInClip--;
-            member.FireCooldown = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
+            member!.Agent.AmmoInClip--;
+            member.Agent.FireCooldown = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
         }
         RoundsFired++;
         if (member is not null)
         {
-            member.FiredThisTick = true;
-            member.ShotSequence++;
+            member.Agent.FiredThisTick = true;
+            member.Agent.ShotSequence++;
         }
 
         // The round leaves along where the GUN is pointed, not at the target's true position. Retail's
@@ -2385,10 +2384,10 @@ public sealed class SoldierRenderer : IDisposable
             up = ToFloat(view.Transform(new Vector3d(0.0, 0.0, 1.0)));
         }
 
-        int roundsThisPull = member?.RoundsThisPull ?? 0;
+        int roundsThisPull = member?.Agent.RoundsThisPull ?? 0;
         if (member is not null)
         {
-            member.RoundsThisPull++;
+            member.Agent.RoundsThisPull++;
         }
 
         float cone = GunFiring.ConeAngle(weapon, roundsThisPull);
@@ -2757,7 +2756,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (ReferenceEquals(member.View, view))
+                if (ReferenceEquals(member.Agent.View, view))
                 {
                     return group.Model;
                 }
@@ -2823,7 +2822,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (ReferenceEquals(member.View, view))
+                if (ReferenceEquals(member.Agent.View, view))
                 {
                     return group;
                 }
@@ -2839,7 +2838,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (ReferenceEquals(member.View, view))
+                if (ReferenceEquals(member.Agent.View, view))
                 {
                     return member;
                 }
@@ -2875,19 +2874,19 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (FindMind(member.View)?.ResolvedType is not { } type)
+                if (FindMind(member.Agent.View)?.ResolvedType is not { } type)
                 {
                     continue;
                 }
 
                 AiCombatParameters row = config.Parameters(type, difficulty);
-                _combat[member.View] = row;
+                _combat[member.Agent.View] = row;
                 bound++;
 
                 (int count, AiCombatParameters _) = accuracyByType.GetValueOrDefault(type);
                 accuracyByType[type] = (count + 1, row);
 
-                if (_brains.TryGetValue(member.View, out AiSoldier? brain))
+                if (_brains.TryGetValue(member.Agent.View, out AiSoldier? brain))
                 {
                     Member held = member;
                     brain.SetCombat(type, row, () => CombatWeaponState(brain, held));
@@ -3247,9 +3246,9 @@ public sealed class SoldierRenderer : IDisposable
 
         SoldierView freshView = new(deadView.Soldier, deadView.Bones.Set);
         Vector3d spawn = new(
-            deadMember.Position.X * WorldScene.UnitsPerMetre,
-            deadMember.Position.Y * WorldScene.UnitsPerMetre,
-            deadMember.Position.Z * WorldScene.UnitsPerMetre);
+            deadMember.Agent.Position.X * WorldScene.UnitsPerMetre,
+            deadMember.Agent.Position.Y * WorldScene.UnitsPerMetre,
+            deadMember.Agent.Position.Z * WorldScene.UnitsPerMetre);
         freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
 
         BonePose initialPose = freshView.UnrotatedPose();
@@ -3285,21 +3284,24 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         HeldWeapon? weapon = null;
-        if (deadMember.WeaponType is { } weaponType)
+        if (deadMember.Agent.WeaponType is { } weaponType)
         {
             _heldWeaponsByModel.TryGetValue(weaponType.GunModel, out weapon);
         }
 
-        Member freshMember = new(freshView, deadMember.Position, mesh)
+        SoldierAgent freshAgent = new(freshView, deadMember.Agent.Position)
         {
             IsCutsceneActor = false,
+            WeaponType = deadMember.Agent.WeaponType,
+            AmmoInClip = deadMember.Agent.WeaponType?.RoundsPerClip ?? 0,
+        };
+        Member freshMember = new(freshAgent, mesh)
+        {
             DrawnPose = initialPose,
             SkinScratch = initialSkin,
             SkinnedPose = initialSkinReady ? initialPose : null,
             PreviousSkinnedPose = initialSkinReady ? initialPose : null,
-            WeaponType = deadMember.WeaponType,
             Weapon = weapon,
-            AmmoInClip = deadMember.WeaponType?.RoundsPerClip ?? 0,
         };
         group.Soldiers.Add(freshMember);
 
@@ -3378,12 +3380,12 @@ public sealed class SoldierRenderer : IDisposable
                     return brain.ViewOrientation;
                 }
 
-                if (member.InView)
+                if (member.Agent.InView)
                 {
-                    member.EyeOrientation = brain.ViewOrientation;
+                    member.Agent.EyeOrientation = brain.ViewOrientation;
                 }
 
-                return member.EyeOrientation ?? RestEyeOrientation;
+                return member.Agent.EyeOrientation ?? RestEyeOrientation;
             });
     }
 
@@ -3432,7 +3434,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                member.InView = ConditionalContainerGate.IsTaskActive(member.View.Soldier)
+                member.Agent.InView = ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier)
                     && member.HasFrameState
                     && Vector3d.Distance(member.DrawnWhere, camera.Position) <= EyeRefreshDistanceMetres
                     && frustum.SphereVisible(camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation), test);
@@ -3774,10 +3776,10 @@ public sealed class SoldierRenderer : IDisposable
 
             foreach (Member member in group.Soldiers)
             {
-                if (!_brains.ContainsKey(member.View))
+                if (!_brains.ContainsKey(member.Agent.View))
                 {
                     // Un-brained soldiers still need their own rig advanced.
-                    member.View.Tick();
+                    member.Agent.View.Tick();
                 }
 
                 BonePose drawn = PoseToDraw(member);
@@ -3937,7 +3939,7 @@ public sealed class SoldierRenderer : IDisposable
         // retail's pre-scene Human_SetParent call. This is deliberately before animation root motion: the
         // authored Human position is the parent origin.
         Member? member = FindMember(view);
-        if (member is { IsCutsceneActor: true })
+        if (member is { Agent.IsCutsceneActor: true })
         {
             AttachStagedActor(member);
         }
@@ -3949,7 +3951,7 @@ public sealed class SoldierRenderer : IDisposable
             brain.ReportAnimationFinished();
         }
 
-        if (member is { IsCutsceneActor: true })
+        if (member is { Agent.IsCutsceneActor: true })
         {
             AiPatrolCommandKind? patrolCommand = brain.Route?.Current?.Kind;
             bool authoredAnimation = brain.RequestedAnimation >= 0
@@ -3959,7 +3961,7 @@ public sealed class SoldierRenderer : IDisposable
                 AttachCutsceneActorToMovingGround(
                     view,
                     brain.Position,
-                    member.Position * WorldScene.UnitsPerMetre);
+                    member.Agent.Position * WorldScene.UnitsPerMetre);
                 Vector3f rootDelta = view.RootMotion();
                 if (Cutscenes?.AdvanceAttachedActor(view.Soldier, rootDelta) == true)
                 {
@@ -3984,14 +3986,14 @@ public sealed class SoldierRenderer : IDisposable
                     // every staged actor's sway: mission 8's guard 3336 drifted 61 cm where the
                     // original's drifts 30.
                     brain.SeparateTo(brain.Position + new Vector3d(0d, 0d, rootDelta.Z));
-                    member.HasCutsceneRootMotion = true;
+                    member.Agent.HasCutsceneRootMotion = true;
                 }
 
             }
 
             if (patrolCommand is { } command && command.IsMovement())
             {
-                member.HasCutsceneGameplayMovement = true;
+                member.Agent.HasCutsceneGameplayMovement = true;
             }
         }
 
@@ -4010,9 +4012,9 @@ public sealed class SoldierRenderer : IDisposable
             Member? corpse = FindMember(view);
             if (corpse is not null)
             {
-                corpse.FiredThisTick = false;
+                corpse.Agent.FiredThisTick = false;
             }
-            _weaponSound?.Invoke(brain.RuntimeId, false, corpse?.WeaponType, brain.Position);
+            _weaponSound?.Invoke(brain.RuntimeId, false, corpse?.Agent.WeaponType, brain.Position);
             return;
         }
 
@@ -4132,7 +4134,7 @@ public sealed class SoldierRenderer : IDisposable
 
         if (member is not null)
         {
-            member.FiredThisTick = false;
+            member.Agent.FiredThisTick = false;
         }
 
         // The body machine consumes this tick's AI channel writes before the weapon consumes the
@@ -4168,7 +4170,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         bool fired = FireIfAsked(view, brain, aimFeet, aimCrouching);
-        WeaponType? soundingWeapon = brain.MountedGun?.Weapon ?? member?.WeaponType;
+        WeaponType? soundingWeapon = brain.MountedGun?.Weapon ?? member?.Agent.WeaponType;
         Vector3d soundPosition = brain.MountedGun?.Position ?? brain.EyePosition();
         _weaponSound?.Invoke(brain.RuntimeId, fired, soundingWeapon, soundPosition);
 
@@ -4418,7 +4420,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (member.IsCutsceneActor && !_brains.ContainsKey(member.View))
+                if (member.Agent.IsCutsceneActor && !_brains.ContainsKey(member.Agent.View))
                 {
                     AttachStagedActor(member);
                 }
@@ -4431,14 +4433,14 @@ public sealed class SoldierRenderer : IDisposable
     {
         if (_solids is null
             || Cutscenes is null
-            || !ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+            || !ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier))
         {
             return;
         }
 
         AttachCutsceneActorToMovingGround(
-            member.View,
-            member.Position * WorldScene.UnitsPerMetre,
+            member.Agent.View,
+            member.Agent.Position * WorldScene.UnitsPerMetre,
             attachmentPosition: null,
             mask: WorldTraceMask.DynamicObjects,
             includeInactiveOwners: false);
@@ -4449,15 +4451,15 @@ public sealed class SoldierRenderer : IDisposable
     {
         (Vector3d where, Matrix3f orientation) = TickPlacementOf(member);
         if (TracedCutsceneActor is { } traceActor
-            && traceActor == member.View.Soldier.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            && traceActor == member.Agent.View.Soldier.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
             && _tick % 30 == 0)
         {
-            BoneClip? clip = member.View.Bones.SourceOf(0);
+            BoneClip? clip = member.Agent.View.Bones.SourceOf(0);
             _logger.Warning(LogCategory + ".CutsceneActor",
-                $"tick={_tick} actor={traceActor} active={ConditionalContainerGate.IsTaskActive(member.View.Soldier)} "
-                + $"scene={Cutscenes?.ActiveScene?.Id} staged={member.IsCutsceneActor} where={where} "
-                + $"view={member.View.Position} clip={member.View.CurrentAnimation} time={clip?.Time} "
-                + $"root={member.View.RootSample} delta={member.View.RootMotion()}");
+                $"tick={_tick} actor={traceActor} active={ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier)} "
+                + $"scene={Cutscenes?.ActiveScene?.Id} staged={member.Agent.IsCutsceneActor} where={where} "
+                + $"view={member.Agent.View.Position} clip={member.Agent.View.CurrentAnimation} time={clip?.Time} "
+                + $"root={member.Agent.View.RootSample} delta={member.Agent.View.RootMotion()}");
         }
         float facing = FacingOf(orientation);
 
@@ -4472,7 +4474,7 @@ public sealed class SoldierRenderer : IDisposable
             // The pose the BODY was drawn from, which for a corpse is the ragdoll's rather than the
             // rig's -- otherwise the weapon rides a hand that is no longer where the hand is drawn, and
             // hangs in the air over the body.
-            BonePose pose = member.DrawnPose ?? member.View.UnrotatedPose();
+            BonePose pose = member.DrawnPose ?? member.Agent.View.UnrotatedPose();
             if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
             {
                 Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
@@ -4506,7 +4508,7 @@ public sealed class SoldierRenderer : IDisposable
     /// </remarks>
     private (Vector3d Where, Matrix3f Orientation) TickPlacementOf(Member member)
     {
-        SoldierView soldier = member.View;
+        SoldierView soldier = member.Agent.View;
 
         // A simulated corpse carries its own placement. Its pose is built in world space relative to the
         // origin frozen at the moment it died, with the body's heading folded into the root bone's own
@@ -4520,7 +4522,7 @@ public sealed class SoldierRenderer : IDisposable
         // A dormant cinematic actor may still have an AI row and therefore a brain object, but its
         // authored staging wins while its conditional scene is active.  Letting the generic brain
         // branch below ground it simply reintroduced the seated-actor lift avoided at construction.
-        if (member.IsCutsceneActor)
+        if (member.Agent.IsCutsceneActor)
         {
             if (Cutscenes?.TryGetAttachedDrawTransform(
                 soldier.Soldier, out Vector3d attached, out Matrix3f attachedOrientation) == true)
@@ -4543,7 +4545,7 @@ public sealed class SoldierRenderer : IDisposable
             // Only once the brain HAS stood it there: before its first tick the position is still the authored
             // model origin, which for a set-dressed actor already sits a root height above the floor -- mission
             // 4's Anya at 1.98 m -- and adding the root height again stood her a whole hip-height up.
-            if (!member.HasCutsceneGameplayMovement
+            if (!member.Agent.HasCutsceneGameplayMovement
                 && _brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
                 && !stagedBrain.GraphInParentFrame && stagedBrain.StoodOnGraph)
             {
@@ -4554,7 +4556,7 @@ public sealed class SoldierRenderer : IDisposable
                     (soldier.Position.Z + soldier.RootSample.Z) / WorldScene.UnitsPerMetre), soldier.Orientation);
             }
 
-            if (member.HasCutsceneGameplayMovement)
+            if (member.Agent.HasCutsceneGameplayMovement)
             {
                 double groundedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
                 return (new Vector3d(
@@ -4563,13 +4565,13 @@ public sealed class SoldierRenderer : IDisposable
                     (groundedZ + soldier.RootSample.Z) / WorldScene.UnitsPerMetre), soldier.Orientation);
             }
 
-            if (member.HasCutsceneRootMotion)
+            if (member.Agent.HasCutsceneRootMotion)
             {
                 return (soldier.Position / WorldScene.UnitsPerMetre, soldier.Orientation);
             }
             // The authored model origin is already staged (Anya HQ, vehicle briefing sets).
             // Adding an absolute root sample here lifts the whole set-relative performance.
-            return (member.Position, soldier.Orientation);
+            return (member.Agent.Position, soldier.Orientation);
         }
 
         // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT HEIGHT.
@@ -4596,10 +4598,10 @@ public sealed class SoldierRenderer : IDisposable
             return (new Vector3d(
                 soldier.Position.X / WorldScene.UnitsPerMetre,
                 soldier.Position.Y / WorldScene.UnitsPerMetre,
-                member.Position.Z), soldier.Orientation);
+                member.Agent.Position.Z), soldier.Orientation);
         }
 
-        return (member.Position, soldier.Orientation);
+        return (member.Agent.Position, soldier.Orientation);
     }
 
     /// <summary>The pose a body is skinned from this tick — its rig's, or its corpse's.</summary>
@@ -4609,7 +4611,7 @@ public sealed class SoldierRenderer : IDisposable
     /// that feeds the temporal resolve are all untouched by it.
     /// </remarks>
     private static BonePose PoseToDraw(Member member) =>
-        member.Ragdoll?.Pose() ?? member.View.UnrotatedPose();
+        member.Ragdoll?.Pose() ?? member.Agent.View.UnrotatedPose();
 
     /// <summary>A body's heading out of its world 3×3 — the inverse of <c>Z(facing)</c>.</summary>
     /// <remarks>
@@ -4756,7 +4758,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (!ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+                if (!ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier))
                 {
                     continue;
                 }
@@ -5048,7 +5050,7 @@ public sealed class SoldierRenderer : IDisposable
 
         _playerBodyView = view;
         _playerBodyGroup = group;
-        _playerBodyMember = new Member(view, default, own);
+        _playerBodyMember = new Member(new SoldierAgent(view, default), own);
         _playerBodyGround = MakeGroundQuery();
         _playerBodyActive = false;
         _playerBodyHasTickState = false;
@@ -6028,7 +6030,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView soldier = member.View;
+                SoldierView soldier = member.Agent.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
                 {
                     continue;
@@ -6126,7 +6128,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (!member.FiredThisTick
+                if (!member.Agent.FiredThisTick
                     || !member.HasWeaponFrameState
                     || member.Weapon is not { } weapon
                     || weapon.Presentation is not { } presentation)
@@ -6141,7 +6143,7 @@ public sealed class SoldierRenderer : IDisposable
                     camera,
                     projection,
                     firedThisTick: true,
-                    member.ShotSequence,
+                    member.Agent.ShotSequence,
                     WeaponDrawParts.FlameOnly);
             }
         }
@@ -6228,7 +6230,7 @@ public sealed class SoldierRenderer : IDisposable
                 camera,
                 projection,
                 firedThisTick: false,
-                member.ShotSequence,
+                member.Agent.ShotSequence,
                 WeaponDrawParts.BodyOnly);
             return;
         }
@@ -6304,7 +6306,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView soldier = member.View;
+                SoldierView soldier = member.Agent.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
                 {
                     continue;
@@ -6651,7 +6653,7 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d ragdollOrigin = new(view.Position.X, view.Position.Y, grounded + view.RootSample.Z);
             Vector3d dropPosition = view.Position;
             Matrix3f dropRotation = view.Orientation;
-            WeaponType? droppedWeapon = WeaponForDrop(member.CarriedWeaponType, member.WeaponType);
+            WeaponType? droppedWeapon = WeaponForDrop(member.Agent.CarriedWeaponType, member.Agent.WeaponType);
             if (droppedWeapon is not null)
             {
                 BonePose pose = view.UnrotatedPose();
@@ -6761,7 +6763,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView soldier = member.View;
+                SoldierView soldier = member.Agent.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
                     || ReferenceEquals(soldier, shooter))
                 {
@@ -6977,7 +6979,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView soldier = member.View;
+                SoldierView soldier = member.Agent.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
                     || soldier.IsDead
                     || (_health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
@@ -7014,7 +7016,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView soldier = member.View;
+                SoldierView soldier = member.Agent.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
                     || soldier.IsDead
                     || (_health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
@@ -7256,26 +7258,10 @@ public sealed class SoldierRenderer : IDisposable
     /// instead of one per group, which is the price of each soldier having its own pose.
     /// </para>
     /// </remarks>
-    private sealed class Member(SoldierView view, Vector3d position, MeshHandle mesh)
+    private sealed class Member(SoldierAgent agent, MeshHandle mesh)
     {
-        public SoldierView View { get; } = view;
-
-        /// <summary>Whether the last frame's main view drew this soldier -- retail's cue to re-skin it.</summary>
-        public bool InView { get; set; }
-
-        /// <summary>The eye orientation from the last frame that drew this soldier, or none yet.</summary>
-        public Matrix3f? EyeOrientation { get; set; }
-
-        public Vector3d Position { get; } = position;
-
-        /// <summary>Whether the authored origin is cinematic staging rather than a gameplay spawn.</summary>
-        public bool IsCutsceneActor { get; init; }
-
-        /// <summary>Whether an authored one-shot has moved this staged Human from its spawn.</summary>
-        public bool HasCutsceneRootMotion { get; set; }
-
-        /// <summary>Whether an authored WalkTo/RunTo route has handed placement to the Human mover.</summary>
-        public bool HasCutsceneGameplayMovement { get; set; }
+        /// <summary>The soldier this draws: who it is, where it spawned, what it is armed with.</summary>
+        public SoldierAgent Agent { get; } = agent;
 
         public MeshHandle Mesh { get; set; } = mesh;
 
@@ -7285,32 +7271,8 @@ public sealed class SoldierRenderer : IDisposable
         /// <summary>The carried weapon restored after a temporary stationary-gun mount ends.</summary>
         public HeldWeapon? CarriedWeapon { get; set; }
 
-        /// <summary>The carried weapon table row restored after a temporary stationary-gun mount ends.</summary>
-        public WeaponType? CarriedWeaponType { get; set; }
-
         /// <summary>The stationary gun whose model currently replaces the carried weapon.</summary>
         public AiStationaryGun? RenderedMountedGun { get; set; }
-
-        /// <summary>Whether a round left this soldier's barrel on the current simulation tick.</summary>
-        public bool FiredThisTick { get; set; }
-
-        /// <summary>Monotonic round serial used to vary the retail gun-flame attachment.</summary>
-        public int ShotSequence { get; set; }
-
-        /// <summary>The weapon's table row, which the AI reads its clip size and burst length from.</summary>
-        public WeaponType? WeaponType { get; set; }
-
-        /// <summary>How many rounds are in the clip. The AI watches this change to count its burst.</summary>
-        public int AmmoInClip { get; set; }
-
-        /// <summary>Ticks left before the weapon's cadence lets another round out.</summary>
-        public int FireCooldown { get; set; }
-
-        /// <summary>Rounds fired since the trigger went down — the gun's <c>+320</c> that picks the spread.</summary>
-        public int RoundsThisPull { get; set; }
-
-        /// <summary>Ticks left of a reload.</summary>
-        public int ReloadTicks { get; set; }
 
         /// <summary>The persistent buffer this soldier's pose is skinned into, allocated once.</summary>
         public Vertex3D[]? SkinScratch { get; set; }

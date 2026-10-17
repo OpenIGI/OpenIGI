@@ -1033,9 +1033,10 @@ public sealed class AiScenarioHarness : IDisposable
                     foreach (object member in (System.Collections.IEnumerable)group.GetType().GetProperty("Soldiers")!.GetValue(group)!)
                     {
                         drawn.Add((Vector3d)member.GetType().GetProperty("TickWhere")!.GetValue(member)! * Metre);
-                        if (member.GetType().GetProperty("IsCutsceneActor")!.GetValue(member) is true)
+                        object agent = member.GetType().GetProperty("Agent")!.GetValue(member)!;
+                        if (agent.GetType().GetProperty("IsCutsceneActor")!.GetValue(agent) is true)
                         {
-                            SoldierView view = (SoldierView)member.GetType().GetProperty("View")!.GetValue(member)!;
+                            SoldierView view = (SoldierView)agent.GetType().GetProperty("View")!.GetValue(agent)!;
                             System.Collections.IDictionary brains = (System.Collections.IDictionary)typeof(SoldierRenderer).GetField("_brains", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!;
                             AiSoldier? brain = brains.Contains(view) ? (AiSoldier?)brains[view] : null;
                             object? P(string name) => member.GetType().GetProperty(name)?.GetValue(member);

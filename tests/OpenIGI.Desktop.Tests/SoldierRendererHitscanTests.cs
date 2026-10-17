@@ -1058,7 +1058,7 @@ public sealed class SoldierRendererHitscanTests
                 group.GetType().GetProperty("Soldiers", BindingFlags.Instance | BindingFlags.Public)!.GetValue(group)))
             {
                 SoldierView view = Assert.IsType<SoldierView>(
-                    member.GetType().GetProperty("View", BindingFlags.Instance | BindingFlags.Public)!.GetValue(member));
+                    Get<SoldierView>(member, "View"));
                 return new MeshBackedSoldier(view, mesh, member);
             }
         }
@@ -1116,11 +1116,30 @@ public sealed class SoldierRendererHitscanTests
         renderer.BeginFrame(tickFraction: 0.5f, smooth);
     }
 
-    private static T Get<T>(object instance, string property) => Assert.IsType<T>(
-        instance.GetType().GetProperty(property, BindingFlags.Instance | BindingFlags.Public)!.GetValue(instance));
+    private static T Get<T>(object instance, string property)
+    {
+        (object owner, PropertyInfo info) = Find(instance, property);
+        return Assert.IsType<T>(info.GetValue(owner));
+    }
 
-    private static void Set<T>(object instance, string property, T value) =>
-        instance.GetType().GetProperty(property, BindingFlags.Instance | BindingFlags.Public)!.SetValue(instance, value);
+    private static void Set<T>(object instance, string property, T value)
+    {
+        (object owner, PropertyInfo info) = Find(instance, property);
+        info.SetValue(owner, value);
+    }
+
+    // A renderer's soldier holds its drawing state itself and its simulation state on its Agent.
+    private static (object Owner, PropertyInfo Property) Find(object instance, string property)
+    {
+        const BindingFlags Public = BindingFlags.Instance | BindingFlags.Public;
+        if (instance.GetType().GetProperty(property, Public) is { } own)
+        {
+            return (instance, own);
+        }
+
+        object agent = instance.GetType().GetProperty("Agent", Public)!.GetValue(instance)!;
+        return (agent, agent.GetType().GetProperty(property, Public)!);
+    }
 
     private static IEnumerable<(SoldierView View, MefCollisionMesh Mesh)> MeshBackedSoldiers(SoldierRenderer renderer)
     {
@@ -1139,7 +1158,7 @@ public sealed class SoldierRendererHitscanTests
             foreach (object member in members)
             {
                 SoldierView view = Assert.IsType<SoldierView>(
-                    member.GetType().GetProperty("View", BindingFlags.Instance | BindingFlags.Public)!.GetValue(member));
+                    Get<SoldierView>(member, "View"));
                 yield return (view, mesh);
             }
         }
