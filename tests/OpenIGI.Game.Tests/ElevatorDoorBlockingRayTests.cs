@@ -119,7 +119,7 @@ public sealed class ElevatorDoorBlockingRayTests
                 feet.X / WorldScene.UnitsPerMetre,
                 feet.Y / WorldScene.UnitsPerMetre,
                 feet.Z / WorldScene.UnitsPerMetre);
-            Vector3d closest = ClosestPointOnSegment(from, to, point);
+            Vector3d closest = Vector3d.ClosestOnSegment(from, to, point);
             return Vector3d.Distance(closest, point) <= 0.5;
         }
 
@@ -277,24 +277,6 @@ public sealed class ElevatorDoorBlockingRayTests
         }
 
         return (null, default, default);
-    }
-
-    private static Vector3d ClosestPointOnSegment(Vector3d start, Vector3d end, Vector3d point)
-    {
-        double dx = end.X - start.X;
-        double dy = end.Y - start.Y;
-        double dz = end.Z - start.Z;
-        double lengthSquared = (dx * dx) + (dy * dy) + (dz * dz);
-        if (lengthSquared <= 0.0)
-        {
-            return start;
-        }
-
-        double t = (((point.X - start.X) * dx)
-            + ((point.Y - start.Y) * dy)
-            + ((point.Z - start.Z) * dz)) / lengthSquared;
-        t = Math.Clamp(t, 0.0, 1.0);
-        return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
     private static IEnumerable<GameTask> Descendants(GameTask task)

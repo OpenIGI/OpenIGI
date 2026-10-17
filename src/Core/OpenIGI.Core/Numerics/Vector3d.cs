@@ -161,6 +161,24 @@ public readonly struct Vector3d : IEquatable<Vector3d>, IFormattable
     public static double Dot(Vector3d left, Vector3d right) =>
         (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
 
+    /// <summary>The point on a segment nearest another point.</summary>
+    /// <param name="start">One end of the segment.</param>
+    /// <param name="end">The other.</param>
+    /// <param name="point">The point.</param>
+    /// <returns>The nearest point on the segment; <paramref name="start"/> when the segment has no length.</returns>
+    public static Vector3d ClosestOnSegment(Vector3d start, Vector3d end, Vector3d point)
+    {
+        Vector3d along = end - start;
+        double lengthSquared = along.LengthSquared;
+        if (lengthSquared <= 0.0)
+        {
+            return start;
+        }
+
+        double t = Math.Clamp(Dot(point - start, along) / lengthSquared, 0.0, 1.0);
+        return start + (along * t);
+    }
+
     /// <summary>Computes the cross product of two vectors.</summary>
     /// <param name="left">The first vector.</param>
     /// <param name="right">The second vector.</param>

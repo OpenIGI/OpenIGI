@@ -109,24 +109,6 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <remarks>The terrain's sparse interval; staggered by query id so retests spread across frames.</remarks>
     private const int VisibleRetestInterval = 16;
 
-    /// <summary>How many frames the view must hold still before a visibility verdict is trusted again.</summary>
-    /// <remarks>
-    /// A verdict is not measured against the frame that acts on it. The box is drawn, the result is read
-    /// once the slot's fence comes round, and the renderer skips the page a frame or two after the depth
-    /// that judged it was written. Standing still that is exactly right. Turning it is a statement about
-    /// where the camera was looking, not where it is: a page that has just come out from behind a hill is
-    /// still carrying the verdict it earned while hidden, so it is skipped -- the hole -- until its retest
-    /// lands and it is drawn again. Long enough to cover the deepest frame queue the backends run.
-    /// </remarks>
-    private const int OcclusionSettleFrames = 3;
-
-    /// <summary>How far the camera may drift per frame and still count as holding still, in metres.</summary>
-    private const double OcclusionSettlePosition = 0.05;
-
-    /// <summary>How far any orientation element may move per frame and still count as holding still.</summary>
-    /// <remarks>About a fifth of a degree: below what a hand on a mouse holds, above sensor noise.</remarks>
-    private const float OcclusionSettleOrientation = 0.003f;
-
     /// <summary>The placements whose occlusion query is (re)issued after this pass's draws.</summary>
     /// <remarks>
     /// Issued after, not during: a query needs the pass's occluders already in the depth buffer, or a
@@ -134,9 +116,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </remarks>
     private readonly List<int> _queryQueue = [];
     private long _frameNumber;
-    private Camera3D _previousCamera;
-    private bool _hasPreviousCamera;
-    private int _occlusionSettle;
+    private readonly OcclusionSettle _occlusionSettle = new(windowed: false);
 
     /// <summary>Initializes a new instance of the <see cref="WorldRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -393,7 +373,7 @@ public sealed class WorldRenderer : IWorldPresenter
         int triangles = 0;
         int lit = 0;
         int occluded = 0;
-        bool bypassOcclusion = !occlusionCulling || !OcclusionVerdictsUsable(camera);
+        bool bypassOcclusion = !occlusionCulling || !_occlusionSettle.VerdictsUsable(camera);
         _queryQueue.Clear();
 
         // The pass's planes once, not a projection multiply per placement: this loop used to be a
@@ -644,8 +624,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
         if (occlusionCulling)
         {
-            _previousCamera = camera;
-            _hasPreviousCamera = true;
+            _occlusionSettle.Observed(camera);
         }
 
         // The rotor pass adds to the opaque pass's tallies rather than replacing them: the two are
@@ -704,54 +683,6 @@ public sealed class WorldRenderer : IWorldPresenter
         _queryQueue.Clear();
     }
 
-    /// <summary>Rejects stale query decisions after a teleport or an abrupt camera cut.</summary>
-    /// <summary>Gets whether visibility verdicts may be acted on: the view has held still long enough.</summary>
-    /// <remarks>
-    /// Not a test of this frame alone. A view that has just stopped still has verdicts in flight that were
-    /// measured while it moved, so the count runs on for <see cref="OcclusionSettleFrames"/> frames after
-    /// the last movement and only then lets the culler skip anything again.
-    /// </remarks>
-    private bool OcclusionVerdictsUsable(in Camera3D camera)
-    {
-        if (ViewMoved(camera))
-        {
-            _occlusionSettle = OcclusionSettleFrames;
-        }
-        else if (_occlusionSettle > 0)
-        {
-            _occlusionSettle--;
-        }
-
-        return _occlusionSettle == 0;
-    }
-
-    private bool ViewMoved(in Camera3D camera)
-    {
-        if (!_hasPreviousCamera)
-        {
-            return true;
-        }
-
-        if ((camera.Position - _previousCamera.Position).Length > OcclusionSettlePosition)
-        {
-            return true;
-        }
-
-        Matrix3f a = camera.Orientation;
-        Matrix3f b = _previousCamera.Orientation;
-        float largest = 0f;
-        largest = Math.Max(largest, Math.Abs(a.M11 - b.M11));
-        largest = Math.Max(largest, Math.Abs(a.M12 - b.M12));
-        largest = Math.Max(largest, Math.Abs(a.M13 - b.M13));
-        largest = Math.Max(largest, Math.Abs(a.M21 - b.M21));
-        largest = Math.Max(largest, Math.Abs(a.M22 - b.M22));
-        largest = Math.Max(largest, Math.Abs(a.M23 - b.M23));
-        largest = Math.Max(largest, Math.Abs(a.M31 - b.M31));
-        largest = Math.Max(largest, Math.Abs(a.M32 - b.M32));
-        largest = Math.Max(largest, Math.Abs(a.M33 - b.M33));
-        return largest > OcclusionSettleOrientation;
-    }
-
     /// <summary>Resolves everything camera-independent about the frame, once, for every pass to share.</summary>
     private void PrepareFrame(WorldScene scene)
     {
@@ -770,7 +701,7 @@ public sealed class WorldRenderer : IWorldPresenter
             DestroyResolvedQueries();
             _resolved.Clear();
             _resolvedDestroyed.Clear();
-            _hasPreviousCamera = false;
+            _occlusionSettle.Forget();
         }
 
         for (int i = 0; i < _frame.Length; i++)

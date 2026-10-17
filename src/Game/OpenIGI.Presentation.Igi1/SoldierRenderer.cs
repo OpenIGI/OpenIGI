@@ -251,31 +251,10 @@ public sealed class SoldierRenderer : IDisposable
         _sim.SpawnedBody = (generator, roster, fresh, dead) =>
         {
             Group group = _groups.First(candidate => ReferenceEquals(candidate.Roster, roster));
-            BonePose initialPose = fresh.View.UnrotatedPose();
-            Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
-            group.Geometry.Vertices.CopyTo(initialSkin, 0);
-            bool initialSkinReady = false;
-            if (group.Body.Model is { } skinModel)
-            {
-                try
-                {
-                    MefSkinner.Skin(
-                        skinModel,
-                        initialPose,
-                        (float)(1.0 / WorldScene.UnitsPerMetre),
-                        initialSkin);
-                    initialSkinReady = true;
-                }
-                catch (ArgumentException)
-                {
-                    initialSkinReady = false;
-                }
-            }
-
-            MeshHandle mesh;
+            Member member;
             try
             {
-                mesh = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
+                member = NewMember(group, fresh);
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
             {
@@ -289,14 +268,8 @@ public sealed class SoldierRenderer : IDisposable
                 _heldWeaponsByModel.TryGetValue(weaponType.GunModel, out weapon);
             }
 
-            group.AddDrawn(new Member(fresh, mesh)
-            {
-                DrawnPose = initialPose,
-                SkinScratch = initialSkin,
-                SkinnedPose = initialSkinReady ? initialPose : null,
-                PreviousSkinnedPose = initialSkinReady ? initialPose : null,
-                Weapon = weapon,
-            });
+            member.Weapon = weapon;
+            group.AddDrawn(member);
             Count++;
             return true;
         };
@@ -549,45 +522,6 @@ public sealed class SoldierRenderer : IDisposable
                 _sim.Roster.Add(group.Roster);
             }
 
-            // Its own mesh, so it can hold its own pose (see Member) -- animated, so each tick's
-            // re-skin replaces the vertices in place and the pose replaced becomes the previous-pose
-            // stream the motion vectors and the between-tick blending read.
-            BonePose initialPose = view.UnrotatedPose();
-            Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
-            group.Geometry.Vertices.CopyTo(initialSkin, 0);
-            bool initialSkinReady = false;
-            if (group.Body.Model is { } skinModel)
-            {
-                try
-                {
-                    MefSkinner.Skin(
-                        skinModel,
-                        initialPose,
-                        (float)(1.0 / WorldScene.UnitsPerMetre),
-                        initialSkin);
-                    initialSkinReady = true;
-                }
-                catch (ArgumentException)
-                {
-                    // Keep the raw mesh if a malformed model cannot be skinned. Its collision path falls
-                    // back to the authoritative pose until two valid animated uploads establish a pair.
-                    initialSkinReady = false;
-                }
-            }
-
-            MeshHandle own;
-            try
-            {
-                // Both GPU streams begin with this same skin. A smoothed player shot can therefore use
-                // a matching CPU pose pair even on the very first rendered frame; seeding them with raw
-                // geometry would make the displayed blend untraceable until a second animation tick.
-                own = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
-            }
-            catch (InvalidOperationException)
-            {
-                continue;
-            }
-
             // A human staged beside a CutScene keeps the authored object origin.  Gameplay humans are
             // grounded by their mover on the first ticks, but cinematic performers deliberately sit,
             // crouch or ride at offsets from nearby geometry.  Running the gameplay stand probe over
@@ -599,13 +533,17 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d placement = cutsceneActor
                 ? soldier.Position / WorldScene.UnitsPerMetre
                 : SoldierSimulation.Stand(soldier, group.Roster, terrain, cast);
-            group.Add(new Member(new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor }, own)
+            Member member;
+            try
             {
-                DrawnPose = initialPose,
-                SkinScratch = initialSkin,
-                SkinnedPose = initialSkinReady ? initialPose : null,
-                PreviousSkinnedPose = initialSkinReady ? initialPose : null,
-            });
+                member = NewMember(group, new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor });
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            group.Add(member);
             if (group.Body.Model is { NativeMarkerBound: > 0f } model
                 && float.IsFinite(model.NativeMarkerBound))
             {
@@ -625,6 +563,52 @@ public sealed class SoldierRenderer : IDisposable
         // already-visible mission hand-over instead of turning a Dragunov hit into a 2–5 FPS hitch.
         WarmHitTestCaches();
         return Count;
+    }
+
+    /// <summary>Makes a soldier's own drawing: its first skin, uploaded to both of its GPU streams.</summary>
+    /// <param name="group">The soldier's group, whose geometry and model it shares.</param>
+    /// <param name="agent">The soldier.</param>
+    /// <returns>The member, not yet added to the group.</returns>
+    /// <exception cref="InvalidOperationException">The device could not upload the mesh.</exception>
+    private Member NewMember(Group group, SoldierAgent agent)
+    {
+        // Its own mesh, so it can hold its own pose (see Member) -- animated, so each tick's
+        // re-skin replaces the vertices in place and the pose replaced becomes the previous-pose
+        // stream the motion vectors and the between-tick blending read.
+        BonePose initialPose = agent.View.UnrotatedPose();
+        Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
+        group.Geometry.Vertices.CopyTo(initialSkin, 0);
+        bool initialSkinReady = false;
+        if (group.Body.Model is { } skinModel)
+        {
+            try
+            {
+                MefSkinner.Skin(
+                    skinModel,
+                    initialPose,
+                    (float)(1.0 / WorldScene.UnitsPerMetre),
+                    initialSkin);
+                initialSkinReady = true;
+            }
+            catch (ArgumentException)
+            {
+                // Keep the raw mesh if a malformed model cannot be skinned. Its collision path falls
+                // back to the authoritative pose until two valid animated uploads establish a pair.
+                initialSkinReady = false;
+            }
+        }
+
+        // Both GPU streams begin with this same skin. A smoothed player shot can therefore use
+        // a matching CPU pose pair even on the very first rendered frame; seeding them with raw
+        // geometry would make the displayed blend untraceable until a second animation tick.
+        MeshHandle own = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
+        return new Member(agent, own)
+        {
+            DrawnPose = initialPose,
+            SkinScratch = initialSkin,
+            SkinnedPose = initialSkinReady ? initialPose : null,
+            PreviousSkinnedPose = initialSkinReady ? initialPose : null,
+        };
     }
 
     /// <summary>Primes immutable hit-test and corpse-rig data before the first round can arrive.</summary>

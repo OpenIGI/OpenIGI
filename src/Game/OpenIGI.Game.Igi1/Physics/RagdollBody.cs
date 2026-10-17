@@ -1072,10 +1072,10 @@ public sealed class RagdollBody
 
             // Two rounds of alternating projection finds the nearest pair of points on two segments
             // closely enough for a push-apart; an exact solve buys nothing a corpse can show.
-            Vector3d onFirst = RagdollSolver.ClosestOnSegment(a0, a1, _position[pair.Second]);
-            Vector3d onSecond = RagdollSolver.ClosestOnSegment(b0, b1, onFirst);
-            onFirst = RagdollSolver.ClosestOnSegment(a0, a1, onSecond);
-            onSecond = RagdollSolver.ClosestOnSegment(b0, b1, onFirst);
+            Vector3d onFirst = Vector3d.ClosestOnSegment(a0, a1, _position[pair.Second]);
+            Vector3d onSecond = Vector3d.ClosestOnSegment(b0, b1, onFirst);
+            onFirst = Vector3d.ClosestOnSegment(a0, a1, onSecond);
+            onSecond = Vector3d.ClosestOnSegment(b0, b1, onFirst);
 
             Vector3d apart = onFirst - onSecond;
             double distance = apart.Length;

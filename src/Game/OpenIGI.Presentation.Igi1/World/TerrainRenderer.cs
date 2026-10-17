@@ -10,6 +10,7 @@ using OpenIGI.Rendering;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -43,44 +44,6 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private const int ProductiveVisibleQueryInterval = 4;
     private const int ProductiveOccludedChunkThreshold = 64;
 
-    /// <summary>How many frames the view must hold still before a visibility verdict is trusted again.</summary>
-    /// <remarks>
-    /// A verdict is not measured against the frame that acts on it. The box is drawn, the result is read
-    /// once the slot's fence comes round, and the renderer skips the page a frame or two after the depth
-    /// that judged it was written. Standing still that is exactly right. Turning it is a statement about
-    /// where the camera was looking, not where it is: a page that has just come out from behind a hill is
-    /// still carrying the verdict it earned while hidden, so it is skipped -- the hole -- until its retest
-    /// lands and it is drawn again. Long enough to cover the deepest frame queue the backends run.
-    /// </remarks>
-    private const int OcclusionSettleFrames = 3;
-
-    /// <summary>How far the camera may drift per frame and still count as holding still, in metres.</summary>
-    private const double OcclusionSettlePosition = 0.05;
-
-    /// <summary>How far any orientation element may move per frame and still count as holding still.</summary>
-    /// <remarks>About a fifth of a degree: below what a hand on a mouse holds, above sensor noise.</remarks>
-    private const float OcclusionSettleOrientation = 0.003f;
-
-    /// <summary>How many frames the cumulative-movement window spans.</summary>
-    /// <remarks>
-    /// The per-frame <see cref="OcclusionSettlePosition"/> is what a single frame's step is judged by, and
-    /// it is fooled by a HIGH FRAME RATE and by a SLOW CINEMATIC PAN: sustained travel whose every step is
-    /// under the per-frame threshold reads as "still" frame after frame, so occlusion re-engages while the
-    /// camera is in fact moving, and terrain emerging from behind a hill is culled on the stale "occluded"
-    /// verdict it earned while hidden -- the black flash on a mission switch and during fast flight. Judging
-    /// the camera against where it was a whole window ago catches that travel however it is paced, because
-    /// occlusion depends on camera POSITION (a hill either hides a point or it does not), never on where the
-    /// camera looks -- so a windowed position test is both sufficient and exact.
-    /// </remarks>
-    private const int OcclusionWindowFrames = 12;
-
-    /// <summary>Cumulative metres over the window above which the camera counts as moving.</summary>
-    private const double OcclusionWindowDistance = 0.1;
-
-    // A ring of the last OcclusionWindowFrames camera positions, oldest at _positionWindowNext once filled.
-    private readonly Vector3d[] _positionWindow = new Vector3d[OcclusionWindowFrames];
-    private int _positionWindowNext;
-    private bool _positionWindowFilled;
 
     /// <summary>The default <see cref="CacheLimit"/>: how many uploaded chunks are kept.</summary>
     /// <remarks>
@@ -155,9 +118,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private int _trims;
     private int _buildsThisFrame;
     private int _cacheLimit = CacheCapacity;
-    private Camera3D _previousCamera;
-    private bool _hasPreviousCamera;
-    private int _occlusionSettle;
+    private readonly OcclusionSettle _occlusionSettle = new(windowed: true);
     private int _previousOccludedChunks;
     private bool _disposed;
 
@@ -479,7 +440,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
             }
         }
 
-        bool bypassOcclusion = !occlusionCulling || !OcclusionVerdictsUsable(camera);
+        bool bypassOcclusion = !occlusionCulling || !_occlusionSettle.VerdictsUsable(camera);
         int visibleQueryInterval = _previousOccludedChunks >= ProductiveOccludedChunkThreshold
             ? ProductiveVisibleQueryInterval
             : SparseVisibleQueryInterval;
@@ -606,8 +567,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
         LastTriangleCount = triangles;
         LastVisitedCount = result.Visited;
         LastDroppedChunkCount = result.Dropped;
-        _previousCamera = camera;
-        _hasPreviousCamera = true;
+        _occlusionSettle.Observed(camera);
         _previousOccludedChunks = occludedChunks;
 
         if (result.Dropped > 0)
@@ -733,79 +693,6 @@ public sealed class TerrainRenderer : ITerrainPresenter
             // (see TerrainChunkMesh), and the shares sum to one.
             page.Key.IsBase ? BlendMode.Opaque : BlendMode.Additive);
         return true;
-    }
-
-    /// <summary>Rejects stale query decisions after a teleport or abrupt camera cut.</summary>
-    /// <summary>Gets whether visibility verdicts may be acted on: the view has held still long enough.</summary>
-    /// <remarks>
-    /// Not a test of this frame alone. A view that has just stopped still has verdicts in flight that were
-    /// measured while it moved, so the count runs on for <see cref="OcclusionSettleFrames"/> frames after
-    /// the last movement and only then lets the culler skip anything again.
-    /// </remarks>
-    private bool OcclusionVerdictsUsable(in Camera3D camera)
-    {
-        // WindowMoved is evaluated unconditionally -- it maintains the position ring -- so it must run even
-        // when ViewMoved has already decided the camera moved.
-        bool windowMoved = WindowMoved(camera.Position);
-        if (ViewMoved(camera) || windowMoved)
-        {
-            _occlusionSettle = OcclusionSettleFrames;
-        }
-        else if (_occlusionSettle > 0)
-        {
-            _occlusionSettle--;
-        }
-
-        return _occlusionSettle == 0;
-    }
-
-    /// <summary>Whether the camera has travelled more than the window allows over the last several frames.</summary>
-    /// <param name="position">This frame's camera position, in metres.</param>
-    /// <returns><see langword="true"/> when cumulative movement over the window counts as moving.</returns>
-    /// <remarks>Catches sustained travel whose per-frame step slips under <see cref="OcclusionSettlePosition"/>.</remarks>
-    private bool WindowMoved(Vector3d position)
-    {
-        // The entry about to be overwritten is the oldest -- OcclusionWindowFrames ago -- once the ring has
-        // filled. Before then there is no window to compare against and the per-frame test carries the load.
-        bool moved = _positionWindowFilled
-            && (position - _positionWindow[_positionWindowNext]).Length > OcclusionWindowDistance;
-
-        _positionWindow[_positionWindowNext] = position;
-        _positionWindowNext++;
-        if (_positionWindowNext >= _positionWindow.Length)
-        {
-            _positionWindowNext = 0;
-            _positionWindowFilled = true;
-        }
-
-        return moved;
-    }
-
-    private bool ViewMoved(in Camera3D camera)
-    {
-        if (!_hasPreviousCamera)
-        {
-            return true;
-        }
-
-        if ((camera.Position - _previousCamera.Position).Length > OcclusionSettlePosition)
-        {
-            return true;
-        }
-
-        Matrix3f a = camera.Orientation;
-        Matrix3f b = _previousCamera.Orientation;
-        float largest = 0f;
-        largest = Math.Max(largest, Math.Abs(a.M11 - b.M11));
-        largest = Math.Max(largest, Math.Abs(a.M12 - b.M12));
-        largest = Math.Max(largest, Math.Abs(a.M13 - b.M13));
-        largest = Math.Max(largest, Math.Abs(a.M21 - b.M21));
-        largest = Math.Max(largest, Math.Abs(a.M22 - b.M22));
-        largest = Math.Max(largest, Math.Abs(a.M23 - b.M23));
-        largest = Math.Max(largest, Math.Abs(a.M31 - b.M31));
-        largest = Math.Max(largest, Math.Abs(a.M32 - b.M32));
-        largest = Math.Max(largest, Math.Abs(a.M33 - b.M33));
-        return largest > OcclusionSettleOrientation;
     }
 
     /// <inheritdoc/>

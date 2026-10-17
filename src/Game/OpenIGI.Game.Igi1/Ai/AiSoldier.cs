@@ -910,7 +910,7 @@ public sealed class AiSoldier
         }
 
         Vector3d eye = EyePosition();
-        Vector3d closest = ClosestPointOnSegment(segmentStart, segmentEnd, eye);
+        Vector3d closest = Vector3d.ClosestOnSegment(segmentStart, segmentEnd, eye);
         double distance = Vector3d.Distance(eye, closest);
         if (distance >= GunshotMissRadiusInUnits)
         {
@@ -4797,24 +4797,6 @@ public sealed class AiSoldier
         }
 
         return radians;
-    }
-
-    private static Vector3d ClosestPointOnSegment(Vector3d start, Vector3d end, Vector3d point)
-    {
-        double dx = end.X - start.X;
-        double dy = end.Y - start.Y;
-        double dz = end.Z - start.Z;
-        double lengthSquared = (dx * dx) + (dy * dy) + (dz * dz);
-        if (lengthSquared <= 0.0)
-        {
-            return start;
-        }
-
-        double t = (((point.X - start.X) * dx)
-            + ((point.Y - start.Y) * dy)
-            + ((point.Z - start.Z) * dz)) / lengthSquared;
-        t = Math.Clamp(t, 0.0, 1.0);
-        return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
 }

@@ -57,7 +57,7 @@ public static class LampSounds
     public const string SputterName = "remaster.lamp.sputter";
 
     /// <summary>The sounds' sample rate.</summary>
-    public const int SampleRate = 44100;
+    public const int SampleRate = ResonantSynthesis.SampleRate;
 
     /// <summary>A magnetic ballast's hum: twice the mains frequency, fifty hertz mains being the world's commonest.</summary>
     private const float HumHertz = 100f;
@@ -88,7 +88,7 @@ public static class LampSounds
     private static float[] WallSwitch()
     {
         float[] s = Buffer(0.11f);
-        Knock(s, 0f, 0.4f, 150f, 0x5A17u);
+        ResonantSynthesis.Knock(s, 0f, 0.4f, 150f, 0x5A17u);
         Strike(s, 0.003f, 1f, [1250f, 2050f, 3350f, 4900f, 7200f], [10f, 12f, 12f, 10f, 8f], 0x9C04u);
         Strike(s, 0.0095f, 0.35f, [1180f, 1930f, 3150f], [9f, 10f, 10f], 0x2E61u);
         return Finish(s, 9500f);
@@ -111,8 +111,8 @@ public static class LampSounds
             spit[i] = XorShift32.NextSigned(ref state) * (1f - MathF.Exp(-t / 0.0002f)) * MathF.Exp(-t / 0.0025f);
         }
 
-        Resonate(s, (int)(0.001f * SampleRate), spit, 3500f * detune, 1.2f, 0.9f);
-        Resonate(s, (int)(0.001f * SampleRate), spit, 7000f * detune, 1.5f, 0.6f);
+        ResonantSynthesis.Resonate(s, (int)(0.001f * SampleRate), spit, 3500f * detune, 1.2f, 0.9f);
+        ResonantSynthesis.Resonate(s, (int)(0.001f * SampleRate), spit, 7000f * detune, 1.5f, 0.6f);
 
         // The flash's own buzz, through the fitting's tin, for as long as the flash lasts.
         Buzz(s, 0.002f, 0.05f, 0.18f, drive: 3f, attack: 0.002f, release: 0.012f);
@@ -124,7 +124,7 @@ public static class LampSounds
     private static float[] TubeHum()
     {
         float[] s = Buffer(1.8f);
-        Knock(s, 0f, 0.25f, 110f, 0x7E11u);
+        ResonantSynthesis.Knock(s, 0f, 0.25f, 110f, 0x7E11u);
         Strike(s, 0f, 0.12f, [3100f, 5300f], [25f, 22f], 0x1F2Du);
 
         for (int i = 0; i < s.Length; i++)
@@ -171,7 +171,7 @@ public static class LampSounds
     private static float[] DischargeHum()
     {
         float[] s = Buffer(2.6f);
-        Knock(s, 0f, 0.8f, 85f, 0x2D44u);
+        ResonantSynthesis.Knock(s, 0f, 0.8f, 85f, 0x2D44u);
 
         uint state = 0x6B9Au;
         float low = 0f;
@@ -198,7 +198,7 @@ public static class LampSounds
             hiss[i] = XorShift32.NextSigned(ref state) * MathF.Exp(-t / 0.8f) * Fade(t, 1.6f, 2.6f);
         }
 
-        Resonate(s, 0, hiss, 5200f, 0.8f, 0.05f);
+        ResonantSynthesis.Resonate(s, 0, hiss, 5200f, 0.8f, 0.05f);
         return Finish(s, 9000f);
     }
 
@@ -216,7 +216,7 @@ public static class LampSounds
     private static float[] BallastOff()
     {
         float[] s = Buffer(0.16f);
-        Knock(s, 0f, 0.5f, 120f, 0x0FF5u);
+        ResonantSynthesis.Knock(s, 0f, 0.5f, 120f, 0x0FF5u);
         Strike(s, 0.001f, 0.3f, [1800f, 3200f], [9f, 9f], 0x77A1u);
 
         for (int i = 0; i < s.Length; i++)
@@ -299,9 +299,9 @@ public static class LampSounds
             samples[first + i] += gain * 0.5f * burst[i];
         }
 
-        Resonate(samples, first, burst, 2600f, 6f, gain * 0.5f);
-        Resonate(samples, first, burst, 4400f, 6f, gain * 0.45f);
-        Resonate(samples, first, burst, 6900f, 5f, gain * 0.3f);
+        ResonantSynthesis.Resonate(samples, first, burst, 2600f, 6f, gain * 0.5f);
+        ResonantSynthesis.Resonate(samples, first, burst, 4400f, 6f, gain * 0.45f);
+        ResonantSynthesis.Resonate(samples, first, burst, 6900f, 5f, gain * 0.3f);
     }
 
     // One mechanical strike: a sub-millisecond burst of noise heard directly for its edge and struck through
@@ -334,54 +334,7 @@ public static class LampSounds
         for (int m = 0; m < hertz.Length; m++)
         {
             float tilt = MathF.Pow(0.8f, m);
-            Resonate(samples, first, excitation, hertz[m] * (1f + (0.02f * XorShift32.NextSigned(ref state))), q[m], gain * 0.7f * tilt);
-        }
-    }
-
-    // A soft, low, heavily damped knock: a hand on a plate, a core settling, a gas breaking down.
-    private static void Knock(float[] samples, float start, float gain, float hertz, uint seed)
-    {
-        int first = (int)(start * SampleRate);
-        int length = samples.Length - first;
-        if (length <= 0)
-        {
-            return;
-        }
-
-        float[] excitation = new float[length];
-        uint state = seed;
-        for (int i = 0; i < length; i++)
-        {
-            float t = i / (float)SampleRate;
-            excitation[i] = XorShift32.NextSigned(ref state) * (1f - MathF.Exp(-t / 0.0006f)) * MathF.Exp(-t / 0.002f);
-        }
-
-        Resonate(samples, first, excitation, hertz, 1.5f, gain);
-        Resonate(samples, first, excitation, hertz * 2.8f, 2.5f, gain * 0.4f);
-    }
-
-    // A two-pole band-pass at unit peak gain (the audio EQ cookbook's), run over the excitation and added in.
-    private static void Resonate(float[] samples, int first, float[] excitation, float hertz, float q, float gain)
-    {
-        float w = MathF.Tau * Math.Min(hertz, SampleRate * 0.45f) / SampleRate;
-        float alpha = MathF.Sin(w) / (2f * q);
-        float a0 = 1f + alpha;
-        float b0 = alpha / a0;
-        float b2 = -alpha / a0;
-        float a1 = -2f * MathF.Cos(w) / a0;
-        float a2 = (1f - alpha) / a0;
-
-        int count = Math.Min(excitation.Length, samples.Length - first);
-        float x1 = 0f, x2 = 0f, y1 = 0f, y2 = 0f;
-        for (int i = 0; i < count; i++)
-        {
-            float x = excitation[i];
-            float y = (b0 * x) + (b2 * x2) - (a1 * y1) - (a2 * y2);
-            x2 = x1;
-            x1 = x;
-            y2 = y1;
-            y1 = y;
-            samples[first + i] += gain * y;
+            ResonantSynthesis.Resonate(samples, first, excitation, hertz[m] * (1f + (0.02f * XorShift32.NextSigned(ref state))), q[m], gain * 0.7f * tilt);
         }
     }
 
