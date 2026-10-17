@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Host.Services;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -35,9 +36,9 @@ public sealed partial class GameHost
     /// the code reading <c>Value</c>.
     /// </para>
     /// <para>
-    /// Clearing it is all Play has to do. The per-frame <see cref="EnsureRealtimeGiStructures"/> sees the
+    /// Clearing it is all Play has to do. The per-frame <see cref="GlobalIllumination.EnsureStructures"/> sees the
     /// structures wanted again and builds them, and the mission's warm-up holds the picture until they are
-    /// ready (<see cref="RealtimeGiPending"/>), so the cost moves behind the going-in sequence.
+    /// ready (<see cref="GlobalIllumination.Pending"/>), so the cost moves behind the going-in sequence.
     /// </para>
     /// <para>
     /// Nothing in a lite backdrop traces, so nothing is admitted to the traced world either: every mesh it

@@ -210,8 +210,8 @@ public sealed partial class GameHost
 
         // The outgoing level's surface cache and distance fields go first: the cards were captured from
         // the level that has just been replaced, and the clipmaps were traced against it.
-        DiscardSurfaceCache();
-        DiscardDistanceFields();
+        _gi.DiscardSurfaceCache();
+        _gi.DiscardDistanceFields();
 
         // Then this level's own. A backdrop used to be a picture lit by the artists' bakes, with no lamps,
         // no cards and no field, while the mission it became was lit by the real-time model -- so the
@@ -223,38 +223,16 @@ public sealed partial class GameHost
         // The lamps first, and always: a model name means different art in different levels, so carrying
         // one mission's lamps into the backdrop of the next glows whatever shares a name. The switches
         // index the fixture list and nothing else, so they are rebuilt with it.
-        ApplyLamps(preview.Lamps, preview.MissionId);
+        _gi.ApplyLamps(preview.Lamps, preview.MissionId);
 
-        if (RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
-        {
-            _attemptedFieldResolution = preview.DistanceFieldResolution;
-            _builtFieldResolution = preview.DistanceFieldResolution;
-
-            if (preview.DistanceField is { } readField)
-            {
-                AdoptDistanceField(readField, DistanceFieldAtlas.Build(readField.Fields), fromCache: true);
-            }
-            else if (preview.PendingDistanceField is { } baking)
-            {
-                // Handed to the same per-frame collect a played mission's bake uses, which adopts it and
-                // writes the cache when it lands -- under a held frame, so the menu does not show the
-                // cross-over either.
-                _sdfBake = baking;
-            }
-        }
-        else
-        {
-            // Started before the lite profile was in force -- the very first backdrop is built before
-            // there is one -- and wanted by nobody now. Play bakes its own if it needs one.
-            preview.PendingDistanceField?.Cancel();
-        }
+        _gi.AdoptBackdropField(preview.DistanceFieldResolution, preview.DistanceField, preview.PendingDistanceField);
 
         Lap("field");
 
         // The capture is a render pass over every distinct model and has to run here. It reads the
         // lamps' emission off the geometry, so it comes after them. A lite backdrop wants no cache, and
         // this returns at once.
-        EnsureSurfaceCache();
+        _gi.EnsureSurfaceCache();
         Lap("cards");
 
         // A title may decline a sky entirely -- the factory returns null when the level declares

@@ -881,7 +881,7 @@ public sealed partial class GameHost
 
             world.Materials = _materials;
             world.DetailMaps = _detailMaps;
-            world.Lamps = _lamps;
+            world.Lamps = _gi.Lamps;
 
             // The parts of the level's objects that never stop turning. Set here rather than beside the
             // other registries below because a promoted backdrop skips that block entirely, and it
@@ -1432,7 +1432,7 @@ public sealed partial class GameHost
         // model is arithmetic and moves off the render thread freely; only the upload cannot,
         // because a GL texture belongs to the context that made it.
         //
-        // Started here rather than built here: EnsureDistanceFields is the same call the render
+        // Started here rather than built here: _gi.EnsureDistanceFields is the same call the render
         // loop makes every frame, so a level begins its bake at load and a player who switches the
         // lighting model on later gets one started for them. See GameHost.RealtimeGi.cs.
         // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
@@ -1447,27 +1447,25 @@ public sealed partial class GameHost
         // the player.
         if (!promoted)
         {
-            DiscardSurfaceCache();
-            DiscardDistanceFields();
+            _gi.DiscardSurfaceCache();
+            _gi.DiscardDistanceFields();
         }
 
-        EnsureDistanceFields();
+        _gi.EnsureDistanceFields();
 
         // A capture must not race the worker, for the reason the probe bake records: a
         // reference image has to either contain the field or not, never whichever frame
         // the worker happened to reach.
-        if (_options.Lockstep && _sdfBake is { } pendingField
-            && pendingField.WaitForResult() is { } readyField)
+        if (_options.Lockstep)
         {
-            _sdfBake = null;
-            AdoptDistanceField(readyField.Scene, readyField.Atlas, fromCache: false);
+            _gi.WaitForFieldBake();
         }
 
         // Every distinct model's surface is captured into the card atlas, but deliberately NOT
         // here -- even though this is where the geometry first exists. Lighting the cache needs
         // the level's own sun, which is not read until further down this load, and lighting the
         // cards before that gave every page a zero sun direction and a picture of pure sky, which
-        // is exactly what the first run produced. EnsureSurfaceCache captures and lights in one
+        // is exactly what the first run produced. _gi.EnsureSurfaceCache captures and lights in one
         // go, so it is called once the sun is known; the outgoing cards were dropped above.
 
         _device.SetIrradianceVolume(_probeField);
@@ -1686,9 +1684,9 @@ public sealed partial class GameHost
         // long as the player was reading the briefing; surveying again here was the largest single cost
         // of pressing Play, and it would have produced the same answer.
         // A cold start has a NEW world renderer that has to be handed them either way.
-        if (_lampsMissionId != id || !promoted)
+        if (_gi.LampsMissionId != id || !promoted)
         {
-            ApplyLamps(
+            _gi.ApplyLamps(
                 RenderCVars.GlobalIlluminationLamps.Value != 0
                     ? EmissiveLightProposer.Propose(
                         _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger)
@@ -1699,7 +1697,7 @@ public sealed partial class GameHost
         // The surfaces, now that the sun and the fixtures they are lit by are both known. Captures the
         // atlas and lights it in one step -- see GameHost.RealtimeGi.cs, which is also what the render
         // loop calls when the lighting model is switched on mid-level.
-        EnsureSurfaceCache();
+        _gi.EnsureSurfaceCache();
 
         // The walk has already spoken for a title that keeps its ground in the level; for the one that
         // keeps it in the mission, the terrain IS the ground.

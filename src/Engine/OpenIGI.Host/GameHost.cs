@@ -42,6 +42,7 @@ using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
+using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;
 
@@ -247,19 +248,8 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     // re-uploading, so a converging tail does not upload the volume forever.
     private const float ProbeChaseRate = 2.0f;
     private const float ProbeChaseSettle = 0.001f;
-    private SurfaceCacheLighting? _cardLighting;
-    private SurfaceCacheLookup? _cardLookup;
 
-    // The level's inferred lamp fixtures, kept so the frame loop can submit them to the deferred lighting
-    // as real point lights each frame (transformed into view space there), the honest way to light an
-    // interior the screen gather cannot reach. Also bounced through the surface cache. Empty until a
-    // mission loads one; see EmissiveLightProposer.
-    private IReadOnlyList<LightFixture> _lightFixtures = [];
 
-    // Which sub-meshes of this level are lamps, so a shared texture glows on the fixture and not on the
-    // furniture that happens to be skinned with the same page. Held here because the world renderer is
-    // rebuilt per mission and this outlives the rebuild.
-    private LampDetector.Lamps _lamps = LampDetector.Lamps.None;
 
     // What the level says about its own light, for a title that authors that rather than a sky. Null for
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
@@ -275,17 +265,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
 
-    // Which of those lamps are actually lit at this moment, and how far through switching on or out they
-    // are. Built with the fixtures, and read by all three of the things a lamp is -- the punctual light
-    // below, the emission the world renderer puts on the fixture's own geometry, and the emitters the
-    // surface cache bounces off -- so none of them can disagree about a lamp being off. Null until a
-    // mission loads fixtures; see LampSwitchboard.
-    private LampSwitchboard? _lampSwitchboard;
 
-    // When the surface cache's emitter buffer last matched the switchboard. The bounce is a GPU upload
-    // rather than a uniform, so it follows a flickering lamp a few frames behind rather than every frame;
-    // the cache's own accumulation is slower than that anyway.
-    private int _lampBounceRevision = -1;
     private int _lampMilliseconds;
 
     // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
@@ -371,7 +351,6 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         }
     }
     private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
-    private int _cardBounceFrame;
 
     // Stand-down state for the surface-cache retrace. The world-space relight and the amortised bounce
     // re-derive the answer the cache already holds whenever nothing has moved -- and "moved" for a
@@ -381,15 +360,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
     private int _giStaticFrames;
 
-    // Frames since the sun last moved, for the fast follow a clock scrub needs. See GiSunFollowFrames.
-    private int _giSunMovedFrames = GiSunFollowFrames + 1;
 
-    /// <summary>How long after the sun last moved the GI keeps following it closely, in frames.</summary>
-    /// <remarks>
-    /// Long enough for the near cache to be relit a few times over at <see cref="GiSunFollowSpread"/>, so a
-    /// scrub that stops lands on the new hour's light and the slow blend takes over from there.
-    /// </remarks>
-    private const int GiSunFollowFrames = 24;
 
     /// <summary>How many frames the near relight is spread over while following a moving sun.</summary>
     private const int GiSunFollowSpread = 4;
@@ -456,25 +427,12 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     // more than this in one, and its history is the unzoomed view's.
     private const float GiCutZoom = 0.1f;
 
-    // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
-    // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
-    // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
-    private int _giExposureWarmup;
 
-    // How long that warm-up lasts. The radiance cache's running average settles over maxFrames sweeps and
-    // one sweep is spread over several frames, so full convergence is a couple of seconds; this covers it.
-    private const int GiExposureWarmupFrames = 150;
 
     // The exposure adaptation rate during the warm-up and in steady play. Fast while the GI converges so the
     // exposure follows it and the picture holds its brightness; slow after, for an unobtrusive eye-adaptation.
     private const float GiExposureWarmupRate = 0.35f;
     private const float ExposureSteadyRate = 0.04f;
-    private SurfaceCacheCapture.Result? _capturedCards;
-    private SurfaceCacheInstances? _cardInstances;
-    private DistanceFieldBake? _sdfBake;
-    private SceneDistanceField? _sdfScene;
-    private GlobalDistanceField? _sdfClipmaps;
-    private bool _sdfValidated;
 
     // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
     // incoming one. Sized to the window and re-made when that changes.
@@ -1122,6 +1080,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
             Path.Combine(AppContext.BaseDirectory, "Assets", "sdf"),
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "sdf"),
             _logger);
+        _gi = new GlobalIllumination(_device, _logger, _work, _options.Lockstep, new GlobalIlluminationHost(this));
 
         // The path-traced object lightmaps, cached the same way: baked once, read instantly after. The
         // shipped bakes live beside the probe fields; freshly-baked ones write to the per-user cache.
@@ -1244,13 +1203,11 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
         // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
         // on the render thread once the bake lands.
-        _cardLighting = null;
-        _cardLookup = null;
+        _gi.Forget();
         state.CardLightingDumped = false;
 
         // How many times the bounce has been re-lit this mission. Zero converges in one shot; each relight
         // after that accumulates over frames. Reset when a mission loads.
-        _cardBounceFrame = 0;
 
         // One screen-space indirect dump per run, to verify the gather reads the G-buffer and reconstructs
         // world positions correctly before it feeds the frame.
@@ -1259,12 +1216,6 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         // What the screen-space GI keeps from one frame to the next.
         state.ScreenGi = new();
 
-        _capturedCards = null;
-        _cardInstances = null;
-        _sdfBake = null;
-        _sdfScene = null;
-        _sdfClipmaps = null;
-        _sdfValidated = false;
         state.ClimbSlideArmed = false;
         _shotRandom = new(20000101);
         state.ReportedHumanHits = 0;
@@ -1992,7 +1943,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
             // a hundred, and every core the render thread is not spinning on is one the bake gets.
             if (state.LastPassRendered && !_options.Lockstep && !_options.IsBenchmark)
             {
-                if (IsWarmingUp && _sdfBake is not null)
+                if (IsWarmingUp && _gi.FieldBake is not null)
                 {
                     state.MenuPacer.Pace(30);
                 }
@@ -2129,7 +2080,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
             // at load, because the settings menu can ask for that model at any moment and the structures it
             // reads have to be able to arrive afterwards -- see GameHost.RealtimeGi.cs. A no-op once
             // they exist, which is every frame but the handful after the switch.
-            EnsureRealtimeGiStructures();
+            _gi.EnsureStructures();
 
             // Behind the loading screen the traced world takes every mesh offered in the frame it is
             // offered, so the level is whole in it before anything is lit against it; in play the per-frame
@@ -2138,22 +2089,21 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
 
             // This frame's share of a convergence in flight, so a level lights up behind the loading
             // screen or under the entry shot's hold rather than in one stall.
-            StepGiConvergence();
+            _gi.StepConvergence();
 
             // Same handover, same reason: the atlas becomes a GL volume, and the context belongs here.
             // Behind the menu the adoption is deferred to the frame after the picture has been held, so
             // the backdrop crossing over to its real-time lighting happens under the dissolve rather than
             // in front of the player -- the same shape as a backdrop swap.
-            if (_sdfBake is { } pendingField && pendingField.TryCollect(out DistanceFieldBake.Result baked))
+            if (_gi.TryCollectFieldBake(out DistanceFieldBake.Result baked))
             {
-                _sdfBake = null;
                 if (state.MenuMode && !state.PauseMenu && _backdrop is not null)
                 {
                     state.BakedFieldForBackdrop = baked;
                 }
                 else
                 {
-                    AdoptDistanceField(baked.Scene, baked.Atlas, fromCache: false);
+                    _gi.AdoptDistanceField(baked.Scene, baked.Atlas, fromCache: false);
                 }
             }
 
@@ -2249,7 +2199,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                 // the dissolve reveals is the settled backdrop rather than one still lighting up. A field
                 // that is still baking is not waited for -- that is seconds, and it crosses over under its
                 // own hold when it lands.
-                if (state.DissolveRevealPending && !IsGiConverging)
+                if (state.DissolveRevealPending && !_gi.IsConverging)
                 {
                     state.DissolveRevealPending = false;
                     dissolve.Retarget(0f);
@@ -2743,7 +2693,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                     // The backdrop's field, baked behind the menu, adopted under the held frame so the
                     // level's cross-over to its real-time lighting is dissolved to rather than watched.
                     state.BakedFieldForBackdrop = null;
-                    AdoptDistanceField(landedField.Scene, landedField.Atlas, fromCache: false);
+                    _gi.AdoptDistanceField(landedField.Scene, landedField.Atlas, fromCache: false);
                     changed = true;
                 }
 
@@ -3578,14 +3528,14 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     {
         int kept = 0;
 
-        for (int i = 0; i < _lightFixtures.Count; i++)
+        for (int i = 0; i < _gi.LightFixtures.Count; i++)
         {
-            LightFixture fixture = _lightFixtures[i];
+            LightFixture fixture = _gi.LightFixtures[i];
 
             // A lamp that has finished going out is not a dim light, it is not a light: passed over here
             // rather than submitted at zero, because the shader's array is a budget and a dark fixture
             // holding a slot switches a real one at the end of the corridor off instead.
-            if (_lampSwitchboard is { } board && board.LevelOf(i) <= 0f)
+            if (_gi.LampSwitchboard is { } board && board.LevelOf(i) <= 0f)
             {
                 continue;
             }
@@ -3865,7 +3815,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     /// </remarks>
     private DistanceFieldBinding DescribeDistanceField(Vector3d eye)
     {
-        if (_sdfClipmaps is not { } field || !field.Clipmaps.IsValid)
+        if (_gi.DistanceField is not { } field || !field.Clipmaps.IsValid)
         {
             return DistanceFieldBinding.None;
         }
@@ -3968,9 +3918,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _arms?.Dispose();
         _titleArms?.Dispose();
         _titleHud?.Dispose();
-        _cardLighting?.Dispose();
-        _cardLookup?.Dispose();
-        _sdfClipmaps?.Dispose();
+        _gi?.Dispose();
         _detailMaps?.Dispose();
 
         // Before the device: the bed's taps are streams the device owns, and stopping them while it is

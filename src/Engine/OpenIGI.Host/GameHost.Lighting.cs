@@ -5,6 +5,7 @@ using OpenIGI.Rendering;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Player;
 using OpenIGI.Host.Audio;
+using OpenIGI.Host.Lighting;
 
 namespace OpenIGI.Host;
 
@@ -53,7 +54,7 @@ public sealed partial class GameHost
 
     // The same, for a named sun rather than whatever the last frame used: the surface cache's convergence
     // runs before a level's first frame has set one.
-    private static Vector3f SkyFillColour(DirectionalLightSettings sun) => sun.Ambient * RenderCVars.SkyLight.Value;
+    private static Vector3f SkyFillColour(DirectionalLightSettings sun) => SkyLight.Fill(sun);
 
     /// <summary>Warms a level's cool zenith ambient towards the horizon as the sun sinks.</summary>
     /// <remarks>

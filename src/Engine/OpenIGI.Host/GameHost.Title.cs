@@ -513,7 +513,7 @@ public sealed partial class GameHost
 
             // The card atlas has the diffuse baked into it, so the indirect light is still bouncing off
             // the old pixels until it is captured again. Discarding it re-converges the GI with it.
-            DiscardSurfaceCache();
+            _gi.DiscardSurfaceCache();
         }
 
         return swapped;

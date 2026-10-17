@@ -43,6 +43,7 @@ using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;
 
@@ -243,7 +244,7 @@ public sealed partial class GameHost
             // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
             // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
             // display-encoded and has to be decoded before the tone map.
-            SceneIsDisplayEncoded: EffectiveLighting != LightingModel.Dynamic,
+            SceneIsDisplayEncoded: _gi.EffectiveLighting != LightingModel.Dynamic,
             Contrast: RenderCVars.Contrast.Value,
             Saturation: RenderCVars.Saturation.Value,
             Vignette: RenderCVars.Vignette.Value,
@@ -262,7 +263,7 @@ public sealed partial class GameHost
             // Fast while the GI is still filling in after a load, slow once it has settled. Counted
             // down here so a frame that never reaches the cache update (a menu, a paused load) does
             // not burn the window; the cache's own reset above is what refills it.
-            ExposureRate: _giExposureWarmup > 0 ? GiExposureWarmupRate : ExposureSteadyRate,
+            ExposureRate: _gi.ExposureWarmup > 0 ? GiExposureWarmupRate : ExposureSteadyRate,
 
             // Read off the loop's own time source rather than the wall clock, which is what makes
             // a -lockstep capture reproducible: that mode swaps in a synthetic clock advanced a
@@ -275,9 +276,9 @@ public sealed partial class GameHost
             // colour, and the eye's night vision takes over only as real night does.
             NightShift: RenderCVars.NightShift.Value * NightVisionWeight(RenderCVars.Nightfall.Value));
 
-        if (_giExposureWarmup > 0)
+        if (_gi.ExposureWarmup > 0)
         {
-            _giExposureWarmup--;
+            _gi.ExposureWarmup--;
         }
         if (mapScene is { } mapView)
         {
@@ -585,7 +586,7 @@ public sealed partial class GameHost
             // stretched copy. See RenderResolutionPolicy.
             OutputWidth: resolution.OutputWidth,
             OutputHeight: resolution.OutputHeight,
-            GBuffer: (EffectiveLighting != LightingModel.Dynamic
+            GBuffer: (_gi.EffectiveLighting != LightingModel.Dynamic
                     ? GBufferLayout.BakedLighting
                     : GBufferLayout.Compact)
                 | (wantsTemporal || RenderCVars.MotionBlur.Value > 0f
@@ -628,7 +629,7 @@ public sealed partial class GameHost
         // Fitted for the dynamic model, it crushed the other two -- mission 1's baked ground came
         // out at 0.18 of vanilla where the dynamic one landed on 0.93.
         //
-        // The REQUESTED model, not EffectiveLighting. That one reports Baked until the real-time
+        // The REQUESTED model, not _gi.EffectiveLighting. That one reports Baked until the real-time
         // structures finish building, so reading it here would move the exposure partway through a
         // load -- and the adaptation that rides on it is temporal, so the step would be chased
         // rather than taken. What the exposure follows has to be a decision the player made, not a
@@ -800,7 +801,7 @@ public sealed partial class GameHost
         // The clipmaps follow the camera. Each level is rebuilt only when the camera has left it,
         // which for the outer levels is almost never -- I.G.I.'s geometry is static, so a clipmap
         // only becomes wrong by being walked out of.
-        if (_sdfClipmaps is { } liveField)
+        if (_gi.DistanceField is { } liveField)
         {
             // The real-time GI's compute runs here, before the G-buffer, so this is where it is
             // timed. Without this bracket the bounce below -- the frame's single most expensive pass
@@ -817,9 +818,9 @@ public sealed partial class GameHost
             // Once, after the first build, and only when asked. A wrong distance field produces a
             // picture that is merely subtly wrong several stages later, so the only way to know it
             // is right is to compare it against the exact answer at the same points.
-            if (!_sdfValidated && RenderCVars.DistanceFieldValidate.Value && _sdfScene is { } exact)
+            if (!_gi.FieldValidated && RenderCVars.DistanceFieldValidate.Value && _gi.DistanceFieldScene is { } exact)
             {
-                _sdfValidated = true;
+                _gi.FieldValidated = true;
                 // Every level, not just the innermost. A trace falls through to the outer
                 // clipmaps as soon as it leaves the fine one, so an unbuilt level 2 is invisible to
                 // a check that only ever looked at level 0 -- and it shadows everything.
@@ -846,7 +847,7 @@ public sealed partial class GameHost
                 // submits it at the end, a readback taken on the same frame as the dispatches sees
                 // the atlas as it was before them -- which reads exactly like a bounce that
                 // produced nothing, and cost a long detour to tell apart from one.
-                && _cardBounceFrame >= 8;
+                && _gi.CardBounceFrame >= 8;
 
             // Whether the surface cache's inputs actually changed this frame: a level scrolled new
             // coverage in, the sun was scrubbed, or a dump was asked for. Turning or nudging the
@@ -884,11 +885,11 @@ public sealed partial class GameHost
             // stayed bright under a black sky. The screen gather's own history is left alone: it is ten
             // frames already, and throwing it away every frame of a scrub showed its raw single-frame
             // noise as clouds on every wall.
-            _giSunMovedFrames = giSunMoved ? 0 : Math.Min(_giSunMovedFrames + 1, GiSunFollowFrames + 1);
-            bool followingSun = _giSunMovedFrames <= GiSunFollowFrames;
+            _gi.SunMovedFrames = giSunMoved ? 0 : Math.Min(_gi.SunMovedFrames + 1, GlobalIllumination.GiSunFollowFrames + 1);
+            bool followingSun = _gi.SunMovedFrames <= GlobalIllumination.GiSunFollowFrames;
             bool retraceGi = _giStaticFrames <= giSettle;
 
-            if (_cardLighting is { } litCards)
+            if (_gi.CardLighting is { } litCards)
             {
                 // How many frames the relight and the bounce spread their tiles across, from the cvar
                 // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
@@ -956,13 +957,13 @@ public sealed partial class GameHost
             // the same final -- so the bounce, the frame's single most expensive pass, idles too. The
             // frame counter holds where it was, so the accumulation resumes rather than restarts when
             // motion or a scrub brings the retrace back.
-            if (_cardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
+            if (_gi.CardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
             {
                 bounceCards.Bounce(
                     liveField,
                     boost: RenderCVars.GlobalIlluminationBoost.Value,
-                    temporalIndex: wantDump ? 0 : _cardBounceFrame);
-                _cardBounceFrame++;
+                    temporalIndex: wantDump ? 0 : _gi.CardBounceFrame);
+                _gi.CardBounceFrame++;
 
                 // Dumped after the SHADOWED bounce rather than the load-time one, which runs before
                 // there is any field to trace against and would show the unshadowed answer.
@@ -981,7 +982,7 @@ public sealed partial class GameHost
             // the sampler, updated a slab a frame off the freshly bounced cache, and bound in place
             // of the baked field for the deferred fill. Needs the baked field only for its grid.
             if (RenderCVars.RadianceCache.Value != 0
-                && _cardLighting is { } cacheCards
+                && _gi.CardLighting is { } cacheCards
                 && _probeField is { } cacheGrid)
             {
                 cacheCards.ConfigureRadianceCache(
@@ -999,7 +1000,7 @@ public sealed partial class GameHost
                     // couple of seconds -- which is what read as the scene loading bright and dimming.
                     // A long one after, where a slow average is what keeps the steady field from
                     // shimmering under the per-sweep ray jitter.
-                    maxFrames: _giExposureWarmup > 0 ? 6 : 32,
+                    maxFrames: _gi.ExposureWarmup > 0 ? 6 : 32,
                     scale: RenderCVars.RadianceCacheScale.Value,
                     skyReject: RenderCVars.GlobalIlluminationLeakReject.Value);
 
@@ -1141,8 +1142,8 @@ public sealed partial class GameHost
         // tracing them. Whatever the sun is doing: these are the night's shadows.
         if (_shadowPass is not null && _device.WantsLampShadowMaps)
         {
-            _lampMaps.Render(_shadowPass, _scene, _world, casterBodies, _lightFixtures, LampMapPeople);
-            _lampMaps.RenderBounce(_shadowPass, _scene, _world, _cardLighting, _lightFixtures, LampOrderEye);
+            _lampMaps.Render(_shadowPass, _scene, _world, casterBodies, _gi.LightFixtures, LampMapPeople);
+            _lampMaps.RenderBounce(_shadowPass, _scene, _world, _gi.CardLighting, _gi.LightFixtures, LampOrderEye);
         }
         EndStageIfSlow("the shadow cascades");
 
@@ -1221,7 +1222,7 @@ public sealed partial class GameHost
 
             _dumpWorldSun = light.Direction;
             _device.SetLighting(_dumpLighting = new SceneLighting(
-                EffectiveLighting,
+                _gi.EffectiveLighting,
                 viewSunDirection,
                 scaledSun,
                 scaledAmbient,
@@ -1294,7 +1295,7 @@ public sealed partial class GameHost
         bool retailFog = RenderCVars.RetailFog.Value;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
         _device.SetModelAmbient(
-            EffectiveLighting == LightingModel.Baked
+            _gi.EffectiveLighting == LightingModel.Baked
                 ? _globalLight.ObjectAmbient
                 : GlobalLightSettings.DefaultAmbient);
 
@@ -1585,7 +1586,7 @@ if (retailFog)
         // off has not turned reflections off. Cleared to nothing while there is no lit cache, so
         // the backend traces nothing rather than against stale handles.
         _device.SetSurfaceCache(
-            _cardLighting is { } reflectionCards && RenderCVars.SurfaceCacheProbe.Value == 0
+            _gi.CardLighting is { } reflectionCards && RenderCVars.SurfaceCacheProbe.Value == 0
                 ? reflectionCards.Describe(
                     new Vector3f(
                         (float)(eye.Position.X - reflectionCards.Origin.X),
@@ -1604,14 +1605,14 @@ if (retailFog)
         float giStrength = RenderCVars.ScreenGather.Value;
         bool giActive = captured
             && giStrength > 0f
-            && _sdfClipmaps is not null
-            && _cardLighting is not null
+            && _gi.DistanceField is not null
+            && _gi.CardLighting is not null
             && RenderCVars.SurfaceCacheProbe.Value == 0;
 
         // Every placement that moves, carried in the surface cache to where it was drawn this frame,
         // before anything below looks a surface up -- a truck the camera rides in reads its own
         // interior rather than the yard it drove out of. See SurfaceCacheLighting.MovePlacement.
-        if (_cardLighting is { } movingCards && _world is { } movingWorld && movingWorld.Movers.Count > 0)
+        if (_gi.CardLighting is { } movingCards && _world is { } movingWorld && movingWorld.Movers.Count > 0)
         {
             PlacementPose pose = movingWorld.DrawPoses;
             foreach (WorldPlacement mover in movingWorld.Movers)
@@ -1628,7 +1629,7 @@ if (retailFog)
         // Under ray reconstruction the light goes to it raw: a ray at every pixel, and none of the probes'
         // pooling, cadence, accumulation or resolve below, which is exactly the denoising it replaces.
         bool giPixelsRan = false;
-        if (giActive && _device.RawLighting && _sdfClipmaps is { } pixelField && _cardLighting is { } pixelCards)
+        if (giActive && _device.RawLighting && _gi.DistanceField is { } pixelField && _gi.CardLighting is { } pixelCards)
         {
             _device.EndStageTiming();
             _device.BeginStageTiming(RenderStage.GlobalIllumination);
@@ -1686,7 +1687,7 @@ if (retailFog)
             _device.EndStageTiming();
         }
 
-        if (!giPixelsRan && giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
+        if (!giPixelsRan && giActive && _gi.DistanceField is { } liveGiField && _gi.CardLighting is { } liveGiCards)
         {
             // Timed, at last. This gather is the most expensive thing in a real-time-GI frame and
             // NOTHING measured it: the bracket the surface-cache relight runs under closes long
@@ -1964,8 +1965,8 @@ if (retailFog)
         _stormLampCount = 0;
         if (captured
             && localLightScale > 0f
-            && EffectiveLighting != LightingModel.Baked
-            && _lightFixtures.Count > 0)
+            && _gi.EffectiveLighting != LightingModel.Baked
+            && _gi.LightFixtures.Count > 0)
         {
             Matrix3f worldToView = eye.Orientation.Transposed();
 
@@ -1979,7 +1980,7 @@ if (retailFog)
 
             for (int i = 0; i < localCount; i++)
             {
-                LightFixture fixture = _lightFixtures[_localLightOrder[i]];
+                LightFixture fixture = _gi.LightFixtures[_localLightOrder[i]];
                 Vector3f cameraRelative = new(
                     (float)(fixture.Position.X - eye.Position.X),
                     (float)(fixture.Position.Y - eye.Position.Y),
@@ -1996,7 +1997,7 @@ if (retailFog)
                 // scaled by the same number in the world renderer, so a lamp fading out fades as
                 // one thing rather than as a panel and a pool of light going at their own rates.
                 int lampIndex = _localLightOrder[i];
-                float output = _lampSwitchboard?.LevelOf(lampIndex) ?? 1f;
+                float output = _gi.LampSwitchboard?.LevelOf(lampIndex) ?? 1f;
 
                 // Clamp the fixture's relative intensity before scaling. Intensity is area x
                 // luminance, so a long fluorescent tube (area ~9) would outpower a desk lamp
@@ -2010,7 +2011,7 @@ if (retailFog)
                 // not on its way out.
                 Vector3f colour = fixture.Colour;
 
-                if (_lampSwitchboard?.TintOf(lampIndex) is { } tint && tint != Vector3f.One)
+                if (_gi.LampSwitchboard?.TintOf(lampIndex) is { } tint && tint != Vector3f.One)
                 {
                     colour = new Vector3f(colour.X * tint.X, colour.Y * tint.Y, colour.Z * tint.Z);
                 }
@@ -2050,14 +2051,14 @@ if (retailFog)
             // renderer is drawing it, and the ultra preset -- the one that discards the shipped
             // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
             _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
-            _lampMaps.Assign(localCount, unjitteredProjection, _localLightScratch, _localLightOrder, _lightFixtures);
+            _lampMaps.Assign(localCount, unjitteredProjection, _localLightScratch, _localLightOrder, _gi.LightFixtures);
             _lampMaps.AssignCoarse(localCount, _localLightOrder);
             _stormLampCount = localCount;
 
             // And the distance field those lamps' shadows are marched through wherever the renderer
             // cannot trace them -- WebGPU always, Vulkan with the RT switch off. See
             // LampOcclusionField.
-            _device.SetLampOcclusionField(LampFieldFor(_sdfClipmaps));
+            _device.SetLampOcclusionField(LampFieldFor(_gi.DistanceField));
         }
 
         // The player's flashlight, outside the lamps' gate: it lights under every lighting model the
@@ -2465,8 +2466,8 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         if (captured
             && !state.ScreenGiDumped
             && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
-            && _sdfClipmaps is { } giField
-            && _cardLighting is { } giCards
+            && _gi.DistanceField is { } giField
+            && _gi.CardLighting is { } giCards
             && RenderCVars.SurfaceCacheProbe.Value == 0)
         {
             state.ScreenGiDumped = true;

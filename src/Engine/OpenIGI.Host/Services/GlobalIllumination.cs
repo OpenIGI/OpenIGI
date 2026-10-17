@@ -1,13 +1,152 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
+using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Host;
+namespace OpenIGI.Host.Services;
 
-public sealed partial class GameHost
+/// <summary>What the real-time lighting model reads of the host: the level up now, its sun, and the caches it keys by.</summary>
+internal interface IGlobalIlluminationHost
 {
+    /// <summary>Gets the level's placed objects, once walked.</summary>
+    WorldScene? Scene { get; }
+
+    /// <summary>Gets the world's renderer, which captures the surface cache.</summary>
+    IWorldPresenter? World { get; }
+
+    /// <summary>Gets the level's authored sun.</summary>
+    DirectionalLightSettings? Sun { get; }
+
+    /// <summary>Gets the sun this frame lights with.</summary>
+    DirectionalLightSettings? EffectiveSun { get; }
+
+    /// <summary>Gets whether a level is up, played or behind the menu.</summary>
+    bool HasLevel { get; }
+
+    /// <summary>Gets the mission whose level is up, for keying its caches.</summary>
+    int? CurrentMissionId { get; }
+
+    /// <summary>Gets the rendered frame's number.</summary>
+    int FrameCount { get; }
+
+    /// <summary>Gets the cache the level's distance fields are kept in.</summary>
+    DistanceFieldCache FieldCache { get; }
+
+    /// <summary>The sun the frame lights with, as the clock and the level's night set it.</summary>
+    /// <returns>The sun.</returns>
+    DirectionalLightSettings CycleSun();
+
+    /// <summary>The sky's fill under this frame's sun.</summary>
+    /// <returns>The colour.</returns>
+    Vector3f SkyFillColour();
+
+    /// <summary>Applies the lite backdrop's overrides, which decide whether either structure is wanted at all.</summary>
+    void UpdateBackdropProfile();
+}
+
+/// <summary>
+/// The real-time lighting model's structures: the level's distance field and the lit surface cache, built when the model is
+/// asked for, converged so a level opens lit, kept current as the sun and the lamps change, and the lamps they light from.
+/// </summary>
+/// <param name="device">The device the structures live on.</param>
+/// <param name="logger">Where builds and convergence are reported.</param>
+/// <param name="work">The workers the distance field bakes on.</param>
+/// <param name="lockstep">Whether frames are captured in lockstep, which runs the convergence in one go.</param>
+/// <param name="host">The level, its sun and the caches.</param>
+internal sealed class GlobalIllumination(
+    IGraphicsDevice device,
+    IOpenIgiLogger logger,
+    IWorkScheduler work,
+    bool lockstep,
+    IGlobalIlluminationHost host) : IHostService
+{
+    private readonly IGraphicsDevice _device = device;
+    private readonly IOpenIgiLogger _logger = logger;
+    private readonly IWorkScheduler _work = work;
+    private readonly bool _lockstep = lockstep;
+    private readonly IGlobalIlluminationHost _host = host;
+
+    /// <summary>How long after the sun last moved the GI keeps following it closely, in frames.</summary>
+    /// <remarks>
+    /// Long enough for the near cache to be relit a few times over at <c>GameHost.GiSunFollowSpread</c>, so a
+    /// scrub that stops lands on the new hour's light and the slow blend takes over from there.
+    /// </remarks>
+    public const int GiSunFollowFrames = 24;
+
+    // How long that warm-up lasts. The radiance cache's running average settles over maxFrames sweeps and
+    // one sweep is spread over several frames, so full convergence is a couple of seconds; this covers it.
+    public const int GiExposureWarmupFrames = 150;
+
+    /// <summary>Gets the lit surface cache, once captured and lit.</summary>
+    public SurfaceCacheLighting? CardLighting { get; private set; }
+
+    private SurfaceCacheLookup? _cardLookup;
+    private SurfaceCacheCapture.Result? _capturedCards;
+    private SurfaceCacheInstances? _cardInstances;
+
+    /// <summary>Gets the distance-field bake in flight, if any.</summary>
+    public DistanceFieldBake? FieldBake { get; private set; }
+
+    /// <summary>Gets the level's exact distance field, which the clipmaps are checked against.</summary>
+    public SceneDistanceField? DistanceFieldScene { get; private set; }
+
+    /// <summary>Gets the clipmaps the level's distance field is resampled into around the camera, once baked.</summary>
+    public GlobalDistanceField? DistanceField { get; private set; }
+
+    /// <summary>Gets or sets whether the clipmaps have been checked against the exact field this level.</summary>
+    public bool FieldValidated { get; set; }
+
+    // When the surface cache's emitter buffer last matched the switchboard. The bounce is a GPU upload
+    // rather than a uniform, so it follows a flickering lamp a few frames behind rather than every frame;
+    // the cache's own accumulation is slower than that anyway.
+    /// <summary>Gets or sets the switchboard revision the cache's emitters last matched.</summary>
+    public int LampBounceRevision { get; set; } = -1;
+
+    // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
+    // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
+    // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
+    /// <summary>Gets or sets the frames left in the exposure warm-up after the cache is (re)built.</summary>
+    public int ExposureWarmup { get; set; }
+
+    /// <summary>Gets or sets how many times the bounce has been relit since the cache was (re)built.</summary>
+    public int CardBounceFrame { get; set; }
+
+    // Frames since the sun last moved, for the fast follow a clock scrub needs. See GiSunFollowFrames.
+    /// <summary>Gets or sets the frames since the sun last moved, for the fast follow a clock scrub needs.</summary>
+    public int SunMovedFrames { get; set; } = GiSunFollowFrames + 1;
+
+    // Which sub-meshes of this level are lamps, so a shared texture glows on the fixture and not on the
+    // furniture that happens to be skinned with the same page. Held here because the world renderer is
+    // rebuilt per mission and this outlives the rebuild.
+    /// <summary>Gets which sub-meshes of the level are lamps.</summary>
+    public LampDetector.Lamps Lamps { get; private set; } = LampDetector.Lamps.None;
+
+    // The level's inferred lamp fixtures, kept so the frame loop can submit them to the deferred lighting
+    // as real point lights each frame (transformed into view space there), the honest way to light an
+    // interior the screen gather cannot reach. Also bounced through the surface cache. Empty until a
+    // mission loads one; see EmissiveLightProposer.
+    /// <summary>Gets the level's lamps, as fixtures.</summary>
+    public IReadOnlyList<LightFixture> LightFixtures { get; private set; } = [];
+
+    // Which of those lamps are actually lit at this moment, and how far through switching on or out they
+    // are. Built with the fixtures, and read by all three of the things a lamp is -- the punctual light
+    // below, the emission the world renderer puts on the fixture's own geometry, and the emitters the
+    // surface cache bounces off -- so none of them can disagree about a lamp being off. Null until a
+    // mission loads fixtures; see LampSwitchboard.
+    /// <summary>Gets what decides each lamp's output, once a level has fixtures.</summary>
+    public LampSwitchboard? LampSwitchboard { get; private set; }
+
+    // Which mission's lamps are applied, so a promotion does not survey a level whose backdrop already
+    // did -- that survey was the largest single cost of pressing Play.
+    /// <summary>Gets the mission whose lamps are applied.</summary>
+    public int LampsMissionId { get; private set; } = -1;
+
+    /// <inheritdoc/>
+    public string Name => "Global illumination";
+
     // The density and resolution the structures currently in memory were actually built at, so a change
     // to either can be noticed and rebuilt from rather than quietly ignored until the next level load.
     private float _builtCardDensity;
@@ -35,14 +174,14 @@ public sealed partial class GameHost
     // stall, and one that landed mid-play whenever the field arrived after the level did.
     private SurfaceCacheConvergence? _giConvergence;
 
-    // The next slice of the whole-cache refresh. See StepGiRelight.
+    // The next slice of the whole-cache refresh. See StepRelight.
     private int _giRefreshSlice;
 
     // Whole sweeps the refresh has completed, which is what advances its jitter from one sweep to the next.
     private int _giRefreshRounds;
 
     // What the refresh last saw its inputs as, and how many whole sweeps it has finished since any of them
-    // changed. See StepGiRelight.
+    // changed. See StepRelight.
     private Vector3f _giRefreshSunDirection;
     private Vector3f _giRefreshSunColour;
     private int _giRefreshLampRevision = -1;
@@ -53,7 +192,7 @@ public sealed partial class GameHost
     private int _giRefreshQuietRounds;
     private bool _giRefreshWorldSettled;
 
-    // The rendered frame the refresh last advanced on; see StepGiRelight.
+    // The rendered frame the refresh last advanced on; see StepRelight.
     private int _giRefreshLastFrame = -1;
 
     /// <summary>How many slices of the whole cache the far refresh relights a frame while the sun is moving.</summary>
@@ -74,7 +213,7 @@ public sealed partial class GameHost
     private const int FarRefreshQuietRounds = 4;
 
     // How many frames the load-time convergence has waited for the world's structure to settle. See
-    // BeginGiConvergence.
+    // BeginConvergence.
     private int _giSettleWaitFrames;
 
     /// <summary>The longest the convergence waits for the traced world to stop growing, in frames.</summary>
@@ -87,7 +226,7 @@ public sealed partial class GameHost
 
     // Which mission's lamps are applied, so a promotion does not survey a level whose backdrop already
     // did -- that survey was the largest single cost of pressing Play.
-    private int _lampsMissionId = -1;
+
 
     /// <summary>
     /// The lighting model the frame may actually use, which is the one asked for only once the structures
@@ -108,15 +247,15 @@ public sealed partial class GameHost
     /// player restarted the game. Nothing said so; the frame simply went flat.
     /// </para>
     /// <para>
-    /// Reading the model through here instead makes the switch safe from both ends. <see cref="EnsureRealtimeGiStructures"/>
+    /// Reading the model through here instead makes the switch safe from both ends. <see cref="EnsureStructures"/>
     /// starts building the moment the model is asked for, and until it finishes this reports
     /// <see cref="LightingModel.Baked"/> — so the frame keeps the lighting it already had and crosses over
     /// when there is something better to cross to. There is never a wrong frame, only an early one.
     /// </para>
     /// </remarks>
-    private LightingModel EffectiveLighting =>
+    public LightingModel EffectiveLighting =>
         RenderCVars.Lighting.Value is var wanted && wanted == LightingModel.Baked ? wanted
-        : RealtimeGiReady ? wanted
+        : Ready ? wanted
         : LightingModel.Baked;
 
     /// <summary>Whether everything the dynamic model lights from is built and usable.</summary>
@@ -126,11 +265,11 @@ public sealed partial class GameHost
     /// check is the same one the builders make — without compute there is no field to build, so a level
     /// loaded on such a device stays on the bakes however the preset is set.
     /// </remarks>
-    private bool RealtimeGiReady =>
-        _cardLighting is not null && _sdfClipmaps is not null && _device.Capabilities.SupportsCompute;
+    public bool Ready =>
+        CardLighting is not null && DistanceField is not null && _device.Capabilities.SupportsCompute;
 
     /// <summary>Whether the frame wants the dynamic model at all, on a device that could run it.</summary>
-    private bool WantsRealtimeGi =>
+    public bool Wanted =>
         RenderCVars.Lighting.Value == LightingModel.Dynamic && _device.Capabilities.SupportsCompute;
 
     /// <summary>
@@ -142,41 +281,41 @@ public sealed partial class GameHost
     /// a level whose capture found nothing, or whose bake produced nothing, is not going to change, and a
     /// gate that waited for it would hold a panel over a level that was as lit as it would ever be.
     /// </remarks>
-    private bool RealtimeGiPending
+    public bool Pending
     {
         get
         {
-            if (!WantsRealtimeGi || _scene is null)
+            if (!Wanted || _host.Scene is null)
             {
                 return false;
             }
 
             bool fieldWanted = RenderCVars.DistanceFields.Value;
-            bool fieldPending = fieldWanted && _sdfClipmaps is null
-                && (_sdfBake is not null || _attemptedFieldResolution != RenderCVars.DistanceFieldResolution.Value);
+            bool fieldPending = fieldWanted && DistanceField is null
+                && (FieldBake is not null || _attemptedFieldResolution != RenderCVars.DistanceFieldResolution.Value);
 
-            bool cardsWanted = RenderCVars.SurfaceCache.Value && _world is not null;
+            bool cardsWanted = RenderCVars.SurfaceCache.Value && _host.World is not null;
             bool cardsPending = cardsWanted && _capturedCards is null
                 && !RenderCVars.SurfaceCacheDensity.Value.Equals(_attemptedCardDensity);
 
-            bool convergencePending = IsGiConverging
-                || (RealtimeGiReady && WantsGiConvergence && !_giConverged);
+            bool convergencePending = IsConverging
+                || (Ready && WantsConvergence && !_giConverged);
 
             return fieldPending || cardsPending || convergencePending;
         }
     }
 
     /// <summary>Whether a convergence is stepping right now.</summary>
-    private bool IsGiConverging => _giConvergence is { IsComplete: false };
+    public bool IsConverging => _giConvergence is { IsComplete: false };
 
     /// <summary>How far the convergence has come, or one when there is none to wait for.</summary>
-    private float GiConvergeProgress => _giConvergence?.Progress ?? (_giConverged ? 1f : 0f);
+    public float ConvergeProgress => _giConvergence?.Progress ?? (_giConverged ? 1f : 0f);
 
-    private static bool WantsGiConvergence =>
+    private static bool WantsConvergence =>
         RenderCVars.GiConverge.Value > 0 && RenderCVars.SurfaceCacheProbe.Value == 0;
 
-    /// <summary>The mission whose level is up, played or previewed, for keying its caches.</summary>
-    private int? CurrentMissionId => _activeMission?.Id ?? _backdrop?.MissionId;
+    // The mission whose level is up, played or previewed, for keying its caches.
+    private int? CurrentMissionId => _host.CurrentMissionId;
 
     /// <summary>
     /// Builds whatever the real-time lighting model needs and does not yet have, and throws away whatever
@@ -203,12 +342,12 @@ public sealed partial class GameHost
     /// the menu show the level the player is about to be standing in.
     /// </para>
     /// </remarks>
-    private void EnsureRealtimeGiStructures()
+    public void EnsureStructures()
     {
         // First, because the lite backdrop's overrides decide whether either structure is wanted at all.
-        UpdateBackdropProfile();
+        _host.UpdateBackdropProfile();
 
-        if (_scene is null || (_activeMission is null && _backdrop is null))
+        if (_host.Scene is null || !_host.HasLevel)
         {
             return;
         }
@@ -217,7 +356,7 @@ public sealed partial class GameHost
         EnsureSurfaceCache();
     }
 
-    private void EnsureDistanceFields()
+    public void EnsureDistanceFields()
     {
         bool wanted = RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute;
         int resolution = RenderCVars.DistanceFieldResolution.Value;
@@ -230,12 +369,12 @@ public sealed partial class GameHost
 
         // A resolution change invalidates the built field rather than being ignored until the next load:
         // the voxel grid IS the resolution, so there is nothing to adjust in place.
-        if (_sdfClipmaps is not null && resolution != _builtFieldResolution)
+        if (DistanceField is not null && resolution != _builtFieldResolution)
         {
             DiscardDistanceFields();
         }
 
-        if (_sdfClipmaps is not null || _sdfBake is not null)
+        if (DistanceField is not null || FieldBake is not null)
         {
             return;
         }
@@ -254,13 +393,13 @@ public sealed partial class GameHost
         // the NEXT frame rather than several seconds later, so the level opens already lit instead of
         // opening on the artists' lightmaps and crossing over while the player watches.
         if (CurrentMissionId is { } missionId
-            && _sdfCache.TryLoad(missionId, resolution) is { } cached)
+            && _host.FieldCache.TryLoad(missionId, resolution) is { } cached)
         {
             AdoptDistanceField(cached, DistanceFieldAtlas.Build(cached.Fields), fromCache: true);
             return;
         }
 
-        _sdfBake = DistanceFieldBake.Start(_scene!.Placements, _work, resolution, _logger);
+        FieldBake = DistanceFieldBake.Start(_host.Scene!.Placements, _work, resolution, _logger);
         _logger.Information(
             "GlobalIllumination",
             $"Baking the level's distance fields at {resolution} voxels; the level will light from the "
@@ -296,14 +435,14 @@ public sealed partial class GameHost
     /// same state behind. Uploading the atlas is why this cannot live on the worker: a GPU texture belongs
     /// to the context that made it.
     /// </remarks>
-    private void AdoptDistanceField(SceneDistanceField scene, DistanceFieldAtlas atlas, bool fromCache)
+    public void AdoptDistanceField(SceneDistanceField scene, DistanceFieldAtlas atlas, bool fromCache)
     {
-        _sdfScene = scene;
-        _sdfValidated = false;
-        _sdfClipmaps?.Dispose();
-        _sdfClipmaps = GlobalDistanceField.Create(_device, scene, atlas, DistanceFieldSettings(), _logger);
+        DistanceFieldScene = scene;
+        FieldValidated = false;
+        DistanceField?.Dispose();
+        DistanceField = GlobalDistanceField.Create(_device, scene, atlas, DistanceFieldSettings(), _logger);
 
-        BeginGiConvergence();
+        BeginConvergence();
 
         if (fromCache || CurrentMissionId is not { } missionId)
         {
@@ -313,12 +452,12 @@ public sealed partial class GameHost
         // Written under the resolution it was actually baked at rather than whatever the variable says
         // now: the player can move r_sdf_resolution while a bake is in flight, and a file keyed by the
         // new value would be a field that does not match its own key.
-        _sdfCache.Save(missionId, _builtFieldResolution, scene);
+        _host.FieldCache.Save(missionId, _builtFieldResolution, scene);
     }
 
-    private void EnsureSurfaceCache()
+    public void EnsureSurfaceCache()
     {
-        bool wanted = RenderCVars.SurfaceCache.Value && _world is not null;
+        bool wanted = RenderCVars.SurfaceCache.Value && _host.World is not null;
         float density = RenderCVars.SurfaceCacheDensity.Value;
 
         if (!wanted)
@@ -350,7 +489,7 @@ public sealed partial class GameHost
 
         // The expensive half of the guard above: this walks every placement and bakes each distinct
         // model's cards before it can discover it has nothing to capture.
-        if (_world!.CaptureSurfaceCache(_scene!, density) is not { } cards)
+        if (_host.World!.CaptureSurfaceCache(_host.Scene!, density) is not { } cards)
         {
             _logger.Warning(
                 "GlobalIllumination",
@@ -373,7 +512,7 @@ public sealed partial class GameHost
             + $"in {captureClock.ElapsedMilliseconds} ms.");
 
         RebuildCardLighting();
-        BeginGiConvergence();
+        BeginConvergence();
     }
 
     /// <summary>
@@ -400,7 +539,7 @@ public sealed partial class GameHost
     /// bounded amount of load time and means walking somewhere new does not re-run the ramp.
     /// </para>
     /// <para>
-    /// Started here and STEPPED by <see cref="StepGiConvergence"/> from the frame loop, rather than run to
+    /// Started here and STEPPED by <see cref="StepConvergence"/> from the frame loop, rather than run to
     /// completion: as one call it measured two and a half seconds on a large level, and it ran whenever the
     /// second half of the pair landed, which on a cold cache was several seconds into play. Spread over
     /// frames the same work goes on behind the loading screen, or under the held shot, while the picture
@@ -408,16 +547,16 @@ public sealed partial class GameHost
     /// frame every time.
     /// </para>
     /// </remarks>
-    private void BeginGiConvergence()
+    private void BeginConvergence()
     {
         int passes = RenderCVars.GiConverge.Value;
 
-        if (_giConverged || _giConvergence is not null || !WantsGiConvergence)
+        if (_giConverged || _giConvergence is not null || !WantsConvergence)
         {
             return;
         }
 
-        if (_cardLighting is not { } cards || _sdfClipmaps is not { } field)
+        if (CardLighting is not { } cards || DistanceField is not { } field)
         {
             // Not a failure: this runs from both halves of the pair and the first one to arrive has
             // nothing to converge yet. Said out loud anyway, because a convergence that silently does not
@@ -425,8 +564,8 @@ public sealed partial class GameHost
             // looks like when the feature is off. That cost an afternoon once.
             _logger.Information(
                 "GlobalIllumination",
-                $"Cannot converge yet: the surface cache is {(_cardLighting is null ? "not built" : "ready")} "
-                + $"and the distance field is {(_sdfClipmaps is null ? "not built" : "ready")}. "
+                $"Cannot converge yet: the surface cache is {(CardLighting is null ? "not built" : "ready")} "
+                + $"and the distance field is {(DistanceField is null ? "not built" : "ready")}. "
                 + "Whichever arrives second will converge.");
             return;
         }
@@ -449,11 +588,11 @@ public sealed partial class GameHost
             return;
         }
 
-        // The sun the frame will light with, derived the same way -- NOT _effectiveSun ?? _sun. During a
+        // The sun the frame will light with, derived the same way -- NOT _host.EffectiveSun ?? _host.Sun. During a
         // load the first is not set for this level yet, and the second is the level's raw authored
         // Dirlight, which every Project I.G.I. mission authors as a noon sun: a night mission's whole
         // cache was converged in daylight. See CycleSun.
-        DirectionalLightSettings sun = CycleSun();
+        DirectionalLightSettings sun = _host.CycleSun();
         _giRefreshSlice = 0;
         _giRefreshQuietRounds = 0;
         _giRefreshWorldSettled = false;
@@ -474,19 +613,19 @@ public sealed partial class GameHost
             field,
             CacheSunDirection(sun),
             sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
-            SkyFillColour(sun),
+            SkyLight.Fill(sun),
             RenderCVars.GlobalIlluminationBoost.Value,
             fullPasses);
 
-        if (_options.Lockstep)
+        if (_lockstep)
         {
             _giConvergence.RunAll();
-            FinishGiConvergence();
+            FinishConvergence();
         }
     }
 
     /// <summary>Runs this frame's share of the convergence, if one is in flight. Once per frame.</summary>
-    private void StepGiConvergence()
+    public void StepConvergence()
     {
         if (_giConvergence is null || _giConvergence.IsComplete)
         {
@@ -495,14 +634,14 @@ public sealed partial class GameHost
             // was lit by has moved on.
             if (!_giConverged)
             {
-                if (_cardLighting is not null && _sdfClipmaps is not null)
+                if (CardLighting is not null && DistanceField is not null)
                 {
-                    BeginGiConvergence();
+                    BeginConvergence();
                 }
             }
             else
             {
-                StepGiRelight();
+                StepRelight();
             }
 
             if (_giConvergence is null || _giConvergence.IsComplete)
@@ -513,7 +652,7 @@ public sealed partial class GameHost
 
         SurfaceCacheConvergence job = _giConvergence;
 
-        if (_cardLighting is null || _sdfClipmaps is null)
+        if (CardLighting is null || DistanceField is null)
         {
             // Whatever it was converging has been discarded under it.
             _giConvergence = null;
@@ -523,7 +662,7 @@ public sealed partial class GameHost
         job.Step();
         if (job.IsComplete)
         {
-            FinishGiConvergence();
+            FinishConvergence();
         }
     }
 
@@ -549,24 +688,24 @@ public sealed partial class GameHost
     /// too.
     /// </para>
     /// </remarks>
-    private void StepGiRelight()
+    private void StepRelight()
     {
         // Once per RENDERED frame. This runs once per pass of the loop, and a pass that only ticks the
         // simulation renders nothing: its slice landed in the next frame beside that frame's own, so one frame
         // in every few carried two -- every fourth at a 30 Hz simulation under a 120 Hz picture, and on
         // mission 3's large cache that was a 3.5 ms frame becoming a 7 ms one, over and over.
-        if (_loop.Clock.FrameCount == _giRefreshLastFrame)
+        if (_host.FrameCount == _giRefreshLastFrame)
         {
             return;
         }
 
-        _giRefreshLastFrame = _loop.Clock.FrameCount;
+        _giRefreshLastFrame = _host.FrameCount;
 
         int slices = RenderCVars.GiFarRefresh.Value;
         if (slices <= 0
-            || _cardLighting is not { } cards
-            || _sdfClipmaps is not { } field
-            || _effectiveSun is not { } sun)
+            || CardLighting is not { } cards
+            || DistanceField is not { } field
+            || _host.EffectiveSun is not { } sun)
         {
             return;
         }
@@ -584,7 +723,7 @@ public sealed partial class GameHost
         bool worldSettled = _device.WorldTraceSettled;
         _giRefreshWorldSettled |= worldSettled;
         bool changed = (!_giRefreshWorldSettled && !worldSettled)
-            || _lampBounceRevision != _giRefreshLampRevision
+            || LampBounceRevision != _giRefreshLampRevision
             || _device.LampBounceMapVersion != _giRefreshBounceMapVersion
             || !NearlyEqual(sunDirection, _giRefreshSunDirection)
             || !NearlyEqual(sunColour, _giRefreshSunColour);
@@ -592,7 +731,7 @@ public sealed partial class GameHost
         if (changed)
         {
             _giRefreshQuietRounds = 0;
-            _giRefreshLampRevision = _lampBounceRevision;
+            _giRefreshLampRevision = LampBounceRevision;
             _giRefreshBounceMapVersion = _device.LampBounceMapVersion;
             _giRefreshSunDirection = sunDirection;
             _giRefreshSunColour = sunColour;
@@ -607,15 +746,15 @@ public sealed partial class GameHost
         // the hills, the far side of the yard -- went on returning the day's light to everything that
         // gathered from it, so a scrub into the night left the world lit under a black sky. Only while the
         // sun moves; at rest the sweep goes back to one slice a frame.
-        int steps = _giSunMovedFrames <= GiSunFollowFrames ? Math.Min(GiSunFollowSlices, slices) : 1;
+        int steps = SunMovedFrames <= GiSunFollowFrames ? Math.Min(GiSunFollowSlices, slices) : 1;
         for (int step = 0; step < steps; step++)
         {
-            StepGiRelightSlice(cards, field, sun, sunDirection, sunColour, slices);
+            StepRelightSlice(cards, field, sun, sunDirection, sunColour, slices);
         }
     }
 
     /// <summary>Relights and bounces one slice of the whole cache, and moves the sweep on.</summary>
-    private void StepGiRelightSlice(
+    private void StepRelightSlice(
         SurfaceCacheLighting cards,
         GlobalDistanceField field,
         DirectionalLightSettings sun,
@@ -634,7 +773,7 @@ public sealed partial class GameHost
         cards.ConvergeLightSlice(
             sunDirection,
             sunColour,
-            SkyFillColour(sun),
+            SkyLight.Fill(sun),
             field,
             slice,
             slices);
@@ -659,7 +798,7 @@ public sealed partial class GameHost
     private static Vector3f CacheSunDirection(DirectionalLightSettings sun) =>
         sun.IsBelowHorizon ? default : sun.Direction;
 
-    private void FinishGiConvergence()
+    private void FinishConvergence()
     {
         if (_giConvergence is not { } job)
         {
@@ -670,11 +809,11 @@ public sealed partial class GameHost
 
         // The frame loop picks the accumulation up from here rather than restarting it, so the passes
         // just run are not repeated at full weight on the first frames.
-        _cardBounceFrame = job.Passes;
+        CardBounceFrame = job.Passes;
 
         // Nothing for the eye adaptation to chase: the first frame is already the converged brightness,
         // so the fast warm-up rate would only make the exposure hunt around an answer it already has.
-        _giExposureWarmup = 0;
+        ExposureWarmup = 0;
 
         _logger.Information(
             "GlobalIllumination",
@@ -683,7 +822,7 @@ public sealed partial class GameHost
         _giConvergence = null;
     }
 
-    private void DiscardDistanceFields()
+    public void DiscardDistanceFields()
     {
         _giConverged = false;
         _giSettleWaitFrames = 0;
@@ -691,15 +830,15 @@ public sealed partial class GameHost
         // Clearing the latch as well as the structures, so the next level -- or the next resolution --
         // gets its own attempt rather than inheriting this one's verdict.
         _attemptedFieldResolution = 0;
-        _sdfBake?.Cancel();
-        _sdfBake = null;
-        _sdfClipmaps?.Dispose();
-        _sdfClipmaps = null;
-        _sdfScene = null;
-        _sdfValidated = false;
+        FieldBake?.Cancel();
+        FieldBake = null;
+        DistanceField?.Dispose();
+        DistanceField = null;
+        DistanceFieldScene = null;
+        FieldValidated = false;
     }
 
-    private void DiscardSurfaceCache()
+    public void DiscardSurfaceCache()
     {
         _giConverged = false;
         _giSettleWaitFrames = 0;
@@ -707,8 +846,8 @@ public sealed partial class GameHost
         _attemptedCardDensity = float.NaN;
         _capturedCards = null;
         _cardInstances = null;
-        _cardLighting?.Dispose();
-        _cardLighting = null;
+        CardLighting?.Dispose();
+        CardLighting = null;
         _cardLookup?.Dispose();
         _cardLookup = null;
     }
@@ -725,16 +864,16 @@ public sealed partial class GameHost
     /// Shared by the backdrop and the played mission, so a promoted level keeps the lamps its backdrop
     /// was already showing rather than surveying them a second time.
     /// </remarks>
-    private void ApplyLamps(EmissiveLightProposer.Proposal lamps, int missionId)
+    public void ApplyLamps(EmissiveLightProposer.Proposal lamps, int missionId)
     {
-        _lampsMissionId = missionId;
-        _lightFixtures = lamps.Fixtures;
+        LampsMissionId = missionId;
+        LightFixtures = lamps.Fixtures;
 
         // One switchboard per set of fixtures, seeded by the mission so two levels' broken tubes do not
         // stutter in step. Everything that reads a lamp's output reads it from here, and everything that
         // holds one is handed the same instance rather than a copy of its state.
-        _lampSwitchboard = new LampSwitchboard(lamps.Fixtures, missionId);
-        _lampBounceRevision = _lampSwitchboard.Revision;
+        LampSwitchboard = new LampSwitchboard(lamps.Fixtures, missionId);
+        LampBounceRevision = LampSwitchboard.Revision;
 
         // Which sub-meshes glow and how brightly. Per sub-mesh rather than per texture, because one
         // texture is not one brightness -- a floodlight and the lamp over a door draw with the same page
@@ -743,7 +882,7 @@ public sealed partial class GameHost
         // belongs where the material is decided and costs nothing per pixel.
         float emissiveScale = RenderCVars.LampEmissiveScale.Value;
 
-        _lamps = emissiveScale == 1f
+        Lamps = emissiveScale == 1f
             ? lamps.Lamps
             : lamps.Lamps with
             {
@@ -751,15 +890,15 @@ public sealed partial class GameHost
                     e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase),
             };
 
-        if (_world is not null)
+        if (_host.World is not null)
         {
-            _world.Lamps = _lamps;
-            _world.Switchboard = _lampSwitchboard;
+            _host.World.Lamps = Lamps;
+            _host.World.Switchboard = LampSwitchboard;
         }
 
         // The lit cache reads the fixtures as area emitters; one built before they were known has to be
         // told about them. The refresh sweep carries them to the far cards.
-        _cardLighting?.SetLocalLights(_lightFixtures);
+        CardLighting?.SetLocalLights(LightFixtures);
     }
 
     /// <summary>Lights the captured card atlas from the level's own sun, sky and fixtures.</summary>
@@ -775,31 +914,31 @@ public sealed partial class GameHost
             return;
         }
 
-        _cardLighting?.Dispose();
-        _cardLighting = SurfaceCacheLighting.Create(_device, surfaces, placedCards, _logger);
+        CardLighting?.Dispose();
+        CardLighting = SurfaceCacheLighting.Create(_device, surfaces, placedCards, _logger);
 
         // A fresh pass has no history to accumulate onto, so the next bounce converges in one shot.
-        _cardBounceFrame = 0;
+        CardBounceFrame = 0;
 
         // The cache now climbs from dark to its full bounce over the frames that follow; hold the exposure
         // on a fast rate for that stretch so it tracks the light in rather than dimming after.
-        _giExposureWarmup = GiExposureWarmupFrames;
+        ExposureWarmup = GiExposureWarmupFrames;
 
-        if (_cardLighting is null)
+        if (CardLighting is null)
         {
             return;
         }
 
         // And into the bounce: the fixtures are area emitters as far as the cache is concerned, so a
         // lamplit room lights its own walls off each other.
-        _cardLighting.SetLocalLights(_lightFixtures);
+        CardLighting.SetLocalLights(LightFixtures);
 
         // Built once, from the same capture and placements the lighting was. A ray that stops somewhere
         // knows only that it stopped; this is what lets it read the surface it hit.
         _cardLookup?.Dispose();
         _cardLookup = SurfaceCacheLookup.Build(
-            _device, surfaces, placedCards, _cardLighting.Origin, _logger);
-        _cardLighting.SetLookup(_cardLookup);
+            _device, surfaces, placedCards, CardLighting.Origin, _logger);
+        CardLighting.SetLookup(_cardLookup);
 
         // A level with no Dirlight has no sun to light the cards with, so they take the sky alone -- which
         // is what such a level looks like anyway.
@@ -807,15 +946,92 @@ public sealed partial class GameHost
         // Unshadowed here. At load the clipmaps do not exist yet -- the field bake is still on its worker --
         // so this establishes sun and sky, and the per-frame pass adds the shadow once there is a field to
         // trace against.
-        _cardLighting.Light(
-            _sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
-            _sun?.Colour ?? default,
-            SkyFillColour());
+        CardLighting.Light(
+            _host.Sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
+            _host.Sun?.Colour ?? default,
+            _host.SkyFillColour());
 
         if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
         {
             SurfaceCacheDebugDumps.CardLighting(
-                _device, _cardLighting, lightingInto, _logger, 0, "cards-direct-load.png");
+                _device, CardLighting, lightingInto, _logger, 0, "cards-direct-load.png");
         }
+    }
+
+    /// <summary>Forgets the structures a session is about to replace, without freeing them.</summary>
+    public void Forget()
+    {
+        CardLighting = null;
+        _cardLookup = null;
+        CardBounceFrame = 0;
+        _capturedCards = null;
+        _cardInstances = null;
+        FieldBake = null;
+        DistanceFieldScene = null;
+        DistanceField = null;
+        FieldValidated = false;
+    }
+
+    /// <summary>Takes a finished distance-field bake out of flight.</summary>
+    /// <param name="baked">Receives what it produced.</param>
+    /// <returns><see langword="true"/> when one finished.</returns>
+    public bool TryCollectFieldBake(out DistanceFieldBake.Result baked)
+    {
+        if (FieldBake is { } pending && pending.TryCollect(out baked))
+        {
+            FieldBake = null;
+            return true;
+        }
+
+        baked = default;
+        return false;
+    }
+
+    /// <summary>Waits for the bake in flight and adopts it, as a capture must rather than race the worker.</summary>
+    public void WaitForFieldBake()
+    {
+        if (FieldBake is { } pending && pending.WaitForResult() is { } ready)
+        {
+            FieldBake = null;
+            AdoptDistanceField(ready.Scene, ready.Atlas, fromCache: false);
+        }
+    }
+
+    /// <summary>Takes a backdrop's distance field, read or still baking, as the level's own.</summary>
+    /// <param name="resolution">The resolution it was read or is being baked at.</param>
+    /// <param name="read">The field read from the cache, if it was there.</param>
+    /// <param name="baking">The bake in flight, if it was not.</param>
+    public void AdoptBackdropField(int resolution, SceneDistanceField? read, DistanceFieldBake? baking)
+    {
+        if (!RenderCVars.DistanceFields.Value || !_device.Capabilities.SupportsCompute)
+        {
+            // Started before the lite profile was in force -- the very first backdrop is built before
+            // there is one -- and wanted by nobody now. Play bakes its own if it needs one.
+            baking?.Cancel();
+            return;
+        }
+
+        _attemptedFieldResolution = resolution;
+        _builtFieldResolution = resolution;
+
+        if (read is not null)
+        {
+            AdoptDistanceField(read, DistanceFieldAtlas.Build(read.Fields), fromCache: true);
+        }
+        else if (baking is not null)
+        {
+            // Handed to the same per-frame collect a played mission's bake uses, which adopts it and
+            // writes the cache when it lands -- under a held frame, so the menu does not show the
+            // cross-over either.
+            FieldBake = baking;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        CardLighting?.Dispose();
+        _cardLookup?.Dispose();
+        DistanceField?.Dispose();
     }
 }

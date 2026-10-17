@@ -68,9 +68,9 @@ public sealed partial class GameHost
         json.WriteNumber("localLightSource", RenderCVars.LocalLightSource.Value);
 
         json.WriteStartArray("lamps");
-        for (int i = 0; i < _lightFixtures.Count; i++)
+        for (int i = 0; i < _gi.LightFixtures.Count; i++)
         {
-            LightFixture fixture = _lightFixtures[i];
+            LightFixture fixture = _gi.LightFixtures[i];
             json.WriteStartObject();
             json.WriteNumber("index", i);
             json.WriteString("texture", fixture.Texture);
@@ -94,15 +94,15 @@ public sealed partial class GameHost
             json.WriteBoolean("followsDaylight", _lampDaylight.Photocells?.Follows(i) ?? false);
             json.WriteBoolean("underRoof", LampDaylightControl.IsUnderRoof(fixture, _shelterField));
             json.WriteBoolean("indoors", LampDaylightControl.IsIndoors(fixture, _shelterField, _effectWalls));
-            json.WriteNumber("level", _lampSwitchboard?.LevelOf(i) ?? 1f);
-            json.WriteBoolean("supplied", _lampSwitchboard?.IsSupplied(i) ?? true);
+            json.WriteNumber("level", _gi.LampSwitchboard?.LevelOf(i) ?? 1f);
+            json.WriteBoolean("supplied", _gi.LampSwitchboard?.IsSupplied(i) ?? true);
             json.WriteEndObject();
         }
 
         json.WriteEndArray();
         json.WriteEndObject();
 
-        _logger.Information("Desktop", $"Wrote the frame's lighting ({_lightFixtures.Count} lamp(s)) to {path}.");
+        _logger.Information("Desktop", $"Wrote the frame's lighting ({_gi.LightFixtures.Count} lamp(s)) to {path}.");
     }
 
     private static void WriteVector(Utf8JsonWriter json, string name, Vector3f value)

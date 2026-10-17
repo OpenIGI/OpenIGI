@@ -85,7 +85,7 @@ public sealed partial class GameHost
             }
         }
 
-        if (_cardLighting is { } cards && !ReferenceEquals(cards, _terrainHeightsGivenTo))
+        if (_gi.CardLighting is { } cards && !ReferenceEquals(cards, _terrainHeightsGivenTo))
         {
             cards.SetTerrainHeights(_terrainHeights, _terrainRaster, _terrainHeightScale);
             cards.SetRoofs(_shelterMap, _giRoofTransform);
@@ -101,8 +101,8 @@ public sealed partial class GameHost
         _terrainRasterCancel = null;
         _terrainRasterTask = null;
         _terrainRaster = null;
-        _cardLighting?.SetTerrainHeights(TextureHandle.None, null, 1f);
-        _cardLighting?.SetRoofs(TextureHandle.None, ShelterMapTransform.None);
+        _gi.CardLighting?.SetTerrainHeights(TextureHandle.None, null, 1f);
+        _gi.CardLighting?.SetRoofs(TextureHandle.None, ShelterMapTransform.None);
         _terrainHeightsGivenTo = null;
         if (_terrainHeights.IsValid)
         {

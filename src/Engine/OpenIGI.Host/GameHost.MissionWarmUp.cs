@@ -687,10 +687,10 @@ public sealed partial class GameHost
         if (_warmUp.IsActive)
         {
             _warmUpFramesDrawn++;
-            bool fieldPending = _sdfBake is not null;
-            bool lightingReady = !RealtimeGiPending;
+            bool fieldPending = _gi.FieldBake is not null;
+            bool lightingReady = !_gi.Pending;
 
-            _warmUp.Update(lightingReady, fieldPending, GiConvergeProgress, elapsed);
+            _warmUp.Update(lightingReady, fieldPending, _gi.ConvergeProgress, elapsed);
 
             if (!_warmUp.IsActive)
             {

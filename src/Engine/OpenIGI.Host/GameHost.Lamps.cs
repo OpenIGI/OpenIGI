@@ -69,7 +69,7 @@ public sealed partial class GameHost
             "Puts every lamp in the level back on.",
             context =>
             {
-                if (_lampSwitchboard is not { Count: > 0 } board)
+                if (_gi.LampSwitchboard is not { Count: > 0 } board)
                 {
                     context.Warn("This level has no lamps to reset.");
                     return;
@@ -85,7 +85,7 @@ public sealed partial class GameHost
     /// <summary>Runs an action on the lamp the crosshair is on, and reports what happened.</summary>
     private void AimedLamp(ConsoleCommandContext context, Action<LampSwitchboard, int> act)
     {
-        if (_lampSwitchboard is not { Count: > 0 } board)
+        if (_gi.LampSwitchboard is not { Count: > 0 } board)
         {
             context.Warn(
                 _scene is null
@@ -167,7 +167,7 @@ public sealed partial class GameHost
         if (_worldSolids.TryIdentify(originU, endU, out _, out WorldRayHit hit))
         {
             double hitMetres = hit.Distance / WorldScene.UnitsPerMetre;
-            double slack = LampOcclusionSlack + _lightFixtures[index].Extent;
+            double slack = LampOcclusionSlack + _gi.LightFixtures[index].Extent;
 
             if (hitMetres < distance - slack)
             {
@@ -199,7 +199,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void UpdateLamps(int milliseconds, bool audible)
     {
-        if (_lampSwitchboard is not { } board)
+        if (_gi.LampSwitchboard is not { } board)
         {
             _lampMilliseconds = milliseconds;
             return;
@@ -212,8 +212,8 @@ public sealed partial class GameHost
         _lampDaylight.Update(
             board,
             elapsed,
-            _lightFixtures,
-            _lampsMissionId,
+            _gi.LightFixtures,
+            _gi.LampsMissionId,
             _shelterField,
             _effectWalls,
             _options.SunDirection is not null,
@@ -221,12 +221,12 @@ public sealed partial class GameHost
             _cycleSun ?? _sun ?? FallbackSun,
             WeatherCloudCover());
         board.Update(elapsed);
-        _lampSounds.Play(board, elapsed, audible, _sounds, _lightFixtures);
+        _lampSounds.Play(board, elapsed, audible, _sounds, _gi.LightFixtures);
 
-        if (board.Revision != _lampBounceRevision)
+        if (board.Revision != _gi.LampBounceRevision)
         {
-            _lampBounceRevision = board.Revision;
-            _cardLighting?.SetLocalLightLevels(board);
+            _gi.LampBounceRevision = board.Revision;
+            _gi.CardLighting?.SetLocalLightLevels(board);
 
             // And the lamp shadows' history, which would otherwise hold the old lamps' verdict for half a
             // second after one switched.
@@ -238,13 +238,13 @@ public sealed partial class GameHost
     /// <returns>The line, or <see langword="null"/> when the crosshair is not on a lamp.</returns>
     private string? DescribeAimedLamp()
     {
-        if (_lampSwitchboard is not { Count: > 0 } board
+        if (_gi.LampSwitchboard is not { Count: > 0 } board
             || !TryAimedLamp(board, out int index, out double distance))
         {
             return null;
         }
 
-        LightFixture fixture = _lightFixtures[index];
+        LightFixture fixture = _gi.LightFixtures[index];
         string daylight = _lampDaylight.Photocells is { } cells && cells.Follows(index)
             ? FormattableString.Invariant($"dusk circuit {cells.CircuitOf(index)} on below {cells.ThresholdsOf(index).On:0.000}")
             : "kept on by day";
