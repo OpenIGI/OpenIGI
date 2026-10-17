@@ -2,6 +2,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Core.Configuration;
+using OpenIGI.Game.Player;
+using OpenIGI.Host.Audio;
 
 namespace OpenIGI.Host;
 
@@ -337,5 +340,57 @@ internal sealed partial class GameHost
     {
         float t = Math.Clamp((nightfall - 0.45f) / 0.55f, 0f, 1f);
         return t * t * (3f - (2f * t));
+    }
+
+    /// <summary>Registers the console's handle on the time of day.</summary>
+    /// <param name="console">The console to register with.</param>
+    private void RegisterTimeOfDayCommands(ConsoleSystem console)
+    {
+        // The clock, set the way the [ and ] scrub sets it: mid-mission, with nothing else reset. What a
+        // capture needs to reproduce a scrub into the night without a key held down.
+        console.Commands.Add(
+            "settime",
+            "Moves the time of day to an hour, 0 to 24, as the [ and ] scrub does; a second number sweeps there over that many seconds. Not in the original.",
+            context =>
+            {
+                if (context.Count < 1
+                    || !float.TryParse(context[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float hours))
+                {
+                    context.Print($"The time is {_dayNight.TimeHours:0.00}.");
+                    return;
+                }
+
+                float seconds = context.Count > 1
+                    && float.TryParse(context[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float over)
+                    ? over
+                    : 0f;
+                _dayNight.SweepToHour(hours, seconds);
+                context.Print(seconds > 0f ? $"Sweeping to {hours:0.00} over {seconds:0.#} s." : $"Time set to {_dayNight.TimeHours:0.00}.");
+            });
+    }
+
+    /// <summary>Reads the Flashlight action and flips the switch, with its click.</summary>
+    /// <param name="menuMode">Whether a menu holds the input.</param>
+    /// <param name="consoleOpen">Whether the console does.</param>
+    /// <remarks>
+    /// Read per frame beside the map computer's key rather than on the thirty-hertz tick, so a quick tap is
+    /// never missed. Only while the light could be seen -- in the player's own view, alive, with nothing else
+    /// holding the picture -- so the key cannot switch it on unseen behind a cutscene.
+    /// </remarks>
+    private void UpdateFlashlightSwitch(bool menuMode, bool consoleOpen)
+    {
+        if (!_flashlight.CanSwitch(menuMode, consoleOpen, _playerDead) || _player is not { } player)
+        {
+            return;
+        }
+
+        player.InputProfile = _configuration.Active;
+        if (!player.WasActionPressed(_window.Input, PlayerAction.Flashlight))
+        {
+            return;
+        }
+
+        bool on = _flashlight.Toggle();
+        _sounds?.PlayExternal(on ? FlashlightClick.OnSoundName : FlashlightClick.OffSoundName, gain: 0.8f, priority: 180);
     }
 }

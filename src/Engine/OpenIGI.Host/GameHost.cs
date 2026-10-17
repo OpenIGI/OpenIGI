@@ -308,6 +308,10 @@ internal sealed partial class GameHost : IDisposable
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
 
+    // The player's flashlight, and what its lens is kept out of.
+    private readonly PlayerFlashlight _flashlight;
+    private Func<DeathCameraVantage.Blocked?>? _flashlightWalls;
+
     // Where a new level's lamps are ordered from for their coarse maps, nearest first.
     private Vector3d LampOrderEye => _camera?.Position ?? default;
 
@@ -747,6 +751,7 @@ internal sealed partial class GameHost : IDisposable
         _window = window;
         _device = device;
         _lampMaps = new LampShadowMaps(device);
+        _flashlight = new PlayerFlashlight(device);
         _audioFactory = audioFactory;
         _work = work;
         _loadGate = loadGate;
@@ -956,7 +961,8 @@ internal sealed partial class GameHost : IDisposable
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
         RegisterLampCommands(console.System);
-        RegisterFlashlightCommands(console.System);
+        RegisterTimeOfDayCommands(console.System);
+        _flashlight.RegisterCommands(console.System);
         RegisterTitlePlayerCommands(console.System);
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
@@ -1118,7 +1124,7 @@ internal sealed partial class GameHost : IDisposable
             DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
         };
         _playerDead = false;
-        ResetFlashlight();
+        _flashlight.Reset();
 
         // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
         // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
@@ -5888,12 +5894,14 @@ if (retailFog)
 
                 // The player's flashlight, outside the lamps' gate: it lights under every lighting model the
                 // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
-                SubmitFlashlight(
-                    captured && flashlightShown,
+                _flashlight.Submit(
+                    captured && flashlightShown && _player is not null && !_playerDead,
                     menuMode && pauseMenu,
                     flashlightBody,
                     eye,
-                    _thirdPerson.IsEngaged);
+                    _thirdPerson.IsEngaged,
+                    _loop.TimeSource.Milliseconds,
+                    _flashlightWalls ??= ThirdPersonWalls);
 
                 if (mapScene is not null)
                 {

@@ -5,7 +5,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Host;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// The player's flashlight: the switch, where the torch hangs and points, and handing it to the renderer.
@@ -25,8 +25,14 @@ namespace OpenIGI.Host;
 /// trails the view by a few hundredths of a second and sways with the gait (<see cref="FlashlightRig"/>).
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+internal sealed class PlayerFlashlight
 {
+    private readonly IGraphicsDevice _device;
+
+    /// <summary>Initializes a new instance of the <see cref="PlayerFlashlight"/> class.</summary>
+    /// <param name="device">The device the light is handed to.</param>
+    public PlayerFlashlight(IGraphicsDevice device) => _device = device ?? throw new ArgumentNullException(nameof(device));
+
     /// <summary>Where the torch hangs from the eye, in metres along the view's right, up and forward.</summary>
     private static readonly Vector3f FlashlightMount = new(0.16f, -0.14f, 0.10f);
 
@@ -50,7 +56,7 @@ internal sealed partial class GameHost
     private float _flashlightWallMetres = float.PositiveInfinity;
 
     /// <summary>Gets whether the renderer can light with a flashlight at all this frame.</summary>
-    private static bool FlashlightAvailable =>
+    public static bool FlashlightAvailable =>
         RenderCVars.Flashlight.Value && RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value;
 
     /// <summary>Registers the console's handle on the flashlight.</summary>
@@ -60,30 +66,8 @@ internal sealed partial class GameHost
     /// switches it on without a key. The key itself is the Flashlight action in the Controls page, not a
     /// console bind, so it can be rebound with the rest of the controls.
     /// </remarks>
-    private void RegisterFlashlightCommands(ConsoleSystem console)
+    public void RegisterCommands(ConsoleSystem console)
     {
-        // The clock, set the way the [ and ] scrub sets it: mid-mission, with nothing else reset. What a
-        // capture needs to reproduce a scrub into the night without a key held down.
-        console.Commands.Add(
-            "settime",
-            "Moves the time of day to an hour, 0 to 24, as the [ and ] scrub does; a second number sweeps there over that many seconds. Not in the original.",
-            context =>
-            {
-                if (context.Count < 1
-                    || !float.TryParse(context[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float hours))
-                {
-                    context.Print($"The time is {_dayNight.TimeHours:0.00}.");
-                    return;
-                }
-
-                float seconds = context.Count > 1
-                    && float.TryParse(context[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float over)
-                    ? over
-                    : 0f;
-                _dayNight.SweepToHour(hours, seconds);
-                context.Print(seconds > 0f ? $"Sweeping to {hours:0.00} over {seconds:0.#} s." : $"Time set to {_dayNight.TimeHours:0.00}.");
-            });
-
         console.Commands.Add(
             "flashlight",
             "Switches the player's flashlight: 1 on, 0 off, nothing to toggle. Not in the original.",
@@ -109,47 +93,36 @@ internal sealed partial class GameHost
             });
     }
 
-    /// <summary>Reads the Flashlight action and flips the switch, with its click.</summary>
-    /// <param name="menuMode">Whether a menu holds the input.</param>
-    /// <param name="consoleOpen">Whether the console does.</param>
+    /// <summary>Puts the light out where it cannot be on, and says whether a press of its key may switch it now.</summary>
+    /// <param name="menuMode">Whether a menu is up.</param>
+    /// <param name="consoleOpen">Whether the console is open.</param>
+    /// <param name="playerDead">Whether the player is dead.</param>
+    /// <returns>Whether the host should read the key this frame.</returns>
     /// <remarks>
-    /// Read per frame beside the map computer's key rather than on the thirty-hertz tick, so a quick tap is
-    /// never missed. Only while the light could be seen -- in the player's own view, alive, with nothing else
-    /// holding the picture -- so the key cannot switch it on unseen behind a cutscene.
+    /// A preset without it puts the light out, and it does not come back on by itself when the preset does; so does
+    /// death. The key is read only while the player's own view is on screen.
     /// </remarks>
-    private void UpdateFlashlightSwitch(bool menuMode, bool consoleOpen)
+    public bool CanSwitch(bool menuMode, bool consoleOpen, bool playerDead)
     {
-        if (!FlashlightAvailable)
-        {
-            // A preset without it put the light out; it does not come back on by itself when the preset does.
-            _flashlightRig.ForceOff();
-            return;
-        }
-
-        if (_playerDead)
+        if (!FlashlightAvailable || playerDead)
         {
             _flashlightRig.ForceOff();
-            return;
+            return false;
         }
 
-        if (menuMode || consoleOpen || !_flashlightShown || _player is not { } player)
-        {
-            return;
-        }
+        return !menuMode && !consoleOpen && _flashlightShown;
+    }
 
-        player.InputProfile = _configuration.Active;
-        if (!player.WasActionPressed(_window.Input, PlayerAction.Flashlight))
-        {
-            return;
-        }
-
+    /// <summary>Switches the light, as its key does.</summary>
+    /// <returns>Whether it is now on.</returns>
+    public bool Toggle()
+    {
         _flashlightRig.ContactWear = RenderCVars.FlashlightWear.Value;
-        bool on = _flashlightRig.Toggle();
-        _sounds?.PlayExternal(on ? FlashlightClick.OnSoundName : FlashlightClick.OffSoundName, gain: 0.8f, priority: 180);
+        return _flashlightRig.Toggle();
     }
 
     /// <summary>Puts the flashlight out and forgets its aim: a mission starting, restarting or ending.</summary>
-    private void ResetFlashlight()
+    public void Reset()
     {
         _flashlightRig.ForceOff();
         _flashlightRig.ResetAim();
@@ -159,16 +132,25 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Places, aims and hands this frame's flashlight to the renderer, or tells it there is none.</summary>
-    /// <param name="shown">Whether the player's own view is on screen, where the light can be.</param>
+    /// <param name="shown">Whether the player's own view is on screen, with a living player in it: where the light can be.</param>
     /// <param name="paused">Whether the world is paused behind a menu, which freezes the torch where it is.</param>
     /// <param name="body">The body's own eye, before any third-person camera moved away from it.</param>
     /// <param name="eye">The eye the frame is drawn from, whose view space the renderer works in.</param>
     /// <param name="thirdPerson">Whether the camera is away from the body.</param>
-    private void SubmitFlashlight(bool shown, bool paused, in Camera3D body, in Camera3D eye, bool thirdPerson)
+    /// <param name="nowMilliseconds">The game clock, which paces the torch's lag and sway.</param>
+    /// <param name="walls">What the body's surroundings block, asked only while the light is shown.</param>
+    public void Submit(
+        bool shown,
+        bool paused,
+        in Camera3D body,
+        in Camera3D eye,
+        bool thirdPerson,
+        int nowMilliseconds,
+        Func<DeathCameraVantage.Blocked?> walls)
     {
-        _flashlightShown = shown && _player is not null && !_playerDead;
+        _flashlightShown = shown;
 
-        int now = _loop.TimeSource.Milliseconds;
+        int now = nowMilliseconds;
         float seconds = paused ? 0f : Math.Clamp((now - _flashlightMilliseconds) / 1000f, 0f, 0.1f);
         _flashlightMilliseconds = now;
 
@@ -202,12 +184,12 @@ internal sealed partial class GameHost
 
         // What the crosshair is on, and how far: the beam converges there, and a near wall throws the beam
         // back onto the hands. The lens is also kept out of any wall the body is pressed against.
-        DeathCameraVantage.Blocked? walls = ThirdPersonWalls();
+        DeathCameraVantage.Blocked? blocked = walls();
         float hit = (float)FlashlightProbeMetres;
-        if (walls is not null)
+        if (blocked is not null)
         {
             Vector3d from = body.Position * WorldScene.UnitsPerMetre;
-            if (walls(from, lens * WorldScene.UnitsPerMetre, out Vector3d blockedAt))
+            if (blocked(from, lens * WorldScene.UnitsPerMetre, out Vector3d blockedAt))
             {
                 Vector3d inward = (blockedAt / WorldScene.UnitsPerMetre) - body.Position;
                 double length = inward.Length;
@@ -215,7 +197,7 @@ internal sealed partial class GameHost
             }
 
             Vector3d ahead = body.Position + (ToDouble(forward) * FlashlightProbeMetres);
-            if (walls(from, ahead * WorldScene.UnitsPerMetre, out Vector3d landed))
+            if (blocked(from, ahead * WorldScene.UnitsPerMetre, out Vector3d landed))
             {
                 hit = (float)((landed / WorldScene.UnitsPerMetre) - body.Position).Length;
             }
