@@ -45,42 +45,21 @@ namespace OpenIGI.Presentation.Igi1;
 /// </remarks>
 public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 {
-    private const string LogCategory = "Soldier";
+    internal const string LogCategory = "Soldier";
     // The one staged actor whose placement is traced each second, named by soldier id in
     // OPENIGI_TRACE_CUTSCENE_ACTOR. Read once: the check runs for every soldier on every tick.
     private static readonly string? TracedCutsceneActor = Environment.GetEnvironmentVariable("OPENIGI_TRACE_CUTSCENE_ACTOR");
-
-
-
 
     private readonly IGraphicsDevice _device;
 
     /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
     private readonly List<MeshDrawRange> _outlineRanges = [];
     private readonly ResourceRegistry _resources;
-    private readonly MagicObjectRegistry? _magic;
     private readonly IOpenIgiLogger _logger;
     private TexTextureCache? _textureCache;
     private readonly List<Group> _groups = [];
 
-    private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<string, HeldWeapon> _heldWeaponsByModel = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Builds a presenter for a weapon a soldier holds, or null when the host supplies none.</summary>
-    /// <remarks>
-    /// A factory rather than a type, because the renderer that draws a held weapon is title content and
-    /// lives in the title's own project: naming it here would put I.G.I. 1 content back in
-    /// <c>OpenIGI.Presentation</c>, which is what this class is waiting to leave. Null is a soldier that
-    /// draws no weapon, which is what a test harness and a backdrop both want.
-    /// </remarks>
-    private readonly Func<IHeldWeaponPresenter>? _heldWeapons;
-
-
-
-
-
-
-
 
     private readonly Dictionary<AiStationaryGun, HeldWeapon?> _stationaryWeaponVisuals = [];
 
@@ -89,59 +68,19 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     private Func<IEnumerable<VehicleGunVisual>>? _vehicleGuns;
     private readonly HashSet<int> _reportedStationaryVisuals = [];
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     // The sound 0x45D3C0 adds to a soldier's grunt when a knife made the hit.
     private const string KnifeStabSound = "stab_01";
-
-
-
-
 
     private bool _disposed;
 
     // The soldiers' simulation: their brains, their bodies' state, their weapons and what they hear and see.
     private readonly SoldierSimulation _sim;
+
+    // What is drawn of the player's own body.
+    private readonly PlayerBodyRenderer _playerBody;
+
+    // What builds the groups', soldiers' and weapons' meshes.
+    private readonly SoldierMeshBuilder _meshes;
 
     /// <inheritdoc/>
     public SoldierSimulation Simulation => _sim;
@@ -150,48 +89,35 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     public MaterialDetailPack? DetailMaps { get; set; }
 
     /// <inheritdoc/>
-    public bool PlayerBodyFollowVisible { get; set; } = true;
+    public bool PlayerBodyFollowVisible
+    {
+        get => _playerBody.FollowVisible;
+        set => _playerBody.FollowVisible = value;
+    }
 
     /// <inheritdoc/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get; set; }
 
     /// <inheritdoc/>
-    public bool IsPlayerBodyActive => _playerBodyActive;
+    public bool IsPlayerBodyActive => _playerBody.IsActive;
 
     /// <inheritdoc/>
-    public Vector3d? PlayerRagdollCentre => _playerRagdoll?.Centre;
-    // The player's own third-person body -- Jones, the rig the first-person view never shows. It is NOT a
-    // guard: it has no AI, is not in _groups, and the soldier tick and draw loops never touch it. It loads
-    // with the level (LoadPlayerBody), stands invisibly until the player dies, then poses the death clip
-    // (KillPlayerBody) and is drawn (DrawPlayerBody) once the death camera has pulled back off the eye.
-    // Reuses the same BuildGroup / re-skin / draw machinery a soldier's body does. See HumanPlayerBody.
-    // The player's own corpse, when g_ragdoll is on. Exactly the soldier arrangement: the retail death
-    // clip keeps running underneath and keeps moving the authoritative body, and this replaces only the
-    // pose and the placement that are drawn.
-    private RagdollBody? _playerRagdoll;
-    private Group? _playerBodyGroup;
-    private Member? _playerBodyMember;
-    private bool _playerBodyActive;
-
-
-
-
-
-
-    private float _playerBodyFacing;
-    private AiSoldier.GroundQuery? _playerBodyGround;
-
-    // The player body's own tick-state pair and frame bookkeeping -- the same smoothing a soldier's
-    // Member carries, kept as fields because there is only ever one of it.
-    private Vector3d _playerBodyTickWhere;
-    private Vector3d _playerBodyPrevTickWhere;
-    private bool _playerBodyHasTickState;
-    private int _playerBodyCaptureTick = -1;
-    private int _playerBodySkinTick = -1;
-
-    // The frame alpha BeginFrame resolved, kept for DrawPlayerBody which runs once per frame.
+    public Vector3d? PlayerRagdollCentre => _playerBody.RagdollCentre;
+    // The frame alpha BeginFrame resolved, kept for the player's body, which draws once per frame.
     private float _frameAlpha = 1f;
     private bool _frameSmooth;
+
+    /// <summary>Gets how far this frame sits between the last two ticks, as <see cref="BeginFrame"/> resolved it.</summary>
+    internal float FrameAlpha => _frameAlpha;
+
+    /// <summary>Gets whether this frame is drawn between ticks rather than at the last one.</summary>
+    internal bool FrameSmooth => _frameSmooth;
+
+    /// <summary>Gets what builds the soldiers' meshes.</summary>
+    internal SoldierMeshBuilder Meshes => _meshes;
+
+    /// <summary>Gets whether the renderer has been disposed.</summary>
+    internal bool IsDisposed => _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -216,17 +142,17 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
         _device = device;
         _resources = resources;
-        _magic = magic;
-        _heldWeapons = heldWeapons;
         _logger = logger ?? NullLogger.Instance;
         _sim = new SoldierSimulation(_logger);
+        _meshes = new SoldierMeshBuilder(_device, _logger, magic, heldWeapons);
+        _playerBody = new PlayerBodyRenderer(this, _device, _sim, _logger);
         _sim.SpawnedBody = (generator, roster, fresh, dead) =>
         {
             Group group = _groups.First(candidate => ReferenceEquals(candidate.Roster, roster));
             Member member;
             try
             {
-                member = NewMember(group, fresh);
+                member = _meshes.NewMember(group, fresh);
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
             {
@@ -381,16 +307,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         }
     }
 
-
-
-
-
-
-
-
-
-
-
     internal bool IsInViewForTesting(SoldierView view) => FindMember(view)?.Agent.InView ?? false;
 
     internal string DescribeViewForTesting(SoldierView view)
@@ -414,11 +330,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     private Camera3D? _lastObservedCamera;
-
-
-
-
-
 
     /// <inheritdoc/>
     public int Load(LoadedMission mission, GameTask levelRoot, IGroundHeightField? terrain = null, WorldRayCast? cast = null)
@@ -452,7 +363,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             (string, int, int) key = (soldier.Model, soldier.BoneHierarchy, view.StandAnimation);
             if (!groups.TryGetValue(key, out Group? group))
             {
-                group = BuildGroup(mission, soldier.Model, view);
+                group = _meshes.BuildGroup(mission, soldier.Model, view);
                 if (group is null)
                 {
                     continue;
@@ -477,7 +388,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             Member member;
             try
             {
-                member = NewMember(group, new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor });
+                member = _meshes.NewMember(group, new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor });
             }
             catch (InvalidOperationException)
             {
@@ -506,54 +417,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         return Count;
     }
 
-    /// <summary>Makes a soldier's own drawing: its first skin, uploaded to both of its GPU streams.</summary>
-    /// <param name="group">The soldier's group, whose geometry and model it shares.</param>
-    /// <param name="agent">The soldier.</param>
-    /// <returns>The member, not yet added to the group.</returns>
-    /// <exception cref="InvalidOperationException">The device could not upload the mesh.</exception>
-    private Member NewMember(Group group, SoldierAgent agent)
-    {
-        // Its own mesh, so it can hold its own pose (see Member) -- animated, so each tick's
-        // re-skin replaces the vertices in place and the pose replaced becomes the previous-pose
-        // stream the motion vectors and the between-tick blending read.
-        BonePose initialPose = agent.View.UnrotatedPose();
-        Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
-        group.Geometry.Vertices.CopyTo(initialSkin, 0);
-        bool initialSkinReady = false;
-        if (group.Body.Model is { } skinModel)
-        {
-            try
-            {
-                MefSkinner.Skin(
-                    skinModel,
-                    initialPose,
-                    (float)(1.0 / WorldScene.UnitsPerMetre),
-                    initialSkin);
-                initialSkinReady = true;
-            }
-            catch (ArgumentException)
-            {
-                // Keep the raw mesh if a malformed model cannot be skinned. Its collision path falls
-                // back to the authoritative pose until two valid animated uploads establish a pair.
-                initialSkinReady = false;
-            }
-        }
-
-        // Both GPU streams begin with this same skin. A smoothed player shot can therefore use
-        // a matching CPU pose pair even on the very first rendered frame; seeding them with raw
-        // geometry would make the displayed blend untraceable until a second animation tick.
-        MeshHandle own = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
-        return new Member(agent, own)
-        {
-            DrawnPose = initialPose,
-            SkinScratch = initialSkin,
-            SkinnedPose = initialSkinReady ? initialPose : null,
-            PreviousSkinnedPose = initialSkinReady ? initialPose : null,
-        };
-    }
-
     // Every textured subset of a body's own mesh, opaque, through the material the caller set.
-    private void DrawSubsets(Group group, Member member, in Matrix4f modelView)
+    internal void DrawSubsets(Group group, Member member, in Matrix4f modelView)
     {
         foreach (MeshSubset subset in group.Geometry.Subsets)
         {
@@ -622,7 +487,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             LogCategory,
             $"Prepared {collisionMeshes} soldier collision mesh(es) and {ragdollRigs} corpse rig(s) before play.");
     }
-
 
     /// <inheritdoc/>
     public bool TryPick(
@@ -695,10 +559,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         return found;
     }
 
-
-
-
-
     /// <inheritdoc/>
     public int Arm(LoadedMission mission, WeaponTypeRegistry roster)
     {
@@ -741,7 +601,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
                 {
-                    held = BuildWeapon(mission, weapon.GunModel);
+                    held = _meshes.BuildWeapon(mission, weapon.GunModel);
                     cache[weapon.GunModel] = held;
                 }
 
@@ -794,7 +654,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
                 {
-                    held = BuildWeapon(mission, weapon.GunModel);
+                    held = _meshes.BuildWeapon(mission, weapon.GunModel);
                     cache[weapon.GunModel] = held;
                 }
 
@@ -832,66 +692,12 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         {
             if (!_vehicleWeaponVisuals.ContainsKey(model))
             {
-                _vehicleWeaponVisuals[model] = BuildWeapon(mission, model);
+                _vehicleWeaponVisuals[model] = _meshes.BuildWeapon(mission, model);
             }
         }
 
         _vehicleGuns = _vehicleWeaponVisuals.Count > 0 ? guns : null;
     }
-
-    private HeldWeapon? BuildWeapon(LoadedMission mission, string modelName)
-    {
-        if (string.IsNullOrEmpty(modelName))
-        {
-            return null;
-        }
-
-        if (!mission.TryGetModel(modelName, out MefModel? model) || model is null)
-        {
-            _logger.Warning(LogCategory, $"Weapon model '{modelName}' is in no pack this mission opened.");
-            return null;
-        }
-
-        MeshGeometry? geometry = MefMeshBuilder.Build(model, (float)(1.0 / WorldScene.UnitsPerMetre));
-        if (geometry is null)
-        {
-            _logger.Warning(LogCategory, $"Weapon model '{modelName}' has nothing to draw.");
-            return null;
-        }
-
-        MeshHandle mesh;
-        try
-        {
-            mesh = _device.CreateMesh(geometry.Vertices, geometry.Indices);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
-        {
-            _logger.Warning(LogCategory, $"Weapon model '{modelName}' did not upload: {ex.Message}");
-            return null;
-        }
-
-        (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        IHeldWeaponPresenter? presentation = null;
-        if (_magic is not null && _heldWeapons?.Invoke() is { } candidate)
-        {
-            if (candidate.Load(mission, modelName))
-            {
-                presentation = candidate;
-            }
-            else
-            {
-                candidate.Dispose();
-            }
-        }
-
-        HeldWeapon held = new(geometry, mesh, instance, pack, presentation);
-        _weapons.Add(held);
-        return held;
-    }
-
-
-
-
 
     /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
     private void UpdateMountedWeapon(Member member, AiSoldier brain)
@@ -944,7 +750,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         return RagdollWeapon.FromBounds(low * scale, high * scale);
     }
 
-
     private Group? FindGroup(SoldierView view)
     {
         foreach (Group group in _groups)
@@ -960,7 +765,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
         return null;
     }
-
 
     private Member? FindMember(SoldierView view)
     {
@@ -978,11 +782,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         return null;
     }
 
-
-
-
-
-
     /// <summary>
     /// Starts a simulated corpse from the pose a body was last drawn in, and pushes it with the round.
     /// </summary>
@@ -992,7 +791,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// clip's own root height — or the corpse jumps at the instant the physics takes over. That is the
     /// same triple <see cref="TickPlacementOf"/> builds, in units rather than metres.
     /// </remarks>
-    private RagdollBody? SeedRagdoll(
+    internal RagdollBody? SeedRagdoll(
         SoldierView view,
         Vector3d originInUnits,
         Matrix3f orientation,
@@ -1034,15 +833,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         return body;
     }
 
-
-
-
-
-
-
-
-
-
     /// <summary>
     /// The soldier model's bounding radius the draw callback's frustum test scales by 1.41, in metres.
     /// </summary>
@@ -1079,11 +869,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             }
         }
     }
-
-
-
-
-
 
     /// <summary>Records a soldier's drawn placement for this tick, keeping the tick before.</summary>
     private void CaptureTickState(Member member)
@@ -1275,11 +1060,11 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         // cascade as well as once for the geometry pass, and the frame bookkeeping below records what was
         // on screen LAST frame. Doing it per draw would make a body cast three shadows' worth of history
         // and report itself as never having moved.
-        ResolvePlayerBodyFrameState();
+        _playerBody.ResolveFrameState();
     }
 
     /// <summary>Computes one soldier's drawn placement, pose blend and motion for this frame.</summary>
-    private void ResolveFrameState(Member member, float alpha, bool smooth)
+    internal void ResolveFrameState(Member member, float alpha, bool smooth)
     {
         if (!member.HasTickState)
         {
@@ -1486,779 +1271,49 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public bool LoadPlayerBody(LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma) =>
+        _playerBody.Load(mission, model, animations, position, gamma);
 
     /// <inheritdoc/>
-    public bool LoadPlayerBody(
-        LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma)
-    {
-        ArgumentNullException.ThrowIfNull(mission);
-        ArgumentNullException.ThrowIfNull(model);
-        ArgumentNullException.ThrowIfNull(animations);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        ReleasePlayerBody();
-
-        HumanSoldierTask task = new()
-        {
-            Model = model,
-            BoneHierarchy = animations.Skeleton.Id,
-            StandAnimation = HumanPlayerBody.StandAnimation,
-            Position = position,
-            Gamma = gamma,
-        };
-
-        SoldierView view;
-        try
-        {
-            view = new SoldierView(task, animations);
-        }
-        catch (ArgumentException ex)
-        {
-            _logger.Warning(LogCategory, $"The player body could not be posed on skeleton {animations.Skeleton.Id}: {ex.Message}");
-            return false;
-        }
-
-        Group? group = BuildGroup(mission, model, view);
-        if (group is null)
-        {
-            return false;
-        }
-
-        // The player's body is also a hit-test candidate for incoming AI rounds. Prime the same immutable
-        // data as the mission soldiers so the first hostile hit cannot trigger a synchronous parse/build.
-        try
-        {
-            _ = group.Body.CollisionMesh;
-        }
-        catch (PackFormatException ex)
-        {
-            _logger.Warning(LogCategory, $"The player collision mesh was not usable: {ex.Message}");
-        }
-
-        if (GameplayCVars.Ragdoll.Value && group.Body.Model is not null)
-        {
-            _ = _sim.RagdollRigFor(animations, group.Body.Model);
-        }
-
-        MeshHandle own;
-        try
-        {
-            own = _device.CreateAnimatedMesh(group.Geometry.Vertices, group.Geometry.Indices);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
-        {
-            _logger.Warning(LogCategory, $"The player body '{model}' did not upload: {ex.Message}");
-            return false;
-        }
-
-        _sim.PlayerBodyView = view;
-        _sim.PlayerBodyModel = group.Body;
-        _playerBodyGroup = group;
-        _playerBodyMember = new Member(new SoldierAgent(view, default), own);
-        _playerBodyGround = _sim.MakeGroundQuery();
-        _playerBodyActive = false;
-        _playerBodyHasTickState = false;
-        _playerBodyCaptureTick = -1;
-        _playerBodySkinTick = -1;
-        _logger.Information(LogCategory, $"Loaded the player's third-person body '{model}' on skeleton {animations.Skeleton.Id}.");
-        return true;
-    }
+    public void KillPlayerBody(int deathAnimation, Vector3d feet, float gamma, int bone = -1, Vector3d travel = default, WeaponCategory category = WeaponCategory.Gun, Vector3d velocity = default) =>
+        _playerBody.Kill(deathAnimation, feet, gamma, bone, travel, category, velocity);
 
     /// <inheritdoc/>
-    public void KillPlayerBody(
-        int deathAnimation,
-        Vector3d feet,
-        float gamma,
-        int bone = -1,
-        Vector3d travel = default,
-        WeaponCategory category = WeaponCategory.Gun,
-        Vector3d velocity = default)
-    {
-        if (_sim.PlayerBodyView is null)
-        {
-            return;
-        }
-
-        _playerBodyFacing = gamma;
-        _sim.PlayerBodySuppressRootHeight = false;
-        _sim.PlayerBodyVisualLift = 0.0;
-        _sim.PlayerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
-        _sim.PlayerBodyView.Kill(deathAnimation);
-        _playerBodyActive = true;
-
-        // Seeded before the tick state is captured, so the very first capture is already the corpse's
-        // own placement rather than the clip's -- a death is a cut and there is nothing to blend from.
-        _playerRagdoll = SeedRagdoll(
-            _sim.PlayerBodyView,
-            new Vector3d(feet.X, feet.Y, feet.Z + _sim.PlayerBodyView.RootSample.Z),
-            _sim.PlayerBodyView.Orientation,
-            bone,
-            travel,
-            category,
-            velocity,
-            _playerBodyGroup?.Body.Model,
-            weapon: null);
-
-        // A death is a cut, not a movement: the body appears where the player fell, and nothing on
-        // screen is its history. Snap the interpolation pair and start the frame bookkeeping over.
-        CapturePlayerBodyTickState(snap: true);
-        if (_playerBodyMember is { } fresh)
-        {
-            fresh.HasFrameState = false;
-            fresh.HasTickState = false;
-        }
-
-        // The fall clip has to resolve in the player's set, or Kill silently keeps the idle and the body
-        // never falls; reported once so a wrong id is visible rather than a body that just stands there.
-        if (_sim.PlayerBodyView.CurrentAnimation != deathAnimation)
-        {
-            _logger.Warning(
-                LogCategory,
-                $"The player's death clip {deathAnimation} is not in its set; the body keeps clip "
-                    + $"{_sim.PlayerBodyView.CurrentAnimation} and will not fall.");
-        }
-    }
+    public void TickPlayerBody() =>
+        _playerBody.Tick();
 
     /// <inheritdoc/>
-    public void TickPlayerBody()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_playerBodyActive
-            || _sim.PlayerBodyView is null
-            || _playerBodyMember is null
-            || _playerBodyGroup?.Body.Model is not { } model)
-        {
-            return;
-        }
-
-        _sim.PlayerBodyView.Tick();
-
-        // The knock-back. A dying body is thrown -- the fall clip's own root-motion track carries it back
-        // and down, and the retail mover consumes exactly that (0x4109A0 samples the body clip's root delta
-        // through sub_4D2FB0 and moves the human by it, until 0x40E620 sees the body grounded and stops it).
-        // Advancing the clip WITHOUT moving the body left it crumpling on the spot instead of being thrown,
-        // which is the missing "knocked to the ground" feel. This is the corpse move a soldier already gets
-        // (AiSoldier.TickDeadBody): the horizontal root motion, rotated by the facing, plus a ground snap.
-        Vector3f rootMotion = _sim.PlayerBodyView.RootMotion();
-        Vector3d world = SoldierDeathFall.RotateAboutZ(
-            new Vector3d(rootMotion.X, rootMotion.Y, rootMotion.Z), _playerBodyFacing);
-
-        double px = _sim.PlayerBodyView.Position.X + world.X;
-        double py = _sim.PlayerBodyView.Position.Y + world.Y;
-        double pz = _sim.PlayerBodyView.Position.Z + world.Z;
-        if (_playerBodyGround is { } ground
-            && ground(px, py, pz + SoldierSimulation.ProbeAboveInUnits, out double groundZ))
-        {
-            pz = groundZ;
-        }
-
-        _sim.PlayerBodyView.PlaceAt(new Vector3d(px, py, pz), _sim.PlayerBodyView.Orientation);
-
-        // The corpse, when there is one. It is stepped after the retail move above rather than instead
-        // of it: that move is what the rest of the game believes, and only the drawing changes here.
-        if (_playerRagdoll is { } playerCorpse)
-        {
-            playerCorpse.Step(
-                _sim.RagdollWorldForCorpses(),
-                GameplayCVars.RagdollSubsteps.Value,
-                GameplayCVars.RagdollGravity.Value);
-            if (!playerCorpse.IsValid)
-            {
-                _playerRagdoll = null;
-                _logger.Warning(LogCategory, "The player's ragdoll left the level; falling back to the death clip.");
-            }
-        }
-
-        ReskinPlayerBody(_sim.PlayerBodyView, model);
-        CapturePlayerBodyTickState(snap: false);
-    }
+    public void StandPlayerBodyAt(Vector3d feetUnits, float facing) =>
+        _playerBody.StandAt(feetUnits, facing);
 
     /// <inheritdoc/>
-    public void StandPlayerBodyAt(Vector3d feetUnits, float facing)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return;
-        }
-
-        bool appearing = !_sim.PlayerBodyShown;
-        _playerBodyFacing = facing;
-        _sim.PlayerBodySuppressRootHeight = false;
-        _sim.PlayerBodyVisualLift = 0.0;
-        view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
-
-        // Its own stand clip, advanced so the body breathes rather than being a statue -- and re-skinned
-        // at most once per simulation tick, which is the same rate the climbing path uploads at and the
-        // rate the previous-pose stream expects.
-        //
-        // ON THE FRAME IT APPEARS THE SKIN IS NOT OPTIONAL. The mesh was uploaded from the model's REST
-        // geometry and holds no pose until something puts one in it, so if the per-tick guard happened to
-        // skip that first frame the body was drawn once from its rest pose -- which is a rig splayed
-        // across the world and, from the camera, a flash over the whole screen. The visibility flag is
-        // therefore only raised AFTER a successful skin: until the body has a pose it is not drawn.
-        bool posed = !appearing;
-        if ((appearing || _playerBodySkinTick != _sim.TickCount) && _playerBodyGroup?.Body.Model is { } model)
-        {
-            view.Tick();
-            ReskinPlayerBody(view, model);
-            posed = true;
-        }
-
-        if (!posed)
-        {
-            return;
-        }
-
-        _sim.PlayerBodyShown = true;
-
-        // Appearing is a cut: nothing on screen is this body's history, so neither the interpolation pair
-        // nor the temporal history may bridge from wherever it last stood.
-        CapturePlayerBodyTickState(snap: appearing);
-        if (appearing && _playerBodyMember is { } fresh)
-        {
-            fresh.HasFrameState = false;
-        }
-    }
-
-
-
+    public void FollowPlayerBody(Vector3d feetUnits, float facing, int animation, bool loops, in PlayerBodyPose pose) =>
+        _playerBody.Follow(feetUnits, facing, animation, loops, in pose);
 
     /// <inheritdoc/>
-    public void FollowPlayerBody(Vector3d feetUnits, float facing, int animation, bool loops, in PlayerBodyPose pose)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return;
-        }
-
-        bool appearing = !_sim.PlayerBodyFollowing;
-        _playerBodyFacing = facing;
-        _sim.PlayerBodySuppressRootHeight = false;
-        _sim.PlayerBodyVisualLift = 0.0;
-
-        if (animation != HumanLocomotionStates.NoAnimation)
-        {
-            // A no-op when the state has not changed, so holding a direction does not restart the walk
-            // every tick — the same contract the player's own animator keeps.
-            view.PlayStateAnimation(animation, loops);
-        }
-
-        // The torso, on bone 1. A new request is a new clip even when it names the one already playing,
-        // because a second shot has to restart the fire animation -- so the SEQUENCE decides, not the id.
-        if (pose.UpperBodySequence != _sim.PlayerBodyUpperBodySequence)
-        {
-            _sim.PlayerBodyUpperBodySequence = pose.UpperBodySequence;
-            if (pose.UpperBodyAnimation < 0)
-            {
-                view.StopUpperBodyAnimation();
-            }
-            else
-            {
-                view.PlayUpperBodyAnimation(
-                    pose.UpperBodyAnimation, pose.UpperBodyLoops, pose.UpperBodyBlendSeconds);
-            }
-        }
-
-        view.AimAlong(pose.AimPitch);
-        view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
-
-        // The mesh is uploaded from the model's REST geometry and holds no pose until something puts one
-        // in it, so the first skin is not optional: without it the body's very first drawn frame is a rig
-        // splayed across the world. Once per simulation tick after that.
-        bool posed = !appearing;
-        if ((appearing || _playerBodySkinTick != _sim.TickCount) && _playerBodyGroup?.Body.Model is { } model)
-        {
-            view.Tick();
-            ReskinPlayerBody(view, model);
-            posed = true;
-        }
-
-        if (!posed)
-        {
-            return;
-        }
-
-        _sim.PlayerBodyFollowing = true;
-        CapturePlayerBodyTickState(snap: appearing);
-        if (appearing && _playerBodyMember is { } fresh)
-        {
-            fresh.HasFrameState = false;
-        }
-    }
+    public BoneAttachment? PlayerBodyHandAttachment() =>
+        _playerBody.HandAttachment();
 
     /// <inheritdoc/>
-    public BoneAttachment? PlayerBodyHandAttachment()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_sim.PlayerBodyFollowing || _sim.PlayerBodyView is not { } view || _playerBodyMember is not { } member)
-        {
-            return null;
-        }
-
-        BonePose pose = view.UnrotatedPose();
-        if (HumanAttachPoints.ThirdPersonWeapon >= pose.BoneCount)
-        {
-            return null;
-        }
-
-        Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
-        Matrix3f handRotation = pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
-        if (_frameSmooth && member.HasHandState)
-        {
-            hand = member.PrevTickHandPosition + ((member.TickHandPosition - member.PrevTickHandPosition) * _frameAlpha);
-            handRotation = Interpolation.InterpolateRotation(
-                member.PrevTickHandRotation, member.TickHandRotation, _frameAlpha);
-        }
-
-        (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
-        if (_frameSmooth && _playerBodyHasTickState)
-        {
-            where = Vector3d.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
-        }
-
-        // M . v — the palette's own convention — is the transpose of the row-vector Transform, the same
-        // turn DrawWeapon applies to a soldier's hand.
-        Vector3f turned = orientation.Transposed().Transform(hand);
-        return new BoneAttachment(
-            new Vector3d(
-                (where.X * WorldScene.UnitsPerMetre) + turned.X,
-                (where.Y * WorldScene.UnitsPerMetre) + turned.Y,
-                (where.Z * WorldScene.UnitsPerMetre) + turned.Z),
-            orientation * handRotation);
-    }
+    public void StartPlayerLadderAnimation(int animation, bool loops, bool backwards = false, bool paused = false) =>
+        _playerBody.StartLadderAnimation(animation, loops, backwards, paused);
 
     /// <inheritdoc/>
-    public void StartPlayerLadderAnimation(
-        int animation,
-        bool loops,
-        bool backwards = false,
-        bool paused = false)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return;
-        }
-
-        _sim.StartPlayerTraversalAnimation(
-            view, animation, loops, backwards, paused, suppressRootHeight: true, visualLift: 0.0);
-
-        // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
-        // temporal history may bridge from wherever it stood before.
-        ResetPlayerTraversalHistory();
-    }
+    public void StartPlayerInteractionAnimation(int animation, bool loops) =>
+        _playerBody.StartInteractionAnimation(animation, loops);
 
     /// <inheritdoc/>
-    public void StartPlayerInteractionAnimation(int animation, bool loops)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return;
-        }
-
-        _sim.StartPlayerTraversalAnimation(
-            view,
-            animation,
-            loops,
-            backwards: false,
-            paused: false,
-            suppressRootHeight: false,
-
-            // With the exact 3686.4-unit task anchor from sub_411F20, the posed wrist centres of both
-            // retail wire clips sit 375..567 units below the cable. Half a retail model grid cell puts
-            // the palms around the cable without moving the gameplay anchor, projection or end margins.
-            visualLift: SoldierSimulation.IsWireAnimation(animation) ? 512.0 : 0.0);
-        ResetPlayerTraversalHistory();
-    }
-
-
-    private void ResetPlayerTraversalHistory()
-    {
-        // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
-        // temporal history may bridge from wherever it stood before.
-        _playerBodyHasTickState = false;
-        _playerBodySkinTick = -1;
-        if (_playerBodyMember is { } member)
-        {
-            member.HasFrameState = false;
-        }
-    }
+    public void AdvancePlayerLadderAnimation(float facing, out Vector3d rootDelta, out bool rungBoundary, out bool ended) =>
+        _playerBody.AdvanceLadderAnimation(facing, out rootDelta, out rungBoundary, out ended);
 
     /// <inheritdoc/>
-    public void AdvancePlayerLadderAnimation(
-        float facing,
-        out Vector3d rootDelta,
-        out bool rungBoundary,
-        out bool ended)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        rootDelta = default;
-        rungBoundary = false;
-        ended = false;
-        if (_sim.PlayerBodyView is not { } view || _playerBodyGroup?.Body.Model is not { } model)
-        {
-            return;
-        }
-
-        _sim.PlayerBodyClimbing = true;
-        _playerBodyFacing = facing;
-        view.Tick();
-
-        Vector3f rm = view.RootMotion();
-        rootDelta = SoldierDeathFall.RotateAboutZ(new Vector3d(rm.X, rm.Y, rm.Z), facing);
-        rungBoundary = view.CrossedLadderBoundary;
-        ended = view.ClipEndedThisTick;
-        ReskinPlayerBody(view, model);
-
-        // The caller places the body with the delta straight after; the placement call captures the
-        // tick state, so nothing is recorded here off a stale position.
-    }
+    public void PlacePlayerBodyClimbing(Vector3d taskPosition, float facing) =>
+        _playerBody.PlaceClimbing(taskPosition, facing);
 
     /// <inheritdoc/>
-    public void PlacePlayerBodyClimbing(Vector3d taskPosition, float facing)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return;
-        }
-
-        _sim.PlayerBodyClimbing = true;
-        _playerBodyFacing = facing;
-        view.PlaceAt(taskPosition, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
-
-        // A newly paused rung must upload its held pose into both interpolation streams. ReskinPlayerBody's
-        // pose latch permits that one duplicate upload, then suppresses further skinning until the pose moves.
-        // AdvancePlayerLadderAnimation already uploads each genuinely moving tick.
-        if (_playerBodySkinTick != _sim.TickCount && _playerBodyGroup?.Body.Model is { } model)
-        {
-            ReskinPlayerBody(view, model);
-        }
-
-        CapturePlayerBodyTickState(snap: false);
-    }
-
-
-    // Re-poses the player body's animated mesh in place. Shared by the death fall and the ladder climb.
-    private void ReskinPlayerBody(SoldierView view, MefModel model)
-    {
-        if (_playerBodyMember is not { } member || _playerBodyGroup is null || !member.Mesh.IsValid)
-        {
-            return;
-        }
-
-        BonePose pose = _playerRagdoll is { } corpse ? corpse.Pose() : view.UnrotatedPose();
-        member.DrawnPose = pose;
-        if (!member.PoseUploads.ShouldUpload(pose))
-        {
-            _playerBodySkinTick = _sim.TickCount;
-            return;
-        }
-
-        Vertex3D[]? skinned = member.SkinScratch;
-        if (skinned is null)
-        {
-            skinned = new Vertex3D[_playerBodyGroup.Geometry.Vertices.Length];
-            _playerBodyGroup.Geometry.Vertices.CopyTo(skinned, 0);
-            member.SkinScratch = skinned;
-        }
-        try
-        {
-            MefSkinner.Skin(model, pose, (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
-        }
-        catch (ArgumentException)
-        {
-            return;
-        }
-
-        try
-        {
-            _device.UpdateAnimatedMesh(member.Mesh, skinned);
-        }
-        catch (ArgumentException)
-        {
-            return;
-        }
-
-        member.PoseFlippedSinceFrame = true;
-        _playerBodySkinTick = _sim.TickCount;
-    }
-
-    /// <summary>Where the player's body is drawn, in metres, and which way it is turned.</summary>
-    /// <remarks>
-    /// <para>
-    /// A body is normally shifted by its clip's root height (<c>Human+1300</c>), which for a fall, stand
-    /// or wire interaction is part of the authored placement. A ladder position is different: IGI1 writes
-    /// the human task root itself (bottom + 3915.776 vertically), and clip 168's lowest foot is authored
-    /// at −4128.768. Those values put the foot at ground height already, so adding a pose-derived pelvis
-    /// lift there duplicates the mount offset and starts Jones a body-height above the first rung.
-    /// </para>
-    /// <para>
-    /// A simulated corpse answers with its own frozen origin and no turn at all: its pose is already in
-    /// world space relative to that origin, with the heading folded into the root bone's rotation.
-    /// </para>
-    /// </remarks>
-    private (Vector3d Where, Matrix3f Orientation) PlayerBodyPlacement()
-    {
-        if (_playerRagdoll is { } corpse)
-        {
-            return (corpse.Origin / WorldScene.UnitsPerMetre, Matrix3f.Identity);
-        }
-
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return (default, Matrix3f.Identity);
-        }
-
-        double lift = (_sim.PlayerBodySuppressRootHeight ? 0.0 : view.RootSample.Z) + _sim.PlayerBodyVisualLift;
-        return (
-            new Vector3d(
-                view.Position.X / WorldScene.UnitsPerMetre,
-                view.Position.Y / WorldScene.UnitsPerMetre,
-                (view.Position.Z + lift) / WorldScene.UnitsPerMetre),
-            view.Orientation);
-    }
-
-    /// <summary>Records where the player's body stands this tick, keeping the tick before.</summary>
-    /// <param name="snap">
-    /// Whether this placement is a discontinuity — a death, a ladder mount — after which the pair
-    /// must not be interpolated across.
-    /// </param>
-    private void CapturePlayerBodyTickState(bool snap)
-    {
-        if (_sim.PlayerBodyView is not { } view)
-        {
-            return;
-        }
-
-        Vector3d where = PlayerBodyPlacement().Where;
-
-        if (snap || !_playerBodyHasTickState)
-        {
-            _playerBodyPrevTickWhere = where;
-        }
-        else if (_playerBodyCaptureTick != _sim.TickCount)
-        {
-            _playerBodyPrevTickWhere = _playerBodyTickWhere;
-        }
-
-        // A second capture in the same tick only refines the current state; the previous one stands.
-        _playerBodyTickWhere = where;
-
-        // The hand the third-person weapon rides, captured in the same pair and by the same rules a
-        // soldier's is (ResolveTickState). Only the followed body needs it: the death and ladder paths
-        // draw no weapon, and asking a posed rig for a bone it has costs one array read.
-        if (_sim.PlayerBodyFollowing
-            && _playerBodyMember is { } member
-            && HumanAttachPoints.ThirdPersonWeapon < view.UnrotatedPose().BoneCount)
-        {
-            BonePose pose = view.UnrotatedPose();
-            Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
-            Matrix3f rotation = pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
-            bool fresh = snap || !member.HasHandState;
-            member.PrevTickHandPosition = fresh
-                ? hand
-                : _playerBodyCaptureTick != _sim.TickCount ? member.TickHandPosition : member.PrevTickHandPosition;
-            member.PrevTickHandRotation = fresh
-                ? rotation
-                : _playerBodyCaptureTick != _sim.TickCount ? member.TickHandRotation : member.PrevTickHandRotation;
-            member.TickHandPosition = hand;
-            member.TickHandRotation = rotation;
-            member.HasHandState = true;
-        }
-
-        _playerBodyCaptureTick = _sim.TickCount;
-        _playerBodyHasTickState = true;
-    }
-
-    /// <summary>Settles where the player's own body is drawn this frame, and what it moved from.</summary>
-    /// <remarks>
-    /// <para>
-    /// The <see cref="ResolveFrameState"/> a soldier gets, for the one body that is not in a group. Its
-    /// placement is a ladder position or a fall or a walk — <see cref="PlayerBodyPlacement"/> knows which
-    /// — interpolated between the last two tick captures exactly as a guard's is.
-    /// </para>
-    /// <para>
-    /// A body normally sits at its clip's own root height (<c>Human+1300</c>), which for a fall, a stand
-    /// or a wire interaction is part of the authored placement. A ladder position is not: IGI1 writes the
-    /// human task root itself (bottom + 3915.776 vertically) and clip 168's lowest foot is authored at
-    /// −4128.768, which put the foot at ground height already, so adding a pose-derived pelvis lift there
-    /// duplicates the mount offset and starts Jones a body-height above the first rung. That case clears
-    /// the lift rather than being special-cased here.
-    /// </para>
-    /// </remarks>
-    private void ResolvePlayerBodyFrameState()
-    {
-        if (_sim.PlayerBodyView is null || _playerBodyMember is not { } member)
-        {
-            return;
-        }
-
-        (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
-        if (_frameSmooth && _playerBodyHasTickState)
-        {
-            where = Vector3d.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
-        }
-
-        member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
-        member.DrawnWhere = where;
-        member.DrawnOrientation = orientation;
-        member.PreviousPoseBlend = member.PoseFlippedSinceFrame ? 1f : member.PoseBlend;
-        member.PoseBlend = _frameSmooth ? 1f - _frameAlpha : 0f;
-        member.PoseFlippedSinceFrame = false;
-        member.NoHistoryThisFrame = !member.HasFrameState;
-        member.HasFrameState = true;
-    }
-
-    /// <inheritdoc/>
-    public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        bool visible = _playerBodyActive
-            || _sim.PlayerBodyClimbing
-            || _sim.PlayerBodyShown
-            || (_sim.PlayerBodyFollowing && PlayerBodyFollowVisible);
-
-        // Drawn for nobody, but THERE for a ray. In first person the body is not drawn -- the camera
-        // would be inside its head -- and until a reflection could shade a hit from the hit's own
-        // material, that also meant it could never appear in a window, because the only geometry a ray
-        // can strike is geometry something submitted. It can be shaded now, so it is submitted now: the
-        // player gets a reflection of themselves, and a shadow, without their own legs in shot.
-        bool tracedOnly = !visible && _sim.PlayerBodyFollowing;
-
-        if ((!visible && !tracedOnly)
-            || _sim.PlayerBodyView is null
-            || _playerBodyMember is not { } member
-            || _playerBodyGroup is not { } group)
-        {
-            return;
-        }
-
-        if (tracedOnly)
-        {
-            SubmitPlayerBodyToTracedWorld(camera, member, group);
-            return;
-        }
-
-        _device.SetProjection(projection);
-        _device.SetCullMode(CullMode.None);
-        _device.SetDepthState(DepthState.TestAndWrite);
-
-        Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
-
-        _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
-
-        // Matte, like every other body: cloth and skin do not shine. It keeps its ambient occlusion,
-        // which is the one way it differs from a guard's.
-        _device.SetMaterialOverride(new SurfaceMaterial(NoHistory: member.NoHistoryThisFrame, Matte: true));
-
-        DrawSubsets(group, member, modelView);
-
-        _device.SetMaterialOverride(SurfaceMaterial.Default);
-
-        _device.ClearPoseInterpolation();
-    }
-
-    /// <summary>Puts the body into the traced world without drawing any of it.</summary>
-    /// <param name="camera">The eye, for the same model-view the drawn path composes.</param>
-    /// <param name="member">The body's frame state, which carries its posed mesh.</param>
-    /// <param name="group">The body's geometry and the pack its textures come from.</param>
-    /// <remarks>
-    /// No device state is touched — no projection, no cull mode, no depth state, no pose interpolation —
-    /// because none of it reaches a ray and every one of them would leak into whatever draws next. The
-    /// pose does not need setting either: the vertex buffer this admits already holds the skinned result,
-    /// written by <see cref="ReskinPlayerBody"/> on the animation tick rather than at the draw.
-    /// </remarks>
-    private void SubmitPlayerBodyToTracedWorld(in Camera3D camera, Member member, Group group)
-    {
-        Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
-
-        int subsets = 0;
-        int textured = 0;
-        string first = "none";
-
-        foreach (MeshSubset subset in group.Geometry.Subsets)
-        {
-            if (subset.IndexCount == 0)
-            {
-                continue;
-            }
-
-            TextureHandle diffuse = TextureHandle.None;
-            if (subset.HasMaterial
-                && group.Instance is { } instance
-                && group.Pack is { } pack
-                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
-            {
-                diffuse = Textures.Get(texture);
-                if (diffuse != TextureHandle.None)
-                {
-                    textured++;
-                    if (first == "none")
-                    {
-                        first = texture;
-                    }
-                }
-            }
-
-            subsets++;
-            // Reflections only: the camera stands inside this body, so to every other ray -- the GI's and
-            // the shadows' -- it is an occluder wrapped around the eye, which darkened whatever wall the
-            // player faced into a cloud that followed the view. A primitive hidden in game should not
-            // affect indirect lighting unless it asks to.
-            _device.SubmitTracedMesh(
-                member.Mesh, subset.IndexOffset, subset.IndexCount, modelView, diffuse, firstPersonOnly: true);
-        }
-
-        // Once, and only for what a reflection needs to know. A body that reflects as a flat silhouette
-        // has run out of texture somewhere along a chain that crosses three files, and this says whether
-        // it got out of THIS one: no texture here and the ray has nothing to shade from whatever the
-        // renderer does later. Named rather than counted, so the name can be checked against the pack.
-        if (!_playerBodyTracedReported)
-        {
-            _playerBodyTracedReported = true;
-            _logger.Information(
-                LogCategory,
-                $"Player body in the traced world: {subsets} subset(s), {textured} with a texture "
-                    + $"(first '{first}'); instance {(group.Instance is null ? "absent" : "present")}, "
-                    + $"pack {(group.Pack is null ? "absent" : "present")}.");
-        }
-    }
-
-    private bool _playerBodyTracedReported;
-
-    private void ReleasePlayerBody()
-    {
-        if (_playerBodyGroup is { } group && group.Mesh.IsValid)
-        {
-            _device.DestroyMesh(group.Mesh);
-        }
-
-        if (_playerBodyMember is { } member && member.Mesh.IsValid)
-        {
-            _device.DestroyMesh(member.Mesh);
-        }
-
-        _sim.PlayerBodyView = null;
-        _sim.PlayerBodyModel = null;
-        _playerBodyGroup = null;
-        _playerBodyMember = null;
-        _playerRagdoll = null;
-        _playerBodyActive = false;
-        _sim.PlayerBodyClimbing = false;
-        _sim.PlayerBodyShown = false;
-        _sim.PlayerBodyFollowing = false;
-        _sim.PlayerBodyUpperBodySequence = -1;
-        _sim.PlayerBodyVisualLift = 0.0;
-        _sim.PlayerBodyRootHeightAtStart = 0.0;
-        _playerBodyHasTickState = false;
-        _playerBodyCaptureTick = -1;
-        _playerBodySkinTick = -1;
-    }
+    public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection) =>
+        _playerBody.Draw(in camera, in projection);
 
     /// <inheritdoc/>
     public void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
@@ -2352,7 +1407,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// exactly; last frame's is reported as its previous pose on the geometry pass.
     /// </para>
     /// </remarks>
-    private void DrawWeapon(Member member, in Camera3D camera, in Matrix4f projection)
+    internal void DrawWeapon(Member member, in Camera3D camera, in Matrix4f projection)
     {
         if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
         {
@@ -2619,9 +1674,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         return true;
     }
 
-
-
-
     /// <inheritdoc/>
     public HumanShot Shooter() => TryShoot;
 
@@ -2638,65 +1690,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         Release();
 
         _textureCache?.Clear();
-    }
-
-    private Group? BuildGroup(LoadedMission mission, string modelName, SoldierView posed)
-    {
-        if (!mission.TryGetModel(modelName, out MefModel? model) || model is null)
-        {
-            _logger.Warning(LogCategory, $"'{posed.Soldier.Name}' names model '{modelName}', which no pack holds.");
-            return null;
-        }
-
-        if (!MefSkinner.IsSkinned(model))
-        {
-            _logger.Warning(LogCategory, $"'{modelName}' is {model.Format}, not a skinned model.");
-            return null;
-        }
-
-        MeshGeometry? geometry = MefMeshBuilder.Build(model, 1f);
-        if (geometry is null)
-        {
-            _logger.Warning(LogCategory, $"'{modelName}' has nothing to draw.");
-            return null;
-        }
-
-        Vertex3D[] skinned = [.. geometry.Vertices];
-        int written;
-        try
-        {
-            // The unrotated pose: the facing is applied per soldier in the model matrix instead.
-            written = MefSkinner.Skin(model, posed.UnrotatedPose(), (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
-        }
-        catch (ArgumentException ex)
-        {
-            _logger.Warning(LogCategory, $"'{modelName}' could not be posed: {ex.Message}");
-            return null;
-        }
-
-        // The lowest point of the posed skin, in metres below the skeleton root. Z rotation cannot
-        // change it, so it is a property of the (model, skeleton, animation) triple, and it is what
-        // SoldierSimulation.Stand() rests on the ground. Only the base vertices count - the array's tail holds the
-        // extra-influence records, which no draw record indexes.
-        float lowest = 0f;
-        for (int i = 0; i < written; i++)
-        {
-            lowest = Math.Min(lowest, skinned[i].Position.Z);
-        }
-
-        MeshHandle mesh;
-        try
-        {
-            mesh = _device.CreateMesh(skinned, geometry.Indices);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-        {
-            _logger.Warning(LogCategory, $"'{modelName}' did not upload: {ex.Message}");
-            return null;
-        }
-
-        (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        return new Group(new SoldierModelGroup(new SoldierBodyModel(model, lowest)), geometry, mesh, instance, pack);
     }
 
     private void Release()
@@ -2718,16 +1711,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             }
         }
 
-        foreach (HeldWeapon weapon in _weapons)
-        {
-            weapon.Presentation?.Dispose();
-            if (weapon.Mesh.IsValid)
-            {
-                _device.DestroyMesh(weapon.Mesh);
-            }
-        }
-
-        _weapons.Clear();
+        _meshes.ReleaseWeapons();
         _heldWeaponsByModel.Clear();
         _vehicleWeaponVisuals.Clear();
         _vehicleGuns = null;
@@ -2743,24 +1727,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         _sim.Sight = null;
         _sim.RagdollRigs.Clear();
         _sim.RagdollWorld = null;
-        ReleasePlayerBody();
+        _playerBody.Release();
         Count = 0;
-    }
-
-    private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)
-    {
-        foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
-        {
-            foreach (MtpInstance instance in pack.Instances)
-            {
-                if (string.Equals(instance.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return (pack, instance);
-                }
-            }
-        }
-
-        return (null, null);
     }
 
     /// <summary>Gets whether the holder model remains the visible gun for this ownership state.</summary>
@@ -2843,41 +1811,12 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                     continue;
                 }
 
-                Vertex3D[]? skinned = member.SkinScratch;
-                if (skinned is null)
-                {
-                    skinned = new Vertex3D[group.Geometry.Vertices.Length];
-                    group.Geometry.Vertices.CopyTo(skinned, 0);
-                    member.SkinScratch = skinned;
-                }
-                try
-                {
-                    MefSkinner.Skin(
-                        group.Body.Model,
-                        drawn,
-                        (float)(1.0 / WorldScene.UnitsPerMetre),
-                        skinned);
-                }
-                catch (ArgumentException)
+                if (!SoldierSkinning.Upload(_device, member, group.Geometry, group.Body.Model, drawn))
                 {
                     continue;
                 }
 
-                if (!member.Mesh.IsValid)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    _device.UpdateAnimatedMesh(member.Mesh, skinned);
-                }
-                catch (ArgumentException)
-                {
-                    continue;
-                }
-
-                // UpdateAnimatedMesh moves the old current stream into the previous stream before it
+                // The upload moves the old current stream into the previous stream before it
                 // writes this pose. Keep the matching collision-pose pair so a player ray can trace the
                 // very same r_smooth blend the GPU presents, rather than a newer animation frame.
                 if (member.SkinnedPose is null)
@@ -2893,7 +1832,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                     member.PreviousSkinnedPose = member.SkinnedPose;
                     member.SkinnedPose = drawn;
                 }
-                member.PoseFlippedSinceFrame = true;
             }
         }
 
@@ -2909,7 +1847,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         }
     }
 
-    private sealed class Group(SoldierModelGroup roster, MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
+    internal sealed class Group(SoldierModelGroup roster, MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
     {
         /// <summary>The soldiers this group draws, as the simulation keeps them, and what it reads of their model.</summary>
         public SoldierModelGroup Roster { get; } = roster;
@@ -2961,7 +1899,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// instead of one per group, which is the price of each soldier having its own pose.
     /// </para>
     /// </remarks>
-    private sealed class Member(SoldierAgent agent, MeshHandle mesh)
+    internal sealed class Member(SoldierAgent agent, MeshHandle mesh)
     {
         /// <summary>The soldier this draws: who it is, where it spawned, what it is armed with.</summary>
         public SoldierAgent Agent { get; } = agent;
@@ -3102,7 +2040,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// mesh serves every soldier and only the transform differs. That transform is the hand bone's, which
     /// is why the body mesh has to be posed but this one does not.
     /// </remarks>
-    private sealed class HeldWeapon(
+    internal sealed class HeldWeapon(
         MeshGeometry geometry,
         MeshHandle mesh,
         MtpInstance? instance,
@@ -3131,5 +2069,5 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             image.Height);
 
     // The textures the models name, loaded on first use.
-    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory) { Loaded = AttachDetail };
+    internal TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory) { Loaded = AttachDetail };
 }
