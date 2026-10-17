@@ -77,6 +77,7 @@ public sealed class TitleContentTests
         "src/Engine/OpenIGI.Host/GameHost.Effects.cs",
         "src/Engine/OpenIGI.Host/GameHost.Menu.cs",
         "src/Engine/OpenIGI.Host/GameHost.Mission.cs",
+        "src/Engine/OpenIGI.Host/GameHost.RenderWorld.cs",
         "src/Engine/OpenIGI.Host/GameHost.cs",
         "src/Engine/OpenIGI.Host/Infrastructure/MissionStringResolver.cs",
         "src/Engine/OpenIGI.Host/Menu/MissionPreview.cs",
