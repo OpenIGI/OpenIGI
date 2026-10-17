@@ -9,6 +9,7 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 

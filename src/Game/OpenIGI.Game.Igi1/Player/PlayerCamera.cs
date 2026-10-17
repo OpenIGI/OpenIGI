@@ -10,21 +10,18 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
 using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.Player;
 
 /// <summary>
 /// Drives a <see cref="PlayerBody"/> from the keyboard and mouse, and gives the renderer its eye.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The counterpart to <see cref="FreeCamera"/>: where that flies, this one walks. It advances the body
+/// The counterpart to <c>FreeCamera</c>: where that flies, this one walks. It advances the body
 /// on the <b>fixed thirty-hertz tick</b> rather than on real elapsed time, because the body's motion
 /// is the game's own and has to stay deterministic — only the look is taken per frame, so the view
 /// stays smooth at any frame rate.

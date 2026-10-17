@@ -4,10 +4,10 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Host;
 

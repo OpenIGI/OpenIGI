@@ -17,6 +17,7 @@ using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
 using System.Globalization;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
