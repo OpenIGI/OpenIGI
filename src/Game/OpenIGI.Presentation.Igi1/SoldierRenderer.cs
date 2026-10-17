@@ -1620,68 +1620,6 @@ public sealed class SoldierRenderer : IDisposable
     }
 
 
-    /// <summary>Scores a guard's round on the <b>player's own body</b> — its skinned collision mesh.</summary>
-    /// <param name="origin">Where the round starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="playerFeetUnits">The player's feet, in world units.</param>
-    /// <param name="playerYaw">Which way the player faces, in radians.</param>
-    /// <param name="hit">The contact, when there is one.</param>
-    /// <returns><see langword="false"/> when the round misses the player's body, or no body is loaded.</returns>
-    /// <remarks>
-    /// The original resolves a shot at the player exactly as at a soldier — against the human's skinned
-    /// collision mesh — so a round through a limb scores that limb (×0.5–0.75), not the torso. The port
-    /// had cast at a 0.55 m cylinder and scored every hit as the trunk, which made the player both a
-    /// fatter target and one that took maximum damage from every round. This poses the player's own
-    /// (otherwise idle) third-person body at the live position and heading and traces the real mesh.
-    /// </remarks>
-    public bool TryHitPlayerBody(
-        Vector3d origin, Vector3d end, Vector3d playerFeetUnits, float playerYaw, out HumanHit hit)
-    {
-        hit = default;
-        if (_sim.PlayerBodyView is not { } view || _playerBodyGroup?.Body.CollisionMesh is not { } mesh)
-        {
-            return false;
-        }
-
-        view.PlaceAt(playerFeetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, playerYaw));
-        Matrix3f m = view.Orientation;
-        Vector3f facing = new(m.M12, m.M22, m.M32);
-        return HumanHitTest.TryCastMesh(
-            origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z, out hit);
-    }
-
-    /// <summary>Every face of the player's own body a round's line crosses, nearest first.</summary>
-    /// <param name="origin">Where the round starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="playerFeetUnits">The player's feet, in world units.</param>
-    /// <param name="playerYaw">Which way the player faces, in radians.</param>
-    /// <param name="crossings">The crossings, entries and exits, in order along the ray.</param>
-    /// <returns><see langword="false"/> when no body is loaded; an empty list when the round misses it.</returns>
-    /// <remarks>
-    /// <see cref="TryHitPlayerBody"/>'s cast, carried on through the body: a round that penetrates it meets its
-    /// exit, and may meet another part behind (<c>0x47B750</c>).
-    /// </remarks>
-    public bool TryCastPlayerBody(
-        Vector3d origin,
-        Vector3d end,
-        Vector3d playerFeetUnits,
-        float playerYaw,
-        out IReadOnlyList<HumanBodyCrossing> crossings)
-    {
-        crossings = [];
-        if (_sim.PlayerBodyView is not { } view || _playerBodyGroup?.Body.CollisionMesh is not { } mesh)
-        {
-            return false;
-        }
-
-        view.PlaceAt(playerFeetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, playerYaw));
-        Matrix3f m = view.Orientation;
-        Vector3f facing = new(m.M12, m.M22, m.M32);
-        crossings = HumanHitTest.CastMeshCrossings(
-            origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z);
-        return true;
-    }
-
     /// <summary>
     /// Loads the player's third-person body — the model the level's <c>HumanPlayer</c> declares, on
     /// skeleton 0's set, standing in clip 2 — so the death camera has a body to reveal.
@@ -1763,6 +1701,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _sim.PlayerBodyView = view;
+        _sim.PlayerBodyModel = group.Body;
         _playerBodyGroup = group;
         _playerBodyMember = new Member(new SoldierAgent(view, default), own);
         _playerBodyGround = _sim.MakeGroundQuery();
@@ -2582,6 +2521,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _sim.PlayerBodyView = null;
+        _sim.PlayerBodyModel = null;
         _playerBodyGroup = null;
         _playerBodyMember = null;
         _playerRagdoll = null;

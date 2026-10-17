@@ -197,8 +197,6 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     private TerrainData? _thirdPersonWallsTerrain;
 
 
-    private int _guardRounds;
-    private int _guardHits;
     private Random _shotRandom = null!;
 
     /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
@@ -1165,8 +1163,6 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
         state.ReportedWorld = false;
         state.ReportedShot = false;
-        _guardRounds = 0;
-        _guardHits = 0;
 
         // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
         // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11). The player's
