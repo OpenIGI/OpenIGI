@@ -14,7 +14,7 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The successor to <c>IrradianceProbeBaker</c>. That volume bake has a hard quality ceiling --
+/// The successor to <see cref="IrradianceProbeBaker"/>. That volume bake has a hard quality ceiling --
 /// it traces the colourless collision mesh and stores a low-frequency grey L1-SH field at metre spacing,
 /// so its bounce is monochrome, flat and coarse. This bakes into the meshes' own <b>lightmap UV channel</b>
 /// (the second UV set format-1 and format-3 meshes carry, <c>world-loading.md §4.3</c>), so every texel is

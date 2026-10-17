@@ -13,7 +13,7 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Why the lightmaps alone are not enough.</b> <c>EmissiveTextureSurvey</c> asks what the
+/// <b>Why the lightmaps alone are not enough.</b> <see cref="EmissiveTextureSurvey"/> asks what the
 /// artists BAKED around a texture, which is the strongest single signal there is — a surface painted
 /// near-white everywhere it appears is a surface the artists treated as a source. But it is evidence
 /// about light and not about objects, and it says yes to things that are lit rather than lighting: a
@@ -68,7 +68,7 @@ namespace OpenIGI.Game.World;
 /// <para>
 /// The output is still a proposal. Everything here is inferred from art that was never authored to be
 /// read this way, and the fixtures file exists so a wrong answer is corrected by editing a list rather
-/// than by editing this class — see <c>LightFixtureStore</c>.
+/// than by editing this class — see <see cref="LightFixtureStore"/>.
 /// </para>
 /// </remarks>
 public static class LampDetector

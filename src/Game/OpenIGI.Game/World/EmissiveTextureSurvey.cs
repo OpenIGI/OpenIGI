@@ -4,9 +4,8 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Finds the textures a level treats as light sources, by reading what the artists baked around them.

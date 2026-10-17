@@ -17,7 +17,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host;
 using OpenIGI.Presentation;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.World;

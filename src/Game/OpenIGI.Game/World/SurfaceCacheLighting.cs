@@ -2,9 +2,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Shaders;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Lights every card page, so that a ray hitting a surface reads light rather than albedo.

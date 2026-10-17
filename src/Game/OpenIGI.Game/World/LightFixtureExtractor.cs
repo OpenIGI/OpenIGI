@@ -2,9 +2,8 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Proposes where a level's lights are, by finding every place it draws a texture the artists treated
@@ -352,7 +351,7 @@ public static class LightFixtureExtractor
 
     /// <summary>Takes a model-space position into world space.</summary>
     /// <remarks>
-    /// The same composition <c>SceneDistanceField</c> uses, and it has to stay the same: a fixture
+    /// The same composition <see cref="SceneDistanceField"/> uses, and it has to stay the same: a fixture
     /// placed by a different convention from the one the renderer draws its own lamp with sits somewhere
     /// the player can see is wrong. The orientation is orthonormal and applied as a row-vector
     /// multiply, so drawing with it means transposing it.

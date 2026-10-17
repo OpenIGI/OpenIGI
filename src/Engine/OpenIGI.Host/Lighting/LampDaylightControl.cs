@@ -4,7 +4,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Rendering;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.Lighting;
 

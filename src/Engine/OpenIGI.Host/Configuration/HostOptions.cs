@@ -1,7 +1,6 @@
 ﻿using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
 

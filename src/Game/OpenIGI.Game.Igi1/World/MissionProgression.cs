@@ -2,7 +2,6 @@
 
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.Config;
 
 namespace OpenIGI.Game.Igi1.World;
 

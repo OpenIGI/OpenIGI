@@ -2,9 +2,8 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Every placed object's distance field, in one structure that can be asked about the whole level.

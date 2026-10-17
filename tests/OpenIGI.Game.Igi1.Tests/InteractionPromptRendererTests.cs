@@ -1,8 +1,6 @@
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;

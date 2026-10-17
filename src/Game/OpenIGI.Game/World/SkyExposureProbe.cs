@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// How much of the open sky reaches a point, and from which directions: the geometry behind hearing

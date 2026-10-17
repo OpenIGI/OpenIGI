@@ -1,8 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>A top-down raster of the terrain's height, for the passes that march without tracing it.</summary>
 /// <remarks>

@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// The photocells that put a level's lamps on at dusk and off at dawn.

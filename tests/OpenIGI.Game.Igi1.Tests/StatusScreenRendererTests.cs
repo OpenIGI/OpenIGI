@@ -1,4 +1,3 @@
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
@@ -7,7 +6,6 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;

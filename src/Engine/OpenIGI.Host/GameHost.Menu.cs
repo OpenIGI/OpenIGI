@@ -10,7 +10,6 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

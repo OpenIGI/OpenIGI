@@ -1,6 +1,5 @@
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// How the level's distance field is resampled into clipmaps around the camera.

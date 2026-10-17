@@ -5,8 +5,6 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Igi1.Ai;
 

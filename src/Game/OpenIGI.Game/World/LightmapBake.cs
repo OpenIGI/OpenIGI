@@ -2,9 +2,8 @@ using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// A path-traced object-lightmap bake running on a worker, and the hand-off of its finished pages to the

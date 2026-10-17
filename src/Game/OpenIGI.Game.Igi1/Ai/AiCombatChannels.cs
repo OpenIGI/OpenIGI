@@ -1,6 +1,5 @@
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Igi1.Ai;
 

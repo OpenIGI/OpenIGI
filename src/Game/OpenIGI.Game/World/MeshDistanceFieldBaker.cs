@@ -1,8 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Turns a model's triangles into the signed distance field the realtime GI track traces through.

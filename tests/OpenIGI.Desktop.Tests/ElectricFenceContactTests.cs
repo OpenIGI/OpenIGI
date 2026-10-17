@@ -1,5 +1,4 @@
 using OpenIGI.Game.Player;
-using OpenIGI.Presentation.Igi1;
 using Xunit;
 using OpenIGI.Game.Igi1.Player;
 

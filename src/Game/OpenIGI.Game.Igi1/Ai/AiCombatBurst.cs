@@ -1,6 +1,5 @@
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Weapons;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
