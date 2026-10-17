@@ -33,8 +33,6 @@ using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1.Menus;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Presentation;
@@ -669,7 +667,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
     private ImpactParticleRenderer? _impactParticles;
-    private RetailImpactRenderer? _retailImpacts;
+    private IImpactEffectPresenter? _retailImpacts;
 
     // The world the blood is traced against: placed objects AND the terrain, because a droplet lands
     // on the ground as readily as on a wall and the player's own movement caster carries neither the
@@ -723,7 +721,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     // A switch builds a new GameLoop, and each of them has to be registered into it -- which is why they
     // are here rather than in Run's own scope.
     private HostConfigHost _configHost = null!;
-    private MenuHost _menuHost = null!;
+    private HostFlowHost _flowHost = null!;
     private GameMissionState _missionState = null!;
 
     // The game the shell has asked for, waiting for a frame boundary. Deferred for the same reason a
@@ -732,7 +730,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     private GameTitle? _pendingTitle;
 
     // --- The menus and the cinematic shell ---
-    private MenuRenderer? _renderer;
+    // The retail menu system's shell, while the -vanilla menus are up.
+    private IRetailMenuPresenter? _retailMenus;
     private MenuShowcaseCamera? _showcaseCamera;
     private MenuCameraLibrary _menuCameras = MenuCameraLibrary.Empty;
 
@@ -991,7 +990,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // Held so a loading frame can be drawn and swapped from outside this loop, before a mission
         // load blocks it. See GameHost.MissionWarmUp.cs.
         _batch = state.Batch;
-        _renderer = null;
+        _retailMenus = null;
         state.Running = true;
 
         // The developer console: the CVar registry, settings.cfg and the on-screen view. Brought up before
@@ -1086,22 +1085,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
         WhenChanged(RenderCVars.PerformanceLog, () => _device.SetStageTiming(RenderCVars.PerformanceLog.Value));
 
-        _menuHost = new MenuHost(
-            _window.Input,
-            state.Batch,
-            () => _renderer,
-            () => _window.Width,
-            () => _window.Height,
-            () => state.Running = false,
-            _logger)
-        {
-            // The menu and its hit-test have to agree about the magnification -- this is the inverse of
-            // what MenuRenderer draws with. See UiScale for why the interface is scaled at all.
-            Scale = _options.UiScale,
-
-            // Opened above, so the menu's own archive is already mounted by the time a screen appears.
-            Sounds = _sounds,
-        };
+        _flowHost = new HostFlowHost(_logger);
 
         // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk
         // updates and renders the menu rather than this loop doing either by hand.
@@ -1404,25 +1388,48 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _worldTrace = null;
         state.ShowDebug = false;
 
-        _menuHost.StartGame = () => StartMission(_missionState.PendingMissionId);
-
-        _menuHost.LoadMainMenu = () =>
+        _flowHost.LoadMainMenu = () =>
         {
             MenuSystem menu = MenuSystem.Load(
                 _fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"),
                 _loop,
                 _logger);
 
-            // The mission briefing images are in their own archive beside the menu's.
-            _renderer = new MenuRenderer(
-                _device,
-                _fileSystem,
-                menu.Manager.ResourcePath,
-                strings,
-                ["LOCAL:menusystem/missionsprites.res"])
+            // The mission briefing images are in their own archive beside the menu's. Leaving with StartGame starts
+            // the chosen mission; leaving any other way quits.
+            _retailMenus?.Dispose();
+            _retailMenus = _presentation.Presenters.Create<RetailMenuPresentationRequest, IRetailMenuPresenter>(
+                new RetailMenuPresentationRequest(
+                    _device,
+                    _fileSystem,
+                    menu.Manager.ResourcePath,
+                    strings,
+                    ["LOCAL:menusystem/missionsprites.res"],
+                    _window.Input,
+                    state.Batch,
+                    () => _window.Width,
+                    () => _window.Height,
+                    // The menu and its hit-test have to agree about the magnification. See UiScale for why the
+                    // interface is scaled at all.
+                    _options.UiScale,
+                    _sounds,
+                    leaving =>
+                    {
+                        if (leaving == MenuManagerState.StartGame)
+                        {
+                            StartMission(_missionState.PendingMissionId);
+                        }
+                        else
+                        {
+                            state.Running = false;
+                        }
+                    },
+                    _logger));
+            if (_retailMenus is null)
             {
-                Scale = _options.UiScale,
-            };
+                _logger.Warning("Menu", "This title draws no retail menus; the menu script is not started.");
+                return;
+            }
 
             // -screen is a development shortcut, not a game feature: the script decides where the menu
             // opens, and this overwrites that one parameter before the manager reads it.
@@ -1441,7 +1448,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             // with the VM is not enough to make the Select Mission button or the music slider work.
             menu.Manager.ExternalNatives = (name, arguments) =>
                 _missionState.TryInvokeFromMenu(name, arguments) ?? musicNatives.TryInvokeFromMenu(name, arguments);
-            menu.Manager.Initialize(menu, _menuHost, _logger);
+            menu.Manager.Initialize(menu, _retailMenus, _logger);
         };
 
         // R11: the cinematic state.Shell (OpenIGI.Frontend) is the default front end; -vanilla and -vanillamenu
@@ -3956,7 +3963,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
-        _renderer?.Dispose();
+        _retailMenus?.Dispose();
         _arms?.Dispose();
         _titleArms?.Dispose();
         _titleHud?.Dispose();

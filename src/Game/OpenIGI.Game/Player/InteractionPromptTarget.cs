@@ -1,7 +1,7 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.Player;
+namespace OpenIGI.Game.Player;
 
 /// <summary>
 /// What the interaction resolver is currently offering the player, in the terms the prompt needs.

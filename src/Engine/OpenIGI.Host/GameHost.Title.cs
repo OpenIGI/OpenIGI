@@ -296,7 +296,7 @@ internal sealed partial class GameHost
         GameLoop outgoing = _loop;
         _loop = new GameLoop(
             time: _timeSource,
-            host: _menuHost,
+            host: _flowHost,
             renderer: _scheduler,
             logger: _logger,
             structuralTypes: _titleRuntime.Layout.StructuralTaskTypes);
@@ -384,7 +384,7 @@ internal sealed partial class GameHost
         // game's: the two number their missions independently and the ranges overlap.
         _previewContext = new MissionPreviewContext(
             _timeSource,
-            _menuHost,
+            _flowHost,
             _scheduler,
             _missionState,
             _detailMaps,

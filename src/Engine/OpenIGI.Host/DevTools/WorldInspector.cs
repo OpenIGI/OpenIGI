@@ -5,7 +5,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using System.Globalization;
 using OpenIGI.Game.Igi1.World;

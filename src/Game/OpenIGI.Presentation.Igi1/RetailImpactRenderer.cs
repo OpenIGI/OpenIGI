@@ -34,7 +34,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// past <see cref="FarCullUnits"/> is drawn at all.
 /// </para>
 /// </remarks>
-public sealed class RetailImpactRenderer : IDisposable
+public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
 {
     /// <summary>The archive the three sprites live in.</summary>
     public const string SpriteArchive = MissionLoader.CommonSpritesArchive;
@@ -113,29 +113,22 @@ public sealed class RetailImpactRenderer : IDisposable
         _fileSystem = fileSystem;
     }
 
-    /// <summary>Gets how many frames <c>blood1.spr</c> turned out to have.</summary>
-    /// <remarks>
-    /// The mist's frame rate is <c>15 / frameCount</c> whole ticks, so the runtime needs this before it
-    /// builds a body's systems. Retail ships seven frames, which gives two ticks each.
-    /// </remarks>
+    /// <inheritdoc/>
     public int MistFrameCount => Math.Max(1, _mist.Frames.Length);
 
-    /// <summary>Gets whether the three retail sprites all resolved.</summary>
+    /// <inheritdoc/>
     public bool SpritesAvailable => EnsureSprites();
 
-    /// <summary>Gets how many dust quads the last draw emitted.</summary>
+    /// <inheritdoc/>
     public int LastPuffQuads { get; private set; }
 
-    /// <summary>Gets how many blood-mist quads the last draw emitted.</summary>
+    /// <inheritdoc/>
     public int LastMistQuads { get; private set; }
 
-    /// <summary>Gets how many blood-droplet quads the last draw emitted.</summary>
+    /// <inheritdoc/>
     public int LastDropletQuads { get; private set; }
 
-    /// <summary>Binds the impact chip models out of a mission's packs.</summary>
-    /// <param name="mission">The loaded mission whose common pack owns them.</param>
-    /// <returns>How many of the four models resolved.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="mission"/> is <see langword="null"/>.</exception>
+    /// <inheritdoc/>
     public int Load(LoadedMission mission)
     {
         ArgumentNullException.ThrowIfNull(mission);
@@ -180,12 +173,7 @@ public sealed class RetailImpactRenderer : IDisposable
         return _fragmentModels.Count;
     }
 
-    /// <summary>Draws every live effect.</summary>
-    /// <param name="effects">The runtime holding the particles and chips.</param>
-    /// <param name="camera">The eye.</param>
-    /// <param name="projection">The world projection.</param>
-    /// <param name="blend">The frame's position between the last two ticks, 0–1.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="effects"/> is <see langword="null"/>.</exception>
+    /// <inheritdoc/>
     public void Draw(
         ImpactEffectRuntime effects,
         in Camera3D camera,

@@ -1,7 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
-using OpenIGI.Engine.Flow;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
@@ -9,21 +8,12 @@ using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Presentation.Igi1.Menus;
 
-/// <summary>
-/// The shell's side of both seams: the flow's host, and the menu manager's.
-/// </summary>
+/// <summary>The retail menu system's shell: the screens drawn through a <see cref="MenuRenderer"/>, the pointer and keys read, the sounds played.</summary>
 /// <remarks>
-/// <para>
-/// The flow state machine owns when the menu exists — <see cref="ShowMainMenu"/> is what
-/// <see cref="FlowEvent.MainMenu"/> calls — and the menu manager, being a task under the flow, is
-/// updated and rendered by the frame walk. The shell only supplies input and drawing.
-/// </para>
-/// <para>
-/// The states this cannot serve yet report through the log rather than pretending: there are no intro
-/// screens, no outro and no game to begin.
-/// </para>
+/// The menu manager, being a task under the flow, is updated and rendered by the frame walk; this only supplies input
+/// and drawing, and says where leaving the menus goes.
 /// </remarks>
-public sealed class MenuHost : IFlowHost, IMenuHost
+public sealed class RetailMenuHost : IRetailMenuPresenter
 {
     private const string LogCategory = "Menu";
 
@@ -32,73 +22,42 @@ public sealed class MenuHost : IFlowHost, IMenuHost
     private readonly IOpenIgiLogger _logger;
     private readonly InputState _input;
     private readonly SpriteBatch _batch;
-    private readonly Func<MenuRenderer?> _renderer;
     private readonly Func<int> _screenWidth;
     private readonly Func<int> _screenHeight;
-    private readonly Action _quit;
+    private readonly Action<MenuManagerState> _leave;
+    private readonly SoundSystem? _sounds;
+    private MenuRenderer? _renderer;
 
-    /// <summary>Initializes a new instance of the <see cref="MenuHost"/> class.</summary>
-    /// <param name="input">The window's input state.</param>
-    /// <param name="batch">The batch menu drawing goes through.</param>
-    /// <param name="renderer">Supplies the renderer once the menu archive is known.</param>
-    /// <param name="screenWidth">Reads the current back-buffer width.</param>
-    /// <param name="screenHeight">Reads the current back-buffer height.</param>
-    /// <param name="quit">Called when the menu asks to leave.</param>
-    /// <param name="logger">Where to report menu activity.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public MenuHost(
-        InputState input,
-        SpriteBatch batch,
-        Func<MenuRenderer?> renderer,
-        Func<int> screenWidth,
-        Func<int> screenHeight,
-        Action quit,
-        IOpenIgiLogger logger)
+    /// <summary>Initializes a new instance of the <see cref="RetailMenuHost"/> class.</summary>
+    /// <param name="request">The menu's files, text, input, batch, scale and sounds, and where leaving goes.</param>
+    /// <exception cref="ArgumentNullException">A required part of the request is <see langword="null"/>.</exception>
+    public RetailMenuHost(in RetailMenuPresentationRequest request)
     {
-        ArgumentNullException.ThrowIfNull(input);
-        ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(renderer);
-        ArgumentNullException.ThrowIfNull(screenWidth);
-        ArgumentNullException.ThrowIfNull(screenHeight);
-        ArgumentNullException.ThrowIfNull(quit);
-        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(request.Input);
+        ArgumentNullException.ThrowIfNull(request.Batch);
+        ArgumentNullException.ThrowIfNull(request.ScreenWidth);
+        ArgumentNullException.ThrowIfNull(request.ScreenHeight);
+        ArgumentNullException.ThrowIfNull(request.Leave);
+        ArgumentNullException.ThrowIfNull(request.Logger);
 
-        _input = input;
-        _batch = batch;
-        _renderer = renderer;
-        _screenWidth = screenWidth;
-        _screenHeight = screenHeight;
-        _quit = quit;
-        _logger = logger;
+        _input = request.Input;
+        _batch = request.Batch;
+        _screenWidth = request.ScreenWidth;
+        _screenHeight = request.ScreenHeight;
+        _leave = request.Leave;
+        _sounds = request.Sounds;
+        _logger = request.Logger;
+        Scale = request.Scale;
+        _renderer = new MenuRenderer(
+            request.Device,
+            request.FileSystem,
+            request.ResourcePath,
+            request.Strings,
+            request.ExtraArchives)
+        {
+            Scale = request.Scale,
+        };
     }
-
-    /// <summary>Gets or sets what <see cref="ShowMainMenu"/> should do, set by the composition root.</summary>
-    public Action? LoadMainMenu { get; set; }
-
-    /// <inheritdoc/>
-    public void ShowMainMenu()
-    {
-        _logger.Information(LogCategory, "Flow entered the main menu.");
-        LoadMainMenu?.Invoke();
-    }
-
-    /// <inheritdoc/>
-    public void ShowIntroScreens() => NotYet(nameof(ShowIntroScreens));
-
-    /// <inheritdoc/>
-    public void ShowOutroScreens() => NotYet(nameof(ShowOutroScreens));
-
-    /// <inheritdoc/>
-    public void ShowAttractScreens() => NotYet(nameof(ShowAttractScreens));
-
-    /// <inheritdoc/>
-    public void BeginGame(FlowTask flow) => NotYet(nameof(BeginGame));
-
-    /// <inheritdoc/>
-    public void LoadLevel() => NotYet(nameof(LoadLevel));
-
-    /// <inheritdoc/>
-    public void EndGame() => NotYet(nameof(EndGame));
 
     /// <inheritdoc/>
     public bool TryGetPointer(out int x, out int y, out bool buttonDown)
@@ -159,11 +118,11 @@ public sealed class MenuHost : IFlowHost, IMenuHost
     };
 
     /// <inheritdoc/>
-    public void PrepareScreen(MenuScreenTask screen) => _renderer()?.Prepare(screen);
+    public void PrepareScreen(MenuScreenTask screen) => _renderer?.Prepare(screen);
 
     /// <inheritdoc/>
     public void DrawScreen(MenuScreenTask screen) =>
-        _renderer()?.Draw(_batch, screen, _screenWidth(), _screenHeight());
+        _renderer?.Draw(_batch, screen, _screenWidth(), _screenHeight());
 
     /// <inheritdoc/>
     /// <remarks>Drained from the window's own character queue, which is separate from the key queue.</remarks>
@@ -180,14 +139,7 @@ public sealed class MenuHost : IFlowHost, IMenuHost
 
     /// <inheritdoc/>
     public void DrawPointer(int x, int y) =>
-        _renderer()?.DrawPointer(_batch, x, y, _screenWidth(), _screenHeight());
-
-    /// <summary>Gets or sets where menu sounds are played, or <see langword="null"/> to stay silent.</summary>
-    /// <remarks>
-    /// Set by the composition root once the device is open. A property rather than a constructor
-    /// argument because a host with no audio is a perfectly good host -- that is what every test uses.
-    /// </remarks>
-    public SoundSystem? Sounds { get; set; }
+        _renderer?.DrawPointer(_batch, x, y, _screenWidth(), _screenHeight());
 
     /// <inheritdoc/>
     /// <remarks>
@@ -197,37 +149,21 @@ public sealed class MenuHost : IFlowHost, IMenuHost
     /// </remarks>
     public void PlaySound(string name)
     {
-        if (Sounds is null || string.IsNullOrEmpty(name))
+        if (_sounds is null || string.IsNullOrEmpty(name))
         {
             return;
         }
 
         // Priority above the default so a click is never the voice a busy pool decides to drop -- the
         // interface going silent reads as the interface having stopped responding.
-        Sounds.Play(name, VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
+        _sounds.Play(name, VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
     }
-
-    /// <inheritdoc/>
-    /// <summary>Gets or sets what to do when the menus ask to start play.</summary>
-    /// <remarks>
-    /// The Select Mission screen's OK button is <c>Game_SetMission(id)</c> followed by
-    /// <c>MenuManager_LeaveMenus(-1, MENUMANAGER_STARTGAME)</c>, so the mission is already chosen by the
-    /// time this runs and the handler only has to load it.
-    /// </remarks>
-    public Action? StartGame { get; set; }
 
     /// <inheritdoc/>
     public void LeaveMenus(MenuManagerState state)
     {
         _logger.Information(LogCategory, $"Leaving the menus: {state}.");
-
-        if (state == MenuManagerState.StartGame && StartGame is not null)
-        {
-            StartGame();
-            return;
-        }
-
-        _quit();
+        _leave(state);
     }
 
     // The exact inverse of MenuLayout.ToScreen, magnification included -- if this and the renderer
@@ -249,8 +185,15 @@ public sealed class MenuHost : IFlowHost, IMenuHost
 
     /// <summary>Gets or sets the magnification the menu is drawn at; <see cref="UiScale.Automatic"/> derives one.</summary>
     /// <remarks>It must match the renderer's, because this is the hit-test's half of the same mapping.</remarks>
-    public int Scale { get; set; } = UiScale.Automatic;
+    public int Scale { get; }
 
-    private void NotYet(string what) =>
-        _logger.Information(LogCategory, $"Flow asked for {what}, which is not implemented yet.");
+    /// <inheritdoc/>
+    public void CloseScreens()
+    {
+        _renderer?.Dispose();
+        _renderer = null;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose() => CloseScreens();
 }

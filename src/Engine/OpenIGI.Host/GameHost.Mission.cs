@@ -20,7 +20,6 @@ using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
@@ -2126,11 +2125,12 @@ internal sealed partial class GameHost
                 // and blood1/blood2 for a body. The runtime keeps the motion; this only draws it. Without
                 // it the blood is still thrown and still stamps its splashes, but no drop or mist is seen.
                 _retailImpacts?.Dispose();
-                _retailImpacts = new RetailImpactRenderer(_device, _resources, _fileSystem);
-                int impactModels = _retailImpacts.Load(loaded);
+                _retailImpacts = _presentation.Presenters.Create<ImpactEffectPresentationRequest, IImpactEffectPresenter>(
+                    new ImpactEffectPresentationRequest(_device, _resources, _fileSystem));
+                int impactModels = _retailImpacts?.Load(loaded) ?? 0;
                 _impactEffects.Clear();
-                _impactEffects.SetMistFrameCount(_retailImpacts.MistFrameCount);
-                if (!_retailImpacts.SpritesAvailable)
+                _impactEffects.SetMistFrameCount(_retailImpacts?.MistFrameCount ?? 1);
+                if (_retailImpacts is not { SpritesAvailable: true } impacts)
                 {
                     _logger.Warning(
                         "Impact",
@@ -2142,7 +2142,7 @@ internal sealed partial class GameHost
                     _logger.Debug(
                         "Impact",
                         $"Retail impact effects bound: {impactModels} chip model(s), "
-                            + $"{_retailImpacts.MistFrameCount} blood frame(s).");
+                            + $"{impacts.MistFrameCount} blood frame(s).");
                 }
 
                 // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
@@ -2293,9 +2293,8 @@ internal sealed partial class GameHost
         _water = _presentation.Presenters.Create<ScenePresentationRequest, IWaterPresenter>(adornments);
         MakeTaskPresenters(levelRoot);
 
-        // The menus are done; without dropping the renderer the last screen would keep drawing over
-        // the world.
-        _renderer = null;
+        // The menus are done; without closing their screens the last one would keep drawing over the world.
+        _retailMenus?.CloseScreens();
 
         // The menu's backdrop is not needed once a real mission is up. On a cold start that releases the
         // previewed level's packs outright. On a promotion it releases nothing: the preview IS this

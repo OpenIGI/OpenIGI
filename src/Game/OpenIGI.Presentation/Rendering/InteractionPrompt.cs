@@ -1,13 +1,12 @@
 using OpenIGI.Presentation;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Animation;
 using System.Globalization;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>How the player completes an offered interaction.</summary>
 public enum InteractionPromptMethod

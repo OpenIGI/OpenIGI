@@ -3,6 +3,8 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Presentation.Igi1.Menus;
+using OpenIGI.Game.Igi1.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
@@ -21,6 +23,10 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <summary>Initializes a new instance of the <see cref="Igi1PresentationProvider"/> class.</summary>
     public Igi1PresentationProvider() =>
         Presenters = new PresenterRegistry()
+            .Add<RetailMenuPresentationRequest, IRetailMenuPresenter>(static (in RetailMenuPresentationRequest request) =>
+                new RetailMenuHost(request))
+            .Add<ImpactEffectPresentationRequest, IImpactEffectPresenter>(static (in ImpactEffectPresentationRequest request) =>
+                new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem))
             .Add<SoldierPresentationRequest, ISoldierPresenter>(static (in SoldierPresentationRequest request) =>
                 new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)

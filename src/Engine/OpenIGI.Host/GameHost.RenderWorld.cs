@@ -29,7 +29,6 @@ using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Presentation;

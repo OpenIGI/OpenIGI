@@ -8,7 +8,6 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("OpenIGI.Game.Igi1.Tests")]
 
 // The player's rig and the soldiers' renderer, which the host still builds and drives itself.
-[assembly: InternalsVisibleTo("OpenIGI.Host")]
 [assembly: InternalsVisibleTo("OpenIGI.Desktop")]
 [assembly: InternalsVisibleTo("OpenIGI.Desktop.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Presentation.Tests")]

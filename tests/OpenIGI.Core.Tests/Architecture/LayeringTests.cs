@@ -97,7 +97,6 @@ public sealed class LayeringTests
     private static readonly string[] TitleReferencesBaseline =
     [
         "OpenIGI.Host -> OpenIGI.Game.Igi1",
-        "OpenIGI.Host -> OpenIGI.Presentation.Igi1",
     ];
 
     /// <summary>Rule 2 — and nothing below an app references a title project either.</summary>

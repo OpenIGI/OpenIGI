@@ -3,7 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>What a cutscene draws over its picture: the retail line and handicam filters, the band, and the letterbox.</summary>
 internal static class CutsceneFramingRenderer
