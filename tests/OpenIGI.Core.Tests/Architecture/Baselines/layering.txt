@@ -6,5 +6,4 @@ OpenIGI.Game -> OpenIGI.Input
 OpenIGI.Game -> OpenIGI.Rendering
 OpenIGI.Game.Igi1 -> OpenIGI.Presentation
 OpenIGI.Game.Igi1 -> OpenIGI.Rendering
-OpenIGI.Game.Igi2 -> OpenIGI.Presentation
 OpenIGI.Game.Igi2 -> OpenIGI.Rendering

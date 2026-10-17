@@ -9,6 +9,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
+using OpenIGI.Presentation.Igi2.ViewModel;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -93,7 +94,7 @@ public sealed class RetailIgi2SecurityCameraTests
         for (int tick = 0; tick < 8; tick++) { m.Run.Tick(); }
         Assert.NotEqual(light.HalfSize, camera.Indicator()!.HalfSize);
         using RecordingGraphicsDevice device = new();
-        using ViewModel.Igi2ViewModelRenderer renderer = new(device, resources);
+        using OpenIGI.Presentation.Igi2.ViewModel.Igi2ViewModelRenderer renderer = new(device, resources);
         Assert.True(renderer.Load(built.Scene.Mission));
         Vector3f ambient = new(0.1f, 0.2f, 0.3f);
         device.SetModelAmbient(ambient);

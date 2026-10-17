@@ -4,8 +4,10 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <summary>The retail status display for the title-owned player.</summary>
 public sealed partial class Igi2HudRenderer : ITitleHudPresenter
@@ -46,7 +48,7 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         {
             return;
         }
-        Config.Igi2PlayerProfile? profile = title.GameConfig?.Active;
+        OpenIGI.Game.Igi2.Config.Igi2PlayerProfile? profile = title.GameConfig?.Active;
         float alpha = profile?.CrossHairAlpha ?? 1f;
         if (alpha <= 0f) { return; }
         (float r, float g, float b) = profile?.CrossHairColour ?? (1f, 0.25f, 0f);

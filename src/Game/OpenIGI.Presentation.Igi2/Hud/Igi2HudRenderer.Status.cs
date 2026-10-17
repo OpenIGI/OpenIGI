@@ -9,8 +9,10 @@ using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <content>Retail status art, ammunition, interaction prompts, progress and view flashes.</content>
 public sealed partial class Igi2HudRenderer
@@ -136,7 +138,7 @@ public sealed partial class Igi2HudRenderer
             }
             float lineWidth = MathF.Max(iconWidth, nameWidth + 3f);
             Fill(batch, new RectF(right - lineWidth, baseline, lineWidth, 1f), Bgra32.FromRgba(102, 153, 255, 128));
-            Weapons.Igi2FireTypeRounds rounds = title.Inventory.FireTypeRounds(held, 0);
+            OpenIGI.Game.Igi2.Weapons.Igi2FireTypeRounds rounds = title.Inventory.FireTypeRounds(held, 0);
             if (_loadedRounds != rounds.Loaded || _availableRounds != rounds.Available)
             {
                 _loadedRounds = rounds.Loaded;
@@ -197,7 +199,7 @@ public sealed partial class Igi2HudRenderer
     private void DrawMessages(SpriteBatch batch, Igi2TitlePlayer title, float width, float height)
     {
         float y = title.IsCutscenePlaying ? height - 100f : 36f;
-        foreach (Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
+        foreach (OpenIGI.Game.Igi2.Flow.Igi2StatusMessageSlot slot in title.StatusMessages.Slots)
         {
             if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying) { continue; }
             _font?.DrawCentered(batch, slot.Text.AsSpan(0, Math.Min(slot.Printed, slot.Text.Length)), width * 0.5f * _scale, y * _scale,

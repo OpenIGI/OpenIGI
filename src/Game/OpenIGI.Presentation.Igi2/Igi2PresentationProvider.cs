@@ -10,8 +10,11 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 using OpenIGI.Presentation.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.ViewModel;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2;
+namespace OpenIGI.Presentation.Igi2;
 
 /// <summary>Builds the renderers I.G.I. 2 draws with.</summary>
 /// <remarks>
@@ -31,7 +34,7 @@ namespace OpenIGI.Game.Igi2;
 /// The world presenter itself is <c>WorldRenderer</c>, shared with Project I.G.I. It named no task type,
 /// no model id and no asset path, so it moved into the presentation layer and both titles draw through
 /// it; what differs is only how a level becomes placements, which is
-/// <see cref="World.Igi2DrawableScene"/>'s job.
+/// <see cref="OpenIGI.Game.Igi2.World.Igi2DrawableScene"/>'s job.
 /// </para>
 /// <para>
 /// The ground arrives through <see cref="CreateGround"/> rather than
@@ -46,7 +49,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     public static Igi2PresentationProvider Instance { get; } = new();
 
     /// <inheritdoc/>
-    public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new Hud.Igi2HudRenderer(request.Device, request.Logger);
+    public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new OpenIGI.Presentation.Igi2.Hud.Igi2HudRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
@@ -60,7 +63,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
-    /// The sequel's sky is a typed <see cref="World.FlatSkyTask"/> on the level tree, which is exactly
+    /// The sequel's sky is a typed <see cref="OpenIGI.Game.Igi2.World.FlatSkyTask"/> on the level tree, which is exactly
     /// why this had to come behind the seam: the shared <c>SkyRenderer</c> finds its own by walking for a
     /// <c>DeclaredTask</c> named <c>FlatSky</c>, and a title with a class for the type has no such node.
     /// The host built that renderer directly, so until now I.G.I. 2 drew no sky at all and nothing said
@@ -397,11 +400,11 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// The first in the tree. No shipped level declares two, and a second would be a second backdrop
     /// drawn over the first rather than anything meaningful.
     /// </remarks>
-    private static World.FlatSkyTask? FindSky(GameTask task)
+    private static OpenIGI.Game.Igi2.World.FlatSkyTask? FindSky(GameTask task)
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is World.FlatSkyTask sky)
+            if (child is OpenIGI.Game.Igi2.World.FlatSkyTask sky)
             {
                 return sky;
             }

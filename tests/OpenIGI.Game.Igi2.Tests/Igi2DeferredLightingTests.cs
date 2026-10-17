@@ -6,6 +6,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

@@ -4,8 +4,11 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.ViewModel;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.ViewModel;
+namespace OpenIGI.Presentation.Igi2.ViewModel;
 
 /// <content>Security-camera indicator sprites in the world's depth buffer.</content>
 public sealed partial class Igi2ViewModelRenderer

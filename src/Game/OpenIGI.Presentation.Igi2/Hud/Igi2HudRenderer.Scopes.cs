@@ -2,8 +2,10 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <content>
 /// The scopes' overlays (<c>sniperoverlay.c</c> and the AUG's, Dragunov's, G11's and PSG-1's), and the laser designator's
@@ -159,7 +161,7 @@ public sealed partial class Igi2HudRenderer
         float rangeY = lineHeight + my;
         Text(batch, RangeText(title), x, MathF.Floor(rangeY), Bgra32.White);
 
-        Weapons.Igi2LaserDesignatorState? designator = title.Weapons?.Firing.LaserDesignator;
+        OpenIGI.Game.Igi2.Weapons.Igi2LaserDesignatorState? designator = title.Weapons?.Firing.LaserDesignator;
         string text;
         if (designator?.IsLockedOn == true)
         {

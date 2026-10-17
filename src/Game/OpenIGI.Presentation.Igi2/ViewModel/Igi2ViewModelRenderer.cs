@@ -10,8 +10,11 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.ViewModel;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.ViewModel;
+namespace OpenIGI.Presentation.Igi2.ViewModel;
 
 /// <summary>Draws what the player's view holds: the skinned first-person model and the models its clip hangs on it.</summary>
 /// <remarks>

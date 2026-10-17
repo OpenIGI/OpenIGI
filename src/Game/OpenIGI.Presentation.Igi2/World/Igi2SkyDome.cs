@@ -1,8 +1,10 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>
 /// I.G.I. 2's sky dome: what the title fixes about the shared lattice, and how a level colours it.

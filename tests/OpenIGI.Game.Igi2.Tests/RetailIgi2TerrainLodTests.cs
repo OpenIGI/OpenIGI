@@ -343,14 +343,7 @@ public sealed class RetailIgi2TerrainLodTests
             new Vector3d(ground.X, ground.Y, ground.Z + EyeHeight),
             Camera3D.LookRotation(yaw, pitch));
 
-        return Igi2TerrainView.FromFrame(new TerrainFrame(
-            camera,
-            Matrix4f.Identity,
-            MathF.PI / 3f,
-            1.6f,
-            ViewDistance: 0,
-            Batching: false,
-            OcclusionCulling: false));
+        return Igi2TerrainView.FromCamera(camera, MathF.PI / 3f, 1.6f);
     }
 
     private static IEnumerable<Igi2TerrainView> Views(Igi2TerrainTile tile)

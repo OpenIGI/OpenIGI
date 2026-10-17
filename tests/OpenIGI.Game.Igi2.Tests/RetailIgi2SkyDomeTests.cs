@@ -4,6 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

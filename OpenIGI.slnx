@@ -30,6 +30,7 @@
     <Project Path="src/Game/OpenIGI.Game.Igi2/OpenIGI.Game.Igi2.csproj" />
     <Project Path="src/Game/OpenIGI.Game/OpenIGI.Game.csproj" />
     <Project Path="src/Game/OpenIGI.Presentation/OpenIGI.Presentation.csproj" />
+    <Project Path="src/Game/OpenIGI.Presentation.Igi2/OpenIGI.Presentation.Igi2.csproj" />
   </Folder>
   <Folder Name="/src/Rendering/">
     <Project Path="src/Rendering/OpenIGI.Rendering.Pipeline/OpenIGI.Rendering.Pipeline.csproj" />

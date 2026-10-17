@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <summary>One screen-space segment of a weapon sight.</summary>
 /// <param name="X1">The start's horizontal position.</param>

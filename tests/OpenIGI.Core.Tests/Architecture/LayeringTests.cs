@@ -22,12 +22,15 @@ public sealed class LayeringTests
         "OpenIGI.Platform.Desktop",
     ];
 
-    /// <summary>The per-title projects. No two of them may meet except in an app.</summary>
-    private static readonly string[] TitleProjects =
+    /// <summary>The per-title projects, by title: a game, and how it is drawn. Two titles' projects meet only in an app.</summary>
+    private static readonly string[][] Titles =
     [
-        "OpenIGI.Game.Igi1",
-        "OpenIGI.Game.Igi2",
+        ["OpenIGI.Game.Igi1"],
+        ["OpenIGI.Game.Igi2", "OpenIGI.Presentation.Igi2"],
     ];
+
+    /// <summary>Every per-title project.</summary>
+    private static readonly string[] TitleProjects = [.. Titles.SelectMany(static title => title)];
 
     /// <summary>Rule 1 — nothing below <c>apps/</c> names a backend.</summary>
     /// <remarks>
@@ -58,7 +61,7 @@ public sealed class LayeringTests
             + string.Join("\n  ", broken));
     }
 
-    /// <summary>Rule 2 — a title project never references another title project.</summary>
+    /// <summary>Rule 2 — a title project never references another title's projects; its own it may.</summary>
     /// <remarks>
     /// Only an app composition root may name both, and it does so through the title runtime. This is
     /// what keeps an I.G.I. 2 finding from reaching I.G.I. 1 code by the back door of a shared type.
@@ -68,16 +71,19 @@ public sealed class LayeringTests
     {
         List<string> broken = [];
 
-        foreach (string title in TitleProjects)
+        foreach (string[] own in Titles)
         {
-            if (!RepositoryLayout.Projects.TryGetValue(title, out ProjectInfo? project))
+            foreach (string title in own)
             {
-                continue;
-            }
+                if (!RepositoryLayout.Projects.TryGetValue(title, out ProjectInfo? project))
+                {
+                    continue;
+                }
 
-            foreach (string other in project.References.Intersect(TitleProjects, StringComparer.Ordinal))
-            {
-                broken.Add($"{title} -> {other}");
+                foreach (string other in project.References.Intersect(TitleProjects, StringComparer.Ordinal).Except(own, StringComparer.Ordinal))
+                {
+                    broken.Add($"{title} -> {other}");
+                }
             }
         }
 

@@ -2,7 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Igi2.Hud;
+using OpenIGI.Presentation.Igi2.Hud;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
@@ -13,6 +13,7 @@ using OpenIGI.Engine.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

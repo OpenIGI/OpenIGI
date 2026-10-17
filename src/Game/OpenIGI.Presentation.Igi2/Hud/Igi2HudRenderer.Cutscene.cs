@@ -2,8 +2,10 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <content>
 /// A running cutscene's framing (<c>pc_filter.c</c>): the letterbox its camera opens and closes, and the filter its camera puts over

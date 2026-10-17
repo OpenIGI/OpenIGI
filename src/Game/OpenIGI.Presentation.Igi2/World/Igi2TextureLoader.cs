@@ -5,8 +5,10 @@ using OpenIGI.Formats;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>
 /// Turns an I.G.I. 2 texture name into a handle on the device, once per name.

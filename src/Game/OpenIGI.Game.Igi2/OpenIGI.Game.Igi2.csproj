@@ -16,11 +16,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The renderers this title draws through. Both are abstractions over a backend rather than a
-         backend: Rendering owns IGraphicsDevice, Presentation owns the title-agnostic passes and the
-         ITitlePresentationProvider seam. The same pair OpenIGI.Game.Igi1 references, for the same reason. -->
+    <!-- Rendering's value types (vertices, the camera), which the game's own geometry is made of. How the game is
+         drawn is OpenIGI.Presentation.Igi2. -->
     <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

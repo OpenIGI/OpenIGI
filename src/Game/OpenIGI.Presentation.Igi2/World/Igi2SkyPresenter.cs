@@ -4,8 +4,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>
 /// Draws I.G.I. 2's sky: the graded dome, then each scrolling cloud layer over it.

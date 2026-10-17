@@ -4,8 +4,10 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>Cached retail screen and game sprites, with their fonts, owned by one presenter.</summary>
 public sealed class Igi2SpriteResources : IDisposable

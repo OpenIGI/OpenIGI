@@ -5,8 +5,10 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>
 /// Draws I.G.I. 2's forests: one mesh per stand, the stand's trees culled through its own index, and each

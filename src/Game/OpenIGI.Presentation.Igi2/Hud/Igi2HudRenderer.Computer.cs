@@ -4,8 +4,10 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <content>
 /// The open map computer (<c>ComputerMenu_DrawHandler</c> and its screens'): the picture under the casing's line filter, the menu

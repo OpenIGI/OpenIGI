@@ -5,8 +5,10 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Hud;
+namespace OpenIGI.Presentation.Igi2.Hud;
 
 /// <content>The binoculars' overlay, <c>BinocularOverlay_Draw</c> (<c>igi2 0x525FA0</c>).</content>
 public sealed partial class Igi2HudRenderer

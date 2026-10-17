@@ -3,8 +3,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>The light a level's water is drawn in: its sun and the objects' ambient.</summary>
 /// <param name="SunDirection">Towards the sun, unit length; zero where the level has none.</param>

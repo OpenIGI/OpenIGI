@@ -14,6 +14,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

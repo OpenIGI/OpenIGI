@@ -3,7 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
-using OpenIGI.Presentation;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -181,7 +181,9 @@ public readonly struct Igi2TerrainView
     public ReadOnlySpan<Vector3f> PlaneNormals => _normals ?? [];
 
     /// <summary>Builds the view one frame is drawn from.</summary>
-    /// <param name="frame">The frame.</param>
+    /// <param name="camera">The eye and its orientation, in the height field's units.</param>
+    /// <param name="verticalFieldOfView">The vertical field of view, in radians.</param>
+    /// <param name="aspectRatio">The width over the height.</param>
     /// <returns>The view, with the frustum's four side planes.</returns>
     /// <remarks>
     /// <para>
@@ -204,10 +206,10 @@ public readonly struct Igi2TerrainView
     /// zero normals, which reject nothing. That is the safe direction to fail in.
     /// </para>
     /// </remarks>
-    public static Igi2TerrainView FromFrame(in TerrainFrame frame)
+    public static Igi2TerrainView FromCamera(in Camera3D camera, float verticalFieldOfView, float aspectRatio)
     {
-        float tanY = MathF.Tan(frame.VerticalFieldOfView * 0.5f);
-        float tanX = tanY * frame.AspectRatio;
+        float tanY = MathF.Tan(verticalFieldOfView * 0.5f);
+        float tanX = tanY * aspectRatio;
 
         Span<Vector3f> view =
         [
@@ -223,10 +225,10 @@ public readonly struct Igi2TerrainView
         Span<Vector3f> world = stackalloc Vector3f[view.Length];
         for (int i = 0; i < view.Length; i++)
         {
-            world[i] = frame.Camera.Orientation.Transform(view[i]);
+            world[i] = camera.Orientation.Transform(view[i]);
         }
 
-        return new Igi2TerrainView(frame.Camera.Position, world);
+        return new Igi2TerrainView(camera.Position, world);
     }
 
 }
@@ -554,7 +556,7 @@ public sealed class Igi2TerrainLod
     /// <param name="view">The current eye and clipping planes.</param>
     /// <param name="settings">The current detail controls.</param>
     /// <returns>The frame's borrowed geometry.</returns>
-    internal Igi2TerrainTessellation TessellateFrame(in Igi2TerrainView view, in Igi2TerrainLodSettings settings) =>
+    public Igi2TerrainTessellation TessellateFrame(in Igi2TerrainView view, in Igi2TerrainLodSettings settings) =>
         (_frameBuilder ??= new Builder(this, reuseBuffers: true)).Run(view, settings);
 
     /// <inheritdoc/>

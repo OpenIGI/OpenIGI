@@ -5,8 +5,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>
 /// One face of a baked environment cube map, named by the direction it looks along in the engine's own

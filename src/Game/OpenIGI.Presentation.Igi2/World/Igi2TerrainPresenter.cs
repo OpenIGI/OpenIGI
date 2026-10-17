@@ -5,8 +5,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.World;
+namespace OpenIGI.Presentation.Igi2.World;
 
 /// <summary>
 /// Draws I.G.I. 2's ground: one additive pass per material, over the tiles a level declares.
@@ -342,8 +344,10 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // the level's Detail and Adaption scale a squared edge length measured against the eye, and the
         // original measures it in the same units the height field is stored in. So the eye is converted
         // rather than the terrain -- which is what Project I.G.I.'s octree traversal does too.
-        Igi2TerrainView view = Igi2TerrainView.FromFrame(
-            frame with { Camera = new Camera3D(WorldScene.ToUnits(frame.Camera.Position), frame.Camera.Orientation) });
+        Igi2TerrainView view = Igi2TerrainView.FromCamera(
+            new Camera3D(WorldScene.ToUnits(frame.Camera.Position), frame.Camera.Orientation),
+            frame.VerticalFieldOfView,
+            frame.AspectRatio);
 
         // Onto the pool the frames still in flight are not reading -- see ChunkPoolSlots.
         _poolSlot = (_poolSlot + 1) % ChunkPoolSlots;

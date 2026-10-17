@@ -3,7 +3,7 @@ src/Game/OpenIGI.Game.Igi1/Igi1PresentationProvider.cs
 src/Game/OpenIGI.Game.Igi1/Igi1Runtime.cs
 src/Game/OpenIGI.Game.Igi1/World/Igi1WorldBuilder.cs
 src/Game/OpenIGI.Game.Igi2/Igi2DataLayout.cs
-src/Game/OpenIGI.Game.Igi2/Igi2PresentationProvider.cs
+src/Game/OpenIGI.Presentation.Igi2/Igi2PresentationProvider.cs
 src/Game/OpenIGI.Game.Igi2/Igi2Runtime.cs
 src/Game/OpenIGI.Game.Igi2/Player/IIgi2PlayerWeaponControl.cs
 src/Game/OpenIGI.Game.Igi2/Player/Igi2Gameplay.cs

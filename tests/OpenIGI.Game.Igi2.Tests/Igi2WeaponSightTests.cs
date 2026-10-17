@@ -1,5 +1,5 @@
 using OpenIGI.Game.Igi2.Config;
-using OpenIGI.Game.Igi2.Hud;
+using OpenIGI.Presentation.Igi2.Hud;
 using Xunit;
 
 namespace OpenIGI.Game.Igi2.Tests;

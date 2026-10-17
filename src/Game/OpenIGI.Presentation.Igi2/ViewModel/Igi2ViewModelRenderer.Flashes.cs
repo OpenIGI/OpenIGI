@@ -4,8 +4,11 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.ViewModel;
+using OpenIGI.Presentation.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.ViewModel;
+namespace OpenIGI.Presentation.Igi2.ViewModel;
 
 /// <content>Muzzle flashes at a weapon object's muzzle, <c>MuzzleFlash_EnterHandler</c> (<c>igi2 0x4D0E80</c>).</content>
 public sealed partial class Igi2ViewModelRenderer
