@@ -1489,7 +1489,7 @@ if (retailFog)
             showFirstPersonHud
             && _player is { IsBinocularsOpen: true }
             && _soldiers is { } binocularSoldiers
-                ? binocularSoldiers.BinocularTargets(
+                ? binocularSoldiers.Simulation.BinocularTargets(
                     // Use the same presented eye that rendered the world. The detector owns
                     // authoritative slot lifetime, but its screen rectangle must be projected
                     // through the frame's smoothed camera or moving/zooming binoculars make the
@@ -2672,7 +2672,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     state.Batch,
                     objectiveRuntime,
                     computerPlayer.Body.Position,
-                    _soldiers?.MapContacts() ?? [],
+                    _soldiers?.Simulation.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
                     _window.Width,
                     _window.Height,
@@ -2684,7 +2684,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     state.Batch,
                     objectiveRuntime,
                     computerPlayer.Body.Position,
-                    _soldiers?.MapContacts() ?? [],
+                    _soldiers?.Simulation.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
                     _window.Width,
                     _window.Height);
@@ -3015,7 +3015,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 ? _player.Body.Eye
                 : _camera.Position;
             if (_soldiers is not null
-                && _soldiers.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
+                && _soldiers.Simulation.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
             {
                 detect = detectInfo;
             }

@@ -385,7 +385,7 @@ internal sealed partial class GameHost
         _playerTicked = true;
 
         // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
-        _soldiers?.PublishCollisionBodies();
+        _soldiers?.Simulation.PublishCollisionBodies();
         player.InputProfile = _configuration.Active;
         GrantCheatWeapons(player);
         if (_computerOpen)
@@ -435,7 +435,7 @@ internal sealed partial class GameHost
         Vector3d? freeView = !_playerMode ? _camera?.Position : null;
         return new AreaPlayer(
             AreaActivationOccupant(_player?.Body.Origin, cutsceneView, freeView),
-            _soldiers?.PlayerTeam ?? 0,
+            _soldiers?.Simulation.PlayerTeam ?? 0,
             AreaActivationExtraOccupant(_player?.Body.Origin, cutsceneView),
             !_playerDead);
     }
@@ -708,7 +708,7 @@ internal sealed partial class GameHost
         objectives.AttachTo(
             _mission.Cutscenes.Walker,
             _mission.Cutscenes.VehicleOccupants,
-            () => _soldiers?.LiveOccupants() ?? [],
+            () => _soldiers?.Simulation.LiveOccupants() ?? [],
             AreaPlayerNow);
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
@@ -1026,13 +1026,13 @@ internal sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
 
-        _soldiers.Cutscenes = _mission.Cutscenes;
+        _soldiers.Simulation.Cutscenes = _mission.Cutscenes;
 
         // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
         // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
         // knife leaves: KnifeStab itself never reaches the decal message.
         _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
-        _mission.Cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
+        _mission.Cutscenes?.SetTargetPoseResolver(_soldiers.Simulation.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
@@ -1046,15 +1046,15 @@ internal sealed partial class GameHost
         // transforms dead: a gun's stand did not turn with the gun it holds.
         world.Interactions = _mission.Interactions;
         solids.GenericPickups = _mission.GenericPickups;
-        _soldiers.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
-        _soldiers.UseInteractions(_mission.Interactions);
-        _soldiers.SetDoors(_mission.Doors, solids);
-        _soldiers.SetElevators(_mission.Elevators);
+        _soldiers.Simulation.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
+        _soldiers.Simulation.UseInteractions(_mission.Interactions);
+        _soldiers.Simulation.SetDoors(_mission.Doors, solids);
+        _soldiers.Simulation.SetElevators(_mission.Elevators);
 
         // The first genuinely world-positioned sound in the port. Its distances are the definition's
         // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
         // without anything here choosing a range.
-        _soldiers.SetDeathSound(position => PlayDeathSound(
+        _soldiers.Simulation.SetDeathSound(position => PlayDeathSound(
             HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
@@ -1066,23 +1066,23 @@ internal sealed partial class GameHost
         }
 
         // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-        _soldiers.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
-        _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
-        _soldiers.SetMeleeStrikeSink(StrikePlayer);
-        _soldiers.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
+        _soldiers.Simulation.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
+        _soldiers.Simulation.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+        _soldiers.Simulation.SetMeleeStrikeSink(StrikePlayer);
+        _soldiers.Simulation.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
 
         // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
         // HumanAI's current position. Both begin at the same live position; the backend owns any voice
         // following after that point.
-        _soldiers.SetScriptSound((name, position, attached) =>
+        _soldiers.Simulation.SetScriptSound((name, position, attached) =>
             _sounds?.PlayDefinition(name, position, priority: 200));
 
         // Each AI weapon owns its automatic loop and updates its world position every tick. The round
         // callback handles ballistics only; without this parallel path AI shots were completely silent.
-        _soldiers.SetWeaponSound(TickSoldierWeaponSound);
+        _soldiers.Simulation.SetWeaponSound(TickSoldierWeaponSound);
 
         // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
-        _soldiers.SetFootstepSound(step => PlayFootstep(step));
+        _soldiers.Simulation.SetFootstepSound(step => PlayFootstep(step));
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
         _mission.Doors.SetSoundSink(PlayDoorSound);
@@ -1550,7 +1550,7 @@ internal sealed partial class GameHost
 
                 EndStage("reading the nav graphs");
 
-                _soldiers.Animate(
+                _soldiers.Simulation.Animate(
                     graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);
                 EndStage("animating the soldiers' brains");
@@ -1562,7 +1562,7 @@ internal sealed partial class GameHost
                 _mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
                     levelRoot,
                     _loop.Variables,
-                    () => _soldiers.AnyAlarmOn);
+                    () => _soldiers.Simulation.AnyAlarmOn);
                 _mission.AlarmSpeakers.BindScene(scene.Placements);
                 world.AlarmSpeakers = _mission.AlarmSpeakers;
                 _logger.Information("Ai", $"{_mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
@@ -1571,7 +1571,7 @@ internal sealed partial class GameHost
                 // where it becomes a cast. The AI's hit probability decides whether the round is on
                 // target -- the original hands that same figure to the gun with every shot (ai.md 11.6),
                 // so a miss is a round that went somewhere else rather than a round that never existed.
-                _soldiers.SetRoundHandler((from, at, probability, weapon, shooter) =>
+                _soldiers.Simulation.SetRoundHandler((from, at, probability, weapon, shooter) =>
                 {
                     _guardRounds++;
                     if (_player is null)
@@ -1596,7 +1596,7 @@ internal sealed partial class GameHost
                     // defensive: the player's own shots do not flow through this handler, so no real
                     // round is hostile-neutral; treating it as hostile keeps a round from vanishing.
                     bool shooterHostileToPlayer = shooter is null
-                        || shooter.Soldier.Team != _soldiers.PlayerTeam;
+                        || shooter.Soldier.Team != _soldiers.Simulation.PlayerTeam;
 
                     // The player's living body is a physical obstacle to every round, whatever the
                     // shooter's team -- retail's cast collides with a same-team human too (it just deals
@@ -1654,7 +1654,7 @@ internal sealed partial class GameHost
                     {
                         if (shooter is not null)
                         {
-                            _soldiers?.NotifyRoundPassed(from, stop, shooter, struck: null);
+                            _soldiers?.Simulation.NotifyRoundPassed(from, stop, shooter, struck: null);
                         }
                     }
 
@@ -1939,7 +1939,7 @@ internal sealed partial class GameHost
                         _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
                         (int)AiDifficulty.Easy,
                         (int)AiDifficulty.Hard);
-                _soldiers.Animate(
+                _soldiers.Simulation.Animate(
                     graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);
                 EndStage("registering stationary soldiers' brains");
@@ -2227,7 +2227,7 @@ internal sealed partial class GameHost
             if (_mission.Interactions is { } interactions)
             {
                 candidate.UseInteractions(interactions);
-                candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
+                candidate.TaskActivated += id => _soldiers?.Simulation.ActivateTask(id);
                 candidate.ElectrifiedFenceTouched += fence => ResolvePlayerElectricFence(candidate, fence);
                 candidate.UnarmedStationaryGun += gun => _logger.Warning(
                     "Player",
@@ -2290,7 +2290,7 @@ internal sealed partial class GameHost
 
                 int materialCount = materialTable.Load(_resources, _loop.Natives);
                 candidate.UseMaterials(materialTable);
-                _soldiers?.UseMaterials(materialTable);
+                _soldiers?.Simulation.UseMaterials(materialTable);
                 _worldMaterials = materialTable;
                 _logger.Information("Material", $"Read {materialCount} game material(s).");
 
@@ -2304,7 +2304,7 @@ internal sealed partial class GameHost
                 _effectTerrainRow = terrainRow;
                 if (_soldiers is not null)
                 {
-                    _soldiers.TerrainGameMaterialIndex = terrainRow;
+                    _soldiers.Simulation.TerrainGameMaterialIndex = terrainRow;
                 }
 
                 if (terrainRow is int row && materialTable.TryGet(row, out GameMaterial groundRow))
@@ -2321,8 +2321,8 @@ internal sealed partial class GameHost
                     string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
                     _mission.Objectives?.ShowTransientMessage(missionText.Get(key));
                 };
-                _soldiers?.UseDroppedWeaponPickups(gunPickups);
-                _soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
+                _soldiers?.Simulation.UseDroppedWeaponPickups(gunPickups);
+                _soldiers?.Simulation.SetWeaponDropSink((weapon, position, orientation, velocity) =>
                 {
                     GunPickup pickup = gunPickups.Spawn(position, orientation, weapon, velocity);
                     _gunPickupRenderer?.Add(loaded, pickup);
@@ -2332,7 +2332,7 @@ internal sealed partial class GameHost
                 // for the realistic body and as one ray for the original's fifty-metre drop probe.
                 ObjectCollisionIndex? dropSolids = _worldSolids;
                 TerrainData? dropTerrain = _playerTerrain;
-                _soldiers?.SetDroppedWeaponWorld(
+                _soldiers?.Simulation.SetDroppedWeaponWorld(
                     (min, max, into) =>
                     {
                         dropSolids?.CollectTriangles(min, max, into);
@@ -2478,8 +2478,8 @@ internal sealed partial class GameHost
                 if (_soldiers is { } guards)
                 {
                     candidate.Humans = guards.Shooter();
-                    candidate.HumanProbes = guards.Probe();
-                    HumanProximityCast soldierProximity = guards.ProximityProbe();
+                    candidate.HumanProbes = guards.Simulation.Probe();
+                    HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();
                     candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
                     {
                         bool found = soldierProximity(center, radiusUnits, out target);
@@ -2495,8 +2495,8 @@ internal sealed partial class GameHost
 
                         return found;
                     };
-                    candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
-                    candidate.AiNoise = noise => guards.NotifyHumanNoise(
+                    candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(impact, candidate.Body.Position);
+                    candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
                         noise, candidate.Body.Position, candidate.Body.Position);
 
                     // A glancing round whizzes where it turned, on the ricochet sound's own limit --
@@ -2505,7 +2505,7 @@ internal sealed partial class GameHost
 
                     // One grenade pool for both throwers: the player's own and every guard's lob fly,
                     // bounce and detonate through the same simulation and the same drain.
-                    guards.SetGrenades(candidate.Grenades);
+                    guards.Simulation.SetGrenades(candidate.Grenades);
                 }
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
@@ -2827,7 +2827,7 @@ internal sealed partial class GameHost
 
         if (_soldiers is { } soldiers)
         {
-            foreach (Vector3d feet in soldiers.MapContacts())
+            foreach (Vector3d feet in soldiers.Simulation.MapContacts())
             {
                 if (HumanStandsInSegment(feet, from, to))
                 {
@@ -3500,7 +3500,7 @@ internal sealed partial class GameHost
         }
 
         // Every ground contact posts type 11. A safe landing carries five metres; a damaging one ten.
-        _soldiers?.NotifyGroundImpact(
+        _soldiers?.Simulation.NotifyGroundImpact(
             player.Body.Position,
             player.Body.Position,
             impact.HearingRadiusUnits);
@@ -3712,7 +3712,7 @@ internal sealed partial class GameHost
             : null;
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             _worldTrace is null
-            || SoldierRenderer.HasLineOfSight(_worldTrace, from, to, AiSoldier.SightObstructionTolerance, owner);
+            || SoldierSimulation.HasLineOfSight(_worldTrace, from, to, AiSoldier.SightObstructionTolerance, owner);
         runtime.VehicleCombatShotFired = shot =>
         {
             if (shot.IsHitscan)
@@ -3722,7 +3722,7 @@ internal sealed partial class GameHost
                     _vehicleRoundOwner = shot.Owner;
                     try
                     {
-                        _soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
+                        _soldiers?.Simulation.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
                     }
                     finally
                     {

@@ -24,7 +24,7 @@ public sealed class AiSightWiringTests
             return false;
         };
 
-        Assert.True(SoldierRenderer.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
+        Assert.True(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
 
         Assert.Equal(WorldTraceMask.World, captured.Mask);
         Assert.False(captured.TracePortals);
@@ -47,6 +47,6 @@ public sealed class AiSightWiringTests
             return true;
         };
 
-        Assert.Equal(seen, SoldierRenderer.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
+        Assert.Equal(seen, SoldierSimulation.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
     }
 }

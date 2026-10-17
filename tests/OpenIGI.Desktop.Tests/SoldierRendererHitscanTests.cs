@@ -37,18 +37,8 @@ public sealed class SoldierRendererHitscanTests
 
     private static readonly FieldInfo GroupsField = typeof(SoldierRenderer)
         .GetField("_groups", BindingFlags.Instance | BindingFlags.NonPublic)!;
-    private static readonly FieldInfo RagdollRigsField = typeof(SoldierRenderer)
-        .GetField("_ragdollRigs", BindingFlags.Instance | BindingFlags.NonPublic)!;
-    private static readonly MethodInfo RaySphereMethod = typeof(SoldierRenderer)
-        .GetMethod("RaySphere", BindingFlags.Static | BindingFlags.NonPublic)!;
-    private static readonly MethodInfo SnapToGroundMethod = typeof(SoldierRenderer)
-        .GetMethod("SnapToGround", BindingFlags.Instance | BindingFlags.NonPublic)!;
-    private static readonly double PickCullRadiusUnits = (double)typeof(SoldierRenderer)
-        .GetField("PickCullRadiusUnits", BindingFlags.Static | BindingFlags.NonPublic)!
-        .GetRawConstantValue()!;
-    private static readonly double PickChestUnits = (double)typeof(SoldierRenderer)
-        .GetField("PickChestUnits", BindingFlags.Static | BindingFlags.NonPublic)!
-        .GetRawConstantValue()!;
+    private const double PickCullRadiusUnits = SoldierSimulation.PickCullRadiusUnits;
+    private const double PickChestUnits = SoldierSimulation.PickChestUnits;
 
     private const double PresentationOffsetMetres = 8.0;
 
@@ -132,7 +122,7 @@ public sealed class SoldierRendererHitscanTests
         using Scenario scenario = CreateScenario();
         MeshHitRay ray = FindAnyMeshHitRay(
             scenario.Renderer,
-            view => view.Soldier.Team != scenario.Renderer.PlayerTeam
+            view => view.Soldier.Team != scenario.Renderer.Simulation.PlayerTeam
                 && !CinematicActor.IsStaged(view.Soldier));
         object targetMember = MemberFor(scenario.Renderer, ray.View);
         MeshHandle bodyMesh = Get<MeshHandle>(targetMember, "Mesh");
@@ -156,7 +146,7 @@ public sealed class SoldierRendererHitscanTests
 
         Assert.True(ray.View.IsDead);
         Assert.Contains(
-            scenario.Renderer.Occupants(),
+            scenario.Renderer.Simulation.Occupants(),
             occupant => occupant.IsDead && occupant.Position == ray.View.Position);
 
         for (int tick = 0; tick < 180; tick++)
@@ -307,7 +297,7 @@ public sealed class SoldierRendererHitscanTests
         // Audio state and alert replies are keyed by runtime identity, not the authored task ID.
         // A retained corpse must not advance its replacement's sound loop on the same tick.
         List<int> soundEmitters = [];
-        scenario.Renderer.SetWeaponSound((id, _, _, _) => soundEmitters.Add(id));
+        scenario.Renderer.Simulation.SetWeaponSound((id, _, _, _) => soundEmitters.Add(id));
 
         // Retail GuardGenerator clones another live subtree. It does not revive and erase the corpse.
         scenario.Renderer.Tick(enemyAlive: false);
@@ -329,7 +319,7 @@ public sealed class SoldierRendererHitscanTests
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         Assert.True(Get<bool>(replacementMember, "HasHandState"));
         Assert.True(Get<bool>(replacementMember, "HasWeaponFrameState"));
-        Assert.Contains(scenario.Renderer.MapContacts(), position => position == replacement.Position);
+        Assert.Contains(scenario.Renderer.Simulation.MapContacts(), position => position == replacement.Position);
         Camera3D drawCamera = new(ray.Origin, Camera3D.LookRotation(0f, 0f));
         Matrix4f replacementWeaponTransform = drawCamera.CreateModelView(
             Get<Vector3d>(replacementMember, "DrawnWeaponOrigin"),
@@ -518,7 +508,7 @@ public sealed class SoldierRendererHitscanTests
         int rescueSentTick = -1;
         for (int tick = 0; tick < (15 * 30); tick++)
         {
-            objectives.SetSoldierOccupants(scenario.Renderer.Occupants());
+            objectives.SetSoldierOccupants(scenario.Renderer.Simulation.Occupants());
             objectives.TickLevelState(playerOutside, playerTeam: 0);
             cutscenes.Tick();
             cutscenes.FinishExpressionTick();
@@ -537,7 +527,7 @@ public sealed class SoldierRendererHitscanTests
         // three authored GuardGenerators beside Josip's building.
         cutscenes.Tick();
         scenario.Renderer.Tick(enemyAlive: false);
-        objectives.SetSoldierOccupants(scenario.Renderer.Occupants());
+        objectives.SetSoldierOccupants(scenario.Renderer.Simulation.Occupants());
         objectives.TickLevelState(playerOutside, playerTeam: 0);
         cutscenes.FinishExpressionTick();
         objectives.TickAfterLevelState();
@@ -651,7 +641,7 @@ public sealed class SoldierRendererHitscanTests
 
         if (GameplayCVars.Ragdoll.Value)
         {
-            int rigs = Assert.IsAssignableFrom<IDictionary>(RagdollRigsField.GetValue(scenario.Renderer)).Count;
+            int rigs = scenario.Renderer.Simulation.RagdollRigs.Count;
             Assert.True(rigs > 0, "Ragdoll rigs must be prepared before the first lethal shot.");
         }
     }
@@ -1172,9 +1162,7 @@ public sealed class SoldierRendererHitscanTests
     private static Vector3d FeetOnGround(SoldierRenderer renderer, SoldierView soldier) => new(
         soldier.Position.X,
         soldier.Position.Y,
-        Assert.IsType<double>(SnapToGroundMethod.Invoke(
-            renderer,
-            [soldier.Position.X, soldier.Position.Y, soldier.Position.Z])));
+        renderer.Simulation.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z));
 
     private static (bool Eligible, double EntryDistance) HitSegmentMayReachSphere(
         Vector3d origin,
@@ -1183,9 +1171,8 @@ public sealed class SoldierRendererHitscanTests
         double radius,
         double reach)
     {
-        object?[] arguments = [origin, direction, centre, radius, reach, 0.0];
-        bool eligible = Assert.IsType<bool>(RaySphereMethod.Invoke(null, arguments));
-        return (eligible, Assert.IsType<double>(arguments[5]));
+        bool eligible = SoldierSimulation.RaySphere(origin, direction, centre, radius, reach, out double entry);
+        return (eligible, entry);
     }
 
     private static bool IsInsideBodySphere(Vector3d point, Vector3d centre)
@@ -1214,9 +1201,7 @@ public sealed class SoldierRendererHitscanTests
         Assert.Equal(soundEmitters.Count, soundEmitters.Distinct().Count());
         Dictionary<SoldierView, AiSoldier> brains = RendererBrains(renderer);
         Assert.Equal(brains.Count, brains.Values.Select(brain => brain.RuntimeId).Distinct().Count());
-        Dictionary<int, AiSoldier> recipients = Assert.IsType<Dictionary<int, AiSoldier>>(
-            typeof(SoldierRenderer).GetField("_brainsByRuntimeId", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(renderer));
+        Dictionary<int, AiSoldier> recipients = renderer.Simulation.BrainsByRuntimeId;
         foreach (AiSoldier brain in brains.Values)
         {
             Assert.Same(brain, recipients[brain.RuntimeId]);
@@ -1226,11 +1211,7 @@ public sealed class SoldierRendererHitscanTests
     private static Dictionary<SoldierView, AiSoldier>.KeyCollection RendererSoldiers(SoldierRenderer renderer) =>
         RendererBrains(renderer).Keys;
 
-    private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) =>
-        Assert.IsType<Dictionary<SoldierView, AiSoldier>>(
-            typeof(SoldierRenderer)
-                .GetField("_brains", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(renderer));
+    private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) => renderer.Simulation.Brains;
 
     private static string DescribeAncestry(GameTask task)
     {
@@ -1307,7 +1288,7 @@ public sealed class SoldierRendererHitscanTests
         if (!prepareContainers)
         {
             Assert.True(renderer.Load(mission, root) > 0);
-            Assert.True(renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
+            Assert.True(renderer.Simulation.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
             return new Scenario(renderer, device, loop, root, cutscenes, objectives);
         }
 
@@ -1334,7 +1315,7 @@ public sealed class SoldierRendererHitscanTests
             graph.ApplyWorldOffset(TaskGeometry.FindPosition(root, graphId));
             graphs.Add(graphId, graph);
         }
-        Assert.True(renderer.Animate(
+        Assert.True(renderer.Simulation.Animate(
             graphs,
             solids.Tracer(),
             resources,

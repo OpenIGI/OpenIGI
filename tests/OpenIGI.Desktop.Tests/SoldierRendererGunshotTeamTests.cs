@@ -36,7 +36,7 @@ public sealed class SoldierRendererGunshotTeamTests
         (SoldierView Listener, AiSoldier HostileBrain) hostile = scenario.HostileSoldier;
 
         PlaceInHearingRange(shooter.ShooterBrain, friendly.FriendlyBrain, hostile.HostileBrain);
-        scenario.Renderer.NotifyGunshot(Vector3d.Zero, 10 * Metre, except: shooter.Shooter);
+        scenario.Renderer.Simulation.NotifyGunshot(Vector3d.Zero, 10 * Metre, except: shooter.Shooter);
 
         Assert.Equal(0, shooter.ShooterBrain.Events.PendingCount(AiEvent.Gunshot));
         Assert.Equal(0, friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot));
@@ -51,7 +51,7 @@ public sealed class SoldierRendererGunshotTeamTests
         (SoldierView Listener, AiSoldier FriendlyBrain) friendly = scenario.PlayerTeamSoldier;
 
         PlaceInHearingRange(shooter.ShooterBrain, friendly.FriendlyBrain);
-        scenario.Renderer.NotifyGunshot(Vector3d.Zero, 10 * Metre, except: shooter.Shooter);
+        scenario.Renderer.Simulation.NotifyGunshot(Vector3d.Zero, 10 * Metre, except: shooter.Shooter);
 
         Assert.Equal(0, shooter.ShooterBrain.Events.PendingCount(AiEvent.Gunshot));
         Assert.True(friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot) > 0);
@@ -65,7 +65,7 @@ public sealed class SoldierRendererGunshotTeamTests
         (SoldierView Listener, AiSoldier HostileBrain) hostile = scenario.HostileSoldier;
 
         PlaceInHearingRange(friendly.FriendlyBrain, hostile.HostileBrain);
-        scenario.Renderer.NotifyGunshot(Vector3d.Zero, 10 * Metre);
+        scenario.Renderer.Simulation.NotifyGunshot(Vector3d.Zero, 10 * Metre);
 
         Assert.Equal(0, friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot));
         Assert.True(hostile.HostileBrain.Events.PendingCount(AiEvent.Gunshot) > 0);
@@ -84,7 +84,7 @@ public sealed class SoldierRendererGunshotTeamTests
         (LoadedMission mission, LevelTask root, ResourceRegistry resources) = LoadMissionFour();
         SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
         Assert.True(renderer.Load(mission, root) > 0);
-        Assert.True(renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
+        Assert.True(renderer.Simulation.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
 
         Dictionary<SoldierView, AiSoldier> brains = RendererBrains(renderer);
         (SoldierView Shooter, AiSoldier ShooterBrain) shooter = Assert.Single(
@@ -99,11 +99,7 @@ public sealed class SoldierRendererGunshotTeamTests
         return new Scenario(renderer, shooter, friendly, hostile);
     }
 
-    private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) =>
-        Assert.IsType<Dictionary<SoldierView, AiSoldier>>(
-            typeof(SoldierRenderer)
-                .GetField("_brains", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(renderer));
+    private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) => renderer.Simulation.Brains;
 
     private static (LoadedMission Mission, LevelTask Root, ResourceRegistry Resources) LoadMissionFour()
     {

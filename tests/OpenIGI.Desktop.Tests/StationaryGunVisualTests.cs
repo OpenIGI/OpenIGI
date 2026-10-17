@@ -4,6 +4,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Presentation.Igi1;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -31,6 +32,6 @@ public sealed class StationaryGunVisualTests
         WeaponType carried = new() { ScriptId = "WEAPON_ID_MP5SD" };
         WeaponType stationary = new() { ScriptId = "WEAPON_ID_M2HB" };
 
-        Assert.Same(carried, SoldierRenderer.WeaponForDrop(carried, stationary));
+        Assert.Same(carried, SoldierSimulation.WeaponForDrop(carried, stationary));
     }
 }

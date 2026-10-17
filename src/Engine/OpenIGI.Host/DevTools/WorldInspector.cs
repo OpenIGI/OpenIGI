@@ -285,7 +285,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
     private void AddSoldiers(List<InspectableEntity> into, string needle, Vector3d eye)
     {
         _inspectorSoldiers.Clear();
-        game.Soldiers?.Snapshot(_inspectorSoldiers);
+        game.Soldiers?.Simulation.Snapshot(_inspectorSoldiers);
 
         for (int i = 0; i < _inspectorSoldiers.Count; i++)
         {

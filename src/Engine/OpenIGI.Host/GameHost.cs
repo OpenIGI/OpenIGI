@@ -367,7 +367,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
         if (_soldiers is { } soldiers)
         {
-            foreach (HumanOccupant occupant in soldiers.LiveOccupants())
+            foreach (HumanOccupant occupant in soldiers.Simulation.LiveOccupants())
             {
                 if (!occupant.IsDead)
                 {
@@ -2327,7 +2327,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     }
                     else
                     {
-                        bodies.HidePlayerBody();
+                        bodies.Simulation.HidePlayerBody();
                     }
                 }
 
@@ -2337,7 +2337,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 if (_entry.Phase == MissionEntryPhase.Done)
                 {
                     _entry.Reset();
-                    _soldiers?.HidePlayerBody();
+                    _soldiers?.Simulation.HidePlayerBody();
                     ApplyGameplayMotionBlur();
                     ReportWatchedFramePassesIn(1);
 
@@ -3113,19 +3113,19 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 // During an authored cinematic the area occupant is the cutscene camera rather than the
                 // stationary player body; a diagnostic free camera must not impersonate a player that exists
                 // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
-                _mission.Objectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
+                _mission.Objectives?.SetSoldierOccupants(_soldiers?.Simulation.Occupants() ?? []);
                 Vector3d? areaCutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
                 Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
                 _mission.Objectives?.SetLevelStateInputs(
                     AreaActivationOccupant(_player?.Body.Origin, areaCutsceneView, areaFreeView),
-                    _soldiers?.PlayerTeam ?? 0,
+                    _soldiers?.Simulation.PlayerTeam ?? 0,
                     AreaActivationExtraOccupant(_player?.Body.Origin, areaCutsceneView),
                     playerAlive: !_playerDead);
                 _playerTicked = false;
                 _interactionsTickedByPlayer = false;
                 if (_soldiersInWalk)
                 {
-                    _soldiers?.BeginTick(_soldierEnemy ??= SoldierEnemyNow);
+                    _soldiers?.Simulation.BeginTick(_soldierEnemy ??= SoldierEnemyNow);
                 }
 
                 _mission.Cutscenes?.Tick();
@@ -3187,7 +3187,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     // silenced weapons no longer wake the whole 30-metre neighbourhood.
                     if (_player.FiredThisTick && _player.HeldWeaponType is { } audibleWeapon)
                     {
-                        _soldiers?.NotifyGunshot(_player.Body.Eye, audibleWeapon.AiDetectionRange);
+                        _soldiers?.Simulation.NotifyGunshot(_player.Body.Eye, audibleWeapon.AiDetectionRange);
                     }
 
                     // And the sound of it. Driven every tick rather than only on the ones that fire,
@@ -3252,7 +3252,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         // starts hunting.
                         if (!_player.IsCrouched)
                         {
-                            _soldiers?.NotifyWalk(
+                            _soldiers?.Simulation.NotifyWalk(
                                 step.PositionInUnits, _player.Body.Position, step.HearingRadiusInUnits);
                         }
                     }
@@ -3373,7 +3373,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     _logger.Information(
                         "Weapon",
                         $"Hit a guard in zone {_player.LastHumanZone} "
-                            + $"({state.ReportedHumanHits} hit(s), {_soldiers?.Killed ?? 0} killed).");
+                            + $"({state.ReportedHumanHits} hit(s), {_soldiers?.Simulation.Killed ?? 0} killed).");
                 }
             }
 
@@ -3447,8 +3447,8 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                         watchedFeet,
                         crouching,
                         targetAlive: !_playerDead,
-                        playerOnCamerasSide: (_soldiers?.PlayerTeam ?? 0) == 1,
-                        _soldiers?.CameraSubjects() ?? []);
+                        playerOnCamerasSide: (_soldiers?.Simulation.PlayerTeam ?? 0) == 1,
+                        _soldiers?.Simulation.CameraSubjects() ?? []);
                     if (_worldSolids is { } cameraSolids)
                     {
                         foreach (SecurityCamera camera in cameras.Cameras)
@@ -3541,7 +3541,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     {
                         case LadderStepResult.SteppingUp:
                         case LadderStepResult.SteppingDown:
-                            _soldiers?.SetPlayerLadderPlaybackDirection(_player.LadderDirection);
+                            _soldiers?.Simulation.SetPlayerLadderPlaybackDirection(_player.LadderDirection);
                             break;
 
                         case LadderStepResult.ReachedTop:
@@ -3569,7 +3569,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                                 if (rungBoundary)
                                 {
                                     _player.CompleteLadderStep();
-                                    _soldiers.SetPlayerLadderPlaybackDirection(0);
+                                    _soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
                                 }
 
                                 break;
@@ -3656,7 +3656,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     {
                         // The gun's sight sits just in front of the gunner's own chest, and retail draws
                         // no body in that view (captured in mission 4: barrel, stand and scenery only).
-                        _soldiers?.HidePlayerBodyClimbing();
+                        _soldiers?.Simulation.HidePlayerBodyClimbing();
                     }
                     else if (_soldiers is not null)
                     {
@@ -3670,7 +3670,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                             interacting.InteractionFeet, interacting.InteractionFacing);
                     }
 
-                    Vector3d interactionCameraFeet = _soldiers?.PlayerInteractionCameraFeet(
+                    Vector3d interactionCameraFeet = _soldiers?.Simulation.PlayerInteractionCameraFeet(
                         interacting.InteractionFeet) ?? interacting.InteractionFeet;
 
                     // State 33 is the one interaction that keeps a first-person camera: the gun hands
@@ -3708,7 +3708,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                 if ((_player is null || (!_player.IsOnLadder && !_player.IsInWorldInteraction))
                     && (state.ClimbActive || state.WorldInteractionActive || state.InteractionCamera.IsActive))
                 {
-                    _soldiers?.HidePlayerBodyClimbing();
+                    _soldiers?.Simulation.HidePlayerBodyClimbing();
                     state.InteractionCamera.Reset();
                     state.ClimbActive = false;
                     state.WorldInteractionActive = false;
@@ -3770,7 +3770,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     }
                     else
                     {
-                        followedBody.HidePlayerBodyFollowing();
+                        followedBody.Simulation.HidePlayerBodyFollowing();
                     }
                 }
 
@@ -4090,7 +4090,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
                     WriteLightingDump(lightingDumpPath);
                 }
 
-                _soldiers?.LogAiSummary();
+                _soldiers?.Simulation.LogAiSummary();
                 state.Running = false;
             }
 

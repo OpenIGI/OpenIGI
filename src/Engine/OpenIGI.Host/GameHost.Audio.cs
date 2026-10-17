@@ -966,14 +966,14 @@ internal sealed partial class GameHost
 
         foreach (Vector3d origin in _player.Grenades.Thrown)
         {
-            _soldiers.NotifyGrenadeThrown(origin);
+            _soldiers.Simulation.NotifyGrenadeThrown(origin);
         }
 
         _player.Grenades.ClearThrownEvents();
 
         foreach (Vector3d origin in _player.Grenades.Bounces)
         {
-            _soldiers.NotifyGrenadeLand(origin);
+            _soldiers.Simulation.NotifyGrenadeLand(origin);
         }
 
         // IGI1's proximity task emits proxy_arm on the first human entering its activation radius.
@@ -989,12 +989,12 @@ internal sealed partial class GameHost
         {
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
-                _soldiers.NotifyFlashbang(blast.Position, blast.RadiusUnits);
+                _soldiers.Simulation.NotifyFlashbang(blast.Position, blast.RadiusUnits);
             }
             else
             {
                 // The AI hears a grenade over 10 m and a mine over 25 m, however big the blast.
-                _soldiers.NotifyExplosion(
+                _soldiers.Simulation.NotifyExplosion(
                     blast.Position,
                     blast.IsProximityMine
                         ? AiSoldier.LargeExplosionEventRadiusInUnits
@@ -1004,16 +1004,16 @@ internal sealed partial class GameHost
 
         foreach (MissileDetonation blast in _player.Missiles.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
+            _soldiers.Simulation.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
         foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
+            _soldiers.Simulation.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
 
         foreach (M203Detonation blast in _player.M203.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+            _soldiers.Simulation.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
     }
 
@@ -1304,7 +1304,7 @@ internal sealed partial class GameHost
         _sounds?.PlayDefinition(sound, position, priority: 90);
         // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
         // at presentation time as the other world blasts, including after an authored delay.
-        _soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
+        _soldiers?.Simulation.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
         _impactParticles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(
@@ -1502,7 +1502,7 @@ internal sealed partial class GameHost
             // GlassShatter_Sound is a world noise. The existing retail ground-impact route is the
             // matching AI event used for non-human world contacts; it also keeps a pane behind a wall
             // from becoming a global alert.
-            _soldiers?.NotifyGroundImpact(
+            _soldiers?.Simulation.NotifyGroundImpact(
                 impactUnits ?? item.PositionUnits,
                 _player?.Body.Position ?? item.PositionUnits);
             _logger.Information("World", $"{item.TypeName} at {item.PositionUnits} shattered.");
@@ -1558,7 +1558,7 @@ internal sealed partial class GameHost
         _impactParticles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
-        _soldiers?.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
+        _soldiers?.Simulation.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
         _soldiers?.ApplyExplosion(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
         HandleDestructibleBlast(blast.Source, position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
         DamageAlarmSpeakers(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
@@ -1606,7 +1606,7 @@ internal sealed partial class GameHost
         _impactParticles?.SpawnRetailExplosion(
             item.PositionUnits,
             new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
-        _soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
+        _soldiers?.Simulation.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
 
         // Explosion0 (0x47F200) hands its message -- the damage, the shove and the shake -- to every human
         // only when its damage is not 0. A wooden window authors 0: it splinters, and nobody is hurt.

@@ -29,7 +29,7 @@ public sealed class AiPerceptionRetailIntegrationTests
         for (int level = 1; level <= 14; level++)
         {
             using Fixture fixture = Fixture.Load(level);
-            AiSoldier? soldier = fixture.Renderer.BrainsForTesting.FirstOrDefault(brain => brain.PlayerIsEnemy);
+            AiSoldier? soldier = fixture.Renderer.Simulation.BrainsForTesting.FirstOrDefault(brain => brain.PlayerIsEnemy);
             if (soldier is null)
             {
                 failures.Add($"Level {level} has no hostile live brain");
@@ -37,7 +37,7 @@ public sealed class AiPerceptionRetailIntegrationTests
             }
 
             // The eye follows the body only while the soldier is drawn close up (see the next test).
-            fixture.Renderer.ObserveAllForTesting();
+            fixture.Renderer.Simulation.ObserveAllForTesting();
 
             // AiEyeSnapshot converts world deltas into local eye space with delta * orientation.
             // Therefore a local +Y target is transformed back to world space with the transpose.
@@ -80,7 +80,7 @@ public sealed class AiPerceptionRetailIntegrationTests
     public void AnUndrawnGuardLooksAlongTheRestPoseNotItsBody()
     {
         using Fixture fixture = Fixture.Load(1);
-        AiSoldier soldier = fixture.Renderer.BrainsForTesting.First(brain =>
+        AiSoldier soldier = fixture.Renderer.Simulation.BrainsForTesting.First(brain =>
             brain.PlayerIsEnemy && Math.Abs(Math.Sin(brain.Facing)) > 0.9);
 
         // Five metres along the body's own forward: to the side of the rest-pose eye, so out of its cone.
@@ -99,7 +99,7 @@ public sealed class AiPerceptionRetailIntegrationTests
         Assert.True(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye missed its rest direction");
 
         // Once drawn close up, the eye follows the body.
-        fixture.Renderer.ObserveAllForTesting();
+        fixture.Renderer.Simulation.ObserveAllForTesting();
         Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "a drawn guard's eye did not follow its body");
     }
 
@@ -132,7 +132,7 @@ public sealed class AiPerceptionRetailIntegrationTests
             SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
             Assert.True(renderer.Load(mission, root) > 0, $"Level {level} loaded no soldiers");
             Assert.True(
-                renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0,
+                renderer.Simulation.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0,
                 $"Level {level} created no AI brains");
             return new Fixture(renderer);
         }

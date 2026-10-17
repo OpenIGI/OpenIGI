@@ -49,7 +49,7 @@ public sealed class LevelFourWindowDetectionTests
             fixture.Renderer.Tick(new Vector3d(0.0, 0.0, 0.0), enemyAlive: false);
         }
 
-        fixture.Renderer.ObserveAllForTesting();
+        fixture.Renderer.Simulation.ObserveAllForTesting();
         Vector3d liveEye = fixture.Gunner.EyePosition();
         // Measured on the retail game (probe, mission 4, soldier 432): its eye stands at z 175486207, 0.42 m
         // under its authored floor plus 1.29 m -- the idle AI stands at its node's height, not the floor's.
@@ -146,7 +146,7 @@ public sealed class LevelFourWindowDetectionTests
                 }
             }
 
-            Assert.True(renderer.Animate(
+            Assert.True(renderer.Simulation.Animate(
                 graphs,
                 sight: world,
                 scripts: resources,
@@ -156,7 +156,7 @@ public sealed class LevelFourWindowDetectionTests
                 difficulty: difficulty,
                 variables: loop.Variables) > 0);
 
-            AiSoldier gunner = Assert.Single(renderer.BrainsForTesting, brain =>
+            AiSoldier gunner = Assert.Single(renderer.Simulation.BrainsForTesting, brain =>
                 Math.Abs(brain.Position.X - GunnerFeet.X) < Metre
                 && Math.Abs(brain.Position.Y - GunnerFeet.Y) < Metre);
             return new Fixture(renderer, solids, gunner);

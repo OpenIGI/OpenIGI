@@ -127,9 +127,9 @@ public sealed class AiHearingTests
 
             SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
             Assert.Equal(2, renderer.Load(mission, testTree.Root));
-            Assert.Equal(2, renderer.Animate(new Dictionary<int, GraphFile>()));
+            Assert.Equal(2, renderer.Simulation.Animate(new Dictionary<int, GraphFile>()));
 
-            AiSoldier[] brains = [.. renderer.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
+            AiSoldier[] brains = [.. renderer.Simulation.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
             return new PublisherFixture(renderer, brains[0], brains[1], struck.Position);
         }
 

@@ -2,11 +2,12 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Desktop.Tests;
 
 /// <summary>
-/// The binocular detector's line-of-sight probe (<see cref="SoldierRenderer.HasLineOfSight"/>) must
+/// The binocular detector's line-of-sight probe (<see cref="SoldierSimulation.HasLineOfSight"/>) must
 /// step past see-through surfaces so a chain-link fence does not hide the solid wall behind it.
 /// </summary>
 public sealed class BinocularLineOfSightTests
@@ -45,38 +46,38 @@ public sealed class BinocularLineOfSightTests
     [Fact]
     public void ClearRayReachesTheTarget()
     {
-        Assert.True(SoldierRenderer.HasLineOfSight(Surfaces(), Eye, Target));
+        Assert.True(SoldierSimulation.HasLineOfSight(Surfaces(), Eye, Target));
     }
 
     [Fact]
     public void SolidWallBlocksTheView()
     {
-        Assert.False(SoldierRenderer.HasLineOfSight(Surfaces((400d, Concrete)), Eye, Target));
+        Assert.False(SoldierSimulation.HasLineOfSight(Surfaces((400d, Concrete)), Eye, Target));
     }
 
     [Fact]
     public void GuardBehindAFenceStaysVisible()
     {
-        Assert.True(SoldierRenderer.HasLineOfSight(Surfaces((300d, Fence)), Eye, Target));
+        Assert.True(SoldierSimulation.HasLineOfSight(Surfaces((300d, Fence)), Eye, Target));
     }
 
     [Fact]
     public void FenceInFrontOfAWallStillBlocks()
     {
         // The nearest hit is the see-through fence; the probe must step past it and find the concrete.
-        Assert.False(SoldierRenderer.HasLineOfSight(Surfaces((300d, Fence), (500d, Concrete)), Eye, Target));
+        Assert.False(SoldierSimulation.HasLineOfSight(Surfaces((300d, Fence), (500d, Concrete)), Eye, Target));
     }
 
     [Fact]
     public void StackedGlassAndFenceStayVisible()
     {
-        Assert.True(SoldierRenderer.HasLineOfSight(Surfaces((200d, Glass), (350d, Fence)), Eye, Target));
+        Assert.True(SoldierSimulation.HasLineOfSight(Surfaces((200d, Glass), (350d, Fence)), Eye, Target));
     }
 
     [Fact]
     public void TransparentTraversalLimitFailsClosedBeforeAWall()
     {
-        Assert.False(SoldierRenderer.HasLineOfSight(
+        Assert.False(SoldierSimulation.HasLineOfSight(
             Surfaces(
                 (100d, Glass), (200d, Glass), (300d, Glass), (400d, Glass),
                 (500d, Glass), (600d, Glass), (700d, Glass), (800d, Glass),
@@ -88,7 +89,7 @@ public sealed class BinocularLineOfSightTests
     [Fact]
     public void TransparentTraversalLimitAcceptsAProvenClearRemainder()
     {
-        Assert.True(SoldierRenderer.HasLineOfSight(
+        Assert.True(SoldierSimulation.HasLineOfSight(
             Surfaces(
                 (100d, Glass), (200d, Glass), (300d, Glass), (400d, Glass),
                 (500d, Glass), (600d, Glass), (700d, Glass), (800d, Glass)),
