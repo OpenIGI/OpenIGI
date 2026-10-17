@@ -1004,7 +1004,7 @@ public sealed class SoldierRenderer : IDisposable
                     Matrix4f mv = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
                     BonePose pose = view.Pose();
                     string eye = HumanAttachPoints.AiEye < pose.BoneCount ? pose.Positions[HumanAttachPoints.AiEye].ToString() : "-";
-                    return $"lowestZ={group.LowestVertexZ:0.000} eyeOffset={eye} viewZ={view.Position.Z / 4096.0:0.000} drawnZ={member.DrawnWhere.Z:0.000} " +
+                    return $"lowestZ={group.Body.LowestVertexZ:0.000} eyeOffset={eye} viewZ={view.Position.Z / 4096.0:0.000} drawnZ={member.DrawnWhere.Z:0.000} " +
                         $"cam={camera.Position} viewPos=({mv.M41:0.0},{mv.M42:0.0},{mv.M43:0.0})";
                 }
             }
@@ -1165,7 +1165,7 @@ public sealed class SoldierRenderer : IDisposable
             Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
             group.Geometry.Vertices.CopyTo(initialSkin, 0);
             bool initialSkinReady = false;
-            if (group.Model is { } skinModel)
+            if (group.Body.Model is { } skinModel)
             {
                 try
                 {
@@ -1215,7 +1215,7 @@ public sealed class SoldierRenderer : IDisposable
                 SkinnedPose = initialSkinReady ? initialPose : null,
                 PreviousSkinnedPose = initialSkinReady ? initialPose : null,
             });
-            if (group.Model is { NativeMarkerBound: > 0f } model
+            if (group.Body.Model is { NativeMarkerBound: > 0f } model
                 && float.IsFinite(model.NativeMarkerBound))
             {
                 _detectorMarkerScaleMetres[view] =
@@ -1251,7 +1251,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             try
             {
-                if (group.CollisionMesh is not null)
+                if (group.Body.CollisionMesh is not null)
                 {
                     collisionMeshes++;
                 }
@@ -1261,12 +1261,12 @@ public sealed class SoldierRenderer : IDisposable
                 _logger.Warning(LogCategory, $"A soldier collision mesh was not usable: {ex.Message}");
             }
 
-            if (!GameplayCVars.Ragdoll.Value || group.Model is null || group.Soldiers.Count == 0)
+            if (!GameplayCVars.Ragdoll.Value || group.Body.Model is null || group.Soldiers.Count == 0)
             {
                 continue;
             }
 
-            if (RagdollRigFor(group.Soldiers[0].Agent.View.Bones.Set, group.Model) is not null)
+            if (RagdollRigFor(group.Soldiers[0].Agent.View.Bones.Set, group.Body.Model) is not null)
             {
                 ragdollRigs++;
             }
@@ -1325,7 +1325,7 @@ public sealed class SoldierRenderer : IDisposable
 
         foreach (Group group in _groups)
         {
-            if (group.CollisionMesh is not { } mesh)
+            if (group.Body.CollisionMesh is not { } mesh)
             {
                 continue;
             }
@@ -1512,7 +1512,7 @@ public sealed class SoldierRenderer : IDisposable
         return new Vector3d(
             declared.X / WorldScene.UnitsPerMetre,
             declared.Y / WorldScene.UnitsPerMetre,
-            (groundZ / WorldScene.UnitsPerMetre) - group.LowestVertexZ);
+            (groundZ / WorldScene.UnitsPerMetre) - group.Body.LowestVertexZ);
     }
 
     /// <summary>The collision surface under a point, in world units — placed objects first, terrain second.</summary>
@@ -2758,7 +2758,7 @@ public sealed class SoldierRenderer : IDisposable
             {
                 if (ReferenceEquals(member.Agent.View, view))
                 {
-                    return group.Model;
+                    return group.Body.Model;
                 }
             }
         }
@@ -3255,7 +3255,7 @@ public sealed class SoldierRenderer : IDisposable
         Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
         group.Geometry.Vertices.CopyTo(initialSkin, 0);
         bool initialSkinReady = false;
-        if (group.Model is { } skinModel)
+        if (group.Body.Model is { } skinModel)
         {
             try
             {
@@ -3355,7 +3355,7 @@ public sealed class SoldierRenderer : IDisposable
                 // lowest vertex -- as IGI.exe's Human+32 stands above them. Adding it to the feet put the
                 // eye at waist height, below every parapet a guard looks over.
                 Vector3f eye = pose.Positions[HumanAttachPoints.AiEye];
-                double originLift = FindGroup(view) is { } group ? -group.LowestVertexZ * WorldScene.UnitsPerMetre : 0.0;
+                double originLift = FindGroup(view) is { } group ? -group.Body.LowestVertexZ * WorldScene.UnitsPerMetre : 0.0;
                 return new Vector3d(
                     view.Position.X + eye.X,
                     view.Position.Y + eye.Y,
@@ -3769,7 +3769,7 @@ public sealed class SoldierRenderer : IDisposable
         // and the second pose the between-tick blend draws against.
         foreach (Group group in _groups)
         {
-            if (group.Model is null)
+            if (group.Body.Model is null)
             {
                 continue;
             }
@@ -3802,7 +3802,7 @@ public sealed class SoldierRenderer : IDisposable
                 try
                 {
                     MefSkinner.Skin(
-                        group.Model,
+                        group.Body.Model,
                         drawn,
                         (float)(1.0 / WorldScene.UnitsPerMetre),
                         skinned);
@@ -4924,7 +4924,7 @@ public sealed class SoldierRenderer : IDisposable
         Vector3d origin, Vector3d end, Vector3d playerFeetUnits, float playerYaw, out HumanHit hit)
     {
         hit = default;
-        if (_playerBodyView is not { } view || _playerBodyGroup?.CollisionMesh is not { } mesh)
+        if (_playerBodyView is not { } view || _playerBodyGroup?.Body.CollisionMesh is not { } mesh)
         {
             return false;
         }
@@ -4955,7 +4955,7 @@ public sealed class SoldierRenderer : IDisposable
         out IReadOnlyList<HumanBodyCrossing> crossings)
     {
         crossings = [];
-        if (_playerBodyView is not { } view || _playerBodyGroup?.CollisionMesh is not { } mesh)
+        if (_playerBodyView is not { } view || _playerBodyGroup?.Body.CollisionMesh is not { } mesh)
         {
             return false;
         }
@@ -5025,16 +5025,16 @@ public sealed class SoldierRenderer : IDisposable
         // data as the mission soldiers so the first hostile hit cannot trigger a synchronous parse/build.
         try
         {
-            _ = group.CollisionMesh;
+            _ = group.Body.CollisionMesh;
         }
         catch (PackFormatException ex)
         {
             _logger.Warning(LogCategory, $"The player collision mesh was not usable: {ex.Message}");
         }
 
-        if (GameplayCVars.Ragdoll.Value && group.Model is not null)
+        if (GameplayCVars.Ragdoll.Value && group.Body.Model is not null)
         {
-            _ = RagdollRigFor(set, group.Model);
+            _ = RagdollRigFor(set, group.Body.Model);
         }
 
         MeshHandle own;
@@ -5106,7 +5106,7 @@ public sealed class SoldierRenderer : IDisposable
             travel,
             category,
             velocity,
-            _playerBodyGroup?.Model,
+            _playerBodyGroup?.Body.Model,
             weapon: null);
 
         // A death is a cut, not a movement: the body appears where the player fell, and nothing on
@@ -5140,7 +5140,7 @@ public sealed class SoldierRenderer : IDisposable
         if (!_playerBodyActive
             || _playerBodyView is null
             || _playerBodyMember is null
-            || _playerBodyGroup?.Model is not { } model)
+            || _playerBodyGroup?.Body.Model is not { } model)
         {
             return;
         }
@@ -5237,7 +5237,7 @@ public sealed class SoldierRenderer : IDisposable
         // across the world and, from the camera, a flash over the whole screen. The visibility flag is
         // therefore only raised AFTER a successful skin: until the body has a pose it is not drawn.
         bool posed = !appearing;
-        if ((appearing || _playerBodySkinTick != _tick) && _playerBodyGroup?.Model is { } model)
+        if ((appearing || _playerBodySkinTick != _tick) && _playerBodyGroup?.Body.Model is { } model)
         {
             view.Tick();
             ReskinPlayerBody(view, model);
@@ -5367,7 +5367,7 @@ public sealed class SoldierRenderer : IDisposable
         // in it, so the first skin is not optional: without it the body's very first drawn frame is a rig
         // splayed across the world. Once per simulation tick after that.
         bool posed = !appearing;
-        if ((appearing || _playerBodySkinTick != _tick) && _playerBodyGroup?.Model is { } model)
+        if ((appearing || _playerBodySkinTick != _tick) && _playerBodyGroup?.Body.Model is { } model)
         {
             view.Tick();
             ReskinPlayerBody(view, model);
@@ -5576,7 +5576,7 @@ public sealed class SoldierRenderer : IDisposable
         rootDelta = default;
         rungBoundary = false;
         ended = false;
-        if (_playerBodyView is not { } view || _playerBodyGroup?.Model is not { } model)
+        if (_playerBodyView is not { } view || _playerBodyGroup?.Body.Model is not { } model)
         {
             return;
         }
@@ -5613,7 +5613,7 @@ public sealed class SoldierRenderer : IDisposable
         // A newly paused rung must upload its held pose into both interpolation streams. ReskinPlayerBody's
         // pose latch permits that one duplicate upload, then suppresses further skinning until the pose moves.
         // AdvancePlayerLadderAnimation already uploads each genuinely moving tick.
-        if (_playerBodySkinTick != _tick && _playerBodyGroup?.Model is { } model)
+        if (_playerBodySkinTick != _tick && _playerBodyGroup?.Body.Model is { } model)
         {
             ReskinPlayerBody(view, model);
         }
@@ -6351,7 +6351,7 @@ public sealed class SoldierRenderer : IDisposable
                 // fall back to the cylinder-and-nearest-bone stand-in.
                 bool met;
                 HumanHit candidate;
-                if (group.CollisionMesh is { } collision)
+                if (group.Body.CollisionMesh is { } collision)
                 {
                     Vector3d centre = new(feet.X, feet.Y, feet.Z + PickChestUnits);
                     double offsetX = origin.X - centre.X;
@@ -6783,7 +6783,7 @@ public sealed class SoldierRenderer : IDisposable
                 double snappedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
                 Vector3d feet = new(soldier.Position.X, soldier.Position.Y, snappedZ);
 
-                bool met = group.CollisionMesh is { } collision
+                bool met = group.Body.CollisionMesh is { } collision
                     ? HumanHitTest.TryCastMesh(
                         origin, end, feet, facing, collision, soldier.Pose(), soldier.RootSample.Z, out HumanHit candidate)
                     : HumanHitTest.TryCast(
@@ -7028,7 +7028,7 @@ public sealed class SoldierRenderer : IDisposable
                 Vector3f facing = new(m.M12, m.M22, m.M32);
                 double snappedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
                 Vector3d feet = new(soldier.Position.X, soldier.Position.Y, snappedZ);
-                bool met = group.CollisionMesh is { } collision
+                bool met = group.Body.CollisionMesh is { } collision
                     ? HumanHitTest.TryCastMesh(
                         origin, end, feet, facing, collision, soldier.Pose(), soldier.RootSample.Z, out HumanHit candidate)
                     : HumanHitTest.TryCast(
@@ -7132,7 +7132,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        return new Group(geometry, mesh, instance, pack, lowest) { Model = model };
+        return new Group(new SoldierBodyModel(model, lowest), geometry, mesh, instance, pack);
     }
 
     private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)
@@ -7198,8 +7198,11 @@ public sealed class SoldierRenderer : IDisposable
         Count = 0;
     }
 
-    private sealed class Group(MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack, float lowestVertexZ)
+    private sealed class Group(SoldierBodyModel body, MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
     {
+        /// <summary>What the simulation reads of the group's model: the model, its collision mesh and its lowest vertex.</summary>
+        public SoldierBodyModel Body { get; } = body;
+
         public MeshGeometry Geometry { get; } = geometry;
 
         public MeshHandle Mesh { get; set; } = mesh;
@@ -7208,36 +7211,7 @@ public sealed class SoldierRenderer : IDisposable
 
         public LoadedPack? Pack { get; } = pack;
 
-        public float LowestVertexZ { get; } = lowestVertexZ;
-
         public List<Member> Soldiers { get; } = [];
-
-        /// <summary>The model every soldier in the group draws, kept so the group can be re-skinned each tick.</summary>
-        public MefModel? Model { get; set; }
-
-        private MefCollisionMesh? _collisionMesh;
-        private bool _collisionMeshRead;
-
-        /// <summary>The model's skinned collision mesh, read once — the geometry a round is scored against.</summary>
-        public MefCollisionMesh? CollisionMesh
-        {
-            get
-            {
-                if (!_collisionMeshRead)
-                {
-                    _collisionMeshRead = true;
-                    if (Model is not null && MefCollisionMesh.TryRead(Model.Container, out MefCollisionMesh? read))
-                    {
-                        _collisionMesh = read;
-                    }
-                }
-
-                return _collisionMesh;
-            }
-        }
-
-        /// <summary>Whether the one-time collision-chunk read has already happened.</summary>
-        public bool CollisionMeshPrepared => _collisionMeshRead;
     }
 
     /// <summary>

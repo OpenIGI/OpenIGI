@@ -642,9 +642,7 @@ public sealed class SoldierRendererHitscanTests
         foreach (object group in Assert.IsAssignableFrom<IEnumerable>(GroupsField.GetValue(scenario.Renderer)))
         {
             groups++;
-            bool wasPrepared = Assert.IsType<bool>(group.GetType()
-                .GetProperty("CollisionMeshPrepared", BindingFlags.Instance | BindingFlags.Public)!
-                .GetValue(group));
+            bool wasPrepared = Get<bool>(group, "CollisionMeshPrepared");
             prepared += wasPrepared ? 1 : 0;
         }
 
@@ -1046,9 +1044,8 @@ public sealed class SoldierRendererHitscanTests
     {
         foreach (object group in Assert.IsAssignableFrom<IEnumerable>(GroupsField.GetValue(renderer)))
         {
-            object? candidate = group.GetType()
-                .GetProperty("CollisionMesh", BindingFlags.Instance | BindingFlags.Public)!
-                .GetValue(group);
+            (object owner, PropertyInfo collision) = Find(group, "CollisionMesh");
+            object? candidate = collision.GetValue(owner);
             if (candidate is not MefCollisionMesh mesh)
             {
                 continue;
@@ -1128,7 +1125,8 @@ public sealed class SoldierRendererHitscanTests
         info.SetValue(owner, value);
     }
 
-    // A renderer's soldier holds its drawing state itself and its simulation state on its Agent.
+    // A renderer's soldier holds its drawing state itself and its simulation state on its Agent; a group holds its
+    // model's CPU data on its Body.
     private static (object Owner, PropertyInfo Property) Find(object instance, string property)
     {
         const BindingFlags Public = BindingFlags.Instance | BindingFlags.Public;
@@ -1137,17 +1135,24 @@ public sealed class SoldierRendererHitscanTests
             return (instance, own);
         }
 
-        object agent = instance.GetType().GetProperty("Agent", Public)!.GetValue(instance)!;
-        return (agent, agent.GetType().GetProperty(property, Public)!);
+        foreach (string part in (string[])["Agent", "Body"])
+        {
+            if (instance.GetType().GetProperty(part, Public)?.GetValue(instance) is { } inner
+                && inner.GetType().GetProperty(property, Public) is { } found)
+            {
+                return (inner, found);
+            }
+        }
+
+        throw new InvalidOperationException($"{instance.GetType().Name} has no property {property}.");
     }
 
     private static IEnumerable<(SoldierView View, MefCollisionMesh Mesh)> MeshBackedSoldiers(SoldierRenderer renderer)
     {
         foreach (object group in Assert.IsAssignableFrom<IEnumerable>(GroupsField.GetValue(renderer)))
         {
-            object? candidate = group.GetType()
-                .GetProperty("CollisionMesh", BindingFlags.Instance | BindingFlags.Public)!
-                .GetValue(group);
+            (object owner, PropertyInfo collision) = Find(group, "CollisionMesh");
+            object? candidate = collision.GetValue(owner);
             if (candidate is not MefCollisionMesh mesh)
             {
                 continue;
