@@ -1061,7 +1061,7 @@ internal sealed partial class GameHost
             // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
             _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+            _soldiers?.Simulation.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
             // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
             // Do not post it again here: leaving a second record behind makes a guard react twice to
             // one retail blast, with the duplicate consumed on the following tick.
@@ -1132,7 +1132,7 @@ internal sealed partial class GameHost
         _sounds?.PlayDefinition("explo_03_l", blast.Position, priority: 90);
         SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
         ScorchSurface(blast.Position, blast.Normal, MissileScorchHalfWidthInUnits);
-        _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        _soldiers?.Simulation.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
         // Launcher impacts use Explosion0's full collision envelope, then the speaker pass for alarms.
         // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
         // which is what lets a LAW rocket -- and nothing else -- blow a car up.
@@ -1238,7 +1238,7 @@ internal sealed partial class GameHost
             _sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
             ScorchSurface(blast.Position, blast.Normal, M203ScorchHalfWidthInUnits);
-            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+            _soldiers?.Simulation.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
             // Match the native explosion callback: visit every visible destructible in the blast
             // envelope, then handle alarms separately.
             HandleDestructibleBlast(
@@ -1318,7 +1318,7 @@ internal sealed partial class GameHost
         }
 
         float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
-        _soldiers?.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
+        _soldiers?.Simulation.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
         HandleDestructibleBlast(
             source: null,
             originUnits: position,
@@ -1559,7 +1559,7 @@ internal sealed partial class GameHost
             position,
             new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
         _soldiers?.Simulation.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
-        _soldiers?.ApplyExplosion(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        _soldiers?.Simulation.ApplyExplosion(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
         HandleDestructibleBlast(blast.Source, position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
         DamageAlarmSpeakers(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
 
@@ -1617,7 +1617,7 @@ internal sealed partial class GameHost
         }
 
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
-        _soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
+        _soldiers?.Simulation.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
 
         if (_player is not null && !_playerHealth.IsDead)
         {

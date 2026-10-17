@@ -51,7 +51,7 @@ public sealed class AiHearingTests
     {
         using PublisherFixture fixture = PublisherFixture.Create();
 
-        fixture.Renderer.ApplyExplosion(
+        fixture.Renderer.Simulation.ApplyExplosion(
             fixture.StruckBrain.Position,
             radiusUnits: 5 * (float)Metre,
             falloffUnits: 0f,

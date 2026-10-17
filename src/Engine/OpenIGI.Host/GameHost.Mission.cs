@@ -1646,7 +1646,7 @@ internal sealed partial class GameHost
                     // takes it. True when a soldier consumed the round; false when it flew past them all.
                     bool SoldiersTakeTheRound()
                         => _soldiers is not null
-                            && _soldiers.TryShootAiRound(
+                            && _soldiers.Simulation.TryShootAiRound(
                                 from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
 
                     // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
