@@ -717,6 +717,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _pacing = new Diagnostics.PresentationPacingProbe(logger);
         _memory = new Services.MemoryDiagnostics(device, logger);
         _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
+        _switch = new RendererSwitchService(device, logger);
     }
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>

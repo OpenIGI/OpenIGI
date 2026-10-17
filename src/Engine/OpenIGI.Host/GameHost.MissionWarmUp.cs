@@ -716,7 +716,7 @@ public sealed partial class GameHost
         }
 
         _loadSequence.Update(elapsed, ready: _loadSequence.Loaded && !_warmUp.IsActive);
-        AdvanceResumeHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
+        _switch.AdvanceHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
 
         if (!_loadSequence.IsActive || !ShowsLoadingPanel)
         {
@@ -772,7 +772,7 @@ public sealed partial class GameHost
     private void PaintLoadingScreen(SpriteBatch batch)
     {
         // After a switch of renderer the other renderer's picture stands in for the whole screen.
-        if (PaintResumeFrame())
+        if (_switch.PaintResumeFrame(_window.Width, _window.Height))
         {
             return;
         }
