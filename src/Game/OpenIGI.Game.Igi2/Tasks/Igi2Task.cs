@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.Igi2;
 
@@ -18,9 +19,31 @@ namespace OpenIGI.Game.Igi2;
 /// A parameter list is inherited only where the original derives one (<c>ParameterList_Derive</c>); such a class carries
 /// <see cref="DerivedScriptParametersAttribute"/>.
 /// </para>
+/// <para>
+/// It is a <see cref="TickedTask"/>, the shared base, so the shared level run reaches it as it reaches any typed task; its run
+/// handler takes I.G.I. 2's run, whose script functions, cutscene camera and sector portals the title's handlers read.
+/// </para>
 /// </remarks>
-public abstract class Igi2Task : GameTask
+public abstract class Igi2Task : TickedTask
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// In I.G.I. 2's own level run the task's run handler runs, reading that run's state. Any other title's run sees it as it
+    /// sees a type it has no class for, a container whose children it walks: the host still walks an I.G.I. 2 level with the
+    /// first game's cutscene runtime, which finds nothing of its own in it.
+    /// </remarks>
+    public sealed override void Run(LevelRun level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if (level is Igi2LevelRun own)
+        {
+            Run(own);
+            return;
+        }
+
+        level.RunChildren(this);
+    }
+
     /// <summary>Runs the task one tick: its run handler (event 1).</summary>
     /// <param name="level">The level it runs in.</param>
     /// <remarks>

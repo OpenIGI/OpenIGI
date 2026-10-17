@@ -495,19 +495,19 @@ public sealed class MissionObjectiveRuntime
         _playerSource = player;
         foreach (AreaActivation area in _areaActivations)
         {
-            walker.Register(area.Task, task =>
+            walker.Bind(area.Task, task =>
             {
                 UpdateArea(area);
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
             });
         }
 
         foreach (EditVariable edit in _editVariables)
         {
-            walker.Register(edit.Task, task =>
+            walker.Bind(edit.Task, task =>
             {
                 UpdateEdit(edit);
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
             });
         }
 
@@ -518,10 +518,10 @@ public sealed class MissionObjectiveRuntime
             if (message.Task is { } owner)
             {
                 _walkedMessages.Add(message);
-                walker.Register(owner, task =>
+                walker.Bind(owner, task =>
                 {
                     UpdateMessage(message);
-                    walker.WalkChildren(task);
+                    walker.RunChildren(task);
                 });
             }
         }

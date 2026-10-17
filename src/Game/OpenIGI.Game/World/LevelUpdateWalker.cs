@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.World;
 
@@ -14,32 +15,29 @@ namespace OpenIGI.Game.World;
 /// reads this tick's state from everything before it in the tree and last tick's from everything after.
 /// </para>
 /// <para>
-/// Subsystems register the update of the tasks they own; a task nobody registered behaves as a plain
+/// It is I.G.I.'s <see cref="LevelRun"/>. Subsystems bind the update of the tasks they own; a task nobody bound behaves as a plain
 /// container and walks its children -- except <c>Static</c> and <c>Idle</c>, whose update is a no-op in the
 /// original, freezing everything beneath them, and <see cref="ConditionalContainerTask"/>, which runs its
-/// own rules (<see cref="ConditionalContainerTask.Update"/>).
+/// own rules (<see cref="ConditionalContainerTask.Update"/>). Unlike I.G.I. 2's run, the walk does not pass over a task already
+/// marked deleted.
 /// </para>
 /// </remarks>
-public sealed class LevelUpdateWalker
+public sealed class LevelUpdateWalker : LevelRun
 {
-    private readonly Dictionary<GameTask, Action<GameTask>> _updates = [];
     private readonly Dictionary<GameTask, Action<GameTask>> _deactivations = [];
+
+    /// <summary>Initializes a new instance of the <see cref="LevelUpdateWalker"/> class.</summary>
+    /// <param name="root">The level's root task.</param>
+    public LevelUpdateWalker(GameTask root)
+        : base(root)
+    {
+    }
 
     /// <summary>Gets or sets what runs when a conditional container starts or stops, after its children ran.</summary>
     public Action<ConditionalContainerTask, bool>? ContainerTransition { get; set; }
 
     /// <summary>Gets or sets a container whose run state is held rather than re-evaluated this tick.</summary>
     public Func<ConditionalContainerTask, bool>? HoldContainer { get; set; }
-
-    /// <summary>Registers a task's update. The update walks the task's children itself, through <see cref="WalkChildren"/>.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="update">Its update.</param>
-    public void Register(GameTask task, Action<GameTask> update)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        ArgumentNullException.ThrowIfNull(update);
-        _updates[task] = update;
-    }
 
     /// <summary>Registers what a task does when its conditional container takes it out of the world.</summary>
     /// <param name="task">The task.</param>
@@ -51,39 +49,18 @@ public sealed class LevelUpdateWalker
         _deactivations[task] = deactivate;
     }
 
-    /// <summary>Runs one tick: the root's children, in order.</summary>
-    /// <param name="root">The level root.</param>
-    public void Walk(GameTask root)
+    /// <summary>Runs one tick: the root's children in order, and the tick counted.</summary>
+    public void Tick()
     {
-        ArgumentNullException.ThrowIfNull(root);
-        WalkChildren(root);
+        RunChildren(Root);
+        CountTick();
     }
 
-    /// <summary>Runs a task's children in order (<c>0x488700</c>): the successor is taken before each update.</summary>
-    /// <param name="parent">The task whose children run.</param>
-    public void WalkChildren(GameTask parent)
-    {
-        ArgumentNullException.ThrowIfNull(parent);
-        GameTask? child = parent.FirstChild;
-        while (child is not null)
-        {
-            GameTask? next = child.NextSibling;
-            Update(child);
-            child = next;
-        }
-    }
-
-    /// <summary>Runs one task's update.</summary>
-    /// <param name="task">The task.</param>
-    public void Update(GameTask task)
+    /// <inheritdoc/>
+    /// <remarks>A conditional container runs its own rules; <c>Static</c> and <c>Idle</c> do nothing; anything else walks its children.</remarks>
+    protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (_updates.TryGetValue(task, out Action<GameTask>? update))
-        {
-            update(task);
-            return;
-        }
-
         if (task is ConditionalContainerTask container)
         {
             container.Update(this);
@@ -95,12 +72,13 @@ public sealed class LevelUpdateWalker
             return;
         }
 
-        WalkChildren(task);
+        RunChildren(task);
     }
 
-    /// <summary>Takes a subtree out of the world: every registered deactivation beneath a container, in order.</summary>
-    /// <param name="parent">The container whose children are deactivated.</param>
-    /// <remarks>An inner container passes it on only while it is active (<c>0x487B20</c>).</remarks>
+    /// <inheritdoc/>
+    /// <remarks>I.G.I.'s walk reaches every linked child, deleted or not.</remarks>
+    protected override bool Skips(GameTask child) => false;
+
     internal void Deactivate(GameTask parent)
     {
         for (GameTask? child = parent.FirstChild; child is not null; child = child.NextSibling)

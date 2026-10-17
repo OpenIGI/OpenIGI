@@ -61,7 +61,7 @@ public sealed class CutsceneRuntime
     private IRetailCarWorld? _retailCarWorld;
     private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
     private readonly List<RetailRayModel> _retailVehicleModels = [];
-    private readonly LevelUpdateWalker _walker = new();
+    private readonly LevelUpdateWalker _walker;
     private readonly Dictionary<GameTask, int> _lastVehicleTick = [];
     private Func<string, MagicObjectDefinition?>? _retailMagic;
     private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
@@ -316,6 +316,7 @@ public sealed class CutsceneRuntime
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         _root = levelRoot;
+        _walker = new LevelUpdateWalker(levelRoot);
         _variables = variables;
         _hostNative = native;
         _soundChanged = soundChanged;
@@ -415,17 +416,17 @@ public sealed class CutsceneRuntime
 
         foreach (TimerState timer in _timers)
         {
-            _walker.Register(timer.Task, _ => TickTimer(timer));
+            _walker.Bind(timer.Task, _ => TickTimer(timer));
         }
 
         foreach (AnimationState animation in _animations)
         {
-            _walker.Register(animation.Task, _ => TickAnimation(animation));
+            _walker.Bind(animation.Task, _ => TickAnimation(animation));
         }
 
         foreach (SoundState sound in _sounds)
         {
-            _walker.Register(sound.Task, _ => TickSound(sound));
+            _walker.Bind(sound.Task, _ => TickSound(sound));
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
@@ -433,11 +434,11 @@ public sealed class CutsceneRuntime
         {
             if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
             {
-                _walker.Register(task, TickCar);
+                _walker.Bind(task, TickCar);
             }
             else if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
             {
-                _walker.Register(task, TickHeli);
+                _walker.Bind(task, TickHeli);
             }
         }
 
@@ -458,7 +459,7 @@ public sealed class CutsceneRuntime
         {
             SceneState scene = new(cutscene, ReadShots(cutscene));
             _scenes.Add(scene);
-            _walker.Register(cutscene, _ => TickScene(scene));
+            _walker.Bind(cutscene, _ => TickScene(scene));
             _walker.RegisterDeactivation(cutscene, _ => DeactivateScene(scene));
         }
 
@@ -586,7 +587,7 @@ public sealed class CutsceneRuntime
 
             CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
             _carAis.Add(state);
-            _walker.Register(declared, _ => TickCarAi(state));
+            _walker.Bind(declared, _ => TickCarAi(state));
         }
     }
 
@@ -1407,7 +1408,7 @@ public sealed class CutsceneRuntime
 
         // One walk of the level tree in authored order: each task runs its own update where the tree puts it
         //, not grouped by type.
-        _walker.Walk(_root);
+        _walker.Tick();
         UpdateFrame();
     }
 
@@ -1420,7 +1421,7 @@ public sealed class CutsceneRuntime
     /// <summary>A LevelTimer's update (<c>0x51BE10</c>): children first, then On, Reset and the tick count.</summary>
     private void TickTimer(TimerState timer)
     {
-        _walker.WalkChildren(timer.Task);
+        _walker.RunChildren(timer.Task);
         if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
         {
             timer.Tick = 0;
@@ -1471,7 +1472,7 @@ public sealed class CutsceneRuntime
     private void TickScene(SceneState state)
     {
         CutSceneTask scene = state.Task;
-        _walker.WalkChildren(scene);
+        _walker.RunChildren(scene);
         bool wasRun = scene.IsRun;
         if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
         {
@@ -1528,7 +1529,7 @@ public sealed class CutsceneRuntime
     {
         bool run = _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
         SetSoundRun(sound, run);
-        _walker.WalkChildren(sound.Task);
+        _walker.RunChildren(sound.Task);
     }
 
     private void SetSoundRun(SoundState sound, bool run)
@@ -1578,7 +1579,7 @@ public sealed class CutsceneRuntime
 
         _lastVehicleTick[car] = SimulationTick;
         TickVehicleVision(car);
-        _walker.WalkChildren(car);
+        _walker.RunChildren(car);
         TickVehicleCombat(car);
         TickDeathZones(car);
     }
@@ -1587,7 +1588,7 @@ public sealed class CutsceneRuntime
     private void TickHeli(GameTask heli)
     {
         TickVehicleVision(heli);
-        _walker.WalkChildren(heli);
+        _walker.RunChildren(heli);
         TickVehicleCombat(heli);
         TickDeathZones(heli);
     }

@@ -60,9 +60,9 @@ public sealed class AiAlarmControlRegistry
         ArgumentNullException.ThrowIfNull(tick);
         foreach (Entry entry in _controls.Values)
         {
-            walker.Register(entry.Task, task =>
+            walker.Bind(entry.Task, task =>
             {
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
                 Tick(entry, tick());
                 ticked?.Invoke(task.Id);
             });

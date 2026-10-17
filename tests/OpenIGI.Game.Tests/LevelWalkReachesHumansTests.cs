@@ -32,10 +32,10 @@ public sealed class LevelWalkReachesHumansTests
         Assert.NotEmpty(humans);
         foreach (HumanTask human in humans)
         {
-            runtime.Walker.Register(human, task =>
+            runtime.Walker.Bind(human, task =>
             {
                 reached.Add(task);
-                runtime.Walker.WalkChildren(task);
+                runtime.Walker.RunChildren(task);
             });
         }
 

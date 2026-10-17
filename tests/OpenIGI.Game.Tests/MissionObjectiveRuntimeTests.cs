@@ -128,7 +128,7 @@ public sealed class MissionObjectiveRuntimeTests
         runtime.TickLevelState();
         Assert.Equal(1, ReadActive(loop));
 
-        new LevelUpdateWalker().Walk(loop.Tasks.Root);
+        new LevelUpdateWalker(loop.Tasks.Root).Tick();
         runtime.TickLevelState();
         Assert.Equal(2, ReadActive(loop));
 

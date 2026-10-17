@@ -3544,20 +3544,20 @@ public sealed class SoldierRenderer : IDisposable
         {
             if (soldiers.Add(view.Soldier))
             {
-                walker.Register(view.Soldier, task =>
+                walker.Bind(view.Soldier, task =>
                 {
                     TickSoldierTask(task);
-                    walker.WalkChildren(task);
+                    walker.RunChildren(task);
                 });
             }
         }
 
         foreach (GuardGeneratorTask generator in _guardGenerators.Keys)
         {
-            walker.Register(generator, task =>
+            walker.Bind(generator, task =>
             {
                 TickGuardGenerator((GuardGeneratorTask)task);
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
             });
         }
 

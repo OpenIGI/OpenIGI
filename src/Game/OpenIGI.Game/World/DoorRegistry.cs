@@ -572,9 +572,9 @@ public sealed class DoorRegistry
         ArgumentNullException.ThrowIfNull(walker);
         foreach (PlacedDoor door in _doors)
         {
-            walker.Register(door.Task, task =>
+            walker.Bind(door.Task, task =>
             {
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
                 Tick(door);
                 ticked?.Invoke(door);
             });

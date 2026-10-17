@@ -150,7 +150,7 @@ public partial class ConditionalContainerTask : ContainerTask
                 LevelUpdateWalker.Activate(this);
             }
 
-            walker.WalkChildren(this);
+            walker.RunChildren(this);
         }
         else if (IsActive)
         {

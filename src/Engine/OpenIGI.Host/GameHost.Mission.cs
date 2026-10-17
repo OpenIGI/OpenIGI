@@ -346,10 +346,10 @@ internal sealed partial class GameHost
 
         if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
         {
-            walker.Register(playerTask, task =>
+            walker.Bind(playerTask, task =>
             {
                 UpdatePlayerTask();
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
             });
             _playerInWalk = true;
         }

@@ -1,4 +1,5 @@
-using OpenIGI.Engine.Tasks;
+﻿using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Scripting.Runtime;
 
@@ -22,19 +23,13 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// (<c>RunDelayed_Run</c>, <c>0x58FDB0</c>).
 /// </para>
 /// <para>
-/// A task whose behaviour lives outside the tree, the player's, is bound to its node (<see cref="Bind"/>) and runs there,
-/// in the tree's order and under its containers' conditions.
+/// A task whose behaviour lives outside the tree, the player's, is bound to its node (<see cref="LevelRun.Bind(GameTask, Action)"/>)
+/// and runs there, in the tree's order and under its containers' conditions. The tick rate is the shared
+/// <see cref="LevelRun.Frequency"/>, <c>GAME_FREQUENCY</c>.
 /// </para>
 /// </remarks>
-public sealed class Igi2LevelRun
+public sealed class Igi2LevelRun : LevelRun
 {
-    /// <summary>The ticks a game second holds, <c>GAME_FREQUENCY</c> and <c>CutScene_nFrequency</c>.</summary>
-    public const int Frequency = 30;
-
-    /// <summary>The milliseconds a tick lasts, <c>nMilisecondsPerTick</c>.</summary>
-    public const int MillisecondsPerTick = 1000 / Frequency;
-
-    private readonly Dictionary<GameTask, Action> _bound = [];
     private readonly List<Action> _delayed = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2LevelRun"/> class.</summary>
@@ -42,8 +37,8 @@ public sealed class Igi2LevelRun
     /// <param name="natives">The namespace the level's scripts resolved against, with its tasks' variables.</param>
     /// <param name="functions">The natives the level's script text may call.</param>
     public Igi2LevelRun(GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions)
+        : base(root)
     {
-        Root = root ?? throw new ArgumentNullException(nameof(root));
         Natives = natives ?? throw new ArgumentNullException(nameof(natives));
         Functions = functions ?? throw new ArgumentNullException(nameof(functions));
         LevelFlow = root.Children.OfType<Igi2LevelFlowTask>().FirstOrDefault();
@@ -52,9 +47,6 @@ public sealed class Igi2LevelRun
 
     /// <summary>Gets the level's flow, <c>LevelFlow_ptLevelFlow</c>, whose tick switches time their presses by.</summary>
     public Igi2LevelFlowTask? LevelFlow { get; }
-
-    /// <summary>Gets the level's root task.</summary>
-    public GameTask Root { get; }
 
     /// <summary>Gets the namespace the level's expressions resolve in.</summary>
     public NativeRegistry Natives { get; }
@@ -65,27 +57,11 @@ public sealed class Igi2LevelRun
     /// <summary>Gets or sets what runs after the level's own objects under <c>Dynamic</c>, or <see langword="null"/>.</summary>
     public World.Igi2DynamicTasks? Dynamic { get; set; }
 
-    /// <summary>Gets the ticks the level has run, <c>nTicks</c>.</summary>
-    public int Ticks { get; private set; }
-
-    /// <summary>Gets the level's time, <c>nTime</c>: a tick's milliseconds for every tick run.</summary>
-    public long TimeMilliseconds { get; private set; }
-
     /// <summary>Gets a value indicating whether a cutscene ran this tick, <c>CutScene_isRunning</c>.</summary>
     public bool IsCutsceneRunning { get; private set; }
 
     /// <summary>Gets or sets a value indicating whether the cutscene break key is down, as <c>LevelFlow_GetBreakCutSceneKey</c> reads it.</summary>
     public bool IsBreakKeyDown { get; set; }
-
-    /// <summary>Binds a task whose behaviour lives outside the tree to its node.</summary>
-    /// <param name="task">The task.</param>
-    /// <param name="run">What its run handler does.</param>
-    public void Bind(GameTask task, Action run)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        ArgumentNullException.ThrowIfNull(run);
-        _bound[task] = run;
-    }
 
     /// <summary>Queues work for the delayed pass at the end of <c>Dynamic</c>'s run (<c>RunDelayed_Add</c>).</summary>
     /// <param name="work">The work.</param>
@@ -120,29 +96,20 @@ public sealed class Igi2LevelRun
         Run(Root);
     }
 
-    /// <summary>Runs one task by its run handler.</summary>
-    /// <param name="task">The task.</param>
-    public void Run(GameTask task)
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The level counts the tick after its children have run (<c>Level_LevelRunHandler</c>); <c>Dynamic</c> runs the level's
+    /// objects, then what was added after them, then the delayed pass (<c>Level_DynamicRunHandler</c>). Any other type with no
+    /// class of its own has no run handler, and the pass stops beneath it.
+    /// </remarks>
+    protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (_bound.TryGetValue(task, out Action? bound))
-        {
-            bound();
-            return;
-        }
-
-        if (task is Igi2Task typed)
-        {
-            typed.Run(this);
-            return;
-        }
-
         switch (task.Type.Name)
         {
             case EngineTaskTypes.Level:
                 RunChildren(task);
-                TimeMilliseconds += MillisecondsPerTick;
-                Ticks++;
+                CountTick();
                 break;
 
             case EngineTaskTypes.Dynamic:
@@ -150,26 +117,6 @@ public sealed class Igi2LevelRun
                 Dynamic?.Run();
                 RunDelayed();
                 break;
-
-        }
-    }
-
-    /// <summary>Runs a task's children in order, each by its run handler, as every container's run handler does.</summary>
-    /// <param name="task">The task.</param>
-    /// <remarks>The next child is taken before a child runs, as the protected task stack does, so a child may delete itself.</remarks>
-    public void RunChildren(GameTask task)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        GameTask? child = task.FirstChild;
-        while (child is not null)
-        {
-            GameTask? next = child.NextSibling;
-            if (!child.IsDeleted)
-            {
-                Run(child);
-            }
-
-            child = next;
         }
     }
 
