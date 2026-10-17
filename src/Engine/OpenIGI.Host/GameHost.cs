@@ -307,6 +307,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
 
+    // The console's handle on the content layers.
+    private readonly ContentLayerCommands _contentLayers;
+
     // The console's inspector, over what IInspectedWorld shows it of the host.
     private readonly WorldInspector _inspector;
 
@@ -779,6 +782,15 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(this);
+        _contentLayers = new ContentLayerCommands(
+            () => _overrides,
+            () => _resources,
+            () =>
+            {
+                ApplyOverrideChange(out string report);
+                return report;
+            },
+            logger);
         _audioFactory = audioFactory;
         _work = work;
         _loadGate = loadGate;
@@ -994,7 +1006,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
         RegisterRendererSwitchCommand(console.System);
-        RegisterOverrideCommands(console.System);
+        _contentLayers.Register(console.System);
         RegisterMemoryCommands(console.System);
 
         console.Start(
@@ -1005,7 +1017,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
             _options.LockedPreset);
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.
-        ReportOverrideScan(_overrideScan);
+        _contentLayers.Report(_overrideScan);
 
         WarnAboutSettingsTheBackendIgnores();
 

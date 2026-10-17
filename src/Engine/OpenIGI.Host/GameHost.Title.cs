@@ -1,4 +1,6 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Host.DevTools;
+using OpenIGI.Formats.Textures;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Configuration;
 using OpenIGI.Engine.Flow;
@@ -182,7 +184,7 @@ internal sealed partial class GameHost
             .ApplyTo(_fileSystem);
 
         LoadTitleResources();
-        ReportOverrideScan(_overrideScan);
+        _contentLayers.Report(_overrideScan);
         LoadTitleSession();
 
         // After the session, because the score is one of the things it registers natives against, and
@@ -488,4 +490,71 @@ internal sealed partial class GameHost
             null,
             null,
             title => _titles.TryResolve(title, out TitleBinding? other) ? other.DataRoot : null);
+
+    /// <summary>Brings what is loaded up to date with the content layers, after anything changed them.</summary>
+    /// <param name="report">Receives a sentence on what was reloaded.</param>
+    /// <returns>How many registered resources were swapped.</returns>
+    /// <remarks>
+    /// The one path F8, a rescan and a layer switched on or off all take. Reloading the RESOURCES is only
+    /// half of it: everything already decoded from them -- an uploaded texture, the ground, the surface
+    /// cache's baked diffuse -- holds its own copy, so those are rebuilt too, and only when something
+    /// actually moved, because the reload is a visible hitch.
+    /// </remarks>
+    private int ApplyOverrideChange(out string report)
+    {
+        int swapped = _resources.ReapplyOverrides();
+        report = $"{swapped} registered resource(s) swapped, {_resources.OverriddenCount} now standing in.";
+
+        if (swapped > 0)
+        {
+            _world?.ReloadTextures();
+            report += ReloadTerrainTiles() ? " Textures and ground reloaded." : " Textures reloaded.";
+
+            // The card atlas has the diffuse baked into it, so the indirect light is still bouncing off
+            // the old pixels until it is captured again. Discarding it re-converges the GI with it.
+            DiscardSurfaceCache();
+        }
+
+        return swapped;
+    }
+
+    /// <summary>Puts the ground back up from whatever the resource registry now hands over.</summary>
+    /// <returns><see langword="true"/> when the ground was re-uploaded.</returns>
+    /// <remarks>
+    /// <para>
+    /// A level's ground atlas is a LOOSE file, not an entry in an archive, and the two are replaced by
+    /// different halves of the machinery: an archived texture is swapped in the registry and picked up by
+    /// <c>WorldRenderer.ReloadTextures</c>, while a loose one is dropped from the registry and re-read on
+    /// the next load. Nothing re-loads the ground by itself, because the atlas is decoded once when the
+    /// level is built -- so without this the pack goes on and off every wall in the level and the ground
+    /// underneath it never moves.
+    /// </para>
+    /// <para>
+    /// Only for a mission being PLAYED. A menu backdrop's terrain was built by the preview's own private
+    /// registry, and the session's is not the one holding its bytes.
+    /// </para>
+    /// </remarks>
+    private bool ReloadTerrainTiles()
+    {
+        if (_terrain is null || _activeMission is not { } mission)
+        {
+            return false;
+        }
+
+        if (!_resources.TryLoad(mission.TerrainBasePath + ".tex", out ReadOnlyMemory<byte> bytes))
+        {
+            return false;
+        }
+
+        try
+        {
+            _terrain.ReloadTiles(TexAtlasFile.Read(bytes));
+            return true;
+        }
+        catch (TextureFormatException error)
+        {
+            _logger.Warning("Overrides", $"The ground atlas did not decode: {error.Message}");
+            return false;
+        }
+    }
 }
