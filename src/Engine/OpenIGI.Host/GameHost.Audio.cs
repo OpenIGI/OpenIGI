@@ -1061,44 +1061,11 @@ internal sealed partial class GameHost
             // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
             _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-            _soldiers?.Simulation.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+
             // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
             // Do not post it again here: leaving a second record behind makes a guard react twice to
             // one retail blast, with the duplicate consumed on the following tick.
-
-            // Explosion0 dispatches its collision callbacks to every nearby authored glass pane and
-            // explosive magic object. Do this before the speaker pass so a barrel-to-barrel chain is
-            // resolved in the same simulation tick as the grenade that started it.
-            HandleDestructibleBlast(
-                source: null,
-                originUnits: blast.Position,
-                radiusUnits: blast.RadiusUnits,
-                falloffUnits: blast.FalloffUnits,
-                damageFactor: blast.DamageFactor);
-
-            // A blast in reach of a speaker takes it off the wall too.
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-
-            ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
-            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
-            float dose = ExplosionDamage.Dose(
-                playerDistance,
-                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                blast.RadiusUnits,
-                blast.FalloffUnits,
-                blast.DamageFactor);
-            if (dose > 0f && !_playerHealth.IsDead)
-            {
-                _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                FlashPlayerForBlast();
-
-                // A blast that zeroes the health kills exactly the way a bullet does -- without
-                // this the player stood at zero for ever.
-                if (_playerHealth.IsDead)
-                {
-                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
-                }
-            }
+            Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade);
         }
     }
 
@@ -1132,39 +1099,83 @@ internal sealed partial class GameHost
         _sounds?.PlayDefinition("explo_03_l", blast.Position, priority: 90);
         SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
         ScorchSurface(blast.Position, blast.Normal, MissileScorchHalfWidthInUnits);
-        _soldiers?.Simulation.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-        // Launcher impacts use Explosion0's full collision envelope, then the speaker pass for alarms.
+
         // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
         // which is what lets a LAW rocket -- and nothing else -- blow a car up.
-        HandleDestructibleBlast(
-            source: null,
-            originUnits: blast.Position,
-            radiusUnits: blast.RadiusUnits,
-            falloffUnits: blast.FalloffUnits,
-            damageFactor: blast.DamageFactor,
-            sourceWeaponId: blast.SourceWeaponId);
-        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-
-        ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
-        float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
-        float dose = ExplosionDamage.Dose(
-            playerDistance,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+        Explode(
+            blast.Position,
             blast.RadiusUnits,
             blast.FalloffUnits,
-            blast.DamageFactor);
-        if (dose > 0f && !_playerHealth.IsDead)
+            blast.DamageFactor,
+            WeaponCategory.Grenade,
+            sourceWeaponId: blast.SourceWeaponId);
+    }
+
+    /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
+    /// <summary>
+    /// <c>Explosion0</c>'s message to everything in its reach (<c>0x47F200</c>): the soldiers, every authored pane and
+    /// explosive object, the alarm speakers, then the player.
+    /// </summary>
+    /// <param name="position">The blast's centre, in units.</param>
+    /// <param name="radiusUnits">The full-damage radius, in units.</param>
+    /// <param name="falloffUnits">The falloff beyond it, in units.</param>
+    /// <param name="damageFactor">The blast's damage.</param>
+    /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
+    /// <param name="source">The destructible that went off, which its own blast does not set off again.</param>
+    /// <param name="sourceWeaponId">The weapon whose round it was, which decides what may blow a car up.</param>
+    /// <remarks>
+    /// The destructibles go before the speakers so a barrel-to-barrel chain is resolved in the same tick as the blast that
+    /// started it.
+    /// </remarks>
+    private void Explode(
+        Vector3d position,
+        float radiusUnits,
+        float falloffUnits,
+        float damageFactor,
+        WeaponCategory killedBy,
+        DestructibleObject? source = null,
+        int sourceWeaponId = 0)
+    {
+        _soldiers?.Simulation.ApplyExplosion(position, radiusUnits, falloffUnits, damageFactor);
+        HandleDestructibleBlast(source, position, radiusUnits, falloffUnits, damageFactor, sourceWeaponId);
+        DamageAlarmSpeakers(position, radiusUnits, falloffUnits, damageFactor);
+        BlastPlayer(position, radiusUnits, falloffUnits, damageFactor, killedBy);
+    }
+
+    /// <summary>A blast's share of the player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death.</summary>
+    /// <param name="position">The blast's centre, in units.</param>
+    /// <param name="radiusUnits">The full-damage radius, in units.</param>
+    /// <param name="falloffUnits">The falloff beyond it, in units.</param>
+    /// <param name="damageFactor">The blast's damage.</param>
+    /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
+    private void BlastPlayer(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
+    {
+        if (_player is null || _playerHealth.IsDead)
+        {
+            return;
+        }
+
+        ReachPlayerWithBlast(position, radiusUnits, falloffUnits);
+        float dose = ExplosionDamage.Dose(
+            (float)(_player.Body.Position - position).Length,
+            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+            radiusUnits,
+            falloffUnits,
+            damageFactor);
+        if (dose > 0f)
         {
             _playerHealth.Apply(ExplosionDamage.Zone, dose);
             FlashPlayerForBlast();
+
+            // A blast that zeroes the health kills exactly the way a bullet does -- without this the player stood at
+            // zero for ever.
             if (_playerHealth.IsDead)
             {
-                BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
+                BeginPlayerDeath(position, ExplosionDamage.Zone, -1, killedBy);
             }
         }
     }
 
-    /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
     /// <summary>What any blast does to the player before its damage is counted — the head of <c>0x412990</c>.</summary>
     /// <param name="blastPosition">The blast's centre, in units.</param>
     /// <param name="radiusUnits">The blast radius, in units.</param>
@@ -1238,34 +1249,7 @@ internal sealed partial class GameHost
             _sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
             ScorchSurface(blast.Position, blast.Normal, M203ScorchHalfWidthInUnits);
-            _soldiers?.Simulation.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-            // Match the native explosion callback: visit every visible destructible in the blast
-            // envelope, then handle alarms separately.
-            HandleDestructibleBlast(
-                source: null,
-                originUnits: blast.Position,
-                radiusUnits: blast.RadiusUnits,
-                falloffUnits: blast.FalloffUnits,
-                damageFactor: blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-
-            ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
-            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
-            float dose = ExplosionDamage.Dose(
-                playerDistance,
-                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                blast.RadiusUnits,
-                blast.FalloffUnits,
-                blast.DamageFactor);
-            if (dose > 0f && !_playerHealth.IsDead)
-            {
-                _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                FlashPlayerForBlast();
-                if (_playerHealth.IsDead)
-                {
-                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
-                }
-            }
+            Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Gun);
         }
     }
 
@@ -1318,37 +1302,12 @@ internal sealed partial class GameHost
         }
 
         float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
-        _soldiers?.Simulation.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-        HandleDestructibleBlast(
-            source: null,
-            originUnits: position,
-            radiusUnits: parameters.ExplosionRadiusUnits,
-            falloffUnits: parameters.ExplosionFalloffUnits,
-            damageFactor: damageFactor);
-        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-
-        if (_player is null)
-        {
-            return;
-        }
-
-        ReachPlayerWithBlast(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits);
-        float playerDistance = (float)(_player.Body.Position - position).Length;
-        float dose = ExplosionDamage.Dose(
-            playerDistance,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+        Explode(
+            position,
             parameters.ExplosionRadiusUnits,
             parameters.ExplosionFalloffUnits,
-            damageFactor);
-        if (dose > 0f && !_playerHealth.IsDead)
-        {
-            _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            FlashPlayerForBlast();
-            if (_playerHealth.IsDead)
-            {
-                BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
-            }
-        }
+            damageFactor,
+            WeaponCategory.Grenade);
     }
 
     /// <summary>Hands one round's contact to the exact object it struck, the way retail does.</summary>
@@ -1559,29 +1518,7 @@ internal sealed partial class GameHost
             position,
             new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
         _soldiers?.Simulation.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
-        _soldiers?.Simulation.ApplyExplosion(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-        HandleDestructibleBlast(blast.Source, position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-        DamageAlarmSpeakers(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-
-        if (_player is not null && !_playerHealth.IsDead)
-        {
-            ReachPlayerWithBlast(position, blast.RadiusUnits, blast.FalloffUnits);
-            float dose = ExplosionDamage.Dose(
-                (float)(_player.Body.Position - position).Length,
-                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                blast.RadiusUnits,
-                blast.FalloffUnits,
-                blast.DamageFactor);
-            if (dose > 0f)
-            {
-                _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                FlashPlayerForBlast();
-                if (_playerHealth.IsDead)
-                {
-                    BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
-                }
-            }
-        }
+        Explode(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade, blast.Source);
 
         _logger.Information("World", $"{blast.Source.Owner.Name} blast at {position}: radius={blast.RadiusUnits}.");
     }
@@ -1619,26 +1556,7 @@ internal sealed partial class GameHost
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
         _soldiers?.Simulation.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
 
-        if (_player is not null && !_playerHealth.IsDead)
-        {
-            float distance = (float)(_player.Body.Position - item.PositionUnits).Length;
-            ReachPlayerWithBlast(item.PositionUnits, radius, falloff);
-            float dose = ExplosionDamage.Dose(
-                distance,
-                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                radius,
-                falloff,
-                damageFactor);
-            if (dose > 0f)
-            {
-                _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                FlashPlayerForBlast();
-                if (_playerHealth.IsDead)
-                {
-                    BeginPlayerDeath(item.PositionUnits, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
-                }
-            }
-        }
+        BlastPlayer(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade);
 
         _logger.Information(
             "World",
