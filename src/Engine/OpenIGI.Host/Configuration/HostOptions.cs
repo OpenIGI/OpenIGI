@@ -61,7 +61,7 @@ public readonly record struct HostOptions(
     /// the place that resolved the title can answer, and <see cref="GamePath"/> is therefore what the
     /// command line said and nothing else.
     /// </remarks>
-    public const string GamePathVariable = "IGI_GAME_PATH";
+    public static string GamePathVariable => Core.Titles.GameTitle.Igi1.GamePathVariable;
 
     /// <summary>The environment variable that names the game to run, when <c>-title</c> does not.</summary>
     /// <remarks>

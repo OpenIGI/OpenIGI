@@ -80,7 +80,7 @@ public static class TitleCatalog
     public static string GamePathVariableFor(GameTitle title)
     {
         ArgumentNullException.ThrowIfNull(title);
-        return title == GameTitle.Igi2 ? "IGI2_GAME_PATH" : HostOptions.GamePathVariable;
+        return title.GamePathVariable;
     }
 
     /// <summary>Finds the runtime a title id names.</summary>
