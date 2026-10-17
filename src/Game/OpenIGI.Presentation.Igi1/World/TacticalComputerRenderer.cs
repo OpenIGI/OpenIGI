@@ -13,6 +13,7 @@ using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Widgets;
+using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -405,7 +406,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         painter.FillRect(new UiRect(card.X, card.Y, card.Width, context.Px(3f)), Hostile);
 
         float pad = context.Px(40f);
-        DrawTracked(painter, label, "MISSION FAILED", new UiVec2(card.X + pad, card.Y + context.Px(44f)),
+        UiVectors.DrawTracked(painter, label, "MISSION FAILED", new UiVec2(card.X + pad, card.Y + context.Px(44f)),
             context.Px(34f), Hostile, context.Px(3.5f));
 
         painter.FillRect(
@@ -464,8 +465,8 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 continue;
             }
 
-            DrawDiamond(painter, new UiVec2(hx, hy), context.Px(6f), Signal.WithAlpha(210));
-            DrawDiamond(painter, new UiVec2(hx, hy), context.Px(2.5f), UiPalette.TextBright);
+            UiVectors.DrawDiamond(painter, new UiVec2(hx, hy), context.Px(6f), Signal.WithAlpha(210));
+            UiVectors.DrawDiamond(painter, new UiVec2(hx, hy), context.Px(2.5f), UiPalette.TextBright);
 
             bool clear = taken.All(point =>
                 MathF.Abs(point.X - hx) > labelGuardX || MathF.Abs(point.Y - hy) > labelGuardY);
@@ -580,10 +581,10 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         float pulse = 0.5f + (0.5f * MathF.Sin(_seconds * 2.4f));
         float radius = context.Px(9f);
 
-        StrokeRing(painter, at, radius + (context.Px(7f) * pulse), context.Px(1.5f),
+        UiVectors.StrokeRing(painter, at, radius + (context.Px(7f) * pulse), context.Px(1.5f),
             Accent.WithAlpha((byte)(90 * (1f - pulse))));
-        StrokeRing(painter, at, radius, context.Px(2f), Accent);
-        FillDisc(painter, at, context.Px(4f), UiPalette.AccentLight);
+        UiVectors.StrokeRing(painter, at, radius, context.Px(2f), Accent);
+        UiVectors.FillDisc(painter, at, context.Px(4f), UiPalette.AccentLight);
 
         // Four brackets rather than a full ring, so the marker reads as a fix on a position instead of as
         // one more circle among the objective markers.
@@ -598,9 +599,9 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
     private static void DrawHostileMarker(UiPainter painter, LayoutContext context, UiVec2 at)
     {
-        DrawDiamond(painter, at, context.Px(8f), Bgra32.FromRgba(40, 10, 8, 220));
-        DrawDiamond(painter, at, context.Px(6f), Hostile);
-        DrawDiamond(painter, at, context.Px(2f), UiPalette.Danger);
+        UiVectors.DrawDiamond(painter, at, context.Px(8f), Bgra32.FromRgba(40, 10, 8, 220));
+        UiVectors.DrawDiamond(painter, at, context.Px(6f), Hostile);
+        UiVectors.DrawDiamond(painter, at, context.Px(2f), UiPalette.Danger);
     }
 
     private static void DrawObjectiveMarker(UiPainter painter, LayoutContext context, UiVec2 at, bool complete)
@@ -624,11 +625,11 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         if (complete)
         {
-            FillDisc(painter, at, context.Px(3.5f), colour, 10);
+            UiVectors.FillDisc(painter, at, context.Px(3.5f), colour, 10);
         }
         else
         {
-            StrokeRing(painter, at, context.Px(3.5f), weight, colour, 10);
+            UiVectors.StrokeRing(painter, at, context.Px(3.5f), weight, colour, 10);
         }
     }
 
@@ -637,7 +638,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         UiFont font = _label ?? _body!;
         float size = context.Px(14f);
         float tracking = context.Px(1.2f);
-        float width = MeasureTracked(font, text, size, tracking);
+        float width = UiVectors.MeasureTracked(font, text, size, tracking);
         float padX = context.Px(8f);
         float padY = context.Px(5f);
         float height = font.LineHeight(size) + (padY * 2f);
@@ -645,7 +646,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         var chip = new UiRect(at.X, at.Y - (height * 0.5f), width + (padX * 2f) + context.Px(3f), height);
         painter.FillRect(chip, UiPalette.Ink.WithAlpha(190));
         painter.FillRect(new UiRect(chip.X, chip.Y, context.Px(2f), chip.Height), Signal.WithAlpha(200));
-        DrawTracked(painter, font, text, new UiVec2(chip.X + padX + context.Px(3f), chip.Y + padY), size,
+        UiVectors.DrawTracked(painter, font, text, new UiVec2(chip.X + padX + context.Px(3f), chip.Y + padY), size,
             UiPalette.Text, tracking);
     }
 
@@ -690,7 +691,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
         else
         {
-            x += DrawTracked(painter, label, "SIMOTECH", new UiVec2(x, mid - (label.LineHeight(markSize) * 0.5f)),
+            x += UiVectors.DrawTracked(painter, label, "SIMOTECH", new UiVec2(x, mid - (label.LineHeight(markSize) * 0.5f)),
                 markSize, UiPalette.TextBright, context.Px(2f)) + context.Px(16f);
         }
 
@@ -698,7 +699,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         x += context.Px(16f);
 
         float subSize = context.Px(13f);
-        DrawTracked(painter, label, "TACTICAL MAP INTERFACE",
+        UiVectors.DrawTracked(painter, label, "TACTICAL MAP INTERFACE",
             new UiVec2(x, mid - (label.LineHeight(subSize) * 0.5f)), subSize, TextMuted, context.Px(2.4f));
 
         // The readouts, right-aligned and laid out from the right edge inwards so the widest one does not
@@ -732,14 +733,14 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         float captionSize = context.Px(11f);
         float valueSize = context.Px(19f);
         float tracking = context.Px(1.8f);
-        float captionWidth = MeasureTracked(label, caption, captionSize, tracking);
-        float valueWidth = MeasureTracked(label, value, valueSize, tracking);
+        float captionWidth = UiVectors.MeasureTracked(label, caption, captionSize, tracking);
+        float valueWidth = UiVectors.MeasureTracked(label, value, valueSize, tracking);
         float width = MathF.Max(captionWidth, valueWidth);
         float left = right - width;
 
-        DrawTracked(painter, label, caption, new UiVec2(right - captionWidth, middle - context.Px(17f)),
+        UiVectors.DrawTracked(painter, label, caption, new UiVec2(right - captionWidth, middle - context.Px(17f)),
             captionSize, TextMuted, tracking);
-        DrawTracked(painter, label, value, new UiVec2(right - valueWidth, middle - context.Px(3f)),
+        UiVectors.DrawTracked(painter, label, value, new UiVec2(right - valueWidth, middle - context.Px(3f)),
             valueSize, valueColour, tracking);
         return left;
     }
@@ -773,9 +774,9 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             float nameSize = context.Px(16f);
             float textX = row.X + context.Px(20f);
 
-            DrawTracked(painter, label, $"0{i + 1}", new UiVec2(textX, row.Y + context.Px(9f)),
+            UiVectors.DrawTracked(painter, label, $"0{i + 1}", new UiVec2(textX, row.Y + context.Px(9f)),
                 indexSize, selected ? Accent : TextMuted.WithAlpha(150), context.Px(1.4f));
-            DrawTracked(painter, label, PageNames[i], new UiVec2(textX + context.Px(34f), row.Y + context.Px(7f)),
+            UiVectors.DrawTracked(painter, label, PageNames[i], new UiVec2(textX + context.Px(34f), row.Y + context.Px(7f)),
                 nameSize, colour, context.Px(2.2f));
         }
     }
@@ -798,7 +799,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         float pad = context.Px(20f);
         float y = card.Y + context.Px(16f);
-        DrawTracked(painter, label, "OPERATOR", new UiVec2(card.X + pad, y), context.Px(11f), TextMuted, context.Px(2f));
+        UiVectors.DrawTracked(painter, label, "OPERATOR", new UiVec2(card.X + pad, y), context.Px(11f), TextMuted, context.Px(2f));
         y += context.Px(20f);
 
         // The player's own position, in metres east and north of the level's origin. The engine keeps it
@@ -807,10 +808,10 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         long east = (long)Math.Round(player.X / UnitsPerMetre);
         long north = (long)Math.Round(player.Y / UnitsPerMetre);
         long altitude = (long)Math.Round(player.Z / UnitsPerMetre);
-        DrawTracked(painter, label, $"E {east:0000}  N {north:0000}", new UiVec2(card.X + pad, y),
+        UiVectors.DrawTracked(painter, label, $"E {east:0000}  N {north:0000}", new UiVec2(card.X + pad, y),
             context.Px(16f), Signal, context.Px(1.2f));
         y += context.Px(26f);
-        DrawTracked(painter, label, $"ALT {altitude} M", new UiVec2(card.X + pad, y),
+        UiVectors.DrawTracked(painter, label, $"ALT {altitude} M", new UiVec2(card.X + pad, y),
             context.Px(13f), TextMuted, context.Px(1.4f));
 
         y += context.Px(26f);
@@ -821,8 +822,8 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         // player having to measure the bar.
         double halfHeightMetres = AltitudeMetres * Math.Tan(fieldOfView * 0.5);
         double metresPerPixel = 2.0 * halfHeightMetres / Math.Max(1, map.Height);
-        DrawTracked(painter, label, "SCALE", new UiVec2(card.X + pad, y), context.Px(11f), TextMuted, context.Px(2f));
-        DrawTracked(painter, label, $"1:{Math.Round(metresPerPixel * 1000.0):0}", new UiVec2(card.X + pad + context.Px(74f), y),
+        UiVectors.DrawTracked(painter, label, "SCALE", new UiVec2(card.X + pad, y), context.Px(11f), TextMuted, context.Px(2f));
+        UiVectors.DrawTracked(painter, label, $"1:{Math.Round(metresPerPixel * 1000.0):0}", new UiVec2(card.X + pad + context.Px(74f), y),
             context.Px(11f), Text, context.Px(1.4f));
     }
 
@@ -889,8 +890,8 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         string text = metres >= 1000.0 ? $"{metres / 1000.0:0.#} KM" : $"{metres:0} M";
         float size = context.Px(12f);
         float tracking = context.Px(1.6f);
-        DrawTracked(painter, label, text,
-            new UiVec2(right - MeasureTracked(label, text, size, tracking), mid - context.Px(14f)),
+        UiVectors.DrawTracked(painter, label, text,
+            new UiVec2(right - UiVectors.MeasureTracked(label, text, size, tracking), mid - context.Px(14f)),
             size, TextMuted, tracking);
     }
 
@@ -906,17 +907,17 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         float keySize = context.Px(12f);
         float actionSize = context.Px(12f);
         float tracking = context.Px(1.2f);
-        float keyWidth = MeasureTracked(label, key, keySize, tracking);
+        float keyWidth = UiVectors.MeasureTracked(label, key, keySize, tracking);
         float padX = context.Px(7f);
         float capHeight = context.Px(20f);
 
         var cap = new UiRect(x, middle - (capHeight * 0.5f), keyWidth + (padX * 2f), capHeight);
         painter.FillRect(cap, UiPalette.White(0.1f));
         painter.StrokeRect(cap, MathF.Max(1f, context.Px(1f)), Border);
-        DrawTracked(painter, label, key, new UiVec2(cap.X + padX, cap.Y + context.Px(3f)), keySize, Text, tracking);
+        UiVectors.DrawTracked(painter, label, key, new UiVec2(cap.X + padX, cap.Y + context.Px(3f)), keySize, Text, tracking);
 
         float textX = cap.Right + context.Px(9f);
-        float actionWidth = DrawTracked(painter, label, action,
+        float actionWidth = UiVectors.DrawTracked(painter, label, action,
             new UiVec2(textX, middle - (label.LineHeight(actionSize) * 0.5f)), actionSize, TextMuted, context.Px(2f));
 
         return textX + actionWidth + context.Px(26f);
@@ -953,7 +954,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         float pad = context.Px(34f);
         float y = card.Y + context.Px(26f);
-        DrawTracked(painter, label, PageNames[(int)_page], new UiVec2(card.X + pad, y),
+        UiVectors.DrawTracked(painter, label, PageNames[(int)_page], new UiVec2(card.X + pad, y),
             context.Px(20f), Text, context.Px(3.2f));
         y += context.Px(38f);
         painter.FillRect(new UiRect(card.X + pad, y, card.Width - (pad * 2f), MathF.Max(1f, context.Px(1f))), Border);
@@ -984,7 +985,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     {
         if (runtime.Objectives.Count == 0)
         {
-            DrawTracked(painter, label, "NO OBJECTIVES ON FILE", new UiVec2(card.X + pad, y),
+            UiVectors.DrawTracked(painter, label, "NO OBJECTIVES ON FILE", new UiVec2(card.X + pad, y),
                 context.Px(14f), TextMuted, context.Px(2f));
             return;
         }
@@ -1014,7 +1015,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             painter.FillRect(row, UiPalette.White(0.05f));
             painter.FillRect(new UiRect(row.X, row.Y, context.Px(3f), row.Height), accent);
 
-            DrawTracked(painter, label, $"0{i + 1}", new UiVec2(row.X + context.Px(20f), row.Y + rowPad),
+            UiVectors.DrawTracked(painter, label, $"0{i + 1}", new UiVec2(row.X + context.Px(20f), row.Y + rowPad),
                 context.Px(15f), accent, context.Px(1.6f));
 
             painter.DrawText(body, wrapped, new UiVec2(textLeft, row.Y + rowPad), textSize,
@@ -1039,7 +1040,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     {
         if (runtime.Log.Count == 0)
         {
-            DrawTracked(painter, label, "NO TRANSMISSIONS LOGGED", new UiVec2(card.X + pad, y),
+            UiVectors.DrawTracked(painter, label, "NO TRANSMISSIONS LOGGED", new UiVec2(card.X + pad, y),
                 context.Px(14f), TextMuted, context.Px(2f));
             return;
         }
@@ -1066,7 +1067,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             // The newest entry is the only one at full strength. Older ones step back a little each time
             // and then hold, so recency is legible at a glance without the tail becoming unreadable.
             byte alpha = (byte)(index == 0 ? 255 : Math.Max(120, 210 - (index * 18)));
-            FillDisc(painter, new UiVec2(railX, y + context.Px(9f)), context.Px(index == 0 ? 4f : 2.5f),
+            UiVectors.FillDisc(painter, new UiVec2(railX, y + context.Px(9f)), context.Px(index == 0 ? 4f : 2.5f),
                 (index == 0 ? Signal : SignalDim).WithAlpha(alpha), 10);
             painter.DrawText(body, wrapped, new UiVec2(textLeft, y), textSize,
                 (index == 0 ? Text : TextMuted).WithAlpha(alpha));
@@ -1092,14 +1093,14 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     {
         float size = context.Px(11f);
         float tracking = context.Px(1.8f);
-        float width = MeasureTracked(label, text, size, tracking);
+        float width = UiVectors.MeasureTracked(label, text, size, tracking);
         float padX = context.Px(10f);
         float height = context.Px(22f);
 
         var pill = new UiRect(rightTop.X - width - (padX * 2f), rightTop.Y, width + (padX * 2f), height);
         painter.FillRect(pill, colour.WithAlpha(38));
         painter.StrokeRect(pill, MathF.Max(1f, context.Px(1f)), colour.WithAlpha(120));
-        DrawTracked(painter, label, text, new UiVec2(pill.X + padX, pill.Y + context.Px(4f)), size, colour, tracking);
+        UiVectors.DrawTracked(painter, label, text, new UiVec2(pill.X + padX, pill.Y + context.Px(4f)), size, colour, tracking);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1147,7 +1148,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             painter.FillRect(new UiRect(x, y, w, h), Signal);
         }
 
-        FillDisc(painter, at, context.Px(1.6f), UiPalette.TextBright, 8);
+        UiVectors.FillDisc(painter, at, context.Px(1.6f), UiPalette.TextBright, 8);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1259,94 +1260,6 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         double normalised = value / magnitude;
         double step = normalised <= 1.0 ? 1.0 : normalised <= 2.0 ? 2.0 : normalised <= 5.0 ? 5.0 : 10.0;
         return step * magnitude;
-    }
-
-    /// <summary>Draws a string with extra space between its letters.</summary>
-    /// <param name="painter">The surface to draw into.</param>
-    /// <param name="font">The face to set it in.</param>
-    /// <param name="text">The text.</param>
-    /// <param name="at">The top-left of the line, in pixels.</param>
-    /// <param name="size">The text size in pixels.</param>
-    /// <param name="colour">The text colour.</param>
-    /// <param name="tracking">The extra space after each letter, in pixels.</param>
-    /// <returns>The width the line took, in pixels.</returns>
-    /// <remarks>
-    /// Letterspaced capitals are the whole voice of this interface, and no font carries them: tracking is
-    /// a typesetting decision made per use, not a property of a face. Drawn a glyph at a time because the
-    /// painter advances by the font's own metrics and there is nowhere else to put the extra space.
-    /// </remarks>
-    private static float DrawTracked(
-        UiPainter painter,
-        UiFont font,
-        ReadOnlySpan<char> text,
-        UiVec2 at,
-        float size,
-        Bgra32 colour,
-        float tracking)
-    {
-        Span<char> one = stackalloc char[1];
-        float x = at.X;
-        foreach (char c in text)
-        {
-            one[0] = c;
-            painter.DrawText(font, one, new UiVec2(x, at.Y), size, colour);
-            x += font.MeasureWidth(one, size) + tracking;
-        }
-
-        return MathF.Max(0f, x - at.X - tracking);
-    }
-
-    private static float MeasureTracked(UiFont font, ReadOnlySpan<char> text, float size, float tracking) =>
-        text.Length == 0 ? 0f : font.MeasureWidth(text, size) + (tracking * (text.Length - 1));
-
-    private static void FillDisc(UiPainter painter, UiVec2 centre, float radius, Bgra32 colour, int segments = 16)
-    {
-        float step = MathF.Tau / segments;
-        for (int i = 0; i < segments; i++)
-        {
-            float a = i * step;
-            float b = (i + 1) * step;
-            painter.FillTriangle(
-                centre,
-                new UiVec2(centre.X + (MathF.Cos(a) * radius), centre.Y + (MathF.Sin(a) * radius)),
-                new UiVec2(centre.X + (MathF.Cos(b) * radius), centre.Y + (MathF.Sin(b) * radius)),
-                colour);
-        }
-    }
-
-    private static void StrokeRing(
-        UiPainter painter,
-        UiVec2 centre,
-        float radius,
-        float thickness,
-        Bgra32 colour,
-        int segments = 22)
-    {
-        float inner = MathF.Max(0f, radius - (thickness * 0.5f));
-        float outer = radius + (thickness * 0.5f);
-        float step = MathF.Tau / segments;
-
-        for (int i = 0; i < segments; i++)
-        {
-            float a = i * step;
-            float b = (i + 1) * step;
-            var innerA = new UiVec2(centre.X + (MathF.Cos(a) * inner), centre.Y + (MathF.Sin(a) * inner));
-            var innerB = new UiVec2(centre.X + (MathF.Cos(b) * inner), centre.Y + (MathF.Sin(b) * inner));
-            var outerA = new UiVec2(centre.X + (MathF.Cos(a) * outer), centre.Y + (MathF.Sin(a) * outer));
-            var outerB = new UiVec2(centre.X + (MathF.Cos(b) * outer), centre.Y + (MathF.Sin(b) * outer));
-            painter.FillTriangle(innerA, outerA, outerB, colour);
-            painter.FillTriangle(innerA, outerB, innerB, colour);
-        }
-    }
-
-    private static void DrawDiamond(UiPainter painter, UiVec2 centre, float radius, Bgra32 colour)
-    {
-        var top = new UiVec2(centre.X, centre.Y - radius);
-        var right = new UiVec2(centre.X + radius, centre.Y);
-        var bottom = new UiVec2(centre.X, centre.Y + radius);
-        var left = new UiVec2(centre.X - radius, centre.Y);
-        painter.FillTriangle(top, right, bottom, colour);
-        painter.FillTriangle(top, bottom, left, colour);
     }
 
     private static bool Contains(UiRect rect, float x, float y) =>

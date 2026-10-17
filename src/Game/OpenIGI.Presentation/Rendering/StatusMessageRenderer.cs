@@ -218,7 +218,7 @@ internal sealed class StatusMessageRenderer : IDisposable
 
         painter.PushOpacity(eased * lifecycleOpacity);
         painter.FillRect(new UiRect(x - slide, y + context.Px(2f), markerWidth, height), Signal);
-        DrawTracked(
+        UiVectors.DrawTracked(
             painter,
             label,
             "TRANSMISSION",
@@ -359,27 +359,6 @@ internal sealed class StatusMessageRenderer : IDisposable
         float x = textAt.X + font.MeasureWidth(lastLine, size) + context.Px(2f);
         float y = textAt.Y + (line * font.LineHeight(size));
         painter.FillRect(new UiRect(x, y + context.Px(3f), context.Px(2f), size * 0.82f), Signal);
-    }
-
-    private static float DrawTracked(
-        UiPainter painter,
-        UiFont font,
-        ReadOnlySpan<char> text,
-        UiVec2 at,
-        float size,
-        Bgra32 colour,
-        float tracking)
-    {
-        Span<char> one = stackalloc char[1];
-        float x = at.X;
-        foreach (char c in text)
-        {
-            one[0] = c;
-            painter.DrawText(font, one, new UiVec2(x, at.Y), size, colour);
-            x += font.MeasureWidth(one, size) + tracking;
-        }
-
-        return MathF.Max(0f, x - at.X - tracking);
     }
 
     // Mission objectives reserve amber; the comms feed uses a quieter signal-blue accent of its own.
