@@ -60,7 +60,7 @@ public static class BoneTrackSampler
 
         if (!spline)
         {
-            return Lerp(previous.Position, next.Position, s);
+            return Vector3f.Lerp(previous.Position, next.Position, s);
         }
 
         // The standard cubic Hermite basis. The tangents are stored per unit time, so each is scaled
@@ -76,11 +76,6 @@ public static class BoneTrackSampler
             Add(Scale(previous.Position, h00), Scale(next.Position, h01)),
             Add(Scale(previous.OutTangent, duration * h10), Scale(next.InTangent, duration * h11)));
     }
-
-    private static Vector3f Lerp(Vector3f from, Vector3f to, float s) => new(
-        from.X + ((to.X - from.X) * s),
-        from.Y + ((to.Y - from.Y) * s),
-        from.Z + ((to.Z - from.Z) * s));
 
     private static Vector3f Scale(Vector3f value, float factor) =>
         new(value.X * factor, value.Y * factor, value.Z * factor);

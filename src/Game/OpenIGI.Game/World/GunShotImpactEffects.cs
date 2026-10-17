@@ -274,8 +274,8 @@ public static class GunShotImpactEffects
         Vector3f helper = axis.X == 0f && axis.Y == 0f
             ? new Vector3f(0f, 1f, 0f)
             : Normalize(new Vector3f(axis.Y, -axis.X, 0f));
-        Vector3f u = Normalize(Cross(helper, axis));
-        Vector3f w = Normalize(Cross(axis, u));
+        Vector3f u = Normalize(Vector3f.Cross(helper, axis));
+        Vector3f w = Normalize(Vector3f.Cross(axis, u));
 
         float roll = random.NextSingle() * MathF.PI;
         float pitch = random.NextSingle() * FragmentConeRadians;
@@ -297,11 +297,6 @@ public static class GunShotImpactEffects
     /// <returns>The speed in world units per tick.</returns>
     public static float FragmentSpeed(float uniformSample) =>
         (uniformSample * (FragmentSpeedMaximum - FragmentSpeedMinimum)) + FragmentSpeedMinimum;
-
-    private static Vector3f Cross(Vector3f a, Vector3f b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
 
     private static Vector3f Normalize(Vector3f value)
     {

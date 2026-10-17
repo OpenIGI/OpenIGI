@@ -335,14 +335,9 @@ public static class LightmapBaker
     private static (Vector3f Tangent, Vector3f Bitangent) TangentFrame(Vector3f normal)
     {
         Vector3f reference = MathF.Abs(normal.Z) < 0.9f ? new Vector3f(0f, 0f, 1f) : new Vector3f(1f, 0f, 0f);
-        Vector3f tangent = Normalise(Cross(reference, normal));
-        return (tangent, Cross(normal, tangent));
+        Vector3f tangent = Normalise(Vector3f.Cross(reference, normal));
+        return (tangent, Vector3f.Cross(normal, tangent));
     }
-
-    private static Vector3f Cross(Vector3f a, Vector3f b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
 
     // A cosine-weighted set of hemisphere directions in local space (z up), spaced by the golden angle so
     // they never fall into rows. Cosine-weighted because irradiance is the cosine-weighted integral of

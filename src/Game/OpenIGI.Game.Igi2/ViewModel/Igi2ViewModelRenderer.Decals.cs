@@ -44,8 +44,8 @@ public sealed partial class Igi2ViewModelRenderer
             }
 
             Vector3f n = decal.Normal;
-            Vector3f across = MathF.Abs(n.X) < 0.9f ? Normalise(Cross(n, new Vector3f(1f, 0f, 0f))) : Normalise(Cross(n, new Vector3f(0f, 1f, 0f)));
-            Vector3f along = Cross(n, across);
+            Vector3f across = MathF.Abs(n.X) < 0.9f ? Normalise(Vector3f.Cross(n, new Vector3f(1f, 0f, 0f))) : Normalise(Vector3f.Cross(n, new Vector3f(0f, 1f, 0f)));
+            Vector3f along = Vector3f.Cross(n, across);
             float s = decal.HalfSize * metres, h = decal.Hover * metres;
             Vector3f up = n * h, a = across * s, b = along * s;
             _decalVertices[0] = new(up - a - b, n, 0f, 0f, colour: decal.Colour);
@@ -67,6 +67,4 @@ public sealed partial class Igi2ViewModelRenderer
         _device.SetDepthState(DepthState.TestAndWrite);
     }
 
-    private static Vector3f Cross(Vector3f a, Vector3f b) =>
-        new((a.Y * b.Z) - (a.Z * b.Y), (a.Z * b.X) - (a.X * b.Z), (a.X * b.Y) - (a.Y * b.X));
 }

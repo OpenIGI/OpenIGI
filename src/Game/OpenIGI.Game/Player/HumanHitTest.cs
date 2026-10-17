@@ -274,7 +274,7 @@ public static class HumanHitTest
         {
             Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
             Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
-            double distance = Distance(contact, headWorld);
+            double distance = Vector3d.Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -395,7 +395,7 @@ public static class HumanHitTest
         {
             Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
             Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
-            if (HumanDamage.TakesProximityZone((float)Distance(contact, headWorld), localForward))
+            if (HumanDamage.TakesProximityZone((float)Vector3d.Distance(contact, headWorld), localForward))
             {
                 zone = HumanDamage.ProximityZone;
             }
@@ -509,7 +509,7 @@ public static class HumanHitTest
             Vector3d headWorld = new(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
 
             // From the contact, as 0x489C60 measures it (see TryCastMesh).
-            double distance = Distance(contact, headWorld);
+            double distance = Vector3d.Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -732,11 +732,4 @@ public static class HumanHitTest
         return length <= 0f ? new Vector3f(0f, 1f, 0f) : new Vector3f(v.X / length, v.Y / length, v.Z / length);
     }
 
-    private static double Distance(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 }

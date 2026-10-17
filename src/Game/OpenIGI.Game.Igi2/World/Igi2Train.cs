@@ -145,7 +145,7 @@ public static class Igi2Train
         }
 
         Vector3f side = Normalize(new Vector3f(along.Y, -along.X, 0f));
-        Vector3f up = Normalize(Cross(side, along));
+        Vector3f up = Normalize(Vector3f.Cross(side, along));
         return new Matrix3f(
             side.X, along.X, up.X,
             side.Y, along.Y, up.Y,
@@ -181,8 +181,4 @@ public static class Igi2Train
             : value;
     }
 
-    private static Vector3f Cross(Vector3f left, Vector3f right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
 }

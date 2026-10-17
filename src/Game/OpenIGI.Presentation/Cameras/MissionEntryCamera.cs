@@ -492,7 +492,7 @@ public sealed class MissionEntryCamera
         }
         else if (!_bodyHidden)
         {
-            if (Distance(_pose.Position, _landing.Position) <= BodyHiddenWithin)
+            if (Vector3d.Distance(_pose.Position, _landing.Position) <= BodyHiddenWithin)
             {
                 _bodyHidden = true;
                 ShowPlayerBody = false;
@@ -666,11 +666,4 @@ public sealed class MissionEntryCamera
             _apexOverSpawn.Pitch + ((_landing.Pitch - _apexOverSpawn.Pitch) * settle));
     }
 
-    private static double Distance(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 }

@@ -280,8 +280,8 @@ public static class MeshDistanceFieldBaker
         Vector3f ac = Subtract(c, a);
         Vector3f ap = Subtract(p, a);
 
-        float d1 = Dot(ab, ap);
-        float d2 = Dot(ac, ap);
+        float d1 = Vector3f.Dot(ab, ap);
+        float d2 = Vector3f.Dot(ac, ap);
 
         if (d1 <= 0f && d2 <= 0f)
         {
@@ -289,8 +289,8 @@ public static class MeshDistanceFieldBaker
         }
 
         Vector3f bp = Subtract(p, b);
-        float d3 = Dot(ab, bp);
-        float d4 = Dot(ac, bp);
+        float d3 = Vector3f.Dot(ab, bp);
+        float d4 = Vector3f.Dot(ac, bp);
 
         if (d3 >= 0f && d4 <= d3)
         {
@@ -306,8 +306,8 @@ public static class MeshDistanceFieldBaker
         }
 
         Vector3f cp = Subtract(p, c);
-        float d5 = Dot(ab, cp);
-        float d6 = Dot(ac, cp);
+        float d5 = Vector3f.Dot(ab, cp);
+        float d6 = Vector3f.Dot(ac, cp);
 
         if (d6 >= 0f && d5 <= d6)
         {
@@ -343,7 +343,5 @@ public static class MeshDistanceFieldBaker
 
     private static Vector3f Scale(Vector3f a, float s) => new(a.X * s, a.Y * s, a.Z * s);
 
-    private static float Dot(Vector3f a, Vector3f b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z);
-
-    private static float Length(Vector3f a) => MathF.Sqrt(Dot(a, a));
+    private static float Length(Vector3f a) => MathF.Sqrt(Vector3f.Dot(a, a));
 }

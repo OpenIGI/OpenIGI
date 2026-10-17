@@ -613,7 +613,7 @@ public sealed class Igi2PortalCulling
                 // The original's interpolant, 0x586650: `(clipZ − a.z) / (b.z − a.z)` applied to the
                 // view-space position, which is then reprojected and given a fresh outcode.
                 float t = (NearPlaneZ - current.View.Z) / (next.View.Z - current.View.Z);
-                scratch[written++] = Project(Lerp(current.View, next.View, t), projection);
+                scratch[written++] = Project(Vector3f.Lerp(current.View, next.View, t), projection);
             }
         }
 
@@ -683,8 +683,6 @@ public sealed class Igi2PortalCulling
         Edge.Right => area.MaxX,
         _ => area.MaxY,
     };
-
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
 
     [Flags]
     private enum Outcode

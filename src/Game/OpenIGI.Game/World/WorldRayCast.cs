@@ -307,8 +307,8 @@ public static class RayTriangle
         Vector3d ab = new(b.X - a.X, b.Y - a.Y, b.Z - a.Z);
         Vector3d ac = new(c.X - a.X, c.Y - a.Y, c.Z - a.Z);
 
-        Vector3d p = Cross(direction, ac);
-        double determinant = Dot(ab, p);
+        Vector3d p = Vector3d.Cross(direction, ac);
+        double determinant = Vector3d.Dot(ab, p);
 
         if (Math.Abs(determinant) < ParallelEpsilon)
         {
@@ -318,20 +318,20 @@ public static class RayTriangle
         double inverse = 1.0 / determinant;
         Vector3d t = new(origin.X - a.X, origin.Y - a.Y, origin.Z - a.Z);
 
-        double u = Dot(t, p) * inverse;
+        double u = Vector3d.Dot(t, p) * inverse;
         if (u < 0.0 || u > 1.0)
         {
             return false;
         }
 
-        Vector3d q = Cross(t, ab);
-        double v = Dot(direction, q) * inverse;
+        Vector3d q = Vector3d.Cross(t, ab);
+        double v = Vector3d.Dot(direction, q) * inverse;
         if (v < 0.0 || u + v > 1.0)
         {
             return false;
         }
 
-        distance = Dot(ac, q) * inverse;
+        distance = Vector3d.Dot(ac, q) * inverse;
         return distance >= 0.0 && distance < 1.0;
     }
 
@@ -344,16 +344,10 @@ public static class RayTriangle
     {
         Vector3d ab = new(b.X - a.X, b.Y - a.Y, b.Z - a.Z);
         Vector3d ac = new(c.X - a.X, c.Y - a.Y, c.Z - a.Z);
-        Vector3d n = Cross(ab, ac);
+        Vector3d n = Vector3d.Cross(ab, ac);
 
-        double length = Math.Sqrt(Dot(n, n));
+        double length = Math.Sqrt(Vector3d.Dot(n, n));
         return length > 0.0 ? new Vector3d(n.X / length, n.Y / length, n.Z / length) : default;
     }
 
-    private static Vector3d Cross(Vector3d l, Vector3d r) => new(
-        (l.Y * r.Z) - (l.Z * r.Y),
-        (l.Z * r.X) - (l.X * r.Z),
-        (l.X * r.Y) - (l.Y * r.X));
-
-    private static double Dot(Vector3d l, Vector3d r) => (l.X * r.X) + (l.Y * r.Y) + (l.Z * r.Z);
 }

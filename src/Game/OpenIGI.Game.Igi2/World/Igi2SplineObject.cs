@@ -182,8 +182,8 @@ public static class Igi2SplineObject
             : Normalize(new Vector3f(along.Y, -along.X, 0f));
 
         Vector3f first = Normalize(along);
-        Vector3f second = Normalize(Cross(Cross(side, along), along));
-        Vector3f third = Normalize(Cross(first, second));
+        Vector3f second = Normalize(Vector3f.Cross(Vector3f.Cross(side, along), along));
+        Vector3f third = Normalize(Vector3f.Cross(first, second));
 
         // Stored transposed, which puts the three axes in the COLUMNS -- and the direction of travel in
         // the first column, where the curve reads its tangent from.
@@ -206,11 +206,6 @@ public static class Igi2SplineObject
             ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
             : value;
     }
-
-    private static Vector3f Cross(Vector3f left, Vector3f right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
 
     /// <summary>One waypoint, as the segments either side of it need it.</summary>
     private readonly record struct Waypoint(

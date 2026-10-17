@@ -418,7 +418,7 @@ internal sealed partial class GameHost
             // A reader stands on the open side and looks INTO the surface, so the notice faces along the
             // normal and is read by someone whose heading is the normal reversed.
             yaw = MathF.Atan2(-normal.X, -normal.Y);
-            where = FormattableString.Invariant($"on '{surfaceLabel}', {Distance(eye.Position, surfaceMetres):F1} m from the start");
+            where = FormattableString.Invariant($"on '{surfaceLabel}', {Vector3d.Distance(eye.Position, surfaceMetres):F1} m from the start");
         }
         else
         {

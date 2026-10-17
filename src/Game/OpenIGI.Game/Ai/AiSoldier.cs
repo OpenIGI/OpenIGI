@@ -488,7 +488,6 @@ public sealed class AiSoldier
     // Which event types the running script has declared a priority for, and how many so far, so
     // AIFunction_SetEventPriority can rebuild the dispatch order in call order (0x44E0C0).
 
-
     // Where combat BELIEVES the target is -- the shared record's position, which sub_48A920 refreshes
     // from the detection slot only while the target is actually seen. Aiming, turning, hunting and the
     // accuracy distance all read this; only the vision tests themselves see the true position. Feeding
@@ -555,7 +554,6 @@ public sealed class AiSoldier
     // sub_48A920's arg-block byte +33: a visible player may produce one detection bark during this
     // combat action. The mission-wide 90-tick gate lives in SoldierRenderer, beside all other AIs.
     private bool _detectionShoutDone;
-
 
     // The target's node when a running Follow last searched: 0x48A920 flags a re-search when it changes.
     private int _followTargetNode = -1;
@@ -766,7 +764,7 @@ public sealed class AiSoldier
         }
 
         range = Math.Max(0.0, range);
-        double distance = Distance(Position, shotPosition);
+        double distance = Vector3d.Distance(Position, shotPosition);
         if (distance > range)
         {
             return false;
@@ -849,7 +847,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        double distance = Distance(Position, explosionPosition);
+        double distance = Vector3d.Distance(Position, explosionPosition);
         if (distance > rangeInUnits)
         {
             return false;
@@ -911,7 +909,7 @@ public sealed class AiSoldier
 
         Vector3d eye = EyePosition();
         Vector3d closest = ClosestPointOnSegment(segmentStart, segmentEnd, eye);
-        double distance = Distance(eye, closest);
+        double distance = Vector3d.Distance(eye, closest);
         if (distance >= GunshotMissRadiusInUnits)
         {
             return false;
@@ -1004,7 +1002,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        double distance = Distance(Position, position);
+        double distance = Vector3d.Distance(Position, position);
         if (distance > radiusInUnits)
         {
             return false;
@@ -1044,7 +1042,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        LastEventDistance = Distance(Position, grenadePosition);
+        LastEventDistance = Vector3d.Distance(Position, grenadePosition);
         _playerEventSourcePosition = grenadePosition;
         return Events.Post(
             new AiEventRecord(
@@ -1075,7 +1073,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        double distance = Distance(Position, grenadePosition);
+        double distance = Vector3d.Distance(Position, grenadePosition);
         if (distance > radiusInUnits)
         {
             return false;
@@ -1118,7 +1116,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        double distance = Distance(Position, grenadePosition);
+        double distance = Vector3d.Distance(Position, grenadePosition);
         if (distance > radiusInUnits
             || !Vision.IsVisible(EyePosition(), EyeOrientation(), grenadePosition, Alerted))
         {
@@ -1168,7 +1166,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        LastEventDistance = Distance(Position, attackerPosition);
+        LastEventDistance = Vector3d.Distance(Position, attackerPosition);
         _playerEventSourcePosition = attackerPosition;
         RefreshBelievedTarget(attacker);
         return true;
@@ -1201,7 +1199,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        double distance = Distance(Position, alerterPosition);
+        double distance = Vector3d.Distance(Position, alerterPosition);
         if (distance > AlertPingRadiusInUnits)
         {
             return false;
@@ -1373,7 +1371,7 @@ public sealed class AiSoldier
         AiEyeSnapshot snapshot = Vision.Capture(EyePosition(), EyeOrientation(), Alerted);
         bool inCone = snapshot.IsVisible(enemyEye);
         bool clear = _sight is null || _sight(EyePosition(), enemyEye);
-        return (Distance(Position, enemyEye), inCone, clear, Alerted, TargetSlot.IsVisible);
+        return (Vector3d.Distance(Position, enemyEye), inCone, clear, Alerted, TargetSlot.IsVisible);
     }
 
     /// <summary>
@@ -1693,7 +1691,7 @@ public sealed class AiSoldier
             return -1.0;
         }
 
-        return Distance(Position, position);
+        return Vector3d.Distance(Position, position);
     }
 
     private Func<int, bool>? _alarmStatus;
@@ -2020,7 +2018,7 @@ public sealed class AiSoldier
             return -1;
         }
 
-        double fromCurrent = Distance(current.Position, Position);
+        double fromCurrent = Vector3d.Distance(current.Position, Position);
         int next = -1;
         foreach (AiWaypoint waypoint in _route)
         {
@@ -2043,7 +2041,7 @@ public sealed class AiSoldier
 
         if (next == destination)
         {
-            return Distance(ahead.Position, Position) < fromCurrent ? next : CurrentNode;
+            return Vector3d.Distance(ahead.Position, Position) < fromCurrent ? next : CurrentNode;
         }
 
         // "ERROR IN ROUTENET" leaves the current node as the start.
@@ -2540,7 +2538,7 @@ public sealed class AiSoldier
                 human.Slot,
                 () => snapshot.IsVisible(mark),
                 () => _sight is null || _sight(eye, mark),
-                Distance(eye, mark));
+                Vector3d.Distance(eye, mark));
         }
     }
 
@@ -2958,7 +2956,7 @@ public sealed class AiSoldier
         // sweep or alert overwrite a queued gunshot's distance before guard.qvm saw it.
         if (_currentEventPosition is { } eventPosition)
         {
-            LastEventDistance = Distance(Position, eventPosition);
+            LastEventDistance = Vector3d.Distance(Position, eventPosition);
         }
 
         bool handled = _host!.Run(_script!, this, type, slot, _archetypeScript);
@@ -3109,7 +3107,7 @@ public sealed class AiSoldier
         // records without a source task do not run that gate, exactly like the null-handle retail arm.
         if (_currentEventSource != 0
             && ResolveCurrentEventSourcePosition() is { } sourcePosition
-            && Distance(Position, sourcePosition) < AiScriptApi.GunshotRange)
+            && Vector3d.Distance(Position, sourcePosition) < AiScriptApi.GunshotRange)
         {
             return;
         }
@@ -3624,15 +3622,15 @@ public sealed class AiSoldier
             _groundLegSet = true;
         }
 
-        if (Distance(head, _groundLegTo) > 100.0)
+        if (Vector3d.Distance(head, _groundLegTo) > 100.0)
         {
             _groundLegFrom = _groundLegTo;
             _groundLegTo = head;
         }
 
-        double length = Distance(_groundLegTo, _groundLegFrom);
+        double length = Vector3d.Distance(_groundLegTo, _groundLegFrom);
         double remaining = length > 0.0
-            ? Math.Clamp(Distance(_groundLegTo, new Vector3d(x, y, Position.Z)) / length, 0.0, 1.0)
+            ? Math.Clamp(Vector3d.Distance(_groundLegTo, new Vector3d(x, y, Position.Z)) / length, 0.0, 1.0)
             : 0.0;
         return ((1.0 - remaining) * (_groundLegTo.Z - _groundLegFrom.Z)) + _groundLegFrom.Z;
     }
@@ -3815,7 +3813,7 @@ public sealed class AiSoldier
             InCone: TargetSlot.IsInCone,
             Visible: TargetSlot.IsVisible,
             TargetPosition: TrueAimPoint(),
-            DistanceToTargetInUnits: Distance(Position, enemy),
+            DistanceToTargetInUnits: Vector3d.Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
             Category: weapon.Category,
@@ -3930,7 +3928,7 @@ public sealed class AiSoldier
                 && (current.Criteria & GraphNodeCriteria.Stair) != 0;
             AiEvasiveAction evasion = _patrol!.ChooseEvasion(
                 tick,
-                Distance(Position, enemy),
+                Vector3d.Distance(Position, enemy),
                 AvailableRollSpace(),
                 underFire,
                 onStair);
@@ -4121,7 +4119,7 @@ public sealed class AiSoldier
             _channelWrites.Clear();
         }
 
-        double distance = Distance(Position, enemy);
+        double distance = Vector3d.Distance(Position, enemy);
         bool visible = TargetSlot.IsVisible;
 
         // Only the branch that needs a search runs one, as the original's call sites do: a search CLAIMS
@@ -4415,7 +4413,7 @@ public sealed class AiSoldier
             InCone: TargetSlot.IsInCone,
             Visible: TargetSlot.IsVisible,
             TargetPosition: TrueAimPoint(),
-            DistanceToTargetInUnits: Distance(Position, enemy),
+            DistanceToTargetInUnits: Vector3d.Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
             Category: weapon.Category,
@@ -4606,7 +4604,7 @@ public sealed class AiSoldier
 
         foreach (GraphNode node in _graph.Nodes)
         {
-            double distance = Distance(node.Position, point);
+            double distance = Vector3d.Distance(node.Position, point);
             if (distance <= radius)
             {
                 string links = string.Join(",", _graph.LinksOf(node.Id).Select(link => link.Other(node.Id)));
@@ -4817,11 +4815,4 @@ public sealed class AiSoldier
         return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
-    private static double Distance(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 }

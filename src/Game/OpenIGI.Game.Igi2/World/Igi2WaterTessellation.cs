@@ -110,12 +110,12 @@ public sealed class Igi2WaterTessellation
                 Vector3f from = _vertices[corners[edge]].Position - eye;
                 Vector3f to = _vertices[corners[(edge + 1) % 3]].Position - eye;
                 Vector3f along = to - from;
-                float length = Dot(along, along);
+                float length = Vector3f.Dot(along, along);
 
                 // The point of the edge nearest the eye.
-                float t = Dot(along, from) * (-1f / length);
+                float t = Vector3f.Dot(along, from) * (-1f / length);
                 Vector3f nearest = t < 0f ? from : t <= 1f ? from + (along * t) : to;
-                float threshold = sheet.Detail * sheet.Detail * Dot(nearest, nearest);
+                float threshold = sheet.Detail * sheet.Detail * Vector3f.Dot(nearest, nearest);
 
                 // Room for the vertices a split makes, which the original never runs out of.
                 if (length <= threshold || length <= ShortestSplitSquared || VertexCount + 3 > MaximumVertices)
@@ -162,8 +162,6 @@ public sealed class Igi2WaterTessellation
                 Bgra32.White);
         }
     }
-
-    private static float Dot(Vector3f a, Vector3f b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z);
 
     private bool Culled(int a, int b, int c) =>
         (_vertices[a].Outcode & _vertices[b].Outcode & _vertices[c].Outcode) != 0;
@@ -311,7 +309,7 @@ public sealed class Igi2WaterTessellation
         public int Outcode(Vector3f position)
         {
             Vector3f offset = position - eye;
-            float across = Dot(_right, offset), upward = Dot(_up, offset), ahead = Dot(_forward, offset);
+            float across = Vector3f.Dot(_right, offset), upward = Vector3f.Dot(_up, offset), ahead = Vector3f.Dot(_forward, offset);
             if (ahead <= 0f)
             {
                 return Behind;

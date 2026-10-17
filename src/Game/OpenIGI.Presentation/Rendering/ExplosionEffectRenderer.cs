@@ -395,7 +395,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
         Vector3d toEye = centre / -distance;
         Vector3d reference = Math.Abs(toEye.Z) < 0.9 ? new Vector3d(0, 0, 1) : new Vector3d(1, 0, 0);
-        Vector3d rightD = Cross(reference, toEye);
+        Vector3d rightD = Vector3d.Cross(reference, toEye);
         double rightLength = rightD.Length;
         if (!(rightLength > 1e-9))
         {
@@ -403,7 +403,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
         }
 
         rightD /= rightLength;
-        Vector3d upD = Cross(toEye, rightD);
+        Vector3d upD = Vector3d.Cross(toEye, rightD);
 
         float cos = MathF.Cos(p.Roll);
         float sin = MathF.Sin(p.Roll);
@@ -494,11 +494,6 @@ internal sealed class ExplosionEffectRenderer : IDisposable
             return false;
         }
     }
-
-    private static Vector3d Cross(Vector3d a, Vector3d b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
 
     private static bool IsFinite(Vector3f v) =>
         float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);

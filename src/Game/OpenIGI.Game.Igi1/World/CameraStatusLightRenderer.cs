@@ -160,7 +160,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
             Vector3d reference = Math.Abs(toEye.Z) < 0.9
                 ? new Vector3d(0, 0, 1)
                 : new Vector3d(1, 0, 0);
-            Vector3d rightD = Cross(reference, toEye);
+            Vector3d rightD = Vector3d.Cross(reference, toEye);
             double rightLength = rightD.Length;
             if (!(rightLength > 1e-9))
             {
@@ -168,7 +168,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
             }
 
             rightD /= rightLength;
-            Vector3d upD = Cross(toEye, rightD);
+            Vector3d upD = Vector3d.Cross(toEye, rightD);
             centre += toEye * LensSurfaceBiasMetres;
             float half = HalfSize(camera);
             Vector3f right = new(
@@ -265,11 +265,6 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         SecurityCameraLamp.Green => new Bgra32(0, 64, 0, 255),
         _ => default,
     };
-
-    private static Vector3d Cross(Vector3d left, Vector3d right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
 
     private static ushort[] BuildIndices()
     {

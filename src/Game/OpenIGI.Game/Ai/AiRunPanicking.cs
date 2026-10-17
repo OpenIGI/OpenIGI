@@ -42,7 +42,7 @@ public static class AiRunPanicking
         }
 
         double radius = distanceMetres * UnitsPerMetre;
-        if (Distance(humanPosition, eventPosition) > radius)
+        if (Vector3d.Distance(humanPosition, eventPosition) > radius)
         {
             return null;
         }
@@ -56,7 +56,7 @@ public static class AiRunPanicking
                 continue;
             }
 
-            double squared = DistanceSquared(node.Position, eventPosition);
+            double squared = Vector3d.DistanceSquared(node.Position, eventPosition);
             if (squared < closestSquared)
             {
                 closest = node;
@@ -79,7 +79,7 @@ public static class AiRunPanicking
             int candidate = queue.Dequeue();
             GraphNode? node = graph.NodeAt(candidate);
             if (node is not null
-                && Distance(node.Position, eventPosition) > radius
+                && Vector3d.Distance(node.Position, eventPosition) > radius
                 && (canUseNode?.Invoke(candidate) ?? true))
             {
                 return candidate;
@@ -106,13 +106,4 @@ public static class AiRunPanicking
         return null;
     }
 
-    private static double Distance(Vector3d a, Vector3d b) => Math.Sqrt(DistanceSquared(a, b));
-
-    private static double DistanceSquared(Vector3d a, Vector3d b)
-    {
-        double x = a.X - b.X;
-        double y = a.Y - b.Y;
-        double z = a.Z - b.Z;
-        return (x * x) + (y * y) + (z * z);
-    }
 }

@@ -208,7 +208,7 @@ public sealed class InteractionCamera
 
         if (_walls is { } walls && walls(pivot, eye, out Vector3d hit))
         {
-            double blockedDistance = Math.Max(0.0, Distance(pivot, hit) - CollisionPullInUnits);
+            double blockedDistance = Math.Max(0.0, Vector3d.Distance(pivot, hit) - CollisionPullInUnits);
             distance = Math.Min(distance, blockedDistance);
             if (commit)
             {
@@ -230,11 +230,4 @@ public sealed class InteractionCamera
         _camera = new Camera3D(eyeMetres, Camera3D.LookRotation(yaw, pitch));
     }
 
-    private static double Distance(Vector3d left, Vector3d right)
-    {
-        double x = left.X - right.X;
-        double y = left.Y - right.Y;
-        double z = left.Z - right.Z;
-        return Math.Sqrt((x * x) + (y * y) + (z * z));
-    }
 }

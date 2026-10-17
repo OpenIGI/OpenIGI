@@ -415,7 +415,7 @@ public static class LightFixtureExtractor
 
                         foreach (int other in bucket)
                         {
-                            if (DistanceSquared(at, centroids[other]) <= limit)
+                            if (Vector3d.DistanceSquared(at, centroids[other]) <= limit)
                             {
                                 Union(parent, i, other);
                             }
@@ -498,9 +498,9 @@ public static class LightFixtureExtractor
         {
             Triangle triangle = triangles[index];
 
-            extent = Math.Max(extent, DistanceSquared(position, triangle.A));
-            extent = Math.Max(extent, DistanceSquared(position, triangle.B));
-            extent = Math.Max(extent, DistanceSquared(position, triangle.C));
+            extent = Math.Max(extent, Vector3d.DistanceSquared(position, triangle.A));
+            extent = Math.Max(extent, Vector3d.DistanceSquared(position, triangle.B));
+            extent = Math.Max(extent, Vector3d.DistanceSquared(position, triangle.C));
 
             Accumulate(byTexture, triangle.Texture, triangle.Area);
 
@@ -732,15 +732,6 @@ public static class LightFixtureExtractor
         order = order != 0 ? order : left.Position.Y.CompareTo(right.Position.Y);
 
         return order != 0 ? order : left.Position.Z.CompareTo(right.Position.Z);
-    }
-
-    private static double DistanceSquared(Vector3d left, Vector3d right)
-    {
-        double dx = left.X - right.X;
-        double dy = left.Y - right.Y;
-        double dz = left.Z - right.Z;
-
-        return (dx * dx) + (dy * dy) + (dz * dz);
     }
 
     private static int Find(int[] parent, int index)

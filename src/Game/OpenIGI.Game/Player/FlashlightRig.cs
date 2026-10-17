@@ -169,7 +169,7 @@ public sealed class FlashlightRig
 
         Vector3f swayed = Normalise(target + (right * MathF.Tan(yaw)) + (up * MathF.Tan(pitch)), target);
 
-        if (!_hasAim || Dot(Aim, swayed) < MathF.Cos(SnapDegrees * (MathF.PI / 180f)))
+        if (!_hasAim || Vector3f.Dot(Aim, swayed) < MathF.Cos(SnapDegrees * (MathF.PI / 180f)))
         {
             Aim = swayed;
             _hasAim = true;
@@ -289,11 +289,9 @@ public sealed class FlashlightRig
         return (_rng & 0xFFFFFF) / 16777216f;
     }
 
-    private static float Dot(Vector3f a, Vector3f b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z);
-
     private static Vector3f Normalise(Vector3f v, Vector3f fallback)
     {
-        float length = MathF.Sqrt(Dot(v, v));
+        float length = MathF.Sqrt(Vector3f.Dot(v, v));
         return length > 1e-6f ? v * (1f / length) : fallback;
     }
 }

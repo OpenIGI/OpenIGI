@@ -84,7 +84,7 @@ public readonly record struct WireTransform(
 
         Vector3d direction = span / length;
         Vector3d up = CableUp(direction);
-        Vector3d side = Cross(direction, up).Normalized();
+        Vector3d side = Vector3d.Cross(direction, up).Normalized();
         Matrix3f orientation = new(
             (float)side.X, (float)direction.X, (float)up.X,
             (float)side.Y, (float)direction.Y, (float)up.Y,
@@ -188,11 +188,6 @@ public readonly record struct WireTransform(
         position = default;
         return false;
     }
-
-    private static Vector3d Cross(Vector3d left, Vector3d right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
 
     private static Vector3f Normalize(Vector3f value)
     {

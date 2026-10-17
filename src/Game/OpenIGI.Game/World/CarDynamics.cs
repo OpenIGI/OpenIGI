@@ -215,8 +215,8 @@ public static class CarDynamics
             }
 
             Vector3d opposing = pointVelocity / -slip;
-            double across = Dot(opposing, lateral);
-            double along = Dot(opposing, forward);
+            double across = Vector3d.Dot(opposing, lateral);
+            double along = Vector3d.Dot(opposing, forward);
 
             // Into wheel space, scale each axis by its own friction, and back out. The scaled vector
             // is deliberately not renormalised: its length carries the reduced grip. The handbrake
@@ -468,9 +468,6 @@ public static class CarDynamics
 
     private static Vector3d Perpendicular(Vector3d offset, double yawRate) =>
         new(-offset.Y * yawRate, offset.X * yawRate, 0d);
-
-    private static double Dot(Vector3d left, Vector3d right) =>
-        (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
 
     private static double Cross(Vector3d offset, Vector3d force) =>
         (offset.X * force.Y) - (offset.Y * force.X);

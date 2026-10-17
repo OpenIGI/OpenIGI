@@ -279,8 +279,8 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
             ? new Vector3f(0f, 0f, 1f)
             : new Vector3f(1f, 0f, 0f);
 
-        Vector3f right = Normalise(Cross(reference, normal));
-        Vector3f up = Normalise(Cross(normal, right));
+        Vector3f right = Normalise(Vector3f.Cross(reference, normal));
+        Vector3f up = Normalise(Vector3f.Cross(normal, right));
         if (anchored)
         {
             normal = BulletMarks.ToWorld(orientation, normal);
@@ -320,11 +320,6 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
             u,
             v,
             colour: Bgra32.White);
-
-    private static Vector3f Cross(Vector3f a, Vector3f b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
 
     private static Vector3f Normalise(Vector3f v)
     {

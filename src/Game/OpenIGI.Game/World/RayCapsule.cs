@@ -57,7 +57,7 @@ public static class RayCapsule
         // An orthonormal basis with z along the capsule axis.
         Vector3d z = new(axis.X / length, axis.Y / length, axis.Z / length);
         Vector3d hint = Math.Abs(z.Z) < 0.99 ? new Vector3d(0.0, 0.0, 1.0) : new Vector3d(1.0, 0.0, 0.0);
-        Vector3d x = Cross(z, hint);
+        Vector3d x = Vector3d.Cross(z, hint);
         double xLen = Math.Sqrt((x.X * x.X) + (x.Y * x.Y) + (x.Z * x.Z));
         if (xLen <= 0.0)
         {
@@ -65,7 +65,7 @@ public static class RayCapsule
         }
 
         x = new Vector3d(x.X / xLen, x.Y / xLen, x.Z / xLen);
-        Vector3d y = Cross(z, x);
+        Vector3d y = Vector3d.Cross(z, x);
 
         // The ray in that frame, measured from axisA.
         double ox = Dot(origin.X - axisA.X, origin.Y - axisA.Y, origin.Z - axisA.Z, x);
@@ -209,11 +209,6 @@ public static class RayCapsule
 
         return false;
     }
-
-    private static Vector3d Cross(Vector3d a, Vector3d b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
 
     private static double Dot(double x, double y, double z, Vector3d axis) =>
         (x * axis.X) + (y * axis.Y) + (z * axis.Z);

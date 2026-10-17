@@ -78,18 +78,18 @@ public static class AimBasis
 
         // Behind the shoulder is not in front of the eye. A camera pressed against a wall can find one,
         // and firing at it would send the round back through the player.
-        if (Dot(aim, forward) <= 0f)
+        if (Vector3f.Dot(aim, forward) <= 0f)
         {
             return false;
         }
 
-        float alongForward = Dot(right, aim);
+        float alongForward = Vector3f.Dot(right, aim);
         Vector3f squared = new(
             right.X - (aim.X * alongForward),
             right.Y - (aim.Y * alongForward),
             right.Z - (aim.Z * alongForward));
 
-        float length = MathF.Sqrt(Dot(squared, squared));
+        float length = MathF.Sqrt(Vector3f.Dot(squared, squared));
         if (length <= 1e-4f)
         {
             // The barrel has turned onto the frame's own right axis, which no aim reachable from a
@@ -101,17 +101,8 @@ public static class AimBasis
 
         forward = aim;
         right = squared;
-        up = Cross(squared, aim);
+        up = Vector3f.Cross(squared, aim);
         return true;
     }
 
-    private static float Dot(Vector3f left, Vector3f right) =>
-        (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
-
-    // right x forward, which is the handedness the engine's own frame has: with X right, Y forward and
-    // Z up, (1,0,0) x (0,1,0) is (0,0,1).
-    private static Vector3f Cross(Vector3f left, Vector3f right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
 }

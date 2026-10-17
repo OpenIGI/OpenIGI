@@ -3134,14 +3134,6 @@ public sealed class SoldierRenderer : IDisposable
 
     private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
 
-    private static double Length(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
-
     /// <summary>A round a soldier has just fired.</summary>
     /// <param name="origin">Where it leaves, in world units — the soldier's eye.</param>
     /// <param name="aim">Where it is aimed, in world units.</param>
@@ -6627,7 +6619,7 @@ public sealed class SoldierRenderer : IDisposable
                 view.Position,
                 facing,
                 (from, to) => cast(from, to, out WorldRayHit blocked)
-                    ? new SoldierDeathRay(true, blocked.Position, Length(from, blocked.Position))
+                    ? new SoldierDeathRay(true, blocked.Position, Vector3d.Distance(from, blocked.Position))
                     : default);
         }
 

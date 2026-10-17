@@ -276,7 +276,7 @@ internal sealed partial class GameHost : IWorldInspector
             "player",
             at,
             _playerDead ? "dead" : "alive",
-            Distance(eye, at)));
+            Vector3d.Distance(eye, at)));
     }
 
     private void AddSoldiers(List<InspectableEntity> into, string needle, Vector3d eye)
@@ -300,7 +300,7 @@ internal sealed partial class GameHost : IWorldInspector
                 soldier.Name.Length > 0 ? soldier.Name : $"#{i}",
                 soldier.Position,
                 DescribeSoldier(soldier),
-                Distance(eye, soldier.Position)));
+                Vector3d.Distance(eye, soldier.Position)));
         }
     }
 
@@ -339,7 +339,7 @@ internal sealed partial class GameHost : IWorldInspector
                 model,
                 placement.Position,
                 task,
-                Distance(eye, placement.Position)));
+                Vector3d.Distance(eye, placement.Position)));
         }
     }
 
@@ -362,7 +362,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 door.DrawPosition,
                 DescribeDoor(door),
-                Distance(eye, door.DrawPosition)));
+                Vector3d.Distance(eye, door.DrawPosition)));
         }
     }
 
@@ -385,7 +385,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 elevator.DrawPosition,
                 elevator.State.IsMoving ? "moving" : $"floor {elevator.State.CurrentFloorIndex}",
-                Distance(eye, elevator.DrawPosition)));
+                Vector3d.Distance(eye, elevator.DrawPosition)));
         }
     }
 
@@ -409,7 +409,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 at,
                 interaction.Type.ToString().ToLowerInvariant(),
-                Distance(eye, at)));
+                Vector3d.Distance(eye, at)));
         }
     }
 
@@ -433,7 +433,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 gunAt,
                 pickup.IsCollected ? "taken" : "available",
-                Distance(eye, gunAt)));
+                Vector3d.Distance(eye, gunAt)));
         }
 
         IReadOnlyList<GenericPickup>? items = _genericPickups?.Items;
@@ -454,7 +454,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 itemAt,
                 pickup.IsCollected ? "taken" : "available",
-                Distance(eye, itemAt)));
+                Vector3d.Distance(eye, itemAt)));
         }
     }
 
@@ -478,7 +478,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 at,
                 camera.IsExploded ? "destroyed" : camera.IsDetection ? "alerted" : "watching",
-                Distance(eye, at)));
+                Vector3d.Distance(eye, at)));
         }
     }
 
@@ -502,7 +502,7 @@ internal sealed partial class GameHost : IWorldInspector
                 name,
                 at,
                 speaker.IsDestroyed ? "destroyed" : "alarm",
-                Distance(eye, at)));
+                Vector3d.Distance(eye, at)));
         }
     }
 
@@ -525,7 +525,7 @@ internal sealed partial class GameHost : IWorldInspector
                 $"ladder {i}",
                 ladderAt,
                 "climbable",
-                Distance(eye, ladderAt)));
+                Vector3d.Distance(eye, ladderAt)));
         }
     }
 
@@ -550,7 +550,7 @@ internal sealed partial class GameHost : IWorldInspector
             "terrain",
             default,
             _terrain.Summary,
-            Distance(eye, default)));
+            Vector3d.Distance(eye, default)));
     }
 
     // ---- Detail ----
@@ -783,14 +783,6 @@ internal sealed partial class GameHost : IWorldInspector
     /// reported five million metres away, so everything is normalised here at the seam.
     /// </remarks>
     private static Vector3d Metres(Vector3d units) => units / WorldScene.UnitsPerMetre;
-
-    private static double Distance(Vector3d from, Vector3d to)
-    {
-        double dx = to.X - from.X;
-        double dy = to.Y - from.Y;
-        double dz = to.Z - from.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 
     private static string DescribeSoldier(in SoldierSnapshot soldier)
     {
