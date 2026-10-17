@@ -67,8 +67,6 @@ internal sealed class FrameLoopState
 
     public int FlightFrame { get; set; }
 
-    public long ProbeArrivedAt { get; set; }
-
     public bool CardLightingDumped { get; set; }
 
     public bool ScreenGiDumped { get; set; }
@@ -148,10 +146,6 @@ internal sealed class FrameLoopState
     public int LastShellMilliseconds { get; set; }
 
     public int LastMenuCameraMilliseconds { get; set; }
-
-    public int LastProbeChaseMilliseconds { get; set; }
-
-    public int ProbeChaseFrame { get; set; }
 
     public bool CaptureMode { get; set; }
 

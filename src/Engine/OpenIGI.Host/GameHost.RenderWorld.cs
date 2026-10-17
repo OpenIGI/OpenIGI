@@ -983,7 +983,7 @@ public sealed partial class GameHost
             // of the baked field for the deferred fill. Needs the baked field only for its grid.
             if (RenderCVars.RadianceCache.Value != 0
                 && _gi.CardLighting is { } cacheCards
-                && _probeField is { } cacheGrid)
+                && _baked.ProbeField is { } cacheGrid)
             {
                 cacheCards.ConfigureRadianceCache(
                     new Vector3d(cacheGrid.Origin.X, cacheGrid.Origin.Y, cacheGrid.Origin.Z),
@@ -1075,13 +1075,13 @@ public sealed partial class GameHost
 
         // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
         // stop as a second, smaller event -- which is the thing this exists to remove.
-        float probeFade = state.ProbeArrivedAt < 0
+        float probeFade = _baked.ProbeArrivedAt < 0
             ? 1f
-            : Math.Clamp((_loop.TimeSource.Milliseconds - state.ProbeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
+            : Math.Clamp((_loop.TimeSource.Milliseconds - _baked.ProbeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
         probeFade = probeFade * probeFade * (3f - (2f * probeFade));
 
         _device.SetIrradianceVolumeSettings(
-            _probeField is not null && RenderCVars.GlobalIllumination.Value
+            _baked.ProbeField is not null && RenderCVars.GlobalIllumination.Value
                 ? new IrradianceVolumeSettings(
                     true,
                     RenderCVars.GlobalIlluminationIntensity.Value,

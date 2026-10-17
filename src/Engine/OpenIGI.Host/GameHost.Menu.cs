@@ -204,8 +204,7 @@ public sealed partial class GameHost
 
         // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a
         // backdrop, and the trace belongs to the mission's real load, which caches it for good.
-        _probeField = preview.ProbeField;
-        _device.SetIrradianceVolume(_probeField);
+        _baked.AdoptPreviewField(preview.ProbeField);
         Lap("constants");
 
         // The outgoing level's surface cache and distance fields go first: the cards were captured from
@@ -276,7 +275,7 @@ public sealed partial class GameHost
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
         using var loader = new MissionPreviewLoader(
-            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger, _work);
+            _gamePath, _missions, _magic, _baked.ProbeCache, cameras, _previewContext, _logger, _work);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())

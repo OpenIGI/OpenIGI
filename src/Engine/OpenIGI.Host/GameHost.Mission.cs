@@ -1308,123 +1308,9 @@ public sealed partial class GameHost
             // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
             // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
             // lightmaps entirely; 1 keeps them where the bake produced nothing.
-            bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
-            if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
+            if (_scene is { } bakeScene)
             {
-                Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
-
-                // The LEVEL's ambient, not SkyFillColour's. That reads the effective sun -- the
-                // authored one after the day/night sweep and the daylight re-point have had it,
-                // which moves every frame and belongs to the frame before this load. The two
-                // inputs beside it come from the level's own Dirlight, so mixing the two gave a
-                // disk-cache key that could not be reproduced: entering the same mission twice in
-                // a session missed its own bake and traced the level again.
-                Vector3f lmSky = (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f))
-                    * RenderCVars.SkyLight.Value;
-                _lightmapBakeMission = id;
-                _lightmapBakeSun = bakeSunDirection;
-                _lightmapBakeSunColour = lmSun;
-                _lightmapBakeSky = lmSky;
-
-                if (_lightmapCache.TryLoad(id, bakeSunDirection, lmSun, lmSky) is { } cachedLightmaps)
-                {
-                    _world.SetBakedLightmaps(cachedLightmaps, discardRetailLightmaps);
-                }
-                else
-                {
-                    // Set the mode straight away so the worker's seconds are not spent showing the
-                    // shipped lightmaps under an exclusive (r_lightmap 2) request: with no bake yet,
-                    // lightmapped surfaces read black until the bake lands. Mode 1 keeps the shipped
-                    // pages meanwhile, which is what its fallback means.
-                    _world.SetBakedLightmaps(null, discardRetailLightmaps);
-
-                    // Resolving each surface's albedo reads the resource registry, so the texel
-                    // maps, textured triangles and their BVH are built here on the main thread; the
-                    // worker then does only the tracing, which touches immutable data and the cast.
-                    IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
-                    LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
-                    LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
-
-                    _lightmapBake?.Cancel();
-                    _lightmapBake = LightmapBake.Start(
-                        bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
-                        _work, bounces: 4, hemisphereRays: 128, logger: _logger);
-
-                    if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
-                    {
-                        _world.SetBakedLightmaps(readyLightmaps, discardRetailLightmaps);
-                        _lightmapCache.Save(id, bakeSunDirection, lmSun, lmSky, readyLightmaps);
-                        _lightmapBake = null;
-                    }
-                }
-            }
-            else
-            {
-                // The setting is off, or off since the last load: make sure no stale bake lingers.
-                _world?.SetBakedLightmaps(null, discardRetail: false);
-            }
-
-            // The probe field, guarded on its own cvar so it does not trace under a lightmap-only
-            // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
-            if (RenderCVars.GlobalIllumination.Value)
-            {
-            // Whatever the console says, but never so fine that a big level spends a minute of
-            // load tracing rays nobody asked for.
-            float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
-
-            // Remembered so the live re-bake (F11) can trace the field again from exactly the
-            // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
-            // from the cache or the tracer below.
-            _bakeCast = bakeCast;
-            _probeBakeMission = id;
-            _probeBakeSpacing = giSpacing;
-            _probeBakeSun = bakeSunDirection;
-
-            // A shipped (or previously-written) bake loads instantly; only a mission without one
-            // pays to trace it here, and then writes the result so no load pays for it again.
-            if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
-            {
-                _probeField = cachedField;
-            }
-            else
-            {
-                _probeBake = IrradianceProbeBake.Start(
-                    _scene,
-                    bakeCast,
-                    bakeSunDirection,
-                    giSpacing,
-
-                    // One albedo for the whole level. The alternative is reading each hit's own
-                    // texture, which needs the ray to report a material rather than a triangle --
-                    // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
-                    // any of them.
-                    ProbeBakeAlbedo,
-                    _work,
-                    _logger);
-
-                if (_options.Lockstep)
-                {
-                    // A capture is not allowed to race the worker: a reference image has to either
-                    // contain the field or not, never "whatever frame 30 caught". So a lockstep run
-                    // blocks for the finished field and writes the cache inline.
-                    _probeField = _probeBake.WaitForResult();
-                    _probeBake = null;
-
-                    if (_probeField is not null)
-                    {
-                        _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
-                    }
-                }
-                else
-                {
-                    // Interactive play enters the level on flat ambient and watches the light
-                    // stream in: the render loop polls TryCollectLatest and eases each snapshot in
-                    // as it lands, so a room fills with light over the first seconds rather than the
-                    // load stalling until it is lit. The cache is written once the bake completes,
-                    // under the key already remembered above.
-                    _probeField = null;
-                }
-            }
+                _baked.Start(id, bakeScene, _world, _resources, _sun, bakeCast);
             }
         }
 
@@ -1468,7 +1354,7 @@ public sealed partial class GameHost
         // is exactly what the first run produced. _gi.EnsureSurfaceCache captures and lights in one
         // go, so it is called once the sun is known; the outgoing cards were dropped above.
 
-        _device.SetIrradianceVolume(_probeField);
+        _baked.Show();
         ApplyColourLookup(_options.StartMission);
         EndStage("starting the light bakes");
     }
@@ -2546,10 +2432,7 @@ public sealed partial class GameHost
         // what the new level then had to load against -- and a session that entered a handful of missions
         // carried a handful of those at once. The heap stood at one and a half gigabytes of lightmap
         // texels alone by the sixth.
-        _probeBake?.Cancel();
-        _probeBake = null;
-        _lightmapBake?.Cancel();
-        _lightmapBake = null;
+        _baked.Abandon();
 
         _computerOpen = false;
         _computerFlight.Reset();

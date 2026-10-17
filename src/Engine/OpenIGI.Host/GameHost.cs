@@ -140,9 +140,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     // GameClock.AdoptScheduleFrom.
     private ITimeSource _timeSource = null!;
     private GameLoop _loop = null!;
-    private GiBakeCache _giCache = null!;
     private DistanceFieldCache _sdfCache = null!;
-    private LightmapBakeCache _lightmapCache = null!;
     // The title's own, not this game's. DefineMission takes eleven arguments in one and fourteen in the
     // other, and only one of them names the mission that follows -- so the reader and the campaign order
     // are both the title's to supply.
@@ -210,46 +208,6 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     private IPlacementSpin? _spins;
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
-
-    // --- Global illumination, distance fields and the surface cache ---
-    private IrradianceVolume? _probeField;
-    private IrradianceProbeBake? _probeBake;
-
-    // The newest bounce pass the display is easing towards. Held apart from _probeField (what is on the
-    // GPU right now) so a pass does not snap in: a bounce adds a chunk of indirect light, and eight snaps
-    // read as the room stepping brighter eight times. _probeField chases this instead.
-    private IrradianceVolume? _probeTarget;
-
-    // The cache key an in-flight interactive bake is written under once it finishes -- remembered here
-    // because the load no longer blocks for the field, so the save moves to the frame the bake completes.
-    // The cast is kept too, so the live re-bake (F11) can trace the field again from the same inputs.
-    private int _probeBakeMission;
-    private float _probeBakeSpacing;
-    private Vector3f _probeBakeSun;
-    private WorldRayCast? _bakeCast;
-
-    // The path-traced object-lightmap bake in flight, and the inputs its result is cached under once it
-    // lands -- remembered because the load no longer blocks for it, so the save moves to the frame it
-    // completes, exactly as the probe field's does.
-    private LightmapBake? _lightmapBake;
-    private int _lightmapBakeMission;
-    private Vector3f _lightmapBakeSun;
-    private Vector3f _lightmapBakeSunColour;
-    private Vector3f _lightmapBakeSky;
-
-    // One albedo for the whole level, shared by the load-time trace and the live re-bake. IGI's palette is
-    // concrete, snow and dirt, so a warm grey stands in for reading each hit's own texture.
-    private static readonly Vector3f ProbeBakeAlbedo = new(0.42f, 0.40f, 0.37f);
-
-    // How the displayed field eases towards the newest bounce pass. The rate is an exponential approach in
-    // reciprocal seconds -- at 2.0 the field covers ~86% of the gap in one second, which settles well
-    // before the next pass (~5 s apart) yet reads as a smooth fill rather than a step. The settle cut-off
-    // is the largest per-frame coefficient move below which the ease is treated as arrived and stops
-    // re-uploading, so a converging tail does not upload the volume forever.
-    private const float ProbeChaseRate = 2.0f;
-    private const float ProbeChaseSettle = 0.001f;
-
-
 
     // What the level says about its own light, for a title that authors that rather than a sky. Null for
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
@@ -1067,7 +1025,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         // Baked global illumination: a mission's probe field is loaded from the shipped cache (Assets/gi)
         // when present, else traced and written to the per-user cache so the next load is fast. This is what
         // turns a level load from a few-seconds lighting trace into an instant read -- see GiBakeCache.
-        _giCache = GiBakeCache.Create(
+        GiBakeCache probeCache = GiBakeCache.Create(
             Path.Combine(AppContext.BaseDirectory, "Assets", "gi"),
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
             _logger);
@@ -1084,10 +1042,11 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
 
         // The path-traced object lightmaps, cached the same way: baked once, read instantly after. The
         // shipped bakes live beside the probe fields; freshly-baked ones write to the per-user cache.
-        _lightmapCache = LightmapBakeCache.Create(
+        LightmapBakeCache lightmapCache = LightmapBakeCache.Create(
             Path.Combine(AppContext.BaseDirectory, "Assets", "gi"),
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
             _logger);
+        _baked = new BakedLighting(_device, _logger, _work, _options.Lockstep, probeCache, lightmapCache);
 
         // The mission state native, held because a switch has to re-register it into the loop it builds.
         _missionState = new GameMissionState();
@@ -1181,22 +1140,8 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         state.FlightStartPitch = 0f;
         state.FlightFrame = 0;
 
-        _probeField = null;
+        _baked.Forget();
 
-        // The bake in flight, while it is in flight. Non-null only between the level load starting one and
-        // the render thread collecting it; a lockstep capture never sees it, because that path waits.
-        _probeBake = null;
-        _lightmapBake?.Cancel();
-        _lightmapBake = null;
-
-        // When the probe field landed, in the loop's own milliseconds, or -1 for "no fade owed". The field
-        // is traced on a worker and arrives several seconds into a level; until it does, every surface is
-        // lit by one flat ambient colour, and swapping the two in a single frame relights the entire world
-        // at once. That reads as a fault rather than as a load finishing.
-        //
-        // A lockstep capture never fades: it waits for the field at load, so there is nothing to blend from
-        // and nothing time-dependent for a reference image to disagree about.
-        state.ProbeArrivedAt = -1;
 
 
 
@@ -1490,7 +1435,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
             state.MissionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
             state.PreviewLoader = new MissionPreviewLoader(
-                _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
+                _gamePath, _missions, _magic, _baked.ProbeCache, _menuCameras, _previewContext, _logger, _work);
 
             // The design's four faces — Barlow, Barlow Condensed in two weights, JetBrains Mono — the same
             // set the launcher draws with, uploaded once and shared by every page of the state.Shell.
@@ -1850,8 +1795,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         state.LastConsoleMilliseconds = _loop.TimeSource.Milliseconds;
         state.LastShellMilliseconds = _loop.TimeSource.Milliseconds;
         state.LastMenuCameraMilliseconds = _loop.TimeSource.Milliseconds;
-        state.LastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
-        state.ProbeChaseFrame = 0;
+        _baked.StartChaseClock(_loop.TimeSource.Milliseconds);
 
         // A capture run is a background process as far as the person at the keyboard is concerned: it must
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
@@ -1920,7 +1864,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                 // outgoing game's backdrop, and the replacement below would otherwise race it.
                 state.PreviewLoader?.Dispose();
                 state.PreviewLoader = new MissionPreviewLoader(
-                    _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
+                    _gamePath, _missions, _magic, _baked.ProbeCache, _menuCameras, _previewContext, _logger, _work);
 
                 if (state.ShellHost is not null && state.ShellTypography is not null && state.Saves is not null)
                 {
@@ -1992,89 +1936,9 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
             _detailMaps.Enabled = _detailMaps.DeriveMissing;
             _detailMaps.PumpDerived();
 
-            // The probe bake, if one is still tracing. Collected HERE rather than on the worker because
-            // what comes back becomes a GL texture, and the context belongs to this thread. TryCollect
-            // answers true once, so this costs a completed-flag read per frame until then and nothing after.
-            if (_probeBake is { } pendingBake)
-            {
-                // Each bounce pass becomes the field the display eases towards, not one shown outright:
-                // the smooth chase below fills the light in over about a second rather than stepping it.
-                if (pendingBake.TryCollectLatest(out IrradianceVolume? streamedField) && streamedField is not null)
-                {
-                    if (_probeField is null)
-                    {
-                        // First light: shown at once and faded up from flat ambient by the device's own
-                        // blend, so there is a starting field for later passes to ease away from.
-                        _probeField = streamedField;
-                        _probeTarget = streamedField;
-                        _device.SetIrradianceVolume(_probeField);
-                        state.ProbeArrivedAt = _loop.TimeSource.Milliseconds;
-                    }
-                    else
-                    {
-                        _probeTarget = streamedField;
-                    }
-                }
-
-                // Once the bake is done, the authoritative final field is both what the display settles on
-                // and what the cache keeps, so the next load reads it instead of tracing again.
-                if (pendingBake.Poll())
-                {
-                    if (pendingBake.TryCollect(out IrradianceVolume? finalField) && finalField is not null)
-                    {
-                        _probeTarget = finalField;
-                        _giCache.Save(_probeBakeMission, _probeBakeSpacing, _probeBakeSun, finalField);
-                    }
-
-                    _probeBake = null;
-                }
-            }
-
-            // The path-traced lightmap bake, once its worker finishes: swap the pages in and write them to
-            // the cache so the next load reads instead of tracing. Collected here for the same reason the
-            // probe field is -- the pages become GL textures, and the context belongs to this thread.
-            if (_lightmapBake is { } pendingLightmaps && pendingLightmaps.TryCollect(out BakedLightmaps? bakedLightmaps))
-            {
-                _lightmapBake = null;
-                if (bakedLightmaps is not null)
-                {
-                    _world?.SetBakedLightmaps(bakedLightmaps, RenderCVars.BakedLightmaps.Value >= 2);
-                    _lightmapCache.Save(
-                        _lightmapBakeMission, _lightmapBakeSun, _lightmapBakeSunColour, _lightmapBakeSky, bakedLightmaps);
-                }
-            }
-
-            // Ease the displayed field towards the newest baked pass. Framerate-independent, so the fill
-            // looks the same however fast frames go out, and it keeps state.Running after the bake handle is gone
-            // until the last pass has settled -- at which point the field points straight at the target and
-            // the per-frame re-upload stops.
-            if (_probeTarget is not null && _probeField is not null && !ReferenceEquals(_probeField, _probeTarget)
-
-                // Every fourth frame, not every frame. The blend walks the whole field on the CPU and the
-                // re-upload sends the four probe volumes over again -- together roughly ten milliseconds
-                // and half a gigabyte a second while a bake streams. The ease runs over about a second, so
-                // a quarter-rate step is invisible; the elapsed-time step below keeps the pace identical.
-                && (++state.ProbeChaseFrame & 3) == 0)
-            {
-                int chaseNow = _loop.TimeSource.Milliseconds;
-                float chaseSeconds = MathF.Max(0f, (chaseNow - state.LastProbeChaseMilliseconds) / 1000f);
-                state.LastProbeChaseMilliseconds = chaseNow;
-
-                float step = 1f - MathF.Exp(-ProbeChaseRate * chaseSeconds);
-                float moved = _probeField.BlendToward(_probeTarget, step);
-                _device.SetIrradianceVolume(_probeField);
-
-                if (moved < ProbeChaseSettle)
-                {
-                    _probeField = _probeTarget;
-                }
-            }
-            else
-            {
-                // Keep the clock current while idle, so the first frame of the next ease steps by one
-                // frame's worth of time rather than the whole idle gap.
-                state.LastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
-            }
+            // The baked lighting's share of the frame: what its workers finished, and the probe field eased
+            // towards the newest pass. Collected here because what comes back becomes GPU textures.
+            _baked.Step(_world, _loop.TimeSource.Milliseconds);
 
             // Whatever the real-time lighting model needs and does not have yet. Every frame rather than
             // at load, because the settings menu can ask for that model at any moment and the structures it
@@ -2751,22 +2615,9 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
                 && RenderCVars.GlobalIllumination.Value
                 && _scene is not null
-                && _bakeCast is not null)
+                && _baked.CanRebake)
             {
-                _probeBake?.Cancel();
-                int cleared = _giCache.DeleteAll();
-
-                _probeField = null;
-                _probeTarget = null;
-                _device.SetIrradianceVolume(null);
-                state.ProbeArrivedAt = -1;
-                state.LastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
-
-                _probeBake = IrradianceProbeBake.Start(
-                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _work, _logger);
-
-                _logger.Information(
-                    "GI", $"Re-baking the lighting from scratch (F11); cleared {cleared} cached field(s).");
+                _baked.Rebake(_scene, _loop.TimeSource.Milliseconds);
             }
 
             // F1 swaps between flying and walking. The player takes the camera's position when it is
@@ -3393,8 +3244,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         // A bake still tracing at this point is tracing for a level nobody will see again. The worker is a
         // thread-pool thread and cannot hold the process open, so this is not about shutting down cleanly --
         // it is about not spending every core on it while the rest of the shutdown runs.
-        _probeBake?.Cancel();
-        _lightmapBake?.Cancel();
+        _baked.Cancel();
 
         if (!_options.IsBenchmark)
         {
