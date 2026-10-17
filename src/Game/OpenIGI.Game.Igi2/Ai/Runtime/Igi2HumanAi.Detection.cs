@@ -265,7 +265,7 @@ public sealed partial class Igi2HumanAi
         Fpu ly = ((dz * o[7]) + (dy * o[4])) + ((Fpu)dx * o[1]);
         float lz = (((Fpu)dzStored * o[8]) + (dy * o[5]) + ((Fpu)dx * o[2])).F;
 
-        double alpha = Igi2AiAngles.CalcAlpha(ly.Value, lz);
+        double alpha = Igi2Pose.CalcAlpha(ly.Value, lz);
         double s = Math.Sin(alpha);
         float c = (float)Math.Cos(alpha), ns = (float)-s;
         Fpu sw = s;

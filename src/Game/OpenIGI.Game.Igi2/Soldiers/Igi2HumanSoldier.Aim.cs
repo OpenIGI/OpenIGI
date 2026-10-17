@@ -90,7 +90,7 @@ public sealed partial class Igi2HumanSoldier : IIgi2BoneCallbacks
             }
         }
 
-        float alpha = Igi2AiAngles.CalcAlpha(dy, dz);
+        float alpha = Igi2Pose.CalcAlpha(dy, dz);
         float gamma = Igi2Pose.CalcGamma(dx, dy);
         AimGamma = gamma < -AimGammaLimit ? -AimGammaLimit : gamma > AimGammaLimit ? AimGammaLimit : gamma;
         AimAlpha = alpha;

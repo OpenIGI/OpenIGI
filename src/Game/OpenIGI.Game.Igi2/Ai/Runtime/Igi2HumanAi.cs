@@ -58,7 +58,7 @@ public sealed class Igi2AiView
         }
 
         double length = Fpu.Sqrt(((ly * ly) + (lz * lz)) + (lx * lx)).Value;
-        float alpha = Math.Abs(Detection.Igi2AiAngles.CalcAlpha(ly.Value, lz.Value));
+        float alpha = Math.Abs(World.Igi2Pose.CalcAlpha(ly.Value, lz.Value));
         float gamma = Math.Abs(World.Igi2Pose.CalcGamma(lx.Value, ly.Value));
         if (ignoreDistance || !(length > ConeLength))
         {

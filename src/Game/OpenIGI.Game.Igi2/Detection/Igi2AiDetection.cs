@@ -166,7 +166,7 @@ public sealed class Igi2DetectionView
         Fpu y = (((Fpu)m[7] * dz) + ((Fpu)m[4] * dy)) + ((Fpu)m[1] * dx);
         Fpu z = (((Fpu)m[8] * dz) + ((Fpu)m[5] * dy)) + ((Fpu)m[2] * dx);
         double length = Fpu.Sqrt(((y * y) + (z * z)) + (x * x)).Value;
-        float alpha = Math.Abs(Igi2AiAngles.CalcAlpha(y.Value, z.Value));
+        float alpha = Math.Abs(Igi2Pose.CalcAlpha(y.Value, z.Value));
         float gamma = Math.Abs(Igi2Pose.CalcGamma(x.Value, y.Value));
 
         // The lengths pass edges included and anything not a number; the angles only strictly inside.
@@ -176,30 +176,6 @@ public sealed class Igi2DetectionView
         }
 
         return IsSecondaryViewUsed && !(length > SecondaryConeLength) && alpha < SecondaryConeAlpha && gamma < SecondaryConeGamma;
-    }
-}
-
-/// <summary>The angle helpers detection uses beside <see cref="Igi2Pose.CalcGamma"/>.</summary>
-public static class Igi2AiAngles
-{
-    /// <summary>
-    /// The tilt of a direction off the Y axis towards Z, <c>GameFunctions_CalcAlpha</c> (<c>igi2 0x48C740</c>): the arc cosine of
-    /// its normalised Y in the Y-Z plane, negative when it points down, and nought for one with neither.
-    /// </summary>
-    /// <param name="y">The direction's Y.</param>
-    /// <param name="z">The direction's Z.</param>
-    /// <returns>The tilt, in radians.</returns>
-    public static float CalcAlpha(double y, double z)
-    {
-        if (y == 0.0 && z == 0.0)
-        {
-            return 0f;
-        }
-
-        Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((Fpu)y * y) + ((Fpu)z * z));
-        Fpu up = (Fpu)z * inverse;
-        float angle = Igi2Pose.Acos(((Fpu)y * inverse).F);
-        return up.Value < 0.0 ? -angle : angle;
     }
 }
 

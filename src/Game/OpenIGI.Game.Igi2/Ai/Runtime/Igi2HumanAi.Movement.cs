@@ -398,14 +398,14 @@ public sealed partial class Igi2HumanAi
         double alpha;
         if (Math.Abs((double)gamma) <= 1.5707963705062866)
         {
-            alpha = Igi2AiAngles.CalcAlpha(ly, lz);
+            alpha = Igi2Pose.CalcAlpha(ly, lz);
         }
         else
         {
             double fx = ((v[0] + v[2]) * 0.0) + v[1];
             double fy = ((v[5] + v[3]) * 0.0) + v[4];
             double fz = ((v[8] + v[6]) * 0.0) + v[7];
-            alpha = -Igi2AiAngles.CalcAlpha(fy, fz);
+            alpha = -Igi2Pose.CalcAlpha(fy, fz);
             _ = fx;
             if (Math.Abs(alpha) > 1.5707963705062866)
             {
