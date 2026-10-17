@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>The player as the soldiers see it when they update.</summary>
 /// <param name="Eye">The eye the view cones are tested against, in world units.</param>
