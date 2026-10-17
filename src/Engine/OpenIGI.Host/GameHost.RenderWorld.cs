@@ -2906,9 +2906,23 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             state.Batch.End();
         }
 
-        float debugPanelHeight = 0f;
-
         _device.EndStageTiming();
+
+        DrawDebugOverlays(state, eye, cameraIndoors);
+    }
+
+    /// <summary>Draws the tools over the frame: the sun gizmo, the F12 overlay and its crosshair, and the r_perflog panel.</summary>
+    /// <param name="state">What the frame loop keeps from one frame to the next.</param>
+    /// <param name="eye">The eye the frame was drawn from, which the crosshair readout is cast from.</param>
+    /// <param name="cameraIndoors">Whether the eye is under cover, as the weather was told.</param>
+    private void DrawDebugOverlays(FrameLoopState state, Camera3D eye, bool cameraIndoors)
+    {
+        if (_world is null || _camera is null)
+        {
+            return;
+        }
+
+        float debugPanelHeight = 0f;
 
         // The sun gizmo, over everything, whenever it is up -- not gated on the F12 overlay, since it
         // is a tool being used rather than an inspection panel.
