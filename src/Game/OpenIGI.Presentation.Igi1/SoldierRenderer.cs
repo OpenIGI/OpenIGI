@@ -4667,11 +4667,11 @@ public sealed class SoldierRenderer : IDisposable
         // The rigid half. When nothing moved — or smoothing is off — the tick's own values pass
         // through verbatim, so the vanilla picture is not merely close but identical.
         Vector3d where = smooth && member.PrevTickWhere != member.TickWhere
-            ? PresentationBlend.Lerp(member.PrevTickWhere, member.TickWhere, alpha)
+            ? Vector3d.Lerp(member.PrevTickWhere, member.TickWhere, alpha)
             : member.TickWhere;
 
         Matrix3f orientation = smooth && member.PrevTickFacing != member.TickFacing
-            ? Matrix3f.FromEngineEulerAngles(0f, 0f, PresentationBlend.LerpAngle(member.PrevTickFacing, member.TickFacing, alpha))
+            ? Matrix3f.FromEngineEulerAngles(0f, 0f, Interpolation.LerpAngle(member.PrevTickFacing, member.TickFacing, alpha))
             : member.TickOrientation;
 
         member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
@@ -4701,7 +4701,7 @@ public sealed class SoldierRenderer : IDisposable
             if (smooth)
             {
                 hand = member.PrevTickHandPosition + ((member.TickHandPosition - member.PrevTickHandPosition) * alpha);
-                handRotation = PresentationBlend.InterpolateRotation(member.PrevTickHandRotation, member.TickHandRotation, alpha);
+                handRotation = Interpolation.InterpolateRotation(member.PrevTickHandRotation, member.TickHandRotation, alpha);
             }
             else
             {
@@ -5443,14 +5443,14 @@ public sealed class SoldierRenderer : IDisposable
         if (_frameSmooth && member.HasHandState)
         {
             hand = member.PrevTickHandPosition + ((member.TickHandPosition - member.PrevTickHandPosition) * _frameAlpha);
-            handRotation = PresentationBlend.InterpolateRotation(
+            handRotation = Interpolation.InterpolateRotation(
                 member.PrevTickHandRotation, member.TickHandRotation, _frameAlpha);
         }
 
         (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
         if (_frameSmooth && _playerBodyHasTickState)
         {
-            where = PresentationBlend.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
+            where = Vector3d.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
         }
 
         // M . v — the palette's own convention — is the transpose of the row-vector Transform, the same
@@ -5815,7 +5815,7 @@ public sealed class SoldierRenderer : IDisposable
         (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
         if (_frameSmooth && _playerBodyHasTickState)
         {
-            where = PresentationBlend.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
+            where = Vector3d.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
         }
 
         member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;

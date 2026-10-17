@@ -82,7 +82,7 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
                 continue;
             }
 
-            Vector3d position = PresentationBlend.Lerp(grenade.PreviousPosition, grenade.Position, alpha);
+            Vector3d position = Vector3d.Lerp(grenade.PreviousPosition, grenade.Position, alpha);
 
             // The native task owns the orientation after landing. The helper also covers a settled
             // object whose one-tick contact flag has already been cleared before this frame is drawn.

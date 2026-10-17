@@ -56,19 +56,19 @@ public sealed class TitlePlayerPresentation
             Matrix3f fromEffect = previous.Eye.Orientation * CameraOrientation(previousLook).Transposed();
             Matrix3f toEffect = current.Eye.Orientation * CameraOrientation(currentLook).Transposed();
             Matrix3f effect = alpha >= 1f ? toEffect : alpha <= 0f ? fromEffect
-                : PresentationBlend.InterpolateRotation(fromEffect, toEffect, alpha);
+                : Interpolation.InterpolateRotation(fromEffect, toEffect, alpha);
             Vector3d position = alpha >= 1f ? current.Eye.Position : alpha <= 0f ? previous.Eye.Position
-                : PresentationBlend.Lerp(previous.Eye.Position, current.Eye.Position, alpha);
+                : Vector3d.Lerp(previous.Eye.Position, current.Eye.Position, alpha);
             return new Camera3D(position, effect * CameraOrientation(look));
         }
         if (alpha >= 1f) { return current.Eye; }
         if (alpha <= 0f) { return previous.Eye; }
         // Camera rows are right/up/forward, a left-handed frame. Preserve that handedness while blending.
-        Vector3f forward = PresentationBlend.Lerp(previous.Eye.Orientation.Row3, current.Eye.Orientation.Row3, alpha).Normalized();
-        Vector3f right = PresentationBlend.Lerp(previous.Eye.Orientation.Row1, current.Eye.Orientation.Row1, alpha);
+        Vector3f forward = Vector3f.Lerp(previous.Eye.Orientation.Row3, current.Eye.Orientation.Row3, alpha).Normalized();
+        Vector3f right = Vector3f.Lerp(previous.Eye.Orientation.Row1, current.Eye.Orientation.Row1, alpha);
         right = (right - (forward * Vector3f.Dot(right, forward))).Normalized();
         Vector3f up = Vector3f.Cross(right, forward);
-        return new Camera3D(PresentationBlend.Lerp(previous.Eye.Position, current.Eye.Position, alpha), Matrix3f.FromRows(right, up, forward));
+        return new Camera3D(Vector3d.Lerp(previous.Eye.Position, current.Eye.Position, alpha), Matrix3f.FromRows(right, up, forward));
     }
 
     /// <summary>Presents the world lens between its tick values.</summary>
@@ -96,14 +96,14 @@ public sealed class TitlePlayerPresentation
         }
 
         alpha = Math.Clamp(alpha, 0f, 1f);
-        Vector3d eye = PresentationBlend.Lerp(previous.Eye.Position, current.Eye.Position, alpha) * 4096.0;
+        Vector3d eye = Vector3d.Lerp(previous.Eye.Position, current.Eye.Position, alpha) * 4096.0;
         // Strip tick mouse aim from the object transforms before blending, then apply the frame's aim.
         TitleFirstPersonView? from = previous.Hands, to = current.Hands;
         if (from is null || to is null) { return hands; }
         Vector3d fromOffset = from.Origin - (previous.Eye.Position * 4096.0);
         Vector3d toOffset = to.Origin - (current.Eye.Position * 4096.0);
-        Vector3f localOffset = PresentationBlend.Lerp(previousLook.Transform(ToFloat(fromOffset)), currentLook.Transform(ToFloat(toOffset)), alpha);
-        Matrix3f localOrientation = PresentationBlend.InterpolateRotation(previousLook.Transposed() * from.Orientation,
+        Vector3f localOffset = Vector3f.Lerp(previousLook.Transform(ToFloat(fromOffset)), currentLook.Transform(ToFloat(toOffset)), alpha);
+        Matrix3f localOrientation = Interpolation.InterpolateRotation(previousLook.Transposed() * from.Orientation,
             currentLook.Transposed() * to.Orientation, alpha);
         Vector3f offset = look.Transposed().Transform(localOffset);
         return hands with { Origin = eye + new Vector3d(offset.X, offset.Y, offset.Z), Orientation = look * localOrientation };
@@ -134,16 +134,16 @@ public sealed class TitlePlayerPresentation
             TitleViewModelPart from = previous.Parts[i], to = current.Parts[i];
             parts[i] = to with
             {
-                Position = PresentationBlend.Lerp(from.Position, to.Position, alpha),
-                Orientation = PresentationBlend.InterpolateRotation(from.Orientation, to.Orientation, alpha),
+                Position = Vector3f.Lerp(from.Position, to.Position, alpha),
+                Orientation = Interpolation.InterpolateRotation(from.Orientation, to.Orientation, alpha),
                 PreviousPose = from.Pose,
             };
         }
 
         return current with
         {
-            Origin = PresentationBlend.Lerp(previous.Origin, current.Origin, alpha),
-            Orientation = PresentationBlend.InterpolateRotation(previous.Orientation, current.Orientation, alpha),
+            Origin = Vector3d.Lerp(previous.Origin, current.Origin, alpha),
+            Orientation = Interpolation.InterpolateRotation(previous.Orientation, current.Orientation, alpha),
             ObjectFieldOfView = previous.ObjectFieldOfView + ((current.ObjectFieldOfView - previous.ObjectFieldOfView) * alpha),
             Parts = parts, PoseInterpolation = alpha,
         };

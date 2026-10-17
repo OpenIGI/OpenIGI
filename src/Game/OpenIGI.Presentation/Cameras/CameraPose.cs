@@ -13,7 +13,7 @@ namespace OpenIGI.Presentation.Cameras;
 /// <see cref="Camera3D"/> holds an orientation matrix, and blending two of those directly does not work
 /// for anything but a very small angle: the obvious row-by-row lerp leaves a matrix that is no longer a
 /// rotation, and re-orthonormalising it does not recover the turn that was meant — which is exactly why
-/// <c>PresentationBlend.InterpolateRotation</c> documents itself as small-angle only. A cinematic that
+/// <see cref="Interpolation.InterpolateRotation"/> documents itself as small-angle only. A cinematic that
 /// swings the camera from an orbit to straight down covers about eighty degrees, so it interpolates the
 /// angles and rebuilds the matrix instead.
 /// </para>

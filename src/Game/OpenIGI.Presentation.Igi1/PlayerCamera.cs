@@ -2068,9 +2068,9 @@ public sealed class PlayerCamera
 
     // The shake's three angles blended between their last two tick values.
     private (float Pitch, float Roll, float Yaw) SmoothedShake(float alpha) => HasViewTickPair
-        ? (PresentationBlend.LerpAngle(_prevTickShake.Pitch, _tickShake.Pitch, alpha),
-            PresentationBlend.LerpAngle(_prevTickShake.Roll, _tickShake.Roll, alpha),
-            PresentationBlend.LerpAngle(_prevTickShake.Yaw, _tickShake.Yaw, alpha))
+        ? (Interpolation.LerpAngle(_prevTickShake.Pitch, _tickShake.Pitch, alpha),
+            Interpolation.LerpAngle(_prevTickShake.Roll, _tickShake.Roll, alpha),
+            Interpolation.LerpAngle(_prevTickShake.Yaw, _tickShake.Yaw, alpha))
         : (_viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw);
 
     /// <summary>Where the ear is for a frame between two ticks, in metres.</summary>
@@ -2082,7 +2082,7 @@ public sealed class PlayerCamera
     /// image at 30 Hz under a camera that glides.
     /// </remarks>
     public Vector3d SmoothedEyeMetres(float alpha) => ToMetres(
-        HasViewTickPair ? PresentationBlend.Lerp(_prevTickEye, _tickEye, alpha) : _body.Eye);
+        HasViewTickPair ? Vector3d.Lerp(_prevTickEye, _tickEye, alpha) : _body.Eye);
 
     /// <summary>Gets the complete first-person camera at one shared between-tick presentation point.</summary>
     public Camera3D SmoothedCamera(float alpha) =>
@@ -2214,15 +2214,15 @@ public sealed class PlayerCamera
         Matrix3f eyeLook = Matrix3f.FromEngineEulerAngles(
             SmoothedAimPitch(alpha) + shakePitch, shakeRoll, -_body.Yaw + shakeYaw);
         Matrix3f look = eyeLook * Matrix3f.FromEngineEulerAngles(
-                PresentationBlend.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
+                Interpolation.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
                 0f,
-                PresentationBlend.LerpAngle(_prevTickSwayYaw, _tickSwayYaw, alpha));
+                Interpolation.LerpAngle(_prevTickSwayYaw, _tickSwayYaw, alpha));
 
-        Vector3d eye = PresentationBlend.Lerp(_prevTickEye, _tickEye, alpha);
+        Vector3d eye = Vector3d.Lerp(_prevTickEye, _tickEye, alpha);
 
         // M · v — the palette's own convention — is the transpose of the row-vector Transform.
         Vector3f held = look.Transposed().Transform(
-            PresentationBlend.Lerp(_prevTickRootMotion, _tickRootMotion, alpha));
+            Vector3f.Lerp(_prevTickRootMotion, _tickRootMotion, alpha));
         double wallPullback = _prevTickWallPullback + ((_tickWallPullback - _prevTickWallPullback) * alpha);
         Vector3d origin = new(
             eye.X + held.X + (eyeLook.M12 * wallPullback),
@@ -2288,10 +2288,10 @@ public sealed class PlayerCamera
 
             // M . v -- the palette's own convention -- is the transpose of the row-vector Transform.
             Vector3f bone = look.Transposed().Transform(
-                PresentationBlend.Lerp(_previousPosition, _position, alpha));
+                Vector3f.Lerp(_previousPosition, _position, alpha));
             return new BoneAttachment(
                 new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
-                look * PresentationBlend.InterpolateRotation(_previousRotation, _rotation, alpha));
+                look * Interpolation.InterpolateRotation(_previousRotation, _rotation, alpha));
         }
     }
 

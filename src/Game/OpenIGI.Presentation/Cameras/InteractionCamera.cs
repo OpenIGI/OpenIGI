@@ -147,7 +147,7 @@ public sealed class InteractionCamera
         }
 
         BuildCamera(
-            PresentationBlend.Lerp(_pivotPrevTick, _pivot, _presentedAlpha),
+            Vector3d.Lerp(_pivotPrevTick, _pivot, _presentedAlpha),
             _distancePrevTick + ((_distance - _distancePrevTick) * _presentedAlpha),
             commit: false);
     }

@@ -122,7 +122,7 @@ public sealed class DeathCamera
 
         _presentedAlpha = Math.Clamp(tickFraction, 0f, 1f);
         Vector3d pivot = _hasPivotPair
-            ? PresentationBlend.Lerp(_pivotPrevTick, _pivot, _presentedAlpha)
+            ? Vector3d.Lerp(_pivotPrevTick, _pivot, _presentedAlpha)
             : _pivot;
         BuildCamera(pivot);
     }

@@ -1357,7 +1357,7 @@ public sealed class ImpactParticleRenderer : IDisposable
 
             foreach (RetailFragment fragment in _retailFragments)
             {
-                Vector3d positionUnits = PresentationBlend.Lerp(
+                Vector3d positionUnits = Vector3d.Lerp(
                     fragment.PreviousPositionUnits,
                     fragment.PositionUnits,
                     alpha);
@@ -1717,7 +1717,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        Vector3d centreUnits = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d centreUnits = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d a = ((centreUnits + p.GlassA) / WorldScene.UnitsPerMetre) - eye;
         Vector3d b = ((centreUnits + p.GlassB) / WorldScene.UnitsPerMetre) - eye;
         Vector3d c = ((centreUnits + p.GlassC) / WorldScene.UnitsPerMetre) - eye;
@@ -1807,7 +1807,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        Vector3d head = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d head = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d headMetres = (head / WorldScene.UnitsPerMetre) - eye;
 
         double distance = headMetres.Length;
@@ -1880,7 +1880,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        Vector3d position = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d position = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d centre = (position / WorldScene.UnitsPerMetre) - eye;
         double distance = centre.Length;
         float nearFade = NearFade(distance);

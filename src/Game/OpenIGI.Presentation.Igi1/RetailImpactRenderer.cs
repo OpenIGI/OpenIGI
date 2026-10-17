@@ -359,7 +359,7 @@ public sealed class RetailImpactRenderer : IDisposable
             particle.Position.X - particle.Velocity.X,
             particle.Position.Y - particle.Velocity.Y,
             particle.Position.Z - particle.Velocity.Z);
-        Vector3d position = PresentationBlend.Lerp(previous, particle.Position, blend);
+        Vector3d position = Vector3d.Lerp(previous, particle.Position, blend);
 
         Vector3d centre = (position / WorldScene.UnitsPerMetre) - eye;
         double distanceMetres = centre.Length;
@@ -490,7 +490,7 @@ public sealed class RetailImpactRenderer : IDisposable
                     model.Mesh = _device.CreateMesh(model.Geometry.Vertices, model.Geometry.Indices);
                 }
 
-                Vector3d position = PresentationBlend.Lerp(
+                Vector3d position = Vector3d.Lerp(
                     fragment.PreviousPosition, fragment.Position, blend);
                 Matrix4f rigid = camera.CreateModelView(
                     position / WorldScene.UnitsPerMetre,

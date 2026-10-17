@@ -368,7 +368,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
             return used;
         }
 
-        Vector3d position = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d position = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d centre = (position / WorldScene.UnitsPerMetre) - eye;
         double distance = centre.Length;
         if (!(distance > 1e-6))

@@ -337,8 +337,8 @@ public sealed class TracerTrailRenderer : IDisposable
             // stretch would extrapolate BEHIND the previous position -- behind the camera, for the
             // shooter's own round -- and a quad with a vertex behind the near plane rasterises as a
             // one-frame screen-filling wedge.
-            Vector3d head = Presented(round, PresentationBlend.Lerp(round.PreviousPosition, round.Position, alpha));
-            Vector3d tail = Presented(round, PresentationBlend.Lerp(
+            Vector3d head = Presented(round, Vector3d.Lerp(round.PreviousPosition, round.Position, alpha));
+            Vector3d tail = Presented(round, Vector3d.Lerp(
                 round.PreviousPosition,
                 round.Position,
                 Math.Max(0f, alpha - HeadStretchFraction)));
