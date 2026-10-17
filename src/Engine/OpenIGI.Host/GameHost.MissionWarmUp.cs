@@ -697,7 +697,7 @@ public sealed partial class GameHost
                 // The level is up. A promoted backdrop still carries the decoded pictures its arming had
                 // not reached; the mission decodes those as it meets them, like a level loaded cold does,
                 // rather than holding the lot for as long as it is played.
-                ReleaseLoadLeftovers();
+                _memory.ReleaseLoadLeftovers(_world, _detailMaps);
 
                 if (_warmUp.GaveUp)
                 {

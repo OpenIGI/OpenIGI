@@ -806,6 +806,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _gamePath = gamePath;
         _logger = logger;
         _pacing = new Diagnostics.PresentationPacingProbe(logger);
+        _memory = new Services.MemoryDiagnostics(device, logger);
     }
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
@@ -1024,7 +1025,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         RegisterCameraCommands(console.System);
         RegisterRendererSwitchCommand(console.System);
         _contentLayers.Register(console.System);
-        RegisterMemoryCommands(console.System);
+        _memory.Register(console.System);
 
         console.Start(
             _fileSystem,
@@ -2606,7 +2607,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
                 // the uploads went through is given back rather than held for the next level.
                 if (_arming.IsArmed)
                 {
-                    ReleaseLoadLeftovers();
+                    _memory.ReleaseLoadLeftovers(_world, _detailMaps);
                 }
             }
 
@@ -2714,12 +2715,12 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
 
                     // Under the held frame, where the pause is not seen: the outgoing level and the
                     // incoming one's decoding have just been through the heap.
-                    TrimAfterLoad();
+                    _memory.TrimAfterLoad();
 
                     // A soak reports where memory stands every tenth swap, so growth shows as a trend.
                     if (_options.BackdropCycleFrames > 0 && ++state.BackdropSwaps % 10 == 0)
                     {
-                        _logger.Information(MemoryLogCategory, $"After {state.BackdropSwaps} backdrop swap(s):\n{DescribeMemory()}");
+                        _memory.Report($"After {state.BackdropSwaps} backdrop swap(s)");
                     }
 
                     // Once the first backdrop is up, every other mission's files are read through in the
