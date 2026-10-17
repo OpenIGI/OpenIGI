@@ -6478,7 +6478,8 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                 if (_mission.Cutscenes?.Frame is { } cinematicFraming)
                 {
-                    DrawCutsceneFraming(batch, cinematicFraming);
+                    CutsceneFramingRenderer.Draw(
+                        _device, batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);
                 }
 
                 // ComputerMap renders the terrain through its own top-down camera and turns only that

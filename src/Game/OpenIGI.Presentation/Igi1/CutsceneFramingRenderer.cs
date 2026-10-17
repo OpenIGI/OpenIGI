@@ -1,46 +1,49 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Host;
+namespace OpenIGI.Presentation.Igi1;
 
-internal sealed partial class GameHost
+/// <summary>What a cutscene draws over its picture: the retail line and handicam filters, the band, and the letterbox.</summary>
+internal static class CutsceneFramingRenderer
 {
-    private static bool HasAuthoredCutscene(GameTask root)
+    /// <summary>Draws a cutscene's framing over the frame: its line, band or handicam filter and its letterbox.</summary>
+    /// <param name="device">The device, whose 2D projection the framing is drawn in.</param>
+    /// <param name="batch">The sprite batch.</param>
+    /// <param name="frame">The cutscene's frame.</param>
+    /// <param name="viewportWidth">The window's width, in pixels; zero while it is minimized.</param>
+    /// <param name="viewportHeight">The window's height, in pixels.</param>
+    /// <param name="hud">The HUD, which draws the binocular overlay and the handicam timecode.</param>
+    /// <param name="simulationTick">The game's tick, for the binocular overlay.</param>
+    public static void Draw(
+        IGraphicsDevice device,
+        SpriteBatch batch,
+        CutsceneFrame frame,
+        int viewportWidth,
+        int viewportHeight,
+        IHudPresenter? hud,
+        int simulationTick)
     {
-        foreach (GameTask child in root.Children)
-        {
-            if (child is CutSceneTask || HasAuthoredCutscene(child))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private void DrawCutsceneFraming(SpriteBatch batch, CutsceneFrame frame)
-    {
-        if (_window.Width <= 0 || _window.Height <= 0)
+        if (viewportWidth <= 0 || viewportHeight <= 0)
         {
             // A minimized/hidden window reports 0x0; a zero-sized projection faults the renderer, so
             // defer the letterbox until a real size arrives.
             return;
         }
 
-        float width = _window.Width;
-        float height = _window.Height;
-        _device.Set2DProjection(_window.Width, _window.Height);
+        float width = viewportWidth;
+        float height = viewportHeight;
+        device.Set2DProjection(viewportWidth, viewportHeight);
         batch.Begin();
 
-        if (frame.BinocularOverlayVisible && _hud is { IsReady: true } binocularOverlay)
+        if (frame.BinocularOverlayVisible && hud is { IsReady: true } binocularOverlay)
         {
             binocularOverlay.DrawBinocularOverlay(
                 batch,
-                _window.Width,
-                _window.Height,
-                simulationTick: _loop.Clock.TickCount);
+                viewportWidth,
+                viewportHeight,
+                simulationTick: simulationTick);
         }
 
         static void Quad(SpriteBatch target, float left, float top, float right, float bottom, Bgra32 colour) =>
@@ -102,7 +105,7 @@ internal sealed partial class GameHost
             Quad(batch, x1 - arm, y1 - stroke, x1, y1, white);
             Quad(batch, x1 - stroke, y1 - arm, x1, y1, white);
 
-            _hud?.DrawHandicamTimecode(batch, frame, _window.Width, _window.Height);
+            hud?.DrawHandicamTimecode(batch, frame, viewportWidth, viewportHeight);
         }
 
         float visibleHeight = Math.Clamp(frame.ViewportHeightFactor, 0f, 1f);
@@ -135,13 +138,8 @@ internal sealed partial class GameHost
         byte alpha = Channel(frame.FilterNoise);
         uint random = unchecked((uint)((frame.Scene.Id * 0x9E3779B9) ^ frame.Scene.Ticks ^ 0xA341316C));
 
-        static float Next(ref uint state)
-        {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            return (state & 0x00FFFFFF) / 16777216f;
-        }
+        // The streaks' draws: the low 24 bits of each xorshift step, as a fraction.
+        static float Next(ref uint state) => (XorShift32.Next(ref state) & 0x00FFFFFF) / 16777216f;
 
         for (float y = rowStep; y <= height; y += rowStep)
         {
