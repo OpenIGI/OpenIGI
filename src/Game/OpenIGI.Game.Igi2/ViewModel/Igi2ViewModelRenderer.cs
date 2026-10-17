@@ -47,7 +47,10 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     private readonly Dictionary<string, Part?> _parts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<object, Part?> _bodies = new(ReferenceEqualityComparer.Instance);
     private readonly List<Part> _skinBatch = [];
-    private readonly ParallelOptions _skinWorkers = new() { MaxDegreeOfParallelism = Math.Min(4, Environment.ProcessorCount) };
+    // The most skinning jobs at once.
+    private const int SkinWorkers = 4;
+
+    private readonly Core.Threading.IWorkScheduler? _work;
     private Igi2TextureLoader? _textures;
     private Igi2ModelTable? _table;
     private Func<string, MefModel?>? _models;
@@ -57,14 +60,17 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">Where texture bytes are read from.</param>
     /// <param name="logger">Where to report problems.</param>
+    /// <param name="work">Where the world models' skinning runs in parallel; none skins them in line.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public Igi2ViewModelRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger? logger = null)
+    public Igi2ViewModelRenderer(
+        IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger? logger = null, Core.Threading.IWorkScheduler? work = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
         _device = device;
         _resources = resources;
         _logger = logger ?? NullLogger.Instance;
+        _work = work;
     }
 
     /// <inheritdoc/>
@@ -353,9 +359,9 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
         // pc_direct3drender.c Direct3DRender_ProcessVerticesBone: every model's vertex stream is independent.
         // Only the unchanged CPU calculations run on workers. Resource creation, uploads and draws stay here.
-        if (_skinBatch.Count >= 4 && _skinWorkers.MaxDegreeOfParallelism > 1)
+        if (_skinBatch.Count >= SkinWorkers && _work is { } work)
         {
-            Parallel.For(0, _skinBatch.Count, _skinWorkers, SkinWorldPart);
+            work.ForRange(0, _skinBatch.Count, SkinWorkers, SkinWorldPart);
         }
         else
         {

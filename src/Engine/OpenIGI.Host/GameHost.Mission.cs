@@ -3131,7 +3131,7 @@ internal sealed partial class GameHost
     /// until a mission has loaded, so it cannot be cached beside the provider.
     /// </remarks>
     private ViewModelPresentationRequest ViewModelRequest() =>
-        new(_device, _resources, _magic, _logger);
+        new(_device, _resources, _magic, _logger, _work);
 
     /// <summary>The player's grunt — <c>player_hit_</c> through <c>0x4637C0</c>'s per-human rate limit.</summary>
     /// <remarks>

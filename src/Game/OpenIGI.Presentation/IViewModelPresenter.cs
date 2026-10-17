@@ -220,6 +220,7 @@ public interface IGunPickupPresenter : IDisposable
 /// <param name="Resources">The registry models and textures are resolved through.</param>
 /// <param name="Magic">The magic-object table the projectile and pickup models are named by.</param>
 /// <param name="Logger">Where load diagnostics go.</param>
+/// <param name="Work">The host's work scheduler, which a presenter hands parallel work to; none runs it in line.</param>
 /// <remarks>
 /// One request for five presenters because all five want the same four things, and a request per
 /// presenter would be four-fifths repetition. <see cref="Magic"/> is unused by the arms, which name no
@@ -229,4 +230,5 @@ public readonly record struct ViewModelPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
     MagicObjectRegistry? Magic,
-    IOpenIgiLogger Logger);
+    IOpenIgiLogger Logger,
+    Core.Threading.IWorkScheduler? Work = null);

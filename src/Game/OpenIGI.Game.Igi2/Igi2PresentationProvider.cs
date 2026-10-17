@@ -51,7 +51,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
     public ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
-        new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger);
+        new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
 
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
