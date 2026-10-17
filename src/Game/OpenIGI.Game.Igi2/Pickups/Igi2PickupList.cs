@@ -125,7 +125,7 @@ public sealed class Igi2PickupList
         ArgumentNullException.ThrowIfNull(models);
 
         List<Igi2GunPickup> items = [];
-        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not Igi2GunPickupTask placed
                 || tables.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, placed.WeaponId, StringComparison.Ordinal)) is not { } weaponType)

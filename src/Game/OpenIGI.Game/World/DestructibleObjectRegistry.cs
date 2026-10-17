@@ -271,7 +271,7 @@ public sealed class DestructibleObjectRegistry
         };
         WorldPlacement[] resolved = [.. placements];
 
-        foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
+        foreach (DeclaredTask task in root.DescendantsAndSelf().OfType<DeclaredTask>())
         {
             // OBJECTS.QVM uses the same live destruction contract for ExplodeObject, Terminal,
             // AlarmControl, and SCameraControl: the first model is replaced by Destroyed model once
@@ -322,7 +322,7 @@ public sealed class DestructibleObjectRegistry
         // (0x42DCF0) binds "%s.isExploded" to the byte at Car+11989 on activation (0x42FCE0) with
         // no condition. Mission 1's gates read it off the escape truck (Car_1099, 622_01_1), whose
         // record has explosion points and no wreck model. There is no isLastExploded on a car.
-        foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
+        foreach (DeclaredTask task in root.DescendantsAndSelf().OfType<DeclaredTask>())
         {
             if (!string.Equals(task.Type.Name, CarType, StringComparison.Ordinal))
             {
@@ -1147,18 +1147,6 @@ public sealed class DestructibleObjectRegistry
         }
 
         return false;
-    }
-
-    private static IEnumerable<GameTask> Walk(GameTask task)
-    {
-        yield return task;
-        foreach (GameTask child in task.Children)
-        {
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
     }
 
     private static class ExplosionDamageDefaults

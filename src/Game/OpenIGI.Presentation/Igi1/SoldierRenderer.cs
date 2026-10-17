@@ -1124,7 +1124,7 @@ public sealed class SoldierRenderer : IDisposable
         _cast = cast;
 
         Dictionary<(string Model, int Skeleton, int Stand), Group> groups = [];
-        foreach (HumanSoldierTask soldier in Walk(levelRoot))
+        foreach (HumanSoldierTask soldier in levelRoot.Descendants().OfType<HumanSoldierTask>())
         {
             if (!mission.TryGetAnimationSet(soldier.BoneHierarchy, out BoneAnimationSet? set) || set is null)
             {
@@ -7140,22 +7140,6 @@ public sealed class SoldierRenderer : IDisposable
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
         return new Group(geometry, mesh, instance, pack, lowest) { Model = model };
-    }
-
-    private static IEnumerable<HumanSoldierTask> Walk(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            if (child is HumanSoldierTask soldier)
-            {
-                yield return soldier;
-            }
-
-            foreach (HumanSoldierTask deeper in Walk(child))
-            {
-                yield return deeper;
-            }
-        }
     }
 
     private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)

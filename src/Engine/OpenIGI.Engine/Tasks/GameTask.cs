@@ -126,6 +126,60 @@ public abstract class GameTask
         }
     }
 
+    /// <summary>Walks every task below this one, depth first, a parent before its children and children in order.</summary>
+    /// <returns>The descendants, this task excluded.</returns>
+    /// <remarks>
+    /// Like <see cref="Children"/>, the walk reads the live links one step at a time, so it allocates no stack and sees the tree
+    /// as it is when each step is taken. It is the order the original's own tree walks visit tasks in, and the one level loading
+    /// binds services in; use <see cref="TaskTreeWalker"/> for a walk that must survive a task deleting itself.
+    /// </remarks>
+    public IEnumerable<GameTask> Descendants()
+    {
+        GameTask? next = FirstChild;
+        while (next is not null)
+        {
+            GameTask current = next;
+            yield return current;
+            next = current.FirstChild ?? NextAfter(current);
+        }
+    }
+
+    /// <summary>Walks this task and every task below it, in the order of <see cref="Descendants"/>.</summary>
+    /// <returns>This task, then its descendants.</returns>
+    public IEnumerable<GameTask> DescendantsAndSelf()
+    {
+        yield return this;
+        foreach (GameTask descendant in Descendants())
+        {
+            yield return descendant;
+        }
+    }
+
+    /// <summary>Walks the tasks above this one, its parent first.</summary>
+    /// <returns>The ancestors, this task excluded.</returns>
+    public IEnumerable<GameTask> Ancestors()
+    {
+        for (GameTask? parent = Parent; parent is not null; parent = parent.Parent)
+        {
+            yield return parent;
+        }
+    }
+
+    // The next task of a pre-order walk below this one once a task's own subtree is done: its next sibling, or the nearest
+    // ancestor's below this one, or nothing.
+    private GameTask? NextAfter(GameTask task)
+    {
+        for (GameTask? at = task; at is not null && !ReferenceEquals(at, this); at = at.Parent)
+        {
+            if (at.NextSibling is { } sibling)
+            {
+                return sibling;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Gets the number of children.</summary>
     public int ChildCount
     {

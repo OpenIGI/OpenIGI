@@ -486,7 +486,7 @@ public static class Igi2SaveGame
     private static Dictionary<GameTask, int> Ids(GameTask root)
     {
         Dictionary<GameTask, int> ids = new(ReferenceEqualityComparer.Instance);
-        foreach (GameTask task in Igi2TaskTree.Descendants(root).Prepend(root))
+        foreach (GameTask task in root.Descendants().Prepend(root))
         {
             if (task.Id != GameTask.NoId)
             {

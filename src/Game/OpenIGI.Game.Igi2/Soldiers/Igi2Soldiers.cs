@@ -80,7 +80,7 @@ public sealed class Igi2Soldiers
         List<Igi2HumanSoldier> bodies = [];
         Dictionary<string, Igi2BodyModel> looks = new(StringComparer.OrdinalIgnoreCase);
         Igi2DeathAnimCycle cycle = new();
-        foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(levelRoot).OfType<Igi2HumanSoldierTask>())
+        foreach (Igi2HumanSoldierTask task in levelRoot.Descendants().OfType<Igi2HumanSoldierTask>())
         {
             string wornModel = worn is not null && worn.TryGetValue(task, out string? face) ? face : task.Model;
             Formats.World.MefModel? model = models(wornModel);
@@ -146,7 +146,7 @@ public sealed class Igi2Soldiers
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(config);
-        foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(levelRoot).OfType<Igi2HumanSoldierTask>())
+        foreach (Igi2HumanSoldierTask task in levelRoot.Descendants().OfType<Igi2HumanSoldierTask>())
         {
             if (task.Body is not { } soldier || task.Ai is not { } ai || (uint)ai.AiType >= (uint)config.BaseRows.Count)
             {

@@ -216,7 +216,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             IgiRandom blink = new(unchecked((uint)-912896271), unchecked((uint)-463112362), unchecked((uint)-1522052915));
             List<World.Igi2EditBoneObjTask> figures = [];
-            foreach (World.Igi2EditBoneObjTask figure in Descendants(figuresRoot).OfType<World.Igi2EditBoneObjTask>())
+            foreach (World.Igi2EditBoneObjTask figure in figuresRoot.Descendants().OfType<World.Igi2EditBoneObjTask>())
             {
                 figure.Prepare(clips, models, worn.TryGetValue(figure, out string? face) ? face : figure.Model, blink);
                 if (request.Natives is { } figureNatives && request.Services.TryGet(out Scripting.Igi2ScriptFunctions? figureFunctions))
@@ -453,7 +453,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         // HumanAI_UpdateInternalDataHandler reads each mind's AI and animation types from their names.
         if (natives is not null && functions is not null)
         {
-            foreach (Ai.Igi2HumanAiTask ai in Igi2TaskTree.Descendants(root).OfType<Ai.Igi2HumanAiTask>())
+            foreach (Ai.Igi2HumanAiTask ai in root.Descendants().OfType<Ai.Igi2HumanAiTask>())
             {
                 ai.ResolveTypes(natives, functions);
             }
@@ -476,7 +476,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         List<Igi2Human> humans = [];
         if (root is not null)
         {
-            foreach (Engine.Tasks.GameTask node in Descendants(root))
+            foreach (Engine.Tasks.GameTask node in root.Descendants())
             {
                 if (node is Igi2HumanPlayerTask && !humans.Contains(player.Human))
                 {
@@ -551,7 +551,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             locator,
             () => level.Ticks);
         List<Audio.Igi2AmbientAreaTask> ambience = [];
-        foreach (Audio.Igi2AmbientAreaTask area in Descendants(root).OfType<Audio.Igi2AmbientAreaTask>())
+        foreach (Audio.Igi2AmbientAreaTask area in root.Descendants().OfType<Audio.Igi2AmbientAreaTask>())
         {
             area.Audio = player.Sounds;
             area.Listener = listener;
@@ -565,7 +565,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             computer.BeginLevel();
             player.Computer = computer;
-            foreach (Engine.Tasks.GameTask node in Descendants(root))
+            foreach (Engine.Tasks.GameTask node in root.Descendants())
             {
                 switch (node)
                 {
@@ -585,7 +585,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 }
             }
         }
-        foreach (Igi2SoundGeneratorTask generator in Descendants(root).OfType<Igi2SoundGeneratorTask>())
+        foreach (Igi2SoundGeneratorTask generator in root.Descendants().OfType<Igi2SoundGeneratorTask>())
         {
             generator.Sounds = player.Sounds;
         }
@@ -594,10 +594,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
         IIgi2AreaOccupant[] humans = [.. LevelHumans(root, player)];
 
         // The level's cars, in the order they are made: the vehicle list areas count.
-        Vehicles.Igi2CarTask[] levelCars = [.. Descendants(root).OfType<Vehicles.Igi2CarTask>()];
+        Vehicles.Igi2CarTask[] levelCars = [.. root.Descendants().OfType<Vehicles.Igi2CarTask>()];
         player.MapVehicles = levelCars;
-        player.MapGunHolders = [.. Descendants(root).OfType<Weapons.Igi2AiStationaryGunHolderTask>()];
-        foreach (Igi2AreaActivateTask area in Descendants(root).OfType<Igi2AreaActivateTask>())
+        player.MapGunHolders = [.. root.Descendants().OfType<Weapons.Igi2AiStationaryGunHolderTask>()];
+        foreach (Igi2AreaActivateTask area in root.Descendants().OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
             area.Player = player.Human;
@@ -608,7 +608,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         // Each line's pieces are counted once its parameters are read, in the language the screens load.
         Igi2Strings strings = new(request.World.Resources);
         player.Strings = strings;
-        foreach (Igi2StatusMessageTask message in Descendants(root).OfType<Igi2StatusMessageTask>())
+        foreach (Igi2StatusMessageTask message in root.Descendants().OfType<Igi2StatusMessageTask>())
         {
             message.Strings = strings;
             message.Screen = player.StatusMessages;
@@ -635,8 +635,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 LevelTick = () => level.LevelFlow?.Tick ?? 0,
             };
             // The level's alarm, for a camera's first sight: the last alarm control made (AlarmControl_CreateHandler's global).
-            Interaction.Igi2AlarmControlTask? levelAlarm = Descendants(root).OfType<Interaction.Igi2AlarmControlTask>().LastOrDefault();
-            foreach (Engine.Tasks.GameTask node in Descendants(root))
+            Interaction.Igi2AlarmControlTask? levelAlarm = root.Descendants().OfType<Interaction.Igi2AlarmControlTask>().LastOrDefault();
+            foreach (Engine.Tasks.GameTask node in root.Descendants())
             {
                 if (node is Interaction.Igi2SecurityCameraTask camera)
                 {
@@ -670,7 +670,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             int missionId = request.World.Mission.Descriptor.Id;
             if (missionId is not (21 or 22))
             {
-                foreach (Ai.Igi2HumanSoldierTask soldierTask in Descendants(root).OfType<Ai.Igi2HumanSoldierTask>())
+                foreach (Ai.Igi2HumanSoldierTask soldierTask in root.Descendants().OfType<Ai.Igi2HumanSoldierTask>())
                 {
                     if (soldierTask.Body is { Team: 1, IsDead: false } living)
                     {
@@ -691,7 +691,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         World.Igi2Water water = request.Services.TryGet(out World.Igi2Water? sessionWater) ? sessionWater : new World.Igi2Water();
         water.Clear();
         water.FlowTicks = () => level.Ticks;
-        foreach (World.WaterTask waterTask in Descendants(root).OfType<World.WaterTask>())
+        foreach (World.WaterTask waterTask in root.Descendants().OfType<World.WaterTask>())
         {
             World.Igi2WaterBody body = water.Add(waterTask);
             waterTask.Body = body;
@@ -711,7 +711,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             underwater.Water = water;
         }
 
-        foreach (Interaction.Igi2FenceTask fence in Descendants(root).OfType<Interaction.Igi2FenceTask>())
+        foreach (Interaction.Igi2FenceTask fence in root.Descendants().OfType<Interaction.Igi2FenceTask>())
         {
             fence.Models = models;
             fence.EquipHum = hum =>
@@ -740,7 +740,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         // Cabinets are searched from their first magic vertex, their drawers sliding on the search clip's triggers.
-        foreach (Interaction.Igi2CabinetTask cabinet in Descendants(root).OfType<Interaction.Igi2CabinetTask>())
+        foreach (Interaction.Igi2CabinetTask cabinet in root.Descendants().OfType<Interaction.Igi2CabinetTask>())
         {
             cabinet.Models = models;
             cabinet.Prepare(magicTypes);
@@ -751,7 +751,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         if (request.Services.TryGet(out World.Igi2ModelLodTable? lodTable))
         {
             lodTable.BeginLevel();
-            foreach (World.Igi2LocalModelLodSettingsContainerTask container in Descendants(root).OfType<World.Igi2LocalModelLodSettingsContainerTask>())
+            foreach (World.Igi2LocalModelLodSettingsContainerTask container in root.Descendants().OfType<World.Igi2LocalModelLodSettingsContainerTask>())
             {
                 lodTable.Load(container, container.Path, request.World.Resources, natives);
             }
@@ -760,7 +760,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         // Flocks start their birds' swings from the stream every flock draws from.
         if (request.Services.TryGet(out World.Igi2FlockRandom? flockRandom))
         {
-            foreach (World.Igi2BirdFlockTask flock in Descendants(root).OfType<World.Igi2BirdFlockTask>())
+            foreach (World.Igi2BirdFlockTask flock in root.Descendants().OfType<World.Igi2BirdFlockTask>())
             {
                 flock.Prepare(flockRandom);
             }
@@ -768,7 +768,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // Each linked cutscene camera notes where its link stands as the level is made (EditCamera_UpdateInternalDataHandler).
         Dictionary<int, Engine.Tasks.GameTask> linkable = [];
-        foreach (Engine.Tasks.GameTask placed in Descendants(root))
+        foreach (Engine.Tasks.GameTask placed in root.Descendants())
         {
             if (placed.Id != Engine.Tasks.GameTask.NoId)
             {
@@ -776,7 +776,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        foreach (Flow.Igi2EditCameraTask camera in Descendants(root).OfType<Flow.Igi2EditCameraTask>().Where(static c => c.LinkTaskId >= 0))
+        foreach (Flow.Igi2EditCameraTask camera in root.Descendants().OfType<Flow.Igi2EditCameraTask>().Where(static c => c.LinkTaskId >= 0))
         {
             camera.NoteLink(linkable.GetValueOrDefault(camera.LinkTaskId));
         }
@@ -786,14 +786,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             screenOverlay.Hide();
             player.ScreenOverlay = screenOverlay;
-            foreach (Igi2OverlayHolderTask holder in Descendants(root).OfType<Igi2OverlayHolderTask>())
+            foreach (Igi2OverlayHolderTask holder in root.Descendants().OfType<Igi2OverlayHolderTask>())
             {
                 holder.Screen = screenOverlay;
             }
         }
 
         // Wires are strung between their ends and climbed or ridden down.
-        foreach (Interaction.Igi2WireTask wire in Descendants(root).OfType<Interaction.Igi2WireTask>())
+        foreach (Interaction.Igi2WireTask wire in root.Descendants().OfType<Interaction.Igi2WireTask>())
         {
             wire.Models = models;
             wire.Level = level;
@@ -802,7 +802,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         // Ladders read their steps off their models' magic vertices, and look down their lines of sight before they are taken.
-        foreach (Interaction.Igi2LadderTask ladder in Descendants(root).OfType<Interaction.Igi2LadderTask>())
+        foreach (Interaction.Igi2LadderTask ladder in root.Descendants().OfType<Interaction.Igi2LadderTask>())
         {
             ladder.Models = models;
             ladder.Sight = sight;
@@ -825,7 +825,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        foreach (Interaction.Igi2SwitchTask button in Descendants(root).OfType<Interaction.Igi2SwitchTask>())
+        foreach (Interaction.Igi2SwitchTask button in root.Descendants().OfType<Interaction.Igi2SwitchTask>())
         {
             button.Models = models;
             button.Sounds = player.Sounds;
@@ -833,7 +833,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         List<Interaction.IIgi2Mover> movers = [];
-        foreach (Interaction.Igi2LiftTask lift in Descendants(root).OfType<Interaction.Igi2LiftTask>())
+        foreach (Interaction.Igi2LiftTask lift in root.Descendants().OfType<Interaction.Igi2LiftTask>())
         {
             lift.Models = models;
             lift.Magic = magicTypes;
@@ -842,7 +842,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             movers.Add(lift);
         }
 
-        foreach (Interaction.Igi2DoorTask door in Descendants(root).OfType<Interaction.Igi2DoorTask>())
+        foreach (Interaction.Igi2DoorTask door in root.Descendants().OfType<Interaction.Igi2DoorTask>())
         {
             door.Models = models;
             door.Magic = magicTypes;
@@ -856,7 +856,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         // Door_AttachToPortal, against the stationary world.
         World.Igi2SectorPortals portals = new(player.CollisionWorld, sectors);
         level.SectorPortals = portals;
-        foreach (Interaction.Igi2DoorTask door in Descendants(root).OfType<Interaction.Igi2DoorTask>())
+        foreach (Interaction.Igi2DoorTask door in root.Descendants().OfType<Interaction.Igi2DoorTask>())
         {
             door.Portals = portals;
             door.Camera = () => level.CutsceneView?.Position ?? player.Human.View.Position;
@@ -864,12 +864,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         // Spline path guides connect to the models they move once the level is loaded; those models move, and are drawn moving.
-        foreach (Paths.Igi2SplinePathGuideTask guide in Descendants(root).OfType<Paths.Igi2SplinePathGuideTask>())
+        foreach (Paths.Igi2SplinePathGuideTask guide in root.Descendants().OfType<Paths.Igi2SplinePathGuideTask>())
         {
             guide.Connect();
         }
 
-        foreach (Interaction.Igi2EditRigidObjTask prop in Descendants(root).OfType<Interaction.Igi2EditRigidObjTask>())
+        foreach (Interaction.Igi2EditRigidObjTask prop in root.Descendants().OfType<Interaction.Igi2EditRigidObjTask>())
         {
             if (prop.Guide is not null)
             {
@@ -882,11 +882,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // Trains are measured and put on the splines they ride, every carriage moving and drawn moving; then the AnimTasks that drive
         // them set them back to their start (Train_UpdateInternalDataAfterLoadHandler, AnimQTask_UpdateInternalDataHandler).
-        foreach (Vehicles.Igi2TrainTask train in Descendants(root).OfType<Vehicles.Igi2TrainTask>().Where(static t => !t.IsCarriage))
+        foreach (Vehicles.Igi2TrainTask train in root.Descendants().OfType<Vehicles.Igi2TrainTask>().Where(static t => !t.IsCarriage))
         {
             Engine.Tasks.GameTask? rails = train.RailroadId < 0
                 ? null
-                : Descendants(root).FirstOrDefault(t => t.Id == train.RailroadId && t.Type.Name == World.Igi2SplineObject.SplineType);
+                : root.Descendants().FirstOrDefault(t => t.Id == train.RailroadId && t.Type.Name == World.Igi2SplineObject.SplineType);
             train.Prepare(models, rails is null ? null : World.Igi2SplineObject.Read(rails).Path);
             foreach (Vehicles.Igi2TrainTask car in train.Rake)
             {
@@ -897,7 +897,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        foreach (Flow.Igi2AnimTask animation in Descendants(root).OfType<Flow.Igi2AnimTask>())
+        foreach (Flow.Igi2AnimTask animation in root.Descendants().OfType<Flow.Igi2AnimTask>())
         {
             animation.Begin();
         }
@@ -907,7 +907,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         if (request.Services.TryGet(out Weapons.Igi2HumanWeapons? gunWeapons))
         {
             Igi2GameMaterials? gunMaterials = request.Services.TryGet(out Igi2GameMaterials? found) ? found : null;
-            foreach (Weapons.Igi2StationaryGunTask gun in Descendants(root).OfType<Weapons.Igi2StationaryGunTask>())
+            foreach (Weapons.Igi2StationaryGunTask gun in root.Descendants().OfType<Weapons.Igi2StationaryGunTask>())
             {
                 gun.Magic = magicTypes;
                 gun.Random = player.Human.Random;
@@ -937,7 +937,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         {
             Igi2GameMaterials? turretMaterials = request.Services.TryGet(out Igi2GameMaterials? found) ? found : null;
             Detection.Igi2DetectionWorld? detection = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? turretAi) ? turretAi.Detection : null;
-            foreach (Weapons.Igi2AiStationaryGunHolderTask turret in Descendants(root).OfType<Weapons.Igi2AiStationaryGunHolderTask>())
+            foreach (Weapons.Igi2AiStationaryGunHolderTask turret in root.Descendants().OfType<Weapons.Igi2AiStationaryGunHolderTask>())
             {
                 turret.Prepare(turretWeapons, models, magicTypes, detection, player.Sounds, player.Human.Random);
                 if (turret.Gun is { } gun)
@@ -966,7 +966,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             request.Services.TryGet(out Weapons.Igi2HumanWeapons? carWeapons);
             Detection.Igi2DetectionWorld? carDetection = request.Services.TryGet(out Ai.Runtime.Igi2AiWorld? carAi) ? carAi.Detection : null;
             Physics.Igi2PhysicsWorld roads = new(player.CollisionWorld, carMaterials, static owner => !Igi2ObjectCollision.PassesThrough(owner));
-            foreach (Vehicles.Igi2CarTask car in Descendants(root).OfType<Vehicles.Igi2CarTask>())
+            foreach (Vehicles.Igi2CarTask car in root.Descendants().OfType<Vehicles.Igi2CarTask>())
             {
                 car.Magic = magicTypes;
                 car.Sounds = player.Sounds;
@@ -995,19 +995,19 @@ public sealed class Igi2Gameplay : ITitleGameplay
         }
 
         List<Interaction.IIgi2Destructible> destructibles = [];
-        foreach (Interaction.Igi2ExplodeObjectTask explosive in Descendants(root).OfType<Interaction.Igi2ExplodeObjectTask>())
+        foreach (Interaction.Igi2ExplodeObjectTask explosive in root.Descendants().OfType<Interaction.Igi2ExplodeObjectTask>())
         {
             Arm(explosive, Interaction.Igi2ExplodeObjectTask.TypeName);
         }
 
-        foreach (Interaction.Igi2GenericTbaTask action in Descendants(root).OfType<Interaction.Igi2GenericTbaTask>())
+        foreach (Interaction.Igi2GenericTbaTask action in root.Descendants().OfType<Interaction.Igi2GenericTbaTask>())
         {
             Arm(action, Interaction.Igi2GenericTbaTask.TypeName);
             activatables.Add(action);
         }
 
         List<Pickups.Igi2GenericPickupTask> genericPickups = [];
-        foreach (Pickups.Igi2GenericPickupTask pickup in Descendants(root).OfType<Pickups.Igi2GenericPickupTask>())
+        foreach (Pickups.Igi2GenericPickupTask pickup in root.Descendants().OfType<Pickups.Igi2GenericPickupTask>())
         {
             pickup.Models = models;
             pickup.PlaySound = name => player.Human.Surroundings.PlaySound(name);
@@ -1017,13 +1017,13 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.GenericPickups = genericPickups;
 
-        foreach (Interaction.Igi2TerminalTask terminal in Descendants(root).OfType<Interaction.Igi2TerminalTask>())
+        foreach (Interaction.Igi2TerminalTask terminal in root.Descendants().OfType<Interaction.Igi2TerminalTask>())
         {
             Arm(terminal, Interaction.Igi2TerminalTask.TypeName);
             activatables.Add(terminal);
         }
 
-        foreach (Interaction.Igi2AlarmControlTask alarm in Descendants(root).OfType<Interaction.Igi2AlarmControlTask>())
+        foreach (Interaction.Igi2AlarmControlTask alarm in root.Descendants().OfType<Interaction.Igi2AlarmControlTask>())
         {
             Arm(alarm, Interaction.Igi2AlarmControlTask.TypeName);
             alarm.AlarmRaised = () => player.Human.TimesAlarmTriggered++;
@@ -1048,7 +1048,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // A minefield's blasts go off at a task of the level, put on its ground.
         Dictionary<int, object> placedById = [];
-        foreach (Engine.Tasks.GameTask node in Descendants(root))
+        foreach (Engine.Tasks.GameTask node in root.Descendants())
         {
             if (node.Id != Engine.Tasks.GameTask.NoId)
             {
@@ -1065,7 +1065,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         if (player.Human.Surroundings is Igi2LevelSurroundings { Particles: { } particles })
         {
             World.Igi2SmokeRandom smokeRandom = player.Explosions?.SmokeRandom ?? new();
-            foreach (World.Igi2SmokeTask smoke in Descendants(root).OfType<World.Igi2SmokeTask>())
+            foreach (World.Igi2SmokeTask smoke in root.Descendants().OfType<World.Igi2SmokeTask>())
             {
                 smoke.Particles = particles;
                 smoke.Stream = smokeRandom;
@@ -1083,14 +1083,14 @@ public sealed class Igi2Gameplay : ITitleGameplay
             player.Weapons?.Firing.LaserDesignator = levelNatives.LaserDesignator;
         }
 
-        foreach (Interaction.Igi2MineFieldTask field in Descendants(root).OfType<Interaction.Igi2MineFieldTask>())
+        foreach (Interaction.Igi2MineFieldTask field in root.Descendants().OfType<Interaction.Igi2MineFieldTask>())
         {
             field.Explosions = player.Explosions;
             field.Collision = player.CollisionWorld;
             field.TaskById = id => placedById.GetValueOrDefault(id);
         }
 
-        foreach (Interaction.Igi2ConveyorBeltTask belt in Descendants(root).OfType<Interaction.Igi2ConveyorBeltTask>())
+        foreach (Interaction.Igi2ConveyorBeltTask belt in root.Descendants().OfType<Interaction.Igi2ConveyorBeltTask>())
         {
             player.Conveyors[belt.Id] = belt;
         }
@@ -1123,8 +1123,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        player.Cameras = [.. Descendants(root).OfType<Interaction.Igi2SecurityCameraTask>()];
-        List<Interaction.IIgi2PartMover> partMovers = [.. Descendants(root).OfType<Interaction.Igi2CabinetTask>(), .. turrets, .. cars, .. player.Cameras];
+        player.Cameras = [.. root.Descendants().OfType<Interaction.Igi2SecurityCameraTask>()];
+        List<Interaction.IIgi2PartMover> partMovers = [.. root.Descendants().OfType<Interaction.Igi2CabinetTask>(), .. turrets, .. cars, .. player.Cameras];
         player.Motions = movers.Count > 0 || partMovers.Count > 0 ? new Interaction.Igi2MoverMotions(movers, partMovers) : null;
 
         // The game is played at the active profile's difficulty (Config_GetActiveDifficultyLevel); here the difficulty is chosen
@@ -1188,31 +1188,19 @@ public sealed class Igi2Gameplay : ITitleGameplay
                 car.Humans = everyone;
             }
 
-            foreach (Vehicles.Igi2TrainTask train in Descendants(root).OfType<Vehicles.Igi2TrainTask>())
+            foreach (Vehicles.Igi2TrainTask train in root.Descendants().OfType<Vehicles.Igi2TrainTask>())
             {
                 train.Humans = everyone;
             }
 
             // CarAI_UpdateInternalDataAfterLoadHandler: each driver finds its car and its graph, and sets the car back to its start.
-            foreach (Vehicles.Igi2CarAiTask driver in Descendants(root).OfType<Vehicles.Igi2CarAiTask>())
+            foreach (Vehicles.Igi2CarAiTask driver in root.Descendants().OfType<Vehicles.Igi2CarAiTask>())
             {
                 driver.Prepare(player.Ai);
             }
         }
 
         return level;
-    }
-
-    private static IEnumerable<Engine.Tasks.GameTask> Descendants(Engine.Tasks.GameTask task)
-    {
-        foreach (Engine.Tasks.GameTask child in task.Children)
-        {
-            yield return child;
-            foreach (Engine.Tasks.GameTask inner in Descendants(child))
-            {
-                yield return inner;
-            }
-        }
     }
 
     /// <summary>Reads the level's sound definitions and hands them to the host's mixer, as <c>Game_CreateHandler</c> (<c>igi2 0x4070E0</c>) does.</summary>

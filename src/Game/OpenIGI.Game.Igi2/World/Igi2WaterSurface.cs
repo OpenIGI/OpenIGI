@@ -110,7 +110,7 @@ public sealed class Igi2WaterSurface
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2WaterSheet> sheets = [];
 
-        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not WaterTask water)
             {

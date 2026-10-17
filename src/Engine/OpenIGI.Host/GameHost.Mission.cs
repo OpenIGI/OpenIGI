@@ -484,8 +484,6 @@ internal sealed partial class GameHost
         _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
 
-
-
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -3420,7 +3418,7 @@ internal sealed partial class GameHost
 
     private MenuManagerTask? FindMenuManager()
     {
-        foreach (GameTask task in WalkTasks(_loop.Tasks.Root))
+        foreach (GameTask task in _loop.Tasks.Root.Descendants())
         {
             if (task is MenuManagerTask manager)
             {
@@ -3455,7 +3453,7 @@ internal sealed partial class GameHost
 
         int armed = 0;
         List<string> weaponModels = [];
-        foreach (DeclaredTask vehicle in WalkTasks(levelRoot).OfType<DeclaredTask>())
+        foreach (DeclaredTask vehicle in levelRoot.Descendants().OfType<DeclaredTask>())
         {
             if (vehicle.Type.Name is ("Car" or "Heli")
                 && vehicle.TryGetValue("Model", out object? rawZoneModel)
@@ -3590,18 +3588,6 @@ internal sealed partial class GameHost
                 ? metres * WorldScene.UnitsPerMetre
                 : origin;
             BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
-        }
-    }
-
-    private static IEnumerable<GameTask> WalkTasks(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in WalkTasks(child))
-            {
-                yield return nested;
-            }
         }
     }
 

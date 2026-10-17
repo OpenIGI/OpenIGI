@@ -602,7 +602,7 @@ public sealed class ElevatorRegistry
         List<string> wantedExpressions)
     {
         string elevatorName = elevator.Name;
-        string[] doorExpressions = Descendants(root)
+        string[] doorExpressions = root.Descendants()
             .OfType<DeclaredTask>()
             .Where(static task => string.Equals(task.Type.Name, "Door", StringComparison.Ordinal))
             .SelectMany(task =>
@@ -621,7 +621,7 @@ public sealed class ElevatorRegistry
             })
             .ToArray();
 
-        List<DeclaredTask> switches = Descendants(root)
+        List<DeclaredTask> switches = root.Descendants()
             .OfType<DeclaredTask>()
             .Where(static task => string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal))
             .ToList();
@@ -683,18 +683,6 @@ public sealed class ElevatorRegistry
         }
 
         return calls;
-    }
-
-    private static IEnumerable<GameTask> Descendants(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-            foreach (GameTask descendant in Descendants(child))
-            {
-                yield return descendant;
-            }
-        }
     }
 
     private static GameTask? FindById(GameTask task, int id)

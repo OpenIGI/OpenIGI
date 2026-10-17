@@ -511,7 +511,7 @@ public sealed class Igi2TerrainSurface
             byName[BareName(entry.Name)] = entry;
         }
 
-        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is TerrainTask level)
             {

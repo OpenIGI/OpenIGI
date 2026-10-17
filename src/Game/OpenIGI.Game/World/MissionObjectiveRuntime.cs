@@ -92,7 +92,7 @@ public sealed class MissionObjectiveRuntime
         _resolveText = resolveText ?? (static key => key);
         _isKeyDown = isKeyDown;
 
-        List<GameTask> tasks = Walk(levelRoot).ToList();
+        List<GameTask> tasks = levelRoot.Descendants().ToList();
 
         foreach (GameTask task in tasks)
         {
@@ -883,18 +883,6 @@ public sealed class MissionObjectiveRuntime
         task.TryGetValue("Orientation", out object? value) && value is Vector3f angles
             ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
             : Matrix3f.Identity;
-
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
-    }
 
     private static Vector3d FindPosition(GameTask task)
     {

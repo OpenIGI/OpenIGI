@@ -98,7 +98,7 @@ public sealed class TerrainHeightBindings
 
         if (terrain.Heightmap is not null)
         {
-            foreach (GameTask task in Walk(levelRoot))
+            foreach (GameTask task in levelRoot.Descendants())
             {
                 if (task is not DeclaredTask declared
                     || !string.Equals(declared.Type.Name, HeightMapType, StringComparison.Ordinal))
@@ -227,18 +227,6 @@ public sealed class TerrainHeightBindings
 
     private static int GetInt32(DeclaredTask task, string parameter) =>
         task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
-
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 
     /// <summary>One published binding: a grid over one octree node.</summary>
     /// <param name="Level">The node's depth, which is the task's <c>Level</c>.</param>

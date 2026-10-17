@@ -19,7 +19,7 @@ internal sealed class ComputerHighlightCatalog : IComputerHighlightCatalogue
         ArgumentNullException.ThrowIfNull(variables);
         _expressions = new LevelExpressionRuntime(variables);
 
-        foreach (GameTask task in Walk(root))
+        foreach (GameTask task in root.Descendants())
         {
             if (task is not DeclaredTask declared
                 || !string.Equals(declared.Type.Name, "ComputerHilight", StringComparison.Ordinal))
@@ -61,18 +61,6 @@ internal sealed class ComputerHighlightCatalog : IComputerHighlightCatalogue
     {
         int colon = resource.LastIndexOf(':');
         return colon >= 0 ? resource[(colon + 1)..] : resource;
-    }
-
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
     }
 
     private sealed record Entry(

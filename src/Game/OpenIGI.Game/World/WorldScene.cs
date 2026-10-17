@@ -472,7 +472,7 @@ public sealed class WorldScene
             return default;
         }
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask declared)
             {
@@ -831,7 +831,7 @@ public sealed class WorldScene
     {
         int added = 0;
         int chain = 0;
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask spline
                 || !string.Equals(spline.Type.Name, SplineObjType, StringComparison.Ordinal))
@@ -1146,7 +1146,7 @@ public sealed class WorldScene
         MagicObjectRegistry magic,
         Dictionary<GameTask, List<(string Set, WorldObject Root)>> bound)
     {
-        foreach (GameTask owner in Walk(levelRoot))
+        foreach (GameTask owner in levelRoot.Descendants())
         {
             if (!TryGetLightmapSet(owner, out string set))
             {
@@ -1419,7 +1419,7 @@ public sealed class WorldScene
     private static IEnumerable<GameTask> Subtree(GameTask task)
     {
         yield return task;
-        foreach (GameTask descendant in Walk(task))
+        foreach (GameTask descendant in task.Descendants())
         {
             yield return descendant;
         }
@@ -1643,15 +1643,4 @@ public sealed class WorldScene
         return string.Create(CultureInfo.InvariantCulture, $"({alpha:F6}, {beta:F6}, {gamma:F6})");
     }
 
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 }

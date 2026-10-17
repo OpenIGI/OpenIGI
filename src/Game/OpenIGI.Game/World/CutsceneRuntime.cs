@@ -331,9 +331,9 @@ public sealed class CutsceneRuntime
 
         // Every detection record takes the next value of the global round-robin counter as it initialises: the camera
         // lenses at construction, then the vehicles in tree order at post-load (VehicleVision).
-        _visionCounter = Walk(levelRoot).Count(static task => string.Equals(task.Type.Name, "SCamera", StringComparison.Ordinal));
+        _visionCounter = levelRoot.Descendants().Count(static task => string.Equals(task.Type.Name, "SCamera", StringComparison.Ordinal));
         int taskOrder = 0;
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             int order = taskOrder++;
             _taskOrder[task] = order;
@@ -429,7 +429,7 @@ public sealed class CutsceneRuntime
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
             {
@@ -564,7 +564,7 @@ public sealed class CutsceneRuntime
         ArgumentNullException.ThrowIfNull(graphs);
         _carAis.Clear();
         AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(_root);
-        foreach (GameTask task in Walk(_root))
+        foreach (GameTask task in _root.Descendants())
         {
             if (task is not DeclaredTask declared
                 || !string.Equals(task.Type.Name, "CarAI", StringComparison.Ordinal)
@@ -3444,7 +3444,6 @@ public sealed class CutsceneRuntime
                 {
                     RetailHeliSpawn.Reset(retailHeli, retailHeliPhysics, RetailHeliSpawn.Placement(retailHeliTask));
 
-
                     program.WriteChannel(0, 0f);
                     program.WriteChannel(1, 0f);
                     program.WriteChannel(2, 0f);
@@ -3852,7 +3851,7 @@ public sealed class CutsceneRuntime
         // Small coordinates can belong to a separate cinematic set (Mission 4's Anya HQ);
         // they are not evidence of a vehicle-local offset. Only explicit Link IDs transform
         // the evaluated camera through 0x508940. See the MVP retail audit for both listings.
-        foreach (GameTask task in Walk(scene))
+        foreach (GameTask task in scene.Descendants())
         {
             if (task is not DeclaredTask camera || !string.Equals(task.Type.Name, "EditCamera", StringComparison.Ordinal))
             {
@@ -3876,18 +3875,6 @@ public sealed class CutsceneRuntime
 
     private static bool IsBandFilter(string filter) =>
         filter.Contains("BAND", StringComparison.OrdinalIgnoreCase);
-
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 
     private (Vector3d Position, Matrix3f Orientation) InitialPose(GameTask? task)
     {
@@ -4897,7 +4884,6 @@ public sealed class CutsceneRuntime
 
         /// <summary>Gets or sets the plane's retail body, once its AnimTask has spoken.</summary>
         public RetailPlaneBody? RetailPlane { get; set; }
-
 
         public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }

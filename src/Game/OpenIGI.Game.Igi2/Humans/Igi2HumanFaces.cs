@@ -33,7 +33,7 @@ public sealed class Igi2HumanFaces
         ArgumentNullException.ThrowIfNull(root);
         Igi2HumanFaces faces = new();
         Dictionary<GameTask, string> worn = new(ReferenceEqualityComparer.Instance);
-        foreach (GameTask task in Igi2TaskTree.Descendants(root))
+        foreach (GameTask task in root.Descendants())
         {
             string? model = task switch
             {

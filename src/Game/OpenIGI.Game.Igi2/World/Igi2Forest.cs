@@ -83,7 +83,7 @@ public sealed class Igi2Forest
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2ForestStand> stands = [];
 
-        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not ForestTask forest || task.Id == GameTask.NoId)
             {

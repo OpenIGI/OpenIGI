@@ -249,8 +249,8 @@ public sealed class Igi2InGameMenu
             natives.SetSymbolContext(TaskScriptCommands.TaskNew, previous);
         }
 
-        Manager = Igi2TaskTree.Descendants(container).OfType<Igi2MenuManagerTask>().FirstOrDefault();
-        foreach (GameTask task in Igi2TaskTree.Descendants(container))
+        Manager = container.Descendants().OfType<Igi2MenuManagerTask>().FirstOrDefault();
+        foreach (GameTask task in container.Descendants())
         {
             switch (task)
             {
@@ -283,13 +283,13 @@ public sealed class Igi2InGameMenu
     /// <param name="id">The screen's id.</param>
     /// <returns>The screen, or <see langword="null"/>.</returns>
     public Igi2MenuScreenTask? Screen(int id) =>
-        Manager is null || id < 0 ? null : Igi2TaskTree.Descendants(Manager).OfType<Igi2MenuScreenTask>().FirstOrDefault(s => s.Id == id);
+        Manager is null || id < 0 ? null : Manager.Descendants().OfType<Igi2MenuScreenTask>().FirstOrDefault(s => s.Id == id);
 
     /// <summary>Gets a window of the menu by its id, among the menu's own tasks: a screen, or a popup's dialog window.</summary>
     /// <param name="id">The window's id.</param>
     /// <returns>The window, or <see langword="null"/>.</returns>
     public Igi2MenuWindowTask? Window(int id) =>
-        Manager is null || id < 0 ? null : Igi2TaskTree.Descendants(Manager).OfType<Igi2MenuWindowTask>().FirstOrDefault(w => w.Id == id);
+        Manager is null || id < 0 ? null : Manager.Descendants().OfType<Igi2MenuWindowTask>().FirstOrDefault(w => w.Id == id);
 
     /// <summary>Opens the menu on its default screen, pausing the game, as Escape does while the game plays.</summary>
     /// <param name="level">The level the default screen's expression is evaluated in.</param>
@@ -567,7 +567,7 @@ public sealed class Igi2InGameMenu
     private QvmValue Sort(Scripting.Igi2ScriptCall call)
     {
         if (call.Count == 3 && Manager is not null
-            && Igi2TaskTree.Descendants(Manager).OfType<Igi2ColumnViewTask>().FirstOrDefault(v => v.Id == call.GetInt32(0)) is { } view)
+            && Manager.Descendants().OfType<Igi2ColumnViewTask>().FirstOrDefault(v => v.Id == call.GetInt32(0)) is { } view)
         {
             view.Sort(call.GetInt32(1), call.GetInt32(2) != 0);
         }

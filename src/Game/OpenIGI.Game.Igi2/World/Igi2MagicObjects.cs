@@ -100,7 +100,7 @@ public sealed class Igi2MagicObjTypes
         }
 
         Igi2SessionScript.Run(resources, natives, Script);
-        foreach (Igi2MagicObjConfigTask config in Igi2TaskTree.Descendants(tree.Root).OfType<Igi2MagicObjConfigTask>())
+        foreach (Igi2MagicObjConfigTask config in tree.Root.Descendants().OfType<Igi2MagicObjConfigTask>())
         {
             Define(config.ToType(tree.Types));
         }

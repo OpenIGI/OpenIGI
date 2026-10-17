@@ -99,14 +99,14 @@ public static class Igi2LevelAi
         world.TaskPosition = id => PositionOf(byId.GetValueOrDefault(id));
         world.PatrolPath = id => byId.GetValueOrDefault(id) as Igi2PatrolPathTask;
         world.EvaluateCommand = command => Igi2LineScript.Evaluate(command.Expression, setup.Natives, setup.Functions) != 0;
-        world.Doors = [.. Igi2TaskTree.Descendants(setup.Root).OfType<Interaction.Igi2DoorTask>()];
+        world.Doors = [.. setup.Root.Descendants().OfType<Interaction.Igi2DoorTask>()];
         world.NoiseAt = setup.NoiseAt ?? (static _ => 0f);
         if (setup.FireTaskTypes is { } fireTypes)
         {
             world.FireTaskTypes = fireTypes;
         }
 
-        foreach (Igi2AiSquadTask task in Igi2TaskTree.Descendants(setup.Root).OfType<Igi2AiSquadTask>())
+        foreach (Igi2AiSquadTask task in setup.Root.Descendants().OfType<Igi2AiSquadTask>())
         {
             Igi2AiSquad squad = new(world, task) { Index = world.Squads.Count };
             task.Squad = squad;
@@ -115,7 +115,7 @@ public static class Igi2LevelAi
         }
 
         List<Igi2HumanAi> minds = [];
-        foreach (Igi2HumanSoldierTask task in Igi2TaskTree.Descendants(setup.Root).OfType<Igi2HumanSoldierTask>())
+        foreach (Igi2HumanSoldierTask task in setup.Root.Descendants().OfType<Igi2HumanSoldierTask>())
         {
             if (task.Body is { } body && task.Ai is { } aiTask)
             {
@@ -146,7 +146,7 @@ public static class Igi2LevelAi
     private static Dictionary<int, object> TasksById(GameTask root, Player.Igi2HumanPlayer player)
     {
         Dictionary<int, object> byId = [];
-        foreach (GameTask task in Igi2TaskTree.Descendants(root))
+        foreach (GameTask task in root.Descendants())
         {
             if (task.Id == GameTask.NoId)
             {

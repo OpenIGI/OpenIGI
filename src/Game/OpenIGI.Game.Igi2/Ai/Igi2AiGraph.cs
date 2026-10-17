@@ -467,7 +467,7 @@ public sealed class Igi2AiGraphs
         ArgumentNullException.ThrowIfNull(functions);
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<int, Igi2AiGraph> graphs = [];
-        foreach (GameTask task in Igi2TaskTree.Descendants(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not Igi2AiGraphTask graph || task.Id == GameTask.NoId)
             {

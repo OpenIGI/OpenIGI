@@ -90,7 +90,7 @@ public sealed class TerrainSurface
         List<TerrainTileLayer> layers = [];
         int skippedModifiers = 0;
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask declared
                 || !string.Equals(declared.Type.Name, TextureModifierType, StringComparison.Ordinal))
@@ -214,15 +214,4 @@ public sealed class TerrainSurface
     private static int GetInt32(DeclaredTask task, string parameter) =>
         task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
 
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 }

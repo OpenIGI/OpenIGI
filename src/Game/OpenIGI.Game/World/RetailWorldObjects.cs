@@ -54,7 +54,7 @@ public sealed class RetailWorldObjects
         ArgumentNullException.ThrowIfNull(models);
         RetailWorldObjects set = new();
         Dictionary<string, (RetailRayMesh Mesh, float Radius)?> meshes = new(StringComparer.OrdinalIgnoreCase);
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask declared)
             {
@@ -457,15 +457,4 @@ public sealed class RetailWorldObjects
 
     private static object? Value(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) ? value : null;
 
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 }
