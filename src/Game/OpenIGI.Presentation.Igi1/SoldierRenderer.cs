@@ -1208,7 +1208,7 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d placement = cutsceneActor
                 ? soldier.Position / WorldScene.UnitsPerMetre
                 : Stand(soldier, group, terrain, cast);
-            group.Soldiers.Add(new Member(new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor }, own)
+            group.Add(new Member(new SoldierAgent(view, placement) { IsCutsceneActor = cutsceneActor }, own)
             {
                 DrawnPose = initialPose,
                 SkinScratch = initialSkin,
@@ -3303,7 +3303,7 @@ public sealed class SoldierRenderer : IDisposable
             PreviousSkinnedPose = initialSkinReady ? initialPose : null,
             Weapon = weapon,
         };
-        group.Soldiers.Add(freshMember);
+        group.Add(freshMember);
 
         if (_detectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale))
         {
@@ -7132,7 +7132,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        return new Group(new SoldierBodyModel(model, lowest), geometry, mesh, instance, pack);
+        return new Group(new SoldierModelGroup(new SoldierBodyModel(model, lowest)), geometry, mesh, instance, pack);
     }
 
     private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)
@@ -7198,10 +7198,13 @@ public sealed class SoldierRenderer : IDisposable
         Count = 0;
     }
 
-    private sealed class Group(SoldierBodyModel body, MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
+    private sealed class Group(SoldierModelGroup roster, MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
     {
+        /// <summary>The soldiers this group draws, as the simulation keeps them, and what it reads of their model.</summary>
+        public SoldierModelGroup Roster { get; } = roster;
+
         /// <summary>What the simulation reads of the group's model: the model, its collision mesh and its lowest vertex.</summary>
-        public SoldierBodyModel Body { get; } = body;
+        public SoldierBodyModel Body => Roster.Body;
 
         public MeshGeometry Geometry { get; } = geometry;
 
@@ -7211,7 +7214,18 @@ public sealed class SoldierRenderer : IDisposable
 
         public LoadedPack? Pack { get; } = pack;
 
-        public List<Member> Soldiers { get; } = [];
+        private readonly List<Member> _soldiers = [];
+
+        /// <summary>The soldiers the group draws, in the order the roster holds their agents; joined through <see cref="Add"/>.</summary>
+        public List<Member> Soldiers => _soldiers;
+
+        /// <summary>Adds a soldier to the group, and its agent to the roster in the same place.</summary>
+        /// <param name="member">The soldier.</param>
+        public void Add(Member member)
+        {
+            _soldiers.Add(member);
+            Roster.Add(member.Agent);
+        }
     }
 
     /// <summary>
