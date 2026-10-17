@@ -1,5 +1,4 @@
 using OpenIGI.Presentation;
-using OpenIGI.Presentation.World;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;

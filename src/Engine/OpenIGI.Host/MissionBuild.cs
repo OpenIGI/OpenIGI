@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
+using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Level;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Infrastructure;
@@ -68,6 +69,9 @@ internal sealed class MissionBuild : LevelBuild
 
     /// <summary>Gets or sets the trace the soldiers and the cameras see through.</summary>
     public WorldTraceCast? WorldTrace { get; set; }
+
+    /// <summary>Gets or sets the level's nav graphs by their task's id, in world space; empty when it ships none.</summary>
+    public Dictionary<int, GraphFile>? Graphs { get; set; }
 }
 
 /// <summary>The host's mission systems, in the order a mission is brought up.</summary>
@@ -101,7 +105,13 @@ internal static class MissionSystemNames
     /// <summary>The security cameras and the rotating objects.</summary>
     public const string Cameras = "Cameras";
 
-    /// <summary>The nav graphs and the soldiers' brains.</summary>
+    /// <summary>The nav graphs.</summary>
+    public const string NavGraphs = "NavGraphs";
+
+    /// <summary>The probe field, the path-traced lightmaps and the distance fields, started.</summary>
+    public const string LightBakes = "LightBakes";
+
+    /// <summary>The soldiers' brains, the alarm speakers and the guards' rounds.</summary>
     public const string NavigationAi = "NavigationAi";
 
     /// <summary>The actors joining the level's walk.</summary>

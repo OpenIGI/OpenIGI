@@ -22,7 +22,6 @@ using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Presentation.World;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.Igi1.Ai;
@@ -523,6 +522,8 @@ internal sealed partial class GameHost
         .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Soldiers, MissionSoldiers))
         .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Interactions, MissionInteractions))
         .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Cameras, MissionCameras))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.NavGraphs, MissionNavGraphs))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.LightBakes, MissionLightBakes))
         .Add(new LevelSystem<MissionBuild>(MissionSystemNames.NavigationAi, MissionNavigationAi))
         .Add(new LevelSystem<MissionBuild>(MissionSystemNames.LevelWalk, MissionLevelWalk))
         .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Picture, MissionPicture))
@@ -1139,6 +1140,339 @@ internal sealed partial class GameHost
     }
 
     /// <summary>The nav graphs and the soldiers' brains, with what their rounds, blasts and alarms do.</summary>
+    /// <summary>The level's nav graphs, which the soldiers and the vehicles drive over.</summary>
+    private void MissionNavGraphs(MissionBuild b)
+    {
+        string graphDirectory = ResolveDirectoryCaseInsensitive(
+                _gamePath, Path.Combine(b.Loaded.Descriptor.MissionDirectory, "graphs"))
+            ?? Path.Combine(_gamePath, b.Loaded.Descriptor.MissionDirectory, "graphs");
+        try
+        {
+            b.Graphs = NavGraphs.Read(graphDirectory, b.LevelRoot, _logger);
+        }
+        catch (IOException ex)
+        {
+            _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
+            b.Graphs = [];
+        }
+
+        Dictionary<int, GraphFile> graphs = b.Graphs;
+        if (graphs.Count > 0)
+        {
+            _logger.Information(
+                "Ai",
+                $"Nav graphs: {graphs.Count} — " +
+                string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
+
+            // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
+            // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
+            // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
+            // PatrolPath route. d843661b dropped this call and left every one of them parked.
+            _mission.Cutscenes?.ConfigureCarAi(graphs);
+        }
+        else
+        {
+            // A missing patrol graph only removes movement: retail still registers every HumanAI as a live human, which
+            // can stand, be seen and be selected by the binocular detector.
+            _logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
+        }
+
+        EndStage("reading the nav graphs");
+    }
+
+    /// <summary>The level's baked lighting: the probe field, the path-traced lightmaps and the distance fields, started.</summary>
+    private void MissionLightBakes(MissionBuild b)
+    {
+        if (_scene is null)
+        {
+            throw MissingSystem(MissionSystemNames.Scene);
+        }
+
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        bool promoted = b.Promoted;
+        ObjectCollisionIndex solids = b.Solids!;
+
+        // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
+        // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
+        // path-traced lightmap was baked with `_sun` still null -- a zero sun direction and a fallback
+        // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
+        // backdrop already carried one in. The later read stays and simply re-confirms the same value.
+        if (_sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
+        {
+            _sun = bakeSun;
+        }
+
+        // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
+        // about three seconds in Release and half a minute in Debug, and by this point the window
+        // and its GL context are live -- so the process stops answering, the GPU is handed no
+        // work for the whole of it, and Windows' watchdog takes the context away. Loading mission
+        // 1 from the menu died that way, with exit 0xCFFFFFFF. The main thread carries on loading
+        // and presenting; IrradianceProbeBake hands the volume over when it is ready.
+        //
+        // It traces with every door SHUT, which is two things at once. A door standing open would
+        // otherwise be baked as a hole in the wall it belongs to, and the field is static, so the
+        // hole would outlast the door -- that is why this used to have to run before the doors
+        // did. And the shut cast is the only one that reads no state the game mutates, which is
+        // what makes running it alongside a live level safe rather than merely early.
+        //
+        // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
+        // alone -- which is what such a level looks like anyway.
+        // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
+        // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
+        // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
+        if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
+        {
+            Vector3f bakeSunDirection = _sun is { } declared && !declared.IsBelowHorizon
+                ? declared.Direction
+                : default;
+
+            WorldRayCast shutObjectCast = solids.CasterWithDoorsShut();
+
+            // A bake ray passes through glass and chain-link the way a line of sight does
+            // (GameMaterial.IsSightTransparent), so daylight reaches a room through its windows
+            // instead of stopping at the pane -- the very thing that left window rooms as dark as
+            // sealed ones. It steps a hair past each see-through face and casts on until it meets
+            // something solid or leaves the level. Portal polygons (doorway/window openings) are
+            // already skipped by the cast itself. Terrain always blocks -- it reports material Air.
+            WorldRayCast seeThroughObjectCast = (a, b, out blockedAt) =>
+            {
+                Vector3d origin = a;
+                for (int pass = 0; pass < 8; pass++)
+                {
+                    if (!shutObjectCast(origin, b, out WorldRayHit hit))
+                    {
+                        blockedAt = default;
+                        return false;
+                    }
+
+                    if (!GameMaterial.IsSightTransparent(hit.Material))
+                    {
+                        blockedAt = hit;
+                        return true;
+                    }
+
+                    Vector3d toEnd = new(b.X - hit.Position.X, b.Y - hit.Position.Y, b.Z - hit.Position.Z);
+                    double length = Math.Sqrt((toEnd.X * toEnd.X) + (toEnd.Y * toEnd.Y) + (toEnd.Z * toEnd.Z));
+                    if (length <= 1e-6)
+                    {
+                        blockedAt = default;
+                        return false;
+                    }
+
+                    // A few units past the pane (4/4096 m ~= 1 mm); thicker or layered glass is
+                    // cleared by the loop, one see-through face at a time.
+                    double scale = 4.0 / length;
+                    origin = new Vector3d(
+                        hit.Position.X + (toEnd.X * scale),
+                        hit.Position.Y + (toEnd.Y * scale),
+                        hit.Position.Z + (toEnd.Z * scale));
+                }
+
+                blockedAt = default;
+                return false;
+            };
+
+            WorldRayCast bakeCast = (a, b, out blockedAt) =>
+            {
+                bool hitObject = seeThroughObjectCast(a, b, out WorldRayHit onObject);
+                if (_playerTerrain is { } bakeGround
+                    && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
+                    && (!hitObject || onGround.Distance < onObject.Distance))
+                {
+                    blockedAt = onGround;
+                    return true;
+                }
+
+                blockedAt = onObject;
+                return hitObject;
+            };
+
+            // Dev verification for the path-traced lightmapper (phases 1-2): when IGI_BAKELM_DIR is
+            // set, enumerate the lightmapped texels, bake direct sun + sky, and dump the largest few
+            // pages' normals and radiance so the texel map and the direct pass can be checked by eye.
+            // Off unless the env var is set.
+            if (Environment.GetEnvironmentVariable("IGI_BAKELM_DIR") is { Length: > 0 } lightmapDir
+                && _scene is { } lightmapScene)
+            {
+                DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
+            }
+
+            // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
+            // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
+            // .olm ones would be sampled. Cached to disk like the probe field, so only a mission
+            // without a bake pays to trace it, and traced on a worker so the load does not stall.
+            // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
+            // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
+            // lightmaps entirely; 1 keeps them where the bake produced nothing.
+            bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
+            if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
+            {
+                Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+
+                // The LEVEL's ambient, not SkyFillColour's. That reads the effective sun -- the
+                // authored one after the day/night sweep and the daylight re-point have had it,
+                // which moves every frame and belongs to the frame before this load. The two
+                // inputs beside it come from the level's own Dirlight, so mixing the two gave a
+                // disk-cache key that could not be reproduced: entering the same mission twice in
+                // a session missed its own bake and traced the level again.
+                Vector3f lmSky = (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f))
+                    * RenderCVars.SkyLight.Value;
+                _lightmapBakeMission = id;
+                _lightmapBakeSun = bakeSunDirection;
+                _lightmapBakeSunColour = lmSun;
+                _lightmapBakeSky = lmSky;
+
+                if (_lightmapCache.TryLoad(id, bakeSunDirection, lmSun, lmSky) is { } cachedLightmaps)
+                {
+                    _world.SetBakedLightmaps(cachedLightmaps, discardRetailLightmaps);
+                }
+                else
+                {
+                    // Set the mode straight away so the worker's seconds are not spent showing the
+                    // shipped lightmaps under an exclusive (r_lightmap 2) request: with no bake yet,
+                    // lightmapped surfaces read black until the bake lands. Mode 1 keeps the shipped
+                    // pages meanwhile, which is what its fallback means.
+                    _world.SetBakedLightmaps(null, discardRetailLightmaps);
+
+                    // Resolving each surface's albedo reads the resource registry, so the texel
+                    // maps, textured triangles and their BVH are built here on the main thread; the
+                    // worker then does only the tracing, which touches immutable data and the cast.
+                    IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
+                    LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
+                    LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
+
+                    _lightmapBake?.Cancel();
+                    _lightmapBake = LightmapBake.Start(
+                        bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
+                        _work, bounces: 4, hemisphereRays: 128, logger: _logger);
+
+                    if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
+                    {
+                        _world.SetBakedLightmaps(readyLightmaps, discardRetailLightmaps);
+                        _lightmapCache.Save(id, bakeSunDirection, lmSun, lmSky, readyLightmaps);
+                        _lightmapBake = null;
+                    }
+                }
+            }
+            else
+            {
+                // The setting is off, or off since the last load: make sure no stale bake lingers.
+                _world?.SetBakedLightmaps(null, discardRetail: false);
+            }
+
+            // The probe field, guarded on its own cvar so it does not trace under a lightmap-only
+            // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
+            if (RenderCVars.GlobalIllumination.Value)
+            {
+            // Whatever the console says, but never so fine that a big level spends a minute of
+            // load tracing rays nobody asked for.
+            float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
+
+            // Remembered so the live re-bake (F11) can trace the field again from exactly the
+            // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
+            // from the cache or the tracer below.
+            _bakeCast = bakeCast;
+            _probeBakeMission = id;
+            _probeBakeSpacing = giSpacing;
+            _probeBakeSun = bakeSunDirection;
+
+            // A shipped (or previously-written) bake loads instantly; only a mission without one
+            // pays to trace it here, and then writes the result so no load pays for it again.
+            if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
+            {
+                _probeField = cachedField;
+            }
+            else
+            {
+                _probeBake = IrradianceProbeBake.Start(
+                    _scene,
+                    bakeCast,
+                    bakeSunDirection,
+                    giSpacing,
+
+                    // One albedo for the whole level. The alternative is reading each hit's own
+                    // texture, which needs the ray to report a material rather than a triangle --
+                    // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
+                    // any of them.
+                    ProbeBakeAlbedo,
+                    _work,
+                    _logger);
+
+                if (_options.Lockstep)
+                {
+                    // A capture is not allowed to race the worker: a reference image has to either
+                    // contain the field or not, never "whatever frame 30 caught". So a lockstep run
+                    // blocks for the finished field and writes the cache inline.
+                    _probeField = _probeBake.WaitForResult();
+                    _probeBake = null;
+
+                    if (_probeField is not null)
+                    {
+                        _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
+                    }
+                }
+                else
+                {
+                    // Interactive play enters the level on flat ambient and watches the light
+                    // stream in: the render loop polls TryCollectLatest and eases each snapshot in
+                    // as it lands, so a room fills with light over the first seconds rather than the
+                    // load stalling until it is lit. The cache is written once the bake completes,
+                    // under the key already remembered above.
+                    _probeField = null;
+                }
+            }
+            }
+        }
+
+        // The distance fields, on a worker beside the probe bake. Tracing every distinct
+        // model is arithmetic and moves off the render thread freely; only the upload cannot,
+        // because a GL texture belongs to the context that made it.
+        //
+        // Started here rather than built here: EnsureDistanceFields is the same call the render
+        // loop makes every frame, so a level begins its bake at load and a player who switches the
+        // lighting model on later gets one started for them. See GameHost.RealtimeGi.cs.
+        // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
+        // field is one of the two moments that can complete the pair and converge the cache, and
+        // with the old cards still standing it would converge THOSE against the new level's field
+        // -- then latch, so the real convergence a few hundred lines below was skipped and the
+        // level opened on the ramp this is all meant to remove. It failed silently, because a
+        // converged-looking cache and a stale one differ only in the picture.
+        // Not on a promotion: the backdrop already carries this very mission's cards and field
+        // -- built or baking behind the menu, which is what lets the menu show the lit level --
+        // and discarding them here would throw the field away and bake it again in front of
+        // the player.
+        if (!promoted)
+        {
+            DiscardSurfaceCache();
+            DiscardDistanceFields();
+        }
+
+        EnsureDistanceFields();
+
+        // A capture must not race the worker, for the reason the probe bake records: a
+        // reference image has to either contain the field or not, never whichever frame
+        // the worker happened to reach.
+        if (_options.Lockstep && _sdfBake is { } pendingField
+            && pendingField.WaitForResult() is { } readyField)
+        {
+            _sdfBake = null;
+            AdoptDistanceField(readyField.Scene, readyField.Atlas, fromCache: false);
+        }
+
+        // Every distinct model's surface is captured into the card atlas, but deliberately NOT
+        // here -- even though this is where the geometry first exists. Lighting the cache needs
+        // the level's own sun, which is not read until further down this load, and lighting the
+        // cards before that gave every page a zero sun direction and a picture of pure sky, which
+        // is exactly what the first run produced. EnsureSurfaceCache captures and lights in one
+        // go, so it is called once the sun is known; the outgoing cards were dropped above.
+
+        _device.SetIrradianceVolume(_probeField);
+        ApplyColourLookup(_options.StartMission);
+        EndStage("starting the light bakes");
+    }
+
+    /// <summary>The soldiers' brains, the alarm speakers and the guards' rounds.</summary>
     private void MissionNavigationAi(MissionBuild b)
     {
         if (_scene is null)
@@ -1153,803 +1487,415 @@ internal sealed partial class GameHost
 
         LoadedMission loaded = b.Loaded;
         LevelTask levelRoot = b.LevelRoot;
-        int id = b.Id;
-        bool promoted = b.Promoted;
         WorldScene scene = b.Scene!;
-        ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
         WorldTraceCast worldTrace = b.WorldTrace!;
+        Dictionary<int, GraphFile> graphs = b.Graphs ?? throw MissingSystem(MissionSystemNames.NavGraphs);
 
-        // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
-        // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
-        //
-        // Level 1 ships eleven of them. Picking a single graph -- the one with the most nodes -- and giving
-        // it to every soldier routed each one over node ids belonging to a graph that was not its own,
-        // which is why guards walked to places no patrol goes and off the edge of the level.
-        try
+        // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
+        // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
+        // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
+        // leaving every guard on GD_2/Normal whatever the profile said. -difficulty still overrides,
+        // for testing a difficulty without editing a profile.
+        AiDifficulty effectiveDifficulty = EffectiveDifficulty();
+        _logger.Information(
+            "Ai",
+            $"Difficulty {HumanAiConfigRegistry.NameOf(effectiveDifficulty)} ({effectiveDifficulty}) "
+                + (_options.Difficulty is null
+                    ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
+                    : "from -difficulty override."));
+
+        // The sight and bullet rays test placed objects AND the terrain, as the original's
+        // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
+        // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
+        // hills.
+        // The level's doors, before the brains: a walker asks the registry for the nearest door
+        // on a door hop, and an open door is switched out of the collision index so the
+        // doorway is walkable. Both have to exist before Animate hands each brain its query.
+        _soldiers.Simulation.Animate(
+            graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
+            _loop.Variables);
+        EndStage("animating the soldiers' brains");
+
+        // The level's alarm speakers, for the sirens: each follows its own expression over
+        // the same live variables the controls export through.
+        _sirenVoices.Clear();
+        _reportedSirenFailures.Clear();
+        _mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
+            levelRoot,
+            _loop.Variables,
+            () => _soldiers.Simulation.AnyAlarmOn);
+        _mission.AlarmSpeakers.BindScene(scene.Placements);
+        world.AlarmSpeakers = _mission.AlarmSpeakers;
+        _logger.Information("Ai", $"{_mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
+
+        // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
+        // where it becomes a cast. The AI's hit probability decides whether the round is on
+        // target -- the original hands that same figure to the gun with every shot (ai.md 11.6),
+        // so a miss is a round that went somewhere else rather than a round that never existed.
+        _soldiers.Simulation.SetRoundHandler((from, at, probability, weapon, shooter) =>
         {
-            string graphDirectory = ResolveDirectoryCaseInsensitive(
-                    _gamePath, Path.Combine(loaded.Descriptor.MissionDirectory, "graphs"))
-                ?? Path.Combine(_gamePath, loaded.Descriptor.MissionDirectory, "graphs");
-            Dictionary<int, GraphFile> graphs = [];
-            if (Directory.Exists(graphDirectory))
+            _guardRounds++;
+            if (_player is null)
             {
-                // Retail installs commonly preserve uppercase pack names (GRAPHS/GRAPH9.DAT). The
-                // VFS accepts those names, but this direct filesystem walk must do so explicitly on a
-                // case-sensitive volume as well.
-                foreach (string file in Directory.EnumerateFiles(graphDirectory)
-                    .Where(file => Path.GetFileNameWithoutExtension(file)
-                        .StartsWith("graph", StringComparison.OrdinalIgnoreCase)
-                        && string.Equals(Path.GetExtension(file), ".dat", StringComparison.OrdinalIgnoreCase)))
+                return;
+            }
+
+            // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
+            // extended past the target, exactly as the retail round is a cast from the muzzle to
+            // the end of its remaining range (GunShot per-tick 0x47B750). A moving player walks
+            // out of the lagging aim and the round geometrically misses; that is retail's miss.
+            Vector3d to = new(
+                from.X + ((at.X - from.X) * 4.0),
+                from.Y + ((at.Y - from.Y) * 4.0),
+                from.Z + ((at.Z - from.Z) * 4.0));
+
+            Vector3d feet = _player.Body.Position;
+
+            // Which side fired decides who the round may hurt. A guard's round (opposing the
+            // player's team) may strike the player; a friendly's may not -- it is aimed at an
+            // opposing soldier and a friendly's own gun never endangers the player. Null is
+            // defensive: the player's own shots do not flow through this handler, so no real
+            // round is hostile-neutral; treating it as hostile keeps a round from vanishing.
+            bool shooterHostileToPlayer = shooter is null
+                || shooter.Soldier.Team != _soldiers.Simulation.PlayerTeam;
+
+            // The player's living body is a physical obstacle to every round, whatever the
+            // shooter's team -- retail's cast collides with a same-team human too (it just deals
+            // no damage). A DEAD player is not: the detection scan unregisters the corpse, so a
+            // round passes through where the body fell instead of hanging in the air on it.
+            bool playerInTheRay = !_playerHealth.IsDead;
+
+            // Resolve the guard's round against the player's OWN skinned body (limb hits do less,
+            // and the hitbox is the real body, not a fat cylinder). Only if the body is not loaded
+            // does it fall back to the cylinder-and-trunk stand-in. Skipped entirely for a corpse.
+            HumanHit hit = default;
+            bool met = false;
+            IReadOnlyList<HumanBodyCrossing> crossings = [];
+            if (playerInTheRay)
+            {
+                if (_soldiers is not null
+                    && _soldiers.TryCastPlayerBody(from, to, feet, _player.Body.Yaw, out crossings)
+                    && crossings.Count > 0)
                 {
-                    string stem = Path.GetFileNameWithoutExtension(file);
-                    if (!int.TryParse(stem.AsSpan("graph".Length), out int graphId))
-                    {
-                        continue;
-                    }
+                    hit = crossings[0].Hit;
+                    met = true;
+                }
 
-                    try
-                    {
-                        GraphFile graph = GraphFile.Read(File.ReadAllBytes(file));
-
-                        // The graph file stores node positions in the graph's own frame. The world
-                        // position is node + graphTask.Position — what 0x4F9770 adds every time.
-                        Vector3d graphPos = TaskGeometry.FindPosition(levelRoot, graphId);
-
-                        // A graph under a placed model is in that model's frame (0x4F9770's other branch).
-                        // Mission 9's intro office is a Building whose graphs sit at a few metres: added to
-                        // nothing, they put Anya's feet 42 km under the level.
-                        if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask graphParent
-                            && graphParent.TryGetValue(WorldScene.ModelParameter, out object? parentModel)
-                            && parentModel is string { Length: > 0 }
-                            && graphParent.TryGetValue("Position", out object? parentPlace)
-                            && parentPlace is Vector3d parentPosition
-                            && graphParent.TryGetValue("Orientation", out object? parentTurn)
-                            && parentTurn is Vector3f parentAngles)
-                        {
-                            graph.ApplyWorldOffset(
-                                graphPos,
-                                parentPosition,
-                                RetailOrientation.Euler(parentAngles.X, parentAngles.Y, parentAngles.Z));
-                        }
-                        else
-                        {
-                            graph.ApplyWorldOffset(graphPos);
-                        }
-
-                        // The graph task's own "Node cover midoffset" -- where the can-shoot ray starts.
-                        if (TaskGeometry.TryFindValue(levelRoot, graphId, "Node cover midoffset", out object? midOffset)
-                            && midOffset is IConvertible convertible)
-                        {
-                            graph.CoverMidOffsetMetres = convertible.ToDouble(System.Globalization.CultureInfo.InvariantCulture);
-                        }
-
-                        graphs[graphId] = graph;
-                    }
-                    catch (GraphFormatException ex)
-                    {
-                        _logger.Warning("Ai", $"Nav graph '{stem}' did not parse: {ex.Message}");
-                    }
+                if (!met)
+                {
+                    Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
+                    met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
                 }
             }
 
-            if (graphs.Count > 0)
+            // Where the world stops this ray, over its whole length -- one cast serves cover,
+            // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
+            // the same mark a player's round does. In retail a miss is visible: the round lands
+            // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
+            // are why the guards seemed to hit with every bullet.
+            // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
+            // owner through), so its own hull never stops the round.
+            bool worldBlocked = worldTrace(
+                new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
+                out WorldTraceHit blocker);
+            WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
+
+            // A round that meets no hostile body falls through to the soldiers behind the
+            // player -- an opposing soldier for a guard, a guard for a friendly. This is the
+            // NPC-vs-NPC half of the gate fight: the round is offered to every soldier on the
+            // ray, nearest first, and the first one it meets (per its own probability roll)
+            // takes it. True when a soldier consumed the round; false when it flew past them all.
+            bool SoldiersTakeTheRound()
+                => _soldiers is not null
+                    && _soldiers.Simulation.TryShootAiRound(
+                        from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
+
+            // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
+            void OfferNearMiss(Vector3d stop)
             {
-                _logger.Information(
-                    "Ai",
-                    $"Nav graphs: {graphs.Count} — " +
-                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
-
-                // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
-                // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
-                // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
-                // PatrolPath route. d843661b dropped this call and left every one of them parked.
-                _mission.Cutscenes?.ConfigureCarAi(graphs);
-
-                // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
-                // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
-                // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
-                // leaving every guard on GD_2/Normal whatever the profile said. -difficulty still overrides,
-                // for testing a difficulty without editing a profile.
-                AiDifficulty effectiveDifficulty = _options.Difficulty
-                    ?? (AiDifficulty)Math.Clamp(
-                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
-                        (int)AiDifficulty.Easy,
-                        (int)AiDifficulty.Hard);
-                _logger.Information(
-                    "Ai",
-                    $"Difficulty {HumanAiConfigRegistry.NameOf(effectiveDifficulty)} ({effectiveDifficulty}) "
-                        + (_options.Difficulty is null
-                            ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
-                            : "from -difficulty override."));
-                // The sight and bullet rays test placed objects AND the terrain, as the original's
-                // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
-                // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
-                // hills.
-
-                // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
-                // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
-                // path-traced lightmap was baked with `_sun` still null -- a zero sun direction and a fallback
-                // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
-                // backdrop already carried one in. The later read stays and simply re-confirms the same value.
-                if (_sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
+                if (shooter is not null)
                 {
-                    _sun = bakeSun;
+                    _soldiers?.Simulation.NotifyRoundPassed(from, stop, shooter, struck: null);
                 }
+            }
 
-                // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
-                // about three seconds in Release and half a minute in Debug, and by this point the window
-                // and its GL context are live -- so the process stops answering, the GPU is handed no
-                // work for the whole of it, and Windows' watchdog takes the context away. Loading mission
-                // 1 from the menu died that way, with exit 0xCFFFFFFF. The main thread carries on loading
-                // and presenting; IrradianceProbeBake hands the volume over when it is ready.
-                //
-                // It traces with every door SHUT, which is two things at once. A door standing open would
-                // otherwise be baked as a hole in the wall it belongs to, and the field is static, so the
-                // hole would outlast the door -- that is why this used to have to run before the doors
-                // did. And the shut cast is the only one that reads no state the game mutates, which is
-                // what makes running it alongside a live level safe rather than merely early.
-                //
-                // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
-                // alone -- which is what such a level looks like anyway.
-                // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
-                // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
-                // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
-                if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
+            // The streak, before the outcome: visual only, along the very ray this handler is
+            // resolving, dying where the world stops it. Whether the round connects is decided
+            // below exactly as ever -- from inside the head, a streak that reaches the eye and
+            // a round that hits look the same.
+            if (GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value)
+            {
+                Vector3d streakEnd = worldBlocked ? worldHit.Position : to;
+                Vector3d line = streakEnd - from;
+                double lineLength = line.Length;
+                if (lineLength > 1e-6)
                 {
-                    Vector3f bakeSunDirection = _sun is { } declared && !declared.IsBelowHorizon
-                        ? declared.Direction
-                        : default;
-
-                    WorldRayCast shutObjectCast = solids.CasterWithDoorsShut();
-
-                    // A bake ray passes through glass and chain-link the way a line of sight does
-                    // (GameMaterial.IsSightTransparent), so daylight reaches a room through its windows
-                    // instead of stopping at the pane -- the very thing that left window rooms as dark as
-                    // sealed ones. It steps a hair past each see-through face and casts on until it meets
-                    // something solid or leaves the level. Portal polygons (doorway/window openings) are
-                    // already skipped by the cast itself. Terrain always blocks -- it reports material Air.
-                    WorldRayCast seeThroughObjectCast = (a, b, out blockedAt) =>
-                    {
-                        Vector3d origin = a;
-                        for (int pass = 0; pass < 8; pass++)
-                        {
-                            if (!shutObjectCast(origin, b, out WorldRayHit hit))
-                            {
-                                blockedAt = default;
-                                return false;
-                            }
-
-                            if (!GameMaterial.IsSightTransparent(hit.Material))
-                            {
-                                blockedAt = hit;
-                                return true;
-                            }
-
-                            Vector3d toEnd = new(b.X - hit.Position.X, b.Y - hit.Position.Y, b.Z - hit.Position.Z);
-                            double length = Math.Sqrt((toEnd.X * toEnd.X) + (toEnd.Y * toEnd.Y) + (toEnd.Z * toEnd.Z));
-                            if (length <= 1e-6)
-                            {
-                                blockedAt = default;
-                                return false;
-                            }
-
-                            // A few units past the pane (4/4096 m ~= 1 mm); thicker or layered glass is
-                            // cleared by the loop, one see-through face at a time.
-                            double scale = 4.0 / length;
-                            origin = new Vector3d(
-                                hit.Position.X + (toEnd.X * scale),
-                                hit.Position.Y + (toEnd.Y * scale),
-                                hit.Position.Z + (toEnd.Z * scale));
-                        }
-
-                        blockedAt = default;
-                        return false;
-                    };
-
-                    WorldRayCast bakeCast = (a, b, out blockedAt) =>
-                    {
-                        bool hitObject = seeThroughObjectCast(a, b, out WorldRayHit onObject);
-                        if (_playerTerrain is { } bakeGround
-                            && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
-                            && (!hitObject || onGround.Distance < onObject.Distance))
-                        {
-                            blockedAt = onGround;
-                            return true;
-                        }
-
-                        blockedAt = onObject;
-                        return hitObject;
-                    };
-
-                    // Dev verification for the path-traced lightmapper (phases 1-2): when IGI_BAKELM_DIR is
-                    // set, enumerate the lightmapped texels, bake direct sun + sky, and dump the largest few
-                    // pages' normals and radiance so the texel map and the direct pass can be checked by eye.
-                    // Off unless the env var is set.
-                    if (Environment.GetEnvironmentVariable("IGI_BAKELM_DIR") is { Length: > 0 } lightmapDir
-                        && _scene is { } lightmapScene)
-                    {
-                        DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
-                    }
-
-                    // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
-                    // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
-                    // .olm ones would be sampled. Cached to disk like the probe field, so only a mission
-                    // without a bake pays to trace it, and traced on a worker so the load does not stall.
-                    // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
-                    // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
-                    // lightmaps entirely; 1 keeps them where the bake produced nothing.
-                    bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
-                    if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
-                    {
-                        Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
-
-                        // The LEVEL's ambient, not SkyFillColour's. That reads the effective sun -- the
-                        // authored one after the day/night sweep and the daylight re-point have had it,
-                        // which moves every frame and belongs to the frame before this load. The two
-                        // inputs beside it come from the level's own Dirlight, so mixing the two gave a
-                        // disk-cache key that could not be reproduced: entering the same mission twice in
-                        // a session missed its own bake and traced the level again.
-                        Vector3f lmSky = (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f))
-                            * RenderCVars.SkyLight.Value;
-                        _lightmapBakeMission = id;
-                        _lightmapBakeSun = bakeSunDirection;
-                        _lightmapBakeSunColour = lmSun;
-                        _lightmapBakeSky = lmSky;
-
-                        if (_lightmapCache.TryLoad(id, bakeSunDirection, lmSun, lmSky) is { } cachedLightmaps)
-                        {
-                            _world.SetBakedLightmaps(cachedLightmaps, discardRetailLightmaps);
-                        }
-                        else
-                        {
-                            // Set the mode straight away so the worker's seconds are not spent showing the
-                            // shipped lightmaps under an exclusive (r_lightmap 2) request: with no bake yet,
-                            // lightmapped surfaces read black until the bake lands. Mode 1 keeps the shipped
-                            // pages meanwhile, which is what its fallback means.
-                            _world.SetBakedLightmaps(null, discardRetailLightmaps);
-
-                            // Resolving each surface's albedo reads the resource registry, so the texel
-                            // maps, textured triangles and their BVH are built here on the main thread; the
-                            // worker then does only the tracing, which touches immutable data and the cast.
-                            IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
-                            LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
-                            LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
-
-                            _lightmapBake?.Cancel();
-                            _lightmapBake = LightmapBake.Start(
-                                bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
-                                _work, bounces: 4, hemisphereRays: 128, logger: _logger);
-
-                            if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
-                            {
-                                _world.SetBakedLightmaps(readyLightmaps, discardRetailLightmaps);
-                                _lightmapCache.Save(id, bakeSunDirection, lmSun, lmSky, readyLightmaps);
-                                _lightmapBake = null;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // The setting is off, or off since the last load: make sure no stale bake lingers.
-                        _world?.SetBakedLightmaps(null, discardRetail: false);
-                    }
-
-                    // The probe field, guarded on its own cvar so it does not trace under a lightmap-only
-                    // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
-                    if (RenderCVars.GlobalIllumination.Value)
-                    {
-                    // Whatever the console says, but never so fine that a big level spends a minute of
-                    // load tracing rays nobody asked for.
-                    float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
-
-                    // Remembered so the live re-bake (F11) can trace the field again from exactly the
-                    // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
-                    // from the cache or the tracer below.
-                    _bakeCast = bakeCast;
-                    _probeBakeMission = id;
-                    _probeBakeSpacing = giSpacing;
-                    _probeBakeSun = bakeSunDirection;
-
-                    // A shipped (or previously-written) bake loads instantly; only a mission without one
-                    // pays to trace it here, and then writes the result so no load pays for it again.
-                    if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
-                    {
-                        _probeField = cachedField;
-                    }
-                    else
-                    {
-                        _probeBake = IrradianceProbeBake.Start(
-                            _scene,
-                            bakeCast,
-                            bakeSunDirection,
-                            giSpacing,
-
-                            // One albedo for the whole level. The alternative is reading each hit's own
-                            // texture, which needs the ray to report a material rather than a triangle --
-                            // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
-                            // any of them.
-                            ProbeBakeAlbedo,
-                            _work,
-                            _logger);
-
-                        if (_options.Lockstep)
-                        {
-                            // A capture is not allowed to race the worker: a reference image has to either
-                            // contain the field or not, never "whatever frame 30 caught". So a lockstep run
-                            // blocks for the finished field and writes the cache inline.
-                            _probeField = _probeBake.WaitForResult();
-                            _probeBake = null;
-
-                            if (_probeField is not null)
-                            {
-                                _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
-                            }
-                        }
-                        else
-                        {
-                            // Interactive play enters the level on flat ambient and watches the light
-                            // stream in: the render loop polls TryCollectLatest and eases each snapshot in
-                            // as it lands, so a room fills with light over the first seconds rather than the
-                            // load stalling until it is lit. The cache is written once the bake completes,
-                            // under the key already remembered above.
-                            _probeField = null;
-                        }
-                    }
-                    }
+                    AmmoType? streakAmmo = _ammoTypes is { } table
+                        && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
+                        ? found
+                        : null;
+                    _player.Ballistics.SpawnVisual(
+                        from,
+                        new Vector3f(
+                            (float)(line.X / lineLength),
+                            (float)(line.Y / lineLength),
+                            (float)(line.Z / lineLength)),
+                        streakEnd,
+                        weapon,
+                        streakAmmo);
                 }
+            }
 
-                // The distance fields, on a worker beside the probe bake. Tracing every distinct
-                // model is arithmetic and moves off the render thread freely; only the upload cannot,
-                // because a GL texture belongs to the context that made it.
-                //
-                // Started here rather than built here: EnsureDistanceFields is the same call the render
-                // loop makes every frame, so a level begins its bake at load and a player who switches the
-                // lighting model on later gets one started for them. See GameHost.RealtimeGi.cs.
-                // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
-                // field is one of the two moments that can complete the pair and converge the cache, and
-                // with the old cards still standing it would converge THOSE against the new level's field
-                // -- then latch, so the real convergence a few hundred lines below was skipped and the
-                // level opened on the ramp this is all meant to remove. It failed silently, because a
-                // converged-looking cache and a stale one differ only in the picture.
-                // Not on a promotion: the backdrop already carries this very mission's cards and field
-                // -- built or baking behind the menu, which is what lets the menu show the lit level --
-                // and discarding them here would throw the field away and bake it again in front of
-                // the player.
-                if (!promoted)
+            void MarkTheImpact()
+            {
+                if (!worldBlocked)
                 {
-                    DiscardSurfaceCache();
-                    DiscardDistanceFields();
-                }
-
-                EnsureDistanceFields();
-
-                // A capture must not race the worker, for the reason the probe bake records: a
-                // reference image has to either contain the field or not, never whichever frame
-                // the worker happened to reach.
-                if (_options.Lockstep && _sdfBake is { } pendingField
-                    && pendingField.WaitForResult() is { } readyField)
-                {
-                    _sdfBake = null;
-                    AdoptDistanceField(readyField.Scene, readyField.Atlas, fromCache: false);
-                }
-
-                // Every distinct model's surface is captured into the card atlas, but deliberately NOT
-                // here -- even though this is where the geometry first exists. Lighting the cache needs
-                // the level's own sun, which is not read until further down this load, and lighting the
-                // cards before that gave every page a zero sun direction and a picture of pure sky, which
-                // is exactly what the first run produced. EnsureSurfaceCache captures and lights in one
-                // go, so it is called once the sun is known; the outgoing cards were dropped above.
-
-                _device.SetIrradianceVolume(_probeField);
-                ApplyColourLookup(_options.StartMission);
-
-                // The level's doors, before the brains: a walker asks the registry for the nearest door
-                // on a door hop, and an open door is switched out of the collision index so the
-                // doorway is walkable. Both have to exist before Animate hands each brain its query.
-
-                EndStage("reading the nav graphs");
-
-                _soldiers.Simulation.Animate(
-                    graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
-                    _loop.Variables);
-                EndStage("animating the soldiers' brains");
-
-                // The level's alarm speakers, for the sirens: each follows its own expression over
-                // the same live variables the controls export through.
-                _sirenVoices.Clear();
-                _reportedSirenFailures.Clear();
-                _mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
-                    levelRoot,
-                    _loop.Variables,
-                    () => _soldiers.Simulation.AnyAlarmOn);
-                _mission.AlarmSpeakers.BindScene(scene.Placements);
-                world.AlarmSpeakers = _mission.AlarmSpeakers;
-                _logger.Information("Ai", $"{_mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
-
-                // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
-                // where it becomes a cast. The AI's hit probability decides whether the round is on
-                // target -- the original hands that same figure to the gun with every shot (ai.md 11.6),
-                // so a miss is a round that went somewhere else rather than a round that never existed.
-                _soldiers.Simulation.SetRoundHandler((from, at, probability, weapon, shooter) =>
-                {
-                    _guardRounds++;
-                    if (_player is null)
-                    {
-                        return;
-                    }
-
-                    // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
-                    // extended past the target, exactly as the retail round is a cast from the muzzle to
-                    // the end of its remaining range (GunShot per-tick 0x47B750). A moving player walks
-                    // out of the lagging aim and the round geometrically misses; that is retail's miss.
-                    Vector3d to = new(
-                        from.X + ((at.X - from.X) * 4.0),
-                        from.Y + ((at.Y - from.Y) * 4.0),
-                        from.Z + ((at.Z - from.Z) * 4.0));
-
-                    Vector3d feet = _player.Body.Position;
-
-                    // Which side fired decides who the round may hurt. A guard's round (opposing the
-                    // player's team) may strike the player; a friendly's may not -- it is aimed at an
-                    // opposing soldier and a friendly's own gun never endangers the player. Null is
-                    // defensive: the player's own shots do not flow through this handler, so no real
-                    // round is hostile-neutral; treating it as hostile keeps a round from vanishing.
-                    bool shooterHostileToPlayer = shooter is null
-                        || shooter.Soldier.Team != _soldiers.Simulation.PlayerTeam;
-
-                    // The player's living body is a physical obstacle to every round, whatever the
-                    // shooter's team -- retail's cast collides with a same-team human too (it just deals
-                    // no damage). A DEAD player is not: the detection scan unregisters the corpse, so a
-                    // round passes through where the body fell instead of hanging in the air on it.
-                    bool playerInTheRay = !_playerHealth.IsDead;
-
-                    // Resolve the guard's round against the player's OWN skinned body (limb hits do less,
-                    // and the hitbox is the real body, not a fat cylinder). Only if the body is not loaded
-                    // does it fall back to the cylinder-and-trunk stand-in. Skipped entirely for a corpse.
-                    HumanHit hit = default;
-                    bool met = false;
-                    IReadOnlyList<HumanBodyCrossing> crossings = [];
-                    if (playerInTheRay)
-                    {
-                        if (_soldiers is not null
-                            && _soldiers.TryCastPlayerBody(from, to, feet, _player.Body.Yaw, out crossings)
-                            && crossings.Count > 0)
-                        {
-                            hit = crossings[0].Hit;
-                            met = true;
-                        }
-
-                        if (!met)
-                        {
-                            Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
-                            met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
-                        }
-                    }
-
-                    // Where the world stops this ray, over its whole length -- one cast serves cover,
-                    // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
-                    // the same mark a player's round does. In retail a miss is visible: the round lands
-                    // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
-                    // are why the guards seemed to hit with every bullet.
-                    // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
-                    // owner through), so its own hull never stops the round.
-                    bool worldBlocked = worldTrace(
-                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
-                        out WorldTraceHit blocker);
-                    WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
-
-                    // A round that meets no hostile body falls through to the soldiers behind the
-                    // player -- an opposing soldier for a guard, a guard for a friendly. This is the
-                    // NPC-vs-NPC half of the gate fight: the round is offered to every soldier on the
-                    // ray, nearest first, and the first one it meets (per its own probability roll)
-                    // takes it. True when a soldier consumed the round; false when it flew past them all.
-                    bool SoldiersTakeTheRound()
-                        => _soldiers is not null
-                            && _soldiers.Simulation.TryShootAiRound(
-                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
-
-                    // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
-                    void OfferNearMiss(Vector3d stop)
-                    {
-                        if (shooter is not null)
-                        {
-                            _soldiers?.Simulation.NotifyRoundPassed(from, stop, shooter, struck: null);
-                        }
-                    }
-
-                    // The streak, before the outcome: visual only, along the very ray this handler is
-                    // resolving, dying where the world stops it. Whether the round connects is decided
-                    // below exactly as ever -- from inside the head, a streak that reaches the eye and
-                    // a round that hits look the same.
-                    if (GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value)
-                    {
-                        Vector3d streakEnd = worldBlocked ? worldHit.Position : to;
-                        Vector3d line = streakEnd - from;
-                        double lineLength = line.Length;
-                        if (lineLength > 1e-6)
-                        {
-                            AmmoType? streakAmmo = _ammoTypes is { } table
-                                && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
-                                ? found
-                                : null;
-                            _player.Ballistics.SpawnVisual(
-                                from,
-                                new Vector3f(
-                                    (float)(line.X / lineLength),
-                                    (float)(line.Y / lineLength),
-                                    (float)(line.Z / lineLength)),
-                                streakEnd,
-                                weapon,
-                                streakAmmo);
-                        }
-                    }
-
-                    void MarkTheImpact()
-                    {
-                        if (!worldBlocked)
-                        {
-                            return;
-                        }
-
-                        if (_worldMaterials is { } table)
-                        {
-                            _player.Marks.TryAdd(
-                                worldHit,
-                                BulletMarks.SurfaceOf(blocker),
-                                table,
-                                probe: _player.MarkProbe,
-                                placement: blocker.Placement);
-                        }
-
-                        PlayBulletImpactSound(
-                            worldHit.Position,
-                            struckHuman: false,
-                            surfaceMaterial: worldHit.Material);
-
-                        // A guard's stray round pops a speaker exactly as the player's does -- the
-                        // retail damage message never asked who fired.
-                        ApplyRoundContact(
-                            worldHit.Position,
-                            blocker.Owner,
-                            blocker.Placement,
-                            weapon.DamageFactor);
-
-                        // A guard's round kicks the same burst a player's does -- misses landing
-                        // around you are half of what sells incoming fire.
-                        if (_impactParticles is { } bursts
-                            && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
-                        {
-                            string material = _worldMaterials is { } names
-                                && names.TryGet(worldHit.Material, out GameMaterial struck)
-                                ? struck.Name
-                                : string.Empty;
-                            bursts.SpawnBurst(
-                                worldHit.Position,
-                                worldHit.Normal,
-                                ImpactParticleRenderer.KindOf(material),
-                                intensity);
-                        }
-                    }
-
-                    if (!met)
-                    {
-                        // Geometric miss -- aim lag against a moving target, a running patrol's spray, or
-                        // a dead player whose corpse stops nothing. The round flies on: offer it to the
-                        // soldiers, and only then does it land where the world says.
-                        if (SoldiersTakeTheRound())
-                        {
-                            return;
-                        }
-                        MarkTheImpact();
-                        return;
-                    }
-
-                    // The world is in the way: the retail cast meets the nearest surface first, so a wall
-                    // or a crate between the muzzle and the body simply takes the round (0x47B750 -- the
-                    // round penetrates or stops per the surface, but it does not reach the player). The
-                    // small margin keeps the player's own contact from re-testing the surface it stands on.
-                    if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
-                    {
-                        OfferNearMiss(worldHit.Position);
-                        MarkTheImpact();
-                        _logger.Debug(
-                            "Weapon",
-                            $"Guard round blocked by {blocker.Kind} '{blocker.Label}' at "
-                                + $"{blocker.Fraction:P1} before the player body.");
-                        return;
-                    }
-
-                    // Only now the probability gate, and it is rolled TWICE: the cast offers the player to
-                    // the Human's evaluate (0x45E3E0, `random <= probability` for player 0 only) once as the
-                    // octree visit's gate (0x45F500 -> 0x45F53D) and again for the narrow contact after the
-                    // 0.94 m sphere test (0x45F580, then the per-shape dispatch -> 0x4D76DA). Measured on
-                    // Hard at 16 m: 105 rounds, 74 passed the first roll (p 0.695), 30 hit. One roll made
-                    // the port's guards hit about 1/p times as often. A failed roll is a round that flew
-                    // past -- through to whatever stands behind the player, where it marks.
-                    if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
-                    {
-                        // The roll failed against the player -- the round flies past to whoever stands
-                        // behind them: an opposing soldier if the shooter is hostile, a guard if the
-                        // shooter is a friendly.
-                        if (SoldiersTakeTheRound())
-                        {
-                            return;
-                        }
-                        MarkTheImpact();
-                        return;
-                    }
-
-                    // The round stops at the player: the soldiers it passed on the way still hear it go by.
-                    OfferNearMiss(hit.Position);
-
-                    // The roll connected with the player's body. A friendly's round that meets the
-                    // player is consumed there with no damage -- retail's cast collides with a same-team
-                    // human but deals none, and it never flies on to a soldier behind the player. Only a
-                    // hostile round may hurt the player.
-                    if (!shooterHostileToPlayer)
-                    {
-                        return;
-                    }
-
-                    if (StrikePlayer(hit) || crossings.Count == 0)
-                    {
-                        return;
-                    }
-
-                    // The round does not stop at the body (0x47B750). The body's entry face is a surface like any
-                    // other: the player's handler takes the hit, and the round goes on only if it beats the face's
-                    // material (power against bullet resistance; the human materials author no ricochet angle).
-                    // A round that goes on leaves through an exit face and stops at the next surface it enters,
-                    // after that surface has taken the hit too -- another part of the body behind, which hits
-                    // the player a second time, or the world beyond. Each cast that meets the body rolls the
-                    // player's evaluate again. Probed on mission 1 (a guard's power-2 rounds) and mission 7 (the
-                    // T80's M2HB): pairs of hits from one round.
-                    if (!Penetrates(crossings[0].Material))
-                    {
-                        return;
-                    }
-
-                    bool leftBody = false;
-                    double next = hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                    for (int index = 1; index < crossings.Count; index++)
-                    {
-                        HumanBodyCrossing crossing = crossings[index];
-                        if (crossing.Hit.Distance < next)
-                        {
-                            continue;
-                        }
-
-                        if ((worldBlocked && worldHit.Distance < crossing.Hit.Distance)
-                            || _shotRandom.NextDouble() > probability
-                            || _shotRandom.NextDouble() > probability)
-                        {
-                            break;
-                        }
-
-                        if (!crossing.Entering)
-                        {
-                            leftBody = true;
-                            next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                            continue;
-                        }
-
-                        if (StrikePlayer(crossing.Hit) || leftBody || !Penetrates(crossing.Material))
-                        {
-                            return;
-                        }
-
-                        next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                    }
-
-                    // Past the body the round meets the world, which takes it.
-                    if (worldBlocked && worldHit.Distance > hit.Distance)
-                    {
-                        MarkTheImpact();
-                    }
-
                     return;
+                }
 
-                    // Whether the round gets through a face of this material; the equal case draws its sample.
-                    bool Penetrates(int material)
-                    {
-                        if (_worldMaterials is not { } materials || !materials.TryGet(material, out GameMaterial face))
-                        {
-                            return false;
-                        }
+                if (_worldMaterials is { } table)
+                {
+                    _player.Marks.TryAdd(
+                        worldHit,
+                        BulletMarks.SurfaceOf(blocker),
+                        table,
+                        probe: _player.MarkProbe,
+                        placement: blocker.Placement);
+                }
 
-                        float margin = weapon.PenetrationPower - face.BulletResistance;
-                        float sample = margin == 0f ? (float)_shotRandom.NextDouble() : 0f;
-                        return GunShotBallistics.Penetrates(weapon.PenetrationPower, face.BulletResistance, sample);
-                    }
+                PlayBulletImpactSound(
+                    worldHit.Position,
+                    struckHuman: false,
+                    surfaceMaterial: worldHit.Material);
 
-                    // One call of the player's hit handler (0x412440): the damage, the grunt, the shake, the flash
-                    // and the shove. Returns whether it killed the player.
-                    bool StrikePlayer(HumanHit struck)
-                    {
-                        _playerHealth.Apply(struck.Zone, weapon.DamageFactor);
-                        PlayBulletImpactSound(struck.Position, struckHuman: true, surfaceMaterial: 0);
-                        _guardHits++;
+                // A guard's stray round pops a speaker exactly as the player's does -- the
+                // retail damage message never asked who fired.
+                ApplyRoundContact(
+                    worldHit.Position,
+                    blocker.Owner,
+                    blocker.Placement,
+                    weapon.DamageFactor);
 
-                        // The retail handler transforms the round into camera space before writing the four
-                        // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
-                        // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
-                        Vector3f incoming = new(
-                            (float)(to.X - from.X),
-                            (float)(to.Y - from.Y),
-                            (float)(to.Z - from.Z));
-                        Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-
-                        // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
-                        if (!_playerHealth.IsDead)
-                        {
-                            PlayPlayerGrunt();
-                        }
-
-                        InstallPlayerHitShake();
-                        _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
-
-                        // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
-                        // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
-                        // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
-                        // what makes sustained fire stagger the player in retail.
-                        if (!_playerHealth.IsDead)
-                        {
-                            double shoveX = to.X - from.X;
-                            double shoveY = to.Y - from.Y;
-                            double shoveZ = to.Z - from.Z;
-                            double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
-                            if (length > 1e-6)
-                            {
-                                _player.Body.AddHitShove(
-                                    (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
-                                    (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
-                            }
-                        }
-
-                        _logger.Information(
-                            "Weapon",
-                            $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
-                                + $"({_guardHits} of {_guardRounds} round(s); "
-                                + $"{_playerHealth.RemainingFraction:P0} left).");
-
-                        if (_playerHealth.IsDead)
-                        {
-                            BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
-                            _logger.Information(
-                                "Weapon",
-                                $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
-                                    + $"struck in zone {struck.Zone}; the death camera has pulled back.");
-                        }
-
-                        return _playerHealth.IsDead;
-                    }
-                });
+                // A guard's round kicks the same burst a player's does -- misses landing
+                // around you are half of what sells incoming fire.
+                if (_impactParticles is { } bursts
+                    && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
+                {
+                    string material = _worldMaterials is { } names
+                        && names.TryGet(worldHit.Material, out GameMaterial struck)
+                        ? struck.Name
+                        : string.Empty;
+                    bursts.SpawnBurst(
+                        worldHit.Position,
+                        worldHit.Normal,
+                        ImpactParticleRenderer.KindOf(material),
+                        intensity);
+                }
             }
-            else
+
+            if (!met)
             {
-                _logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
-
-                // A missing patrol graph only removes movement.  Retail still registers every
-                // HumanAI as a live human: it can stand, be seen and be selected by the binocular
-                // detector.  Leaving Animate inside the graphs-present branch rendered the guards
-                // but left _brains empty, so BinocularTargets had no contacts to project at all.
-                AiDifficulty effectiveDifficulty = _options.Difficulty
-                    ?? (AiDifficulty)Math.Clamp(
-                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
-                        (int)AiDifficulty.Easy,
-                        (int)AiDifficulty.Hard);
-                _soldiers.Simulation.Animate(
-                    graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
-                    _loop.Variables);
-                EndStage("registering stationary soldiers' brains");
+                // Geometric miss -- aim lag against a moving target, a running patrol's spray, or
+                // a dead player whose corpse stops nothing. The round flies on: offer it to the
+                // soldiers, and only then does it land where the world says.
+                if (SoldiersTakeTheRound())
+                {
+                    return;
+                }
+                MarkTheImpact();
+                return;
             }
-        }
-        catch (Exception ex) when (ex is IOException or GraphFormatException)
-        {
-            _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
-        }
+
+            // The world is in the way: the retail cast meets the nearest surface first, so a wall
+            // or a crate between the muzzle and the body simply takes the round (0x47B750 -- the
+            // round penetrates or stops per the surface, but it does not reach the player). The
+            // small margin keeps the player's own contact from re-testing the surface it stands on.
+            if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
+            {
+                OfferNearMiss(worldHit.Position);
+                MarkTheImpact();
+                _logger.Debug(
+                    "Weapon",
+                    $"Guard round blocked by {blocker.Kind} '{blocker.Label}' at "
+                        + $"{blocker.Fraction:P1} before the player body.");
+                return;
+            }
+
+            // Only now the probability gate, and it is rolled TWICE: the cast offers the player to
+            // the Human's evaluate (0x45E3E0, `random <= probability` for player 0 only) once as the
+            // octree visit's gate (0x45F500 -> 0x45F53D) and again for the narrow contact after the
+            // 0.94 m sphere test (0x45F580, then the per-shape dispatch -> 0x4D76DA). Measured on
+            // Hard at 16 m: 105 rounds, 74 passed the first roll (p 0.695), 30 hit. One roll made
+            // the port's guards hit about 1/p times as often. A failed roll is a round that flew
+            // past -- through to whatever stands behind the player, where it marks.
+            if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
+            {
+                // The roll failed against the player -- the round flies past to whoever stands
+                // behind them: an opposing soldier if the shooter is hostile, a guard if the
+                // shooter is a friendly.
+                if (SoldiersTakeTheRound())
+                {
+                    return;
+                }
+                MarkTheImpact();
+                return;
+            }
+
+            // The round stops at the player: the soldiers it passed on the way still hear it go by.
+            OfferNearMiss(hit.Position);
+
+            // The roll connected with the player's body. A friendly's round that meets the
+            // player is consumed there with no damage -- retail's cast collides with a same-team
+            // human but deals none, and it never flies on to a soldier behind the player. Only a
+            // hostile round may hurt the player.
+            if (!shooterHostileToPlayer)
+            {
+                return;
+            }
+
+            if (StrikePlayer(hit) || crossings.Count == 0)
+            {
+                return;
+            }
+
+            // The round does not stop at the body (0x47B750). The body's entry face is a surface like any
+            // other: the player's handler takes the hit, and the round goes on only if it beats the face's
+            // material (power against bullet resistance; the human materials author no ricochet angle).
+            // A round that goes on leaves through an exit face and stops at the next surface it enters,
+            // after that surface has taken the hit too -- another part of the body behind, which hits
+            // the player a second time, or the world beyond. Each cast that meets the body rolls the
+            // player's evaluate again. Probed on mission 1 (a guard's power-2 rounds) and mission 7 (the
+            // T80's M2HB): pairs of hits from one round.
+            if (!Penetrates(crossings[0].Material))
+            {
+                return;
+            }
+
+            bool leftBody = false;
+            double next = hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+            for (int index = 1; index < crossings.Count; index++)
+            {
+                HumanBodyCrossing crossing = crossings[index];
+                if (crossing.Hit.Distance < next)
+                {
+                    continue;
+                }
+
+                if ((worldBlocked && worldHit.Distance < crossing.Hit.Distance)
+                    || _shotRandom.NextDouble() > probability
+                    || _shotRandom.NextDouble() > probability)
+                {
+                    break;
+                }
+
+                if (!crossing.Entering)
+                {
+                    leftBody = true;
+                    next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                    continue;
+                }
+
+                if (StrikePlayer(crossing.Hit) || leftBody || !Penetrates(crossing.Material))
+                {
+                    return;
+                }
+
+                next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+            }
+
+            // Past the body the round meets the world, which takes it.
+            if (worldBlocked && worldHit.Distance > hit.Distance)
+            {
+                MarkTheImpact();
+            }
+
+            return;
+
+            // Whether the round gets through a face of this material; the equal case draws its sample.
+            bool Penetrates(int material)
+            {
+                if (_worldMaterials is not { } materials || !materials.TryGet(material, out GameMaterial face))
+                {
+                    return false;
+                }
+
+                float margin = weapon.PenetrationPower - face.BulletResistance;
+                float sample = margin == 0f ? (float)_shotRandom.NextDouble() : 0f;
+                return GunShotBallistics.Penetrates(weapon.PenetrationPower, face.BulletResistance, sample);
+            }
+
+            // One call of the player's hit handler (0x412440): the damage, the grunt, the shake, the flash
+            // and the shove. Returns whether it killed the player.
+            bool StrikePlayer(HumanHit struck)
+            {
+                _playerHealth.Apply(struck.Zone, weapon.DamageFactor);
+                PlayBulletImpactSound(struck.Position, struckHuman: true, surfaceMaterial: 0);
+                _guardHits++;
+
+                // The retail handler transforms the round into camera space before writing the four
+                // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
+                // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
+                Vector3f incoming = new(
+                    (float)(to.X - from.X),
+                    (float)(to.Y - from.Y),
+                    (float)(to.Z - from.Z));
+                Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
+
+                // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
+                if (!_playerHealth.IsDead)
+                {
+                    PlayPlayerGrunt();
+                }
+
+                InstallPlayerHitShake();
+                _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
+
+                // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
+                // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
+                // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
+                // what makes sustained fire stagger the player in retail.
+                if (!_playerHealth.IsDead)
+                {
+                    double shoveX = to.X - from.X;
+                    double shoveY = to.Y - from.Y;
+                    double shoveZ = to.Z - from.Z;
+                    double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
+                    if (length > 1e-6)
+                    {
+                        _player.Body.AddHitShove(
+                            (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
+                            (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
+                    }
+                }
+
+                _logger.Information(
+                    "Weapon",
+                    $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
+                        + $"({_guardHits} of {_guardRounds} round(s); "
+                        + $"{_playerHealth.RemainingFraction:P0} left).");
+
+                if (_playerHealth.IsDead)
+                {
+                    BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
+                    _logger.Information(
+                        "Weapon",
+                        $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
+                            + $"struck in zone {struck.Zone}; the death camera has pulled back.");
+                }
+
+                return _playerHealth.IsDead;
+            }
+        });
     }
+
+    /// <summary>The difficulty every guard reads its combat row at.</summary>
+    /// <returns>The <c>-difficulty</c> override, or else the active profile's.</returns>
+    private AiDifficulty EffectiveDifficulty() => _options.Difficulty
+        ?? (AiDifficulty)Math.Clamp(
+            _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
+            (int)AiDifficulty.Easy,
+            (int)AiDifficulty.Hard);
 
     /// <summary>The soldiers, the doors, the alarm controls and the player join the level's walk.</summary>
     private void MissionLevelWalk(MissionBuild b)

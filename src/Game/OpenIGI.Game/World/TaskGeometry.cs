@@ -1,13 +1,13 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
-namespace OpenIGI.Presentation.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Reads placement geometry out of a loaded task tree, for the callers that need where a task sits rather
 /// than what it does.
 /// </summary>
-internal static class TaskGeometry
+public static class TaskGeometry
 {
     /// <summary>Finds a declared task by id and reads one of its named parameters.</summary>
     /// <param name="root">The tree to search.</param>
@@ -44,6 +44,10 @@ internal static class TaskGeometry
     }
 
     /// <summary>Finds a task's authored position without treating the world origin as “not found”.</summary>
+    /// <param name="root">The task tree to search.</param>
+    /// <param name="taskId">The id of the task whose position is wanted.</param>
+    /// <param name="position">Receives the task's "Graph position" or "Position".</param>
+    /// <returns><see langword="true"/> when the task exists and declares either.</returns>
     public static bool TryFindPosition(GameTask root, int taskId, out Vector3d position)
     {
         return Find(root, taskId, out position);

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -14,7 +15,6 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
 using OpenIGI.Presentation.Igi1;
-using OpenIGI.Presentation.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using System.Collections;
@@ -1299,22 +1299,10 @@ public sealed class SoldierRendererHitscanTests
             root,
             mission.Terrain is { IsUsable: true } terrain ? terrain : null,
             solids.Caster()) > 0);
-        Dictionary<int, GraphFile> graphs = [];
-        string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", $"level{missionNumber}", "graphs");
-        foreach (string path in Directory.EnumerateFiles(graphDirectory)
-            .Where(path => string.Equals(Path.GetExtension(path), ".dat", StringComparison.OrdinalIgnoreCase)))
-        {
-            string stem = Path.GetFileNameWithoutExtension(path);
-            if (!stem.StartsWith("graph", StringComparison.OrdinalIgnoreCase)
-                || !int.TryParse(stem.AsSpan("graph".Length), out int graphId))
-            {
-                continue;
-            }
-
-            GraphFile graph = GraphFile.Read(File.ReadAllBytes(path));
-            graph.ApplyWorldOffset(TaskGeometry.FindPosition(root, graphId));
-            graphs.Add(graphId, graph);
-        }
+        Dictionary<int, GraphFile> graphs = NavGraphs.Read(
+            Path.Combine(GameData.RequireRoot(), "missions", "location0", $"level{missionNumber}", "graphs"),
+            root,
+            NullLogger.Instance);
         Assert.True(renderer.Simulation.Animate(
             graphs,
             solids.Tracer(),

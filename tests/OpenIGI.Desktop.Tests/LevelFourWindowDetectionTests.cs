@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -134,17 +135,10 @@ public sealed class LevelFourWindowDetectionTests
             Assert.True(renderer.Load(mission, root) > 0);
             // The level's own nav graphs, as the game hands them over: an idle AI stands at its node's
             // height (0x462390), which for this gunner is well below its authored floor.
-            Dictionary<int, GraphFile> graphs = [];
-            string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs");
-            foreach (string file in Directory.EnumerateFiles(graphDirectory, "graph*.dat"))
-            {
-                if (int.TryParse(Path.GetFileNameWithoutExtension(file).AsSpan("graph".Length), out int graphId))
-                {
-                    GraphFile graph = GraphFile.Read(File.ReadAllBytes(file));
-                    graph.ApplyWorldOffset(OpenIGI.Presentation.World.TaskGeometry.FindPosition(root, graphId));
-                    graphs[graphId] = graph;
-                }
-            }
+            Dictionary<int, GraphFile> graphs = NavGraphs.Read(
+                Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs"),
+                root,
+                NullLogger.Instance);
 
             Assert.True(renderer.Simulation.Animate(
                 graphs,
