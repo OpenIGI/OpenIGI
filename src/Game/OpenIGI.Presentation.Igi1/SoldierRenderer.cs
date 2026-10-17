@@ -141,10 +141,6 @@ public sealed class SoldierRenderer : IDisposable
 
 
 
-    private int _deathsSoFar;
-
-
-
     private bool _disposed;
 
     // The soldiers' simulation: their brains, their bodies' state, their weapons and what they hear and see.
@@ -255,6 +251,28 @@ public sealed class SoldierRenderer : IDisposable
         _heldWeapons = heldWeapons;
         _logger = logger ?? NullLogger.Instance;
         _sim = new SoldierSimulation(_logger);
+        _sim.BodyFell = fall =>
+        {
+            if (FindMember(fall.View) is not { } member)
+            {
+                return;
+            }
+
+            member.Ragdoll = SeedRagdoll(
+                fall.View,
+                fall.Origin,
+                fall.View.Orientation,
+                fall.Bone,
+                fall.Travel,
+                fall.Category,
+                fall.Velocity,
+                _sim.FindModel(fall.View),
+                weapon: null);
+            if (fall.DroppedWeapon)
+            {
+                member.Weapon = null;
+            }
+        };
         _sim.MountSettled = (view, brain) =>
         {
             if (FindMember(view) is { } member)
@@ -3022,7 +3040,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     // 0x45A3D0 records death mode 0 for a blast: the body is thrown, turned to it.
                     HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
-                    Die(soldier, hit, position, feet, WeaponCategory.Grenade, SoldierDeathMode.Untouched);
+                    _sim.Die(soldier, hit, position, feet, WeaponCategory.Grenade, SoldierDeathMode.Untouched);
                 }
                 else
                 {
@@ -3385,7 +3403,7 @@ public sealed class SoldierRenderer : IDisposable
 
             if (struck.IsDead && struckView is not null)
             {
-                Die(struckView, hit, origin, end, category, SoldierDeath.ModeFor(category));
+                _sim.Die(struckView, hit, origin, end, category, SoldierDeath.ModeFor(category));
             }
             else if (struckView is not null)
             {
@@ -3413,132 +3431,6 @@ public sealed class SoldierRenderer : IDisposable
 
 
 
-
-    /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
-    /// <remarks>
-    /// <para>
-    /// Four things happen here and every one of them is read. The body <b>turns to the round</b>
-    /// (<c>0x45DAA0</c>); the death <b>animation is chosen</b> from the killing weapon's category, the zone
-    /// struck and which way the round came (<see cref="SoldierDeath.Choose"/>); the <b>fall solver</b>
-    /// fans its nine rays and returns the corrective velocity (<see cref="SoldierDeathFall"/>); and the
-    /// brain is told, so it steps the body every tick from then on instead of freezing it.
-    /// </para>
-    /// </remarks>
-    private void Die(
-        SoldierView view,
-        HumanHit hit,
-        Vector3d origin,
-        Vector3d end,
-        WeaponCategory category,
-        SoldierDeathMode mode)
-    {
-        Matrix3f orientation = view.Orientation;
-        Vector3f forward = new(orientation.M12, orientation.M22, orientation.M32);
-
-        HumanSoldierClass soldierClass = view.Soldier.Class;
-        _sim.Brains.TryGetValue(view, out AiSoldier? brain);
-        int scriptOverride = brain?.DeathAnimationOverride ?? -1;
-        Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        float facing = SoldierSimulation.GammaOf(view);
-
-        int animation;
-        if (brain?.Body.PostureDeathAnimation is { } postureDeath)
-        {
-            // A kneeling or prone body dies in its posture's own state (0x45C5A0, 0x45C650), which plays a
-            // fixed clip and does not turn.
-            animation = postureDeath;
-        }
-        else
-        {
-            // 0x45C440 turns the body to the round (0x45DAA0) only in its thrown branch, which the script's
-            // override skips: a crumple falls with the facing it died with.
-            bool front = true;
-            if (scriptOverride == -1 && soldierClass.TurnsToTheShot(mode))
-            {
-                front = SoldierDeath.TurnToTheShot(travel, forward, ref facing);
-            }
-
-            // The engine's own rand(2). Alternating is not the same distribution, but the two retail
-            // head-row entries are equal and the two crumple clips are a pair, so what the flip has to do
-            // is vary them.
-            int flip = _deathsSoFar++ & 1;
-            animation = soldierClass.ChooseDeathAnimation(mode, hit.Zone, front, flip, scriptOverride);
-        }
-
-        Vector3d fall = default;
-        if (animation >= 0 && view.Bones.Set.TryGet(animation, out BoneAnimation clip) && _sim.Cast is { } cast)
-        {
-            fall = SoldierDeathFall.Solve(
-                clip,
-                view.Position,
-                facing,
-                (from, to) => cast(from, to, out WorldRayHit blocked)
-                    ? new SoldierDeathRay(true, blocked.Position, Vector3d.Distance(from, blocked.Position))
-                    : default);
-        }
-
-        view.PlaceAt(view.Position, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
-        view.Kill(animation);
-
-        if (brain is not null)
-        {
-            brain.Kill(fall, facing);
-        }
-
-        // And the death cry, from here rather than from AiSoldier.Kill: the per-tick loop calls Kill on
-        // every corpse it steps, so a hook there would restart the sound thirty times a second. This is
-        // the alive-to-dead edge, and it happens once.
-        _sim.DeathSound?.Invoke(view.Position);
-        _sim.FootCursors.Remove(view);
-
-        // Everything above is the original's, and it stays that way whatever follows: the body's
-        // authoritative position, the clip that moves it and what the guards around it are told are all
-        // exactly what they were. The ragdoll replaces THE POSE THAT IS DRAWN, and nothing else.
-        if (FindMember(view) is { } member)
-        {
-            Vector3f carried = view.RootMotion();
-            double grounded = _sim.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
-            Vector3d ragdollOrigin = new(view.Position.X, view.Position.Y, grounded + view.RootSample.Z);
-            Vector3d dropPosition = view.Position;
-            Matrix3f dropRotation = view.Orientation;
-            WeaponType? droppedWeapon = SoldierSimulation.WeaponForDrop(member.Agent.CarriedWeaponType, member.Agent.WeaponType);
-            if (droppedWeapon is not null)
-            {
-                BonePose pose = view.UnrotatedPose();
-                if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
-                {
-                    Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
-                    Vector3f offset = view.Orientation.Transposed().Transform(hand);
-                    dropPosition = ragdollOrigin + new Vector3d(offset.X, offset.Y, offset.Z);
-                    dropRotation = view.Orientation * pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
-                }
-            }
-            member.Ragdoll = SeedRagdoll(
-                view,
-                ragdollOrigin,
-                view.Orientation,
-                hit.Bone,
-                travel,
-                category,
-
-                // What the body was already doing. A soldier's clip root motion is its only velocity --
-                // the port gives one nothing else -- and it is a per-tick delta already, so it goes in
-                // as it stands, turned out of body space by the heading.
-                SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing),
-                _sim.FindModel(view),
-                weapon: null);
-
-            if (droppedWeapon is { } dropped)
-            {
-                member.Weapon = null;
-                _sim.WeaponDrop?.Invoke(
-                    dropped,
-                    dropPosition,
-                    dropRotation,
-                    SoldierSimulation.DropVelocity(SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing), travel));
-            }
-        }
-    }
 
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>
     /// <returns>The delegate the player takes.</returns>
@@ -3666,7 +3558,7 @@ public sealed class SoldierRenderer : IDisposable
 
                 if (health.IsDead)
                 {
-                    Die(struckView, candidate, origin, end, weapon.Category, SoldierDeath.ModeFor(weapon.Category));
+                    _sim.Die(struckView, candidate, origin, end, weapon.Category, SoldierDeath.ModeFor(weapon.Category));
                 }
                 else
                 {
