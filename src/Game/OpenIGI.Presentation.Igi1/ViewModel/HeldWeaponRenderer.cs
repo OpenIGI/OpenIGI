@@ -13,7 +13,7 @@ using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Which bone of the first-person view rig one of a weapon's parts hangs off.</summary>
 /// <remarks>

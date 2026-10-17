@@ -18,7 +18,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
 using System.Globalization;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>The remaster's tactical, resolution-independent in-game HUD.</summary>
 /// <remarks>

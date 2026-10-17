@@ -7,7 +7,7 @@ using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Draws the weapon models the level's live <c>GunPickup</c> tasks place in the world.</summary>
 /// <remarks>

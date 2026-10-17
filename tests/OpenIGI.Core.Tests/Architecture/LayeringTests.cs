@@ -25,7 +25,7 @@ public sealed class LayeringTests
     /// <summary>The per-title projects, by title: a game, and how it is drawn. Two titles' projects meet only in an app.</summary>
     private static readonly string[][] Titles =
     [
-        ["OpenIGI.Game.Igi1"],
+        ["OpenIGI.Game.Igi1", "OpenIGI.Presentation.Igi1"],
         ["OpenIGI.Game.Igi2", "OpenIGI.Presentation.Igi2"],
     ];
 

@@ -9,7 +9,7 @@ using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Draws every grenade in the air with its own retail model, tumbling as it flies.</summary>
 /// <remarks>

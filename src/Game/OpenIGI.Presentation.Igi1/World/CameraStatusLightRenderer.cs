@@ -10,7 +10,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Draws the pulsing green/red lamp attached to every retail security-camera lens.</summary>
 /// <remarks>

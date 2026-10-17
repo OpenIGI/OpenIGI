@@ -9,13 +9,6 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
-
-    <!-- Rendering and Presentation are abstractions, not backends: IGraphicsDevice and the presenter
-         interfaces. Layering rule 1 allows them below apps/; what it forbids is naming a backend. This
-         title's renderers live here because a renderer that knows I.G.I. 1's terrain format is game
-         content that happens to draw. -->
-    <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

@@ -8,7 +8,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Draws the marks rounds have left on the world.</summary>
 /// <remarks>

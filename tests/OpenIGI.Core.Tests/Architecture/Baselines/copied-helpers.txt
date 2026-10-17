@@ -1,6 +1,6 @@
 src/Core/OpenIGI.Formats/Ilff/IresArchive.cs: Walk
 src/Engine/OpenIGI.Engine/Resources/ScriptTableLoader.cs: Walk
-src/Game/OpenIGI.Game.Igi1/World/BulletMarkRenderer.cs: Normalise
+src/Game/OpenIGI.Presentation.Igi1/World/BulletMarkRenderer.cs: Normalise
 src/Game/OpenIGI.Game.Igi2/Collision/Igi2CollisionWorld.cs: Walk
 src/Game/OpenIGI.Game.Igi2/Collision/Igi2SplineSegmentTrace.cs: Distance
 src/Game/OpenIGI.Game.Igi2/Detection/Igi2AiDetection.cs: Distance

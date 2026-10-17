@@ -10,7 +10,7 @@ using OpenIGI.Rendering;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>
 /// Draws a level's terrain: descends the octree from the camera, then draws each chunk the descent

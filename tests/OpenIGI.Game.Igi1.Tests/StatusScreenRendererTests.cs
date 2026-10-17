@@ -11,6 +11,7 @@ using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi1.World;
 
 namespace OpenIGI.Game.Igi1.Tests;
 

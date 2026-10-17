@@ -5,6 +5,7 @@ using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi1;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Game.Igi2;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;

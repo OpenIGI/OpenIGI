@@ -14,7 +14,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>
 /// The remaster's map computer: a full-screen tactical interface drawn over a live overhead view of the

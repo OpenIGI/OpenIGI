@@ -12,7 +12,7 @@ using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Draws IGI1's C-key SIMOTECH map computer, objectives and event log.</summary>
 internal sealed class MapComputerRenderer : IMapComputerPresenter

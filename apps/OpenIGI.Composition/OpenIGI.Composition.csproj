@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi1\OpenIGI.Presentation.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi2\OpenIGI.Presentation.Igi2.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />

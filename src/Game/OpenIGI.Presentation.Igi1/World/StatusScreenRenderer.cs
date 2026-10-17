@@ -12,7 +12,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Draws the in-game HUD, including the retail action icons.</summary>
 /// <remarks>

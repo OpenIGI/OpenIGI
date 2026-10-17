@@ -5,7 +5,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1.World;
 
 /// <summary>Reads the retail <c>ComputerHilight</c> records that annotate the overhead map.</summary>
 internal sealed class ComputerHighlightCatalog : IComputerHighlightCatalogue

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- How Project I.G.I. draws: its terrain, first-person view, HUD, computers and marks, over the title-agnostic
+         passes. The game's content is OpenIGI.Game.Igi1; only an app composition root names both. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+    <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
+    <ProjectReference Include="..\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+  </ItemGroup>
+
+</Project>

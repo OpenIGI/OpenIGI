@@ -5,8 +5,9 @@ using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation.Igi1.World;
 
-namespace OpenIGI.Game.Igi1;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Builds the renderers Project I.G.I. draws with.</summary>
 /// <remarks>
