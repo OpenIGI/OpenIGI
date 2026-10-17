@@ -1,3 +1,4 @@
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -33,7 +34,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private TexTextureCache? _textureCache;
 
     private MefModel? _model;
     private MeshGeometry? _geometry;
@@ -189,7 +190,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
                 && _pack is { } pack
                 && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
             {
-                diffuse = GetTexture(texture);
+                diffuse = Textures.Get(texture);
             }
 
             _device.DrawMesh(
@@ -217,12 +218,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
         _disposed = true;
         Release();
 
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            _device.DestroyTexture(texture);
-        }
-
-        _textures.Clear();
+        _textureCache?.Clear();
     }
 
     private bool Reskin(HumanView view)
@@ -295,35 +291,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
         _pack = null;
     }
 
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
 
-        TextureHandle handle = TextureHandle.None;
-        if (_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            try
-            {
-                TextureImage image = TexFile.Load(bytes.Span);
-                handle = _device.CreateTexture(
-                    new TextureDescription(
-                        image.Width,
-                        image.Height,
-                        image.MipLevels,
-                        TextureFilter.Linear,
-                        TextureAddressMode.Repeat),
-                    image.Pixels);
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
-            }
-        }
-
-        _textures[name] = handle;
-        return handle;
-    }
+    // The textures the models name, loaded on first use.
+    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory);
 }

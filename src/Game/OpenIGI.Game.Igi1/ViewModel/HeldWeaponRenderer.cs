@@ -120,7 +120,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry _magic;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private TexTextureCache? _textureCache;
     private readonly List<Part> _parts = [];
 
     private string _modelName = string.Empty;
@@ -369,7 +369,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
                 if (subset.HasMaterial
                     && part.Pack.TryGetTextureName(part.Instance, subset.MaterialSlot, out string texture))
                 {
-                    diffuse = GetTexture(texture);
+                    diffuse = Textures.Get(texture);
                     if (!part.IsGunFlame)
                     {
                         material = _materials.For(texture);
@@ -403,12 +403,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
         _disposed = true;
         Release();
 
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            _device.DestroyTexture(texture);
-        }
-
-        _textures.Clear();
+        _textureCache?.Clear();
     }
 
     private void AddParts(
@@ -490,38 +485,6 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
         _modelName = string.Empty;
         _gunFlameRotation = Matrix3f.Identity;
         _lastShotSequence = -1;
-    }
-
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
-
-        TextureHandle handle = TextureHandle.None;
-        if (_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            try
-            {
-                TextureImage image = TexFile.Load(bytes.Span);
-                handle = _device.CreateTexture(
-                    new TextureDescription(
-                        image.Width,
-                        image.Height,
-                        image.MipLevels,
-                        TextureFilter.Linear,
-                        TextureAddressMode.Repeat),
-                    image.Pixels);
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
-            }
-        }
-
-        _textures[name] = handle;
-        return handle;
     }
 
     /// <summary>One node's place in the attachment tree, accumulated on the way down.</summary>
@@ -613,4 +576,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
 
         return dimmed;
     }
+
+    // The textures the models name, loaded on first use.
+    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory);
 }

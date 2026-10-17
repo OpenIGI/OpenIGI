@@ -24,7 +24,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private TexTextureCache? _textureCache;
 
     private MeshGeometry? _geometry;
     private MeshHandle _mesh = MeshHandle.None;
@@ -141,7 +141,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
             TextureHandle diffuse = TextureHandle.None;
             if (subset.HasMaterial && _pack.TryGetTextureName(_instance, subset.MaterialSlot, out string texture))
             {
-                diffuse = GetTexture(texture);
+                diffuse = Textures.Get(texture);
             }
 
             _device.SetMaterialOverride(SurfaceMaterial.Default);
@@ -167,12 +167,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
 
         _disposed = true;
         Release();
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            _device.DestroyTexture(texture);
-        }
-
-        _textures.Clear();
+        _textureCache?.Clear();
     }
 
     private void Release()
@@ -189,34 +184,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
         _hasInstance = false;
     }
 
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
 
-        TextureHandle handle = TextureHandle.None;
-        if (_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            try
-            {
-                TextureImage image = TexFile.Load(bytes.Span);
-                handle = _device.CreateTexture(
-                    new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
-                    image.Pixels);
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"The device texture '{name}' did not load: {ex.Message}");
-            }
-        }
-        else
-        {
-            _logger.Warning(LogCategory, $"The retail device texture '{name}' is not registered.");
-        }
-
-        _textures[name] = handle;
-        return handle;
-    }
+    // The textures the models name, loaded on first use.
+    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory) { ReportMissing = true };
 }

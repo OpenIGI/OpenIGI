@@ -80,7 +80,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry? _magic;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private TexTextureCache? _textureCache;
     private readonly List<Group> _groups = [];
     private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<string, HeldWeapon> _heldWeaponsByModel = new(StringComparer.OrdinalIgnoreCase);
@@ -4797,7 +4797,7 @@ public sealed class SoldierRenderer : IDisposable
                         && group.Pack is { } pack
                         && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
                     {
-                        diffuse = GetTexture(texture);
+                        diffuse = Textures.Get(texture);
                     }
 
                     _device.DrawMesh(
@@ -5887,7 +5887,7 @@ public sealed class SoldierRenderer : IDisposable
                 && group.Pack is { } pack
                 && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
             {
-                diffuse = GetTexture(texture);
+                diffuse = Textures.Get(texture);
             }
 
             _device.DrawMesh(
@@ -5936,7 +5936,7 @@ public sealed class SoldierRenderer : IDisposable
                 && group.Pack is { } pack
                 && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
             {
-                diffuse = GetTexture(texture);
+                diffuse = Textures.Get(texture);
                 if (diffuse != TextureHandle.None)
                 {
                     textured++;
@@ -6251,7 +6251,7 @@ public sealed class SoldierRenderer : IDisposable
                 && weapon.Pack is { } pack
                 && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
             {
-                diffuse = GetTexture(texture);
+                diffuse = Textures.Get(texture);
             }
 
             _device.DrawMesh(
@@ -7067,12 +7067,7 @@ public sealed class SoldierRenderer : IDisposable
         _disposed = true;
         Release();
 
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            _device.DestroyTexture(texture);
-        }
-
-        _textures.Clear();
+        _textureCache?.Clear();
     }
 
     private Group? BuildGroup(LoadedMission mission, string modelName, SoldierView posed)
@@ -7195,45 +7190,6 @@ public sealed class SoldierRenderer : IDisposable
         _ragdollWorld = null;
         ReleasePlayerBody();
         Count = 0;
-    }
-
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
-
-        TextureHandle handle = TextureHandle.None;
-        if (_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            try
-            {
-                TextureImage image = TexFile.Load(bytes.Span);
-                handle = _device.CreateTexture(
-                    new TextureDescription(
-                        image.Width,
-                        image.Height,
-                        image.MipLevels,
-                        TextureFilter.Linear,
-                        TextureAddressMode.Repeat),
-                    image.Pixels);
-
-                DetailMaps?.Attach(
-                    MaterialDetailPack.KeyFor(name, _resources.OverrideStamp(LoadedPack.TextureResourceName(name))),
-                    handle,
-                    image.GetLevel(0),
-                    image.Width,
-                    image.Height);
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
-            }
-        }
-
-        _textures[name] = handle;
-        return handle;
     }
 
     private sealed class Group(MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack, float lowestVertexZ)
@@ -7495,4 +7451,16 @@ public sealed class SoldierRenderer : IDisposable
         /// <summary>The multipart retail object, including its transient TASKTYPE_GUNFLAME child.</summary>
         public IHeldWeaponPresenter? Presentation { get; } = presentation;
     }
+
+    // A model texture just uploaded gets the detail map derived from it, keyed by its name and its override's stamp.
+    private void AttachDetail(string name, TextureHandle handle, TextureImage image) =>
+        DetailMaps?.Attach(
+            MaterialDetailPack.KeyFor(name, _resources.OverrideStamp(LoadedPack.TextureResourceName(name))),
+            handle,
+            image.GetLevel(0),
+            image.Width,
+            image.Height);
+
+    // The textures the models name, loaded on first use.
+    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory) { Loaded = AttachDetail };
 }

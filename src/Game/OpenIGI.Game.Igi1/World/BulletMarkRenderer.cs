@@ -52,7 +52,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private TexTextureCache? _textureCache;
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
     private readonly List<(TextureHandle Texture, int FirstQuad, int QuadCount)> _batches = [];
 
@@ -124,7 +124,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
 
         foreach (IGrouping<string, BulletMark> group in marks.Marks.GroupBy(m => m.Texture, StringComparer.OrdinalIgnoreCase))
         {
-            TextureHandle texture = GetTexture(group.Key);
+            TextureHandle texture = Textures.Get(group.Key);
             if (!texture.IsValid)
             {
                 continue;
@@ -212,15 +212,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
             _mesh = MeshHandle.None;
         }
 
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            if (texture.IsValid)
-            {
-                _device.DestroyTexture(texture);
-            }
-        }
-
-        _textures.Clear();
+        _textureCache?.Clear();
     }
 
     // The index pattern is static -- quad n is vertices 4n..4n+3 -- so it is built once, at the size
@@ -327,45 +319,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         return length <= 0f ? new Vector3f(0f, 0f, 1f) : new Vector3f(v.X / length, v.Y / length, v.Z / length);
     }
 
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
 
-        TextureHandle handle = TextureHandle.None;
-        foreach (string candidate in new[]
-        {
-            $"LOCAL:common/textures/{name}",
-            LoadedPack.TextureResourceName(name),
-        })
-        {
-            if (!_resources.TryLoad(candidate, out ReadOnlyMemory<byte> bytes))
-            {
-                continue;
-            }
-
-            try
-            {
-                TextureImage image = TexFile.Load(bytes.Span);
-                handle = _device.CreateTexture(
-                    new TextureDescription(
-                        image.Width,
-                        image.Height,
-                        image.MipLevels,
-                        TextureFilter.Linear,
-                        TextureAddressMode.Clamp),
-                    image.Pixels);
-                break;
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Decal texture '{name}' did not load: {ex.Message}");
-            }
-        }
-
-        _textures[name] = handle;
-        return handle;
-    }
+    // The textures the models name, loaded on first use.
+    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory, TextureAddressMode.Clamp, static name => [$"LOCAL:common/textures/{name}", LoadedPack.TextureResourceName(name)]);
 }
