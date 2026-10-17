@@ -445,7 +445,7 @@ internal sealed partial class GameHost
         new(
             theme,
             host,
-            new ScreenStack(),
+            new ScreenStack { Sounds = new ShellSounds(this) },
             TitleCatalogue(),
             ActiveTitle.Id,
             ShellMissions(),

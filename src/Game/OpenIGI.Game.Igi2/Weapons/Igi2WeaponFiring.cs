@@ -69,7 +69,7 @@ public sealed class Igi2WeaponFiring
     public IIgi2WeaponOwner? Owner { get; set; }
 
     /// <summary>Gets or sets what firing shows and sounds.</summary>
-    public IIgi2WeaponEffects Effects { get; set; } = Igi2NoWeaponEffects.Instance;
+    public IIgi2WeaponEffects Effects { get; set; } = new Igi2NoWeaponEffects();
 
     /// <summary>Gets the weapon's bullets, the <c>GunShot</c> <c>Weapon_CreateHandler</c> (<c>igi2 0x51C320</c>) makes under it.</summary>
     public Igi2GunShot GunShot { get; } = new();
@@ -78,7 +78,7 @@ public sealed class Igi2WeaponFiring
     public Igi2MuzzleFlashes Flashes { get; } = new();
 
     /// <summary>Gets or sets where the grenades the weapon throws go (<c>Grenade_CreateProjectileHandler</c>, <c>igi2 0x484BE0</c>).</summary>
-    public IIgi2GrenadeWorld Grenades { get; set; } = Igi2NoGrenades.Instance;
+    public IIgi2GrenadeWorld Grenades { get; set; } = new Igi2NoGrenades();
 
     /// <summary>Gets or sets the level the weapon's bullets and stabs strike, or <see langword="null"/> for none: then nothing is struck.</summary>
     public IIgi2GunShotWorld? World { get; set; }
@@ -90,7 +90,7 @@ public sealed class Igi2WeaponFiring
     public Igi2LaserDesignatorState? LaserDesignator { get; set; }
 
     /// <summary>Gets or sets what the weapon's bullets and stabs show and sound where they strike.</summary>
-    public IIgi2GunShotEffects ImpactEffects { get; set; } = Igi2NoGunShotEffects.Instance;
+    public IIgi2GunShotEffects ImpactEffects { get; set; } = new Igi2NoGunShotEffects();
 
     /// <summary>Traces the bullets fired last tick (<c>GunShot_RunHandler</c>, <c>igi2 0x4C76E0</c>); with no level they are forgotten.</summary>
     /// <remarks>The weapon's flashes run after it, as its later children.</remarks>

@@ -131,16 +131,16 @@ internal sealed partial class GameHost
         // Whether the picture's own clock keeps step with the wall clock, behind
         // the Pacing log category at Debug. Sampled here because this pair -- the tick and the blend --
         // is exactly the moment in the simulation the frame is about to be drawn at.
-        Diagnostics.PresentationPacingProbe.Sample(
+        _pacing.Sample(
             pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
-        Diagnostics.PresentationPacingProbe.SampleGate(
+        _pacing.SampleGate(
             state.PauseMenu,
             _mission.Cutscenes?.IsPlaying == true,
             _options.Lockstep,
             RenderCVars.SmoothPresentation.Value);
         if (_loop.Clock.FrameCount % 600 == 0)
         {
-            Diagnostics.PresentationPacingProbe.Report("vulkan");
+            _pacing.Report("vulkan");
         }
         SightZoomFrame sight = _playerMode && _player is not null
             ? _player.SmoothedSightZoom(tickBlend)

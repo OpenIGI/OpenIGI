@@ -99,9 +99,6 @@ public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
 /// <summary>A player holding nothing: every query answers "no weapon" and every request does nothing.</summary>
 public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2NoWeaponControl Instance { get; } = new();
-
     /// <inheritdoc/>
     public int? ActiveCategory => null;
 

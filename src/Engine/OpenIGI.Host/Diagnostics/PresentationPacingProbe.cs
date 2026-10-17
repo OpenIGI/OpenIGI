@@ -21,32 +21,36 @@ namespace OpenIGI.Host.Diagnostics;
 /// an even 40 fps scores 1, an uneven 300 fps does not, which is exactly the distinction being made.
 /// </para>
 /// </remarks>
-internal static class PresentationPacingProbe
+public sealed class PresentationPacingProbe
 {
+    /// <summary>Initializes a new instance of the <see cref="PresentationPacingProbe"/> class.</summary>
+    /// <param name="logger">The logger the probe reports to and asks whether it is wanted.</param>
+    public PresentationPacingProbe(IOpenIgiLogger logger) => Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
     private const int Capacity = 20000;
 
-    private static readonly double[] Ratios = new double[Capacity];
-    private static readonly double[] FrameMilliseconds = new double[Capacity];
-    private static readonly double[] Blends = new double[Capacity];
-    private static int _saturated;
-    private static int _smoothFrames;
-    private static int _totalFrames;
+    private readonly double[] _ratios = new double[Capacity];
+    private readonly double[] _frameMilliseconds = new double[Capacity];
+    private readonly double[] _blends = new double[Capacity];
+    private int _saturated;
+    private int _smoothFrames;
+    private int _totalFrames;
 
     private const string LogCategory = "Pacing";
 
-    private static int _count;
-    private static double _lastWallMilliseconds;
-    private static double _lastSimMilliseconds;
-    private static bool _hasPrevious;
+    private int _count;
+    private double _lastWallMilliseconds;
+    private double _lastSimMilliseconds;
+    private bool _hasPrevious;
 
     /// <summary>Gets or sets the logger the probe reports to and asks whether it is wanted.</summary>
     /// <remarks>Turned on with <c>OPENIGI_LOG=Pacing=debug</c>, or <c>log_level Pacing debug</c> in the console.</remarks>
-    public static IOpenIgiLogger Logger { get; set; } = NullLogger.Instance;
+    public IOpenIgiLogger Logger { get; }
 
     /// <summary>Gets whether the probe is listening, so callers can skip their own measuring.</summary>
-    public static bool IsEnabled => Enabled;
+    public bool IsEnabled => Enabled;
 
-    private static bool Enabled => Logger.IsEnabled(LogLevel.Debug, LogCategory);
+    private bool Enabled => Logger.IsEnabled(LogLevel.Debug, LogCategory);
 
     /// <summary>Records where in the simulation this frame was drawn, and when.</summary>
     /// <param name="wallMilliseconds">The precise wall clock the frame sampled its blend from.</param>
@@ -54,7 +58,7 @@ internal static class PresentationPacingProbe
     /// <param name="tickBlend">How far through the current tick period the frame sits, 0 to 1.</param>
     /// <param name="tickRate">Ticks per second, which converts the pair into milliseconds of sim time.</param>
     /// <param name="smoothing">Whether the frame was presented with smoothing on.</param>
-    public static void Sample(
+    public void Sample(
         double wallMilliseconds, int tickCount, float tickBlend, int tickRate, bool smoothing)
     {
         if (!Enabled || tickRate <= 0)
@@ -78,9 +82,9 @@ internal static class PresentationPacingProbe
             // rewound clock is not judder. Both are dropped rather than counted as a huge ratio.
             if (wallStep > 0.01 && simStep >= 0.0 && smoothing && _count < Capacity)
             {
-                Ratios[_count] = simStep / wallStep;
-                FrameMilliseconds[_count] = wallStep;
-                Blends[_count] = tickBlend;
+                _ratios[_count] = simStep / wallStep;
+                _frameMilliseconds[_count] = wallStep;
+                _blends[_count] = tickBlend;
                 if (tickBlend >= 0.999f)
                 {
                     _saturated++;
@@ -97,7 +101,7 @@ internal static class PresentationPacingProbe
         {
             if (_lastTickWall > 0.0 && _tickIntervalCount < Capacity)
             {
-                TickIntervals[_tickIntervalCount++] =
+                _tickIntervals[_tickIntervalCount++] =
                     (wallMilliseconds - _lastTickWall) / Math.Max(1, tickCount - _lastTickCount);
             }
 
@@ -117,17 +121,17 @@ internal static class PresentationPacingProbe
         _hasPrevious = true;
     }
 
-    private static int _gatePause;
-    private static int _gateCutscene;
-    private static int _gateLockstep;
-    private static int _gateCVarOff;
+    private int _gatePause;
+    private int _gateCutscene;
+    private int _gateLockstep;
+    private int _gateCVarOff;
 
     /// <summary>Records which of the four conditions withheld smoothing on this frame.</summary>
     /// <remarks>
     /// Smoothing is an AND of four things, so "it was off" says nothing on its own. Counting them
     /// apart is what turns a dead blend into a named cause.
     /// </remarks>
-    public static void SampleGate(bool pauseMenu, bool cutscene, bool lockstep, bool cvar)
+    public void SampleGate(bool pauseMenu, bool cutscene, bool lockstep, bool cvar)
     {
         if (!Enabled)
         {
@@ -157,7 +161,7 @@ internal static class PresentationPacingProbe
 
     /// <summary>Logs the pacing distribution gathered so far, if the probe is on.</summary>
     /// <param name="label">What run this is, so two reports can be told apart.</param>
-    public static void Report(string label)
+    public void Report(string label)
     {
         if (!Enabled)
         {
@@ -182,9 +186,9 @@ internal static class PresentationPacingProbe
         double[] ratios = new double[_count];
         double[] frames = new double[_count];
         double[] blends = new double[_count];
-        Array.Copy(Ratios, ratios, _count);
-        Array.Copy(FrameMilliseconds, frames, _count);
-        Array.Copy(Blends, blends, _count);
+        Array.Copy(_ratios, ratios, _count);
+        Array.Copy(_frameMilliseconds, frames, _count);
+        Array.Copy(_blends, blends, _count);
         Array.Sort(ratios);
         Array.Sort(frames);
         Array.Sort(blends);
@@ -249,7 +253,7 @@ internal static class PresentationPacingProbe
         if (_blockCount > 1)
         {
             double[] blocks = new double[_blockCount];
-            Array.Copy(PresentBlocks, blocks, _blockCount);
+            Array.Copy(_presentBlocks, blocks, _blockCount);
             Array.Sort(blocks);
             Log(string.Format(
                 CultureInfo.InvariantCulture,
@@ -266,7 +270,7 @@ internal static class PresentationPacingProbe
         if (_tickIntervalCount > 1)
         {
             double[] intervals = new double[_tickIntervalCount];
-            Array.Copy(TickIntervals, intervals, _tickIntervalCount);
+            Array.Copy(_tickIntervals, intervals, _tickIntervalCount);
             Array.Sort(intervals);
             Log(string.Format(
                 CultureInfo.InvariantCulture,
@@ -281,31 +285,31 @@ internal static class PresentationPacingProbe
         }
     }
 
-    private static void Log(string line) => Logger.Debug(LogCategory, line);
+    private void Log(string line) => Logger.Debug(LogCategory, line);
 
-    private static readonly double[] PresentBlocks = new double[Capacity];
-    private static int _blockCount;
-    private static readonly double[] TickIntervals = new double[Capacity];
-    private static int _tickIntervalCount;
-    private static int _lastTickCount = -1;
-    private static double _lastTickWall;
-    private static int _rendersThisTick;
+    private readonly double[] _presentBlocks = new double[Capacity];
+    private int _blockCount;
+    private readonly double[] _tickIntervals = new double[Capacity];
+    private int _tickIntervalCount;
+    private int _lastTickCount = -1;
+    private double _lastTickWall;
+    private int _rendersThisTick;
 
     /// <summary>Records how long the present-and-acquire blocked the CPU.</summary>
     /// <remarks>
     /// This block sits between the frame arbiter's clock reading and the blend the picture is drawn
     /// at, so whatever it costs is time the decision to render rather than tick was already stale by.
     /// </remarks>
-    public static void RecordPresentBlock(double milliseconds)
+    public void RecordPresentBlock(double milliseconds)
     {
         if (Enabled && _blockCount < Capacity)
         {
-            PresentBlocks[_blockCount++] = milliseconds;
+            _presentBlocks[_blockCount++] = milliseconds;
         }
     }
 
     /// <summary>Forgets everything measured, so a later stretch can be reported on its own.</summary>
-    public static void Reset()
+    public void Reset()
     {
         _count = 0;
         _hasPrevious = false;

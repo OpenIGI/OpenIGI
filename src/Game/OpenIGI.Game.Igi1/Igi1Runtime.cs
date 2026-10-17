@@ -7,14 +7,11 @@ namespace OpenIGI.Game.Igi1;
 /// <summary>Project I.G.I., as the engine runs it.</summary>
 public sealed class Igi1Runtime : IGameTitleRuntime
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi1Runtime Instance { get; } = new();
-
     /// <inheritdoc/>
     public GameTitle Title => GameTitle.Igi1;
 
     /// <inheritdoc/>
-    public ITitleDataLayout Layout => Igi1DataLayout.Instance;
+    public ITitleDataLayout Layout { get; } = new Igi1DataLayout();
 
     /// <inheritdoc/>
     public AssetFormatProfile Formats => AssetFormatProfile.Igi1;

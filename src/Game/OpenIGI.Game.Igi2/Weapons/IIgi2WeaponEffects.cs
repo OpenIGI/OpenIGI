@@ -109,9 +109,6 @@ public interface IIgi2WeaponEffects
 /// <summary>Effects that show nothing and sound nothing.</summary>
 public sealed class Igi2NoWeaponEffects : IIgi2WeaponEffects
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2NoWeaponEffects Instance { get; } = new();
-
     /// <inheritdoc/>
     public void CreateProjectile(in Igi2ProjectileLaunch launch)
     {

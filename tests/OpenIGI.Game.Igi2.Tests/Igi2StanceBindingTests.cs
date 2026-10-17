@@ -25,15 +25,15 @@ public sealed class Igi2StanceBindingTests
     public void Profile_keys_reach_the_title_player(KeyCode key, Igi2HumanChannel channel)
     {
         PlayerProfile profile = PlayerProfile.CreateDefault();
-        TitleInputBindings.RestoreMissing(profile, Igi2Gameplay.Instance.InputBindings);
+        TitleInputBindings.RestoreMissing(profile, new Igi2Gameplay().InputBindings);
         InputState input = new();
         input.BeginFrame();
         input.Keyboard.SetKey(key, true);
-        ulong pressed = TitleInputBindings.Sample(profile, input, Igi2Gameplay.Instance.InputBindings, pressed: true);
+        ulong pressed = TitleInputBindings.Sample(profile, input, new Igi2Gameplay().InputBindings, pressed: true);
         Assert.NotEqual(0UL, pressed);
         input.BeginFrame();
         input.Keyboard.SetKey(key, false);
-        ulong held = TitleInputBindings.Sample(profile, input, Igi2Gameplay.Instance.InputBindings, pressed: false);
+        ulong held = TitleInputBindings.Sample(profile, input, new Igi2Gameplay().InputBindings, pressed: false);
         Assert.Equal(0UL, held);
         Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(new Igi2CollisionWorld([], null),
             Igi2HumanPlayerGeneral.Unset with { MaxDamageScale = 1f }, default, 0f, Game.Ai.AiDifficulty.Normal);
@@ -51,18 +51,18 @@ public sealed class Igi2StanceBindingTests
         profile.Bindings.Add(new("Title_igi2_LowerStance", InputBindingKeyNames.KeyboardDevice, "KEY_J"));
         profile.Bindings.Add(new("Title_igi2_ToggleStandLie", InputBindingKeyNames.KeyboardDevice, PlayerProfile.UnboundKey));
         profile.Bindings.Add(new("CustomAction", InputBindingKeyNames.KeyboardDevice, "KEY_Q"));
-        TitleInputBindings.RestoreMissing(profile, Igi2Gameplay.Instance.InputBindings);
-        TitleInputBindings.RestoreMissing(profile, Igi2Gameplay.Instance.InputBindings);
+        TitleInputBindings.RestoreMissing(profile, new Igi2Gameplay().InputBindings);
+        TitleInputBindings.RestoreMissing(profile, new Igi2Gameplay().InputBindings);
         Assert.Equal("KEY_J", Assert.Single(profile.Bindings, b => b.Action == "Title_igi2_LowerStance").Key);
         Assert.Equal(PlayerProfile.UnboundKey, Assert.Single(profile.Bindings, b => b.Action == "Title_igi2_RaiseStance").Key);
         Assert.Equal(PlayerProfile.UnboundKey, Assert.Single(profile.Bindings, b => b.Action == "Title_igi2_ToggleStandLie").Key);
         InputState input = new();
         input.BeginFrame();
         input.Keyboard.SetKey(KeyCode.Z, true);
-        Assert.Equal(0UL, TitleInputBindings.Sample(profile, input, Igi2Gameplay.Instance.InputBindings, pressed: true));
+        Assert.Equal(0UL, TitleInputBindings.Sample(profile, input, new Igi2Gameplay().InputBindings, pressed: true));
         input.Keyboard.SetKey(KeyCode.J, true);
         Assert.Equal((ulong)Igi2PlayerAction.LowerStance,
-            TitleInputBindings.Sample(profile, input, Igi2Gameplay.Instance.InputBindings, pressed: true));
+            TitleInputBindings.Sample(profile, input, new Igi2Gameplay().InputBindings, pressed: true));
     }
 
     /// <summary>Retail Z/Q lower and raise stance, movement crawls, and held Shift crouch releases.</summary>
@@ -70,7 +70,7 @@ public sealed class Igi2StanceBindingTests
     public void Keyboard_stances_crawl_and_stand_again()
     {
         PlayerProfile profile = PlayerProfile.CreateDefault();
-        TitleInputBindings.RestoreMissing(profile, Igi2Gameplay.Instance.InputBindings);
+        TitleInputBindings.RestoreMissing(profile, new Igi2Gameplay().InputBindings);
         InputState input = new();
         Igi2HumanPlayer human = Igi2PlayerFakes.OnFloor().Player;
         Igi2PlayerInputReader reader = new();
@@ -104,7 +104,7 @@ public sealed class Igi2StanceBindingTests
             {
                 input.Keyboard.SetKey(candidate, candidate == key);
             }
-            Igi2PlayerAction held = (Igi2PlayerAction)TitleInputBindings.Sample(profile, input, Igi2Gameplay.Instance.InputBindings, pressed: false);
+            Igi2PlayerAction held = (Igi2PlayerAction)TitleInputBindings.Sample(profile, input, new Igi2Gameplay().InputBindings, pressed: false);
             if (PlayerProfileInputBindings.IsDown(profile, input, "MoveUp")) { held |= Igi2PlayerAction.MoveForwards; }
             reader.Read(new(0f, 0f, held, 0), frame);
             human.Channels.Accept(frame);
@@ -118,16 +118,16 @@ public sealed class Igi2StanceBindingTests
     public void Retail_stance_controls_are_scoped_to_igi2()
     {
         PlayerProfile profile = PlayerProfile.CreateDefault();
-        TitleInputBindings.RestoreMissing(profile, Igi2Gameplay.Instance.InputBindings);
-        Assert.Equal(PlayerAction.Crouch | PlayerAction.ToggleWalkRun, TitleInputBindings.ReplacedActions(Igi2Gameplay.Instance.InputBindings));
-        Assert.Null(TitleInputBindings.Label("Crouch", Igi2Gameplay.Instance.InputBindings));
-        Assert.Equal("Crouch", TitleInputBindings.Label("Title_igi2_Crouch", Igi2Gameplay.Instance.InputBindings));
+        TitleInputBindings.RestoreMissing(profile, new Igi2Gameplay().InputBindings);
+        Assert.Equal(PlayerAction.Crouch | PlayerAction.ToggleWalkRun, TitleInputBindings.ReplacedActions(new Igi2Gameplay().InputBindings));
+        Assert.Null(TitleInputBindings.Label("Crouch", new Igi2Gameplay().InputBindings));
+        Assert.Equal("Crouch", TitleInputBindings.Label("Title_igi2_Crouch", new Igi2Gameplay().InputBindings));
         Assert.Null(TitleInputBindings.Label("Title_igi2_Crouch", []));
         Assert.Equal("Crouch", TitleInputBindings.Label("Crouch", []));
         InputBinding original = profile.Bindings.Single(b => b.Action == "Crouch");
         int titleCrouch = profile.Bindings.FindIndex(b => b.Action == "Title_igi2_Crouch");
         profile.Bindings[titleCrouch] = profile.Bindings[titleCrouch] with { Key = "KEY_J" };
-        TitleInputBindings.Reset(profile, Igi2Gameplay.Instance.InputBindings);
+        TitleInputBindings.Reset(profile, new Igi2Gameplay().InputBindings);
         Assert.Equal("KEY_LEFT_SHIFT", profile.Bindings[titleCrouch].Key);
         Assert.Equal(original, profile.Bindings.Single(b => b.Action == "Crouch"));
         Assert.Equal(PlayerProfile.UnboundKey, profile.Bindings.Single(b => b.Action == "Title_igi2_ToggleStandLie").Key);

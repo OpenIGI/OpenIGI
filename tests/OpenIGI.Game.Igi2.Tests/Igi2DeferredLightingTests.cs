@@ -133,7 +133,7 @@ public sealed class Igi2DeferredLightingTests
         (colour.X * 0.2126f) + (colour.Y * 0.7152f) + (colour.Z * 0.0722f);
 
     private static DeferredLighting Read(Igi2Level level) =>
-        Assert.IsType<DeferredLighting>(Igi2PresentationProvider.Instance.ReadDeferredLighting(level.Root));
+        Assert.IsType<DeferredLighting>(new Igi2PresentationProvider().ReadDeferredLighting(level.Root));
 
     private static Igi2Level Level(string suffix) => Igi2Level.All().First(
         l => l.Directory.Replace('\\', '/').EndsWith(suffix, StringComparison.OrdinalIgnoreCase));

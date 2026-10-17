@@ -172,9 +172,6 @@ public interface IIgi2GrenadeWorld
 /// <summary>A level with no grenade in it: a grenade thrown into it is gone.</summary>
 public sealed class Igi2NoGrenades : IIgi2GrenadeWorld
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2NoGrenades Instance { get; } = new();
-
     /// <inheritdoc/>
     public void Launch(in Igi2GrenadeThrow grenade)
     {

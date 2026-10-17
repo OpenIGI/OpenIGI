@@ -49,7 +49,7 @@ public sealed class RetailNightMissionTests
     {
         GameTask root = Load(mission);
 
-        DeferredLighting? lighting = Igi1PresentationProvider.Instance.ReadDeferredLighting(root);
+        DeferredLighting? lighting = new Igi1PresentationProvider().ReadDeferredLighting(root);
 
         if (!night)
         {

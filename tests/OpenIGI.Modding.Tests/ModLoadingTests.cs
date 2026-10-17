@@ -51,17 +51,17 @@ public sealed class ModLoadingTests : IDisposable
     public void A_configured_game_registers_the_mods_modules_after_its_own_and_edits_its_level_systems()
     {
         InstallSample("sample", """{ "id": "sample", "name": "Sample", "version": "1.0", "apiVersion": 1, "assembly": "SampleMod.dll" }""");
-        IGameTitleRuntime modded = ModLoader.Load(_mods).Extend(Igi2Runtime.Instance);
+        IGameTitleRuntime modded = ModLoader.Load(_mods).Extend(new Igi2Runtime());
 
-        Assert.Equal(Igi2Runtime.Instance.Title, modded.Title);
-        Assert.Equal(Igi2Runtime.Instance.Modules, modded.Modules.Take(Igi2Runtime.Instance.Modules.Count));
+        Assert.Equal(new Igi2Runtime().Title, modded.Title);
+        Assert.Equal(new Igi2Runtime().Modules, modded.Modules.Take(new Igi2Runtime().Modules.Count));
 
         // Only the mod's modules: the game's own need its tables.
         NativeRegistry natives = new();
         ServiceCatalog services = new();
         ContentRegistrationContext registration = new(
             new TaskTypeRegistry(), natives, new ScriptVarRegistry(natives), services, NullLogger.Instance);
-        foreach (IContentModule module in modded.Modules.Skip(Igi2Runtime.Instance.Modules.Count))
+        foreach (IContentModule module in modded.Modules.Skip(new Igi2Runtime().Modules.Count))
         {
             module.Register(registration);
         }
@@ -79,7 +79,9 @@ public sealed class ModLoadingTests : IDisposable
 
         ModSet mods = ModLoader.Load(_mods);
 
-        Assert.Same(Igi2Runtime.Instance, mods.Extend(Igi2Runtime.Instance));
+        Igi2Runtime runtime = new();
+
+        Assert.Same(runtime, mods.Extend(runtime));
         Assert.True(mods.Mods[0].Manifest.AppliesTo(GameTitle.Igi1));
         Assert.False(mods.Mods[0].Manifest.AppliesTo(GameTitle.Igi2));
     }
@@ -109,7 +111,8 @@ public sealed class ModLoadingTests : IDisposable
         InstalledMod mod = Assert.Single(mods.Mods);
         Assert.Null(mod.Code);
         Assert.False(mod.Manifest.AffectsSimulation);
-        Assert.Same(Igi2Runtime.Instance, mods.Extend(Igi2Runtime.Instance));
+        Igi2Runtime runtime = new();
+        Assert.Same(runtime, mods.Extend(runtime));
     }
 
     [Fact]

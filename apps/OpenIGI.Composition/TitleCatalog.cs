@@ -39,16 +39,16 @@ public static class TitleCatalog
     /// </remarks>
     public static TitleRegistry Titles { get; } = new TitleRegistry()
         .Register(new TitlePackage(
-            Igi1Runtime.Instance,
-            Igi1PresentationProvider.Instance,
-            Igi1WorldBuilder.Instance,
+            new Igi1Runtime(),
+            new Igi1PresentationProvider(),
+            new Igi1WorldBuilder(),
             static log => new MissionRegistry(log)))
         .Register(new TitlePackage(
-            Igi2Runtime.Instance,
-            Igi2PresentationProvider.Instance,
-            Igi2WorldBuilder.Instance,
+            new Igi2Runtime(),
+            new Igi2PresentationProvider(),
+            new Igi2WorldBuilder(),
             static log => new Igi2MissionCatalogue(log),
-            Igi2Gameplay.Instance));
+            new Igi2Gameplay()));
 
     /// <summary>Gets the catalogue the host resolves titles through.</summary>
     /// <remarks>

@@ -438,7 +438,7 @@ public sealed class Igi2HumanSoldierTests
     {
         FakeAnimation animation = new();
         FakeSurroundings surroundings = new();
-        Igi2HumanSoldier soldier = new(Igi2NoWeaponControl.Instance, animation, surroundings);
+        Igi2HumanSoldier soldier = new(new Igi2NoWeaponControl(), animation, surroundings);
         soldier.Create();
         soldier.Damage.MaxDamage = 100f;
         return (soldier, animation, surroundings, new ScriptedMind());

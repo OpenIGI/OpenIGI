@@ -122,7 +122,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     private IIgi2PlayerWeaponControl _weapon;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2HumanSoldier"/> class.</summary>
-    /// <param name="weapon">The soldier's weapon; <see cref="Igi2NoWeaponControl.Instance"/> for none.</param>
+    /// <param name="weapon">The soldier's weapon; <see cref="Igi2NoWeaponControl"/> for none.</param>
     /// <param name="animation">The animation layer the states drive, over <see cref="Igi2SoldierStateAnimations.Table"/>.</param>
     /// <param name="surroundings">The world the states probe.</param>
     public Igi2HumanSoldier(IIgi2PlayerWeaponControl weapon, IIgi2HumanAnimation animation, IIgi2HumanSurroundings surroundings)

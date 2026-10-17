@@ -220,7 +220,7 @@ public sealed class RetailIgi2RenderGroupOrderTests
             Terrain: null,
             Packs: packs);
 
-        return Igi2WorldBuilder.Instance
+        return new Igi2WorldBuilder()
             .Build(new WorldBuildRequest(mission, level.Root, resources, null, NullLogger.Instance))
             .Scene;
     }

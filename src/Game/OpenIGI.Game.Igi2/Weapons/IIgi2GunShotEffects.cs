@@ -96,9 +96,6 @@ public interface IIgi2GunShotEffects
 /// <summary>Shows and sounds nothing, and makes no sound: what a bullet's flight does before its presentation is attached.</summary>
 public sealed class Igi2NoGunShotEffects : IIgi2GunShotEffects
 {
-    /// <summary>Gets the instance.</summary>
-    public static Igi2NoGunShotEffects Instance { get; } = new();
-
     /// <inheritdoc/>
     public bool NewSound(string sound, Vector3d position) => false;
 

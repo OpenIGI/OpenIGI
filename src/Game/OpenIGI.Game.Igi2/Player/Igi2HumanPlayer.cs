@@ -58,7 +58,7 @@ public sealed partial class Igi2HumanPlayer : Igi2Human
     private IIgi2PlayerWeaponControl _weapon;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2HumanPlayer"/> class.</summary>
-    /// <param name="weapon">The held-weapon controls; <see cref="Igi2NoWeaponControl.Instance"/> for none.</param>
+    /// <param name="weapon">The held-weapon controls; <see cref="Igi2NoWeaponControl"/> for none.</param>
     /// <param name="animation">The animation layer the states drive.</param>
     /// <param name="surroundings">The world the states probe.</param>
     public Igi2HumanPlayer(

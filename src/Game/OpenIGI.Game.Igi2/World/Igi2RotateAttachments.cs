@@ -77,7 +77,7 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
             list.Add(part.Placement);
         }
 
-        Dictionary<WorldPlacement, Spin> spins = new(ReferenceComparer.Instance);
+        Dictionary<WorldPlacement, Spin> spins = new(ReferenceEqualityComparer.Instance);
         Collect(levelRoot, parts, spins);
         return spins.Count > 0 ? new Igi2RotateAttachments(spins) : null;
     }
@@ -189,20 +189,4 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
 
     /// <summary>How fast one part turns, in radians per tick about each of the three axes.</summary>
     private readonly record struct Spin(float Alpha, float Beta, float Gamma);
-
-    /// <summary>Matches placements by identity rather than by value.</summary>
-    /// <remarks>
-    /// A <see cref="WorldPlacement"/> is a record, so two parts of one model standing in the same pose on
-    /// two different objects compare equal. The walk made each of them separately and this has to keep
-    /// them apart, so the exact instances the scene holds are what is looked up.
-    /// </remarks>
-    private sealed class ReferenceComparer : IEqualityComparer<WorldPlacement>
-    {
-        public static ReferenceComparer Instance { get; } = new();
-
-        public bool Equals(WorldPlacement? left, WorldPlacement? right) => ReferenceEquals(left, right);
-
-        public int GetHashCode(WorldPlacement value) =>
-            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
-    }
 }

@@ -109,8 +109,9 @@ public abstract class Screen
 
     /// <summary>Builds the widget tree, then lays it out for the current viewport.</summary>
     /// <param name="context">The layout context for this frame.</param>
+    /// <param name="sounds">Where its feedback sounds go; the stack's.</param>
     /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
-    public void Prepare(LayoutContext context)
+    public void Prepare(LayoutContext context, IUiSoundSink? sounds = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -120,6 +121,7 @@ public abstract class Screen
         if (Root is null || _builtViewport != context.Viewport)
         {
             Root = BuildRoot(context);
+            Root.Sounds = sounds;
             Focus = new FocusManager(Root);
             _builtViewport = context.Viewport;
             rebuilt = true;

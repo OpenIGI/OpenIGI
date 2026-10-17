@@ -358,12 +358,6 @@ internal sealed partial class GameHost
         // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
         _weaponSounds = new WeaponSoundPlayer(_sounds);
 
-        // The cinematic shell's own feedback. The retail menu system reaches the same two sounds
-        // through IMenuHost.PlaySound; the shell's widgets have no host, so they go through a sink.
-        SoundSystem shellSounds = _sounds;
-        UiSounds.Play = name => shellSounds.Play(
-            name,
-            VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
         _music = new MusicPlayer(_sounds, _logger)
         {
             FadeSeconds = AudioCVars.Spatial.Value ? 1.5f : 0f,
@@ -1870,5 +1864,14 @@ internal sealed partial class GameHost
         {
             _logger.Warning("Audio", $"No menu sounds in '{MenuSoundArchive}'.");
         }
+    }
+
+    /// <summary>The cinematic shell's own feedback, played through the title's sound bank as the retail menus' is.</summary>
+    /// <param name="host">The host, whose sound system is the one open at the time.</param>
+    private sealed class ShellSounds(GameHost host) : IUiSoundSink
+    {
+        public void Play(string name) => host._sounds?.Play(
+            name,
+            VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
     }
 }

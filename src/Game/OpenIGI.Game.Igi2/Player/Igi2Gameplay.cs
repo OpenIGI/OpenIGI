@@ -39,9 +39,6 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <summary>The model the first-person view falls back to, <c>005_01_1</c>.</summary>
     public const string FirstPersonFallbackModel = "005_01_1";
 
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2Gameplay Instance { get; } = new();
-
     /// <inheritdoc/>
     /// <remarks>config.c Config_Open; humanplayer.c HumanPlayer_StateSignalHandler: held crouch and the three stance edges are separate actions.</remarks>
     public IReadOnlyList<TitleInputBinding> InputBindings { get; } =
@@ -392,7 +389,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             (task, rig) =>
             {
                 Igi2LevelSurroundings surroundings = new(world, sounds) { Materials = materials, Pickups = pickups, Models = models, Grenades = grenades };
-                IIgi2PlayerWeaponControl weapon = Igi2NoWeaponControl.Instance;
+                IIgi2PlayerWeaponControl weapon = new Igi2NoWeaponControl();
                 if (armoury is not null)
                 {
                     Igi2Inventory inventory = armoury.CreateInventory(tuning?.AmmoLimits ?? []);
@@ -1098,7 +1095,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         sounds ??= new Igi2Sounds(new Igi2SoundDefinitions(), null);
         Igi2LevelSurroundings surroundings = new(world, sounds);
-        IIgi2PlayerWeaponControl weapon = weapons ?? (IIgi2PlayerWeaponControl)Igi2NoWeaponControl.Instance;
+        IIgi2PlayerWeaponControl weapon = weapons ?? (IIgi2PlayerWeaponControl)new Igi2NoWeaponControl();
         Igi2HumanAnimation animation = new(clips, rig, Igi2PlayerStateAnimations.Table, () => weapon.BodyClips(rig));
         Igi2HumanPlayer human = new(weapon, animation, surroundings)
         {
@@ -1389,7 +1386,7 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     }
 
     public IIgi2SoundInstance StartSound(string name) =>
-        sounds.New(name, View(), View) ?? (IIgi2SoundInstance)SilentSound.Instance;
+        sounds.New(name, View(), View) ?? (IIgi2SoundInstance)new SilentSound();
 
     private Vector3d View() => Owner?.View.Position ?? default;
 
@@ -1419,8 +1416,6 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     private sealed class SilentSound : IIgi2SoundInstance
     {
-        public static SilentSound Instance { get; } = new();
-
         public bool IsAlive => false;
 
         public void MoveToHuman()

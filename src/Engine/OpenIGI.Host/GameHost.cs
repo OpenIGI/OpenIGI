@@ -133,6 +133,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     private GameConfig _configuration = null!;
     private HostRenderScheduler _scheduler = null!;
 
+    // Whether the presented motion keeps pace with real time; listening only at Pacing=debug.
+    private readonly Diagnostics.PresentationPacingProbe _pacing;
+
     // The one wall clock every loop reads. A mission promoted out of the menu's backdrop brings its own
     // GameLoop with it, and both loops have to measure milliseconds from the same origin — see
     // GameClock.AdoptScheduleFrom.
@@ -803,7 +806,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         _options = options;
         _gamePath = gamePath;
         _logger = logger;
-        Diagnostics.PresentationPacingProbe.Logger = logger;
+        _pacing = new Diagnostics.PresentationPacingProbe(logger);
     }
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
@@ -1102,7 +1105,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
         // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk
         // updates and renders the menu rather than this loop doing either by hand.
-        _scheduler = new(_device);
+        _scheduler = new(_device, _pacing);
 
         // -lockstep replaces the wall clock with a synthetic one advanced a fixed amount per loop pass,
         // so how long a frame took to draw stops deciding how many ticks it covered. Without it a capture

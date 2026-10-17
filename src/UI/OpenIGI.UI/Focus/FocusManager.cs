@@ -61,7 +61,7 @@ public sealed class FocusManager
         // the way out of a screen, is not the player moving a selection and should not click.
         if (moved)
         {
-            UiSounds.Moved();
+            _root.PlaySound(UiSounds.Move);
         }
     }
 

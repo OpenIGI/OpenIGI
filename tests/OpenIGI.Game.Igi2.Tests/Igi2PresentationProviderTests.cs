@@ -40,7 +40,7 @@ public sealed class Igi2PresentationProviderTests
         // Through the interface, because the thirteen it does not implement are default interface
         // members and are reachable only that way -- which is itself the point: the concrete type's
         // surface is the one member it actually has.
-        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        ITitlePresentationProvider provider = new Igi2PresentationProvider();
         ResourceRegistry resources = new(new VirtualFileSystem());
         NullLogger logger = NullLogger.Instance;
 
@@ -85,7 +85,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void The_provider_reads_and_draws_a_levels_ground()
     {
-        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        ITitlePresentationProvider provider = new Igi2PresentationProvider();
         string root = GameDataSource.Igi2.RequireRoot();
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -169,7 +169,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void The_grounds_textures_tile_rather_than_clamp()
     {
-        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        ITitlePresentationProvider provider = new Igi2PresentationProvider();
         string root = GameDataSource.Igi2.RequireRoot();
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -249,7 +249,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void The_ground_is_drawn_in_metres()
     {
-        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        ITitlePresentationProvider provider = new Igi2PresentationProvider();
         string root = GameDataSource.Igi2.RequireRoot();
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -369,7 +369,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void Every_shipped_levels_sky_comes_back_through_the_seam()
     {
-        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        ITitlePresentationProvider provider = new Igi2PresentationProvider();
         string root = GameDataSource.Igi2.RequireRoot();
         int levels = 0;
 

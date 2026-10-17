@@ -85,7 +85,7 @@ public sealed class Igi2FixedFunctionSunTests
         Assert.Equal(0.25f, sun.Colour.Z, 3);
         Assert.Equal(0.8415f, sun.Direction.Z, 3);
 
-        ObjectShading? shading = Igi2PresentationProvider.Instance.ReadObjectShading(level.Root);
+        ObjectShading? shading = new Igi2PresentationProvider().ReadObjectShading(level.Root);
         Assert.NotNull(shading);
         Assert.Equal(2f, shading.Value.LightmapGain);
         Assert.Equal(sun.Colour, shading.Value.Sun?.Colour);

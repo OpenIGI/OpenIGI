@@ -72,7 +72,7 @@ public sealed class Igi2FlashBangTests
     {
         var (_, animation, surroundings) = Igi2PlayerFakes.OnFloor();
         RecordingMind mind = new();
-        Igi2HumanSoldier soldier = new(Igi2NoWeaponControl.Instance, animation, surroundings) { Mind = mind };
+        Igi2HumanSoldier soldier = new(new Igi2NoWeaponControl(), animation, surroundings) { Mind = mind };
         Vector3d position = new(122880.0, 0.0, 0.0);
         soldier.FlashBang(new Igi2FlashBangHit(position, 122880f, 2, null));
         Igi2AiEvent heard = Assert.Single(mind.Events);

@@ -24,9 +24,6 @@ namespace OpenIGI.Game.Igi2;
 /// </remarks>
 public sealed class Igi2DataLayout : ITitleDataLayout
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2DataLayout Instance { get; } = new();
-
     /// <inheritdoc/>
     public IReadOnlyList<KeyValuePair<string, string>> StartupAliases { get; } =
     [

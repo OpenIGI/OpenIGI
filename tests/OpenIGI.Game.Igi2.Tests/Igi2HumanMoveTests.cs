@@ -201,7 +201,7 @@ public sealed class Igi2HumanMoveTests
         Assert.Equal(1, player.DeathStabilizationTimer);
         Assert.Equal(0f, player.Speed.X);
         Assert.Equal(0f, player.Speed.Y);
-        Assert.Equal(new Vector3f(0f, 0f, 1f), new Igi2HumanPlayer(Igi2NoWeaponControl.Instance, new Igi2PlayerFakes.FakeAnimation(), new Igi2PlayerFakes.FakeSurroundings()).AveragedGroundNormal);
+        Assert.Equal(new Vector3f(0f, 0f, 1f), new Igi2HumanPlayer(new Igi2NoWeaponControl(), new Igi2PlayerFakes.FakeAnimation(), new Igi2PlayerFakes.FakeSurroundings()).AveragedGroundNormal);
     }
 
     private static (Igi2HumanPlayer Player, Igi2PlayerFakes.FakeSurroundings Surroundings) OnFloor()

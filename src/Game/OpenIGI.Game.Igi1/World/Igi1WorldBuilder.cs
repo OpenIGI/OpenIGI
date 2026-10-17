@@ -18,9 +18,6 @@ namespace OpenIGI.Game.Igi1.World;
 /// </remarks>
 public sealed class Igi1WorldBuilder : ITitleWorldBuilder
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi1WorldBuilder Instance { get; } = new();
-
     /// <inheritdoc/>
     public WorldBuildResult Build(in WorldBuildRequest request)
     {

@@ -131,9 +131,6 @@ public interface IIgi2ExplosionEffects
 /// <summary>An explosion's effects that do nothing.</summary>
 public sealed class Igi2NoExplosionEffects : IIgi2ExplosionEffects
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2NoExplosionEffects Instance { get; } = new();
-
     /// <inheritdoc/>
     public void BurnMark(Igi2Intersection ground, float radius)
     {
@@ -556,7 +553,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     }
 
     /// <summary>Gets or sets what explosions show and sound.</summary>
-    public IIgi2ExplosionEffects Effects { get; set; } = Igi2NoExplosionEffects.Instance;
+    public IIgi2ExplosionEffects Effects { get; set; } = new Igi2NoExplosionEffects();
 
     /// <summary>Gets or sets the level's water, which a grenade's blast under it splashes, or <see langword="null"/>.</summary>
     public World.Igi2Water? Water { get; set; }

@@ -45,9 +45,6 @@ namespace OpenIGI.Presentation.Igi2;
 /// </remarks>
 public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2PresentationProvider Instance { get; } = new();
-
     /// <inheritdoc/>
     public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new OpenIGI.Presentation.Igi2.Hud.Igi2HudRenderer(request.Device, request.Logger);
 

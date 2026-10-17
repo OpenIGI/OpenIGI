@@ -17,9 +17,6 @@ namespace OpenIGI.Presentation.Igi1;
 /// </remarks>
 public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi1PresentationProvider Instance { get; } = new();
-
     /// <summary>The dome luminance at or under which a level is drawn as night.</summary>
     /// <remarks>
     /// <para>

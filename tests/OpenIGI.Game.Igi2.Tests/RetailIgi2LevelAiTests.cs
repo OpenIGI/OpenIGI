@@ -29,10 +29,10 @@ public sealed class RetailIgi2LevelAiTests
         Igi2AiWorld ai = m.Services!.Require<Igi2AiWorld>();
         Assert.Same(m.Run.Natives, ai.Natives);
         Engine.Flow.GameLoop preview = new(new Engine.Time.ManualTimeSource(1000),
-            structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
+            structuralTypes: new Igi2Runtime().Layout.StructuralTaskTypes);
         VirtualFileSystem files = new();
         files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
-        Engine.Titles.TitleSession.Start(Igi2Runtime.Instance.Modules, preview, files, new ResourceRegistry(files),
+        Engine.Titles.TitleSession.Start(new Igi2Runtime().Modules, preview, files, new ResourceRegistry(files),
             loadTables: false, inherited: m.Services);
         Assert.Same(m.Run.Natives, ai.Natives);
     }
@@ -46,8 +46,8 @@ public sealed class RetailIgi2LevelAiTests
         resources.FileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
         // The menu builds a second loop with inherited tables, then promotes that loop for play.
         Engine.Flow.GameLoop promoted = new(new Engine.Time.ManualTimeSource(1000),
-            structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
-        Engine.Titles.TitleSession.Start(Igi2Runtime.Instance.Modules, promoted, resources.FileSystem, resources,
+            structuralTypes: new Igi2Runtime().Layout.StructuralTaskTypes);
+        Engine.Titles.TitleSession.Start(new Igi2Runtime().Modules, promoted, resources.FileSystem, resources,
             loadTables: false, inherited: m.Services);
         Engine.Tasks.LevelTask root = (Engine.Tasks.LevelTask)promoted.Tasks.New(promoted.Tasks.Root,
             promoted.Types.Get(Engine.Tasks.EngineTaskTypes.Level));
@@ -59,10 +59,10 @@ public sealed class RetailIgi2LevelAiTests
         LoadedMission mission = new(descriptor, packs[0], packs[^1], [], Packs: packs);
         WorldBuildRequest world = new(mission, root, resources, null,
             Core.Diagnostics.NullLogger.Instance, Services: m.Services);
-        WorldBuildResult built = Igi2WorldBuilder.Instance.Build(world);
+        WorldBuildResult built = new Igi2WorldBuilder().Build(world);
         // The desktop's shared soldier renderer registers the first game's AI before standing the title player.
         _ = new OpenIGI.Game.Igi1.Ai.AiScriptHost(promoted.Natives);
-        Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(Igi2Gameplay.Instance.CreatePlayer(
+        Igi2TitlePlayer player = Assert.IsType<Igi2TitlePlayer>(new Igi2Gameplay().CreatePlayer(
             new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: promoted.Natives)));
         Assert.NotNull(player.Level);
         Assert.NotNull(player.Ai);
@@ -115,7 +115,7 @@ public sealed class RetailIgi2LevelAiTests
         {
             OpenIGI.Rendering.SpriteBatch batch = new(device);
             using Presentation.ITitleHudPresenter hud = Assert.IsAssignableFrom<Presentation.ITitleHudPresenter>(
-                Igi2PresentationProvider.Instance.CreateTitleHud(new Presentation.HudPresentationRequest(device, Core.Diagnostics.NullLogger.Instance)));
+                new Igi2PresentationProvider().CreateTitleHud(new Presentation.HudPresentationRequest(device, Core.Diagnostics.NullLogger.Instance)));
             hud.Load(resources.FileSystem);
             player.GameConfig = new Config.Igi2GameConfig();
             batch.Begin();

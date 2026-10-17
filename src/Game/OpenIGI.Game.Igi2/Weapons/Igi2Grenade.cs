@@ -88,9 +88,6 @@ public interface IIgi2GrenadeEffects
 /// <summary>A grenade's effects that do nothing: the grenade is silent, and at its end simply gone.</summary>
 public sealed class Igi2NoGrenadeEffects : IIgi2GrenadeEffects
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2NoGrenadeEffects Instance { get; } = new();
-
     /// <inheritdoc/>
     public void Explode(in Igi2GrenadeExplosion explosion)
     {
@@ -369,7 +366,7 @@ public sealed class Igi2Grenades(
     public IEnumerable<Igi2Grenade> Flying => Dynamic.Tasks.OfType<Igi2Grenade>();
 
     /// <summary>Gets or sets what a grenade's end shows and does.</summary>
-    public IIgi2GrenadeEffects Effects { get; set; } = Igi2NoGrenadeEffects.Instance;
+    public IIgi2GrenadeEffects Effects { get; set; } = new Igi2NoGrenadeEffects();
 
     /// <summary>Gets or sets where an impact grenade's blast goes off, or <see langword="null"/> for a level where none can.</summary>
     public Igi2ExplosionWorld? Explosions { get; set; }

@@ -137,7 +137,7 @@ public sealed class RetailIgi2LevelLoadTests
 
         public Harness(string scriptPath, IReadOnlyList<string>? structuralTypes = null, bool loadTables = false)
         {
-            Igi2Runtime title = Igi2Runtime.Instance;
+            Igi2Runtime title = new Igi2Runtime();
             Loop = new GameLoop(
                 new ManualTimeSource(1_000),
                 structuralTypes: structuralTypes ?? title.Layout.StructuralTaskTypes);

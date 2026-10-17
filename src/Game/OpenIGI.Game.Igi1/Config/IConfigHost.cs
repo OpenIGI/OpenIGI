@@ -69,9 +69,6 @@ public interface IConfigHost
 /// </remarks>
 public sealed class NullConfigHost : IConfigHost
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static NullConfigHost Instance { get; } = new();
-
     /// <inheritdoc/>
     public int DefaultDisplayMode => 0;
 

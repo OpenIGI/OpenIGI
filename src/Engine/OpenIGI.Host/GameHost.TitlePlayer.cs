@@ -291,7 +291,7 @@ internal sealed partial class GameHost
                 context.Print(gates);
                 context.Print(FormattableString.Invariant(
                     $"blend={_titlePresentationBlend:F4}, pendingMouse=({_titleMouseX:F3},{_titleMouseY:F3}), ticks={_loop.Clock.TickCount}, renders={_loop.Clock.FrameCount}, titleTickMs mean={_titleTickMilliseconds / Math.Max(1, _titleMeasuredTicks):F3} max={_titleTickMaximumMilliseconds:F3} samples={_titleMeasuredTicks}"));
-                Diagnostics.PresentationPacingProbe.Report("title_presentation");
+                _pacing.Report("title_presentation");
             });
 
         console.Commands.Add(

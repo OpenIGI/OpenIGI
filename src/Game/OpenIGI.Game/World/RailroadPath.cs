@@ -85,7 +85,7 @@ internal sealed class RailroadPath
         int upper = Array.BinarySearch(
             _samples,
             new SplineSample(distance, 0, 0d),
-            SplineSampleDistanceComparer.Instance);
+            ByDistance);
         if (upper < 0)
         {
             upper = ~upper;
@@ -178,9 +178,7 @@ internal sealed class RailroadPath
 
     private readonly record struct SplineSample(double Distance, int Segment, double T);
 
-    private sealed class SplineSampleDistanceComparer : IComparer<SplineSample>
-    {
-        public static readonly SplineSampleDistanceComparer Instance = new();
-        public int Compare(SplineSample x, SplineSample y) => x.Distance.CompareTo(y.Distance);
-    }
+    // The samples are in distance order, and searched by it.
+    private static readonly Comparer<SplineSample> ByDistance = Comparer<SplineSample>.Create(
+        static (x, y) => x.Distance.CompareTo(y.Distance));
 }

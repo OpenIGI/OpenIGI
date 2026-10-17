@@ -107,7 +107,7 @@ public sealed class RetailIgi2MissionCatalogueTests
         // the first, Container is registered with no parameters and every I.G.I. 2 level refuses to load
         // -- the level's own editor declares it with one, which is the whole reason the set is the
         // title's to supply.
-        Igi2Runtime title = Igi2Runtime.Instance;
+        Igi2Runtime title = new Igi2Runtime();
         GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: title.Layout.StructuralTaskTypes);
         TitleSession session = TitleSession.Start(title.Modules, loop, files, resources, loadTables: false);
 

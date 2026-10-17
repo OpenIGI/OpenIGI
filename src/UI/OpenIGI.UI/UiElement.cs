@@ -100,6 +100,10 @@ public abstract class UiElement
     /// </remarks>
     public bool IsHitTestTransparent { get; set; }
 
+    /// <summary>Gets or sets where this element and everything under it play their feedback sounds.</summary>
+    /// <remarks>The nearest element up the tree that has one decides; with none the element is silent.</remarks>
+    public IUiSoundSink? Sounds { get; set; }
+
     /// <summary>Gets the parent element, or <see langword="null"/> for the root.</summary>
     public UiElement? Parent { get; private set; }
 
@@ -204,6 +208,20 @@ public abstract class UiElement
         }
 
         return null;
+    }
+
+    /// <summary>Plays a feedback sound through the nearest <see cref="Sounds"/> up the tree.</summary>
+    /// <param name="name">The sound, one of <see cref="UiSounds"/>.</param>
+    public void PlaySound(string name)
+    {
+        for (UiElement? element = this; element is not null; element = element.Parent)
+        {
+            if (element.Sounds is { } sounds)
+            {
+                sounds.Play(name);
+                return;
+            }
+        }
     }
 
     /// <summary>Finds the nearest ancestor of a given type, starting with this element.</summary>

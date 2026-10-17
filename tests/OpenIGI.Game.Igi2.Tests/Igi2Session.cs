@@ -18,8 +18,8 @@ internal sealed record Igi2Session(TitleSession Session, GameLoop Loop)
     {
         VirtualFileSystem files = new();
         files.RegisterDevice(new LocalFileDevice(GameDataSource.Igi2.RequireRoot()));
-        GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: Igi2Runtime.Instance.Layout.StructuralTaskTypes);
-        TitleSession session = TitleSession.Start(Igi2Runtime.Instance.Modules, loop, files, new ResourceRegistry(files), loadTables: true);
+        GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: new Igi2Runtime().Layout.StructuralTaskTypes);
+        TitleSession session = TitleSession.Start(new Igi2Runtime().Modules, loop, files, new ResourceRegistry(files), loadTables: true);
         return new Igi2Session(session, loop);
     }
 

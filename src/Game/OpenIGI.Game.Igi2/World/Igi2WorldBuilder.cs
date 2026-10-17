@@ -35,9 +35,6 @@ namespace OpenIGI.Game.Igi2.World;
 /// </remarks>
 public sealed class Igi2WorldBuilder : ITitleWorldBuilder
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2WorldBuilder Instance { get; } = new();
-
     /// <inheritdoc/>
     public WorldBuildResult Build(in WorldBuildRequest request)
     {

@@ -17,7 +17,7 @@ internal static class Igi2PlayerFakes
     {
         FakeAnimation animation = new();
         FakeSurroundings surroundings = new();
-        return (new Igi2HumanPlayer(weapon ?? Igi2NoWeaponControl.Instance, animation, surroundings), animation, surroundings);
+        return (new Igi2HumanPlayer(weapon ?? new Igi2NoWeaponControl(), animation, surroundings), animation, surroundings);
     }
 
     /// <summary>Builds a living player standing on a flat floor, with recording doubles.</summary>
