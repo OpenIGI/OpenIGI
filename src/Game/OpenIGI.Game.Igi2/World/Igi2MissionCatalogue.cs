@@ -188,13 +188,11 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
 
     private static string First(string value) => value.Length > 0 ? value[..1] : string.Empty;
 
-    private static string Normalize(string path) => path.Replace('\\', '/').TrimEnd('/');
-
     private QvmValue Define(QvmCallContext call)
     {
-        string missionDirectory = Normalize(call.GetString(8));
-        string commonDirectory = Normalize(call.GetString(9));
-        string levelDirectory = Normalize(call.GetString(10));
+        string missionDirectory = Core.ResourcePath.NormalizeDirectory(call.GetString(8));
+        string commonDirectory = Core.ResourcePath.NormalizeDirectory(call.GetString(9));
+        string levelDirectory = Core.ResourcePath.NormalizeDirectory(call.GetString(10));
         string commonPack = call.GetString(11);
         string levelPack = call.GetString(12);
 
