@@ -13,7 +13,7 @@ namespace OpenIGI.Host;
 /// The march finds the level's placements in its distance field and nothing else; the terrain is not one
 /// of them. See <see cref="TerrainHeightRaster"/>.
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>How far past the built-up area the raster reaches, in metres.</summary>
     private const double TerrainRasterMargin = 32.0;

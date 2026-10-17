@@ -49,7 +49,7 @@ namespace OpenIGI.Host;
 /// same handover with the title changed as well.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>The category title diagnostics are logged under.</summary>
     private const string TitleLogCategory = "Title";

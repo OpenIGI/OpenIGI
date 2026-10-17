@@ -39,7 +39,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// overlapping them, which the fixed step cannot do.
 /// </para>
 /// </remarks>
-internal sealed class StatusMessageRenderer : IDisposable
+public sealed class StatusMessageRenderer : IDisposable
 {
     private const string LogCategory = "Messages";
 

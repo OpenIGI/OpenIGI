@@ -1077,7 +1077,7 @@ public sealed class PlayerCamera
     /// locomotion, X/Y move the human task while the current root Z is presentation height; applying Z here
     /// as well would lift the task and then add the same vault height again when the body is drawn.
     /// </remarks>
-    internal void ApplyInteractionRootMotion(Vector3d rootDelta)
+    public void ApplyInteractionRootMotion(Vector3d rootDelta)
     {
         if (_activeInteraction?.Type != InteractionActivateType.Fence)
         {

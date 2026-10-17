@@ -165,6 +165,37 @@ public sealed class LayeringTests
             "A project the launcher draws with names the game's renderer:\n  " + string.Join("\n  ", broken));
     }
 
+    /// <summary>
+    /// No library grants its internals to another library or an app: what one project needs of another is public, so a
+    /// mod or a third title can reach it the same way. The test suites may see in, and a title's game may to its own
+    /// presentation, the two halves of one title.
+    /// </summary>
+    [Fact]
+    public void Internals_are_seen_only_by_tests_and_a_title_s_own_presentation()
+    {
+        System.Text.RegularExpressions.Regex grant = new(@"InternalsVisibleTo\(""([\w.]+)""\)");
+        List<string> broken = [];
+
+        foreach (ProjectInfo project in RepositoryLayout.Projects.Values.Where(static p => p.Area == "src"))
+        {
+            foreach (string path in project.Sources())
+            {
+                foreach (System.Text.RegularExpressions.Match match in grant.Matches(File.ReadAllText(path)))
+                {
+                    string to = match.Groups[1].Value;
+                    bool test = to.EndsWith(".Tests", StringComparison.Ordinal) || to.EndsWith(".Benchmarks", StringComparison.Ordinal);
+                    bool ownTitle = Titles.Any(title => title[0] == project.Name && title.Contains(to, StringComparer.Ordinal));
+                    if (!test && !ownTitle)
+                    {
+                        broken.Add($"{project.Name} -> {to}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(broken.Count == 0, "These grant their internals to a library or an app; make what is needed public:\n  " + string.Join("\n  ", broken));
+    }
+
     /// <summary>Every project the rules name still exists, so a rename cannot quietly disarm a rule.</summary>
     [Fact]
     public void The_rules_name_projects_that_exist()

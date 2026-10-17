@@ -32,7 +32,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// around world Z, 8/2 around X, 9/7 around Y, and 5 clears the re-orientation and returns to noon.
 /// </para>
 /// </remarks>
-internal sealed class DayNightCycle
+public sealed class DayNightCycle
 {
     /// <summary>Real seconds a held scrub key takes to advance a whole day.</summary>
     public const float SecondsPerDay = 30f;

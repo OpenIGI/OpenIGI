@@ -25,7 +25,7 @@ using OpenIGI.Game.Igi1.World;
 namespace OpenIGI.Host;
 
 /// <summary>The audio half of the composition root: opening the device and keeping the buses levelled.</summary>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>The menu system's own sound archive, which the original mounts apart from any mission.</summary>
     private const string MenuSoundArchive = "LOCAL:menusystem/sound/sounds.res";

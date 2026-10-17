@@ -31,7 +31,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// eye and a time.
 /// </para>
 /// </remarks>
-internal sealed class WorldTitleRenderer
+public sealed class WorldTitleRenderer
 {
     /// <summary>One line of the caption.</summary>
     /// <param name="Text">What it says.</param>

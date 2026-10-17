@@ -33,7 +33,7 @@ using OpenIGI.Host.Configuration;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];

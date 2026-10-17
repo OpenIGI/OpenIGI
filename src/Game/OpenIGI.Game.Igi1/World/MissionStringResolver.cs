@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// still produces <c>RM: &lt;key&gt;</c>, which is what the original puts on screen rather than a blank.
 /// </para>
 /// </remarks>
-internal sealed class MissionStringResolver
+public sealed class MissionStringResolver
 {
     private readonly ResourceRegistry _resources;
     private readonly MenuStringTable _menuStrings;

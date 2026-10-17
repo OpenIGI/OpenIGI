@@ -50,7 +50,7 @@ namespace OpenIGI.Host;
 /// the frame loop, and tears everything down. The startup and per-frame body lives in <see cref="Run"/>;
 /// mission loading, lighting and the menu shell are in the sibling partials.
 /// </summary>
-internal sealed partial class GameHost : IDisposable, IInspectedWorld
+public sealed partial class GameHost : IDisposable, IInspectedWorld
 {
     // The camera's clip planes, both measured out of the original's own renderer setup -- see
     // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly

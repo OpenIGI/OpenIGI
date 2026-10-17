@@ -25,7 +25,7 @@ namespace OpenIGI.Host;
 /// arithmetic.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // The lighting the last frame handed the renderer, and its sun in world space (the handed one is in
     // view space). Recorded unconditionally: two struct copies a frame cost nothing.

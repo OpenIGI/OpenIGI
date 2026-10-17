@@ -26,7 +26,7 @@ namespace OpenIGI.Host;
 /// and every system that reads the host's rig sees no player.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     private const double TitleUnitsPerMetre = 4096.0;
 

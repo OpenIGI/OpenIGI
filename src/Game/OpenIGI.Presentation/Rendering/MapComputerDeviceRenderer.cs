@@ -15,7 +15,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// camera-relative rather than a weapon-bone model: treating it as a gun is what produced the diagonal
 /// black slab in the first implementation.
 /// </remarks>
-internal sealed class MapComputerDeviceRenderer : IDisposable
+public sealed class MapComputerDeviceRenderer : IDisposable
 {
     private const string LogCategory = "Computer";
     private const string ModelName = "mapcomputer";
@@ -34,6 +34,10 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
     private bool _disposed;
     private float _widthMetres = DefaultWidthMetres;
 
+    /// <summary>Initializes a new instance of the <see cref="MapComputerDeviceRenderer"/> class.</summary>
+    /// <param name="device">The device the model is uploaded to and drawn with.</param>
+    /// <param name="resources">The resources the common pack's device model is read from.</param>
+    /// <param name="logger">Told when the model does not load.</param>
     public MapComputerDeviceRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger logger)
     {
         _device = device;
@@ -158,6 +162,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)

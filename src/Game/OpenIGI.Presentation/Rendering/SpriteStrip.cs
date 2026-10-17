@@ -15,7 +15,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <param name="V0">The top edge.</param>
 /// <param name="U1">The right edge.</param>
 /// <param name="V1">The bottom edge.</param>
-internal readonly record struct SpriteStripFrame(float U0, float V0, float U1, float V1)
+public readonly record struct SpriteStripFrame(float U0, float V0, float U1, float V1)
 {
     /// <summary>Gets the whole texture, for a strip with no frames.</summary>
     public static SpriteStripFrame Full => new(0f, 0f, 1f, 1f);
@@ -27,7 +27,7 @@ internal readonly record struct SpriteStripFrame(float U0, float V0, float U1, f
 /// <remarks>
 /// One texture, so a particle system draws every frame of its sprite in one batch and picks a frame by its rectangle.
 /// </remarks>
-internal readonly record struct SpriteStrip(TextureHandle Texture, SpriteStripFrame[] Frames)
+public readonly record struct SpriteStrip(TextureHandle Texture, SpriteStripFrame[] Frames)
 {
     /// <summary>Gets the strip of a sprite that could not be loaded: no texture and no frames.</summary>
     public static SpriteStrip Empty => new(TextureHandle.None, []);

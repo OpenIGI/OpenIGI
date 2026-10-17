@@ -4,7 +4,7 @@ using OpenIGI.UI.Rhi;
 namespace OpenIGI.Host;
 
 /// <summary>The menu's frosted glass: the device's blurred frame, restated in the interface's units.</summary>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     private BackdropBlur? _backdropBlur;
     private RhiBackdrop? _backdropForUi;

@@ -12,7 +12,7 @@ using OpenIGI.Game.Igi1.Player;
 namespace OpenIGI.Host;
 
 /// <summary>The switch between renderers: asking for it, and picking the game back up after it.</summary>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // How many frames the switched-from picture is read over. The RHI copies the presented frame back only
     // once asked to, so the first read of a session is black and a frame or two later it holds the picture.

@@ -7,10 +7,10 @@ using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>The category memory reports are logged under.</summary>
-    internal const string MemoryLogCategory = "Memory";
+    public const string MemoryLogCategory = "Memory";
 
     /// <summary>Registers <c>mem_report</c>.</summary>
     /// <param name="console">The console to register with.</param>

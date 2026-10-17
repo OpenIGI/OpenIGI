@@ -10,7 +10,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// Keeping the model in this shallower foreground depth range preserves its own depth ordering. The
 /// foreground pass then resets its depth before drawing the rig, so close world geometry cannot occlude it.
 /// </remarks>
-internal static class ViewModelProjection
+public static class ViewModelProjection
 {
     /// <summary>The retail layer-zero near plane, in metres.</summary>
     internal const float NearPlane = 0.05f;

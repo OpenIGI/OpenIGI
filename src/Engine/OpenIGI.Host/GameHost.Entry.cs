@@ -10,7 +10,7 @@ using System.Diagnostics;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // The two animation sets every mission uses: skeleton 0's, which the player's body walks on, and
     // skeleton 5's, the first-person rig the held weapon hangs off. They live under common/ rather than

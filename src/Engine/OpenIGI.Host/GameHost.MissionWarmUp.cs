@@ -17,7 +17,7 @@ using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>The mission-name table, so the card titles a level the way the campaign screen did.</summary>
     private MenuStringTable? _menuStrings;

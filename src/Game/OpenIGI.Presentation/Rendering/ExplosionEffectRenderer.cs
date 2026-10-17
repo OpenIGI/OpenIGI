@@ -31,7 +31,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// to the procedural burst so a blast is never invisible.
 /// </para>
 /// </remarks>
-internal sealed class ExplosionEffectRenderer : IDisposable
+public sealed class ExplosionEffectRenderer : IDisposable
 {
     /// <summary>The retail fireball sprite (<c>dword_5C1158</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "fireball.spr";

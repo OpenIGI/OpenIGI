@@ -7,7 +7,7 @@ namespace OpenIGI.Presentation.Cameras;
 /// Places the free camera so a mission opens looking at the level rather than at the inside of whichever
 /// object happens to sit at the origin.
 /// </summary>
-internal static class FreeCameraFactory
+public static class FreeCameraFactory
 {
     /// <summary>Builds a free camera backed off the centre of what the scene placed, looking slightly down.</summary>
     /// <param name="scene">The built scene whose placements decide the centre.</param>

@@ -27,7 +27,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// loads <c>alarmlight.spr</c>. Presentation only, on the fixed tick.
 /// </para>
 /// </remarks>
-internal sealed class SmokeSpriteRenderer : IDisposable
+public sealed class SmokeSpriteRenderer : IDisposable
 {
     /// <summary>The retail smoke sprite (<c>dword_5C1160</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "smoke2.spr";

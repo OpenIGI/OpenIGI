@@ -6,7 +6,7 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // The density and resolution the structures currently in memory were actually built at, so a change
     // to either can be noticed and rebuilt from rather than quietly ignored until the next level load.

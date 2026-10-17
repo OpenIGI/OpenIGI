@@ -23,7 +23,7 @@ namespace OpenIGI.Host;
 /// key is read.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>How far down the crosshair a lamp may stand and still be switchable, in metres.</summary>
     /// <remarks>

@@ -13,7 +13,7 @@ using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>
     /// Makes a preview built on a worker the live backdrop, doing on the render thread only what has to

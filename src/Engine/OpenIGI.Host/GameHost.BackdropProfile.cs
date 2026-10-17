@@ -3,7 +3,7 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // Whether the lite profile's overrides are in force, so they are applied and cleared once per change
     // rather than every frame.

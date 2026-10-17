@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// walks through its own "Graph ID" parameter (ai.md 7.6). Level 1 ships eleven of them: giving every soldier the single
 /// largest one routed each over node ids from a graph that was not its own, off the edge of the level.
 /// </remarks>
-internal static class NavGraphs
+public static class NavGraphs
 {
     /// <summary>Reads every <c>graph&lt;id&gt;.dat</c> under a mission's graph directory.</summary>
     /// <param name="directory">The mission's <c>graphs</c> directory; a missing one has no graphs.</param>

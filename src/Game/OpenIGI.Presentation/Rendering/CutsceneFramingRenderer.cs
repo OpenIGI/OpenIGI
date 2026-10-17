@@ -6,7 +6,7 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>What a cutscene draws over its picture: the retail line and handicam filters, the band, and the letterbox.</summary>
-internal static class CutsceneFramingRenderer
+public static class CutsceneFramingRenderer
 {
     /// <summary>Draws a cutscene's framing over the frame: its line, band or handicam filter and its letterbox.</summary>
     /// <param name="device">The device, whose 2D projection the framing is drawn in.</param>

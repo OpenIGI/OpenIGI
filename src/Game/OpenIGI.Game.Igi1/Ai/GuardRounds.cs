@@ -9,7 +9,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>What a guard's round reaches beyond the soldiers: the player, and the sound and picture of the hits.</summary>
-internal interface IGuardRoundHost
+public interface IGuardRoundHost
 {
     /// <summary>Gets the player's rig, or <see langword="null"/> while none stands in the level.</summary>
     PlayerCamera? Player { get; }
@@ -70,7 +70,7 @@ internal interface IGuardRoundHost
 /// is on target -- the original hands that same figure to the gun with every shot (ai.md 11.6), so a miss is a round
 /// that went somewhere else rather than a round that never existed.
 /// </remarks>
-internal sealed class GuardRounds
+public sealed class GuardRounds
 {
     private readonly SoldierSimulation _soldiers;
     private readonly WorldTraceCast _trace;

@@ -14,7 +14,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// here once rather than being copied into each renderer. Everything takes already-scaled pixel values;
 /// callers apply <see cref="LayoutContext.Px(float)"/> before handing sizes in.
 /// </remarks>
-internal static class UiVectors
+public static class UiVectors
 {
     /// <summary>Draws a run of text with an even extra gap between glyphs.</summary>
     /// <returns>The advance width of the run.</returns>

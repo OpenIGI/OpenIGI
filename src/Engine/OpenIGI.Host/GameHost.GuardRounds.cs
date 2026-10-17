@@ -10,7 +10,7 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // The guards' rounds this mission, once the brains are animated.
     private GuardRounds? _guardRounds;

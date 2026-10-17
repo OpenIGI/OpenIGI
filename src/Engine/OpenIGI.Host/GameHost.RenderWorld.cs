@@ -46,7 +46,7 @@ using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>Draws a frame of the world: the shadows, the scene, its lighting and effects, and what is drawn over it.</summary>
     /// <param name="state">What the frame loop keeps from one frame to the next.</param>

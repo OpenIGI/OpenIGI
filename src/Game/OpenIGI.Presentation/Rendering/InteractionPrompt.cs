@@ -207,7 +207,7 @@ public static class InteractionPromptPresentation
 /// jumping to the screen centre or blinking off.
 /// </para>
 /// </remarks>
-internal sealed class InteractionPromptAnimation
+public sealed class InteractionPromptAnimation
 {
     /// <summary>How long the marker takes to reach full opacity.</summary>
     public const float FadeInSeconds = 0.11f;
