@@ -102,6 +102,9 @@ public sealed class Igi2LevelRun
     /// <remarks>Its <c>QCamera_Set</c> is at a priority of 1000, over the player's 300, so it is what the level shows.</remarks>
     public Igi2CutsceneView? CutsceneView { get; private set; }
 
+    /// <summary>Gets or sets which of the level's sector portals its doors leave open, which the sector walk reads.</summary>
+    public World.Igi2SectorPortals? SectorPortals { get; set; }
+
     /// <summary>Gets or sets the random stream cutscene cameras shake by, the session's; none draws nothing.</summary>
     public Igi2CutsceneShake? CutsceneShake { get; set; }
 

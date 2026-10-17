@@ -338,9 +338,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         }
 
         Sound();
-
-        // What follows links the door to the sector portal it stands in, which is not ported: no portal is found
-        // (iPortal1 stays 0xFFFF) and the handler ends here.
+        RunPortal();
     }
 
     /// <summary>

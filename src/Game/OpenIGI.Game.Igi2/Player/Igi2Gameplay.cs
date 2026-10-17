@@ -544,9 +544,8 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         // The microphone hears from the game's camera, inside whatever sector it stands in; each ambient area plays to it.
         Func<string, Formats.World.MefModel?> sceneModels = Models(request.World);
-        Igi2SectorLocator locator = new(
-            player.CollisionWorld,
-            World.Igi2SectorGraph.Build(root, model => sceneModels(model)?.Portals));
+        World.Igi2SectorGraph sectors = World.Igi2SectorGraph.Build(root, model => sceneModels(model)?.Portals);
+        Igi2SectorLocator locator = new(player.CollisionWorld, sectors);
         Audio.Igi2CameraListener listener = new(
             () => level.CutsceneView?.Position ?? player.Human.View.Position,
             locator,
@@ -851,6 +850,17 @@ public sealed class Igi2Gameplay : ITitleGameplay
             door.Bind(player.CollisionWorld.SolidsOf(Interaction.Igi2DoorTask.TypeName, door.Id));
             activatables.Add(door);
             movers.Add(door);
+        }
+
+        // Each door finds the sector portal it stands in once every door has its solid: Door_UpdateInternalDataHandler's
+        // Door_AttachToPortal, against the stationary world.
+        World.Igi2SectorPortals portals = new(player.CollisionWorld, sectors);
+        level.SectorPortals = portals;
+        foreach (Interaction.Igi2DoorTask door in Descendants(root).OfType<Interaction.Igi2DoorTask>())
+        {
+            door.Portals = portals;
+            door.Camera = () => level.CutsceneView?.Position ?? player.Human.View.Position;
+            door.AttachToPortal(player.CollisionWorld);
         }
 
         // Spline path guides connect to the models they move once the level is loaded; those models move, and are drawn moving.

@@ -221,8 +221,8 @@ public sealed class Igi2VisibleSector
 /// (<c>ModelObj_GetLOD</c>) and skips one that returns <c>-1</c>; it also skips a portal whose
 /// per-object status byte is zero, which is what a door drives
 /// (<c>Sector_SetPortalOpen</c>, <c>igi2ed.exe 0x42AFD0</c>, writes <c>ptSector + iPortal + 352</c>).
-/// Neither has a home in the port yet, so LOD is ignored and the open/closed state arrives through the
-/// <c>isPortalOpen</c> delegate.
+/// LOD is ignored, and the open/closed state arrives through the <c>isPortalOpen</c> delegate, which
+/// <see cref="Igi2SectorPortals.IsOpen"/> answers from the doors.
 /// </para>
 /// </remarks>
 public sealed class Igi2PortalCulling

@@ -111,6 +111,61 @@ public sealed class RetailIgi2DoorTests
     }
 
     /// <summary>
+    /// Mission 1's doors find the sector portals they stand in (<c>Door_AttachToPortal</c>), each writing its two portals shut
+    /// while it is shut; told to open, a door counts its portals open, and come to rest shut, counts them shut again.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_door_opens_and_shuts_the_portals_it_stands_in()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
+        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Root, model => m.Level.ModelFor(model)?.Portals);
+        Igi2SectorPortals portals = new(m.Collision!, graph);
+        foreach (Igi2DoorTask each in m.Doors)
+        {
+            each.Portals = portals;
+            each.AttachToPortal(m.Collision!);
+        }
+
+        List<Igi2DoorTask> linked = [.. m.Doors.Where(static d => d.Portal1 != Igi2DoorTask.NoPortal)];
+        Assert.NotEmpty(linked);
+        Assert.All(linked, d => Assert.InRange(d.Portal2, 0, Igi2SectorPortals.Capacity - 1));
+
+        // A sector's portals start open; the ones a shut door stands in are shut.
+        Assert.Contains(Enumerable.Range(0, graph.Sectors.Count), s => !portals.IsOpen(s, linked[0].Portal1) || !portals.IsOpen(s, linked[0].Portal2));
+
+        Igi2DoorTask door = linked[0];
+        int open = OpenSectors(graph, portals);
+        door.ToggleOpen(door.Position);
+        m.Run.Tick();
+        Assert.True(OpenSectors(graph, portals) > open);
+
+        door.ToggleOpen(door.Position);
+        for (int i = 0; i < 300 && !door.IsClosed; i++)
+        {
+            m.Run.Tick();
+        }
+
+        m.Run.Tick();
+        Assert.True(door.IsClosed);
+        Assert.Equal(open, OpenSectors(graph, portals));
+
+        // Shut, with the camera nearer where it is drawn at the portal than its own place, it stands at the portal; with the
+        // camera back at its own place, it stands there again.
+        Assert.NotEqual(door.Position, door.PortalPosition);
+        door.Camera = () => door.PortalPosition;
+        m.Run.Tick();
+        Assert.True(door.IsAttachedToPortal);
+        Assert.NotEqual(door.Position, door.CurrentPosition);
+        door.Camera = () => door.Position;
+        m.Run.Tick();
+        Assert.False(door.IsAttachedToPortal);
+        Assert.Equal(door.Position, door.CurrentPosition);
+    }
+
+    private static int OpenSectors(Igi2SectorGraph graph, Igi2SectorPortals portals) =>
+        Enumerable.Range(0, graph.Sectors.Count).Sum(s => Enumerable.Range(0, Igi2SectorPortals.Capacity).Count(p => portals.IsOpen(s, p)));
+
+    /// <summary>
     /// A door that opens both ways swings away from the side it is opened from; one that does not keeps its level's angle.
     /// Mission 1 has none that opens both ways, so the large building's door is given the parameter.
     /// </summary>
