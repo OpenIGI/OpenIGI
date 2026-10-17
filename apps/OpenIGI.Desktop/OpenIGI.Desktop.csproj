@@ -37,6 +37,7 @@
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Loader\OpenIGI.Modding.Loader.csproj" />
     <ProjectReference Include="..\..\src\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\src\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />

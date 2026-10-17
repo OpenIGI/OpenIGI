@@ -46,6 +46,21 @@ public sealed class LevelSystemsTests
         Assert.Single(seen);
     }
 
+    [Fact]
+    public void Edits_run_in_order_over_the_lists_of_their_build_type_alone()
+    {
+        TestBuild build = Build();
+        LevelSystemEdits edits = new LevelSystemEdits()
+            .Add<TestBuild>(s => s.InsertBefore("a", Log("before")))
+            .Add<OtherBuild>(_ => throw new InvalidOperationException("Another title's edit ran."))
+            .Add<TestBuild>(s => s.Remove("a"));
+
+        edits.Apply(new LevelSystems<TestBuild>().Add(Log("a")).Add(Log("b"))).BuildAll(build);
+
+        Assert.Equal(3, edits.Count);
+        Assert.Equal(["before", "b"], build.Ran);
+    }
+
     private static LevelSystem<TestBuild> Log(string name) => new(name, b => b.Ran.Add(name));
 
     private static TestBuild Build()
@@ -66,6 +81,8 @@ public sealed class LevelSystemsTests
         {
         }
     }
+
+    private sealed class OtherBuild(LevelRun run, IServiceCatalog services) : LevelBuild(run, services);
 
     private sealed class TestBuild(LevelRun run, IServiceCatalog services) : LevelBuild(run, services)
     {

@@ -502,7 +502,10 @@ public sealed class Igi2Gameplay : ITitleGameplay
     /// <summary>The level's tick, with the player bound to its <c>HumanPlayer</c> task, as <c>Flow_RunChildren</c> (<c>igi2 0x401A50</c>) runs it.</summary>
     /// <param name="request">The level and the session.</param>
     /// <param name="player">The player.</param>
-    /// <param name="systems">The systems that bring the level up, in order; the title's own (<see cref="Igi2LevelSystems.Create"/>) when none.</param>
+    /// <param name="systems">
+    /// The systems that bring the level up, in order; when none, the title's own (<see cref="Igi2LevelSystems.Create"/>) with
+    /// the session's <see cref="LevelSystemEdits"/> made to them.
+    /// </param>
     /// <returns>The level's run, or <see langword="null"/> when the level's scripts are not at hand or it places no player in its tree.</returns>
     /// <remarks>
     /// Everything the level's tasks are handed before the first tick is a <see cref="ILevelSystem{TBuild}"/> of
@@ -522,7 +525,16 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         Igi2LevelRun level = new(root, natives, functions) { Dynamic = player.Dynamic };
         Igi2LevelBuild build = new(request, player, level, natives, functions, task, Models(request.World));
-        (systems ?? Igi2LevelSystems.Create()).BuildAll(build);
+        if (systems is null)
+        {
+            systems = Igi2LevelSystems.Create();
+            if (request.Services.TryGet(out LevelSystemEdits? edits))
+            {
+                edits.Apply(systems);
+            }
+        }
+
+        systems.BuildAll(build);
         return level;
     }
 

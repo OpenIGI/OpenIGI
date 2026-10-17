@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Loader\OpenIGI.Modding.Loader.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <!-- Built, not referenced: the tests load it as a mod is loaded, from a directory of its own. -->
+    <ProjectReference Include="..\OpenIGI.Modding.SampleMod\OpenIGI.Modding.SampleMod.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <!-- The sample mod's assembly and its dependency manifest, beside the tests, where a test installs it from. -->
+  <Target Name="CopySampleMod" AfterTargets="Build">
+    <MSBuild Projects="..\OpenIGI.Modding.SampleMod\OpenIGI.Modding.SampleMod.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="SampleModAssembly" />
+    </MSBuild>
+    <Copy SourceFiles="@(SampleModAssembly);@(SampleModAssembly->'%(RootDir)%(Directory)%(Filename).deps.json')" DestinationFolder="$(OutDir)SampleMod" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -11,6 +11,9 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host;
+using OpenIGI.Host.Titles;
+using OpenIGI.Modding;
+using OpenIGI.Modding.Loader;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
 using OpenIGI.Rendering.Pipeline;
@@ -65,6 +68,21 @@ catch (ArgumentException ex)
 string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDirectory, Environment.CurrentDirectory }
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
+
+// The mods: every directory holding a mod.json under mods/ beside the executable, or under OPENIGI_MODS, applied to
+// the games they name before either is resolved, so whichever is chosen is the modded one. OPENIGI_MODS=off plays the
+// games as they ship.
+string? modsSetting = Environment.GetEnvironmentVariable("OPENIGI_MODS");
+if (!string.Equals(modsSetting, "off", StringComparison.OrdinalIgnoreCase))
+{
+    ModSet mods = ModLoader.Load(
+        string.IsNullOrWhiteSpace(modsSetting) ? Path.Combine(SettingsPaths.ExecutableDirectory, "mods") : modsSetting,
+        logger);
+    foreach (TitlePackage package in TitleCatalog.Titles.Packages.ToArray())
+    {
+        TitleCatalog.Titles.Replace(package with { Runtime = mods.Extend(package.Runtime) });
+    }
+}
 
 // The title this build runs, chosen here because the composition root is the only place that may name
 // one. Everything below takes the runtime and never asks which game it is.

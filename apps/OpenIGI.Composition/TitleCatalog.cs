@@ -75,7 +75,7 @@ public static class TitleCatalog
 
     /// <summary>Gets the title used when nothing selects one.</summary>
     /// <remarks>Project I.G.I., the first title the port played.</remarks>
-    public static IGameTitleRuntime Default => Igi1Runtime.Instance;
+    public static IGameTitleRuntime Default => Titles.Get(GameTitle.Igi1).Runtime;
 
     /// <summary>Names the environment variable that says where one title is installed.</summary>
     /// <param name="title">The title.</param>

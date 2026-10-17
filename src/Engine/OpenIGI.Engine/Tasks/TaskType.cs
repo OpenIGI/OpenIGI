@@ -11,7 +11,7 @@ namespace OpenIGI.Engine.Tasks;
 /// </remarks>
 public sealed class TaskType
 {
-    private readonly Func<GameTask> _factory;
+    private Func<GameTask> _factory;
 
     internal TaskType(int id, string name, TaskType? parent, Func<GameTask> factory, bool isDeclarationOnly)
     {
@@ -119,6 +119,9 @@ public sealed class TaskType
 
     /// <inheritdoc/>
     public override string ToString() => Name;
+
+    // Swaps the class that implements this type, keeping its id, its name and its parent.
+    internal void Reimplement(Func<GameTask> factory) => _factory = factory;
 
     internal GameTask CreateInstance()
     {
