@@ -78,7 +78,7 @@ internal sealed partial class GameHost
         // replaced every time the player settles on a different mission rather than once per game. Dropping
         // the reference without disposing would leak a level's textures per row of the list.
         _world?.Dispose();
-        _world = _presentation.CreateWorld(new WorldPresentationRequest(_device, preview.Resources, _logger));
+        _world = _presentation.Presenters.Create<WorldPresentationRequest, IWorldPresenter>(new WorldPresentationRequest(_device, preview.Resources, _logger));
         if (_world is not null)
         {
             _world.Materials = _materials;
@@ -111,11 +111,11 @@ internal sealed partial class GameHost
         // none either. That is why I.G.I. 2 drew its ground from -mission and not from the menu: the two
         // routes were asking different questions of the same title.
         _terrain?.Dispose();
-        _terrain = _presentation.CreateGround(
+        _terrain = _presentation.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(
             new GroundPresentationRequest(_device, preview.LevelRoot, preview.Resources, _logger));
 
         _terrain ??= preview.TerrainSurface is { } surface
-            ? _presentation.CreateTerrain(new TerrainPresentationRequest(
+            ? _presentation.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(new TerrainPresentationRequest(
                 _device, surface, _logger, _detailMaps, preview.GroundDetail))
             : null;
 
@@ -168,7 +168,7 @@ internal sealed partial class GameHost
         // directly; the sequel's resolves them as resources, so it asked for MISSION:... and got a fatal
         // "device not present" -- which took the process down the first time a backdrop was built for it.
         _sky?.Dispose();
-        _sky = _presentation.CreateSky(
+        _sky = _presentation.Presenters.Create<SkyPresentationRequest, ISkyPresenter>(
             new SkyPresentationRequest(
                 _device, preview.LevelRoot, preview.FileSystem, preview.Resources, FarPlane, _logger));
         _globalLight = GlobalLightSettings.Read(preview.LevelRoot);

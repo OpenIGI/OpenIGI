@@ -783,8 +783,8 @@ internal sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
         MissionStringResolver missionText = b.MissionText!;
 
-        _computerHighlights = _presentation.CreateComputerHighlights(new ComputerHighlightRequest(levelRoot, _loop.Variables));
-        _mapComputer = _presentation.CreateMapComputer(
+        _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables));
+        _mapComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
         if (_mapComputer is not null && !_mapComputer.Load(_fileSystem))
         {
@@ -802,7 +802,7 @@ internal sealed partial class GameHost
         // Both presentations are built, and r_computer_tactical decides which is drawn — see
         // GameHost.TacticalComputer. The retail pair above needs the installation's own archives; this
         // one needs only the shipped faces, so a mission whose computer.res is missing still has a map.
-        _tacticalComputer = _presentation.CreateTacticalComputer(
+        _tacticalComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, ITacticalComputerPresenter>(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
         if (_tacticalComputer is not null && !_tacticalComputer.Load())
         {
@@ -876,7 +876,7 @@ internal sealed partial class GameHost
             // the collision index, the destructibles and the cut-scene bindings below all attach to it.
             // A title that has not written one yet can still show a menu, and says so here rather than
             // by a null reference three hundred lines later.
-            world = _presentation.CreateWorld(new WorldPresentationRequest(_device, _resources, _logger))
+            world = _presentation.Presenters.Create<WorldPresentationRequest, IWorldPresenter>(new WorldPresentationRequest(_device, _resources, _logger))
                 ?? throw new InvalidOperationException(
                     "The title supplies no world presenter, so it cannot load a mission yet.");
 
@@ -1123,7 +1123,7 @@ internal sealed partial class GameHost
         _mission.SecurityCameras.BindScene(scene.Placements);
         world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
-        _cameraStatusLights = _presentation.CreateCameraStatusLights(EffectsRequest());
+        _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
         if (_cameraStatusLights is not null && !_cameraStatusLights.Load(_fileSystem))
         {
             _cameraStatusLights.Dispose();
@@ -1583,18 +1583,18 @@ internal sealed partial class GameHost
             // already built as a TerrainSurface answers CreateTerrain. Asking in that order is what lets
             // the two coexist without either pretending to the other's shape.
             _terrain?.Dispose();
-            _terrain = _presentation.CreateGround(
+            _terrain = _presentation.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(
                 new GroundPresentationRequest(_device, levelRoot, _resources, _logger));
 
             _terrain ??= loaded.Terrain is { IsUsable: true } usable
-                ? _presentation.CreateTerrain(new TerrainPresentationRequest(
+                ? _presentation.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(new TerrainPresentationRequest(
                     _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
                 : null;
 
             // The sky is script data on the level's task tree; its fog colour is also what the frame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
-            _sky = _presentation.CreateSky(
+            _sky = _presentation.Presenters.Create<SkyPresentationRequest, ISkyPresenter>(
                 new SkyPresentationRequest(_device, levelRoot, _fileSystem, _resources, FarPlane, _logger));
             _shadowPass = new ShadowCasterPass(_device);
 
@@ -2028,7 +2028,7 @@ internal sealed partial class GameHost
                 // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
                 // skinning: 005_01_1 is mesh format 1.
                 _arms?.Dispose();
-                _arms = _presentation.CreateViewModel(ViewModelRequest());
+                _arms = _presentation.Presenters.Create<ViewModelPresentationRequest, IViewModelPresenter>(ViewModelRequest());
                 if (_arms is not null && !_arms.Load(loaded))
                 {
                     _arms.Dispose();
@@ -2104,7 +2104,7 @@ internal sealed partial class GameHost
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
-                _marks = _presentation.CreateBulletMarks(EffectsRequest());
+                _marks = _presentation.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(EffectsRequest());
 
                 // The ballistic streaks, beside the marks they end in. Cheap to have around: with
                 // g_ballistics off nothing is ever spawned and Draw returns at the count check.
@@ -2153,7 +2153,7 @@ internal sealed partial class GameHost
                 _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, MissionLoader.CommonSpritesArchive, _logger);
 
                 _hud?.Dispose();
-                _hud = _presentation.CreateHud(new HudPresentationRequest(_device, _logger));
+                _hud = _presentation.Presenters.Create<HudPresentationRequest, IHudPresenter>(new HudPresentationRequest(_device, _logger));
                 if (_hud is not null && !_hud.Load(_fileSystem))
                 {
                     _hud.Dispose();
@@ -2161,7 +2161,7 @@ internal sealed partial class GameHost
                 }
 
                 _remasteredHud?.Dispose();
-                _remasteredHud = _presentation.CreateRemasteredHud(new HudPresentationRequest(_device, _logger));
+                _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
                 if (_remasteredHud is not null && !_remasteredHud.Load())
                 {
                     _remasteredHud.Dispose();
@@ -2179,7 +2179,7 @@ internal sealed partial class GameHost
 
             if (_mission.GunPickups is { } pickups)
             {
-                _gunPickupRenderer = _presentation.CreateGunPickups(ViewModelRequest());
+                _gunPickupRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGunPickupPresenter>(ViewModelRequest());
                 if (_gunPickupRenderer is not null)
                 {
                     _gunPickupRenderer.Materials = _materials;
@@ -2190,10 +2190,10 @@ internal sealed partial class GameHost
             // The grenades in the air, drawn with their own retail models. Loaded beside the
             // pickups because it is the same model machinery at a transform the simulation owns.
             _grenadeRenderer?.Dispose();
-            _grenadeRenderer = _presentation.CreateGrenades(ViewModelRequest());
+            _grenadeRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGrenadePresenter>(ViewModelRequest());
             _grenadeRenderer?.Load(loaded);
             _missileRenderer?.Dispose();
-            _missileRenderer = _presentation.CreateMissiles(ViewModelRequest());
+            _missileRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(ViewModelRequest());
             _missileRenderer?.Load(loaded);
 
             EndStage("the loadout, the bullet marks and the HUD");
@@ -2285,10 +2285,11 @@ internal sealed partial class GameHost
             _logger);
 
         _forest?.Dispose();
-        _forest = _presentation.CreateForest(adornments);
+        _forest = _presentation.Presenters.Create<ScenePresentationRequest, IForestPresenter>(adornments);
 
         _water?.Dispose();
-        _water = _presentation.CreateWater(adornments);
+        _water = _presentation.Presenters.Create<ScenePresentationRequest, IWaterPresenter>(adornments);
+        MakeTaskPresenters(levelRoot);
 
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.
@@ -2537,6 +2538,8 @@ internal sealed partial class GameHost
 
     private void ReleasePlayedMission()
     {
+        ReleaseTaskPresenters();
+
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
         // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one
@@ -2846,7 +2849,7 @@ internal sealed partial class GameHost
             }
         }
 
-        IHeldWeaponPresenter? presenter = _presentation.CreateHeldWeapon(ViewModelRequest());
+        IHeldWeaponPresenter? presenter = _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest());
         if (presenter is not null)
         {
             presenter.Materials = _materials;
@@ -2878,7 +2881,7 @@ internal sealed partial class GameHost
         // A level that declared no loadout never built a presenter for the hand, so the first granted
         // weapon would be carried but never drawn.
         if (_heldWeapon is null && player.View is not null
-            && _presentation.CreateHeldWeapon(ViewModelRequest()) is { } presenter)
+            && _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest()) is { } presenter)
         {
             presenter.Materials = _materials;
             _heldWeapon = presenter;
@@ -4171,5 +4174,42 @@ internal sealed partial class GameHost
                 }
             }
         }
+    }
+
+    // The presenters the title registered for particular task types, one for each such task of the level.
+    private readonly List<ITaskPresenter> _taskPresenters = [];
+
+    /// <summary>Makes a presenter for every task of the level whose type has one registered.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    private void MakeTaskPresenters(LevelTask levelRoot)
+    {
+        ReleaseTaskPresenters();
+        PresenterRegistry presenters = _presentation.Presenters;
+        if (presenters.TaskTypeCount == 0)
+        {
+            return;
+        }
+
+        TaskPresenterRequest request = new(_device, _resources, levelRoot, _logger);
+        foreach (GameTask task in levelRoot.Descendants())
+        {
+            if (presenters.CreateForTask(task, request) is { } presenter)
+            {
+                _taskPresenters.Add(presenter);
+            }
+        }
+
+        _logger.Information("Mission", $"{_taskPresenters.Count} task presenter(s) made.");
+    }
+
+    // Frees the presenters made for the level's tasks.
+    private void ReleaseTaskPresenters()
+    {
+        foreach (ITaskPresenter presenter in _taskPresenters)
+        {
+            presenter.Dispose();
+        }
+
+        _taskPresenters.Clear();
     }
 }

@@ -37,24 +37,38 @@ namespace OpenIGI.Presentation.Igi2;
 /// <see cref="OpenIGI.Game.Igi2.World.Igi2DrawableScene"/>'s job.
 /// </para>
 /// <para>
-/// The ground arrives through <see cref="CreateGround"/> rather than
-/// <see cref="ITitlePresentationProvider.CreateTerrain"/>, because the latter carries a
-/// <c>TerrainSurface</c> built from Project I.G.I.'s chunked octree and the sequel's flat grid of
-/// <c>.thm</c> tiles produces no such thing. Given the level and a registry, this reads its own.
+/// The ground is registered for a <see cref="GroundPresentationRequest"/> rather than a
+/// <see cref="TerrainPresentationRequest"/>, because the latter carries a <c>TerrainSurface</c> built from
+/// Project I.G.I.'s chunked octree and the sequel's flat grid of <c>.thm</c> tiles produces no such thing.
+/// Given the level and a registry, this reads its own.
 /// </para>
 /// </remarks>
 public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 {
+    /// <summary>Initializes a new instance of the <see cref="Igi2PresentationProvider"/> class.</summary>
+    public Igi2PresentationProvider() =>
+        Presenters = new PresenterRegistry()
+            .Add<HudPresentationRequest, ITitleHudPresenter>(CreateTitleHud)
+            .Add<ViewModelPresentationRequest, ITitleViewModelPresenter>(CreateTitleViewModel)
+            .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
+            .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
+            .Add<GroundPresentationRequest, ITerrainPresenter>(CreateGround)
+            .Add<ScenePresentationRequest, IForestPresenter>(CreateForest)
+            .Add<ScenePresentationRequest, IWaterPresenter>(CreateWater);
+
     /// <inheritdoc/>
-    public ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new OpenIGI.Presentation.Igi2.Hud.Igi2HudRenderer(request.Device, request.Logger);
+    public PresenterRegistry Presenters { get; }
+
+    /// <inheritdoc/>
+    private ITitleHudPresenter? CreateTitleHud(in HudPresentationRequest request) => new OpenIGI.Presentation.Igi2.Hud.Igi2HudRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
     /// <remarks>The arms and the weapon in them, posed by the player's view; see <see cref="Igi2ViewModelRenderer"/>.</remarks>
-    public ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
+    private ITitleViewModelPresenter? CreateTitleViewModel(in ViewModelPresentationRequest request) =>
         new Igi2ViewModelRenderer(request.Device, request.Resources, request.Logger, request.Work);
 
     /// <inheritdoc/>
-    public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
+    private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
         new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi2, request.Logger);
 
     /// <inheritdoc/>
@@ -71,7 +85,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// to a colour nobody authored.
     /// </para>
     /// </remarks>
-    public ISkyPresenter? CreateSky(in SkyPresentationRequest request)
+    private ISkyPresenter? CreateSky(in SkyPresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);
@@ -212,7 +226,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     }
 
     /// <inheritdoc/>
-    public ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
+    private ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);
@@ -247,7 +261,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// culled every frame.
     /// </para>
     /// </remarks>
-    public IForestPresenter? CreateForest(in ScenePresentationRequest request)
+    private IForestPresenter? CreateForest(in ScenePresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);
@@ -285,7 +299,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// absent is not drawn, as the original returns before drawing one with no valid reflection.
     /// </para>
     /// </remarks>
-    public IWaterPresenter? CreateWater(in ScenePresentationRequest request)
+    private IWaterPresenter? CreateWater(in ScenePresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);

@@ -1512,6 +1512,12 @@ if (retailFog)
         _soldiers?.ObserveView(eye, projection);
         _soldiers?.Draw(eye, projection);
 
+        // Whatever the title, or a mod, draws for particular tasks of the level (PresenterRegistry.ForTask).
+        foreach (ITaskPresenter taskPresenter in _taskPresenters)
+        {
+            taskPresenter.Draw(eye, projection, tickBlend);
+        }
+
         // The player's own body, once it has fallen -- drawn only under the death camera, so it never
         // appears in front of the first-person view during normal play.
         // ...and, now, whenever the third-person camera has cleared the character's head, which

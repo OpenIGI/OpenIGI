@@ -80,7 +80,7 @@ internal sealed partial class GameHost
         }
 
         _titlePlayer = player;
-        _titleHud = _presentation.CreateTitleHud(new HudPresentationRequest(_device, _logger));
+        _titleHud = _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
         _titleHud?.Load(_resources.FileSystem);
         _titleTickMilliseconds = 0;
         _titleTickMaximumMilliseconds = 0;
@@ -95,7 +95,7 @@ internal sealed partial class GameHost
         // What the title's player holds in front of its eyes, drawn from the title's own packs.
         if (player is ITitleFirstPerson)
         {
-            _titleArms = _presentation.CreateTitleViewModel(ViewModelRequest());
+            _titleArms = _presentation.Presenters.Create<ViewModelPresentationRequest, ITitleViewModelPresenter>(ViewModelRequest());
             if (_titleArms is not null && !_titleArms.Load(loaded))
             {
                 _titleArms.Dispose();

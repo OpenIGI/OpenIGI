@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
@@ -115,7 +116,7 @@ public sealed class RetailIgi2LevelAiTests
         {
             OpenIGI.Rendering.SpriteBatch batch = new(device);
             using Presentation.ITitleHudPresenter hud = Assert.IsAssignableFrom<Presentation.ITitleHudPresenter>(
-                new Igi2PresentationProvider().CreateTitleHud(new Presentation.HudPresentationRequest(device, Core.Diagnostics.NullLogger.Instance)));
+                new Igi2PresentationProvider().Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new Presentation.HudPresentationRequest(device, Core.Diagnostics.NullLogger.Instance)));
             hud.Load(resources.FileSystem);
             player.GameConfig = new Config.Igi2GameConfig();
             batch.Begin();

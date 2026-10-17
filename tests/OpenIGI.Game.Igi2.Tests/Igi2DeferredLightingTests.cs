@@ -140,7 +140,7 @@ public sealed class Igi2DeferredLightingTests
 
     private sealed class SilentProvider : ITitlePresentationProvider
     {
-        public IWorldPresenter? CreateWorld(in WorldPresentationRequest request) => null;
+        public PresenterRegistry Presenters { get; } = new();
     }
 
     /// <summary>The levels the sequel authors as a night are bound to the cycle by that end.</summary>

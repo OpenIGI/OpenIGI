@@ -38,7 +38,7 @@ public sealed class RetailIgi2ScenePresentersTests
         foreach (Igi2Level level in Igi2Level.All())
         {
             RecordingGraphicsDevice device = new();
-            using IForestPresenter? forest = new Igi2PresentationProvider().CreateForest(RequestFor(level, device));
+            using IForestPresenter? forest = new Igi2PresentationProvider().Presenters.Create<ScenePresentationRequest, IForestPresenter>(RequestFor(level, device));
             if (forest is null)
             {
                 continue;
@@ -74,7 +74,7 @@ public sealed class RetailIgi2ScenePresentersTests
         foreach (Igi2Level level in Igi2Level.All())
         {
             RecordingGraphicsDevice device = new();
-            using IWaterPresenter? water = new Igi2PresentationProvider().CreateWater(RequestFor(level, device));
+            using IWaterPresenter? water = new Igi2PresentationProvider().Presenters.Create<ScenePresentationRequest, IWaterPresenter>(RequestFor(level, device));
             if (water is null)
             {
                 continue;
@@ -151,7 +151,7 @@ public sealed class RetailIgi2ScenePresentersTests
             RecordingGraphicsDevice device = new();
             ScenePresentationRequest request = RequestFor(level, device) with { Models = static _ => null };
 
-            using IForestPresenter? forest = new Igi2PresentationProvider().CreateForest(request);
+            using IForestPresenter? forest = new Igi2PresentationProvider().Presenters.Create<ScenePresentationRequest, IForestPresenter>(request);
             if (forest is null)
             {
                 continue;

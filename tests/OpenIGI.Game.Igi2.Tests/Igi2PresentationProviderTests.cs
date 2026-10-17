@@ -40,26 +40,26 @@ public sealed class Igi2PresentationProviderTests
         // Through the interface, because the thirteen it does not implement are default interface
         // members and are reachable only that way -- which is itself the point: the concrete type's
         // surface is the one member it actually has.
-        ITitlePresentationProvider provider = new Igi2PresentationProvider();
+        Igi2PresentationProvider provider = new();
         ResourceRegistry resources = new(new VirtualFileSystem());
         NullLogger logger = NullLogger.Instance;
 
-        Assert.Null(provider.CreateViewModel(default));
-        Assert.Null(provider.CreateHeldWeapon(default));
-        Assert.Null(provider.CreateGrenades(default));
-        Assert.Null(provider.CreateMissiles(default));
-        Assert.Null(provider.CreateGunPickups(default));
-        Assert.Null(provider.CreateBulletMarks(default));
-        Assert.Null(provider.CreateCameraStatusLights(default));
-        Assert.Null(provider.CreateHud(default));
-        Assert.Null(provider.CreateRemasteredHud(default));
-        Assert.Null(provider.CreateMapComputer(default));
-        Assert.Null(provider.CreateTacticalComputer(default));
-        Assert.Null(provider.CreateComputerHighlights(default));
-        Assert.Null(provider.CreateTerrain(default));
+        Assert.Null(provider.Presenters.Create<ViewModelPresentationRequest, IViewModelPresenter>(default));
+        Assert.Null(provider.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(default));
+        Assert.Null(provider.Presenters.Create<ViewModelPresentationRequest, IGrenadePresenter>(default));
+        Assert.Null(provider.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(default));
+        Assert.Null(provider.Presenters.Create<ViewModelPresentationRequest, IGunPickupPresenter>(default));
+        Assert.Null(provider.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(default));
+        Assert.Null(provider.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(default));
+        Assert.Null(provider.Presenters.Create<HudPresentationRequest, IHudPresenter>(default));
+        Assert.Null(provider.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(default));
+        Assert.Null(provider.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(default));
+        Assert.Null(provider.Presenters.Create<MapComputerPresentationRequest, ITacticalComputerPresenter>(default));
+        Assert.Null(provider.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(default));
+        Assert.Null(provider.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(default));
 
         // The one it does supply is real, and it is the renderer Project I.G.I. draws through.
-        using IWorldPresenter? world = provider.CreateWorld(new WorldPresentationRequest(
+        using IWorldPresenter? world = provider.Presenters.Create<WorldPresentationRequest, IWorldPresenter>(new WorldPresentationRequest(
             new RecordingGraphicsDevice(),
             resources,
             logger));
@@ -85,7 +85,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void The_provider_reads_and_draws_a_levels_ground()
     {
-        ITitlePresentationProvider provider = new Igi2PresentationProvider();
+        Igi2PresentationProvider provider = new();
         string root = GameDataSource.Igi2.RequireRoot();
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -115,7 +115,7 @@ public sealed class Igi2PresentationProviderTests
             }
 
             RecordingGraphicsDevice device = new();
-            using ITerrainPresenter? ground = provider.CreateGround(
+            using ITerrainPresenter? ground = provider.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(
                 new GroundPresentationRequest(device, level.Root, resources, NullLogger.Instance));
 
             if (ground is null)
@@ -169,7 +169,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void The_grounds_textures_tile_rather_than_clamp()
     {
-        ITitlePresentationProvider provider = new Igi2PresentationProvider();
+        Igi2PresentationProvider provider = new();
         string root = GameDataSource.Igi2.RequireRoot();
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -197,7 +197,7 @@ public sealed class Igi2PresentationProviderTests
             }
 
             RecordingGraphicsDevice device = new();
-            using ITerrainPresenter? ground = provider.CreateGround(
+            using ITerrainPresenter? ground = provider.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(
                 new GroundPresentationRequest(device, level.Root, resources, NullLogger.Instance));
 
             if (ground is null || device.Textures.Count == 0)
@@ -249,7 +249,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void The_ground_is_drawn_in_metres()
     {
-        ITitlePresentationProvider provider = new Igi2PresentationProvider();
+        Igi2PresentationProvider provider = new();
         string root = GameDataSource.Igi2.RequireRoot();
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -275,7 +275,7 @@ public sealed class Igi2PresentationProviderTests
             }
 
             RecordingGraphicsDevice device = new();
-            using ITerrainPresenter? ground = provider.CreateGround(
+            using ITerrainPresenter? ground = provider.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(
                 new GroundPresentationRequest(device, level.Root, resources, NullLogger.Instance));
 
             if (ground is null)
@@ -369,7 +369,7 @@ public sealed class Igi2PresentationProviderTests
     [RequiresTitleDataFact("igi2")]
     public void Every_shipped_levels_sky_comes_back_through_the_seam()
     {
-        ITitlePresentationProvider provider = new Igi2PresentationProvider();
+        Igi2PresentationProvider provider = new();
         string root = GameDataSource.Igi2.RequireRoot();
         int levels = 0;
 
@@ -382,7 +382,7 @@ public sealed class Igi2PresentationProviderTests
                 "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
 
             RecordingGraphicsDevice device = new();
-            using ISkyPresenter? sky = provider.CreateSky(new SkyPresentationRequest(
+            using ISkyPresenter? sky = provider.Presenters.Create<SkyPresentationRequest, ISkyPresenter>(new SkyPresentationRequest(
                 device,
                 level.Root,
                 files,
@@ -421,11 +421,14 @@ public sealed class Igi2PresentationProviderTests
     {
         ITitlePresentationProvider empty = new SilentProvider();
 
-        Assert.Null(empty.CreateWorld(default));
-        Assert.Null(empty.CreateTerrain(default));
-        Assert.Null(empty.CreateGround(default));
-        Assert.Null(empty.CreateHud(default));
+        Assert.Null(empty.Presenters.Create<WorldPresentationRequest, IWorldPresenter>(default));
+        Assert.Null(empty.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(default));
+        Assert.Null(empty.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(default));
+        Assert.Null(empty.Presenters.Create<HudPresentationRequest, IHudPresenter>(default));
     }
 
-    private sealed class SilentProvider : ITitlePresentationProvider;
+    private sealed class SilentProvider : ITitlePresentationProvider
+    {
+        public PresenterRegistry Presenters { get; } = new();
+    }
 }
