@@ -48,6 +48,7 @@ using OpenIGI.Game.Igi1.Menus;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Presentation.Igi1.Menus;
 
 namespace OpenIGI.Host;
 

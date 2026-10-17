@@ -7,7 +7,7 @@ using OpenIGI.Input;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.Menus;
 
-namespace OpenIGI.Host.Menu;
+namespace OpenIGI.Presentation.Igi1.Menus;
 
 /// <summary>
 /// The shell's side of both seams: the flow's host, and the menu manager's.

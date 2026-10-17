@@ -4,6 +4,7 @@ using OpenIGI.Game.Level;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Presentation;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

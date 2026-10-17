@@ -1,7 +1,7 @@
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Igi1.Menus;
 
-namespace OpenIGI.Host.Infrastructure;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>
 /// Resolves the string keys a mission's own data carries — objective rows, computer highlights, status

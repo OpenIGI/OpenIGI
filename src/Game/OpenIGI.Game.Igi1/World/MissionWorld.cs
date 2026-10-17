@@ -1,15 +1,14 @@
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.World;
 
-namespace OpenIGI.Host;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>
 /// The played mission's world, as the host keeps it: the level's registries of what can be opened, ridden, picked
 /// up, seen, heard and blown up, and its cutscene and objective runtimes.
 /// </summary>
 /// <remarks>
-/// Each is <see langword="null"/> until the mission system that makes it has run (see <see cref="MissionSystemNames"/>), and
+/// Each is <see langword="null"/> until the mission system that makes it has run (see the host's <c>MissionSystemNames</c>), and
 /// is dropped again as the mission is released. Held in one place so that what reads the level -- the inspector, the
 /// sounds, the effects -- is handed the mission rather than the whole host.
 /// </remarks>

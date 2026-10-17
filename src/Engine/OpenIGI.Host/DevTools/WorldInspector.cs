@@ -8,6 +8,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using System.Globalization;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host.DevTools;
 

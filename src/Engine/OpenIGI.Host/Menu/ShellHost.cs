@@ -11,7 +11,7 @@ namespace OpenIGI.Host.Menu;
 /// <remarks>
 /// The shell is backend-free, so everything it cannot do itself — leaving the menu into a mission,
 /// previewing a level behind the menu, capturing a save thumbnail, quitting, persisting settings — is a
-/// delegate the composition root supplies here. This is the same pattern as <see cref="MenuHost"/>'s
+/// delegate the composition root supplies here. This is the same pattern as <c>MenuHost</c>'s
 /// <c>StartGame</c>/quit hooks, made into a full <see cref="IShellHost"/>.
 /// </remarks>
 /// <param name="startMission">Starts a mission at a difficulty and leaves the shell.</param>
