@@ -4,7 +4,7 @@ using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Host;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>Which lamps hold shadow maps, and drawing those maps.</summary>
 /// <remarks>
@@ -22,8 +22,14 @@ namespace OpenIGI.Host;
 /// tell a lamp's own housing from a wall, so the maps leave nothing in front of a lamp outside them.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+internal sealed class LampShadowMaps
 {
+    private readonly IGraphicsDevice _device;
+
+    /// <summary>Initializes a new instance of the <see cref="LampShadowMaps"/> class.</summary>
+    /// <param name="device">The device whose lamp-map slots this fills.</param>
+    public LampShadowMaps(IGraphicsDevice device) => _device = device ?? throw new ArgumentNullException(nameof(device));
+
     /// <summary>How many map slots are drawn in a frame for lamps that have just taken them.</summary>
     private const int LampMapsNewPerFrame = 8;
 
@@ -80,8 +86,11 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Gives the frame's nearest lamps their map slots and tells the device which they read.</summary>
-    /// <param name="lightCount">How many lamps were handed over, in <c>_localLightOrder</c>'s order.</param>
+    /// <param name="lightCount">How many lamps were handed over.</param>
     /// <param name="cameraProjection">The camera's projection, whose frustum the lamps' reach is tested against.</param>
+    /// <param name="lights">The frame's lamps, in view space, in light order.</param>
+    /// <param name="order">For each of the frame's lamps, the fixture it is.</param>
+    /// <param name="fixtures">The level's fixtures.</param>
     /// <remarks>
     /// Lamps whose light reaches into the view take the slots first, nearest first; the rest of the budget
     /// goes to those that do not, nearest first, so turning round finds their maps already drawn. Taken by
@@ -89,7 +98,12 @@ internal sealed partial class GameHost
     /// over the door across the yard -- the one lighting what was on screen -- marched the distance field
     /// instead and lit the wall through the doorway, where the traced shadow had it dark.
     /// </remarks>
-    private void AssignLampMaps(int lightCount, in Matrix4f cameraProjection)
+    public void Assign(
+        int lightCount,
+        in Matrix4f cameraProjection,
+        ReadOnlySpan<DeferredLocalLight> lights,
+        ReadOnlySpan<int> order,
+        IReadOnlyList<LightFixture> fixtures)
     {
         int slots = Math.Min(_device.LampShadowMapSlots, LampMapSlotsTracked);
         if (!_device.WantsLampShadowMaps || slots <= 0)
@@ -107,12 +121,12 @@ internal sealed partial class GameHost
         {
             for (int i = 0; i < lightCount && budget >= CubeFaceAxes.Length; i++)
             {
-                DeferredLocalLight light = _localLightScratch[i];
+                DeferredLocalLight light = lights[i];
                 bool inView = frustum.SphereVisible(
                     light.ViewPosition.X, light.ViewPosition.Y, light.ViewPosition.Z, light.Radius);
                 if (inView == (pass == 0))
                 {
-                    _lampMapWanted.Add(_localLightOrder[i]);
+                    _lampMapWanted.Add(order[i]);
                     budget -= CubeFaceAxes.Length;
                 }
             }
@@ -137,7 +151,7 @@ internal sealed partial class GameHost
                 continue;
             }
 
-            LightFixture lamp = _lightFixtures[fixture];
+            LightFixture lamp = fixtures[fixture];
             int needs = CubeFaceAxes.Length;
             int start = FreeLampMapRun(slots, needs);
             if (start < 0)
@@ -157,7 +171,7 @@ internal sealed partial class GameHost
         // still waiting to be drawn, since a slot holds the picture from the lamp it last belonged to.
         for (int i = 0; i < lightCount; i++)
         {
-            int fixture = _localLightOrder[i];
+            int fixture = order[i];
             int start = Array.IndexOf(_lampMapFixture, fixture, 0, slots);
             int count = CubeFaceAxes.Length;
             bool ready = start >= 0;
@@ -221,27 +235,13 @@ internal sealed partial class GameHost
 
     /// <summary>Finds the cubes whose lamp has a living soldier or the player within its reach.</summary>
     /// <param name="slots">How many slots the device holds.</param>
-    private void CollectOccupiedLampMaps(int slots)
+    /// <param name="fixtures">The level's fixtures.</param>
+    /// <param name="people">Adds where everyone who casts stands, in metres.</param>
+    private void CollectOccupiedLampMaps(int slots, IReadOnlyList<LightFixture> fixtures, Action<List<Vector3d>> people)
     {
         _lampMapOccupied.Clear();
         _lampMapPeople.Clear();
-
-        if (_player is { } player)
-        {
-            _lampMapPeople.Add(WorldScene.ToMetres(player.Body.Position));
-        }
-
-        if (_soldiers is { } soldiers)
-        {
-            foreach (HumanOccupant occupant in soldiers.LiveOccupants())
-            {
-                if (!occupant.IsDead)
-                {
-                    _lampMapPeople.Add(WorldScene.ToMetres(occupant.Position));
-                }
-            }
-        }
-
+        people(_lampMapPeople);
         if (_lampMapPeople.Count == 0)
         {
             return;
@@ -250,12 +250,12 @@ internal sealed partial class GameHost
         for (int start = 0; start + CubeFaceAxes.Length <= slots; start += CubeFaceAxes.Length)
         {
             int fixture = _lampMapFixture[start];
-            if (fixture < 0 || fixture >= _lightFixtures.Count)
+            if (fixture < 0 || fixture >= fixtures.Count)
             {
                 continue;
             }
 
-            LightFixture lamp = _lightFixtures[fixture];
+            LightFixture lamp = fixtures[fixture];
             double reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f) + 1.0;
             foreach (Vector3d person in _lampMapPeople)
             {
@@ -306,12 +306,16 @@ internal sealed partial class GameHost
     /// <param name="scene">The world's placed objects.</param>
     /// <param name="world">The presenter that draws them.</param>
     /// <param name="characters">The character presenter.</param>
+    /// <param name="fixtures">The level's fixtures.</param>
+    /// <param name="people">Adds where everyone who casts stands, in metres, for the lamps near them to be redrawn first.</param>
     /// <remarks>Before the scene capture opens, beside the cascades.</remarks>
-    private void RenderLampMaps(
+    public void Render(
         ShadowCasterPass pass,
         WorldScene? scene,
         IWorldPresenter? world,
-        ICharacterPresenter? characters)
+        ICharacterPresenter? characters,
+        IReadOnlyList<LightFixture> fixtures,
+        Action<List<Vector3d>> people)
     {
         int slots = Math.Min(_device.LampShadowMapSlots, LampMapSlotsTracked);
         if (!_device.WantsLampShadowMaps || slots <= 0)
@@ -330,7 +334,7 @@ internal sealed partial class GameHost
         }
 
         // Lamps someone stands or walks near: their whole cube first, so the shadow moves with the body.
-        CollectOccupiedLampMaps(slots);
+        CollectOccupiedLampMaps(slots, fixtures, people);
         int movingDrawn = 0;
         for (int k = 0; k < _lampMapOccupied.Count && movingDrawn < LampMapsMovingFacesPerFrame; k++)
         {
@@ -367,5 +371,131 @@ internal sealed partial class GameHost
             scene,
             world,
             characters);
+    }
+
+    // The surface cache's coarse lamp maps: six small faces for every lamp in the level. Drawn a few faces a frame
+    // after a level loads, nearest lamps first, and kept: they hold the static world, which draws the same picture
+    // every time. The relight reads a lamp's six once all six are drawn and marches the distance field for it until
+    // then (see IGraphicsDevice.LampBounceMapSlots).
+    /// <summary>How many coarse faces are drawn a frame until every lamp has its six.</summary>
+    /// <remarks>Sixty-four texels a side each: a dozen cost less than one of the shadow maps' new faces.</remarks>
+    private const int LampBounceFacesPerFrame = 12;
+
+    // Per fixture: how many of its six faces are drawn, and what the relight is told (the first face, or -1).
+    private int[] _lampBounceFaces = [];
+    private int[] _lampBounceEntries = [];
+    private int[] _lampBounceOrder = [];
+    private IReadOnlyList<LightFixture>? _lampBounceFixtures;
+
+    // The device's count as of the last face drawn here; anything else means it let the maps go.
+    private int _lampBounceVersion = -1;
+
+    /// <summary>Draws the next few coarse faces, and tells the relight which lamps have all six.</summary>
+    /// <param name="pass">The caster pass, which draws through the title's presenters.</param>
+    /// <param name="scene">The world's placed objects.</param>
+    /// <param name="world">The presenter that draws them.</param>
+    /// <param name="cardLighting">The surface cache's relight, when it is on.</param>
+    /// <param name="fixtures">The level's fixtures; another list than last time is a new level.</param>
+    /// <param name="eye">Where the camera is, which orders a new level's lamps nearest first.</param>
+    public void RenderBounce(
+        ShadowCasterPass pass,
+        WorldScene? scene,
+        IWorldPresenter? world,
+        SurfaceCacheLighting? cardLighting,
+        IReadOnlyList<LightFixture> fixtures,
+        Vector3d eye)
+    {
+        int slots = _device.LampBounceMapSlots;
+        if (slots <= 0 || cardLighting is not { } cards)
+        {
+            return;
+        }
+
+        // A new level, or the device let the maps go (a settings change rebuilds the shadow resources):
+        // everything is drawn again.
+        if (!ReferenceEquals(_lampBounceFixtures, fixtures)
+            || _lampBounceFaces.Length != fixtures.Count
+            || _device.LampBounceMapVersion != _lampBounceVersion)
+        {
+            ResetLampBounceMaps(fixtures, eye);
+        }
+
+        int lamps = Math.Min(fixtures.Count, slots / CubeFaceAxes.Length);
+        int drawn = 0;
+        for (int k = 0; k < lamps && drawn < LampBounceFacesPerFrame; k++)
+        {
+            int fixture = _lampBounceOrder[k];
+            while (_lampBounceFaces[fixture] < CubeFaceAxes.Length && drawn < LampBounceFacesPerFrame)
+            {
+                int face = _lampBounceFaces[fixture];
+                (Vector3d from, Matrix4f projection) = LampMapView(fixtures[fixture]);
+                if (!pass.RenderLampMap(
+                    (k * CubeFaceAxes.Length) + face,
+                    from,
+                    ShadowCascades.LightRotationFor(-CubeFaceAxes[face]),
+                    projection,
+                    scene,
+                    world,
+                    characters: null,
+                    coarse: true))
+                {
+                    return;
+                }
+
+                _lampBounceVersion = _device.LampBounceMapVersion;
+                _lampBounceFaces[fixture]++;
+                drawn++;
+                if (_lampBounceFaces[fixture] == CubeFaceAxes.Length)
+                {
+                    _lampBounceEntries[fixture] = k * CubeFaceAxes.Length;
+                }
+            }
+        }
+
+        cards.SetLampMapEntries(_lampBounceEntries);
+    }
+
+    // Each of the frame's lamps' coarse cube, in light order, for the device.
+    private readonly int[] _lampCoarsePerLight = new int[DeferredLocalLight.Maximum];
+
+    /// <summary>Tells the device which coarse cube each of this frame's lamps has.</summary>
+    /// <param name="lightCount">How many lamps the frame was given.</param>
+    /// <param name="order">For each of the frame's lamps, the fixture it is.</param>
+    /// <remarks>
+    /// For the lamp shadows of the lamps the fine maps do not reach: past the fine maps' budget a lamp was
+    /// answered by the distance field alone, which at a distance cannot hold the wall it stands behind.
+    /// </remarks>
+    public void AssignCoarse(int lightCount, ReadOnlySpan<int> order)
+    {
+        int count = Math.Min(lightCount, _lampCoarsePerLight.Length);
+        for (int i = 0; i < count; i++)
+        {
+            int fixture = order[i];
+            _lampCoarsePerLight[i] = (uint)fixture < (uint)_lampBounceEntries.Length ? _lampBounceEntries[fixture] : -1;
+        }
+
+        _device.SetLampCoarseMapSlots(_lampCoarsePerLight.AsSpan(0, count));
+    }
+
+    /// <summary>Forgets every coarse face and orders the lamps nearest the camera first.</summary>
+    private void ResetLampBounceMaps(IReadOnlyList<LightFixture> fixtures, Vector3d eye)
+    {
+        int count = fixtures.Count;
+        _lampBounceFixtures = fixtures;
+        _lampBounceFaces = new int[count];
+        _lampBounceEntries = new int[count];
+        Array.Fill(_lampBounceEntries, -1);
+        _lampBounceVersion = _device.LampBounceMapVersion;
+
+        // Nearest first, so the lamps around the player are right within a few frames of the load; the
+        // order is fixed then, since a lamp's slots are where it sits in it.
+        _lampBounceOrder = [.. Enumerable.Range(0, count).OrderBy(i =>
+        {
+            Vector3d at = fixtures[i].Position;
+            double dx = at.X - eye.X;
+            double dy = at.Y - eye.Y;
+            double dz = at.Z - eye.Z;
+            return (dx * dx) + (dy * dy) + (dz * dz);
+        })];
     }
 }

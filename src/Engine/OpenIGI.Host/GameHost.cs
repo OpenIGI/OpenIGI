@@ -304,6 +304,32 @@ internal sealed partial class GameHost : IDisposable
     // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
     // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
     private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
+
+    // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
+    private readonly LampShadowMaps _lampMaps;
+
+    // Where a new level's lamps are ordered from for their coarse maps, nearest first.
+    private Vector3d LampOrderEye => _camera?.Position ?? default;
+
+    // Where everyone who casts in a lamp's map stands, in metres: the player and the living soldiers.
+    private void LampMapPeople(List<Vector3d> people)
+    {
+        if (_player is { } player)
+        {
+            people.Add(WorldScene.ToMetres(player.Body.Position));
+        }
+
+        if (_soldiers is { } soldiers)
+        {
+            foreach (HumanOccupant occupant in soldiers.LiveOccupants())
+            {
+                if (!occupant.IsDead)
+                {
+                    people.Add(WorldScene.ToMetres(occupant.Position));
+                }
+            }
+        }
+    }
     private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
     private int _cardBounceFrame;
 
@@ -720,6 +746,7 @@ internal sealed partial class GameHost : IDisposable
         _platform = platform;
         _window = window;
         _device = device;
+        _lampMaps = new LampShadowMaps(device);
         _audioFactory = audioFactory;
         _work = work;
         _loadGate = loadGate;
@@ -4946,8 +4973,8 @@ internal sealed partial class GameHost : IDisposable
                 if (_shadowPass is not null && _device.WantsLampShadowMaps)
                 {
                     Igi1Presentation lampCasters = new(_world, shadowCasters);
-                    RenderLampMaps(_shadowPass, _scene, lampCasters.World, lampCasters.Characters);
-                    RenderLampBounceMaps(_shadowPass, _scene, lampCasters.World);
+                    _lampMaps.Render(_shadowPass, _scene, lampCasters.World, lampCasters.Characters, _lightFixtures, LampMapPeople);
+                    _lampMaps.RenderBounce(_shadowPass, _scene, lampCasters.World, _cardLighting, _lightFixtures, LampOrderEye);
                 }
                 EndStageIfSlow("the shadow cascades");
 
@@ -5849,8 +5876,8 @@ if (retailFog)
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
-                    AssignLampMaps(localCount, unjitteredProjection);
-                    AssignLampCoarseMaps(localCount);
+                    _lampMaps.Assign(localCount, unjitteredProjection, _localLightScratch, _localLightOrder, _lightFixtures);
+                    _lampMaps.AssignCoarse(localCount, _localLightOrder);
                     _stormLampCount = localCount;
 
                     // And the distance field those lamps' shadows are marched through wherever the renderer
