@@ -165,7 +165,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumMarks));
             }
 
             _device.UpdateAnimatedMesh(_mesh, _vertices);
@@ -213,26 +213,6 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         }
 
         _textureCache?.Clear();
-    }
-
-    // The index pattern is static -- quad n is vertices 4n..4n+3 -- so it is built once, at the size
-    // the mesh keeps for its whole life.
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumMarks * 6];
-        for (int quad = 0; quad < MaximumMarks; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
     }
 
     private bool CachedPose(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)

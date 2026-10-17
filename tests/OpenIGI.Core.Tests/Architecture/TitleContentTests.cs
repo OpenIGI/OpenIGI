@@ -81,10 +81,7 @@ public sealed class TitleContentTests
         "src/Engine/OpenIGI.Host/GameHost.cs",
         "src/Engine/OpenIGI.Host/Menu/MissionPreview.cs",
         "src/Engine/OpenIGI.Host/Menu/MissionPreviewLoader.cs",
-        "src/Game/OpenIGI.Presentation/Rendering/ExplosionEffectRenderer.cs",
-        "src/Game/OpenIGI.Presentation/Rendering/ImpactParticleRenderer.cs",
         "src/Game/OpenIGI.Presentation/Rendering/SkyRenderer.cs",
-        "src/Game/OpenIGI.Presentation/Rendering/SmokeSpriteRenderer.cs",
         "src/Game/OpenIGI.Presentation/Rendering/TextureDecodeCache.cs",
     ];
 

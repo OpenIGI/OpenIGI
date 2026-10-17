@@ -9,6 +9,7 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -22,7 +23,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
 {
     /// <summary>The global archive used by retail's by-name sprite loader.</summary>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
+    public const string SpriteArchive = MissionLoader.CommonSpritesArchive;
 
     /// <summary>The exact sprite requested by <c>SCameraLens</c>'s type registration.</summary>
     public const string SpriteName = "alarmlight.spr";
@@ -86,9 +87,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
             }
 
             IresArchive archive = IresArchive.Read(fileSystem.ReadAllBytes(SpriteArchive));
-            IresEntry? entry = archive.Entries.FirstOrDefault(
-                candidate => candidate.Kind == IresEntryKind.Body
-                    && Path.GetFileName(candidate.Name).Equals(SpriteName, StringComparison.OrdinalIgnoreCase));
+            IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {
                 _logger.Warning("Camera", $"'{SpriteName}' is missing from {SpriteArchive}.");

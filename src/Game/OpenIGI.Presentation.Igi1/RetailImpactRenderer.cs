@@ -1,16 +1,12 @@
-using OpenIGI.Core;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ilff;
-using OpenIGI.Formats.Sprites;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.World;
-using OpenIGI.Rendering;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.World;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -41,7 +37,7 @@ namespace OpenIGI.Presentation.Igi1;
 public sealed class RetailImpactRenderer : IDisposable
 {
     /// <summary>The archive the three sprites live in.</summary>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
+    public const string SpriteArchive = MissionLoader.CommonSpritesArchive;
 
     /// <summary>Inside this distance from the eye a particle is not drawn, in world units.</summary>
     /// <remarks><c>0x4FD1A2</c> — half a metre.</remarks>
@@ -90,9 +86,9 @@ public sealed class RetailImpactRenderer : IDisposable
     private readonly VirtualFileSystem? _fileSystem;
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
     private readonly Dictionary<string, FragmentModel> _fragmentModels = new(StringComparer.OrdinalIgnoreCase);
-    private SpriteAtlas _puff = SpriteAtlas.Empty;
-    private SpriteAtlas _mist = SpriteAtlas.Empty;
-    private SpriteAtlas _droplet = SpriteAtlas.Empty;
+    private SpriteStrip _puff = SpriteStrip.Empty;
+    private SpriteStrip _mist = SpriteStrip.Empty;
+    private SpriteStrip _droplet = SpriteStrip.Empty;
     private MeshHandle _mesh = MeshHandle.None;
     private int _used;
     private int _lastUsed;
@@ -171,7 +167,7 @@ public sealed class RetailImpactRenderer : IDisposable
                     continue;
                 }
 
-                TextureHandle texture = LoadTexture(textureName);
+                TextureHandle texture = SpriteStrip.LoadTexture(_device, _resources, textureName);
                 if (!texture.IsValid)
                 {
                     continue;
@@ -266,7 +262,7 @@ public sealed class RetailImpactRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumQuads));
             }
 
             _device.UpdateAnimatedMesh(_mesh, _vertices);
@@ -327,7 +323,7 @@ public sealed class RetailImpactRenderer : IDisposable
             BlendMode.AlphaBlend);
     }
 
-    private void AddSystem(RetailParticleSystem system, in SpriteAtlas atlas, Vector3d eye, float blend)
+    private void AddSystem(RetailParticleSystem system, in SpriteStrip atlas, Vector3d eye, float blend)
     {
         if (system.Count == 0 || !atlas.Texture.IsValid)
         {
@@ -343,7 +339,7 @@ public sealed class RetailImpactRenderer : IDisposable
 
     private void AddQuad(
         RetailParticleSystem system,
-        in SpriteAtlas atlas,
+        in SpriteStrip atlas,
         in RetailParticle particle,
         Vector3d eye,
         float blend)
@@ -450,8 +446,8 @@ public sealed class RetailImpactRenderer : IDisposable
         float level = Math.Clamp(NeutralTint * _exposure, 0f, 1f);
         Bgra32 colour = Tint(level, level, level, opacity);
 
-        SpriteFrameUv uv = atlas.Frames.Length == 0
-            ? SpriteFrameUv.Full
+        SpriteStripFrame uv = atlas.Frames.Length == 0
+            ? SpriteStripFrame.Full
             : atlas.Frames[Math.Clamp(particle.Frame, 0, atlas.Frames.Length - 1)];
 
         _vertices[_used] = new Vertex3D(centreF - right - up, normal, uv.U0, uv.V0, colour: colour);
@@ -534,142 +530,20 @@ public sealed class RetailImpactRenderer : IDisposable
             return false;
         }
 
-        _puff = LoadSprite(GunShotImpactEffects.PuffSprite);
-        _mist = LoadSprite(BloodEffects.MistSprite);
-        _droplet = LoadSprite(BloodEffects.DropletSprite);
+        _puff = SpriteStrip.Load(_device, _fileSystem, SpriteArchive, GunShotImpactEffects.PuffSprite);
+        _mist = SpriteStrip.Load(_device, _fileSystem, SpriteArchive, BloodEffects.MistSprite);
+        _droplet = SpriteStrip.Load(_device, _fileSystem, SpriteArchive, BloodEffects.DropletSprite);
         return _puff.Texture.IsValid && _mist.Texture.IsValid && _droplet.Texture.IsValid;
     }
 
-    private SpriteAtlas LoadSprite(string spriteName)
-    {
-        try
-        {
-            if (_fileSystem is null || !_fileSystem.Exists(SpriteArchive))
-            {
-                return SpriteAtlas.Empty;
-            }
-
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(SpriteArchive));
-            IresEntry? entry = archive.Entries.FirstOrDefault(candidate =>
-                candidate.Kind == IresEntryKind.Body
-                && Path.GetFileName(candidate.Name).Equals(spriteName, StringComparison.OrdinalIgnoreCase));
-            if (entry is null)
-            {
-                return SpriteAtlas.Empty;
-            }
-
-            SpriteAsset asset = SpriteLoader.Load(entry.Data, spriteName);
-            if (asset.Frames.Count == 0 || asset.Textures.Count == 0)
-            {
-                return SpriteAtlas.Empty;
-            }
-
-            List<(Bgra32[] Pixels, int Width, int Height)> crops = [];
-            foreach (SpriteFrame frame in asset.Frames)
-            {
-                if (frame.IsEmpty || (uint)frame.TextureIndex >= (uint)asset.Textures.Count)
-                {
-                    continue;
-                }
-
-                TextureImage source = asset.GetTexture(frame);
-                ReadOnlySpan<Bgra32> pixels = source.GetLevel(0);
-                int left = Math.Clamp((int)MathF.Floor(frame.U0 * source.Width), 0, source.Width - 1);
-                int top = Math.Clamp((int)MathF.Floor(frame.V0 * source.Height), 0, source.Height - 1);
-                int right = Math.Clamp((int)MathF.Ceiling(frame.U1 * source.Width), left + 1, source.Width);
-                int bottom = Math.Clamp((int)MathF.Ceiling(frame.V1 * source.Height), top + 1, source.Height);
-                int width = right - left;
-                int height = bottom - top;
-                Bgra32[] cropped = new Bgra32[width * height];
-                for (int y = 0; y < height; y++)
-                {
-                    pixels.Slice(((top + y) * source.Width) + left, width)
-                        .CopyTo(cropped.AsSpan(y * width, width));
-                }
-
-                crops.Add((cropped, width, height));
-            }
-
-            if (crops.Count == 0)
-            {
-                return SpriteAtlas.Empty;
-            }
-
-            int atlasWidth = crops.Sum(crop => crop.Width);
-            int atlasHeight = crops.Max(crop => crop.Height);
-            Bgra32[] atlas = new Bgra32[checked(atlasWidth * atlasHeight)];
-            SpriteFrameUv[] frames = new SpriteFrameUv[crops.Count];
-            int offsetX = 0;
-            for (int i = 0; i < crops.Count; i++)
-            {
-                (Bgra32[] pixels, int width, int height) = crops[i];
-                for (int y = 0; y < height; y++)
-                {
-                    pixels.AsSpan(y * width, width)
-                        .CopyTo(atlas.AsSpan((y * atlasWidth) + offsetX, width));
-                }
-
-                frames[i] = new SpriteFrameUv(
-                    (float)offsetX / atlasWidth,
-                    0f,
-                    (float)(offsetX + width) / atlasWidth,
-                    (float)height / atlasHeight);
-                offsetX += width;
-            }
-
-            TextureHandle texture = _device.CreateTexture(
-                new TextureDescription(
-                    atlasWidth,
-                    atlasHeight,
-                    MipLevels: 1,
-                    TextureFilter.Linear,
-                    TextureAddressMode.Clamp),
-                atlas);
-            return new SpriteAtlas(texture, frames);
-        }
-        catch (Exception ex)
-            when (ex is IOException or InvalidDataException or PackFormatException or GraphicsDeviceException)
-        {
-            _ = ex;
-            return SpriteAtlas.Empty;
-        }
-    }
-
-    private TextureHandle LoadTexture(string name)
-    {
-        if (_resources is null
-            || !_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            return TextureHandle.None;
-        }
-
-        try
-        {
-            TextureImage image = TexFile.Load(bytes.Span);
-            return _device.CreateTexture(
-                new TextureDescription(
-                    image.Width,
-                    image.Height,
-                    image.MipLevels,
-                    TextureFilter.Linear,
-                    TextureAddressMode.Clamp),
-                image.Pixels);
-        }
-        catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-        {
-            _ = ex;
-            return TextureHandle.None;
-        }
-    }
-
-    private void ReleaseSprite(ref SpriteAtlas atlas)
+    private void ReleaseSprite(ref SpriteStrip atlas)
     {
         if (atlas.Texture.IsValid)
         {
             _device.DestroyTexture(atlas.Texture);
         }
 
-        atlas = SpriteAtlas.Empty;
+        atlas = SpriteStrip.Empty;
     }
 
     private void ReleaseFragmentModels()
@@ -704,36 +578,6 @@ public sealed class RetailImpactRenderer : IDisposable
 
     private static bool IsFinite(Vector3f v) =>
         float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
-
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumQuads * 6];
-        for (int quad = 0; quad < MaximumQuads; quad++)
-        {
-            int vertex = quad * 4;
-            int index = quad * 6;
-            indices[index] = (ushort)vertex;
-            indices[index + 1] = (ushort)(vertex + 1);
-            indices[index + 2] = (ushort)(vertex + 2);
-            indices[index + 3] = (ushort)vertex;
-            indices[index + 4] = (ushort)(vertex + 2);
-            indices[index + 5] = (ushort)(vertex + 3);
-        }
-
-        return indices;
-    }
-
-    /// <summary>One frame's corner of a packed sprite atlas.</summary>
-    private readonly record struct SpriteFrameUv(float U0, float V0, float U1, float V1)
-    {
-        public static SpriteFrameUv Full => new(0f, 0f, 1f, 1f);
-    }
-
-    /// <summary>A sprite unpacked into one strip texture.</summary>
-    private readonly record struct SpriteAtlas(TextureHandle Texture, SpriteFrameUv[] Frames)
-    {
-        public static SpriteAtlas Empty => new(TextureHandle.None, []);
-    }
 
     private sealed class FragmentModel(MeshGeometry geometry, TextureHandle texture)
     {

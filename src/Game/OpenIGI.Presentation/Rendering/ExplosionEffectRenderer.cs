@@ -33,9 +33,6 @@ namespace OpenIGI.Presentation.Rendering;
 /// </remarks>
 internal sealed class ExplosionEffectRenderer : IDisposable
 {
-    /// <summary>The global archive retail's by-name sprite loader reads.</summary>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
-
     /// <summary>The retail fireball sprite (<c>dword_5C1158</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "fireball.spr";
 
@@ -67,6 +64,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
+    private readonly string _spriteArchive;
     private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
@@ -83,9 +81,11 @@ internal sealed class ExplosionEffectRenderer : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ExplosionEffectRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="fileSystem">The virtual file system the common sprite archive is mounted in.</param>
+    /// <param name="spriteArchive">The archive in <paramref name="fileSystem"/> the sprite ships in.</param>
     /// <param name="logger">The logger for load diagnostics.</param>
-    public ExplosionEffectRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
+    public ExplosionEffectRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, string spriteArchive, IOpenIgiLogger? logger = null)
     {
+        _spriteArchive = spriteArchive ?? throw new ArgumentNullException(nameof(spriteArchive));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _logger = logger ?? NullLogger.Instance;
@@ -205,7 +205,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumPuffs));
             }
 
             // Each fireball may be on a different animation frame — a distinct texture — so draw one
@@ -459,19 +459,17 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
         try
         {
-            if (!_fileSystem.Exists(SpriteArchive))
+            if (!_fileSystem.Exists(_spriteArchive))
             {
-                _logger.Warning("Explosion", $"No sprite archive at {SpriteArchive}; using the procedural burst.");
+                _logger.Warning("Explosion", $"No sprite archive at {_spriteArchive}; using the procedural burst.");
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(SpriteArchive));
-            IresEntry? entry = archive.Entries.FirstOrDefault(
-                candidate => candidate.Kind == IresEntryKind.Body
-                    && Path.GetFileName(candidate.Name).Equals(SpriteName, StringComparison.OrdinalIgnoreCase));
+            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(_spriteArchive));
+            IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {
-                _logger.Warning("Explosion", $"'{SpriteName}' is missing from {SpriteArchive}; using the procedural burst.");
+                _logger.Warning("Explosion", $"'{SpriteName}' is missing from {_spriteArchive}; using the procedural burst.");
                 return false;
             }
 
@@ -501,24 +499,6 @@ internal sealed class ExplosionEffectRenderer : IDisposable
     {
         static byte Channel(float value) => (byte)Math.Clamp((int)(value * 255f), 0, 255);
         return new Bgra32(Channel(b), Channel(g), Channel(r), Math.Max((byte)1, Channel(a)));
-    }
-
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumPuffs * 6];
-        for (int quad = 0; quad < MaximumPuffs; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
     }
 
     private struct Pending

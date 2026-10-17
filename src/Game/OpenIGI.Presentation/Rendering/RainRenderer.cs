@@ -86,11 +86,10 @@ public sealed class RainRenderer : IDisposable
         _numDrops = Math.Max(1, numDrops);
 
         _vertices = new Vertex3D[_numDrops * 4];
-        _indices = new ushort[_numDrops * 6];
+        _indices = QuadIndices.Build(_numDrops);
         _seeds = new (float X, float Y, float Z)[_numDrops];
 
         GenerateSeeds();
-        BuildIndices();
     }
 
     /// <summary>Gets a value indicating whether rain rendering is active and visible.</summary>
@@ -376,21 +375,6 @@ public sealed class RainRenderer : IDisposable
         for (int i = 0; i < _numDrops; i++)
         {
             _seeds[i] = ((float)rng.NextDouble(), (float)rng.NextDouble(), (float)rng.NextDouble());
-        }
-    }
-
-    private void BuildIndices()
-    {
-        for (int i = 0; i < _numDrops; i++)
-        {
-            int v = i * 4;
-            int idx = i * 6;
-            _indices[idx] = (ushort)v;
-            _indices[idx + 1] = (ushort)(v + 1);
-            _indices[idx + 2] = (ushort)(v + 2);
-            _indices[idx + 3] = (ushort)v;
-            _indices[idx + 4] = (ushort)(v + 2);
-            _indices[idx + 5] = (ushort)(v + 3);
         }
     }
 

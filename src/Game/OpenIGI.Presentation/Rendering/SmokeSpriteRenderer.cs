@@ -29,9 +29,6 @@ namespace OpenIGI.Presentation.Rendering;
 /// </remarks>
 internal sealed class SmokeSpriteRenderer : IDisposable
 {
-    /// <summary>The global archive retail's by-name sprite loader reads.</summary>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
-
     /// <summary>The retail smoke sprite (<c>dword_5C1160</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "smoke2.spr";
 
@@ -60,6 +57,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
+    private readonly string _spriteArchive;
     private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
@@ -73,8 +71,9 @@ internal sealed class SmokeSpriteRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SmokeSpriteRenderer"/> class.</summary>
-    public SmokeSpriteRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
+    public SmokeSpriteRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, string spriteArchive, IOpenIgiLogger? logger = null)
     {
+        _spriteArchive = spriteArchive ?? throw new ArgumentNullException(nameof(spriteArchive));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _logger = logger ?? NullLogger.Instance;
@@ -186,7 +185,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumPuffs));
             }
 
             _device.UpdateAnimatedMesh(_mesh, _vertices);
@@ -333,19 +332,17 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
         try
         {
-            if (!_fileSystem.Exists(SpriteArchive))
+            if (!_fileSystem.Exists(_spriteArchive))
             {
-                _logger.Warning("Smoke", $"No sprite archive at {SpriteArchive}; rockets fly without a trail.");
+                _logger.Warning("Smoke", $"No sprite archive at {_spriteArchive}; rockets fly without a trail.");
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(SpriteArchive));
-            IresEntry? entry = archive.Entries.FirstOrDefault(
-                candidate => candidate.Kind == IresEntryKind.Body
-                    && Path.GetFileName(candidate.Name).Equals(SpriteName, StringComparison.OrdinalIgnoreCase));
+            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(_spriteArchive));
+            IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {
-                _logger.Warning("Smoke", $"'{SpriteName}' is missing from {SpriteArchive}; rockets fly without a trail.");
+                _logger.Warning("Smoke", $"'{SpriteName}' is missing from {_spriteArchive}; rockets fly without a trail.");
                 return false;
             }
 
@@ -370,24 +367,6 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
     private static bool IsFinite(Vector3f v) =>
         float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
-
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumPuffs * 6];
-        for (int quad = 0; quad < MaximumPuffs; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
-    }
 
     private struct Puff
     {

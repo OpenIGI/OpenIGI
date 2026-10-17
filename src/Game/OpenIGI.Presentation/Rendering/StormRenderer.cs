@@ -818,7 +818,7 @@ public sealed class StormRenderer : IDisposable
 
         int quads = _dropCapacity + MaximumSplashes + MaximumCurtains;
         _vertices = new Vertex3D[quads * 4];
-        _indices = BuildQuadIndices(quads);
+        _indices = QuadIndices.Build(quads);
         _liveDrops = Math.Min(_liveDrops, _dropCapacity);
         _lastQuads = 0;
 
@@ -833,24 +833,6 @@ public sealed class StormRenderer : IDisposable
             LogCategory,
             FormattableString.Invariant(
                 $"Storm sized for {_dropCapacity} drop(s), {MaximumSplashes} splash(es), {MaximumCurtains} sheet(s)."));
-    }
-
-    private static ushort[] BuildQuadIndices(int quads)
-    {
-        ushort[] indices = new ushort[quads * 6];
-        for (int q = 0; q < quads; q++)
-        {
-            int v = q * 4;
-            int i = q * 6;
-            indices[i] = (ushort)v;
-            indices[i + 1] = (ushort)(v + 1);
-            indices[i + 2] = (ushort)(v + 2);
-            indices[i + 3] = (ushort)v;
-            indices[i + 4] = (ushort)(v + 2);
-            indices[i + 5] = (ushort)(v + 3);
-        }
-
-        return indices;
     }
 
     private void Spawn(

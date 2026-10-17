@@ -192,7 +192,7 @@ public sealed class TracerTrailRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumQuads));
             }
 
             _device.UpdateAnimatedMesh(_mesh, _vertices);
@@ -221,26 +221,6 @@ public sealed class TracerTrailRenderer : IDisposable
 
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
-    }
-
-    // The index pattern is static -- quad n is vertices 4n..4n+3 -- so it is built once, at the
-    // size the mesh will keep for its whole life.
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumQuads * 6];
-        for (int quad = 0; quad < MaximumQuads; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
     }
 
     /// <inheritdoc/>

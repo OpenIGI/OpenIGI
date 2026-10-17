@@ -12,6 +12,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
@@ -65,7 +66,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     /// Dragunov's <c>snipersight</c> overlay and the other non-HUD sprites live, which
     /// <c>status.res</c> does not carry.
     /// </remarks>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
+    public const string SpriteArchive = MissionLoader.CommonSpritesArchive;
 
     /// <summary>The font the readout is set in.</summary>
     /// <remarks>

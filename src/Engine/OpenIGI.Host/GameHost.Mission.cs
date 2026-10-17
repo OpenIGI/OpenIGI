@@ -2114,7 +2114,7 @@ internal sealed partial class GameHost
                 // And the bursts where rounds land. Also cheap when off: r_impact_particles 0
                 // spawns nothing, and an empty pool returns at the count check.
                 _impactParticles?.Dispose();
-                _impactParticles = new ImpactParticleRenderer(_device, _resources, _fileSystem);
+                _impactParticles = new ImpactParticleRenderer(_device, _resources, _fileSystem, MissionLoader.CommonSpritesArchive);
                 if (!_impactParticles.Load(loaded))
                 {
                     _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
@@ -2146,11 +2146,11 @@ internal sealed partial class GameHost
                 // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
                 // texture lazily on first blast; falls back to the procedural burst without it.
                 _explosions?.Dispose();
-                _explosions = new ExplosionEffectRenderer(_device, _fileSystem, _logger);
+                _explosions = new ExplosionEffectRenderer(_device, _fileSystem, MissionLoader.CommonSpritesArchive, _logger);
 
                 // The retail smoke2.spr trail behind rockets and the grey column a blast leaves.
                 _missileSmoke?.Dispose();
-                _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, _logger);
+                _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, MissionLoader.CommonSpritesArchive, _logger);
 
                 _hud?.Dispose();
                 _hud = _presentation.CreateHud(new HudPresentationRequest(_device, _logger));

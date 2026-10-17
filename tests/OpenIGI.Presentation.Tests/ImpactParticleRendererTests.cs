@@ -96,7 +96,7 @@ public sealed class ImpactParticleRendererTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
 
         RecordingGraphicsDevice device = new();
-        using ImpactParticleRenderer renderer = new(device, fileSystem);
+        using ImpactParticleRenderer renderer = new(device, fileSystem, MissionLoader.CommonSpritesArchive);
 
         Assert.True(renderer.UsesRetailEffectSprites);
         renderer.SpawnBurst(
@@ -117,7 +117,7 @@ public sealed class ImpactParticleRendererTests
     {
         (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
         RecordingGraphicsDevice device = new();
-        using ImpactParticleRenderer renderer = new(device, resources, fileSystem);
+        using ImpactParticleRenderer renderer = new(device, resources, fileSystem, MissionLoader.CommonSpritesArchive);
 
         Assert.True(renderer.Load(mission));
         Assert.True(renderer.UsesRetailEffectSprites);
@@ -144,7 +144,7 @@ public sealed class ImpactParticleRendererTests
     {
         (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
         RecordingGraphicsDevice device = new();
-        using ImpactParticleRenderer renderer = new(device, resources, fileSystem);
+        using ImpactParticleRenderer renderer = new(device, resources, fileSystem, MissionLoader.CommonSpritesArchive);
 
         Assert.True(renderer.Load(mission));
 
@@ -184,7 +184,7 @@ public sealed class ImpactParticleRendererTests
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
 
-        using ImpactParticleRenderer renderer = new(new RecordingGraphicsDevice(), fileSystem);
+        using ImpactParticleRenderer renderer = new(new RecordingGraphicsDevice(), fileSystem, MissionLoader.CommonSpritesArchive);
 
         Assert.True(renderer.UsesRetailEffectSprites);
         Assert.True(
