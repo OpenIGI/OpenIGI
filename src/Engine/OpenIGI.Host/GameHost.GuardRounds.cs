@@ -39,7 +39,7 @@ public sealed partial class GameHost
 
         public void SpawnImpactBurst(in WorldRayHit worldHit)
         {
-            if (host._impactParticles is { } bursts
+            if (host._effects.Particles is { } bursts
                 && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
             {
                 string material = host._worldMaterials is { } names

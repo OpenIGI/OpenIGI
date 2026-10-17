@@ -21,6 +21,7 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;
 
@@ -912,7 +913,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void SpawnBallisticImpactParticles()
     {
-        if (_impactParticles is null || _player is null)
+        if (_effects.Particles is null || _player is null)
         {
             return;
         }
@@ -927,7 +928,7 @@ public sealed partial class GameHost
         {
             if (impact.StruckHuman)
             {
-                _impactParticles.SpawnBurst(impact.Position, default, ImpactSurfaceKind.Flesh, intensity);
+                _effects.Particles.SpawnBurst(impact.Position, default, ImpactSurfaceKind.Flesh, intensity);
             }
             else if (impact.StruckWall)
             {
@@ -935,7 +936,7 @@ public sealed partial class GameHost
                     && table.TryGet(impact.Wall.Material, out GameMaterial struck)
                     ? struck.Name
                     : string.Empty;
-                _impactParticles.SpawnBurst(
+                _effects.Particles.SpawnBurst(
                     impact.Wall.Position,
                     impact.Wall.Normal,
                     ImpactParticleRenderer.KindOf(material),
@@ -1039,7 +1040,7 @@ public sealed partial class GameHost
                 // (smoke2.spr), while the player handler at 0x00413090 writes the distance-based
                 // whiteout fields from the player's eye. That handler does not perform a wall trace.
                 _sounds?.PlayDefinition("explo_flash", blast.Position, priority: 90);
-                SpawnFlashbangSmoke(blast.Position);
+                _effects.SpawnFlashbangSmoke(blast.Position);
                 float eyeDistance = (float)(_player.EyeUnits - blast.Position).Length;
                 (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
                 // 0x00413090 writes the player fields only when one of its two distance tests passes.
@@ -1054,7 +1055,7 @@ public sealed partial class GameHost
 
             // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
             _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
-            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+            _effects.SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
 
             // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
             // Do not post it again here: leaving a second record behind makes a guard react twice to
@@ -1091,8 +1092,8 @@ public sealed partial class GameHost
         // The missile's own impact (0x428390, at 0x42854D) sets off an Explosion0 with explo_03_l -- the launcher's
         // rocket and a vehicle's alike, since both are the same Missile task.
         _sounds?.PlayDefinition("explo_03_l", blast.Position, priority: 90);
-        SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-        ScorchSurface(blast.Position, blast.Normal, MissileScorchHalfWidthInUnits);
+        _effects.SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+        _effects.Scorch(blast.Position, blast.Normal, WorldEffects.MissileScorchHalfWidthInUnits);
 
         // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
         // which is what lets a LAW rocket -- and nothing else -- blow a car up.
@@ -1241,8 +1242,8 @@ public sealed partial class GameHost
             // hand-grenade fireball. The distinct sound/effect is audible proof that the M203 task
             // reached its own detonation path.
             _sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
-            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-            ScorchSurface(blast.Position, blast.Normal, M203ScorchHalfWidthInUnits);
+            _effects.SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+            _effects.Scorch(blast.Position, blast.Normal, WorldEffects.M203ScorchHalfWidthInUnits);
             Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Gun);
         }
     }
@@ -1283,7 +1284,7 @@ public sealed partial class GameHost
         // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
         // at presentation time as the other world blasts, including after an authored delay.
         _soldiers?.Simulation.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
-        _impactParticles?.SpawnRetailExplosion(
+        _effects.Particles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(
                 parameters.ExplosionRadiusUnits,
@@ -1387,7 +1388,7 @@ public sealed partial class GameHost
         // The SCameraLens branch (0x441770) and AlarmLight_Explode (0x43A5F0) each start their own
         // Explosion0 with fixed arguments: the lens a 2048 range, three FireBalls and seven fragments,
         // the light a 4096 range, two FireBalls and five.
-        _impactParticles?.SpawnRetailExplosion(
+        _effects.Particles?.SpawnRetailExplosion(
             destroyed.PositionUnits,
             string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
                 ? RetailExplosionShape.CameraLens
@@ -1443,7 +1444,7 @@ public sealed partial class GameHost
             _sounds?.PlayDefinition($"glass_crush_{variant}", item.PositionUnits, priority: 55);
             if (item.Placement is { } placement)
             {
-                _impactParticles?.SpawnGlassShatter(placement, impactUnits ?? item.PositionUnits);
+                _effects.Particles?.SpawnGlassShatter(placement, impactUnits ?? item.PositionUnits);
             }
 
             // The holes in it were a child of the pane (0x47D438), so they go with it -- which is why a
@@ -1508,7 +1509,7 @@ public sealed partial class GameHost
     {
         Vector3d position = blast.PositionUnits;
         _sounds?.PlayDefinition(VehicleBlast.Sound, position, priority: 90);
-        _impactParticles?.SpawnRetailExplosion(
+        _effects.Particles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
         _soldiers?.Simulation.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
@@ -1534,7 +1535,7 @@ public sealed partial class GameHost
 
         // ExplodeMagicObj (0x43C0B0) and ExplodeObject (0x481A60) hand Explosion0 their authored full
         // range, fragment count and FireBall count; the look follows from those alone.
-        _impactParticles?.SpawnRetailExplosion(
+        _effects.Particles?.SpawnRetailExplosion(
             item.PositionUnits,
             new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
         _soldiers?.Simulation.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
@@ -1873,5 +1874,24 @@ public sealed partial class GameHost
         public void Play(string name) => host._sounds?.Play(
             name,
             VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
+    }
+
+    /// <summary>Sounds every grenade that bounced this tick, and lets the AI hear it.</summary>
+    /// <remarks>
+    /// The retail grenade collision (<c>0x00476CC0</c>) plays <c>grenade_bnc_1</c> at the grenade and
+    /// posts a noise the AI can investigate, both debounced so a rolling grenade sounds once. The
+    /// simulation already applied the debounce; here each surviving bounce is heard.
+    /// </remarks>
+    private void PlayGrenadeBounces()
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        foreach (Vector3d at in _player.Grenades.Bounces)
+        {
+            _sounds?.PlayDefinition("grenade_bnc_1", at, priority: 120);
+        }
     }
 }

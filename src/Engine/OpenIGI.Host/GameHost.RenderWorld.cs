@@ -2179,22 +2179,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         // firing guard's muzzle. Light draws over the lit scene.
         (_soldiers ?? _backdropSoldiers)?.DrawMuzzleFlashes(eye, projection);
 
-        // The impact bursts: dust hazes over the scene, spark light over the haze.
-        _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
-
-        // And the original's own: concrete1.spr dust, the chips it knocked loose, and blood.
-        if (RenderCVars.ImpactEffects.Value)
-        {
-            _retailImpacts?.Draw(
-                _impactEffects, eye, projection, smoothPresentation ? tickBlend : 1f);
-        }
-
-        // The rocket's smoke trail and the blast's grey column, under the fireball.
-        _missileSmoke?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
-
-        // The retail fireball, over the scene as light: grenade, missile and shot-out-device
-        // blasts drawn from the real fireball.spr sprite.
-        _explosions?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
+        // The world's effects over the lit scene: the impact bursts, the original's own dust, chips and blood,
+        // the smoke trails and columns, and the fireball over all of it as light.
+        _effects.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
         // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
         // While the camera is inside a building's state.Shell the rain is suppressed, exactly as the

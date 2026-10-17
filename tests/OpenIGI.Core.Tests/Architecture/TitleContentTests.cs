@@ -62,7 +62,6 @@ public sealed class TitleContentTests
     private static readonly string[] Baseline =
     [
         "src/Engine/OpenIGI.Host/GameHost.Audio.cs",
-        "src/Engine/OpenIGI.Host/GameHost.Effects.cs",
         "src/Engine/OpenIGI.Host/GameHost.Menu.cs",
         "src/Engine/OpenIGI.Host/GameHost.Mission.cs",
         "src/Engine/OpenIGI.Host/GameHost.RenderWorld.cs",

@@ -1065,7 +1065,7 @@ public sealed partial class GameHost
             // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
             // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
             // knife leaves: KnifeStab itself never reaches the decal message.
-            soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
+            soldiers.BloodSpray = (owner, at, direction) => _effects.SpawnBlood(owner, at, direction);
             _mission.Cutscenes?.SetTargetPoseResolver(soldiers.Simulation.CutscenePose);
 
             soldiers.Simulation.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
@@ -1933,15 +1933,7 @@ public sealed partial class GameHost
             _marks?.Dispose();
             _tracers?.Dispose();
             _tracers = null;
-            _impactParticles?.Dispose();
-            _impactParticles = null;
-            _retailImpacts?.Dispose();
-            _retailImpacts = null;
-            _impactEffects.Clear();
-            _explosions?.Dispose();
-            _explosions = null;
-            _missileSmoke?.Dispose();
-            _missileSmoke = null;
+            _effects.Release();
             _heldWeapon = null;
 
             // Set whether or not the level declares a loadout: a weapon the all-weapons cheat grants
@@ -1996,47 +1988,9 @@ public sealed partial class GameHost
                 _tracers?.Dispose();
                 _tracers = new TracerTrailRenderer(_device);
 
-                // And the bursts where rounds land. Also cheap when off: r_impact_particles 0
-                // spawns nothing, and an empty pool returns at the count check.
-                _impactParticles?.Dispose();
-                _impactParticles = new ImpactParticleRenderer(_device, _resources, _fileSystem, MissionLoader.CommonSpritesArchive);
-                if (!_impactParticles.Load(loaded))
-                {
-                    _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
-                }
-
-                // The original's own impact effects: concrete1.spr dust, the material's own chip model,
-                // and blood1/blood2 for a body. The runtime keeps the motion; this only draws it. Without
-                // it the blood is still thrown and still stamps its splashes, but no drop or mist is seen.
-                _retailImpacts?.Dispose();
-                _retailImpacts = _presentation.Presenters.Create<ImpactEffectPresentationRequest, IImpactEffectPresenter>(
-                    new ImpactEffectPresentationRequest(_device, _resources, _fileSystem));
-                int impactModels = _retailImpacts?.Load(loaded) ?? 0;
-                _impactEffects.Clear();
-                _impactEffects.SetMistFrameCount(_retailImpacts?.MistFrameCount ?? 1);
-                if (_retailImpacts is not { SpritesAvailable: true } impacts)
-                {
-                    _logger.Warning(
-                        "Impact",
-                        "concrete1.spr, blood1.spr or blood2.spr did not resolve; the original's "
-                            + "impact dust and blood will not draw.");
-                }
-                else
-                {
-                    _logger.Debug(
-                        "Impact",
-                        $"Retail impact effects bound: {impactModels} chip model(s), "
-                            + $"{impacts.MistFrameCount} blood frame(s).");
-                }
-
-                // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
-                // texture lazily on first blast; falls back to the procedural burst without it.
-                _explosions?.Dispose();
-                _explosions = new ExplosionEffectRenderer(_device, _fileSystem, MissionLoader.CommonSpritesArchive, _logger);
-
-                // The retail smoke2.spr trail behind rockets and the grey column a blast leaves.
-                _missileSmoke?.Dispose();
-                _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, MissionLoader.CommonSpritesArchive, _logger);
+                // The world's effects: the bursts where rounds land, the original's own dust, chips and blood,
+                // the fireball every blast shares, and the smoke rockets and blasts leave.
+                _effects.Load(loaded, _presentation.Presenters, _resources, _fileSystem);
 
                 _hud?.Dispose();
                 _hud = _presentation.Presenters.Create<HudPresentationRequest, IHudPresenter>(new HudPresentationRequest(_device, _logger));
@@ -2498,10 +2452,7 @@ public sealed partial class GameHost
         _debugOverlay?.Dispose();
         _marks?.Dispose();
         _tracers?.Dispose();
-        _impactParticles?.Dispose();
-        _retailImpacts?.Dispose();
-        _explosions?.Dispose();
-        _missileSmoke?.Dispose();
+        _effects.Release();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
@@ -2526,11 +2477,6 @@ public sealed partial class GameHost
         _debugOverlay = null;
         _marks = null;
         _tracers = null;
-        _impactParticles = null;
-        _retailImpacts = null;
-        _impactEffects.Clear();
-        _explosions = null;
-        _missileSmoke = null;
         _cameraStatusLights = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
@@ -3453,22 +3399,20 @@ public sealed partial class GameHost
 
                 // The same impacts, seen: sparks and dust composed from the struck material.
                 // Ticked before spawning so a new burst draws its birth frame unmoved.
-                _impactParticles?.Tick();
-                _explosions?.Tick();
-                _missileSmoke?.Tick();
+                _effects.Tick();
 
                 // The original's own effects, on the same rhythm: the dust and chips step, and the
                 // blood droplets in the air are traced against the world, marking whatever they
                 // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
                 // it was born.
-                TickRetailImpactEffects();
+                _effects.TickRetailImpacts();
 
                 SpawnBallisticImpactParticles();
-                SpawnRetailImpactEffects();
+                _effects.SpawnSurfaceImpacts(_player.Impacts);
 
                 // The launcher rockets in the air lay their smoke trail, one column of puffs per
                 // segment they crossed this tick.
-                SpawnMissileSmoke();
+                _effects.SpawnMissileTrails(_player.Missiles, _vehicleMissiles);
 
                 // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
                 // and the casualties.
@@ -3528,10 +3472,8 @@ public sealed partial class GameHost
                 // The player's update has stopped, but the world's has not: a blast that killed the player
                 // burns out, and its debris and smoke settle, under the death camera as they do in the
                 // original. Stepping them only from the player's update froze them on screen.
-                _impactParticles?.Tick();
-                _explosions?.Tick();
-                _missileSmoke?.Tick();
-                TickRetailImpactEffects();
+                _effects.Tick();
+                _effects.TickRetailImpacts();
             }
 
             // The first round of a mission, reported once — the same one-shot diagnostic the world

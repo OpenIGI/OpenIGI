@@ -582,8 +582,6 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     private bool _missionFailedMenu;
     private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
-    private ImpactParticleRenderer? _impactParticles;
-    private IImpactEffectPresenter? _retailImpacts;
 
     // The world the blood is traced against: placed objects AND the terrain, because a droplet lands
     // on the ground as readily as on a wall and the player's own movement caster carries neither the
@@ -595,11 +593,6 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
     // and the player's own material lookup already use.
     private int? _effectTerrainRow;
 
-    // The original's own impact effects -- the material's GunShotEffect and a body's blood. Simulated
-    // on the fixed tick beside the particles and drawn by _retailImpacts.
-    private readonly ImpactEffectRuntime _impactEffects = new();
-    private ExplosionEffectRenderer? _explosions;
-    private SmokeSpriteRenderer? _missileSmoke;
     private ICameraStatusLightPresenter? _cameraStatusLights;
     private IGrenadePresenter? _grenadeRenderer;
     private IMissilePresenter? _missileRenderer;
@@ -723,6 +716,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _logger = logger;
         _pacing = new Diagnostics.PresentationPacingProbe(logger);
         _memory = new Services.MemoryDiagnostics(device, logger);
+        _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
     }
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
@@ -937,7 +931,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         RegisterTimeOfDayCommands(console.System);
         _flashlight.RegisterCommands(console.System);
         RegisterTitlePlayerCommands(console.System);
-        RegisterImpactCommands(console.System);
+        _effects.Register(console.System);
         RegisterCameraCommands(console.System);
         RegisterRendererSwitchCommand(console.System);
         _contentLayers.Register(console.System);
@@ -1251,11 +1245,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _debugOverlay = null;
         _marks = null;
         _tracers = null;
-        _impactParticles = null;
-        _retailImpacts = null;
-        _impactEffects.Clear();
-        _explosions = null;
-        _missileSmoke = null;
+        _effects.Forget();
         _cameraStatusLights = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
@@ -3757,10 +3747,7 @@ public sealed partial class GameHost : IDisposable, IInspectedWorld
         _messages?.Dispose();
         _marks?.Dispose();
         _tracers?.Dispose();
-        _impactParticles?.Dispose();
-        _retailImpacts?.Dispose();
-        _explosions?.Dispose();
-        _missileSmoke?.Dispose();
+        _effects.Dispose();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
