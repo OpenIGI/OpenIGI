@@ -311,12 +311,18 @@ public sealed class CutsceneRuntime
         Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
         Func<GameTask, bool>? vehicleObstacleReleased = null,
         TerrainData? terrain = null,
-        IOpenIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null,
+        LevelUpdateWalker? walker = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
+        if (walker is not null && !ReferenceEquals(walker.Root, levelRoot))
+        {
+            throw new ArgumentException("The walk must be over the same level.", nameof(walker));
+        }
+
         _root = levelRoot;
-        _walker = new LevelUpdateWalker(levelRoot);
+        _walker = walker ?? new LevelUpdateWalker(levelRoot);
         _variables = variables;
         _hostNative = native;
         _soundChanged = soundChanged;

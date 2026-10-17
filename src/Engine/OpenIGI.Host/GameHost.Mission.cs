@@ -10,6 +10,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -500,6 +501,40 @@ internal sealed partial class GameHost
     private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
     {
         BeginStage();
+        LevelUpdateWalker walker = new(levelRoot);
+        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted);
+        (_missionSystems ??= MissionSystems()).BuildAll(build);
+    }
+
+    // The systems a mission is brought up by, in order; see MissionSystemNames.
+    private LevelSystems<MissionBuild>? _missionSystems;
+
+    /// <summary>Makes the host's mission systems, in the order a mission is brought up.</summary>
+    /// <returns>A fresh list.</returns>
+    private LevelSystems<MissionBuild> MissionSystems() => new LevelSystems<MissionBuild>()
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Sounds, MissionSounds))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Cutscenes, MissionCutscenes))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Objectives, MissionObjectives))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Computer, MissionComputer))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Scene, MissionScene))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Soldiers, MissionSoldiers))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Interactions, MissionInteractions))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Cameras, MissionCameras))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.NavigationAi, MissionNavigationAi))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.LevelWalk, MissionLevelWalk))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Picture, MissionPicture))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Player, MissionPlayer))
+        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Adornments, MissionAdornments));
+
+    // A system ran before the one it depends on.
+    private static InvalidOperationException MissingSystem(string name) =>
+        new($"The mission system '{name}' has not run.");
+
+    /// <summary>The mission's terrain, its sounds and its score.</summary>
+    private void MissionSounds(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        bool promoted = b.Promoted;
 
         // The mission's terrain, first thing, because three separate passes below close over it and it
         // used to be assigned a thousand lines after the first of them. A cold start therefore built the
@@ -532,6 +567,13 @@ internal sealed partial class GameHost
 
         MountMissionSounds(loaded);
         _music?.Play(MusicPlayer.GameMusic);
+    }
+
+    /// <summary>The mission's text and the cutscene runtime, with the natives the level's cutscenes call.</summary>
+    private void MissionCutscenes(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
 
         MenuStringTable missionStrings = new(_resources);
 
@@ -540,9 +582,8 @@ internal sealed partial class GameHost
         MissionStringResolver missionText = new(_resources, missionStrings);
 
         // The objective runtime owns the message slots but is built after the cutscene runtime, which
-        // needs it for StatusMessageScreen_ClearMessages. The native reads this local rather than the
+        // needs it for StatusMessageScreen_ClearMessages. The native reads the build's rather than the
         // field so a clear during construction cannot reach the previous mission's messages.
-        MissionObjectiveRuntime? objectives = null;
         _cutscenes = new CutsceneRuntime(
             levelRoot,
             _loop.Variables,
@@ -581,7 +622,7 @@ internal sealed partial class GameHost
                 if (name == "StatusMessageScreen_ClearMessages")
                 {
                     // 0x485AD0: clears every slot and returns true.
-                    objectives?.ClearMessages();
+                    b.Objectives?.ClearMessages();
                     return QvmValue.FromInt32(1);
                 }
 
@@ -615,7 +656,8 @@ internal sealed partial class GameHost
                 return null;
             },
             vehicleObstacleReleased: obstacle =>
-                _doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
+                _doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true,
+            walker: b.Walker);
         bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
         {
@@ -633,9 +675,25 @@ internal sealed partial class GameHost
                     (parameter, index) => $"{parameter.Name}={activation.GetValue(index) ?? "<null>"}"));
             _logger.Information("Mission.Timer", $"AreaActivate_161 {parameters}");
         }
+
+        b.MissionText = missionText;
+    }
+
+    /// <summary>The objective runtime, the intro skipped when cinematics are off, and the test captures' script writes.</summary>
+    private void MissionObjectives(MissionBuild b)
+    {
+        if (_cutscenes is null)
+        {
+            throw MissingSystem(MissionSystemNames.Cutscenes);
+        }
+
+        LevelTask levelRoot = b.LevelRoot;
+        MissionStringResolver missionText = b.MissionText!;
+
         // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
         // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
-        _missionObjectives = objectives = new MissionObjectiveRuntime(
+        MissionObjectiveRuntime objectives;
+        _missionObjectives = b.Objectives = objectives = new MissionObjectiveRuntime(
             levelRoot,
             _loop.Variables,
             missionText.Get,
@@ -709,6 +767,15 @@ internal sealed partial class GameHost
             _cutscenes.FinishExpressionTick();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
+    }
+
+    /// <summary>The map computer, its highlights, the tactical computer and the comms cards.</summary>
+    private void MissionComputer(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        MissionStringResolver missionText = b.MissionText!;
+
         _computerHighlights = _presentation.CreateComputerHighlights(new ComputerHighlightRequest(levelRoot, _loop.Variables));
         _mapComputer = _presentation.CreateMapComputer(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
@@ -754,6 +821,20 @@ internal sealed partial class GameHost
         // world renderer and the collision index are exactly what AdoptPreview put up to draw the menu
         // over, and they are the same level.
         EndStage("objectives, highlights and the map computer");
+    }
+
+    /// <summary>The scene walk, the world renderer and the collision index; the vehicles on it, what can be destroyed, and the weather.</summary>
+    private void MissionScene(MissionBuild b)
+    {
+        if (_cutscenes is null)
+        {
+            throw MissingSystem(MissionSystemNames.Cutscenes);
+        }
+
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        bool promoted = b.Promoted;
 
         ObjectCollisionIndex solids;
         IWorldPresenter world;
@@ -886,6 +967,19 @@ internal sealed partial class GameHost
         _storm.SetShelter(_shelterField);
         ApplyWeatherSettings();
 
+        b.Scene = scene;
+        b.Solids = solids;
+        b.World = world;
+    }
+
+    /// <summary>The soldiers' meshes and textures.</summary>
+    private void MissionSoldiers(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        bool promoted = b.Promoted;
+        ObjectCollisionIndex solids = b.Solids!;
+
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
         // WorldScene placements - a human task is a typed task, and the original draws it through the
@@ -913,6 +1007,22 @@ internal sealed partial class GameHost
         }
 
         EndStage("the soldiers' meshes and textures");
+    }
+
+    /// <summary>The doors, elevators, pickups and world interactions, and the soldiers' sounds.</summary>
+    private void MissionInteractions(MissionBuild b)
+    {
+        if (_soldiers is null)
+        {
+            throw MissingSystem(MissionSystemNames.Soldiers);
+        }
+
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        ObjectCollisionIndex solids = b.Solids!;
+        IWorldPresenter world = b.World!;
+
         _soldiers.Cutscenes = _cutscenes;
 
         // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
@@ -983,6 +1093,15 @@ internal sealed partial class GameHost
         }
 
         EndStage("the doors, elevators and world interactions");
+    }
+
+    /// <summary>The security cameras, their sight, and the rotating objects.</summary>
+    private void MissionCameras(MissionBuild b)
+    {
+        LevelTask levelRoot = b.LevelRoot;
+        WorldScene scene = b.Scene!;
+        ObjectCollisionIndex solids = b.Solids!;
+        IWorldPresenter world = b.World!;
 
         // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
         // objects, not navigation actors, so construct them independently of whether this mission
@@ -1012,6 +1131,31 @@ internal sealed partial class GameHost
         // what turns them: the walk gives a placement, this gives it an angle per tick.
         _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
         world.RotatingObjects = _rotatingObjects;
+
+        b.WorldTrace = worldTrace;
+    }
+
+    /// <summary>The nav graphs and the soldiers' brains, with what their rounds, blasts and alarms do.</summary>
+    private void MissionNavigationAi(MissionBuild b)
+    {
+        if (_scene is null)
+        {
+            throw MissingSystem(MissionSystemNames.Scene);
+        }
+
+        if (_soldiers is null)
+        {
+            throw MissingSystem(MissionSystemNames.Soldiers);
+        }
+
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        bool promoted = b.Promoted;
+        WorldScene scene = b.Scene!;
+        ObjectCollisionIndex solids = b.Solids!;
+        IWorldPresenter world = b.World!;
+        WorldTraceCast worldTrace = b.WorldTrace!;
 
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
@@ -1802,9 +1946,30 @@ internal sealed partial class GameHost
         {
             _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
         }
+    }
+
+    /// <summary>The soldiers, the doors, the alarm controls and the player join the level's walk.</summary>
+    private void MissionLevelWalk(MissionBuild b)
+    {
+        LevelTask levelRoot = b.LevelRoot;
 
         // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
         AttachActorsToLevelWalk(levelRoot);
+    }
+
+    /// <summary>The terrain, sky, sun, grade and camera; the lamps and the surface cache; what impact effects trace against; the player's state reset.</summary>
+    private void MissionPicture(MissionBuild b)
+    {
+        if (_scene is null)
+        {
+            throw MissingSystem(MissionSystemNames.Scene);
+        }
+
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        bool promoted = b.Promoted;
+        WorldScene scene = b.Scene!;
 
         // Everything from here to the free camera is what makes the level a PICTURE, and a promoted
         // backdrop is already that picture -- AdoptPreview built the terrain (with its ground detail
@@ -1996,6 +2161,17 @@ internal sealed partial class GameHost
         ResetFlashlight();
 
         EndStage("the terrain, sky, sun, grade and camera");
+    }
+
+    /// <summary>The player: its rig, its animations, its loadout and HUD, stood up at the spawn; or the title's own player.</summary>
+    private void MissionPlayer(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        MissionStringResolver missionText = b.MissionText!;
+        WorldScene scene = b.Scene!;
+        ObjectCollisionIndex solids = b.Solids!;
 
         {
             PlayerCamera candidate = new(_logger);
@@ -2485,6 +2661,14 @@ internal sealed partial class GameHost
 
         // A title that brings its own player stands it here, in place of the rig above.
         StandTitlePlayer(loaded, levelRoot, scene);
+    }
+
+    /// <summary>The forest and the water, the menu's renderer and backdrop dropped, and the mission reported built.</summary>
+    private void MissionAdornments(MissionBuild b)
+    {
+        bool promoted = b.Promoted;
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
 
         // The things standing in the world rather than being it: planted foliage, and water. Both are
         // handed the mission's model lookup, which is the one thing the ground and the sky do not need --
