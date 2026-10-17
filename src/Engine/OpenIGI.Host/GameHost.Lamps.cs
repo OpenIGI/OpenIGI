@@ -2,6 +2,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Lighting;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -31,6 +32,10 @@ internal sealed partial class GameHost
     /// press lands on.
     /// </remarks>
     private const double LampReach = 60.0;
+
+    // Which lamps the daylight switches, and what the lamps sound like.
+    private readonly LampDaylightControl _lampDaylight = new();
+    private readonly LampSoundPlayer _lampSounds = new();
 
     /// <summary>How much closer than the lamp something has to be to count as standing in front of it.</summary>
     /// <remarks>
@@ -204,9 +209,19 @@ internal sealed partial class GameHost
         _lampMilliseconds = milliseconds;
 
         // The daylight first, so a lamp its photocell switches this pass starts its fade this pass too.
-        UpdateLampDaylight(board, elapsed);
+        _lampDaylight.Update(
+            board,
+            elapsed,
+            _lightFixtures,
+            _lampsMissionId,
+            _shelterField,
+            _effectWalls,
+            _options.SunDirection is not null,
+            _dayNight,
+            _cycleSun ?? _sun ?? FallbackSun,
+            WeatherCloudCover());
         board.Update(elapsed);
-        PlayLampSounds(board, elapsed, audible);
+        _lampSounds.Play(board, elapsed, audible, _sounds, _lightFixtures);
 
         if (board.Revision != _lampBounceRevision)
         {
@@ -230,7 +245,7 @@ internal sealed partial class GameHost
         }
 
         LightFixture fixture = _lightFixtures[index];
-        string daylight = _lampPhotocells is { } cells && cells.Follows(index)
+        string daylight = _lampDaylight.Photocells is { } cells && cells.Follows(index)
             ? FormattableString.Invariant($"dusk circuit {cells.CircuitOf(index)} on below {cells.ThresholdsOf(index).On:0.000}")
             : "kept on by day";
 
