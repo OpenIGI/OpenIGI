@@ -9,3 +9,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("OpenIGI.Web")]
 [assembly: InternalsVisibleTo("OpenIGI.Host.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Desktop.Tests")]
+[assembly: InternalsVisibleTo("OpenIGI.Parity.Tests")]

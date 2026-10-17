@@ -15,7 +15,7 @@ using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests.Parity;
+namespace OpenIGI.Parity.Tests;
 
 /// <summary>
 /// The refactor's oracle: a mission run headless in lockstep for a fixed number of frames, each frame reduced to one hash of
@@ -30,10 +30,11 @@ namespace OpenIGI.Desktop.Tests.Parity;
 /// not fail it, and moving where something is does.
 /// </para>
 /// <para>
-/// The baselines are <c>Parity/Baselines/&lt;title&gt;-m&lt;mission&gt;.txt</c>, one hash a frame. Set
+/// The baselines are <c>tests/OpenIGI.Parity.Tests/Baselines/&lt;title&gt;-m&lt;mission&gt;.txt</c>, one hash a frame. Set
 /// <c>OPENIGI_PARITY_UPDATE=1</c> to record them, only from a commit whose behaviour is the one to keep.
 /// </para>
 /// </remarks>
+[Collection(ParityGroup.Name)]
 public sealed class SimulationTraceTests : IDisposable
 {
     private const string UpdateVariable = "OPENIGI_PARITY_UPDATE";
@@ -71,6 +72,10 @@ public sealed class SimulationTraceTests : IDisposable
 
     private void Trace(GameDataSource data, GameTitle title, int mission, params string[] script)
     {
+        // The console variables are process-wide; a test run before this one may have left any of them changed. Lockstep reads
+        // no saved settings, so the defaults are the whole configuration.
+        Core.Configuration.CVarRegistry.Default.ResetAll();
+
         string root = data.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.For(title);
         using RecordingGraphicsDevice device = new();
@@ -110,7 +115,7 @@ public sealed class SimulationTraceTests : IDisposable
         host.Stop();
 
         string name = $"{title.Id}-m{mission}.txt";
-        string path = Path.Combine(RepositoryRoot(), "tests", "OpenIGI.Desktop.Tests", "Parity", "Baselines", name);
+        string path = Path.Combine(RepositoryRoot(), "tests", "OpenIGI.Parity.Tests", "Baselines", name);
         if (Environment.GetEnvironmentVariable(UpdateVariable) == "1")
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -122,7 +127,7 @@ public sealed class SimulationTraceTests : IDisposable
         string[] expected = File.ReadAllLines(path);
         for (int i = 0; i < Math.Min(expected.Length, hashes.Count); i++)
         {
-            Assert.True(expected[i] == hashes[i], $"{name}: frame {i} drew differently from its baseline (first difference).");
+            Assert.True(expected[i] == hashes[i], $"{name}: frame {i} drew differently from its baseline (first difference): expected {expected[i]}, got {hashes[i]}.");
         }
 
         Assert.Equal(expected.Length, hashes.Count);
@@ -188,4 +193,12 @@ public sealed class SimulationTraceTests : IDisposable
     {
         public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => NullAudioDevice.Instance;
     }
+}
+
+/// <summary>The parity traces run alone: the host's process-wide state (console variables, probes) must not change under them.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ParityGroup
+{
+    /// <summary>The collection's name.</summary>
+    public const string Name = "Parity";
 }
