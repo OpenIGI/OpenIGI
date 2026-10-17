@@ -127,10 +127,10 @@ public static class HumanHitTest
             (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
 
         // The reversed travel direction, because the original measures where the round came FROM.
-        Vector3f incoming = Normalise(new Vector3f(
-            (float)-direction.X, (float)-direction.Y, (float)-direction.Z));
+        Vector3f incoming = new Vector3f(
+            (float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
 
-        Vector3f forward = Normalise(facing);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
 
         // The sideways axis is the facing turned a quarter turn in the ground plane, so the two
@@ -259,8 +259,8 @@ public static class HumanHitTest
         double length = Math.Sqrt(
             (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
 
-        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
-        Vector3f forward = Normalise(facing);
+        Vector3f incoming = new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
 
@@ -386,8 +386,8 @@ public static class HumanHitTest
         BonePose pose,
         Vector3d boneOrigin)
     {
-        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
-        Vector3f forward = Normalise(facing);
+        Vector3f incoming = new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
@@ -489,8 +489,8 @@ public static class HumanHitTest
 
         double length = Math.Sqrt(
             (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
-        Vector3f forward = Normalise(facing);
+        Vector3f incoming = new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
@@ -724,12 +724,6 @@ public static class HumanHitTest
 
         t = low;
         return true;
-    }
-
-    private static Vector3f Normalise(Vector3f v)
-    {
-        float length = MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
-        return length <= 0f ? new Vector3f(0f, 1f, 0f) : new Vector3f(v.X / length, v.Y / length, v.Z / length);
     }
 
 }

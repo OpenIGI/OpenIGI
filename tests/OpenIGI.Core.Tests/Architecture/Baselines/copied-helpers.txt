@@ -1,6 +1,5 @@
 src/Core/OpenIGI.Formats/Ilff/IresArchive.cs: Walk
 src/Engine/OpenIGI.Engine/Resources/ScriptTableLoader.cs: Walk
-src/Game/OpenIGI.Presentation.Igi1/World/BulletMarkRenderer.cs: Normalise
 src/Game/OpenIGI.Game.Igi2/Collision/Igi2CollisionWorld.cs: Walk
 src/Game/OpenIGI.Game.Igi2/Collision/Igi2SplineSegmentTrace.cs: Distance
 src/Game/OpenIGI.Game.Igi2/Detection/Igi2AiDetection.cs: Distance
@@ -8,7 +7,6 @@ src/Game/OpenIGI.Game.Igi2/Interaction/Igi2DoorTask.Portal.cs: DistanceSquared
 src/Game/OpenIGI.Game.Igi2/Physics/Igi2RigidBody.cs: Normalise
 src/Game/OpenIGI.Game.Igi2/Player/Igi2MovementCamera.cs: Normalize
 src/Game/OpenIGI.Game.Igi2/Weapons/Igi2GunShot.cs: Distance
-src/Game/OpenIGI.Game/Player/HumanHitTest.cs: Normalise
 src/Game/OpenIGI.Game/World/CarDynamics.cs: Cross
 src/Game/OpenIGI.Game/World/CutsceneRuntime.cs: Lerp
 src/Game/OpenIGI.Game/World/LadderPlacement.cs: Dot

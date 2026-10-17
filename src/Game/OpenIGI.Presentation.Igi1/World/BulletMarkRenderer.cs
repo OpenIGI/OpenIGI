@@ -266,13 +266,13 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         // axis the normal leans on least is what keeps the cross product well conditioned. An anchored
         // mark picks them in its object's frame and turns them with it, so a hole on a swinging door
         // turns with the door rather than spinning when the normal crosses the world-axis threshold.
-        Vector3f normal = Normalise(anchored ? mark.LocalNormal : mark.Normal);
+        Vector3f normal = (anchored ? mark.LocalNormal : mark.Normal).NormalizedOr(Vector3f.UnitZ);
         Vector3f reference = MathF.Abs(normal.Z) < 0.9f
             ? new Vector3f(0f, 0f, 1f)
             : new Vector3f(1f, 0f, 0f);
 
-        Vector3f right = Normalise(Vector3f.Cross(reference, normal));
-        Vector3f up = Normalise(Vector3f.Cross(normal, right));
+        Vector3f right = Vector3f.Cross(reference, normal).NormalizedOr(Vector3f.UnitZ);
+        Vector3f up = Vector3f.Cross(normal, right).NormalizedOr(Vector3f.UnitZ);
         if (anchored)
         {
             normal = BulletMarks.ToWorld(orientation, normal);
@@ -312,13 +312,6 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
             u,
             v,
             colour: Bgra32.White);
-
-    private static Vector3f Normalise(Vector3f v)
-    {
-        float length = MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
-        return length <= 0f ? new Vector3f(0f, 0f, 1f) : new Vector3f(v.X / length, v.Y / length, v.Z / length);
-    }
-
 
     // The textures the models name, loaded on first use.
     private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory, TextureAddressMode.Clamp, static name => [$"LOCAL:common/textures/{name}", LoadedPack.TextureResourceName(name)]);
