@@ -1258,61 +1258,9 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
         // world positions correctly before it feeds the frame.
         bool screenGiDumped = false;
 
-        // The live screen probe gather's atlases, sized to the frame divided by the probe step and reused
-        // across frames. Ping-ponged: each frame reads one pair and writes the other, so the accumulation
-        // reprojects onto its own past. giAccum holds the accumulated irradiance the deferred lighting reads;
-        // giPosition holds the world position each probe belongs to, for the reprojection's disocclusion test.
-        // Grown when the window changes, which drops the history with it.
-        TextureHandle[] giAccum = [default, default];
-        TextureHandle[] giPosition = [default, default];
-        TextureHandle giFiltered = default;
+        // What the screen-space GI keeps from one frame to the next.
+        ScreenGiHistory screenGi = new();
 
-        // The gather's raw per-probe estimates, traced by its first pass and pooled by its second.
-        TextureHandle giRaw = default;
-
-        // The one-ray-a-pixel gather DLSS ray reconstruction denoises in all of the above's place, at the
-        // frame's size, and the count its white noise is keyed on.
-        TextureHandle giPixels = default;
-        int giPixelsWidth = 0;
-        int giPixelsHeight = 0;
-        uint giPixelFrame = 0;
-        int giIndirectWidth = 0;
-        int giIndirectHeight = 0;
-        int giFrame = 0;
-        bool giHasHistory = false;
-        Matrix3f giPrevWorldToView = Matrix3f.Identity;
-        Vector3f giPrevCameraToCache = default;
-        DepthUnprojection? giPrevUnprojection = null;
-
-        // The full-resolution resolve runs EVERY frame even where the gather is amortised, so it keeps its
-        // own ping-pong cursor and its own previous camera. Sharing the gather's was the trap: on a frame
-        // the gather skipped, the resolve would have reprojected against a camera two frames old and read
-        // back the slot it was about to write.
-        int giResolveFrame = 0;
-        Matrix3f giResolvePrevWorldToView = Matrix3f.Identity;
-        Vector3f giResolvePrevCameraToCache = default;
-        DepthUnprojection? giResolvePrevUnprojection = null;
-
-        // Which accumulation slot the last gather wrote, and the atlas the resolve should read. On a frame
-        // the gather skips, both simply stand.
-        int giLastWrite = 0;
-        int giCadenceCursor = 0;
-
-        // The full-resolution temporal resolve's atlases: the sparse probe atlas upsampled and accumulated
-        // per pixel so the indirect is pinned to the world rather than sliding with the sparse reprojection.
-        // Ping-ponged like the probe atlases, sized to the full render, and read directly by the deferred fill.
-        TextureHandle[] giResolve = [default, default];
-        TextureHandle[] giResolvePosition = [default, default];
-        int giResolveWidth = 0;
-        int giResolveHeight = 0;
-        bool giResolveHasHistory = false;
-
-        // What the screen GI's histories were accumulated under, so a cut, a zoom or a new surface cache
-        // can throw them away. See where the gather begins.
-        bool giContinuityValid = false;
-        Vector3d giLastEye = default;
-        DepthUnprojection giLastUnprojection = default;
-        SurfaceCacheLighting? giLastCards = null;
         _capturedCards = null;
         _cardInstances = null;
         _sdfBake = null;
@@ -5504,17 +5452,17 @@ if (retailFog)
                     _device.EndStageTiming();
                     _device.BeginStageTiming(RenderStage.GlobalIllumination);
 
-                    if (giPixelsWidth != sceneTarget.Width || giPixelsHeight != sceneTarget.Height)
+                    if (screenGi.PixelsWidth != sceneTarget.Width || screenGi.PixelsHeight != sceneTarget.Height)
                     {
-                        if (giPixels.IsValid)
+                        if (screenGi.Pixels.IsValid)
                         {
-                            _device.DestroyTexture(giPixels);
+                            _device.DestroyTexture(screenGi.Pixels);
                         }
 
-                        giPixels = _device.CreateStorageTexture(
+                        screenGi.Pixels = _device.CreateStorageTexture(
                             sceneTarget.Width, sceneTarget.Height, VolumeFormat.Rgba16F, "cards.pixel");
-                        giPixelsWidth = sceneTarget.Width;
-                        giPixelsHeight = sceneTarget.Height;
+                        screenGi.PixelsWidth = sceneTarget.Width;
+                        screenGi.PixelsHeight = sceneTarget.Height;
                     }
 
                     Vector3f pixelCameraToCache = new(
@@ -5532,26 +5480,26 @@ if (retailFog)
                         sceneTarget.Width,
                         sceneTarget.Height,
                         SkyFillColour(),
-                        giPixelFrame++,
-                        giPixels,
+                        screenGi.PixelFrame++,
+                        screenGi.Pixels,
 
                         // Last frame's lit picture and the camera it was rendered from, as the probes read it.
                         _device.SceneColour,
                         RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
                         giTraceDistance,
                         giTraceThickness,
-                        giResolvePrevWorldToView,
-                        giResolvePrevCameraToCache);
+                        screenGi.ResolvePrevWorldToView,
+                        screenGi.ResolvePrevCameraToCache);
 
                     if (giPixelsRan)
                     {
                         // The probes' histories go with the else below: they describe frames they did not see.
-                        _device.SetScreenIndirect(giPixels, giStrength, fullResolution: true);
-                        giContinuityValid = false;
+                        _device.SetScreenIndirect(screenGi.Pixels, giStrength, fullResolution: true);
+                        screenGi.ContinuityValid = false;
 
                         // This frame's camera is what next frame's lit picture will have been rendered from.
-                        giResolvePrevWorldToView = eye.Orientation;
-                        giResolvePrevCameraToCache = pixelCameraToCache;
+                        screenGi.ResolvePrevWorldToView = eye.Orientation;
+                        screenGi.ResolvePrevCameraToCache = pixelCameraToCache;
                     }
 
                     _device.EndStageTiming();
@@ -5577,49 +5525,49 @@ if (retailFog)
                     int wantWidth = (giSourceWidth + giStep - 1) / giStep;
                     int wantHeight = (giSourceHeight + giStep - 1) / giStep;
 
-                    if (giIndirectWidth != wantWidth || giIndirectHeight != wantHeight)
+                    if (screenGi.IndirectWidth != wantWidth || screenGi.IndirectHeight != wantHeight)
                     {
                         // A resize drops the history: the atlases are a different shape, so nothing in them
                         // reprojects onto the new frame.
                         for (int i = 0; i < 2; i++)
                         {
-                            if (giAccum[i].IsValid)
+                            if (screenGi.Accum[i].IsValid)
                             {
-                                _device.DestroyTexture(giAccum[i]);
+                                _device.DestroyTexture(screenGi.Accum[i]);
                             }
 
-                            if (giPosition[i].IsValid)
+                            if (screenGi.Position[i].IsValid)
                             {
-                                _device.DestroyTexture(giPosition[i]);
+                                _device.DestroyTexture(screenGi.Position[i]);
                             }
 
-                            giAccum[i] = _device.CreateStorageTexture(
+                            screenGi.Accum[i] = _device.CreateStorageTexture(
                                 wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum");
-                            giPosition[i] = _device.CreateStorageTexture(
+                            screenGi.Position[i] = _device.CreateStorageTexture(
                                 wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum.pos");
                         }
 
                         // The spatial denoise's output, regenerated each frame from the accumulation, so a
                         // single buffer rather than a ping-pong pair.
-                        if (giFiltered.IsValid)
+                        if (screenGi.Filtered.IsValid)
                         {
-                            _device.DestroyTexture(giFiltered);
+                            _device.DestroyTexture(screenGi.Filtered);
                         }
 
-                        giFiltered = _device.CreateStorageTexture(
+                        screenGi.Filtered = _device.CreateStorageTexture(
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.filtered");
 
-                        if (giRaw.IsValid)
+                        if (screenGi.Raw.IsValid)
                         {
-                            _device.DestroyTexture(giRaw);
+                            _device.DestroyTexture(screenGi.Raw);
                         }
 
-                        giRaw = _device.CreateStorageTexture(
+                        screenGi.Raw = _device.CreateStorageTexture(
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.raw");
 
-                        giIndirectWidth = wantWidth;
-                        giIndirectHeight = wantHeight;
-                        giHasHistory = false;
+                        screenGi.IndirectWidth = wantWidth;
+                        screenGi.IndirectHeight = wantHeight;
+                        screenGi.HasHistory = false;
                     }
 
                     // Both histories describe the scene as the last frames saw it. A camera cut (a cutscene, a
@@ -5633,21 +5581,21 @@ if (retailFog)
                     // a tick, and the GI threw its whole history away thirty times a second -- the interior went
                     // dark, noisy and flickering for the length of the shot.
                     DepthUnprojection giUnprojection = DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane);
-                    bool giContinuous = giContinuityValid
-                        && ReferenceEquals(giLastCards, liveGiCards)
-                        && MathF.Abs(giUnprojection.XScale - giLastUnprojection.XScale) < GiCutZoom * giLastUnprojection.XScale
-                        && MathF.Abs(giUnprojection.YScale - giLastUnprojection.YScale) < GiCutZoom * giLastUnprojection.YScale
-                        && (eye.Position - giLastEye).LengthSquared < GiCutDistance * GiCutDistance;
+                    bool giContinuous = screenGi.ContinuityValid
+                        && ReferenceEquals(screenGi.LastCards, liveGiCards)
+                        && MathF.Abs(giUnprojection.XScale - screenGi.LastUnprojection.XScale) < GiCutZoom * screenGi.LastUnprojection.XScale
+                        && MathF.Abs(giUnprojection.YScale - screenGi.LastUnprojection.YScale) < GiCutZoom * screenGi.LastUnprojection.YScale
+                        && (eye.Position - screenGi.LastEye).LengthSquared < GiCutDistance * GiCutDistance;
                     if (!giContinuous)
                     {
-                        giHasHistory = false;
-                        giResolveHasHistory = false;
+                        screenGi.HasHistory = false;
+                        screenGi.ResolveHasHistory = false;
                     }
 
-                    giContinuityValid = true;
-                    giLastEye = eye.Position;
-                    giLastUnprojection = giUnprojection;
-                    giLastCards = liveGiCards;
+                    screenGi.ContinuityValid = true;
+                    screenGi.LastEye = eye.Position;
+                    screenGi.LastUnprojection = giUnprojection;
+                    screenGi.LastCards = liveGiCards;
 
                     Vector3f giCameraToCache = new(
                         (float)(eye.Position.X - liveGiCards.Origin.X),
@@ -5658,10 +5606,10 @@ if (retailFog)
                     // See r_screen_gi_cadence for why that is sound and why it beats cutting the ray count.
                     int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
                     int giCadence = Math.Max(RenderCVars.ScreenGatherCadence.Value, 1);
-                    bool giTraceThisFrame = !giHasHistory || (giCadenceCursor % giCadence) == 0;
-                    giCadenceCursor++;
+                    bool giTraceThisFrame = !screenGi.HasHistory || (screenGi.CadenceCursor % giCadence) == 0;
+                    screenGi.CadenceCursor++;
 
-                    int write = giFrame & 1;
+                    int write = screenGi.Frame & 1;
                     int read = 1 - write;
 
                     if (giTraceThisFrame)
@@ -5676,15 +5624,15 @@ if (retailFog)
                             giSourceWidth,
                             giSourceHeight,
                             giStep,
-                            giAccum[write],
-                            giPosition[write],
-                            giAccum[read],
-                            giPosition[read],
-                            giPrevWorldToView,
-                            giPrevCameraToCache,
-                            giFrame,
+                            screenGi.Accum[write],
+                            screenGi.Position[write],
+                            screenGi.Accum[read],
+                            screenGi.Position[read],
+                            screenGi.PrevWorldToView,
+                            screenGi.PrevCameraToCache,
+                            screenGi.Frame,
                             giMaxAccum,
-                            giHasHistory,
+                            screenGi.HasHistory,
 
                             // The screen trace tier (L5b): the previous frame's lit scene, read at on-screen hits
                             // before the ray falls through to the surface cache. device.SceneColour holds last
@@ -5702,73 +5650,73 @@ if (retailFog)
                             // The camera the lit target was rendered through: the LAST frame's, which the
                             // resolve carries forward every frame -- unlike the gather's own previous camera,
                             // which only moves on a frame that traced.
-                            giResolvePrevWorldToView,
-                            giResolvePrevCameraToCache,
-                            giRaw,
+                            screenGi.ResolvePrevWorldToView,
+                            screenGi.ResolvePrevCameraToCache,
+                            screenGi.Raw,
 
                             // Where a moving car's surface really came from, not where the camera alone
                             // would put it. Asking derives it: every G-buffer draw is in by now.
                             _device.SceneVelocity,
-                            giPrevUnprojection);
+                            screenGi.PrevUnprojection);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
                         if (giFilterRadius > 0)
                         {
                             liveGiCards.FilterScreen(
-                                giAccum[write],
-                                giPosition[write],
+                                screenGi.Accum[write],
+                                screenGi.Position[write],
                                 _device.SceneNormal,
-                                giFiltered,
-                                giIndirectWidth,
-                                giIndirectHeight,
+                                screenGi.Filtered,
+                                screenGi.IndirectWidth,
+                                screenGi.IndirectHeight,
                                 giFilterRadius);
                         }
 
                         // What this frame becomes to the NEXT GATHER: only a frame that actually traced moves
                         // the gather's history and its camera on.
-                        giLastWrite = write;
-                        giPrevWorldToView = eye.Orientation;
-                        giPrevCameraToCache = giCameraToCache;
-                        giPrevUnprojection = giUnprojection;
-                        giHasHistory = true;
-                        giFrame++;
+                        screenGi.LastWrite = write;
+                        screenGi.PrevWorldToView = eye.Orientation;
+                        screenGi.PrevCameraToCache = giCameraToCache;
+                        screenGi.PrevUnprojection = giUnprojection;
+                        screenGi.HasHistory = true;
+                        screenGi.Frame++;
                     }
 
-                    TextureHandle giRead = giFilterRadius > 0 ? giFiltered : giAccum[giLastWrite];
+                    TextureHandle giRead = giFilterRadius > 0 ? screenGi.Filtered : screenGi.Accum[screenGi.LastWrite];
 
                     // The full-resolution temporal resolve: upsample the sparse atlas once and accumulate
                     // it per pixel, reprojecting against each surface's own world position, so the
                     // indirect is pinned to the world instead of sliding with the coarse sparse-probe
                     // reprojection. The deferred fill reads the full-res result.
-                    int resolveWrite = giResolveFrame & 1;
+                    int resolveWrite = screenGi.ResolveFrame & 1;
                     int resolveRead = 1 - resolveWrite;
 
                     int resolveW = giSourceWidth;
                     int resolveH = giSourceHeight;
-                    if (giResolveWidth != resolveW || giResolveHeight != resolveH)
+                    if (screenGi.ResolveWidth != resolveW || screenGi.ResolveHeight != resolveH)
                     {
                         for (int i = 0; i < 2; i++)
                         {
-                            if (giResolve[i].IsValid)
+                            if (screenGi.Resolve[i].IsValid)
                             {
-                                _device.DestroyTexture(giResolve[i]);
+                                _device.DestroyTexture(screenGi.Resolve[i]);
                             }
 
-                            if (giResolvePosition[i].IsValid)
+                            if (screenGi.ResolvePosition[i].IsValid)
                             {
-                                _device.DestroyTexture(giResolvePosition[i]);
+                                _device.DestroyTexture(screenGi.ResolvePosition[i]);
                             }
 
-                            giResolve[i] = _device.CreateStorageTexture(
+                            screenGi.Resolve[i] = _device.CreateStorageTexture(
                                 resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve");
-                            giResolvePosition[i] = _device.CreateStorageTexture(
+                            screenGi.ResolvePosition[i] = _device.CreateStorageTexture(
                                 resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve.pos");
                         }
 
-                        giResolveWidth = resolveW;
-                        giResolveHeight = resolveH;
-                        giResolveHasHistory = false;
+                        screenGi.ResolveWidth = resolveW;
+                        screenGi.ResolveHeight = resolveH;
+                        screenGi.ResolveHasHistory = false;
                     }
 
                     liveGiCards.ResolveScreenTemporal(
@@ -5778,50 +5726,50 @@ if (retailFog)
                         DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                         eye.Orientation.Transposed(),
                         giCameraToCache,
-                        giResolvePrevWorldToView,
-                        giResolvePrevCameraToCache,
-                        giResolve[resolveWrite],
-                        giResolvePosition[resolveWrite],
-                        giResolve[resolveRead],
-                        giResolvePosition[resolveRead],
+                        screenGi.ResolvePrevWorldToView,
+                        screenGi.ResolvePrevCameraToCache,
+                        screenGi.Resolve[resolveWrite],
+                        screenGi.ResolvePosition[resolveWrite],
+                        screenGi.Resolve[resolveRead],
+                        screenGi.ResolvePosition[resolveRead],
                         resolveW,
                         resolveH,
-                        giResolveHasHistory,
+                        screenGi.ResolveHasHistory,
                         16,
 
                         // The probes' own traced positions and the frame they were traced in -- the last
                         // frame that traced, which is not this one whenever the gather's cadence skipped.
-                        giPosition[giLastWrite],
-                        giPrevWorldToView,
-                        giPrevCameraToCache,
+                        screenGi.Position[screenGi.LastWrite],
+                        screenGi.PrevWorldToView,
+                        screenGi.PrevCameraToCache,
                         giStep,
                         _device.SceneVelocity,
-                        giResolvePrevUnprojection,
+                        screenGi.ResolvePrevUnprojection,
 
                         // The frame the atlas being read was traced in -- the counter has moved past it --
                         // which places its probes in their tiles.
-                        giFrame - 1);
-                    giResolveHasHistory = true;
+                        screenGi.Frame - 1);
+                    screenGi.ResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
                     // it is read straight rather than upsampled from the sparse atlas a second time.
-                    _device.SetScreenIndirect(giResolve[resolveWrite], giStrength, fullResolution: true);
+                    _device.SetScreenIndirect(screenGi.Resolve[resolveWrite], giStrength, fullResolution: true);
 
                     // The resolve's own carry-forward, every frame: this camera is what the next frame's
                     // per-pixel reprojection measures its motion against. The gather's equivalent is set
                     // above, inside the branch, because only a frame that traced may move it.
-                    giResolvePrevWorldToView = eye.Orientation;
-                    giResolvePrevCameraToCache = giCameraToCache;
-                    giResolvePrevUnprojection = giUnprojection;
-                    giResolveFrame++;
+                    screenGi.ResolvePrevWorldToView = eye.Orientation;
+                    screenGi.ResolvePrevCameraToCache = giCameraToCache;
+                    screenGi.ResolvePrevUnprojection = giUnprojection;
+                    screenGi.ResolveFrame++;
 
                     _device.EndStageTiming();
                 }
                 else
                 {
                     // The gather did not run this frame, so next frame has nothing coherent to reproject onto.
-                    giHasHistory = false;
-                    giResolveHasHistory = false;
+                    screenGi.HasHistory = false;
+                    screenGi.ResolveHasHistory = false;
                 }
 
                 // The level's lamp fixtures, submitted as real point lights for the deferred pass that
