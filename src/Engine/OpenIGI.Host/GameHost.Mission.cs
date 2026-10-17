@@ -28,6 +28,9 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Menus;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Igi1.Weapons;
+using OpenIGI.Host.Audio;
+using OpenIGI.Host.Configuration;
 
 namespace OpenIGI.Host;
 
@@ -3387,5 +3390,804 @@ internal sealed partial class GameHost
             }
         }
         return writes;
+    }
+
+    /// <summary>The mission's side of one pass of the loop: the world, the player and the level's state, ticked.</summary>
+    /// <param name="state">The frame loop's state.</param>
+    /// <param name="outcome">What the loop's frame did; only a tick advances anything.</param>
+    private void TickMission(FrameLoopState state, FrameOutcome outcome)
+    {
+        if (outcome == FrameOutcome.Tick)
+        {
+            // The storm steps here rather than inside the player's own block, where the impact
+            // particles step: weather is ambient, and it has to keep falling in the free camera and
+            // while the player is down. Its spawn column follows the eye, so it is handed the
+            // position the last frame drew from -- one frame stale is nothing to a column forty
+            // metres across, and the tick has no camera of its own.
+            _storm?.Tick(_stormEyeMetres);
+
+            // The lifts step ahead of the walk, so they still move before the doors that ride them and before
+            // the player they carry; they do not yet update at their own place in the tree.
+            if (_mission.Elevators is { } elevators)
+            {
+                // Feed the player's current position to the elevators so their start gate can refuse
+                // to move an empty car or one with an open door. Provider is read every tick.
+                elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
+                elevators.Tick();
+                UpdateElevatorSoundPositions();
+                if (_worldSolids is { } elevatorSolids)
+                {
+                    elevators.ApplyCollision(elevatorSolids);
+                }
+
+                if (_playerMode && _player is { } passenger
+                    && elevators.TryGetPassengerDisplacement(
+                        passenger.Body.Position, _worldSolids, out Vector3d displacement))
+                {
+                    passenger.Body.Position += displacement;
+                }
+            }
+
+            // The level's one walk (the retail task tree, in authored order). Soldiers, doors, alarms, areas and
+            // the player all update inside it where the tree places them: a task reads this tick's state from
+            // everything before it and last tick's from everything after, so the soldiers -- all ahead of
+            // ConditionalContainer_560 -- see the player where it stood last tick.
+            // During an authored cinematic the area occupant is the cutscene camera rather than the
+            // stationary player body; a diagnostic free camera must not impersonate a player that exists
+            // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
+            _mission.Objectives?.SetSoldierOccupants(_soldiers?.Simulation.Occupants() ?? []);
+            Vector3d? areaCutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
+            Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
+            _mission.Objectives?.SetLevelStateInputs(
+                AreaActivationOccupant(_player?.Body.Origin, areaCutsceneView, areaFreeView),
+                _soldiers?.Simulation.PlayerTeam ?? 0,
+                AreaActivationExtraOccupant(_player?.Body.Origin, areaCutsceneView),
+                playerAlive: !_playerDead);
+            _playerTicked = false;
+            _interactionsTickedByPlayer = false;
+            if (_soldiersInWalk)
+            {
+                _soldiers?.Simulation.BeginTick(_soldierEnemy ??= SoldierEnemyNow);
+            }
+
+            _mission.Cutscenes?.Tick();
+            if (_mission.Cutscenes is { } soundingVehicles && _sounds is { } vehicleSoundSystem)
+            {
+                _vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
+                _vehicleSounds.Tick(
+                    soundingVehicles.VehicleSoundSources(),
+                    soundingVehicles.VehicleGunSounds(),
+                    _audio.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
+            }
+
+            if (_mission.Cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
+            {
+                foreach (WorldPlacement placement in cinematicScene.Placements)
+                {
+                    if (liveCutscenes.TryGetPlacementDrawTransform(
+                        placement.Owner,
+                        placement.Position,
+                        placement.Orientation,
+                        out Vector3d position,
+                        out Matrix3f orientation))
+                    {
+                        cinematicSolids.UpdateTransform(placement, position, orientation);
+                    }
+                }
+            }
+        }
+
+        // The player cannot jump while standing inside an elevator cab. The elevator registry knows
+        // the player's position (fed above), so it can report whether they're inside.
+        if (_player is { } playerWithJump)
+        {
+            playerWithJump.CanJump = _mission.Elevators is { } jumpElevators
+                ? (Func<bool>)(() => !jumpElevators.IsPlayerInsideElevator(
+                    playerWithJump.Body.Position, out _))
+                : null;
+        }
+
+        // A level with no player task in its walk updates the player after the walk instead.
+        if (outcome is FrameOutcome.Tick && !_playerInWalk)
+        {
+            UpdatePlayerTask();
+        }
+
+        if (outcome is FrameOutcome.Tick
+            && _mission.Cutscenes?.IsPlaying != true
+            && _playerMode && _player is not null)
+        {
+            // What the player's update set in motion this tick -- its sounds, effects and detonations.
+            if (_playerTicked)
+            {
+                PlayBinocularTransitionSound();
+                PlayMedipackSound();
+
+                // Hearing is emitted once per round, not once per projectile intersection. The weapon
+                // row carries the exact retail radius (for example 4096 for suppressed fire and
+                // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
+                // silenced weapons no longer wake the whole 30-metre neighbourhood.
+                if (_player.FiredThisTick && _player.HeldWeaponType is { } audibleWeapon)
+                {
+                    _soldiers?.Simulation.NotifyGunshot(_player.Body.Eye, audibleWeapon.AiDetectionRange);
+                }
+
+                // And the sound of it. Driven every tick rather than only on the ones that fire,
+                // because an automatic's loop has to be told when the trigger was RELEASED as much
+                // as when it was pulled -- see WeaponSoundPlayer.
+                // FUN_0040FB30/0x40FB90 drives medipack animation tasks directly. A medipack is
+                // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
+                // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
+                // null also closes an automatic gun loop when the player switches to the syringe.
+                WeaponType? weaponForSound = _player.HeldWeaponType?.Category == WeaponCategory.Medipack
+                    ? null
+                    : _player.HeldWeaponType;
+                bool m203Launched = _player.M203LaunchedThisTick;
+                _weaponSounds?.Tick(
+                    _player.FiredThisTick && !m203Launched && weaponForSound is not null,
+                    weaponForSound);
+                if (m203Launched)
+                {
+                    // GunM16A2's native callback (0x473510) plays this launch report itself; it is
+                    // not the M16A2's primary rifle loop and must remain audible on an alternate shot.
+                    // The native call attaches it to the launcher task position, not to the listener.
+                    Vector3d launchPosition = _player.Body.Eye;
+                    if (_player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
+                    {
+                        launchPosition = m203Shots[0].Origin;
+                    }
+
+                    _sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
+                }
+
+                // The grenade's cook tick: a looping sound held while the throw charges, stopped the
+                // moment it is released (0x40F590 starts it, 0x40F640 stops it).
+                TickGrenadeCook();
+
+                // Reloads and a few other weapon actions name their sounds through BOED animation
+                // events rather than through the weapon record. The rig advanced inside Player.Tick,
+                // so its crossed-event interval is ready to dispatch here.
+                // The native medipack callbacks dispatch their own clips and do not enter the
+                // generic firearm BOED trigger path. Suppress those generic triggers while the
+                // medipack is held, otherwise a shared animation event can sound like reload/fire.
+                if (_player.HeldWeaponType?.Category != WeaponCategory.Medipack)
+                {
+                    PlayPlayerAnimationSounds();
+                }
+
+                // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
+                if (_player.Body.TookOffThisTick)
+                {
+                    PlayJumpSound();
+                }
+
+                // And the player's own feet. Positional like anyone else's, and placed where the
+                // foot landed rather than on the listener, because the sound belongs to the ground.
+                if (_player.TakeFootstep() is { } step)
+                {
+                    PlayFootstep(step);
+
+                    // The step is also a NOISE the AI hears: 0x463920's tail posts AIEVENT_WALK
+                    // (type 10, filter 0x46) with the ground material's own radius, unless the
+                    // walker is crouching -- sneaking really is silent to the AI. guard.qvm's WALK
+                    // branch is AIAction_SetCombat, so a guard that hears footsteps it cannot see
+                    // starts hunting.
+                    if (!_player.IsCrouched)
+                    {
+                        _soldiers?.Simulation.NotifyWalk(
+                            step.PositionInUnits, _player.Body.Position, step.HearingRadiusInUnits);
+                    }
+                }
+
+                // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
+                // material table, where the round arrived rather than where it was fired.
+                PlayBulletImpactSounds();
+                PlayWeaponDropSounds();
+
+                // The same impacts, seen: sparks and dust composed from the struck material.
+                // Ticked before spawning so a new burst draws its birth frame unmoved.
+                _impactParticles?.Tick();
+                _explosions?.Tick();
+                _missileSmoke?.Tick();
+
+                // The original's own effects, on the same rhythm: the dust and chips step, and the
+                // blood droplets in the air are traced against the world, marking whatever they
+                // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
+                // it was born.
+                TickRetailImpactEffects();
+
+                SpawnBallisticImpactParticles();
+                SpawnRetailImpactEffects();
+
+                // The launcher rockets in the air lay their smoke trail, one column of puffs per
+                // segment they crossed this tick.
+                SpawnMissileSmoke();
+
+                // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
+                // and the casualties.
+                ResolveGrenadeDetonations();
+                ResolveGenericTbaExplosions();
+                ResolveMissileDetonations();
+                ResolveM203Detonations();
+                PlayGrenadeBounces();
+
+                // The alarm speakers, following their own level expressions -- the siren the
+                // room hears when a guard reaches a switch.
+                if (_mission.Destructibles is { } destructibles)
+                {
+                    destructibles.Tick();
+                    foreach (DestructibleObject ready in destructibles.ConsumeReadyExplosions())
+                    {
+                        HandleDestructibleImpact(ready);
+                    }
+                    foreach (VehicleBlast blast in destructibles.ConsumeVehicleBlasts())
+                    {
+                        PresentVehicleBlast(blast);
+                    }
+                    foreach (DestructibleObject car in destructibles.ConsumeExplodedVehicles())
+                    {
+                        ForgetVehicleMarks(destructibles, car);
+                    }
+
+                    // A generator that exploded this tick loses its power this tick, as Generator::Run
+                    // (0x43B500) sees its own explosion before it reads the On expression.
+                    _mission.Interactions?.SettleGenerators();
+                }
+                TickAlarmSpeakers();
+                TickSecurityCameraSounds();
+
+                // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
+                // impact list carries both the instant rays and the ballistic arrivals, so either
+                // mode can shoot the siren off the wall.
+                foreach (GunImpact playerImpact in _player.Impacts)
+                {
+                    if (playerImpact.HitSomething)
+                    {
+                        ApplyRoundContact(
+                            playerImpact.Position,
+                            playerImpact.Owner,
+                            playerImpact.Placement,
+                            _player.HeldWeaponType?.DamageFactor ?? 1f);
+                    }
+                }
+
+                // The level's ambience, which is keyed off where the ear is rather than where the
+                // body stands: an area is a box you listen from the inside of.
+                TickAmbience(_player.EyeUnits);
+
+            }
+            else if (_playerDead)
+            {
+                // The player's update has stopped, but the world's has not: a blast that killed the player
+                // burns out, and its debris and smoke settle, under the death camera as they do in the
+                // original. Stepping them only from the player's update froze them on screen.
+                _impactParticles?.Tick();
+                _explosions?.Tick();
+                _missileSmoke?.Tick();
+                TickRetailImpactEffects();
+            }
+
+            // The first round of a mission, reported once — the same one-shot diagnostic the world
+            // draw uses. It is what says the whole chain arrived: the trigger reached the state
+            // machine, the machine reached the gun, the gun's clock let a round out, and the round
+            // went somewhere.
+            if (!state.ReportedShot && _player.FiredThisTick && _player.HeldWeaponType is { } fired)
+            {
+                state.ReportedShot = true;
+                string where = _player.Impacts.Count == 0
+                    ? "nowhere"
+                    : _player.Impacts[0].HitSomething
+                        ? $"{_player.Impacts[0].Position}"
+                        : $"nothing inside {fired.EffectiveRange} m";
+
+                _logger.Information(
+                    "Weapon",
+                    $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
+                        + $"a round at {fired.RoundsPerMinute} rpm, "
+                        + $"{_player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
+            }
+
+            // Every round that lands on a guard, reported once each so the zone and the kill are
+            // visible without a per-shot log.
+            if (_player.HumanHits != state.ReportedHumanHits)
+            {
+                state.ReportedHumanHits = _player.HumanHits;
+                _logger.Information(
+                    "Weapon",
+                    $"Hit a guard in zone {_player.LastHumanZone} "
+                        + $"({state.ReportedHumanHits} hit(s), {_soldiers?.Simulation.Killed ?? 0} killed).");
+            }
+        }
+
+        // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
+        // modes (free camera, cutscenes, map computer and a dead player) still need their level
+        // interactions to advance, but never more than once per simulation tick.
+        if (outcome is FrameOutcome.Tick && !_interactionsTickedByPlayer)
+        {
+            _mission.Interactions?.Tick();
+        }
+
+        // Lifts advance before perception and AI consume this tick's player position. A passenger
+        // standing on the previous platform sample receives the same displacement, which keeps the
+        // body, camera and collision contact together while the platform travels.
+        // The soldiers' rigs advance on the tick, not on the render, so their animation runs at the
+        // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
+        //
+        // Tick and Render are SEPARATE outcomes and one logic tick produces one of each, so accepting both
+        // here ran the AI and its rigs TWICE per tick: guards walked and animated at exactly double speed.
+        // Measured against the original, which covers 160-185 units a tick, this port was covering ~357.
+        if (outcome is FrameOutcome.Tick)
+        {
+            // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
+            // fixed tick, for the same determinism reason the bodies are.
+            _damageFlash.Tick();
+            _flashbangScreenFlash.Tick();
+            _hud?.Tick();
+
+            // The player's eye is what the guards' view cones are tested against -- and in the
+            // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
+            // you leave walking mode, so feeding its eye meant every guard in the level was watching an
+            // immobile figure at the spawn point while you flew past them: they never saw you because
+            // there was nothing of you to see. A state.Shell affordance, not engine behaviour.
+            Vector3d watched = _playerMode && _player is not null
+                ? _player.Body.Eye
+                : _camera?.Position ?? _player?.Body.Eye ?? default;
+
+            // A dead player is no longer a target: the guards lose it and stop firing at the corpse, the
+            // way the retail detection scan (0x489750) unregisters a human that has died.
+            //
+            // The eye is what vision watches; the FEET are what combat aims at (sub_451380 raises the
+            // target task's position 0.5 m, 0.25 m crouched) -- in the fly-through there is no body, so
+            // the camera stands in for both.
+            Vector3d watchedFeet = _playerMode && _player is not null
+                ? _player.Body.Position
+                : watched;
+
+            // The areas and edit variables ran inside the level walk above, before the AlarmControls that
+            // consume them (Mission 1's alarm latch depends on that order).
+
+            // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates
+            // whose variables the level scripts reset stay satisfied while the scene plays.
+            foreach ((string writeName, string writeValue) in _testOutroTickWrites)
+            {
+                _loop.Variables.TryWrite(
+                    writeName,
+                    QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
+            }
+            _mission.Cutscenes?.FinishExpressionTick();
+
+            // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
+            // is a counter, and the renderer turns the transform from it when it draws.
+            _spins?.Advance();
+            if (_mission.SecurityCameras is { } cameras)
+            {
+                bool crouching = _playerMode && _player is not null && _player.IsCrouched;
+
+                // Retail's lenses scan every human and every camera (0x489750): a guard's body or a
+                // destroyed camera in view raises the alarm at once, as the player does after 90 ticks.
+                cameras.Tick(
+                    watchedFeet,
+                    crouching,
+                    targetAlive: !_playerDead,
+                    playerOnCamerasSide: (_soldiers?.Simulation.PlayerTeam ?? 0) == 1,
+                    _soldiers?.Simulation.CameraSubjects() ?? []);
+                if (_worldSolids is { } cameraSolids)
+                {
+                    foreach (SecurityCamera camera in cameras.Cameras)
+                    {
+                        Vector3d headMetres = new(
+                            camera.HeadPositionUnits.X / WorldScene.UnitsPerMetre,
+                            camera.HeadPositionUnits.Y / WorldScene.UnitsPerMetre,
+                            camera.HeadPositionUnits.Z / WorldScene.UnitsPerMetre);
+                        cameraSolids.UpdateTransform(
+                            camera.Task,
+                            camera.HeadModelName,
+                            headMetres,
+                            camera.Orientation);
+                    }
+                }
+            }
+
+            if (_mission.RotatingObjects is { } rotatingObjects)
+            {
+                rotatingObjects.Tick();
+                if (_worldSolids is { } rotatingSolids)
+                {
+                    rotatingObjects.ApplyCollision(rotatingSolids);
+                }
+            }
+
+            if (_soldiersInWalk)
+            {
+                // The soldiers updated inside the level walk; this closes their tick (corpses, skinning).
+                _soldiers?.EndTick();
+            }
+            else
+            {
+                _soldiers?.Tick(
+                    watched,
+                    enemyAlive: !_playerDead && _mission.Cutscenes?.IsPlaying != true,
+                    enemyFeet: watchedFeet,
+                    enemyCrouching: _playerMode && _player is not null && _player.IsCrouched);
+            }
+
+            // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
+            // it does nothing until the player has died and the body was posed.
+            _soldiers?.TickPlayerBody();
+
+            // A simulated corpse decides for itself where it ends up, so the death camera has to
+            // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
+            // you were shot frames the whole of it.
+            if (_playerDead && _soldiers?.PlayerRagdollCentre is { } corpseCentre)
+            {
+                _deathCamera.Follow(corpseCentre);
+            }
+
+            // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
+            // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
+            // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
+            if (_player is not null && _player.IsOnLadder)
+            {
+                _player.InputProfile = _configuration.Active;
+                bool climbUp = _player.IsActionDown(_window.Input, PlayerAction.MoveUp);
+                bool climbDown = _player.IsActionDown(_window.Input, PlayerAction.MoveDown);
+                bool climbUse = _player.IsActionDown(_window.Input, PlayerAction.Activate);
+
+                // Mount and use share E. The release gate is a state.Shell detail that prevents the mounting press
+                // from becoming state 40 on the immediately following tick.
+                if (!state.ClimbActive)
+                {
+                    state.ClimbActive = true;
+                    state.ClimbSlideArmed = false;
+                    if (_player.LadderPhase == LadderTraversalPhase.GettingOnTop)
+                    {
+                        _soldiers?.StartPlayerLadderAnimation(
+                            PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
+                    }
+                    else
+                    {
+                        _soldiers?.StartPlayerLadderAnimation(
+                            PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                    }
+                }
+
+                if (!climbUse)
+                {
+                    state.ClimbSlideArmed = true;
+                }
+
+                bool climbSlide = climbUse && state.ClimbSlideArmed;
+                LadderStepResult decision = _player.DecideLadderStep(
+                    climbUp, climbDown, climbSlide, _ground!);
+                switch (decision)
+                {
+                    case LadderStepResult.SteppingUp:
+                    case LadderStepResult.SteppingDown:
+                        _soldiers?.Simulation.SetPlayerLadderPlaybackDirection(_player.LadderDirection);
+                        break;
+
+                    case LadderStepResult.ReachedTop:
+                        _soldiers?.StartPlayerLadderAnimation(
+                            PlayerCamera.LadderTopAnimation, loops: false);
+                        break;
+
+                    case LadderStepResult.Sliding:
+                        _soldiers?.StartPlayerLadderAnimation(
+                            PlayerCamera.LadderSlideAnimation, loops: true);
+                        break;
+                }
+
+                if (_player.IsOnLadder && _soldiers is not null)
+                {
+                    switch (_player.LadderPhase)
+                    {
+                        case LadderTraversalPhase.Climbing when _player.LadderDirection != 0:
+                            _soldiers.AdvancePlayerLadderAnimation(
+                                _player.LadderFacing,
+                                out Vector3d climbDelta,
+                                out bool rungBoundary,
+                                out _);
+                            _player.MoveLadder(climbDelta);
+                            if (rungBoundary)
+                            {
+                                _player.CompleteLadderStep();
+                                _soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
+                            }
+
+                            break;
+
+                        case LadderTraversalPhase.GettingOnTop:
+                        case LadderTraversalPhase.GettingOffTop:
+                            _soldiers.AdvancePlayerLadderAnimation(
+                                _player.LadderFacing,
+                                out Vector3d topDelta,
+                                out _,
+                                out bool topAnimationEnded);
+                            _player.MoveLadder(topDelta);
+                            if (topAnimationEnded)
+                            {
+                                _player.CompleteLadderTopTransition(_ground!);
+                                if (_player.LadderPhase == LadderTraversalPhase.Climbing)
+                                {
+                                    _soldiers.StartPlayerLadderAnimation(
+                                        PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                                }
+                            }
+
+                            break;
+
+                        case LadderTraversalPhase.SlidingDown:
+                            _soldiers.AdvancePlayerLadderAnimation(
+                                _player.LadderFacing,
+                                out Vector3d slideDelta,
+                                out _,
+                                out _);
+                            // State 40's entry only installs animation 169 and the sound. Its damped
+                            // velocity function first runs on the following tick.
+                            if (decision != LadderStepResult.Sliding)
+                            {
+                                _player.TickLadderSlide(slideDelta, _ground!);
+                            }
+
+                            break;
+                    }
+                }
+
+                // All four states stay in third person until their actual deinitialization signal.
+                if (_player.IsOnLadder)
+                {
+                    _soldiers?.PlacePlayerBodyClimbing(_player.LadderFeet, _player.LadderFacing);
+                    if (!state.InteractionCamera.IsActive)
+                    {
+                        WorldRayCast? cameraCast = _worldSolids?.Caster();
+                        state.InteractionCamera.Begin(
+                            _player.LadderFeet,
+                            _player.LadderFacing,
+                            cameraCast is null
+                                ? null
+                                : (Vector3d from, Vector3d to, out Vector3d hit) =>
+                                {
+                                    bool blocked = cameraCast(from, to, out WorldRayHit wall);
+                                    hit = blocked ? wall.Position : default;
+                                    return blocked;
+                                });
+                    }
+                    else
+                    {
+                        state.InteractionCamera.Follow(_player.LadderFeet);
+                    }
+
+                    state.InteractionCamera.Tick();
+                }
+            }
+
+            if (_player is { IsInWorldInteraction: true } interacting)
+            {
+                if (!state.WorldInteractionActive)
+                {
+                    state.WorldInteractionActive = true;
+                    if (interacting.InteractionAnimation >= 0)
+                    {
+                        _soldiers?.StartPlayerInteractionAnimation(
+                            interacting.InteractionAnimation,
+                            loops: interacting.InteractionAnimationLoops);
+                    }
+                }
+
+                if (interacting.IsMountedStationaryGun)
+                {
+                    // The gun's sight sits just in front of the gunner's own chest, and retail draws
+                    // no body in that view (captured in mission 4: barrel, stand and scenery only).
+                    _soldiers?.Simulation.HidePlayerBodyClimbing();
+                }
+                else if (_soldiers is not null)
+                {
+                    _soldiers.AdvancePlayerLadderAnimation(
+                        interacting.InteractionFacing,
+                        out Vector3d interactionRootDelta,
+                        out _,
+                        out _);
+                    interacting.ApplyInteractionRootMotion(interactionRootDelta);
+                    _soldiers.PlacePlayerBodyClimbing(
+                        interacting.InteractionFeet, interacting.InteractionFacing);
+                }
+
+                Vector3d interactionCameraFeet = _soldiers?.Simulation.PlayerInteractionCameraFeet(
+                    interacting.InteractionFeet) ?? interacting.InteractionFeet;
+
+                // State 33 is the one interaction that keeps a first-person camera: the gun hands
+                // the view its own sight (0x474420), so no orbit is started behind the body.
+                if (interacting.IsMountedStationaryGun)
+                {
+                    state.InteractionCamera.Reset();
+                }
+                else if (!state.InteractionCamera.IsActive)
+                {
+                    WorldRayCast? cameraCast = _worldSolids?.Caster();
+                    state.InteractionCamera.Begin(
+                        interactionCameraFeet,
+                        interacting.InteractionFacing,
+                        cameraCast is null
+                            ? null
+                            : (Vector3d from, Vector3d to, out Vector3d hit) =>
+                            {
+                                bool blocked = cameraCast(from, to, out WorldRayHit wall);
+                                hit = blocked ? wall.Position : default;
+                                return blocked;
+                            });
+                }
+                else
+                {
+                    state.InteractionCamera.Follow(interactionCameraFeet);
+                }
+
+                if (state.InteractionCamera.IsActive)
+                {
+                    state.InteractionCamera.Tick();
+                }
+            }
+
+            if ((_player is null || (!_player.IsOnLadder && !_player.IsInWorldInteraction))
+                && (state.ClimbActive || state.WorldInteractionActive || state.InteractionCamera.IsActive))
+            {
+                _soldiers?.Simulation.HidePlayerBodyClimbing();
+                state.InteractionCamera.Reset();
+                state.ClimbActive = false;
+                state.WorldInteractionActive = false;
+            }
+
+            // The character the third-person view looks at, walked with the player on the same tick
+            // their own legs are -- see SoldierRenderer.FollowPlayerBody for why it must be the tick
+            // and not the frame. Kept state.Running for the whole of the move back as well as out, so the
+            // body is already in step whenever the camera is far enough away to show it.
+            //
+            // The states with a body of their own are left alone: the ladder and the world
+            // interactions place and pose the same rig on their own schedule, and the death path owns
+            // it outright once the player has fallen.
+            if (_soldiers is { } followedBody)
+            {
+                // The same conditions the camera itself is eligible under, and deliberately so: the
+                // follow owns the torso clip and the aim bend, and every state excluded here has an
+                // authored full-body clip or a camera of its own that must own the whole character.
+                if (_playerMode
+                    && !_playerDead
+                    && !_missionFailedMenu
+                    && !_computerOpen
+                    && !_entry.IsCameraActive
+                    && _mission.Cutscenes?.IsPlaying != true
+                    && (!state.MenuMode || state.PauseMenu)
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
+
+                    // ...and in FIRST person too, unconditionally, which it did not used to be.
+                    //
+                    // The follow is what POSES the body; the separate visibility latch below is what
+                    // draws it. Those were both held shut in first person, so the body did not exist
+                    // at all -- and geometry that does not exist cannot be struck by a reflected ray,
+                    // whatever the reflection is then able to do with the hit. A window could not
+                    // show the player because there was no player to show.
+                    //
+                    // So it is posed always and drawn as before. What that costs is one character
+                    // skinned per frame; what it buys is the player's own reflection and shadow,
+                    // through DrawPlayerBody's traced-only path.
+                {
+                    followedBody.FollowPlayerBody(
+                        walkingBody.Body.Position,
+
+                        // MINUS the yaw. A body's heading is a GAMMA and the look is a YAW, and the
+                        // two run opposite ways: PlayerBody.FacingBasis builds the body's own basis
+                        // as RotationZ(-yaw), and every other caller in the port converts the same
+                        // way (PlayerCamera writes `_body.Yaw = -facing` on entering an interaction
+                        // and `_interactionFacing = -_body.Yaw` on leaving one). Passing the yaw
+                        // straight through mirrors the character about the world's X axis, which is
+                        // a body that faces the camera at exactly the moment it should face away.
+                        -walkingBody.Body.Yaw,
+                        walkingBody.LocomotionAnimation,
+                        walkingBody.LocomotionAnimationLoops,
+                        new PlayerBodyPose(
+                            walkingBody.UpperBodyAnimation,
+                            walkingBody.UpperBodyAnimationLoops,
+                            walkingBody.UpperBodyBlendSeconds,
+                            walkingBody.UpperBodySequence,
+                            walkingBody.AimPitch));
+                }
+                else
+                {
+                    followedBody.Simulation.HidePlayerBodyFollowing();
+                }
+            }
+
+            if (_mission.Objectives is { } objectiveTick)
+            {
+                // The remaster holds a message three seconds longer than the original does, because
+                // the authored durations are short and the hold only starts once the last character
+                // has been typed. The retail HUD always retains the original timing and message block,
+                // irrespective of the independently archived tactical-message preference.
+                objectiveTick.ExtraMessageHoldSeconds =
+                    RemasteredHudPresentation.UsesTacticalMessages(
+                        RenderCVars.RemasteredHud.Value,
+                        RenderCVars.TacticalMessages.Value)
+                    && _mission.Cutscenes?.IsPlaying != true
+                        ? RemasteredMessageHoldSeconds
+                        : 0f;
+            }
+
+            _mission.Objectives?.TickAfterLevelState();
+            if (_mission.Objectives is { IsFailed: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Failed })
+            {
+                // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
+                // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
+                if (!_missionFailedMenu && ++_missionFailureTicks > 151 && state.Shell is not null)
+                {
+                    _missionFailedMenu = true;
+
+                    // Said out loud because the level decided this, not the player: a LevelFlow
+                    // 'Failed' expression is authored out of message and area state, and when it
+                    // turns for a reason nobody in the room understands this line is where the
+                    // reading starts.
+                    _logger.Information(
+                        "Mission",
+                        $"The level's LevelFlow has failed the mission; opening the failed page.");
+                    _computerOpen = false;
+                    _computerFlight.Reset();
+                    _player?.SetMapComputerOpen(false);
+
+                    // The result is a state.Shell page, not a drawn card, so its two choices can be clicked
+                    // and navigated like every other page and the state.Shell's own cursor is the one on
+                    // screen. state.MenuMode hands it the frame's input and draw; state.PauseMenu holds the
+                    // showcase off, because the level this is drawn over is still loaded -- the same
+                    // pair the pause menu sets.
+                    state.MenuMode = true;
+                    state.PauseMenu = true;
+                    state.Shell.OpenMissionFailed();
+
+                    // The platform cursor stays hidden: the state.Shell draws its own, so revealing this one
+                    // would put a second, unrelated pointer beside it.
+                    _window.CursorVisible = false;
+                    _player?.HoldStill();
+                    _window.CursorLocked = false;
+                }
+            }
+            else
+            {
+                _missionFailureTicks = 0;
+            }
+            if (!_missionResultHandled
+                && (_mission.Objectives is { IsComplete: true } || _titlePlayer is { Outcome: TitleMissionOutcome.Completed })
+                && _activeMission is { } completedMission)
+            {
+                _missionResultHandled = true;
+                // A successor the catalogue does not offer ends the campaign the way the last mission
+                // does -- in a build cut to the opening missions, the last one offered is its finale.
+                int nextMissionId = completedMission.NextMissionId;
+                if (nextMissionId != MissionDescriptor.NextMissionUndefined && _missions.TryGet(nextMissionId, out _))
+                {
+                    if (_configuration.Active is { } activeProfile)
+                    {
+                        MissionProgression.UnlockNext(activeProfile, _missions, nextMissionId);
+                        // Retail writes LOCAL:config.qsc after every non-final completion, even when
+                        // replaying an earlier mission leaves the frontier unchanged.
+                        HostConfiguration.Save(_configuration, _logger);
+                    }
+
+                    _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
+                    _titlePlayer?.MissionCompleted(nextMissionId);
+                    StartMission(nextMissionId);
+                }
+                else
+                {
+                    _logger.Information("Mission", $"Completed final mission {completedMission.Id}; campaign complete.");
+                    ReleasePlayedMission();
+                    if (state.Shell is not null)
+                    {
+                        // Event 7 is the retail outro-screen path. The authored final cutscene has
+                        // completed before LevelFlow reaches here, so the state.Shell now continues to its
+                        // campaign-complete destination.
+                        state.Shell.OpenOn("extras");
+                        state.MenuMode = true;
+                        state.ShowcasePending = true;
+                    }
+                }
+            }
+        }
     }
 }
