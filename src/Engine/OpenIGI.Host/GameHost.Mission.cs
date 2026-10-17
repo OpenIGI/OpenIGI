@@ -344,7 +344,7 @@ internal sealed partial class GameHost
         LevelUpdateWalker walker = cutscenes.Walker;
         if (_soldiers is { } soldiers)
         {
-            soldiers.AttachTo(walker);
+            soldiers.Simulation.AttachTo(walker);
             _soldiersInWalk = true;
         }
 

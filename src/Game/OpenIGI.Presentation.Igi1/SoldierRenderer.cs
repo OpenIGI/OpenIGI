@@ -99,11 +99,8 @@ public sealed class SoldierRenderer : IDisposable
 
 
 
-    // The level walk this renderer's tasks update from, once AttachTo has put them in it; null when standalone.
-    private LevelUpdateWalker? _walker;
 
 
-    private readonly HashSet<GameTask> _unwalkedSoldiers = new(ReferenceEqualityComparer.Instance);
 
 
 
@@ -251,6 +248,58 @@ public sealed class SoldierRenderer : IDisposable
         _heldWeapons = heldWeapons;
         _logger = logger ?? NullLogger.Instance;
         _sim = new SoldierSimulation(_logger);
+        _sim.SpawnedBody = (generator, roster, fresh, dead) =>
+        {
+            Group group = _groups.First(candidate => ReferenceEquals(candidate.Roster, roster));
+            BonePose initialPose = fresh.View.UnrotatedPose();
+            Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
+            group.Geometry.Vertices.CopyTo(initialSkin, 0);
+            bool initialSkinReady = false;
+            if (group.Body.Model is { } skinModel)
+            {
+                try
+                {
+                    MefSkinner.Skin(
+                        skinModel,
+                        initialPose,
+                        (float)(1.0 / WorldScene.UnitsPerMetre),
+                        initialSkin);
+                    initialSkinReady = true;
+                }
+                catch (ArgumentException)
+                {
+                    initialSkinReady = false;
+                }
+            }
+
+            MeshHandle mesh;
+            try
+            {
+                mesh = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
+            }
+            catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
+            {
+                _logger.Warning(LogCategory, $"{generator.Name} could not upload its cloned Human: {ex.Message}");
+                return false;
+            }
+
+            HeldWeapon? weapon = null;
+            if (dead.WeaponType is { } weaponType)
+            {
+                _heldWeaponsByModel.TryGetValue(weaponType.GunModel, out weapon);
+            }
+
+            group.AddDrawn(new Member(fresh, mesh)
+            {
+                DrawnPose = initialPose,
+                SkinScratch = initialSkin,
+                SkinnedPose = initialSkinReady ? initialPose : null,
+                PreviousSkinnedPose = initialSkinReady ? initialPose : null,
+                Weapon = weapon,
+            });
+            Count++;
+            return true;
+        };
         _sim.BodyFell = fall =>
         {
             if (FindMember(fall.View) is not { } member)
@@ -1077,140 +1126,7 @@ public sealed class SoldierRenderer : IDisposable
 
 
 
-    /// <summary>Runs the native generator decision before any live soldier is advanced this tick.</summary>
-    /// <summary>A GuardGenerator's update (<c>0x487EE0</c>): its expression, and a replacement for a dead guard.</summary>
-    private void TickGuardGenerator(GuardGeneratorTask generator)
-    {
-        if (!_sim.GuardGenerators.TryGetValue(generator, out SoldierView? view))
-        {
-            return;
-        }
 
-        bool isOn = _sim.GuardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
-            ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
-        // Publish the first authored life immediately, but do not consume a bounded replacement
-        // until its mesh and runtime subtree have actually been created. A transient upload failure
-        // must leave the generator eligible to retry on the next tick.
-        GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
-        if (decision != GuardSpawnDecision.FirstSpawn
-            && isOn
-            && view.IsDead
-            && generator.SpawnCount < generator.MaxSpawns
-            && SpawnGeneratedGuard(generator, view) is { } fresh)
-        {
-            _ = generator.Advance(isOn: true, childIsDead: true);
-            _sim.GuardGenerators[generator] = fresh;
-        }
-    }
-
-    /// <summary>Clones a fresh rendered Human/HumanAI subtree while leaving the killed body in the world.</summary>
-    private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView)
-    {
-        Member? deadMember = FindMember(deadView);
-        if (deadMember is null || !_sim.Brains.TryGetValue(deadView, out AiSoldier? deadBrain))
-        {
-            _logger.Warning(LogCategory, $"{generator.Name} could not clone its missing rendered Human subtree.");
-            return null;
-        }
-
-        Group? group = _groups.FirstOrDefault(candidate => candidate.Soldiers.Contains(deadMember));
-        if (group is null)
-        {
-            _logger.Warning(LogCategory, $"{generator.Name} could not find its rendered Human group.");
-            return null;
-        }
-
-        SoldierView freshView = new(deadView.Soldier, deadView.Bones.Set);
-        Vector3d spawn = new(
-            deadMember.Agent.Position.X * WorldScene.UnitsPerMetre,
-            deadMember.Agent.Position.Y * WorldScene.UnitsPerMetre,
-            deadMember.Agent.Position.Z * WorldScene.UnitsPerMetre);
-        freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
-
-        BonePose initialPose = freshView.UnrotatedPose();
-        Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
-        group.Geometry.Vertices.CopyTo(initialSkin, 0);
-        bool initialSkinReady = false;
-        if (group.Body.Model is { } skinModel)
-        {
-            try
-            {
-                MefSkinner.Skin(
-                    skinModel,
-                    initialPose,
-                    (float)(1.0 / WorldScene.UnitsPerMetre),
-                    initialSkin);
-                initialSkinReady = true;
-            }
-            catch (ArgumentException)
-            {
-                initialSkinReady = false;
-            }
-        }
-
-        MeshHandle mesh;
-        try
-        {
-            mesh = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
-        {
-            _logger.Warning(LogCategory, $"{generator.Name} could not upload its cloned Human: {ex.Message}");
-            return null;
-        }
-
-        HeldWeapon? weapon = null;
-        if (deadMember.Agent.WeaponType is { } weaponType)
-        {
-            _heldWeaponsByModel.TryGetValue(weaponType.GunModel, out weapon);
-        }
-
-        SoldierAgent freshAgent = new(freshView, deadMember.Agent.Position)
-        {
-            IsCutsceneActor = false,
-            WeaponType = deadMember.Agent.WeaponType,
-            AmmoInClip = deadMember.Agent.WeaponType?.RoundsPerClip ?? 0,
-        };
-        Member freshMember = new(freshAgent, mesh)
-        {
-            DrawnPose = initialPose,
-            SkinScratch = initialSkin,
-            SkinnedPose = initialSkinReady ? initialPose : null,
-            PreviousSkinnedPose = initialSkinReady ? initialPose : null,
-            Weapon = weapon,
-        };
-        group.Add(freshMember);
-
-        if (_sim.DetectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale))
-        {
-            _sim.DetectorMarkerScaleMetres[freshView] = markerScale;
-        }
-        if (_sim.Combat.TryGetValue(deadView, out AiCombatParameters? combat))
-        {
-            _sim.Combat[freshView] = combat;
-        }
-        _sim.Health[freshView] = _sim.NewHealth(freshView);
-
-        AiSoldier freshBrain = deadBrain.Respawned(
-            freshView.Position,
-            freshView.Soldier.Gamma,
-            brain => SoldierSimulation.CombatWeaponState(brain, freshAgent));
-        // The corpse remains registered: sharing its runtime ID would advance one weapon sound
-        // twice per tick and send replies to the old guard's alerts to its replacement instead.
-        // Keep the authored Soldier.Id for mission queries, but give each live instance its own ID.
-        freshBrain.RuntimeId = checked(_sim.BrainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
-        _sim.BindViewTracking(freshBrain, freshView);
-        freshBrain.SetDefaultTarget(_sim.PlayerTarget);
-        _sim.Brains[freshView] = freshBrain;
-        _sim.BrainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
-        Count++;
-
-        _logger.Information(
-            LogCategory,
-            $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
-                + $"{freshView.Soldier.Name} cloned at its authored position; the previous body remains.");
-        return freshView;
-    }
 
 
     /// <summary>
@@ -1257,308 +1173,10 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
-    /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Nothing advanced a soldier's rig before this existed</b>, so every guard in the level stood frozen on
-    /// the first frame of its stand animation — which reads as a default A-pose. Soldiers are grouped by
-    /// (model, skeleton, animation) and share one skinned mesh, so ticking the group's first soldier and
-    /// re-skinning from its pose animates the whole group: they run the same clip from the same start, so they
-    /// share a pose by construction.
-    /// </para>
-    /// <para>
-    /// The device's meshes are immutable, so this destroys and re-uploads. There are only a handful of groups
-    /// in a level, so it is a few uploads a tick — worth replacing with a dynamic vertex buffer, but not worth
-    /// leaving the guards frozen for.
-    /// </para>
-    /// </remarks>
-    /// <param name="enemy">The enemy's eye position, which the view cones are tested against.</param>
-    /// <param name="enemyAlive">
-    /// Whether the enemy is still a target. A dead player is not: the detection scan (<c>0x489750</c>)
-    /// unregisters a human that reports itself invalid, so the guards lose it and stop firing at the
-    /// corpse — passing <see langword="false"/> reproduces that.
-    /// </param>
-    /// <param name="enemyFeet">
-    /// The enemy task's position — its feet, what combat aims at (<c>sub_451380</c>). Defaults to
-    /// <paramref name="enemy"/> when the caller has no body to speak of.
-    /// </param>
-    /// <param name="enemyCrouching">Whether the enemy is crouching, which halves the aim raise.</param>
-    public void Tick(
-        Vector3d enemy = default,
-        bool enemyAlive = true,
-        Vector3d? enemyFeet = null,
-        bool enemyCrouching = false)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        // Standalone (a renderer outside a level walk: the menu backdrop, tests): the same per-task updates, run
-        // in one pass. Inside a mission the level walk runs each where the tree places it (AttachTo).
-        SoldierEnemy fixedEnemy = new(enemy, enemyAlive, enemyFeet, enemyCrouching);
-        _sim.BeginTick(() => fixedEnemy);
-        foreach (GuardGeneratorTask generator in _sim.GuardGenerators.Keys.ToArray())
-        {
-            TickGuardGenerator(generator);
-        }
-
-        if (_sim.Doors is { } doors)
-        {
-            foreach (PlacedDoor door in doors.Doors)
-            {
-                doors.Tick(door);
-                _sim.DoorTicked(door);
-            }
-        }
-
-        if (_sim.AlarmControls is { } alarmControls)
-        {
-            alarmControls.Tick(_sim.TickCount);
-            _sim.AlarmControlTicked();
-        }
-
-        foreach ((SoldierView view, AiSoldier brain) in _sim.Brains)
-        {
-            _sim.TickSoldier(view, brain);
-        }
-
-        EndTick();
-    }
-
-    /// <summary>Puts the soldiers, their guard generators, the doors and the alarm controls into the level's walk.</summary>
-    /// <param name="walker">The level walk.</param>
-    /// <remarks>
-    /// <para>
-    /// The original has no soldier pass: each <c>HumanSoldier</c> updates where the walk reaches it
-    ///, its children -- HumanView, Shadow, the gun, then the HumanAI
-    /// whose CHANNELS packet moves it -- before the next soldier starts. A soldier therefore sees the soldiers
-    /// before it in the tree where they are this tick, and those after it (and the player, late in
-    /// <c>ConditionalContainer_560</c>) where they were last tick.
-    /// </para>
-    /// <para>
-    /// A <c>GuardGenerator</c> (<c>0x487EE0</c>) decides and clones first, then walks its soldier; a <c>Door</c>
-    /// (<c>0x446D10</c>) and an <c>AlarmControl</c> (<c>0x4408A0</c>) walk their children first, then update.
-    /// Call <see cref="SoldierSimulation.BeginTick"/> before the walk and <see cref="EndTick"/> after it.
-    /// </para>
-    /// </remarks>
-    public void AttachTo(LevelUpdateWalker walker)
-    {
-        ArgumentNullException.ThrowIfNull(walker);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _walker = walker;
-        HashSet<GameTask> soldiers = new(ReferenceEqualityComparer.Instance);
-        foreach (SoldierView view in _sim.Brains.Keys)
-        {
-            if (soldiers.Add(view.Soldier))
-            {
-                walker.Bind(view.Soldier, task =>
-                {
-                    TickSoldierTask(task);
-                    walker.RunChildren(task);
-                });
-            }
-        }
-
-        foreach (GuardGeneratorTask generator in _sim.GuardGenerators.Keys)
-        {
-            walker.Bind(generator, task =>
-            {
-                TickGuardGenerator((GuardGeneratorTask)task);
-                walker.RunChildren(task);
-            });
-        }
-
-        _sim.Doors?.AttachTo(walker, _sim.DoorTicked);
-        _sim.AlarmControls?.AttachTo(walker, () => _sim.TickCount, _ => _sim.AlarmControlTicked());
-    }
 
 
-    /// <summary>Closes a tick: the soldiers' collision, corpses, dropped weapons and skinning.</summary>
-    public void EndTick()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        bool collectDiagnostics = _sim.CollectDiagnostics;
-        if (_walker is not null)
-        {
-            // A registered, live soldier the walk never reached sits under a task the port does not walk the way
-            // the original does; tick it so it cannot freeze, and say so once.
-            foreach ((SoldierView view, AiSoldier brain) in _sim.Brains)
-            {
-                if (_sim.Ticked.Contains(view) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
-                {
-                    continue;
-                }
 
-                if (_unwalkedSoldiers.Add(view.Soldier))
-                {
-                    _logger.Warning(
-                        LogCategory,
-                        $"{view.Soldier.Name} is live but the level walk did not reach it; ticking it after the walk.");
-                }
 
-                _sim.TickSoldier(view, brain);
-            }
-        }
-
-        // Un-brained cutscene actors ride their vehicles the same way; the brained ones did as they updated.
-        _sim.AttachStagedActorsToVehicles();
-
-        // Every soldier has moved; re-publish their bodies so the player's wall sweep treats each
-        // living, active soldier as solid.
-        _sim.SyncCollisionBodies();
-
-        // This scans the complete roster. Calling it from inside the roster loop made diagnostics O(N²)
-        // every tick, including when the logger discarded the result. One final-state scan is sufficient.
-        if (collectDiagnostics)
-        {
-            _sim.ReportCombat();
-        }
-
-        // Simulated corpses advance on the tick, alongside the rigs they replaced -- and only until they
-        // settle, because nothing in this game ever removes a body and a corpse that kept stepping would
-        // be a cost paid for the rest of the mission.
-        if (GameplayCVars.Ragdoll.Value)
-        {
-            RagdollWorld corpses = _sim.RagdollWorldForCorpses();
-            int substeps = GameplayCVars.RagdollSubsteps.Value;
-            double fall = GameplayCVars.RagdollGravity.Value;
-            foreach (Group group in _groups)
-            {
-                foreach (Member member in group.Soldiers)
-                {
-                    if (member.Ragdoll is not { } corpse)
-                    {
-                        continue;
-                    }
-
-                    corpse.Step(corpses, substeps, fall);
-
-                    // A corpse whose solver has gone wrong is dropped rather than drawn: the retail
-                    // death clip has been running underneath the whole time, so what the player sees is
-                    // the original's own fall, not a body that vanished.
-                    if (!corpse.IsValid)
-                    {
-                        member.Ragdoll = null;
-                        _logger.Warning(LogCategory, "A ragdoll left its own level; falling back to the death clip.");
-                    }
-                }
-            }
-        }
-
-        // A GunPickup simulates independently after a dead human drops it, including when the optional
-        // visual corpse ragdoll is off. Sharing these probes keeps its walls and floor identical to the
-        // ones that stop the body.
-        _sim.DroppedWeaponPickups?.Tick(_sim.RagdollWorldForCorpses());
-
-        // Each soldier is skinned from ITS OWN rig, which is what the original does (0x49F700 is called
-        // through a stack descriptor about once per soldier per frame). Sharing one skinned mesh per group
-        // made every soldier wear the first one's pose, so once guards diverged onto real patrol paths
-        // nothing appeared to animate at all.
-        //
-        // The skin lands in a persistent per-soldier buffer and replaces the mesh's vertices in place:
-        // no allocation, no mesh churn, and the pose being replaced becomes the mesh's previous-pose
-        // stream -- which is exactly the "previous frame's skinned vertices" the temporal resolve needs
-        // and the second pose the between-tick blend draws against.
-        foreach (Group group in _groups)
-        {
-            if (group.Body.Model is null)
-            {
-                continue;
-            }
-
-            foreach (Member member in group.Soldiers)
-            {
-                if (!_sim.Brains.ContainsKey(member.Agent.View))
-                {
-                    // Un-brained soldiers still need their own rig advanced.
-                    member.Agent.View.Tick();
-                }
-
-                BonePose drawn = PoseToDraw(member);
-                member.DrawnPose = drawn;
-
-                // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
-                // upload to settle both interpolation streams, then no more skinning or driver traffic.
-                if (!member.PoseUploads.ShouldUpload(drawn))
-                {
-                    continue;
-                }
-
-                Vertex3D[]? skinned = member.SkinScratch;
-                if (skinned is null)
-                {
-                    skinned = new Vertex3D[group.Geometry.Vertices.Length];
-                    group.Geometry.Vertices.CopyTo(skinned, 0);
-                    member.SkinScratch = skinned;
-                }
-                try
-                {
-                    MefSkinner.Skin(
-                        group.Body.Model,
-                        drawn,
-                        (float)(1.0 / WorldScene.UnitsPerMetre),
-                        skinned);
-                }
-                catch (ArgumentException)
-                {
-                    continue;
-                }
-
-                if (!member.Mesh.IsValid)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    _device.UpdateAnimatedMesh(member.Mesh, skinned);
-                }
-                catch (ArgumentException)
-                {
-                    continue;
-                }
-
-                // UpdateAnimatedMesh moves the old current stream into the previous stream before it
-                // writes this pose. Keep the matching collision-pose pair so a player ray can trace the
-                // very same r_smooth blend the GPU presents, rather than a newer animation frame.
-                if (member.SkinnedPose is null)
-                {
-                    // A malformed model began with raw geometry. The first successful upload gives us a
-                    // current pose but not a trustworthy previous one; wait for the next upload before
-                    // claiming a blend pair that would disagree with the device.
-                    member.SkinnedPose = drawn;
-                    member.PreviousSkinnedPose = null;
-                }
-                else
-                {
-                    member.PreviousSkinnedPose = member.SkinnedPose;
-                    member.SkinnedPose = drawn;
-                }
-                member.PoseFlippedSinceFrame = true;
-            }
-        }
-
-        // With the poses settled, record where each body stands and faces THIS tick. The presentation
-        // draws between the last two of these records, so they are the whole interface between the
-        // 30 Hz simulation and however fast the display runs.
-        foreach (Group group in _groups)
-        {
-            foreach (Member member in group.Soldiers)
-            {
-                CaptureTickState(member);
-            }
-        }
-    }
-
-    /// <summary>Updates every body a soldier task owns -- a generator's dead guard and its replacement share one.</summary>
-    private void TickSoldierTask(GameTask task)
-    {
-        foreach ((SoldierView view, AiSoldier brain) in _sim.Brains)
-        {
-            if (ReferenceEquals(view.Soldier, task))
-            {
-                _sim.TickSoldier(view, brain);
-            }
-        }
-    }
 
     /// <summary>Records a soldier's drawn placement for this tick, keeping the tick before.</summary>
     private void CaptureTickState(Member member)
@@ -3510,6 +3128,170 @@ public sealed class SoldierRenderer : IDisposable
         return !gun.IsOccupied || playerUsing;
     }
 
+    /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing advanced a soldier's rig before this existed</b>, so every guard in the level stood frozen on
+    /// the first frame of its stand animation — which reads as a default A-pose. Soldiers are grouped by
+    /// (model, skeleton, animation) and share one skinned mesh, so ticking the group's first soldier and
+    /// re-skinning from its pose animates the whole group: they run the same clip from the same start, so they
+    /// share a pose by construction.
+    /// </para>
+    /// <para>
+    /// The device's meshes are immutable, so this destroys and re-uploads. There are only a handful of groups
+    /// in a level, so it is a few uploads a tick — worth replacing with a dynamic vertex buffer, but not worth
+    /// leaving the guards frozen for.
+    /// </para>
+    /// </remarks>
+    /// <param name="enemy">The enemy's eye position, which the view cones are tested against.</param>
+    /// <param name="enemyAlive">
+    /// Whether the enemy is still a target. A dead player is not: the detection scan (<c>0x489750</c>)
+    /// unregisters a human that reports itself invalid, so the guards lose it and stop firing at the
+    /// corpse — passing <see langword="false"/> reproduces that.
+    /// </param>
+    /// <param name="enemyFeet">
+    /// The enemy task's position — its feet, what combat aims at (<c>sub_451380</c>). Defaults to
+    /// <paramref name="enemy"/> when the caller has no body to speak of.
+    /// </param>
+    /// <param name="enemyCrouching">Whether the enemy is crouching, which halves the aim raise.</param>
+    public void Tick(
+        Vector3d enemy = default,
+        bool enemyAlive = true,
+        Vector3d? enemyFeet = null,
+        bool enemyCrouching = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // Standalone (a renderer outside a level walk: the menu backdrop, tests): the same per-task updates, run
+        // in one pass. Inside a mission the level walk runs each where the tree places it (AttachTo).
+        _sim.TickStandalone(new SoldierEnemy(enemy, enemyAlive, enemyFeet, enemyCrouching));
+        EndTick();
+    }
+
+    /// <summary>Closes a tick: the soldiers' collision, corpses, dropped weapons and skinning.</summary>
+    public void EndTick()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _sim.FinishTick();
+
+        if (GameplayCVars.Ragdoll.Value)
+        {
+            RagdollWorld corpses = _sim.RagdollWorldForCorpses();
+            int substeps = GameplayCVars.RagdollSubsteps.Value;
+            double fall = GameplayCVars.RagdollGravity.Value;
+            foreach (Group group in _groups)
+            {
+                foreach (Member member in group.Soldiers)
+                {
+                    if (member.Ragdoll is not { } corpse)
+                    {
+                        continue;
+                    }
+
+                    corpse.Step(corpses, substeps, fall);
+
+                    // A corpse whose solver has gone wrong is dropped rather than drawn: the retail
+                    // death clip has been running underneath the whole time, so what the player sees is
+                    // the original's own fall, not a body that vanished.
+                    if (!corpse.IsValid)
+                    {
+                        member.Ragdoll = null;
+                        _logger.Warning(LogCategory, "A ragdoll left its own level; falling back to the death clip.");
+                    }
+                }
+            }
+        }
+
+        // A GunPickup simulates independently after a dead human drops it, including when the optional
+        // visual corpse ragdoll is off. Sharing these probes keeps its walls and floor identical to the
+        // ones that stop the body.
+        _sim.TickAfterCorpses();
+
+        foreach (Group group in _groups)
+        {
+            if (group.Body.Model is null)
+            {
+                continue;
+            }
+
+            foreach (Member member in group.Soldiers)
+            {
+                BonePose drawn = PoseToDraw(member);
+                member.DrawnPose = drawn;
+
+                // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
+                // upload to settle both interpolation streams, then no more skinning or driver traffic.
+                if (!member.PoseUploads.ShouldUpload(drawn))
+                {
+                    continue;
+                }
+
+                Vertex3D[]? skinned = member.SkinScratch;
+                if (skinned is null)
+                {
+                    skinned = new Vertex3D[group.Geometry.Vertices.Length];
+                    group.Geometry.Vertices.CopyTo(skinned, 0);
+                    member.SkinScratch = skinned;
+                }
+                try
+                {
+                    MefSkinner.Skin(
+                        group.Body.Model,
+                        drawn,
+                        (float)(1.0 / WorldScene.UnitsPerMetre),
+                        skinned);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+
+                if (!member.Mesh.IsValid)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    _device.UpdateAnimatedMesh(member.Mesh, skinned);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+
+                // UpdateAnimatedMesh moves the old current stream into the previous stream before it
+                // writes this pose. Keep the matching collision-pose pair so a player ray can trace the
+                // very same r_smooth blend the GPU presents, rather than a newer animation frame.
+                if (member.SkinnedPose is null)
+                {
+                    // A malformed model began with raw geometry. The first successful upload gives us a
+                    // current pose but not a trustworthy previous one; wait for the next upload before
+                    // claiming a blend pair that would disagree with the device.
+                    member.SkinnedPose = drawn;
+                    member.PreviousSkinnedPose = null;
+                }
+                else
+                {
+                    member.PreviousSkinnedPose = member.SkinnedPose;
+                    member.SkinnedPose = drawn;
+                }
+                member.PoseFlippedSinceFrame = true;
+            }
+        }
+
+        // With the poses settled, record where each body stands and faces THIS tick. The presentation
+        // draws between the last two of these records, so they are the whole interface between the
+        // 30 Hz simulation and however fast the display runs.
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                CaptureTickState(member);
+            }
+        }
+    }
+
     private sealed class Group(SoldierModelGroup roster, MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
     {
         /// <summary>The soldiers this group draws, as the simulation keeps them, and what it reads of their model.</summary>
@@ -3530,6 +3312,10 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>The soldiers the group draws, in the order the roster holds their agents; joined through <see cref="Add"/>.</summary>
         public List<Member> Soldiers => _soldiers;
+
+        /// <summary>Adds a soldier whose agent the simulation has just added to the roster, to be drawn beside it.</summary>
+        /// <param name="member">The soldier.</param>
+        public void AddDrawn(Member member) => _soldiers.Add(member);
 
         /// <summary>Adds a soldier to the group, and its agent to the roster in the same place.</summary>
         /// <param name="member">The soldier.</param>

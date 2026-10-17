@@ -3967,4 +3967,267 @@ public sealed class SoldierSimulation
             }
         }
     }
+
+    /// <summary>Gets or sets what prepares a generator's replacement guard to be drawn, and says whether it could.</summary>
+    internal Func<GuardGeneratorTask, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody { get; set; }
+
+    /// <summary>Clones a fresh Human/HumanAI subtree while leaving the killed body in the world.</summary>
+    /// <remarks>
+    /// The replacement is made only once its renderer, when there is one, has its drawing ready (<see cref="SpawnedBody"/>):
+    /// a transient upload failure leaves the generator free to try again next tick.
+    /// </remarks>
+    private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView)
+    {
+        SoldierAgent? deadAgent = FindAgent(deadView);
+        if (deadAgent is null || !Brains.TryGetValue(deadView, out AiSoldier? deadBrain))
+        {
+            _logger.Warning(LogCategory, $"{generator.Name} could not clone its missing rendered Human subtree.");
+            return null;
+        }
+
+        SoldierModelGroup? group = Roster.FirstOrDefault(candidate => candidate.Agents.Contains(deadAgent));
+        if (group is null)
+        {
+            _logger.Warning(LogCategory, $"{generator.Name} could not find its rendered Human group.");
+            return null;
+        }
+
+        SoldierView freshView = new(deadView.Soldier, deadView.Bones.Set);
+        Vector3d spawn = new(
+            deadAgent.Position.X * WorldScene.UnitsPerMetre,
+            deadAgent.Position.Y * WorldScene.UnitsPerMetre,
+            deadAgent.Position.Z * WorldScene.UnitsPerMetre);
+        freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
+
+        SoldierAgent freshAgent = new(freshView, deadAgent.Position)
+        {
+            IsCutsceneActor = false,
+            WeaponType = deadAgent.WeaponType,
+            AmmoInClip = deadAgent.WeaponType?.RoundsPerClip ?? 0,
+        };
+        if (SpawnedBody is { } drawing && !drawing(generator, group, freshAgent, deadAgent))
+        {
+            return null;
+        }
+
+        group.Add(freshAgent);
+
+        if (DetectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale))
+        {
+            DetectorMarkerScaleMetres[freshView] = markerScale;
+        }
+        if (Combat.TryGetValue(deadView, out AiCombatParameters? combat))
+        {
+            Combat[freshView] = combat;
+        }
+        Health[freshView] = NewHealth(freshView);
+
+        AiSoldier freshBrain = deadBrain.Respawned(
+            freshView.Position,
+            freshView.Soldier.Gamma,
+            brain => CombatWeaponState(brain, freshAgent));
+        // The corpse remains registered: sharing its runtime ID would advance one weapon sound
+        // twice per tick and send replies to the old guard's alerts to its replacement instead.
+        // Keep the authored Soldier.Id for mission queries, but give each live instance its own ID.
+        freshBrain.RuntimeId = checked(BrainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
+        BindViewTracking(freshBrain, freshView);
+        freshBrain.SetDefaultTarget(PlayerTarget);
+        Brains[freshView] = freshBrain;
+        BrainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
+
+        _logger.Information(
+            LogCategory,
+            $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
+                + $"{freshView.Soldier.Name} cloned at its authored position; the previous body remains.");
+        return freshView;
+    }
+
+    // The level walk this renderer's tasks update from, once AttachTo has put them in it; null when standalone.
+    private LevelUpdateWalker? _walker;
+
+    private readonly HashSet<GameTask> _unwalkedSoldiers = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Runs the native generator decision before any live soldier is advanced this tick.</summary>
+    /// <summary>A GuardGenerator's update (<c>0x487EE0</c>): its expression, and a replacement for a dead guard.</summary>
+    internal void TickGuardGenerator(GuardGeneratorTask generator)
+    {
+        if (!GuardGenerators.TryGetValue(generator, out SoldierView? view))
+        {
+            return;
+        }
+
+        bool isOn = GuardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
+            ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
+        // Publish the first authored life immediately, but do not consume a bounded replacement
+        // until its mesh and runtime subtree have actually been created. A transient upload failure
+        // must leave the generator eligible to retry on the next tick.
+        GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
+        if (decision != GuardSpawnDecision.FirstSpawn
+            && isOn
+            && view.IsDead
+            && generator.SpawnCount < generator.MaxSpawns
+            && SpawnGeneratedGuard(generator, view) is { } fresh)
+        {
+            _ = generator.Advance(isOn: true, childIsDead: true);
+            GuardGenerators[generator] = fresh;
+        }
+    }
+
+    /// <summary>Updates every body a soldier task owns -- a generator's dead guard and its replacement share one.</summary>
+    private void TickSoldierTask(GameTask task)
+    {
+        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        {
+            if (ReferenceEquals(view.Soldier, task))
+            {
+                TickSoldier(view, brain);
+            }
+        }
+    }
+
+    /// <summary>Puts the soldiers, their guard generators, the doors and the alarm controls into the level's walk.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>
+    /// <para>
+    /// The original has no soldier pass: each <c>HumanSoldier</c> updates where the walk reaches it
+    ///, its children -- HumanView, Shadow, the gun, then the HumanAI
+    /// whose CHANNELS packet moves it -- before the next soldier starts. A soldier therefore sees the soldiers
+    /// before it in the tree where they are this tick, and those after it (and the player, late in
+    /// <c>ConditionalContainer_560</c>) where they were last tick.
+    /// </para>
+    /// <para>
+    /// A <c>GuardGenerator</c> (<c>0x487EE0</c>) decides and clones first, then walks its soldier; a <c>Door</c>
+    /// (<c>0x446D10</c>) and an <c>AlarmControl</c> (<c>0x4408A0</c>) walk their children first, then update.
+    /// Call <see cref="BeginTick"/> before the walk and <c>EndTick</c> after it.
+    /// </para>
+    /// </remarks>
+    public void AttachTo(LevelUpdateWalker walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _walker = walker;
+        HashSet<GameTask> soldiers = new(ReferenceEqualityComparer.Instance);
+        foreach (SoldierView view in Brains.Keys)
+        {
+            if (soldiers.Add(view.Soldier))
+            {
+                walker.Bind(view.Soldier, task =>
+                {
+                    TickSoldierTask(task);
+                    walker.RunChildren(task);
+                });
+            }
+        }
+
+        foreach (GuardGeneratorTask generator in GuardGenerators.Keys)
+        {
+            walker.Bind(generator, task =>
+            {
+                TickGuardGenerator((GuardGeneratorTask)task);
+                walker.RunChildren(task);
+            });
+        }
+
+        Doors?.AttachTo(walker, DoorTicked);
+        AlarmControls?.AttachTo(walker, () => TickCount, _ => AlarmControlTicked());
+    }
+
+    /// <summary>Runs one tick outside a level walk: the same per-task updates, in one pass.</summary>
+    /// <param name="enemy">The player as the soldiers see it this tick.</param>
+    internal void TickStandalone(SoldierEnemy enemy)
+    {
+        BeginTick(() => enemy);
+        foreach (GuardGeneratorTask generator in GuardGenerators.Keys.ToArray())
+        {
+            TickGuardGenerator(generator);
+        }
+
+        if (Doors is { } doors)
+        {
+            foreach (PlacedDoor door in doors.Doors)
+            {
+                doors.Tick(door);
+                DoorTicked(door);
+            }
+        }
+
+        if (AlarmControls is { } alarmControls)
+        {
+            alarmControls.Tick(TickCount);
+            AlarmControlTicked();
+        }
+
+        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        {
+            TickSoldier(view, brain);
+        }
+
+    }
+
+    /// <summary>Closes the tick's simulation before the corpses move: the bodies the walk missed, the staged actors, the collision.</summary>
+    internal void FinishTick()
+    {
+        bool collectDiagnostics = CollectDiagnostics;
+        if (_walker is not null)
+        {
+            // A registered, live soldier the walk never reached sits under a task the port does not walk the way
+            // the original does; tick it so it cannot freeze, and say so once.
+            foreach ((SoldierView view, AiSoldier brain) in Brains)
+            {
+                if (Ticked.Contains(view) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
+                {
+                    continue;
+                }
+
+                if (_unwalkedSoldiers.Add(view.Soldier))
+                {
+                    _logger.Warning(
+                        LogCategory,
+                        $"{view.Soldier.Name} is live but the level walk did not reach it; ticking it after the walk.");
+                }
+
+                TickSoldier(view, brain);
+            }
+        }
+
+        // Un-brained cutscene actors ride their vehicles the same way; the brained ones did as they updated.
+        AttachStagedActorsToVehicles();
+
+        // Every soldier has moved; re-publish their bodies so the player's wall sweep treats each
+        // living, active soldier as solid.
+        SyncCollisionBodies();
+
+        // This scans the complete roster. Calling it from inside the roster loop made diagnostics O(N²)
+        // every tick, including when the logger discarded the result. One final-state scan is sufficient.
+        if (collectDiagnostics)
+        {
+            ReportCombat();
+        }
+
+        // Simulated corpses advance on the tick, alongside the rigs they replaced -- and only until they
+        // settle, because nothing in this game ever removes a body and a corpse that kept stepping would
+        // be a cost paid for the rest of the mission.
+    }
+
+    /// <summary>After the corpses moved: the dropped weapons, and the poses of the bodies no brain drives.</summary>
+    internal void TickAfterCorpses()
+    {
+        DroppedWeaponPickups?.Tick(RagdollWorldForCorpses());
+        foreach (SoldierModelGroup group in Roster)
+        {
+            if (group.Body.Model is null)
+            {
+                continue;
+            }
+
+            foreach (SoldierAgent agent in group.Agents)
+            {
+                if (!Brains.ContainsKey(agent.View))
+                {
+                    // Un-brained soldiers still need their own rig advanced.
+                    agent.View.Tick();
+                }
+            }
+        }
+    }
 }
