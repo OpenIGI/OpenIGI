@@ -847,7 +847,7 @@ internal interface IInspectedWorld
     IGroundHeightField? Ground { get; }
 
     /// <summary>Gets the soldiers.</summary>
-    SoldierRenderer? Soldiers { get; }
+    ISoldierPresenter? Soldiers { get; }
 
     /// <summary>Gets the mission's registries.</summary>
     MissionWorld Mission { get; }

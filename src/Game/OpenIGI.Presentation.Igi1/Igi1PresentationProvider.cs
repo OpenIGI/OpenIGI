@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
+using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
@@ -20,6 +21,8 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <summary>Initializes a new instance of the <see cref="Igi1PresentationProvider"/> class.</summary>
     public Igi1PresentationProvider() =>
         Presenters = new PresenterRegistry()
+            .Add<SoldierPresentationRequest, ISoldierPresenter>(static (in SoldierPresentationRequest request) =>
+                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<ViewModelPresentationRequest, IViewModelPresenter>(CreateViewModel)

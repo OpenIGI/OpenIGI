@@ -1003,8 +1003,9 @@ internal sealed partial class GameHost
         else
         {
             _soldiers?.Dispose();
-            _soldiers = new SoldierRenderer(_device, _resources, _logger, _magic) { DetailMaps = _detailMaps };
-            _soldiers.Load(
+            _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
+                new SoldierPresentationRequest(_device, _resources, _logger, _magic, _detailMaps));
+            _soldiers?.Load(
                 loaded,
                 levelRoot,
                 // The walk's ground when the title keeps one in the level, and the mission's terrain
@@ -1019,24 +1020,11 @@ internal sealed partial class GameHost
     /// <summary>The doors, elevators, pickups and world interactions, and the soldiers' sounds.</summary>
     private void MissionInteractions(MissionBuild b)
     {
-        if (_soldiers is null)
-        {
-            throw MissingSystem(MissionSystemNames.Soldiers);
-        }
-
         LoadedMission loaded = b.Loaded;
         LevelTask levelRoot = b.LevelRoot;
         int id = b.Id;
         ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
-
-        _soldiers.Simulation.Cutscenes = _mission.Cutscenes;
-
-        // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
-        // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
-        // knife leaves: KnifeStab itself never reaches the decal message.
-        _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
-        _mission.Cutscenes?.SetTargetPoseResolver(_soldiers.Simulation.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
@@ -1050,16 +1038,6 @@ internal sealed partial class GameHost
         // transforms dead: a gun's stand did not turn with the gun it holds.
         world.Interactions = _mission.Interactions;
         solids.GenericPickups = _mission.GenericPickups;
-        _soldiers.Simulation.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
-        _soldiers.Simulation.UseInteractions(_mission.Interactions);
-        _soldiers.Simulation.SetDoors(_mission.Doors, solids);
-        _soldiers.Simulation.SetElevators(_mission.Elevators);
-
-        // The first genuinely world-positioned sound in the port. Its distances are the definition's
-        // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
-        // without anything here choosing a range.
-        _soldiers.Simulation.SetDeathSound(position => PlayDeathSound(
-            HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
         _mission.Ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
@@ -1068,25 +1046,6 @@ internal sealed partial class GameHost
         {
             _logger.Information("Audio", $"{_mission.Ambience.Areas.Count} ambient area(s).");
         }
-
-        // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-        _soldiers.Simulation.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
-        _soldiers.Simulation.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
-        _soldiers.Simulation.SetMeleeStrikeSink(StrikePlayer);
-        _soldiers.Simulation.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
-
-        // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
-        // HumanAI's current position. Both begin at the same live position; the backend owns any voice
-        // following after that point.
-        _soldiers.Simulation.SetScriptSound((name, position, attached) =>
-            _sounds?.PlayDefinition(name, position, priority: 200));
-
-        // Each AI weapon owns its automatic loop and updates its world position every tick. The round
-        // callback handles ballistics only; without this parallel path AI shots were completely silent.
-        _soldiers.Simulation.SetWeaponSound(TickSoldierWeaponSound);
-
-        // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
-        _soldiers.Simulation.SetFootstepSound(step => PlayFootstep(step));
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
         _mission.Doors.SetSoundSink(PlayDoorSound);
@@ -1097,6 +1056,48 @@ internal sealed partial class GameHost
         if (_mission.Doors.Doors.Count > 0)
         {
             _logger.Information("World", $"{_mission.Doors.Doors.Count} door(s) available to players and AI.");
+        }
+
+        // The level's own soldiers, where the title has them to draw (a title without IGI1's has none).
+        if (_soldiers is { } soldiers)
+        {
+            soldiers.Simulation.Cutscenes = _mission.Cutscenes;
+
+            // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
+            // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
+            // knife leaves: KnifeStab itself never reaches the decal message.
+            soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
+            _mission.Cutscenes?.SetTargetPoseResolver(soldiers.Simulation.CutscenePose);
+
+            soldiers.Simulation.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
+            soldiers.Simulation.UseInteractions(_mission.Interactions);
+            soldiers.Simulation.SetDoors(_mission.Doors, solids);
+            soldiers.Simulation.SetElevators(_mission.Elevators);
+
+            // The first genuinely world-positioned sound in the port. Its distances are the definition's
+            // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
+            // without anything here choosing a range.
+            soldiers.Simulation.SetDeathSound(position => PlayDeathSound(
+                HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
+
+            // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
+            soldiers.Simulation.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
+            soldiers.Simulation.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+            soldiers.Simulation.SetMeleeStrikeSink(StrikePlayer);
+            soldiers.Simulation.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
+
+            // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
+            // HumanAI's current position. Both begin at the same live position; the backend owns any voice
+            // following after that point.
+            soldiers.Simulation.SetScriptSound((name, position, attached) =>
+                _sounds?.PlayDefinition(name, position, priority: 200));
+
+            // Each AI weapon owns its automatic loop and updates its world position every tick. The round
+            // callback handles ballistics only; without this parallel path AI shots were completely silent.
+            soldiers.Simulation.SetWeaponSound(TickSoldierWeaponSound);
+
+            // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
+            soldiers.Simulation.SetFootstepSound(step => PlayFootstep(step));
         }
 
         EndStage("the doors, elevators and world interactions");
@@ -1485,7 +1486,8 @@ internal sealed partial class GameHost
 
         if (_soldiers is null)
         {
-            throw MissingSystem(MissionSystemNames.Soldiers);
+            // A title without IGI1's soldiers has no brains to animate here.
+            return;
         }
 
         LoadedMission loaded = b.Loaded;

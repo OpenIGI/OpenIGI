@@ -10,6 +10,7 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host;
 
@@ -144,8 +145,9 @@ internal sealed partial class GameHost
         _backdropSoldiers = null;
         if (!BackdropLite)
         {
-            _backdropSoldiers = new SoldierRenderer(_device, preview.Resources, _logger, _magic) { DetailMaps = _detailMaps };
-            _backdropSoldiers.Load(
+            _backdropSoldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
+                new SoldierPresentationRequest(_device, preview.Resources, _logger, _magic, _detailMaps));
+            _backdropSoldiers?.Load(
                 preview.Mission,
                 preview.LevelRoot,
                 preview.Mission.Terrain is { IsUsable: true } standing ? standing : null,

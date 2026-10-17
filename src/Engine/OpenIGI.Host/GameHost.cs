@@ -332,7 +332,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
 
     IGroundHeightField? IInspectedWorld.Ground => _ground;
 
-    SoldierRenderer? IInspectedWorld.Soldiers => _soldiers;
+    ISoldierPresenter? IInspectedWorld.Soldiers => _soldiers;
 
     MissionWorld IInspectedWorld.Mission => _mission;
 
@@ -560,7 +560,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
     // has already met a skinned vertex layout by the time Play is pressed. Handed straight over to
     // `_soldiers` when the backdrop is promoted, so the played mission never builds them at all.
-    private SoldierRenderer? _backdropSoldiers;
+    private ISoldierPresenter? _backdropSoldiers;
 
     // Makes the backdrop playable a couple of milliseconds at a time while the menu is idle.
     private MissionArming? _arming;
@@ -692,7 +692,7 @@ internal sealed partial class GameHost : IDisposable, IInspectedWorld
     private readonly MissileSimulation _vehicleMissiles = new();
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
-    private SoldierRenderer? _soldiers;
+    private ISoldierPresenter? _soldiers;
 
     // Whether the soldiers and the player update inside the level walk (AttachActorsToLevelWalk), whether the
     // player's update has run this tick, and whether it advanced the interaction registry itself.

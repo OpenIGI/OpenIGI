@@ -43,6 +43,7 @@ using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host;
 
@@ -559,7 +560,8 @@ internal sealed partial class GameHost
         // The backdrop's soldiers resolve their frame state too, because the shadow pass below is
         // about to read their poses. Only one of the two is ever live: `_soldiers` belongs to a
         // played mission, `_backdropSoldiers` to the menu's.
-        SoldierRenderer? shadowCasters = _soldiers ?? _backdropSoldiers;
+        ISoldierPresenter? shadowCasters = _soldiers ?? _backdropSoldiers;
+        ICharacterPresenter? casterBodies = shadowCasters is null ? null : new SoldierBodies(shadowCasters);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
         _gunPickupRenderer?.BeginFrame(tickBlend, smoothPresentation);
@@ -1133,21 +1135,15 @@ internal sealed partial class GameHost
         {
             // The cascades are filled through the title's presentation, not through this
             // host's renderer fields: the pass draws whichever game is loaded.
-            // Named concretely because this host still knows its title; the seam is
-            // ShadowCasterPass.Render, which takes only the presenter interfaces and so
-            // draws whichever game supplied them. The title becomes injected in phase 1.
-            Igi1Presentation casters = new(_world, shadowCasters);
-            _shadowPass.Render(
-                state.CascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters, _terrain);
+            _shadowPass.Render(state.CascadeStorage, cascadeCount, eye, _scene, _world, casterBodies, _terrain);
         }
 
         // The nearest lamps' own shadow maps, where the device marches lamp shadows rather than
         // tracing them. Whatever the sun is doing: these are the night's shadows.
         if (_shadowPass is not null && _device.WantsLampShadowMaps)
         {
-            Igi1Presentation lampCasters = new(_world, shadowCasters);
-            _lampMaps.Render(_shadowPass, _scene, lampCasters.World, lampCasters.Characters, _lightFixtures, LampMapPeople);
-            _lampMaps.RenderBounce(_shadowPass, _scene, lampCasters.World, _cardLighting, _lightFixtures, LampOrderEye);
+            _lampMaps.Render(_shadowPass, _scene, _world, casterBodies, _lightFixtures, LampMapPeople);
+            _lampMaps.RenderBounce(_shadowPass, _scene, _world, _cardLighting, _lightFixtures, LampOrderEye);
         }
         EndStageIfSlow("the shadow cascades");
 
@@ -3212,5 +3208,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 _logger.Information("Terrain", string.Join("; ", terrain));
             }
         }
+    }
+
+    /// <summary>The soldiers' bodies as the shadow passes draw characters.</summary>
+    /// <param name="soldiers">The soldiers.</param>
+    private sealed class SoldierBodies(ISoldierPresenter soldiers) : ICharacterPresenter
+    {
+        public void Draw(in Camera3D camera, in Matrix4f projection) => soldiers.Draw(camera, projection);
+
+        public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection) => soldiers.DrawPlayerBody(camera, projection);
     }
 }
