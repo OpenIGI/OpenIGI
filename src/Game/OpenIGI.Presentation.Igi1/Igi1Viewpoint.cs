@@ -54,6 +54,29 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public Vector3d? BodyPositionUnits => gameplay.World.Player?.Body.Position;
 
     /// <inheritdoc/>
+    public Vector3d? EyeUnits => gameplay.World.Player?.Body.Eye;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string>? DebugLines()
+    {
+        if (gameplay.World.Player is not { } player)
+        {
+            return null;
+        }
+
+        Vector3d pu = player.PositionUnits;
+        Vector3d pm = player.Position;
+        return
+        [
+            "mode: WALK",
+            FormattableString.Invariant($"pos units ({pu.X:F0}, {pu.Y:F0}, {pu.Z:F0})"),
+            FormattableString.Invariant($"pos m     ({pm.X:F2}, {pm.Y:F2}, {pm.Z:F2})"),
+            FormattableString.Invariant($"yaw {player.Yaw * 180f / MathF.PI:F1}  pitch {player.Pitch * 180f / MathF.PI:F1}"),
+            FormattableString.Invariant($"grounded {player.IsGrounded}  crouch {player.IsCrouched}  wall {player.TouchedWall}"),
+        ];
+    }
+
+    /// <inheritdoc/>
     public WorldRayCast? GroundTrace => gameplay.World.Player?.GrenadeWalls;
 
     /// <inheritdoc/>

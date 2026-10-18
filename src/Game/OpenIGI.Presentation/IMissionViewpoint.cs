@@ -58,6 +58,13 @@ public interface IMissionViewpoint
     /// <summary>Gets where the player's feet are, in world units, or <see langword="null"/> when there is no player.</summary>
     Vector3d? BodyPositionUnits { get; }
 
+    /// <summary>Gets where the player's eyes are, in world units, or <see langword="null"/> when there is no player.</summary>
+    Vector3d? EyeUnits { get; }
+
+    /// <summary>Gets the developer overlay's lines about the walking player: where it stands, which way it looks, what it touches.</summary>
+    /// <returns>The lines, or <see langword="null"/> when there is no player.</returns>
+    IReadOnlyList<string>? DebugLines();
+
     /// <summary>Gets the trace that covers the terrain and the placed collision, which the rain lands on, or <see langword="null"/>.</summary>
     WorldRayCast? GroundTrace { get; }
 

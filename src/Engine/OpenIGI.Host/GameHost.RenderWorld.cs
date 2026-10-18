@@ -2697,8 +2697,8 @@ public sealed partial class GameHost
             // Whatever soldier the crosshair is on, ask its brain which detection gate is (not) passing
             // against the point the guards actually test -- the player's own eye in engine units, the same
             // point soldiers.Tick is fed.
-            Vector3d watchedEye = _playerMode && _mission.Player is not null
-                ? _mission.Player.Body.Eye
+            Vector3d watchedEye = _playerMode && Viewpoint?.EyeUnits is { } playerEye
+                ? playerEye
                 : _camera.Position;
             if (_soldiers is not null
                 && _soldiers.Simulation.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
@@ -2707,19 +2707,9 @@ public sealed partial class GameHost
             }
 
             List<string> lines;
-            if (_playerMode && _mission.Player is not null)
+            if (_playerMode && Viewpoint?.DebugLines() is { } walking)
             {
-                Vector3d pu = _mission.Player.PositionUnits;
-                Vector3d pm = _mission.Player.Position;
-                lines =
-                [
-                    "mode: WALK",
-                    I($"pos units ({pu.X:F0}, {pu.Y:F0}, {pu.Z:F0})"),
-                    I($"pos m     ({pm.X:F2}, {pm.Y:F2}, {pm.Z:F2})"),
-                    I($"yaw {_mission.Player.Yaw * 180f / MathF.PI:F1}  pitch {_mission.Player.Pitch * 180f / MathF.PI:F1}"),
-                    I($"grounded {_mission.Player.IsGrounded}  crouch {_mission.Player.IsCrouched}  wall {_mission.Player.TouchedWall}"),
-                    target,
-                ];
+                lines = [.. walking, target];
             }
             else
             {
