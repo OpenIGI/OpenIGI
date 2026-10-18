@@ -1033,7 +1033,6 @@ public sealed partial class GameHost
     /// <summary>Hands the device this frame's indirect light: the probe field, the sky's fill, the surface cache and the distance field.</summary>
     private void PrepareSceneLighting(FrameLoopState state, Camera3D eye, DirectionalLightSettings light)
     {
-
         // The bake stored how much sky reaches each probe, never what colour it was, so the
         // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
         // on its ambient exactly as the fog does.
@@ -1268,7 +1267,6 @@ public sealed partial class GameHost
     /// <summary>Fills the sun's cascades and the nearest lamps' shadow maps, before the scene capture opens.</summary>
     private void RenderShadowMaps(FrameLoopState state, int cascadeCount, bool cascadesRead, Camera3D eye, ICharacterPresenter? casterBodies)
     {
-
         BeginStage();
         if (cascadeCount > 0 && _shadowPass is not null && cascadesRead)
         {
@@ -1293,7 +1291,6 @@ public sealed partial class GameHost
         SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
         RenderResolution resolution)
     {
-
         bool captured = RenderCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
         if (captured)
         {
@@ -1647,7 +1644,6 @@ public sealed partial class GameHost
     /// <summary>Gathers the screen-space indirect light and resolves the deferred lighting.</summary>
     private void LightScene(FrameLoopState state, Camera3D eye, bool captured, SceneTargetDescription sceneTarget, Matrix4f unjitteredProjection)
     {
-
         // L6/L9: the live screen probe gather. Traced here, while the G-buffer the geometry pass just
         // filled is still live and BEFORE the pass closes -- because closing it runs the deferred
         // lighting, which reads the atlas as its diffuse fill. So the gather has to have written it
@@ -2050,7 +2046,6 @@ public sealed partial class GameHost
         FrameLoopState state, bool captured, Camera3D eye, Matrix4f unjitteredProjection, bool flashlightShown, Camera3D flashlightBody,
         MapSceneView? mapScene, SceneTargetDescription sceneTarget)
     {
-
         // The level's lamp fixtures, submitted as real point lights for the deferred pass that
         // closes just below -- the same timing as the screen-space fill. Transformed into this
         // frame's view space here, in double precision: the level sits at large world coordinates,
@@ -2409,7 +2404,6 @@ public sealed partial class GameHost
     /// <returns>The binocular range to show, in metres, or <see langword="null"/> when the glasses are down.</returns>
     private float? DrawFirstPersonView(Camera3D eye, bool showViewModel, SightZoomFrame sight, bool smoothPresentation, float tickBlend)
     {
-
         // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
         // then ask the human where the weapon is and draw that. Only in player mode, because the
         // original draws it out of the human's own render and the free camera is not a human -- and
@@ -2567,7 +2561,6 @@ public sealed partial class GameHost
         float tickBlend, SightZoomFrame sight, bool worldInteractionPrompt, Camera3D eye, float horizontalTangent, float aspectRatio,
         bool cameraIndoors)
     {
-
         // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
         // the menus and the console are authored in display colours and must never be tone mapped.
         // Unconditional, and outside the player-mode block on purpose -- a free-camera frame draws
