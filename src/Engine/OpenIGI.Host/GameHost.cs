@@ -587,11 +587,11 @@ public sealed partial class GameHost : IDisposable
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
         _igi1TickHost = new Igi1TickHost(this);
-        _igi1Tick = new Igi1MissionTick(_mission, _igi1TickHost);
         _igi1PlayerHost = new Igi1PlayerHost(this);
         _igi1Harm = new Igi1PlayerHarm(_mission, new Igi1HarmHost(this));
         _igi1Setup = new Igi1MissionSetup(_mission, new Igi1SetupHost(this));
         _igi1Blasts = new Igi1Blasts(_mission, _igi1Harm, new Igi1BlastHost(this));
+        _igi1Tick = new Igi1MissionTick(_mission, _igi1Blasts, _igi1TickHost);
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,

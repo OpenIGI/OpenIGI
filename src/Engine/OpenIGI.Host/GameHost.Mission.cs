@@ -1986,11 +1986,23 @@ public sealed partial class GameHost
         public void KillPlayer(Vector3d from, int zone, int bone, WeaponCategory category) =>
             host.BeginPlayerDeath(from, zone, bone, category);
 
-        public void PresentPlayerTick()
-        {
-            host.PresentPlayerTick();
-            host.ReportPlayerShots(State);
-        }
+        public void ReportPlayerShots() => host.ReportPlayerShots(State);
+
+        public void SoundPlayerUpdate() => host.SoundPlayerUpdate();
+
+        public void SoundPlayerWeaponAndBody() => host.SoundPlayerWeaponAndBody();
+
+        public void PlayFootstep(in Footstep footstep) => host.PlayFootstep(footstep);
+
+        public void PresentPlayerImpacts() => host.PresentPlayerImpacts();
+
+        public void PlayGrenadeBounces() => host.PlayGrenadeBounces();
+
+        public void SoundAlarms() => host.SoundAlarms();
+
+        public void TickAmbience(Vector3d listenerInUnits) => host.TickAmbience(listenerInUnits);
+
+        public void StepEffectsAfterDeath() => host.StepEffectsAfterDeath();
 
         public void StepScreen()
         {
@@ -2081,151 +2093,112 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>Plays and reports what the player's update set in motion this tick: its sounds, effects and detonations.</summary>
-    private void PresentPlayerTick()
+    /// <summary>The sounds of the player's update: the binoculars' zoom and the medipack.</summary>
+    private void SoundPlayerUpdate()
     {
-        Debug.Assert(_mission.Player is not null, "Presented only for a player who ticked; see TickMission.");
+        PlayBinocularTransitionSound();
+        PlayMedipackSound();
+    }
 
-        // What the player's update set in motion this tick -- its sounds, effects and detonations.
-        if (_mission.PlayerTicked)
+    /// <summary>The sounds of the player's weapon and body this tick: the report, the launcher, the cook, the reload and the jump.</summary>
+    private void SoundPlayerWeaponAndBody()
+    {
+        PlayerCamera player = _mission.Player!;
+
+        // And the sound of it. Driven every tick rather than only on the ones that fire,
+        // because an automatic's loop has to be told when the trigger was RELEASED as much
+        // as when it was pulled -- see WeaponSoundPlayer.
+        // FUN_0040FB30/0x40FB90 drives medipack animation tasks directly. A medipack is
+        // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
+        // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
+        // null also closes an automatic gun loop when the player switches to the syringe.
+        WeaponType? weaponForSound = player.HeldWeaponType?.Category == WeaponCategory.Medipack
+            ? null
+            : player.HeldWeaponType;
+        bool m203Launched = player.M203LaunchedThisTick;
+        _weaponSounds?.Tick(
+            player.FiredThisTick && !m203Launched && weaponForSound is not null,
+            weaponForSound);
+        if (m203Launched)
         {
-            PlayBinocularTransitionSound();
-            PlayMedipackSound();
-
-            // Hearing is emitted once per round, not once per projectile intersection. The weapon
-            // row carries the exact retail radius (for example 4096 for suppressed fire and
-            // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
-            // silenced weapons no longer wake the whole 30-metre neighbourhood.
-            if (_mission.Player.FiredThisTick && _mission.Player.HeldWeaponType is { } audibleWeapon)
+            // GunM16A2's native callback (0x473510) plays this launch report itself; it is
+            // not the M16A2's primary rifle loop and must remain audible on an alternate shot.
+            // The native call attaches it to the launcher task position, not to the listener.
+            Vector3d launchPosition = player.Body.Eye;
+            if (player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
             {
-                _mission.Soldiers?.NotifyGunshot(_mission.Player.Body.Eye, audibleWeapon.AiDetectionRange);
+                launchPosition = m203Shots[0].Origin;
             }
 
-            // And the sound of it. Driven every tick rather than only on the ones that fire,
-            // because an automatic's loop has to be told when the trigger was RELEASED as much
-            // as when it was pulled -- see WeaponSoundPlayer.
-            // FUN_0040FB30/0x40FB90 drives medipack animation tasks directly. A medipack is
-            // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
-            // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
-            // null also closes an automatic gun loop when the player switches to the syringe.
-            WeaponType? weaponForSound = _mission.Player.HeldWeaponType?.Category == WeaponCategory.Medipack
-                ? null
-                : _mission.Player.HeldWeaponType;
-            bool m203Launched = _mission.Player.M203LaunchedThisTick;
-            _weaponSounds?.Tick(
-                _mission.Player.FiredThisTick && !m203Launched && weaponForSound is not null,
-                weaponForSound);
-            if (m203Launched)
-            {
-                // GunM16A2's native callback (0x473510) plays this launch report itself; it is
-                // not the M16A2's primary rifle loop and must remain audible on an alternate shot.
-                // The native call attaches it to the launcher task position, not to the listener.
-                Vector3d launchPosition = _mission.Player.Body.Eye;
-                if (_mission.Player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
-                {
-                    launchPosition = m203Shots[0].Origin;
-                }
-
-                _audioOut.Sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
-            }
-
-            // The grenade's cook tick: a looping sound held while the throw charges, stopped the
-            // moment it is released (0x40F590 starts it, 0x40F640 stops it).
-            TickGrenadeCook();
-
-            // Reloads and a few other weapon actions name their sounds through BOED animation
-            // events rather than through the weapon record. The rig advanced inside Player.Tick,
-            // so its crossed-event interval is ready to dispatch here.
-            // The native medipack callbacks dispatch their own clips and do not enter the
-            // generic firearm BOED trigger path. Suppress those generic triggers while the
-            // medipack is held, otherwise a shared animation event can sound like reload/fire.
-            if (_mission.Player.HeldWeaponType?.Category != WeaponCategory.Medipack)
-            {
-                PlayPlayerAnimationSounds();
-            }
-
-            // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
-            if (_mission.Player.Body.TookOffThisTick)
-            {
-                PlayJumpSound();
-            }
-
-            // And the player's own feet. Positional like anyone else's, and placed where the
-            // foot landed rather than on the listener, because the sound belongs to the ground.
-            if (_mission.Player.TakeFootstep() is { } step)
-            {
-                PlayFootstep(step);
-
-                // The step is also a NOISE the AI hears: 0x463920's tail posts AIEVENT_WALK
-                // (type 10, filter 0x46) with the ground material's own radius, unless the
-                // walker is crouching -- sneaking really is silent to the AI. guard.qvm's WALK
-                // branch is AIAction_SetCombat, so a guard that hears footsteps it cannot see
-                // starts hunting.
-                if (!_mission.Player.IsCrouched)
-                {
-                    _mission.Soldiers?.NotifyWalk(
-                        step.PositionInUnits, _mission.Player.Body.Position, step.HearingRadiusInUnits);
-                }
-            }
-
-            // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
-            // material table, where the round arrived rather than where it was fired.
-            PlayBulletImpactSounds();
-            PlayWeaponDropSounds();
-
-            // The same impacts, seen: sparks and dust composed from the struck material.
-            // Ticked before spawning so a new burst draws its birth frame unmoved.
-            _effects.Tick();
-
-            // The original's own effects, on the same rhythm: the dust and chips step, and the
-            // blood droplets in the air are traced against the world, marking whatever they
-            // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
-            // it was born.
-            _effects.TickRetailImpacts();
-
-            SpawnBallisticImpactParticles();
-            _effects.SpawnSurfaceImpacts(_mission.Player.Impacts);
-
-            // The launcher rockets in the air lay their smoke trail, one column of puffs per
-            // segment they crossed this tick.
-            _effects.SpawnMissileTrails(_mission.Player.Missiles, _mission.VehicleMissiles);
-
-            // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
-            // and the casualties.
-            _igi1Blasts.ResolveGrenadeDetonations();
-            _igi1Blasts.ResolveGenericTbaExplosions();
-            _igi1Blasts.ResolveMissileDetonations();
-            _igi1Blasts.ResolveM203Detonations();
-            PlayGrenadeBounces();
-
-            // The alarm speakers, following their own level expressions -- the siren the
-            // room hears when a guard reaches a switch.
-            _igi1Blasts.TickDestructibles();
-            TickAlarmSpeakers();
-            TickSecurityCameraSounds();
-
-            // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
-            // impact list carries both the instant rays and the ballistic arrivals, so either
-            // mode can shoot the siren off the wall.
-            _igi1Blasts.ApplyPlayerRounds();
-
-            // The level's ambience, which is keyed off where the ear is rather than where the
-            // body stands: an area is a box you listen from the inside of.
-            TickAmbience(_mission.Player.EyeUnits);
-
-        }
-        else if (_mission.IsPlayerDead)
-        {
-            // The player's update has stopped, but the world's has not: a blast that killed the player
-            // burns out, and its debris and smoke settle, under the death camera as they do in the
-            // original. Stepping them only from the player's update froze them on screen.
-            _effects.Tick();
-            _effects.TickRetailImpacts();
+            _audioOut.Sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
         }
 
-        // The first round of a mission, reported once — the same one-shot diagnostic the world
-        // draw uses. It is what says the whole chain arrived: the trigger reached the state
-        // machine, the machine reached the gun, the gun's clock let a round out, and the round
+        // The grenade's cook tick: a looping sound held while the throw charges, stopped the
+        // moment it is released (0x40F590 starts it, 0x40F640 stops it).
+        TickGrenadeCook();
+
+        // Reloads and a few other weapon actions name their sounds through BOED animation
+        // events rather than through the weapon record. The rig advanced inside Player.Tick,
+        // so its crossed-event interval is ready to dispatch here.
+        // The native medipack callbacks dispatch their own clips and do not enter the
+        // generic firearm BOED trigger path. Suppress those generic triggers while the
+        // medipack is held, otherwise a shared animation event can sound like reload/fire.
+        if (player.HeldWeaponType?.Category != WeaponCategory.Medipack)
+        {
+            PlayPlayerAnimationSounds();
+        }
+
+        // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
+        if (player.Body.TookOffThisTick)
+        {
+            PlayJumpSound();
+        }
+    }
+
+    /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
+    private void PresentPlayerImpacts()
+    {
+        PlayerCamera player = _mission.Player!;
+
+        // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
+        // material table, where the round arrived rather than where it was fired.
+        PlayBulletImpactSounds();
+        PlayWeaponDropSounds();
+
+        // The same impacts, seen: sparks and dust composed from the struck material.
+        // Ticked before spawning so a new burst draws its birth frame unmoved.
+        _effects.Tick();
+
+        // The original's own effects, on the same rhythm: the dust and chips step, and the
+        // blood droplets in the air are traced against the world, marking whatever they
+        // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
+        // it was born.
+        _effects.TickRetailImpacts();
+
+        SpawnBallisticImpactParticles();
+        _effects.SpawnSurfaceImpacts(player.Impacts);
+
+        // The launcher rockets in the air lay their smoke trail, one column of puffs per
+        // segment they crossed this tick.
+        _effects.SpawnMissileTrails(player.Missiles, _mission.VehicleMissiles);
+    }
+
+    /// <summary>The alarm speakers' sirens and the security cameras' beeps and motors, following their own state.</summary>
+    private void SoundAlarms()
+    {
+        TickAlarmSpeakers();
+        TickSecurityCameraSounds();
+    }
+
+    /// <summary>The world's effects stepping on under the death camera, after the player's update has stopped.</summary>
+    /// <remarks>
+    /// A blast that killed the player burns out, and its debris and smoke settle, under the death camera as they do in the
+    /// original. Stepping them only from the player's update froze them on screen.
+    /// </remarks>
+    private void StepEffectsAfterDeath()
+    {
+        _effects.Tick();
+        _effects.TickRetailImpacts();
     }
 
     /// <summary>Walks the character the third-person view looks at with the player, on the same tick as their legs.</summary>
