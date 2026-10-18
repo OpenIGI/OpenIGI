@@ -213,6 +213,10 @@ public sealed partial class GameHost : IDisposable
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     private readonly MissionWorld _mission = new();
 
+    // The mission's tick, and the host's side of it.
+    private readonly Igi1TickHost _igi1TickHost;
+    private readonly Igi1MissionTick _igi1Tick;
+
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
 
@@ -582,6 +586,8 @@ public sealed partial class GameHost : IDisposable
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
+        _igi1TickHost = new Igi1TickHost(this);
+        _igi1Tick = new Igi1MissionTick(_mission, _igi1TickHost);
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,

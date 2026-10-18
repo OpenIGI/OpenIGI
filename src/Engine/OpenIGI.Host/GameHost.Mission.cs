@@ -319,37 +319,6 @@ public sealed partial class GameHost
         NotifyGrenadeAiEvents();
     }
 
-    /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>
-    /// <remarks>
-    /// In the fly-through the eye is the CAMERA's: guards otherwise watch an immobile body at the spawn. The feet
-    /// are what combat aims at (sub_451380). A dead player is no longer a target (the detection scan
-    /// 0x489750 unregisters it), and neither is one hidden behind a cinematic.
-    /// </remarks>
-    private SoldierEnemy SoldierEnemyNow()
-    {
-        bool body = _playerMode && _mission.Player is not null;
-        Vector3d eye = body ? _mission.Player!.Body.Eye : _camera?.Position ?? _mission.Player?.Body.Eye ?? default;
-        Vector3d feet = body ? _mission.Player!.Body.Position : eye;
-        return new SoldierEnemy(eye, !_mission.IsPlayerDead && _mission.Cutscenes?.IsPlaying != true, feet, body && _mission.Player!.IsCrouched);
-    }
-
-    /// <summary>The player as an area counts it at the moment the area updates.</summary>
-    /// <remarks>
-    /// During an authored cinematic the occupant is the cutscene camera rather than the stationary player body; a
-    /// diagnostic free camera must not impersonate a player that exists (Mission 4's AreaActivate_156 would start
-    /// the outro as the camera follows Bell 800).
-    /// </remarks>
-    private AreaPlayer AreaPlayerNow()
-    {
-        Vector3d? cutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
-        Vector3d? freeView = !_playerMode ? _camera?.Position : null;
-        return new AreaPlayer(
-            AreaOccupancy.AreaActivationOccupant(_mission.Player?.Body.Origin, cutsceneView, freeView),
-            _mission.Soldiers?.PlayerTeam ?? 0,
-            AreaOccupancy.AreaActivationExtraOccupant(_mission.Player?.Body.Origin, cutsceneView),
-            !_mission.IsPlayerDead);
-    }
-
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -573,7 +542,7 @@ public sealed partial class GameHost
             _mission.Cutscenes.Walker,
             _mission.Cutscenes.VehicleOccupants,
             () => _mission.Soldiers?.LiveOccupants() ?? [],
-            AreaPlayerNow);
+            _igi1Tick.AreaPlayerNow);
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
@@ -3065,265 +3034,113 @@ public sealed partial class GameHost
     /// <param name="outcome">What the loop's frame did; only a tick advances anything.</param>
     private void TickMission(FrameLoopState state, FrameOutcome outcome)
     {
-        if (outcome == FrameOutcome.Tick)
+        _igi1TickHost.State = state;
+        _igi1Tick.Run(outcome == FrameOutcome.Tick);
+    }
+
+    /// <summary>The host's side of <see cref="Igi1MissionTick"/>: the picture, the sound and the log of a tick.</summary>
+    /// <param name="host">The host.</param>
+    private sealed class Igi1TickHost(GameHost host) : IIgi1MissionHost
+    {
+        /// <summary>Gets or sets the frame loop's state for the pass being run.</summary>
+        public FrameLoopState State { get; set; } = null!;
+
+        public bool PlayerMode => host._playerMode;
+
+        public Vector3d? FreeCameraPosition => host._camera?.Position;
+
+        public WorldScene? Scene => host._scene;
+
+        public ISoldierPresenter? SoldierPresenter => host._soldiers;
+
+        // Its spawn column follows the eye, so it is handed the position the last frame drew from -- one frame stale
+        // is nothing to a column forty metres across, and the tick has no camera of its own.
+        public void StepWeather() => host._storm?.Tick(host._stormEyeMetres);
+
+        public void ElevatorsMoved() => host.UpdateElevatorSoundPositions();
+
+        public void SoundVehicles(CutsceneRuntime cutscenes)
         {
-            // The storm steps here rather than inside the player's own block, where the impact
-            // particles step: weather is ambient, and it has to keep falling in the free camera and
-            // while the player is down. Its spawn column follows the eye, so it is handed the
-            // position the last frame drew from -- one frame stale is nothing to a column forty
-            // metres across, and the tick has no camera of its own.
-            _storm?.Tick(_stormEyeMetres);
-
-            // The lifts step ahead of the walk, so they still move before the doors that ride them and before
-            // the player they carry; they do not yet update at their own place in the tree.
-            if (_mission.Elevators is { } elevators)
+            if (host._audioOut.Sounds is not { } vehicleSoundSystem)
             {
-                // Feed the player's current position to the elevators so their start gate can refuse
-                // to move an empty car or one with an open door. Provider is read every tick.
-                elevators.SetPlayerPositionProvider(_mission.Player is { } p ? () => p.Body.Position : null);
-                elevators.Tick();
-                UpdateElevatorSoundPositions();
-                if (_mission.Solids is { } elevatorSolids)
-                {
-                    elevators.ApplyCollision(elevatorSolids);
-                }
-
-                if (_playerMode && _mission.Player is { } passenger
-                    && elevators.TryGetPassengerDisplacement(
-                        passenger.Body.Position, _mission.Solids, out Vector3d displacement))
-                {
-                    passenger.Body.Position += displacement;
-                }
+                return;
             }
 
-            // The level's one walk (the retail task tree, in authored order). Soldiers, doors, alarms, areas and
-            // the player all update inside it where the tree places them: a task reads this tick's state from
-            // everything before it and last tick's from everything after, so the soldiers -- all ahead of
-            // ConditionalContainer_560 -- see the player where it stood last tick.
-            // During an authored cinematic the area occupant is the cutscene camera rather than the
-            // stationary player body; a diagnostic free camera must not impersonate a player that exists
-            // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
-            _mission.Objectives?.SetSoldierOccupants(_mission.Soldiers?.Occupants() ?? []);
-            Vector3d? areaCutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
-            Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
-            _mission.Objectives?.SetLevelStateInputs(
-                AreaOccupancy.AreaActivationOccupant(_mission.Player?.Body.Origin, areaCutsceneView, areaFreeView),
-                _mission.Soldiers?.PlayerTeam ?? 0,
-                AreaOccupancy.AreaActivationExtraOccupant(_mission.Player?.Body.Origin, areaCutsceneView),
-                playerAlive: !_mission.IsPlayerDead);
-            _mission.PlayerTicked = false;
-            _mission.InteractionsTickedByPlayer = false;
-            if (_mission.SoldiersInWalk)
-            {
-                _mission.Soldiers?.BeginTick(_mission.CurrentEnemy ??= SoldierEnemyNow);
-            }
-
-            _mission.Cutscenes?.Tick();
-            if (_mission.Cutscenes is { } soundingVehicles && _audioOut.Sounds is { } vehicleSoundSystem)
-            {
-                _vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
-                _vehicleSounds.Tick(
-                    soundingVehicles.VehicleSoundSources(),
-                    soundingVehicles.VehicleGunSounds(),
-                    _audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
-            }
-
-            if (_mission.Cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _mission.Solids is { } cinematicSolids)
-            {
-                foreach (WorldPlacement placement in cinematicScene.Placements)
-                {
-                    if (liveCutscenes.TryGetPlacementDrawTransform(
-                        placement.Owner,
-                        placement.Position,
-                        placement.Orientation,
-                        out Vector3d position,
-                        out Matrix3f orientation))
-                    {
-                        cinematicSolids.UpdateTransform(placement, position, orientation);
-                    }
-                }
-            }
+            host._vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
+            host._vehicleSounds.Tick(
+                cutscenes.VehicleSoundSources(),
+                cutscenes.VehicleGunSounds(),
+                host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
         }
 
-        // The player cannot jump while standing inside an elevator cab. The elevator registry knows
-        // the player's position (fed above), so it can report whether they're inside.
-        if (_mission.Player is { } playerWithJump)
+        public void UpdatePlayer() => host.UpdatePlayerTask();
+
+        public void PresentPlayerTick()
         {
-            playerWithJump.CanJump = _mission.Elevators is { } jumpElevators
-                ? (Func<bool>)(() => !jumpElevators.IsPlayerInsideElevator(
-                    playerWithJump.Body.Position, out _))
-                : null;
+            host.PresentPlayerTick();
+            host.ReportPlayerShots(State);
         }
 
-        // A level with no player task in its walk updates the player after the walk instead.
-        if (outcome is FrameOutcome.Tick && !_mission.PlayerInWalk)
+        public void StepScreen()
         {
-            UpdatePlayerTask();
+            host._damageFlash.Tick();
+            host._flashbangScreenFlash.Tick();
+            host._hud?.Tick();
         }
 
-        if (outcome is FrameOutcome.Tick
-            && _mission.Cutscenes?.IsPlaying != true
-            && _playerMode && _mission.Player is not null)
+        // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates whose variables the level
+        // scripts reset stay satisfied while the scene plays.
+        public void ApplyTestWrites()
         {
-            PresentPlayerTick();
-            // went somewhere.
-            if (!state.ReportedShot && _mission.Player.FiredThisTick && _mission.Player.HeldWeaponType is { } fired)
+            foreach ((string writeName, string writeValue) in host._testOutroTickWrites)
             {
-                state.ReportedShot = true;
-                string where = _mission.Player.Impacts.Count == 0
-                    ? "nowhere"
-                    : _mission.Player.Impacts[0].HitSomething
-                        ? $"{_mission.Player.Impacts[0].Position}"
-                        : $"nothing inside {fired.EffectiveRange} m";
-
-                _logger.Information(
-                    "Weapon",
-                    $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
-                        + $"a round at {fired.RoundsPerMinute} rpm, "
-                        + $"{_mission.Player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
-            }
-
-            // Every round that lands on a guard, reported once each so the zone and the kill are
-            // visible without a per-shot log.
-            if (_mission.Player.HumanHits != state.ReportedHumanHits)
-            {
-                state.ReportedHumanHits = _mission.Player.HumanHits;
-                _logger.Information(
-                    "Weapon",
-                    $"Hit a guard in zone {_mission.Player.LastHumanZone} "
-                        + $"({state.ReportedHumanHits} hit(s), {_mission.Soldiers?.Killed ?? 0} killed).");
-            }
-        }
-
-        // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
-        // modes (free camera, cutscenes, map computer and a dead player) still need their level
-        // interactions to advance, but never more than once per simulation tick.
-        if (outcome is FrameOutcome.Tick && !_mission.InteractionsTickedByPlayer)
-        {
-            _mission.Interactions?.Tick();
-        }
-
-        // Lifts advance before perception and AI consume this tick's player position. A passenger
-        // standing on the previous platform sample receives the same displacement, which keeps the
-        // body, camera and collision contact together while the platform travels.
-        // The soldiers' rigs advance on the tick, not on the render, so their animation runs at the
-        // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
-        //
-        // Tick and Render are SEPARATE outcomes and one logic tick produces one of each, so accepting both
-        // here ran the AI and its rigs TWICE per tick: guards walked and animated at exactly double speed.
-        // Measured against the original, which covers 160-185 units a tick, this port was covering ~357.
-        if (outcome is FrameOutcome.Tick)
-        {
-            // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
-            // fixed tick, for the same determinism reason the bodies are.
-            _damageFlash.Tick();
-            _flashbangScreenFlash.Tick();
-            _hud?.Tick();
-
-            // The player's eye is what the guards' view cones are tested against -- and in the
-            // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
-            // you leave walking mode, so feeding its eye meant every guard in the level was watching an
-            // immobile figure at the spawn point while you flew past them: they never saw you because
-            // there was nothing of you to see. A shell affordance, not engine behaviour.
-            Vector3d watched = _playerMode && _mission.Player is not null
-                ? _mission.Player.Body.Eye
-                : _camera?.Position ?? _mission.Player?.Body.Eye ?? default;
-
-            // A dead player is no longer a target: the guards lose it and stop firing at the corpse, the
-            // way the retail detection scan (0x489750) unregisters a human that has died.
-            //
-            // The eye is what vision watches; the FEET are what combat aims at (sub_451380 raises the
-            // target task's position 0.5 m, 0.25 m crouched) -- in the fly-through there is no body, so
-            // the camera stands in for both.
-            Vector3d watchedFeet = _playerMode && _mission.Player is not null
-                ? _mission.Player.Body.Position
-                : watched;
-
-            // The areas and edit variables ran inside the level walk above, before the AlarmControls that
-            // consume them (Mission 1's alarm latch depends on that order).
-
-            // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates
-            // whose variables the level scripts reset stay satisfied while the scene plays.
-            foreach ((string writeName, string writeValue) in _testOutroTickWrites)
-            {
-                _loop.Variables.TryWrite(
+                host._loop.Variables.TryWrite(
                     writeName,
                     QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
             }
-            _mission.Cutscenes?.FinishExpressionTick();
+        }
 
-            // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
-            // is a counter, and the renderer turns the transform from it when it draws.
-            _mission.Spins?.Advance();
-            if (_mission.SecurityCameras is { } cameras)
-            {
-                bool crouching = _playerMode && _mission.Player is not null && _mission.Player.IsCrouched;
+        public void FollowCorpse(Vector3d centre) => host._deathCamera.Follow(centre);
 
-                // Retail's lenses scan every human and every camera (0x489750): a guard's body or a
-                // destroyed camera in view raises the alarm at once, as the player does after 90 ticks.
-                cameras.Tick(
-                    watchedFeet,
-                    crouching,
-                    targetAlive: !_mission.IsPlayerDead,
-                    playerOnCamerasSide: (_mission.Soldiers?.PlayerTeam ?? 0) == 1,
-                    _mission.Soldiers?.CameraSubjects() ?? []);
-                if (_mission.Solids is { } cameraSolids)
-                {
-                    foreach (SecurityCamera camera in cameras.Cameras)
-                    {
-                        Vector3d headMetres = new(
-                            camera.HeadPositionUnits.X / WorldScene.UnitsPerMetre,
-                            camera.HeadPositionUnits.Y / WorldScene.UnitsPerMetre,
-                            camera.HeadPositionUnits.Z / WorldScene.UnitsPerMetre);
-                        cameraSolids.UpdateTransform(
-                            camera.Task,
-                            camera.HeadModelName,
-                            headMetres,
-                            camera.Orientation);
-                    }
-                }
-            }
+        public void CloseTick()
+        {
+            host.TickClimbsAndInteractions(State);
+            host.FollowPlayerBody(State);
+            host.SettleMissionOutcome(State);
+        }
+    }
 
-            if (_mission.RotatingObjects is { } rotatingObjects)
-            {
-                rotatingObjects.Tick();
-                if (_mission.Solids is { } rotatingSolids)
-                {
-                    rotatingObjects.ApplyCollision(rotatingSolids);
-                }
-            }
+    /// <summary>Logs the player's first shot and every round that lands on a guard.</summary>
+    private void ReportPlayerShots(FrameLoopState state)
+    {
+        PlayerCamera player = _mission.Player!;
 
-            if (_mission.SoldiersInWalk)
-            {
-                // The soldiers updated inside the level walk; this closes their tick (corpses, skinning).
-                _soldiers?.EndTick();
-            }
-            else
-            {
-                _soldiers?.Tick(
-                    watched,
-                    enemyAlive: !_mission.IsPlayerDead && _mission.Cutscenes?.IsPlaying != true,
-                    enemyFeet: watchedFeet,
-                    enemyCrouching: _playerMode && _mission.Player is not null && _mission.Player.IsCrouched);
-            }
+        // went somewhere.
+        if (!state.ReportedShot && player.FiredThisTick && player.HeldWeaponType is { } fired)
+        {
+            state.ReportedShot = true;
+            string where = player.Impacts.Count == 0
+                ? "nowhere"
+                : player.Impacts[0].HitSomething
+                    ? $"{player.Impacts[0].Position}"
+                    : $"nothing inside {fired.EffectiveRange} m";
 
-            // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
-            // it does nothing until the player has died and the body was posed.
-            _soldiers?.TickPlayerBody();
+            _logger.Information(
+                "Weapon",
+                $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
+                    + $"a round at {fired.RoundsPerMinute} rpm, "
+                    + $"{player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
+        }
 
-            // A simulated corpse decides for itself where it ends up, so the death camera has to
-            // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
-            // you were shot frames the whole of it.
-            if (_mission.IsPlayerDead && _soldiers?.PlayerRagdollCentre is { } corpseCentre)
-            {
-                _deathCamera.Follow(corpseCentre);
-            }
-
-            TickClimbsAndInteractions(state);
-
-            FollowPlayerBody(state);
-
-            SettleMissionOutcome(state);
+        // Every round that lands on a guard, reported once each so the zone and the kill are
+        // visible without a per-shot log.
+        if (player.HumanHits != state.ReportedHumanHits)
+        {
+            state.ReportedHumanHits = player.HumanHits;
+            _logger.Information(
+                "Weapon",
+                $"Hit a guard in zone {player.LastHumanZone} "
+                    + $"({state.ReportedHumanHits} hit(s), {_mission.Soldiers?.Killed ?? 0} killed).");
         }
     }
 
