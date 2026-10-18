@@ -639,7 +639,7 @@ public sealed partial class GameHost
 
                 return null;
             },
-            SetCutsceneSound,
+            _cutsceneSounds.Set,
             modelLength: name => CutsceneModelLength(loaded, name),
             modelPivot: name => CutsceneModelPivot(loaded, name),
             vehiclePhysics: _vehiclePhysics,
@@ -725,7 +725,7 @@ public sealed partial class GameHost
             _mission.Objectives.TickLevelState();
             _mission.Cutscenes.Tick();
             _mission.Cutscenes.FinishExpressionTick();
-            StopCutsceneSounds();
+            _cutsceneSounds.StopAll();
         }
 
         // Same native edge as Escape (LevelFlow_GetBreakCutSceneKey). Used by the
@@ -740,7 +740,7 @@ public sealed partial class GameHost
             _mission.Objectives.TickLevelState();
             _mission.Cutscenes.Tick();
             _mission.Cutscenes.FinishExpressionTick();
-            StopCutsceneSounds();
+            _cutsceneSounds.StopAll();
         }
 
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
@@ -1117,7 +1117,7 @@ public sealed partial class GameHost
             : solids.Tracer();
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
-        StopCutsceneSounds();
+        _cutsceneSounds.StopAll();
         _mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
         _mission.SecurityCameras.BindScene(scene.Placements);
         world.SecurityCameras = _mission.SecurityCameras;
@@ -2409,7 +2409,7 @@ public sealed partial class GameHost
         _mission.SecurityCameras = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
-        StopCutsceneSounds();
+        _cutsceneSounds.StopAll();
         _activeMission = null;
 
         // The level's own sun goes with the level. It is read on load only when it is not already set --

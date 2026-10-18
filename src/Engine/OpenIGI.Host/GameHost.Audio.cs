@@ -38,71 +38,10 @@ public sealed partial class GameHost
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
     private readonly Dictionary<PlacedElevator, AudioVoiceHandle> _elevatorVoices =
         new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
-    private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
+
+    // The voices the level's cutscenes start, which a skip silences.
+    private readonly CutsceneSounds _cutsceneSounds;
     private AudioVoiceHandle _binocularZoomVoice;
-
-    private void SetCutsceneSound(CutsceneSoundEvent sound)
-    {
-        if (_audioOut.Sounds is null || string.IsNullOrWhiteSpace(sound.Name))
-        {
-            return;
-        }
-
-        // Simple ConditionalSounds have no falling-edge event, but their voices still belong to the
-        // cutscene while it is being skipped. Retire completed handles so this set only represents
-        // one-shots that can still be stopped by the next cancellation.
-        _cutsceneOneShotVoices.RemoveWhere(voice => !_audioOut.Sounds.IsPlaying(voice));
-
-        if (!sound.Simple
-            && _cutsceneVoices.Remove(sound.Task, out AudioVoiceHandle old)
-            && old.IsValidHandle)
-        {
-            _audioOut.Sounds.Stop(old);
-        }
-
-        if (sound.Playing)
-        {
-            AudioVoiceHandle voice = _audioOut.Sounds.PlayDefinition(
-                sound.Name,
-                sound.Position,
-                priority: 320,
-                looping: sound.Simple ? false : null);
-            if (!sound.Simple && voice.IsValidHandle)
-            {
-                _cutsceneVoices[sound.Task] = voice;
-            }
-            else if (sound.Simple && voice.IsValidHandle)
-            {
-                _cutsceneOneShotVoices.Add(voice);
-            }
-        }
-    }
-
-    private void StopCutsceneSounds()
-    {
-        if (_audioOut.Sounds is not null)
-        {
-            foreach (AudioVoiceHandle voice in _cutsceneVoices.Values)
-            {
-                if (voice.IsValidHandle)
-                {
-                    _audioOut.Sounds.Stop(voice);
-                }
-            }
-
-            foreach (AudioVoiceHandle voice in _cutsceneOneShotVoices)
-            {
-                if (voice.IsValidHandle)
-                {
-                    _audioOut.Sounds.Stop(voice);
-                }
-            }
-        }
-
-        _cutsceneVoices.Clear();
-        _cutsceneOneShotVoices.Clear();
-    }
 
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];

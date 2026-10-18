@@ -666,6 +666,7 @@ public sealed partial class GameHost : IDisposable
         _memory = new Services.MemoryDiagnostics(device, logger);
         _menuBackdrop = new MenuBackdrop(device, logger);
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
+        _cutsceneSounds = new CutsceneSounds(_audioOut);
         _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
         _switch = new RendererSwitchService(device, logger);
     }
@@ -2158,7 +2159,7 @@ public sealed partial class GameHost : IDisposable
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
                 _mission.Cutscenes.RequestBreak();
-                StopCutsceneSounds();
+                _cutsceneSounds.StopAll();
                 _mission.Objectives?.ClearCutsceneMessages();
             }
 
