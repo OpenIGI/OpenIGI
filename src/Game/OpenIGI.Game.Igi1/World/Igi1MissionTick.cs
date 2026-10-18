@@ -1,9 +1,12 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -34,8 +37,36 @@ public interface IIgi1MissionHost
     /// <param name="cutscenes">The cutscene runtime.</param>
     void SoundVehicles(CutsceneRuntime cutscenes);
 
-    /// <summary>Runs the player's update, for a level whose walk holds no player task.</summary>
-    void UpdatePlayer();
+    /// <summary>Gets the log.</summary>
+    IOpenIgiLogger Logger { get; }
+
+    /// <summary>Gets the input the player's update reads, which a scripted capture may stand in for.</summary>
+    InputState ViewInput { get; }
+
+    /// <summary>Gets a value indicating whether the failure menu holds the game.</summary>
+    bool FailedMenu { get; }
+
+    /// <summary>Gets a value indicating whether the map computer is open.</summary>
+    bool ComputerOpen { get; }
+
+    /// <summary>Runs another title's own player in this one's place, if the title brought one.</summary>
+    /// <returns>Whether it ran, in which case the first game's player does not.</returns>
+    bool TickTitlePlayer();
+
+    /// <summary>Gives the player every weapon, when the cheat asks for it, and a hand to hold them in.</summary>
+    /// <param name="player">The player.</param>
+    void GrantCheatWeapons(PlayerCamera player);
+
+    /// <summary>Plays a proximity mine's arming cue.</summary>
+    /// <param name="origin">Where the mine is, in world units.</param>
+    void PlayMineTrigger(Vector3d origin);
+
+    /// <summary>Kills the player, and starts what shows the death.</summary>
+    /// <param name="from">Where the blow came from, in world units.</param>
+    /// <param name="zone">The damage zone struck.</param>
+    /// <param name="bone">The bone struck, or -1.</param>
+    /// <param name="category">The kind of weapon that killed.</param>
+    void KillPlayer(Vector3d from, int zone, int bone, WeaponCategory category);
 
     /// <summary>Plays and reports what the player's update set in motion this tick.</summary>
     void PresentPlayerTick();
@@ -131,7 +162,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, IIgi1MissionHost host)
         // A level with no player task in its walk updates the player after the walk instead.
         if (!mission.PlayerInWalk)
         {
-            host.UpdatePlayer();
+            UpdatePlayer();
         }
 
         if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.Player is not null)
@@ -549,6 +580,148 @@ public sealed class Igi1MissionTick(MissionWorld mission, IIgi1MissionHost host)
             host.ResetInteractionView();
             _climbActive = false;
             _worldInteractionActive = false;
+        }
+    }
+
+    /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
+    /// <remarks>
+    /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
+    /// stepped rather than being stepped with no input. Without this a corpse walks around. What the update set
+    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="MissionWorld.PlayerTicked"/> holds.
+    /// </remarks>
+    public void UpdatePlayer()
+    {
+        if (host.TickTitlePlayer())
+        {
+            return;
+        }
+
+        if (mission.PlayerTicked
+            || mission.Cutscenes?.IsPlaying == true
+            || !host.PlayerMode
+            || mission.Player is not { } player
+            || mission.IsPlayerDead
+            || host.FailedMenu)
+        {
+            return;
+        }
+
+        mission.PlayerTicked = true;
+
+        // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
+        mission.Soldiers?.PublishCollisionBodies();
+        player.InputProfile = host.InputProfile;
+        host.GrantCheatWeapons(player);
+        if (host.ComputerOpen)
+        {
+            player.TickMapComputer();
+        }
+        else
+        {
+            player.Tick(host.ViewInput, host.Ground);
+
+            // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
+            // Do not advance the same registry again after the walk.
+            mission.InteractionsTickedByPlayer = true;
+        }
+
+        mission.TickVehicleMissiles();
+        CheckRunOver();
+
+        // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
+        // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
+        NotifyGrenadeAiEvents();
+    }
+
+    /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
+    private void CheckRunOver()
+    {
+        if (mission.Player is null || mission.IsPlayerDead || mission.Cutscenes is not { } runtime)
+        {
+            return;
+        }
+
+        Vector3d origin = mission.Player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
+        if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+        {
+            return;
+        }
+
+        mission.PlayerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
+        host.Logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
+        if (mission.PlayerHealth.IsDead)
+        {
+            Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
+                ? metres * WorldScene.UnitsPerMetre
+                : origin;
+            host.KillPlayer(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+        }
+    }
+
+    /// <summary>Delivers native grenade/explosion AI events before the soldier tick.</summary>
+    /// <remarks>
+    /// IGI1 broadcasts these from the task update itself: type 17 when a grenade is created, type 18 on
+    /// the debounced landing sound, type 19 for a flashbang, and type 21 for an explosion. They are
+    /// deliberately separate from gunshot/walk noise. The physics lists stay available until the effect
+    /// pass below, so this method only consumes the one-shot throw list.
+    /// </remarks>
+    private void NotifyGrenadeAiEvents()
+    {
+        if (mission.Player is null || mission.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        foreach (Vector3d origin in mission.Player.Grenades.Thrown)
+        {
+            soldiers.NotifyGrenadeThrown(origin);
+        }
+
+        mission.Player.Grenades.ClearThrownEvents();
+
+        foreach (Vector3d origin in mission.Player.Grenades.Bounces)
+        {
+            soldiers.NotifyGrenadeLand(origin);
+        }
+
+        // IGI1's proximity task emits proxy_arm on the first human entering its activation radius.
+        // This is a one-shot rising-edge cue, not the mine's placement/arming sound.
+        foreach (Vector3d origin in mission.Player.Grenades.MineTriggers)
+        {
+            host.PlayMineTrigger(origin);
+        }
+
+        mission.Player.Grenades.ClearMineTriggerEvents();
+
+        foreach (GrenadeDetonation blast in mission.Player.Grenades.Detonations)
+        {
+            if (blast.Type == GrenadeExplosionType.Flashbang)
+            {
+                soldiers.NotifyFlashbang(blast.Position, blast.RadiusUnits);
+            }
+            else
+            {
+                // The AI hears a grenade over 10 m and a mine over 25 m, however big the blast.
+                soldiers.NotifyExplosion(
+                    blast.Position,
+                    blast.IsProximityMine
+                        ? AiSoldier.LargeExplosionEventRadiusInUnits
+                        : AiSoldier.GrenadeExplosionEventRadiusInUnits);
+            }
+        }
+
+        foreach (MissileDetonation blast in mission.Player.Missiles.Detonations)
+        {
+            soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
+        }
+        foreach (MissileDetonation blast in mission.VehicleMissiles.Detonations)
+        {
+            soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
+        }
+
+        foreach (M203Detonation blast in mission.Player.M203.Detonations)
+        {
+            soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
     }
 }

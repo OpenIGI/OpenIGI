@@ -262,61 +262,11 @@ public sealed partial class GameHost
         {
             walker.Bind(playerTask, task =>
             {
-                UpdatePlayerTask();
+                _igi1Tick.UpdatePlayer();
                 walker.RunChildren(task);
             });
             _mission.PlayerInWalk = true;
         }
-    }
-
-    /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
-    /// <remarks>
-    /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
-    /// stepped rather than being stepped with no input. Without this a corpse walks around. What the update set
-    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="MissionWorld.PlayerTicked"/> holds.
-    /// </remarks>
-    private void UpdatePlayerTask()
-    {
-        if (TickTitlePlayer())
-        {
-            return;
-        }
-
-        if (_mission.PlayerTicked
-            || _mission.Cutscenes?.IsPlaying == true
-            || !_playerMode
-            || _mission.Player is not { } player
-            || _mission.IsPlayerDead
-            || _session.FailedMenu)
-        {
-            return;
-        }
-
-        _mission.PlayerTicked = true;
-
-        // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
-        _mission.Soldiers?.PublishCollisionBodies();
-        player.InputProfile = _configuration.Active;
-        GrantCheatWeapons(player);
-        if (_computerOpen)
-        {
-            player.TickMapComputer();
-        }
-        else
-        {
-            player.Tick(ViewInput, _ground);
-
-            // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
-            // Do not advance the same registry again after the walk.
-            _mission.InteractionsTickedByPlayer = true;
-        }
-
-        _mission.TickVehicleMissiles();
-        CheckRunOver();
-
-        // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
-        // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
-        NotifyGrenadeAiEvents();
     }
 
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
@@ -2984,31 +2934,6 @@ public sealed partial class GameHost
                 : null;
     }
 
-    /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
-    private void CheckRunOver()
-    {
-        if (_mission.Player is null || _mission.IsPlayerDead || _mission.Cutscenes is not { } runtime)
-        {
-            return;
-        }
-
-        Vector3d origin = _mission.Player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
-        if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
-        {
-            return;
-        }
-
-        _mission.PlayerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
-        _logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
-        if (_mission.PlayerHealth.IsDead)
-        {
-            Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
-                ? metres * WorldScene.UnitsPerMetre
-                : origin;
-            BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
-        }
-    }
-
     /// <summary>Parses the test-only outro forcing list: "Var=Value,Var=Value".</summary>
     private static List<(string Name, string Value)> TestOutroWrites(string? spec)
     {
@@ -3073,7 +2998,23 @@ public sealed partial class GameHost
                 host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
         }
 
-        public void UpdatePlayer() => host.UpdatePlayerTask();
+        public IOpenIgiLogger Logger => host._logger;
+
+        public OpenIGI.Input.InputState ViewInput => host.ViewInput;
+
+        public bool FailedMenu => host._session.FailedMenu;
+
+        public bool ComputerOpen => host._computerOpen;
+
+        public bool TickTitlePlayer() => host.TickTitlePlayer();
+
+        public void GrantCheatWeapons(PlayerCamera player) => host.GrantCheatWeapons(player);
+
+        public void PlayMineTrigger(Vector3d origin) =>
+            host._audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
+
+        public void KillPlayer(Vector3d from, int zone, int bone, WeaponCategory category) =>
+            host.BeginPlayerDeath(from, zone, bone, category);
 
         public void PresentPlayerTick()
         {
