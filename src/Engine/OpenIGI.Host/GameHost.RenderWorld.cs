@@ -1561,21 +1561,8 @@ public sealed partial class GameHost
         _device.SetObjectMotion(true);
         _gunPickupRenderer?.Draw(eye, projection);
 
-        // The grenades in the air, solid geometry among the world's own.
-        if (_grenadeRenderer is not null && _mission.Player is not null)
-        {
-            _grenadeRenderer.Draw(
-                _mission.Player.Grenades,
-                eye,
-                projection,
-                smoothPresentation ? tickBlend : 1f);
-        }
-        if (_missileRenderer is not null && _mission.Player is not null)
-        {
-            _missileRenderer.Draw(_mission.Player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
-            _missileRenderer.Draw(_mission.VehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
-            _missileRenderer.Draw(_mission.Player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
-        }
+        // The grenades, rockets and launcher rounds in the air, solid geometry among the world's own.
+        WorldView?.DrawProjectiles(_grenadeRenderer, _missileRenderer, eye, projection, smoothPresentation ? tickBlend : 1f);
 
         _device.SetObjectMotion(false);
     }
@@ -1636,9 +1623,9 @@ public sealed partial class GameHost
         EndStageIfSlow("the soldiers");
 
         // The marks rounds have left, over the world and under the first-person rig.
-        if (_marks is not null && _mission.Player is not null && RenderCVars.BulletMarks.Value)
+        if (_marks is not null && RenderCVars.BulletMarks.Value)
         {
-            _marks.Draw(_mission.Player.Marks, eye, projection, _world.DrawPoses);
+            WorldView?.DrawMarks(_marks, eye, projection, _world.DrawPoses);
         }
     }
 
@@ -2256,10 +2243,10 @@ public sealed partial class GameHost
         // and fogged (a dim grey square was exactly what that looked like). Here they draw
         // additively over the finished scene, emissive like the muzzle flame, testing the
         // world's depth but writing none.
-        if (_tracers is not null && _mission.Player is not null)
+        if (_tracers is not null && WorldView?.Ballistics is { } ballistics)
         {
             _tracers.Draw(
-                _mission.Player.Ballistics,
+                ballistics,
                 eye,
                 projection,
                 smoothPresentation ? tickBlend : 1f);
@@ -2400,6 +2387,11 @@ public sealed partial class GameHost
         // walls, and the view model clears depth immediately after.
         _inspector.DrawOutline(console, eye);
     }
+
+    /// <summary>Gets what the title's player has put in the world, made from the title's presentation the first time a frame asks for it.</summary>
+    private IMissionWorldView? WorldView =>
+        _worldView ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionWorldView>(
+            new MissionHudPresentationRequest(_device, _igi1, _logger));
 
     /// <summary>Gets the title's first-person view, made from the title's presentation the first time a frame asks for it.</summary>
     private IMissionFirstPersonView? FirstPersonView =>

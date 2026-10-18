@@ -444,6 +444,7 @@ public sealed partial class GameHost : IDisposable
     // The title's mission HUD, made from the title's presentation the first time a frame draws it.
     private IMissionHudOverlay? _hudOverlay;
     private IMissionFirstPersonView? _firstPerson;
+    private IMissionWorldView? _worldView;
     private DebugOverlayRenderer? _debugOverlay;
     private IMapComputerPresenter? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
