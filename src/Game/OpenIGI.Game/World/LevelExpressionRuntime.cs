@@ -24,21 +24,6 @@ public sealed class LevelExpressionRuntime
         _context = new Context(variables, invoke);
     }
 
-    /// <summary>The suffix the original's preprocessor answers before any variable is consulted.</summary>
-    /// <remarks>
-    /// <c>0x4F1574</c> is the line after the <c>this.</c> rewrite: any token CONTAINING
-    /// <c>.isExists</c> is replaced outright with the literal <c>1</c>, so the name never reaches the
-    /// variable table and the answer is always true. It is a <c>strstr</c> in the original rather than
-    /// a suffix test, and this matches that.
-    /// <para>
-    /// No shipped level uses it — the string appears nowhere in the retail mission data, only in the
-    /// executable — so this changes nothing about the campaign. It is here so a level that does use it
-    /// reads the way the original would answer, rather than silently resolving to zero, which is the
-    /// opposite of what the engine says.
-    /// </para>
-    /// </remarks>
-    public const string AlwaysTrueField = LevelExpressionNames.ExistsField;
-
     /// <summary>Evaluates an authored condition; an empty condition uses the caller's default.</summary>
     public bool EvaluateCondition(string? source, bool emptyValue, GameTask? owner = null)
     {
@@ -108,14 +93,17 @@ public sealed class LevelExpressionRuntime
         string? ownerName = owner?.Name;
         if (!_cache.TryGetValue((source, ownerName), out LevelExpression? cached))
         {
-            cached = new LevelExpression(source, ownerName, ResolveConstant, LevelExpressionDialect.AsWritten);
+            cached = new LevelExpression(source, ownerName, Constant, LevelExpressionDialect.AsWritten);
             _cache[(source, ownerName)] = cached;
         }
 
         return cached;
     }
 
-    private static int? ResolveConstant(string name) => name switch
+    /// <summary>Gets the integer constants a level expression's parse folds.</summary>
+    /// <param name="name">The name as written.</param>
+    /// <returns>Its value, or <see langword="null"/> for a name that is not a constant.</returns>
+    public static int? Constant(string name) => name switch
     {
         "TRUE" => 1,
         "FALSE" => 0,

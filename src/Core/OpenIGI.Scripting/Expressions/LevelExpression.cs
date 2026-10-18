@@ -10,6 +10,12 @@ public enum LevelExpressionDialect
     /// Parsed as written; <c>this.</c> and <c>.isExists</c> are answered as each name is looked up. How the port has
     /// always read Project I.G.I.'s task slots.
     /// </summary>
+    /// <remarks>
+    /// Project I.G.I. has a text preprocessor too (<c>0x4F1400</c> writes the owner's name over <c>this</c>, and
+    /// <c>0x4F1574</c> puts <c>1</c> in place of any token holding <c>.isExists</c>), so for the shipped levels the two
+    /// readings agree. Whether its preprocessor is I.G.I. 2's word for word -- whitespace, comments and all -- has not
+    /// been read, and until it has this dialect keeps the port's behaviour.
+    /// </remarks>
     AsWritten,
 
     /// <summary>
