@@ -223,7 +223,7 @@ public sealed partial class GameHost
 
         // The briefing posted at the start: it arrives once the player has the level, stays a few
         // seconds, and goes.
-        if (RenderCVars.WorldBriefing.Value && _session.Mission is not null && _mission.Player is not null
+        if (RenderCVars.WorldBriefing.Value && _session.Mission is not null && HostedPlayer is not null
             && !PresentationHoldsLevel && !_loadSequence.IsActive)
         {
             PostBriefing();
@@ -386,7 +386,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PostBriefing()
     {
-        if (_briefingPosted || _mission.Player is not { } standing || _shellHeadingFont is not { } face)
+        if (_briefingPosted || HostedPlayer is not { } standing || _shellHeadingFont is not { } face)
         {
             return;
         }

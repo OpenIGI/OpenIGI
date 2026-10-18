@@ -248,7 +248,7 @@ public sealed partial class GameHost
             _entry.Update(
                 entryElapsed,
                 liveOrbit,
-                _mission.Player is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
+                HostedPlayer is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
 
             // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
             // where the one frame the promotion still costs is least visible. What it used to cost --
@@ -290,7 +290,7 @@ public sealed partial class GameHost
             // no pose until something puts one in it.
             if (_soldiers is { } bodies)
             {
-                if (_entry.ShowPlayerBody && _mission.Player is { } standingBody)
+                if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
                 {
                     // Minus the yaw, for the reason the third-person follow states at length: a
                     // heading is a gamma and turns the other way. This shot has always faced the
@@ -411,7 +411,7 @@ public sealed partial class GameHost
 
             // The pointer belongs to the menu now. The look is what holds the cursor captive, so the
             // player is told to let go of it rather than the lock being fought over each frame.
-            _mission.Player?.HoldStill();
+            HostedPlayer?.HoldStill();
             _window.CursorLocked = false;
 
             // The eye is drawn between its last two ticks and neither of them moves again until the
@@ -452,7 +452,7 @@ public sealed partial class GameHost
 
         // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
         // freezes player/camera input while the world continues its fixed-tick simulation.
-        if (!_menuFlow.MenuMode && !state.Console.IsOpen && _mission.Player is not null
+        if (!_menuFlow.MenuMode && !state.Console.IsOpen && HostedPlayer is not null
             && (TacticalComputer is not null || _mapComputer is { IsReady: true }))
         {
             // -computercam presses C on a named frame, so the transition can be captured from a
@@ -466,8 +466,8 @@ public sealed partial class GameHost
                 _computerCamFired = true;
             }
 
-            _mission.Player.InputProfile = _configuration.Active;
-            bool toggleComputer = _mission.Player.WasActionPressed(_window.Input, PlayerAction.MapComputer) || automaticOpen;
+            HostedPlayer.InputProfile = _configuration.Active;
+            bool toggleComputer = HostedPlayer.WasActionPressed(_window.Input, PlayerAction.MapComputer) || automaticOpen;
             bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
 
             if (TacticalComputer is { } tacticalComputer)
@@ -479,7 +479,7 @@ public sealed partial class GameHost
                 float computerElapsed = Math.Clamp((computerNow - state.LastComputerMilliseconds) / 1000f, 0f, 0.1f);
                 state.LastComputerMilliseconds = computerNow;
 
-                CameraPose eye = CameraPose.FromCamera(_mission.Player.Camera);
+                CameraPose eye = CameraPose.FromCamera(HostedPlayer.Camera);
 
                 // The field of view gameplay is being drawn at, which is where the climb leaves from.
                 // Taken at the default rather than from the live sight: a player who opens the map
@@ -492,8 +492,8 @@ public sealed partial class GameHost
                 if (!_computerOpen && toggleComputer)
                 {
                     _computerOpen = true;
-                    tacticalComputer.Open(_mission.Player.Body.Position);
-                    _mission.Player.SetMapComputerOpen(true);
+                    tacticalComputer.Open(HostedPlayer.Body.Position);
+                    HostedPlayer.SetMapComputerOpen(true);
                     _computerFlight.BeginOpen(
                         eye,
                         gameplayFieldOfView,
@@ -529,7 +529,7 @@ public sealed partial class GameHost
                         tacticalComputer.Update(
                             _window.Input,
                             computerElapsed,
-                            _mission.Player.Body.Position,
+                            HostedPlayer.Body.Position,
                             _window.Width,
                             _window.Height);
                     }
@@ -540,7 +540,7 @@ public sealed partial class GameHost
                     {
                         _computerOpen = false;
                         _computerFlight.Reset();
-                        _mission.Player.SetMapComputerOpen(false);
+                        HostedPlayer.SetMapComputerOpen(false);
                     }
 
                     _window.Input.Captured = true;
@@ -553,9 +553,9 @@ public sealed partial class GameHost
                     _computerOpen = toggleComputer ? !_computerOpen : false;
                     if (_computerOpen)
                     {
-                        retailComputer.Open(_mission.Player.Body.Position);
+                        retailComputer.Open(HostedPlayer.Body.Position);
                     }
-                    _mission.Player.SetMapComputerOpen(_computerOpen);
+                    HostedPlayer.SetMapComputerOpen(_computerOpen);
                     // Retail draws COMPUTER:pointer.spr. Leaving the platform cursor visible put a
                     // second, unrelated pointer over it.
                     _window.CursorVisible = false;
@@ -808,12 +808,12 @@ public sealed partial class GameHost
         {
             ToggleTitlePlayer();
         }
-        else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && _mission.Player is not null && _camera is not null)
+        else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && HostedPlayer is not null && _camera is not null)
         {
             _playerMode = !_playerMode;
             if (_playerMode)
             {
-                if (!_mission.Player.Place(_ground, _camera.Position, _camera.Yaw))
+                if (!HostedPlayer.Place(_ground, _camera.Position, _camera.Yaw))
                 {
                     _playerMode = false;
                     _logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
@@ -825,7 +825,7 @@ public sealed partial class GameHost
             }
             else
             {
-                _camera.MoveTo(_mission.Player.Camera.Position, _mission.Player.Body.Yaw, _mission.Player.Body.Pitch);
+                _camera.MoveTo(HostedPlayer.Camera.Position, HostedPlayer.Body.Yaw, HostedPlayer.Body.Pitch);
             }
 
             _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
@@ -891,9 +891,9 @@ public sealed partial class GameHost
             // Resolved per frame rather than cached, so the options menu's sensitivity slider takes
             // effect on the next frame instead of the next launch. It is two multiplies and a Pow.
             MouseLookSettings look = MouseLookSettings.FromProfile(_configuration.Active);
-            if (_mission.Player is not null)
+            if (HostedPlayer is not null)
             {
-                _mission.Player.LookSettings = look;
+                HostedPlayer.LookSettings = look;
             }
 
             if (Viewpoint is { } lookViewpoint)
@@ -912,7 +912,7 @@ public sealed partial class GameHost
                 // The system cursor stays hidden: the console draws its own, as the shell does,
                 // so the pointer looks the same everywhere and is drawn over the panels rather
                 // than by the compositor on top of them.
-                _mission.Player?.HoldStill();
+                HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;
             }
             else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu))
@@ -930,7 +930,7 @@ public sealed partial class GameHost
                 // cursor each frame and the branch below re-took it, which is the pointer that
                 // flashed and would not move. Standing every camera branch down is what actually
                 // settles it; excluding them one at a time only moves the fight further down.
-                _mission.Player?.HoldStill();
+                HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;
             }
             else if (Viewpoint?.IsDeathViewActive == true)
@@ -944,9 +944,9 @@ public sealed partial class GameHost
                 // The look is not driving the view this frame, so it must not consider itself
                 // capturing: whenever the orbit hands control back, the first frame of look is a
                 // settling one and the re-lock's re-centring is absorbed rather than aimed with.
-                _mission.Player?.ReleaseLook();
+                HostedPlayer?.ReleaseLook();
             }
-            else if (_mission.Player is { IsOnLadder: true }
+            else if (HostedPlayer is { IsOnLadder: true }
                 or { IsInWorldInteraction: true, IsMountedStationaryGun: false })
             {
                 // A mounted gun is not among these: its look turns the barrel, so it falls through
@@ -957,7 +957,7 @@ public sealed partial class GameHost
                 // you can look around while you climb rather than being locked behind the character.
                 Viewpoint?.ControlInteractionView(rawX, rawY);
                 _window.CursorLocked = !state.CaptureMode;
-                _mission.Player?.ReleaseLook();
+                HostedPlayer?.ReleaseLook();
             }
             else if (_computerOpen)
             {
@@ -965,11 +965,11 @@ public sealed partial class GameHost
                 // closing it from throwing the view: dropping the lock restores the desktop pointer,
                 // and taking it back re-centres the backend's virtual one.
                 _window.CursorLocked = false;
-                _mission.Player?.ReleaseLook();
+                HostedPlayer?.ReleaseLook();
             }
             else if (_mission.Cutscenes?.IsPlaying == true)
             {
-                _mission.Player?.HoldStill();
+                HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;
             }
             else if (_playerMode && TitlePlayer is not null)
@@ -979,12 +979,12 @@ public sealed partial class GameHost
                 GatherTitleInput();
                 _window.CursorLocked = !state.CaptureMode;
             }
-            else if (_playerMode && _mission.Player is not null)
+            else if (_playerMode && HostedPlayer is not null)
             {
                 // Looking is per frame so the view is as smooth as the display allows; the body itself
                 // moves on the fixed tick below, so it steps identically whatever the frame rate.
-                _mission.Player.Look(_window.Input, elapsed);
-                _window.CursorLocked = !state.CaptureMode && _mission.Player.IsCapturingMouse;
+                HostedPlayer.Look(_window.Input, elapsed);
+                _window.CursorLocked = !state.CaptureMode && HostedPlayer.IsCapturingMouse;
             }
             else if (_sunGizmo.Active)
             {

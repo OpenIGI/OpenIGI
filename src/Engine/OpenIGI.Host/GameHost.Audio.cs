@@ -68,7 +68,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void TickGrenadeCook()
     {
-        if (_audioOut.Sounds is null || _mission.Player is null || !_mission.Player.IsChargingThrow)
+        if (_audioOut.Sounds is null || HostedPlayer is null || !HostedPlayer.IsChargingThrow)
         {
             StopGrenadeCook();
             return;
@@ -116,7 +116,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayPlayerAnimationSounds()
     {
-        if (_audioOut.Sounds is null || _animationTriggers is null || _mission.Player?.View is not { } view)
+        if (_audioOut.Sounds is null || _animationTriggers is null || HostedPlayer?.View is not { } view)
         {
             return;
         }
@@ -141,7 +141,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayBinocularTransitionSound()
     {
-        if (_audioOut.Sounds is null || _mission.Player is not { } player)
+        if (_audioOut.Sounds is null || HostedPlayer is not { } player)
         {
             return;
         }
@@ -183,7 +183,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayMedipackSound()
     {
-        if (_mission.Player?.Weapons is { MedipackStartedThisTick: true } weapons)
+        if (HostedPlayer?.Weapons is { MedipackStartedThisTick: true } weapons)
         {
             // A medipack is an injection action, not a gun shot. Some weapon records carry a
             // legacy firearm FireSound field (which produces the shotgun/pistol report); the
@@ -212,7 +212,7 @@ public sealed partial class GameHost
         // Ammo pickups are authored as GenericPickup/AmmoPickup world objects. Resolve and award them
         // at the same collection edge as the retail pickup cue, so the object, inventory count and sound
         // cannot drift apart. An explicit task payload wins over the catalog fallback.
-        if (_mission.Player?.Weapons is { } weapons
+        if (HostedPlayer?.Weapons is { } weapons
             && _mission.AmmoTypes is { } ammoTypes
             && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
         {
@@ -292,7 +292,7 @@ public sealed partial class GameHost
             return;
         }
 
-        if (_mission.Player is not { } player)
+        if (HostedPlayer is not { } player)
         {
             return;
         }
@@ -587,7 +587,7 @@ public sealed partial class GameHost
         }
 
         // No player is the menu, where there is no ear to place the weather around.
-        bool raining = AudioCVars.Rain.Value && _mission.Player is not null && (_rain?.IsWeatherEnabled ?? false);
+        bool raining = AudioCVars.Rain.Value && HostedPlayer is not null && (_rain?.IsWeatherEnabled ?? false);
         float intensity = raining
             ? (_storm is { Enabled: true } ? RenderCVars.StormIntensity.Value : 1f)
             : 0f;
@@ -595,7 +595,7 @@ public sealed partial class GameHost
         rain.Update(
             _audioOut.Device.Listener.Position,
             _shelterField,
-            _mission.Player?.GrenadeWalls,
+            HostedPlayer?.GrenadeWalls,
             WorldScene.UnitsPerMetre,
             intensity,
             AudioCVars.RainVolume.Value,
@@ -626,12 +626,12 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayBulletImpactSounds()
     {
-        if (_mission.Player is null)
+        if (HostedPlayer is null)
         {
             return;
         }
 
-        foreach (GunImpact impact in _mission.Player.Impacts)
+        foreach (GunImpact impact in _mission.Player!.Impacts)
         {
             // A knife records no impact (0x46DFB0), so it never reaches the material's sounds.
             if (!impact.HitSomething || impact.Melee)
@@ -733,7 +733,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void SpawnBallisticImpactParticles()
     {
-        if (_effects.Particles is null || _mission.Player is null)
+        if (_effects.Particles is null || HostedPlayer is null)
         {
             return;
         }
@@ -744,7 +744,7 @@ public sealed partial class GameHost
             return;
         }
 
-        foreach (BallisticImpact impact in _mission.Player.Ballistics.Impacts)
+        foreach (BallisticImpact impact in HostedPlayer.Ballistics.Impacts)
         {
             if (impact.StruckHuman)
             {
@@ -1075,12 +1075,12 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayGrenadeBounces()
     {
-        if (_mission.Player is null)
+        if (HostedPlayer is null)
         {
             return;
         }
 
-        foreach (Vector3d at in _mission.Player.Grenades.Bounces)
+        foreach (Vector3d at in HostedPlayer.Grenades.Bounces)
         {
             _audioOut.Sounds?.PlayDefinition("grenade_bnc_1", at, priority: 120);
         }

@@ -1,3 +1,5 @@
+using OpenIGI.Game.Player;
+
 namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Everything the first game's mission asks of whatever shows and plays it.</summary>
@@ -26,6 +28,9 @@ public sealed class Igi1Gameplay
 
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
+
+    /// <summary>Gets the player the host steers and looks through, or <see langword="null"/> before a level places one.</summary>
+    public IHostedPlayer? Player => World.Player;
 
     /// <summary>Gets what hurts the player and how it dies.</summary>
     public Igi1PlayerHarm Harm { get; }

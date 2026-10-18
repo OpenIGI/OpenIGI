@@ -32,7 +32,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// how far the body moved. Changing the animation changes the speed, which is how the original works.
 /// </para>
 /// </remarks>
-public sealed class PlayerCamera
+public sealed class PlayerCamera : IHostedPlayer
 {
     /// <summary>
     /// The delta translation a walk covers in one tick, in the body's frame.

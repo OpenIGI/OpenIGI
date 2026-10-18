@@ -200,6 +200,9 @@ public sealed partial class GameHost : IDisposable
     private readonly Igi1Gameplay _igi1;
     private readonly MissionWorld _mission;
 
+    // The player the host steers and looks through, when the mission has one.
+    private IHostedPlayer? HostedPlayer => _igi1.Player;
+
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
 
@@ -219,7 +222,7 @@ public sealed partial class GameHost : IDisposable
     // Where everyone who casts in a lamp's map stands, in metres: the player and the living soldiers.
     private void LampMapPeople(List<Vector3d> people)
     {
-        if (_mission.Player is { } player)
+        if (HostedPlayer is { } player)
         {
             people.Add(WorldScene.ToMetres(player.Body.Position));
         }

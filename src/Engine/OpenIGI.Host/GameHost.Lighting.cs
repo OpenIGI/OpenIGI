@@ -380,7 +380,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void UpdateFlashlightSwitch(bool menuMode, bool consoleOpen)
     {
-        if (!_flashlight.CanSwitch(menuMode, consoleOpen, _mission.IsPlayerDead) || _mission.Player is not { } player)
+        if (!_flashlight.CanSwitch(menuMode, consoleOpen, _mission.IsPlayerDead) || HostedPlayer is not { } player)
         {
             return;
         }
