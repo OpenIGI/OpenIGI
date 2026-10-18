@@ -323,10 +323,10 @@ public sealed partial class GameHost
 
     private void ClearTransientCutsceneObjects()
     {
-        _player?.Grenades.Clear();
-        _player?.Missiles.Clear();
+        _mission.Player?.Grenades.Clear();
+        _mission.Player?.Missiles.Clear();
         _mission.VehicleMissiles.Clear();
-        _player?.M203.Clear();
+        _mission.Player?.M203.Clear();
     }
     /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
     /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
@@ -379,7 +379,7 @@ public sealed partial class GameHost
         if (_mission.PlayerTicked
             || _mission.Cutscenes?.IsPlaying == true
             || !_playerMode
-            || _player is not { } player
+            || _mission.Player is not { } player
             || _mission.IsPlayerDead
             || _session.FailedMenu)
         {
@@ -421,10 +421,10 @@ public sealed partial class GameHost
     /// </remarks>
     private SoldierEnemy SoldierEnemyNow()
     {
-        bool body = _playerMode && _player is not null;
-        Vector3d eye = body ? _player!.Body.Eye : _camera?.Position ?? _player?.Body.Eye ?? default;
-        Vector3d feet = body ? _player!.Body.Position : eye;
-        return new SoldierEnemy(eye, !_mission.IsPlayerDead && _mission.Cutscenes?.IsPlaying != true, feet, body && _player!.IsCrouched);
+        bool body = _playerMode && _mission.Player is not null;
+        Vector3d eye = body ? _mission.Player!.Body.Eye : _camera?.Position ?? _mission.Player?.Body.Eye ?? default;
+        Vector3d feet = body ? _mission.Player!.Body.Position : eye;
+        return new SoldierEnemy(eye, !_mission.IsPlayerDead && _mission.Cutscenes?.IsPlaying != true, feet, body && _mission.Player!.IsCrouched);
     }
 
     /// <summary>The player as an area counts it at the moment the area updates.</summary>
@@ -438,15 +438,15 @@ public sealed partial class GameHost
         Vector3d? cutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
         Vector3d? freeView = !_playerMode ? _camera?.Position : null;
         return new AreaPlayer(
-            AreaActivationOccupant(_player?.Body.Origin, cutsceneView, freeView),
+            AreaActivationOccupant(_mission.Player?.Body.Origin, cutsceneView, freeView),
             _soldiers?.Simulation.PlayerTeam ?? 0,
-            AreaActivationExtraOccupant(_player?.Body.Origin, cutsceneView),
+            AreaActivationExtraOccupant(_mission.Player?.Body.Origin, cutsceneView),
             !_mission.IsPlayerDead);
     }
 
     private void TickVehicleMissiles()
     {
-        if (_player is not { } player)
+        if (_mission.Player is not { } player)
         {
             return;
         }
@@ -645,7 +645,7 @@ public sealed partial class GameHost
             _cutsceneSounds.Set,
             modelLength: name => CutsceneModelLength(loaded, name),
             modelPivot: name => CutsceneModelPivot(loaded, name),
-            vehiclePhysics: _vehiclePhysics,
+            vehiclePhysics: _mission.VehiclePhysics,
             terrain: loaded.Terrain,
             logger: _logger,
             vehicleObstacleHit: (task, origin, end) =>
@@ -860,7 +860,7 @@ public sealed partial class GameHost
         else
         {
             WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, Services: _title.Services));
+                new WorldBuildRequest(loaded, levelRoot, _resources, _mission.MagicObjects, _logger, Services: _title.Services));
             scene = built.Scene;
             _scene = scene;
             _ground = built.Ground;
@@ -934,11 +934,11 @@ public sealed partial class GameHost
                     RetailWorldObjects.Build(
                         levelRoot,
                         carModels,
-                        name => _magic?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
+                        name => _mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
                     cutscenes.RetailVehicleModels,
                     static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
                 carModels,
-                name => _magic?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
+                name => _mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
         }
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
@@ -947,7 +947,7 @@ public sealed partial class GameHost
             levelRoot,
             scene.Placements,
             _loop.Variables,
-            _vehiclePhysics,
+            _mission.VehiclePhysics,
             random: _soundRandom);
         world.Destructibles = _mission.Destructibles;
         solids.Destructibles = _mission.Destructibles;
@@ -1005,7 +1005,7 @@ public sealed partial class GameHost
         {
             _soldiers?.Dispose();
             _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
-                new SoldierPresentationRequest(_device, _resources, _logger, _magic, _detailMaps));
+                new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps));
             _soldiers?.Load(
                 loaded,
                 levelRoot,
@@ -1138,7 +1138,7 @@ public sealed partial class GameHost
 
         // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
         // what turns them: the walk gives a placement, this gives it an angle per tick.
-        _mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
+        _mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _mission.MagicObjects);
         world.RotatingObjects = _mission.RotatingObjects;
 
         b.WorldTrace = worldTrace;
@@ -1403,7 +1403,7 @@ public sealed partial class GameHost
         // on a door hop, and an open door is switched out of the collision index so the
         // doorway is walkable. Both have to exist before Animate hands each brain its query.
         _soldiers.Simulation.Animate(
-            graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
+            graphs, worldTrace, _resources, _loop.Natives, levelRoot, _mission.AiConfig, effectiveDifficulty,
             _loop.Variables);
         EndStage("animating the soldiers' brains");
 
@@ -1625,7 +1625,7 @@ public sealed partial class GameHost
                 return true;
             }
             : null;
-        _player = null;
+        _mission.Player = null;
         _titleFeatures = null;
         _titleHud?.Dispose();
         _titleHud = null;
@@ -1750,11 +1750,11 @@ public sealed partial class GameHost
 
                 // Shared with the guard-round handler: the ammunition record is what colours a
                 // ballistic streak, exactly as it colours the retail tracer.
-                _ammoTypes = ammoTable;
+                _mission.AmmoTypes = ammoTable;
 
                 // Kept beside it for the all-weapons cheat, which can be switched on mid-mission and
                 // then needs the whole roster, not just what the level declared.
-                _weaponTypes = weaponRoster;
+                _mission.WeaponTypes = weaponRoster;
 
                 // What every surface in the world is made of, and therefore what a round leaves on it.
                 materialTable.Register(_loop.Natives);
@@ -1772,7 +1772,7 @@ public sealed partial class GameHost
                 int materialCount = materialTable.Load(_resources, _loop.Natives);
                 candidate.UseMaterials(materialTable);
                 _soldiers?.Simulation.UseMaterials(materialTable);
-                _worldMaterials = materialTable;
+                _mission.Materials = materialTable;
                 _logger.Information("Material", $"Read {materialCount} game material(s).");
 
                 // What the open ground is made of. The terrain declares it the same way a mesh face
@@ -2051,7 +2051,7 @@ public sealed partial class GameHost
 
             if (placed)
             {
-                _player = candidate;
+                _mission.Player = candidate;
 
                 // The player's own third-person body -- the rig the death camera reveals. Built from the
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
@@ -2254,7 +2254,7 @@ public sealed partial class GameHost
     /// </remarks>
     private bool DoorwayIsBlockedByHuman(Vector3d from, Vector3d to)
     {
-        if (HumanStandsInSegment(_player?.Body.Position, from, to))
+        if (HumanStandsInSegment(_mission.Player?.Body.Position, from, to))
         {
             return true;
         }
@@ -2478,7 +2478,7 @@ public sealed partial class GameHost
         _grenadeRenderer = null;
         _missileRenderer = null;
         _arms = null;
-        _player = null;
+        _mission.Player = null;
         _titleFeatures = null;
         _titleArms = null;
         _playerMode = false;
@@ -2488,7 +2488,7 @@ public sealed partial class GameHost
         _mission.EffectWalls = null;
         _mission.Solids = null;
         _mission.Destructibles = null;
-        _worldMaterials = null;
+        _mission.Materials = null;
         _mission.Doors = null;
         _mission.Elevators = null;
         _mission.Interactions = null;
@@ -2689,8 +2689,8 @@ public sealed partial class GameHost
     private void GrantCheatWeapons(PlayerCamera player)
     {
         if (!PlayerCheatOptions.Current.AllWeapons
-            || _weaponTypes is not { } roster
-            || _ammoTypes is not { } ammunition)
+            || _mission.WeaponTypes is not { } roster
+            || _mission.AmmoTypes is not { } ammunition)
         {
             return;
         }
@@ -2722,7 +2722,7 @@ public sealed partial class GameHost
     /// until a mission has loaded, so it cannot be cached beside the provider.
     /// </remarks>
     private ViewModelPresentationRequest ViewModelRequest() =>
-        new(_device, _resources, _magic, _logger, _work);
+        new(_device, _resources, _mission.MagicObjects, _logger, _work);
 
     /// <summary>The player's grunt — <c>player_hit_</c> through <c>0x4637C0</c>'s per-human rate limit.</summary>
     /// <remarks>
@@ -2736,7 +2736,7 @@ public sealed partial class GameHost
     private void InstallPlayerHitShake()
     {
         float share = Math.Clamp(_soundRandom.NextSingle(), 0.25f, 1f);
-        _player!.InstallViewShake(
+        _mission.Player!.InstallViewShake(
             HumanViewShake.HitPositionUnits * share, HumanViewShake.HitAngleRadians * share, HumanViewShake.HitTicks);
     }
 
@@ -2762,17 +2762,17 @@ public sealed partial class GameHost
     /// </remarks>
     private void StrikePlayer(Vector3d attacker, float damage)
     {
-        if (_player is null || _mission.IsPlayerDead)
+        if (_mission.Player is null || _mission.IsPlayerDead)
         {
             return;
         }
 
         // The body's forward axis against the direction from the attacker: negative when facing it.
         Vector3d towardsPlayer = new(
-            _player.Body.Position.X - attacker.X,
-            _player.Body.Position.Y - attacker.Y,
-            _player.Body.Position.Z - attacker.Z);
-        float yaw = _player.Body.Yaw;
+            _mission.Player.Body.Position.X - attacker.X,
+            _mission.Player.Body.Position.Y - attacker.Y,
+            _mission.Player.Body.Position.Z - attacker.Z);
+        float yaw = _mission.Player.Body.Yaw;
         double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
         int zone = facing < 0.0 ? PlayerBluntFrontZone : PlayerBluntBackZone;
 
@@ -2816,7 +2816,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category)
     {
-        if (_player is null || _mission.IsPlayerDead)
+        if (_mission.Player is null || _mission.IsPlayerDead)
         {
             return;
         }
@@ -2825,14 +2825,14 @@ public sealed partial class GameHost
         // player's own hit-zone table, one of its two reactions by rand(2). The player stops taking
         // input from here on -- it is a state, not a message.
         _mission.IsPlayerDead = true;
-        _player.ResetOptics();
-        _player.StopWeaponsForDeath();
+        _mission.Player.ResetOptics();
+        _mission.Player.StopWeaponsForDeath();
         StopBinocularTransitionSound();
 
         // The player receives no further simulation ticks after death, so the weapon sound player
         // cannot observe a quiet tick and retire an automatic loop on its own.
         _weaponSounds?.Reset();
-        int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _shotRandom.Next(2));
+        int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _mission.ShotRandom.Next(2));
 
         // The lethal hit has already written the retail corner flash. Do not replace it with a uniform
         // full-screen wash here: 0x412440 writes the flash as part of damage receipt, before it changes
@@ -2840,33 +2840,33 @@ public sealed partial class GameHost
 
         // Which way the body is thrown: the facing whose backward axis points away from the killer,
         // exactly as the soldier death faces the incoming round (SoldierDeath.TurnToTheShot).
-        double throwX = _player.Body.Position.X - from.X;
-        double throwY = _player.Body.Position.Y - from.Y;
+        double throwX = _mission.Player.Body.Position.X - from.X;
+        double throwY = _mission.Player.Body.Position.Y - from.Y;
         double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
         float throwFacing = throwLength > 1e-6
             ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
-            : _player.Body.Yaw;
+            : _mission.Player.Body.Yaw;
 
         _soldiers?.KillPlayerBody(
             fall,
-            _player.Body.Position,
+            _mission.Player.Body.Position,
             throwFacing,
             bone,
             new Vector3d(
-                _player.Body.Position.X - from.X,
-                _player.Body.Position.Y - from.Y,
-                _player.Body.Position.Z - from.Z),
+                _mission.Player.Body.Position.X - from.X,
+                _mission.Player.Body.Position.Y - from.Y,
+                _mission.Player.Body.Position.Z - from.Z),
             category,
             new Vector3d(
-                _player.Body.Velocity.X,
-                _player.Body.Velocity.Y,
-                _player.Body.Velocity.Z));
+                _mission.Player.Body.Velocity.X,
+                _mission.Player.Body.Velocity.Y,
+                _mission.Player.Body.Velocity.Z));
 
         if (_mission.Solids is { } deathSolids)
         {
             WorldRayCast deathCaster = deathSolids.Caster();
             _deathCamera.Begin(
-                _player.Body.Position,
+                _mission.Player.Body.Position,
                 throwFacing,
                 (f, t, out h) =>
                 {
@@ -3034,7 +3034,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
     {
-        if (_mission.Cutscenes is not { } runtime || _magic is not { } magic)
+        if (_mission.Cutscenes is not { } runtime || _mission.MagicObjects is not { } magic)
         {
             return;
         }
@@ -3157,12 +3157,12 @@ public sealed partial class GameHost
     /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
     private void CheckRunOver()
     {
-        if (_player is null || _mission.IsPlayerDead || _mission.Cutscenes is not { } runtime)
+        if (_mission.Player is null || _mission.IsPlayerDead || _mission.Cutscenes is not { } runtime)
         {
             return;
         }
 
-        Vector3d origin = _player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
+        Vector3d origin = _mission.Player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
         if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
         {
             return;
@@ -3219,7 +3219,7 @@ public sealed partial class GameHost
             {
                 // Feed the player's current position to the elevators so their start gate can refuse
                 // to move an empty car or one with an open door. Provider is read every tick.
-                elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
+                elevators.SetPlayerPositionProvider(_mission.Player is { } p ? () => p.Body.Position : null);
                 elevators.Tick();
                 UpdateElevatorSoundPositions();
                 if (_mission.Solids is { } elevatorSolids)
@@ -3227,7 +3227,7 @@ public sealed partial class GameHost
                     elevators.ApplyCollision(elevatorSolids);
                 }
 
-                if (_playerMode && _player is { } passenger
+                if (_playerMode && _mission.Player is { } passenger
                     && elevators.TryGetPassengerDisplacement(
                         passenger.Body.Position, _mission.Solids, out Vector3d displacement))
                 {
@@ -3246,9 +3246,9 @@ public sealed partial class GameHost
             Vector3d? areaCutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
             Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
             _mission.Objectives?.SetLevelStateInputs(
-                AreaActivationOccupant(_player?.Body.Origin, areaCutsceneView, areaFreeView),
+                AreaActivationOccupant(_mission.Player?.Body.Origin, areaCutsceneView, areaFreeView),
                 _soldiers?.Simulation.PlayerTeam ?? 0,
-                AreaActivationExtraOccupant(_player?.Body.Origin, areaCutsceneView),
+                AreaActivationExtraOccupant(_mission.Player?.Body.Origin, areaCutsceneView),
                 playerAlive: !_mission.IsPlayerDead);
             _mission.PlayerTicked = false;
             _mission.InteractionsTickedByPlayer = false;
@@ -3286,7 +3286,7 @@ public sealed partial class GameHost
 
         // The player cannot jump while standing inside an elevator cab. The elevator registry knows
         // the player's position (fed above), so it can report whether they're inside.
-        if (_player is { } playerWithJump)
+        if (_mission.Player is { } playerWithJump)
         {
             playerWithJump.CanJump = _mission.Elevators is { } jumpElevators
                 ? (Func<bool>)(() => !jumpElevators.IsPlayerInsideElevator(
@@ -3302,34 +3302,34 @@ public sealed partial class GameHost
 
         if (outcome is FrameOutcome.Tick
             && _mission.Cutscenes?.IsPlaying != true
-            && _playerMode && _player is not null)
+            && _playerMode && _mission.Player is not null)
         {
             PresentPlayerTick();
             // went somewhere.
-            if (!state.ReportedShot && _player.FiredThisTick && _player.HeldWeaponType is { } fired)
+            if (!state.ReportedShot && _mission.Player.FiredThisTick && _mission.Player.HeldWeaponType is { } fired)
             {
                 state.ReportedShot = true;
-                string where = _player.Impacts.Count == 0
+                string where = _mission.Player.Impacts.Count == 0
                     ? "nowhere"
-                    : _player.Impacts[0].HitSomething
-                        ? $"{_player.Impacts[0].Position}"
+                    : _mission.Player.Impacts[0].HitSomething
+                        ? $"{_mission.Player.Impacts[0].Position}"
                         : $"nothing inside {fired.EffectiveRange} m";
 
                 _logger.Information(
                     "Weapon",
                     $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
                         + $"a round at {fired.RoundsPerMinute} rpm, "
-                        + $"{_player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
+                        + $"{_mission.Player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
             }
 
             // Every round that lands on a guard, reported once each so the zone and the kill are
             // visible without a per-shot log.
-            if (_player.HumanHits != state.ReportedHumanHits)
+            if (_mission.Player.HumanHits != state.ReportedHumanHits)
             {
-                state.ReportedHumanHits = _player.HumanHits;
+                state.ReportedHumanHits = _mission.Player.HumanHits;
                 _logger.Information(
                     "Weapon",
-                    $"Hit a guard in zone {_player.LastHumanZone} "
+                    $"Hit a guard in zone {_mission.Player.LastHumanZone} "
                         + $"({state.ReportedHumanHits} hit(s), {_soldiers?.Simulation.Killed ?? 0} killed).");
             }
         }
@@ -3364,9 +3364,9 @@ public sealed partial class GameHost
             // you leave walking mode, so feeding its eye meant every guard in the level was watching an
             // immobile figure at the spawn point while you flew past them: they never saw you because
             // there was nothing of you to see. A shell affordance, not engine behaviour.
-            Vector3d watched = _playerMode && _player is not null
-                ? _player.Body.Eye
-                : _camera?.Position ?? _player?.Body.Eye ?? default;
+            Vector3d watched = _playerMode && _mission.Player is not null
+                ? _mission.Player.Body.Eye
+                : _camera?.Position ?? _mission.Player?.Body.Eye ?? default;
 
             // A dead player is no longer a target: the guards lose it and stop firing at the corpse, the
             // way the retail detection scan (0x489750) unregisters a human that has died.
@@ -3374,8 +3374,8 @@ public sealed partial class GameHost
             // The eye is what vision watches; the FEET are what combat aims at (sub_451380 raises the
             // target task's position 0.5 m, 0.25 m crouched) -- in the fly-through there is no body, so
             // the camera stands in for both.
-            Vector3d watchedFeet = _playerMode && _player is not null
-                ? _player.Body.Position
+            Vector3d watchedFeet = _playerMode && _mission.Player is not null
+                ? _mission.Player.Body.Position
                 : watched;
 
             // The areas and edit variables ran inside the level walk above, before the AlarmControls that
@@ -3396,7 +3396,7 @@ public sealed partial class GameHost
             _mission.Spins?.Advance();
             if (_mission.SecurityCameras is { } cameras)
             {
-                bool crouching = _playerMode && _player is not null && _player.IsCrouched;
+                bool crouching = _playerMode && _mission.Player is not null && _mission.Player.IsCrouched;
 
                 // Retail's lenses scan every human and every camera (0x489750): a guard's body or a
                 // destroyed camera in view raises the alarm at once, as the player does after 90 ticks.
@@ -3443,7 +3443,7 @@ public sealed partial class GameHost
                     watched,
                     enemyAlive: !_mission.IsPlayerDead && _mission.Cutscenes?.IsPlaying != true,
                     enemyFeet: watchedFeet,
-                    enemyCrouching: _playerMode && _player is not null && _player.IsCrouched);
+                    enemyCrouching: _playerMode && _mission.Player is not null && _mission.Player.IsCrouched);
             }
 
             // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
@@ -3469,7 +3469,7 @@ public sealed partial class GameHost
     /// <summary>Plays and reports what the player's update set in motion this tick: its sounds, effects and detonations.</summary>
     private void PresentPlayerTick()
     {
-        Debug.Assert(_player is not null, "Presented only for a player who ticked; see TickMission.");
+        Debug.Assert(_mission.Player is not null, "Presented only for a player who ticked; see TickMission.");
 
         // What the player's update set in motion this tick -- its sounds, effects and detonations.
         if (_mission.PlayerTicked)
@@ -3481,9 +3481,9 @@ public sealed partial class GameHost
             // row carries the exact retail radius (for example 4096 for suppressed fire and
             // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
             // silenced weapons no longer wake the whole 30-metre neighbourhood.
-            if (_player.FiredThisTick && _player.HeldWeaponType is { } audibleWeapon)
+            if (_mission.Player.FiredThisTick && _mission.Player.HeldWeaponType is { } audibleWeapon)
             {
-                _soldiers?.Simulation.NotifyGunshot(_player.Body.Eye, audibleWeapon.AiDetectionRange);
+                _soldiers?.Simulation.NotifyGunshot(_mission.Player.Body.Eye, audibleWeapon.AiDetectionRange);
             }
 
             // And the sound of it. Driven every tick rather than only on the ones that fire,
@@ -3493,20 +3493,20 @@ public sealed partial class GameHost
             // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
             // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
             // null also closes an automatic gun loop when the player switches to the syringe.
-            WeaponType? weaponForSound = _player.HeldWeaponType?.Category == WeaponCategory.Medipack
+            WeaponType? weaponForSound = _mission.Player.HeldWeaponType?.Category == WeaponCategory.Medipack
                 ? null
-                : _player.HeldWeaponType;
-            bool m203Launched = _player.M203LaunchedThisTick;
+                : _mission.Player.HeldWeaponType;
+            bool m203Launched = _mission.Player.M203LaunchedThisTick;
             _weaponSounds?.Tick(
-                _player.FiredThisTick && !m203Launched && weaponForSound is not null,
+                _mission.Player.FiredThisTick && !m203Launched && weaponForSound is not null,
                 weaponForSound);
             if (m203Launched)
             {
                 // GunM16A2's native callback (0x473510) plays this launch report itself; it is
                 // not the M16A2's primary rifle loop and must remain audible on an alternate shot.
                 // The native call attaches it to the launcher task position, not to the listener.
-                Vector3d launchPosition = _player.Body.Eye;
-                if (_player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
+                Vector3d launchPosition = _mission.Player.Body.Eye;
+                if (_mission.Player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
                 {
                     launchPosition = m203Shots[0].Origin;
                 }
@@ -3524,20 +3524,20 @@ public sealed partial class GameHost
             // The native medipack callbacks dispatch their own clips and do not enter the
             // generic firearm BOED trigger path. Suppress those generic triggers while the
             // medipack is held, otherwise a shared animation event can sound like reload/fire.
-            if (_player.HeldWeaponType?.Category != WeaponCategory.Medipack)
+            if (_mission.Player.HeldWeaponType?.Category != WeaponCategory.Medipack)
             {
                 PlayPlayerAnimationSounds();
             }
 
             // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
-            if (_player.Body.TookOffThisTick)
+            if (_mission.Player.Body.TookOffThisTick)
             {
                 PlayJumpSound();
             }
 
             // And the player's own feet. Positional like anyone else's, and placed where the
             // foot landed rather than on the listener, because the sound belongs to the ground.
-            if (_player.TakeFootstep() is { } step)
+            if (_mission.Player.TakeFootstep() is { } step)
             {
                 PlayFootstep(step);
 
@@ -3546,10 +3546,10 @@ public sealed partial class GameHost
                 // walker is crouching -- sneaking really is silent to the AI. guard.qvm's WALK
                 // branch is AIAction_SetCombat, so a guard that hears footsteps it cannot see
                 // starts hunting.
-                if (!_player.IsCrouched)
+                if (!_mission.Player.IsCrouched)
                 {
                     _soldiers?.Simulation.NotifyWalk(
-                        step.PositionInUnits, _player.Body.Position, step.HearingRadiusInUnits);
+                        step.PositionInUnits, _mission.Player.Body.Position, step.HearingRadiusInUnits);
                 }
             }
 
@@ -3569,11 +3569,11 @@ public sealed partial class GameHost
             _effects.TickRetailImpacts();
 
             SpawnBallisticImpactParticles();
-            _effects.SpawnSurfaceImpacts(_player.Impacts);
+            _effects.SpawnSurfaceImpacts(_mission.Player.Impacts);
 
             // The launcher rockets in the air lay their smoke trail, one column of puffs per
             // segment they crossed this tick.
-            _effects.SpawnMissileTrails(_player.Missiles, _mission.VehicleMissiles);
+            _effects.SpawnMissileTrails(_mission.Player.Missiles, _mission.VehicleMissiles);
 
             // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
             // and the casualties.
@@ -3611,7 +3611,7 @@ public sealed partial class GameHost
             // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
             // impact list carries both the instant rays and the ballistic arrivals, so either
             // mode can shoot the siren off the wall.
-            foreach (GunImpact playerImpact in _player.Impacts)
+            foreach (GunImpact playerImpact in _mission.Player.Impacts)
             {
                 if (playerImpact.HitSomething)
                 {
@@ -3619,13 +3619,13 @@ public sealed partial class GameHost
                         playerImpact.Position,
                         playerImpact.Owner,
                         playerImpact.Placement,
-                        _player.HeldWeaponType?.DamageFactor ?? 1f);
+                        _mission.Player.HeldWeaponType?.DamageFactor ?? 1f);
                 }
             }
 
             // The level's ambience, which is keyed off where the ear is rather than where the
             // body stands: an area is a box you listen from the inside of.
-            TickAmbience(_player.EyeUnits);
+            TickAmbience(_mission.Player.EyeUnits);
 
         }
         else if (_mission.IsPlayerDead)
@@ -3648,12 +3648,12 @@ public sealed partial class GameHost
         // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
         // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
         // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
-        if (_player is not null && _player.IsOnLadder)
+        if (_mission.Player is not null && _mission.Player.IsOnLadder)
         {
-            _player.InputProfile = _configuration.Active;
-            bool climbUp = _player.IsActionDown(_window.Input, PlayerAction.MoveUp);
-            bool climbDown = _player.IsActionDown(_window.Input, PlayerAction.MoveDown);
-            bool climbUse = _player.IsActionDown(_window.Input, PlayerAction.Activate);
+            _mission.Player.InputProfile = _configuration.Active;
+            bool climbUp = _mission.Player.IsActionDown(_window.Input, PlayerAction.MoveUp);
+            bool climbDown = _mission.Player.IsActionDown(_window.Input, PlayerAction.MoveDown);
+            bool climbUse = _mission.Player.IsActionDown(_window.Input, PlayerAction.Activate);
 
             // Mount and use share E. The release gate is a shell detail that prevents the mounting press
             // from becoming state 40 on the immediately following tick.
@@ -3661,7 +3661,7 @@ public sealed partial class GameHost
             {
                 state.ClimbActive = true;
                 state.ClimbSlideArmed = false;
-                if (_player.LadderPhase == LadderTraversalPhase.GettingOnTop)
+                if (_mission.Player.LadderPhase == LadderTraversalPhase.GettingOnTop)
                 {
                     _soldiers?.StartPlayerLadderAnimation(
                         PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
@@ -3679,13 +3679,13 @@ public sealed partial class GameHost
             }
 
             bool climbSlide = climbUse && state.ClimbSlideArmed;
-            LadderStepResult decision = _player.DecideLadderStep(
+            LadderStepResult decision = _mission.Player.DecideLadderStep(
                 climbUp, climbDown, climbSlide, _ground!);
             switch (decision)
             {
                 case LadderStepResult.SteppingUp:
                 case LadderStepResult.SteppingDown:
-                    _soldiers?.Simulation.SetPlayerLadderPlaybackDirection(_player.LadderDirection);
+                    _soldiers?.Simulation.SetPlayerLadderPlaybackDirection(_mission.Player.LadderDirection);
                     break;
 
                 case LadderStepResult.ReachedTop:
@@ -3699,20 +3699,20 @@ public sealed partial class GameHost
                     break;
             }
 
-            if (_player.IsOnLadder && _soldiers is not null)
+            if (_mission.Player.IsOnLadder && _soldiers is not null)
             {
-                switch (_player.LadderPhase)
+                switch (_mission.Player.LadderPhase)
                 {
-                    case LadderTraversalPhase.Climbing when _player.LadderDirection != 0:
+                    case LadderTraversalPhase.Climbing when _mission.Player.LadderDirection != 0:
                         _soldiers.AdvancePlayerLadderAnimation(
-                            _player.LadderFacing,
+                            _mission.Player.LadderFacing,
                             out Vector3d climbDelta,
                             out bool rungBoundary,
                             out _);
-                        _player.MoveLadder(climbDelta);
+                        _mission.Player.MoveLadder(climbDelta);
                         if (rungBoundary)
                         {
-                            _player.CompleteLadderStep();
+                            _mission.Player.CompleteLadderStep();
                             _soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
                         }
 
@@ -3721,15 +3721,15 @@ public sealed partial class GameHost
                     case LadderTraversalPhase.GettingOnTop:
                     case LadderTraversalPhase.GettingOffTop:
                         _soldiers.AdvancePlayerLadderAnimation(
-                            _player.LadderFacing,
+                            _mission.Player.LadderFacing,
                             out Vector3d topDelta,
                             out _,
                             out bool topAnimationEnded);
-                        _player.MoveLadder(topDelta);
+                        _mission.Player.MoveLadder(topDelta);
                         if (topAnimationEnded)
                         {
-                            _player.CompleteLadderTopTransition(_ground!);
-                            if (_player.LadderPhase == LadderTraversalPhase.Climbing)
+                            _mission.Player.CompleteLadderTopTransition(_ground!);
+                            if (_mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
                             {
                                 _soldiers.StartPlayerLadderAnimation(
                                     PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
@@ -3740,7 +3740,7 @@ public sealed partial class GameHost
 
                     case LadderTraversalPhase.SlidingDown:
                         _soldiers.AdvancePlayerLadderAnimation(
-                            _player.LadderFacing,
+                            _mission.Player.LadderFacing,
                             out Vector3d slideDelta,
                             out _,
                             out _);
@@ -3748,7 +3748,7 @@ public sealed partial class GameHost
                         // velocity function first runs on the following tick.
                         if (decision != LadderStepResult.Sliding)
                         {
-                            _player.TickLadderSlide(slideDelta, _ground!);
+                            _mission.Player.TickLadderSlide(slideDelta, _ground!);
                         }
 
                         break;
@@ -3756,15 +3756,15 @@ public sealed partial class GameHost
             }
 
             // All four states stay in third person until their actual deinitialization signal.
-            if (_player.IsOnLadder)
+            if (_mission.Player.IsOnLadder)
             {
-                _soldiers?.PlacePlayerBodyClimbing(_player.LadderFeet, _player.LadderFacing);
+                _soldiers?.PlacePlayerBodyClimbing(_mission.Player.LadderFeet, _mission.Player.LadderFacing);
                 if (!state.InteractionCamera.IsActive)
                 {
                     WorldRayCast? cameraCast = _mission.Solids?.Caster();
                     state.InteractionCamera.Begin(
-                        _player.LadderFeet,
-                        _player.LadderFacing,
+                        _mission.Player.LadderFeet,
+                        _mission.Player.LadderFacing,
                         cameraCast is null
                             ? null
                             : (Vector3d from, Vector3d to, out Vector3d hit) =>
@@ -3776,14 +3776,14 @@ public sealed partial class GameHost
                 }
                 else
                 {
-                    state.InteractionCamera.Follow(_player.LadderFeet);
+                    state.InteractionCamera.Follow(_mission.Player.LadderFeet);
                 }
 
                 state.InteractionCamera.Tick();
             }
         }
 
-        if (_player is { IsInWorldInteraction: true } interacting)
+        if (_mission.Player is { IsInWorldInteraction: true } interacting)
         {
             if (!state.WorldInteractionActive)
             {
@@ -3849,7 +3849,7 @@ public sealed partial class GameHost
             }
         }
 
-        if ((_player is null || (!_player.IsOnLadder && !_player.IsInWorldInteraction))
+        if ((_mission.Player is null || (!_mission.Player.IsOnLadder && !_mission.Player.IsInWorldInteraction))
             && (state.ClimbActive || state.WorldInteractionActive || state.InteractionCamera.IsActive))
         {
             _soldiers?.Simulation.HidePlayerBodyClimbing();
@@ -3882,7 +3882,7 @@ public sealed partial class GameHost
                     && !_entry.IsCameraActive
                     && _mission.Cutscenes?.IsPlaying != true
                     && !_menuFlow.OverShowcase
-                    && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
+                    && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
 
                 // ...and in FIRST person too, unconditionally, which it did not used to be.
                 //
@@ -3958,7 +3958,7 @@ public sealed partial class GameHost
                     $"The level's LevelFlow has failed the mission; opening the failed page.");
                 _computerOpen = false;
                 _computerFlight.Reset();
-                _player?.SetMapComputerOpen(false);
+                _mission.Player?.SetMapComputerOpen(false);
 
                 // The result is a shell page, not a drawn card, so its two choices can be clicked
                 // and navigated like every other page and the shell's own cursor is the one on
@@ -3972,7 +3972,7 @@ public sealed partial class GameHost
                 // The platform cursor stays hidden: the shell draws its own, so revealing this one
                 // would put a second, unrelated pointer beside it.
                 _window.CursorVisible = false;
-                _player?.HoldStill();
+                _mission.Player?.HoldStill();
                 _window.CursorLocked = false;
             }
         }

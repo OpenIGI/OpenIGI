@@ -79,7 +79,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void TickGrenadeCook()
     {
-        if (_audioOut.Sounds is null || _player is null || !_player.IsChargingThrow)
+        if (_audioOut.Sounds is null || _mission.Player is null || !_mission.Player.IsChargingThrow)
         {
             StopGrenadeCook();
             return;
@@ -127,7 +127,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayPlayerAnimationSounds()
     {
-        if (_audioOut.Sounds is null || _animationTriggers is null || _player?.View is not { } view)
+        if (_audioOut.Sounds is null || _animationTriggers is null || _mission.Player?.View is not { } view)
         {
             return;
         }
@@ -152,7 +152,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayBinocularTransitionSound()
     {
-        if (_audioOut.Sounds is null || _player is not { } player)
+        if (_audioOut.Sounds is null || _mission.Player is not { } player)
         {
             return;
         }
@@ -194,7 +194,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayMedipackSound()
     {
-        if (_player?.Weapons is { MedipackStartedThisTick: true } weapons)
+        if (_mission.Player?.Weapons is { MedipackStartedThisTick: true } weapons)
         {
             // A medipack is an injection action, not a gun shot. Some weapon records carry a
             // legacy firearm FireSound field (which produces the shotgun/pistol report); the
@@ -223,8 +223,8 @@ public sealed partial class GameHost
         // Ammo pickups are authored as GenericPickup/AmmoPickup world objects. Resolve and award them
         // at the same collection edge as the retail pickup cue, so the object, inventory count and sound
         // cannot drift apart. An explicit task payload wins over the catalog fallback.
-        if (_player?.Weapons is { } weapons
-            && _ammoTypes is { } ammoTypes
+        if (_mission.Player?.Weapons is { } weapons
+            && _mission.AmmoTypes is { } ammoTypes
             && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
         {
             weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
@@ -303,7 +303,7 @@ public sealed partial class GameHost
             return;
         }
 
-        if (_player is not { } player)
+        if (_mission.Player is not { } player)
         {
             return;
         }
@@ -598,7 +598,7 @@ public sealed partial class GameHost
         }
 
         // No player is the menu, where there is no ear to place the weather around.
-        bool raining = AudioCVars.Rain.Value && _player is not null && (_rain?.IsWeatherEnabled ?? false);
+        bool raining = AudioCVars.Rain.Value && _mission.Player is not null && (_rain?.IsWeatherEnabled ?? false);
         float intensity = raining
             ? (_storm is { Enabled: true } ? RenderCVars.StormIntensity.Value : 1f)
             : 0f;
@@ -606,7 +606,7 @@ public sealed partial class GameHost
         rain.Update(
             _audioOut.Device.Listener.Position,
             _shelterField,
-            _player?.GrenadeWalls,
+            _mission.Player?.GrenadeWalls,
             WorldScene.UnitsPerMetre,
             intensity,
             AudioCVars.RainVolume.Value,
@@ -637,12 +637,12 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayBulletImpactSounds()
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
 
-        foreach (GunImpact impact in _player.Impacts)
+        foreach (GunImpact impact in _mission.Player.Impacts)
         {
             // A knife records no impact (0x46DFB0), so it never reaches the material's sounds.
             if (!impact.HitSomething || impact.Melee)
@@ -678,7 +678,7 @@ public sealed partial class GameHost
     private void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial)
     {
         if (_audioOut.Sounds is null
-            || _worldMaterials is null
+            || _mission.Materials is null
             || !GameplayCVars.BallisticsImpactSounds.Value
             || _loop.Clock.TickCount < _impactSoundQuietUntil)
         {
@@ -686,7 +686,7 @@ public sealed partial class GameHost
         }
 
         string sound = BulletImpactSounds.PickForImpact(
-            _worldMaterials,
+            _mission.Materials,
             struckHuman,
             surfaceMaterial,
             _soundRandom);
@@ -744,7 +744,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void SpawnBallisticImpactParticles()
     {
-        if (_effects.Particles is null || _player is null)
+        if (_effects.Particles is null || _mission.Player is null)
         {
             return;
         }
@@ -755,7 +755,7 @@ public sealed partial class GameHost
             return;
         }
 
-        foreach (BallisticImpact impact in _player.Ballistics.Impacts)
+        foreach (BallisticImpact impact in _mission.Player.Ballistics.Impacts)
         {
             if (impact.StruckHuman)
             {
@@ -763,7 +763,7 @@ public sealed partial class GameHost
             }
             else if (impact.StruckWall)
             {
-                string material = _worldMaterials is { } table
+                string material = _mission.Materials is { } table
                     && table.TryGet(impact.Wall.Material, out GameMaterial struck)
                     ? struck.Name
                     : string.Empty;
@@ -785,33 +785,33 @@ public sealed partial class GameHost
     /// </remarks>
     private void NotifyGrenadeAiEvents()
     {
-        if (_player is null || _soldiers is null)
+        if (_mission.Player is null || _soldiers is null)
         {
             return;
         }
 
-        foreach (Vector3d origin in _player.Grenades.Thrown)
+        foreach (Vector3d origin in _mission.Player.Grenades.Thrown)
         {
             _soldiers.Simulation.NotifyGrenadeThrown(origin);
         }
 
-        _player.Grenades.ClearThrownEvents();
+        _mission.Player.Grenades.ClearThrownEvents();
 
-        foreach (Vector3d origin in _player.Grenades.Bounces)
+        foreach (Vector3d origin in _mission.Player.Grenades.Bounces)
         {
             _soldiers.Simulation.NotifyGrenadeLand(origin);
         }
 
         // IGI1's proximity task emits proxy_arm on the first human entering its activation radius.
         // This is a one-shot rising-edge cue, not the mine's placement/arming sound.
-        foreach (Vector3d origin in _player.Grenades.MineTriggers)
+        foreach (Vector3d origin in _mission.Player.Grenades.MineTriggers)
         {
             _audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
         }
 
-        _player.Grenades.ClearMineTriggerEvents();
+        _mission.Player.Grenades.ClearMineTriggerEvents();
 
-        foreach (GrenadeDetonation blast in _player.Grenades.Detonations)
+        foreach (GrenadeDetonation blast in _mission.Player.Grenades.Detonations)
         {
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
@@ -828,7 +828,7 @@ public sealed partial class GameHost
             }
         }
 
-        foreach (MissileDetonation blast in _player.Missiles.Detonations)
+        foreach (MissileDetonation blast in _mission.Player.Missiles.Detonations)
         {
             _soldiers.Simulation.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
@@ -837,7 +837,7 @@ public sealed partial class GameHost
             _soldiers.Simulation.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
 
-        foreach (M203Detonation blast in _player.M203.Detonations)
+        foreach (M203Detonation blast in _mission.Player.M203.Detonations)
         {
             _soldiers.Simulation.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
@@ -857,12 +857,12 @@ public sealed partial class GameHost
     /// </remarks>
     private void ResolveGrenadeDetonations()
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
 
-        foreach (GrenadeDetonation blast in _player.Grenades.Detonations)
+        foreach (GrenadeDetonation blast in _mission.Player.Grenades.Detonations)
         {
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
@@ -872,7 +872,7 @@ public sealed partial class GameHost
                 // whiteout fields from the player's eye. That handler does not perform a wall trace.
                 _audioOut.Sounds?.PlayDefinition("explo_flash", blast.Position, priority: 90);
                 _effects.SpawnFlashbangSmoke(blast.Position);
-                float eyeDistance = (float)(_player.EyeUnits - blast.Position).Length;
+                float eyeDistance = (float)(_mission.Player.EyeUnits - blast.Position).Length;
                 (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
                 // 0x00413090 writes the player fields only when one of its two distance tests passes.
                 // The world smoke belongs to 0x47E9A0 and is deliberately independent, so a distant
@@ -898,12 +898,12 @@ public sealed partial class GameHost
     /// <summary>Applies and shows launcher missile impacts produced by the missile task.</summary>
     private void ResolveMissileDetonations()
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
 
-        foreach (MissileDetonation blast in _player.Missiles.Detonations)
+        foreach (MissileDetonation blast in _mission.Player.Missiles.Detonations)
         {
             ResolveMissileDetonation(blast);
         }
@@ -915,7 +915,7 @@ public sealed partial class GameHost
 
     private void ResolveMissileDetonation(MissileDetonation blast)
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
@@ -976,14 +976,14 @@ public sealed partial class GameHost
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
     private void BlastPlayer(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
     {
-        if (_player is null || _mission.PlayerHealth.IsDead)
+        if (_mission.Player is null || _mission.PlayerHealth.IsDead)
         {
             return;
         }
 
         ReachPlayerWithBlast(position, radiusUnits, falloffUnits);
         float dose = ExplosionDamage.Dose(
-            (float)(_player.Body.Position - position).Length,
+            (float)(_mission.Player.Body.Position - position).Length,
             ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
             radiusUnits,
             falloffUnits,
@@ -1021,16 +1021,16 @@ public sealed partial class GameHost
     /// </remarks>
     private void ReachPlayerWithBlast(Vector3d blastPosition, float radiusUnits, float falloffUnits)
     {
-        if (_player is null || _mission.PlayerHealth.IsDead || radiusUnits <= 0f)
+        if (_mission.Player is null || _mission.PlayerHealth.IsDead || radiusUnits <= 0f)
         {
             return;
         }
 
-        Vector3d away = _player.EyeUnits - blastPosition;
+        Vector3d away = _mission.Player.EyeUnits - blastPosition;
         double distance = away.Length;
         if (distance < (radiusUnits + falloffUnits) * 1.5 && distance > 0.0)
         {
-            _player.Body.AddHitShove(
+            _mission.Player.Body.AddHitShove(
                 (float)(away.X / distance * BlastShoveUnitsPerTick),
                 (float)(away.Y / distance * BlastShoveUnitsPerTick));
         }
@@ -1039,7 +1039,7 @@ public sealed partial class GameHost
         double share = beyond < 0.0 ? 1.0 : 1.0 - (beyond / (radiusUnits * 6.0));
         if (share > 0.0)
         {
-            _player.InstallViewShake(
+            _mission.Player.InstallViewShake(
                 (float)(HumanViewShake.HitPositionUnits * share),
                 (float)(HumanViewShake.HitAngleRadians * share),
                 ExplosionShakeTicks);
@@ -1062,12 +1062,12 @@ public sealed partial class GameHost
 
     private void ResolveM203Detonations()
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
 
-        foreach (M203Detonation blast in _player.M203.Detonations)
+        foreach (M203Detonation blast in _mission.Player.M203.Detonations)
         {
             // GunM203's native projectile callback (0x476340) sends the proxy explosion tag, not the
             // hand-grenade fireball. The distinct sound/effect is audible proof that the M203 task
@@ -1282,14 +1282,14 @@ public sealed partial class GameHost
             // round that breaks the glass leaves no hole hanging in the empty frame.
             if (BulletMarks.SurfaceOf(item.Owner, item.Placement) is { } shattered)
             {
-                _player?.Marks.Forget(shattered);
+                _mission.Player?.Marks.Forget(shattered);
             }
             // GlassShatter_Sound is a world noise. The existing retail ground-impact route is the
             // matching AI event used for non-human world contacts; it also keeps a pane behind a wall
             // from becoming a global alert.
             _soldiers?.Simulation.NotifyGroundImpact(
                 impactUnits ?? item.PositionUnits,
-                _player?.Body.Position ?? item.PositionUnits);
+                _mission.Player?.Body.Position ?? item.PositionUnits);
             _logger.Information("World", $"{item.TypeName} at {item.PositionUnits} shattered.");
             return;
         }
@@ -1310,7 +1310,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void ForgetVehicleMarks(DestructibleObjectRegistry destructibles, DestructibleObject car)
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
@@ -1324,7 +1324,7 @@ public sealed partial class GameHost
 
         foreach (object surface in surfaces)
         {
-            _player.Marks.Forget(surface);
+            _mission.Player.Marks.Forget(surface);
         }
 
         _logger.Information("World", $"{car.Owner.Name} exploded and left the world.");
@@ -1696,12 +1696,12 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayGrenadeBounces()
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
 
-        foreach (Vector3d at in _player.Grenades.Bounces)
+        foreach (Vector3d at in _mission.Player.Grenades.Bounces)
         {
             _audioOut.Sounds?.PlayDefinition("grenade_bnc_1", at, priority: 120);
         }

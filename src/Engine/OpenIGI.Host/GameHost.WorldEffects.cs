@@ -13,15 +13,15 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class WorldEffectsHost(GameHost host) : IWorldEffectsHost
     {
-        public bool HasPlayer => host._player is not null;
+        public bool HasPlayer => host._mission.Player is not null;
 
-        public WorldRayCast? Walls => host._mission.EffectWalls ?? host._player?.Body.Walls;
+        public WorldRayCast? Walls => host._mission.EffectWalls ?? host._mission.Player?.Body.Walls;
 
-        public BulletMarks? Marks => host._player?.Marks;
+        public BulletMarks? Marks => host._mission.Player?.Marks;
 
-        public WorldRayCast? MarkProbe => host._player?.MarkProbe;
+        public WorldRayCast? MarkProbe => host._mission.Player?.MarkProbe;
 
-        public GameMaterialRegistry? Materials => host._worldMaterials;
+        public GameMaterialRegistry? Materials => host._mission.Materials;
 
         public WorldTraceCast? Trace => host._mission.Trace;
 

@@ -103,8 +103,8 @@ public sealed partial class GameHost
         {
             _pacing.Report("vulkan");
         }
-        SightZoomFrame sight = _playerMode && _player is not null
-            ? _player.SmoothedSightZoom(tickBlend)
+        SightZoomFrame sight = _playerMode && _mission.Player is not null
+            ? _mission.Player.SmoothedSightZoom(tickBlend)
             : _playerMode && TitlePlayer is { } titleLens
                 ? new SightZoomFrame(_titlePresentation.FieldOfView(_titlePresentationBlend), HumanView.DefaultViewModelTanX)
                 : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
@@ -144,7 +144,7 @@ public sealed partial class GameHost
         // camera and its field of view, which is what makes the climb and the fall a move of the
         // player's own eye rather than a cut to a second one.
         MapSceneView? mapScene = null;
-        if (_computerOpen && _player is { } mapPlayer)
+        if (_computerOpen && _mission.Player is { } mapPlayer)
         {
             if (TacticalComputer is { } tacticalView)
             {
@@ -184,7 +184,7 @@ public sealed partial class GameHost
         int binocularNow = _loop.TimeSource.Milliseconds;
         float binocularElapsed = Math.Clamp((binocularNow - _lastBinocularMilliseconds) / 1000f, 0f, 0.1f);
         _lastBinocularMilliseconds = binocularNow;
-        _binocularOptics.Update(_player is { IsBinocularsOpen: true }, binocularElapsed);
+        _binocularOptics.Update(_mission.Player is { IsBinocularsOpen: true }, binocularElapsed);
         BinocularDisplaySettings binocularDisplay =
             RenderCVars.BinocularLens.Value ? _binocularOptics.Display : default;
         // A little extra edge fringing while the optics are up, on top of the ordinary value, so
@@ -336,11 +336,11 @@ public sealed partial class GameHost
 
         Camera3D eye = _mission.IsPlayerDead && _deathCamera.IsActive
             ? _deathCamera.Camera
-            : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
+            : (_mission.Player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                 && state.InteractionCamera.IsActive
                 ? state.InteractionCamera.Camera
                 : _playerMode && TitlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend)
-                : _playerMode && _player is not null ? _player.Camera : _camera.Camera;
+                : _playerMode && _mission.Player is not null ? _mission.Player.Camera : _camera.Camera;
 
         // The walking eye glides between its tick pair, and so does the recoil kick inside its
         // orientation; the mouse half of the look is this frame's own. The fly and death cameras
@@ -348,9 +348,9 @@ public sealed partial class GameHost
         if (smoothPresentation
             && _playerMode
             && !_mission.IsPlayerDead
-            && _player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
+            && _mission.Player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
         {
-            eye = _player.SmoothedCamera(tickBlend);
+            eye = _mission.Player.SmoothedCamera(tickBlend);
         }
 
         // The body's own eye, before the over-the-shoulder view moves the camera off it: the
@@ -364,7 +364,7 @@ public sealed partial class GameHost
             && _mission.Cutscenes?.IsPlaying != true
             && mapScene is null
             && !_menuFlow.OverShowcase
-            && _player is not null;
+            && _mission.Player is not null;
 
         // The over-the-shoulder view, built off whatever camera the player would have had. It is
         // applied HERE, on the finished first-person eye and before anything reads the eye back,
@@ -388,9 +388,9 @@ public sealed partial class GameHost
             && _mission.Cutscenes?.IsPlaying != true
             && mapScene is null
             && !_menuFlow.OverShowcase
-            && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+            && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false };
 
-        if (thirdPersonEligible && _player is { } thirdPersonPlayer)
+        if (thirdPersonEligible && _mission.Player is { } thirdPersonPlayer)
         {
             int thirdPersonNow = _loop.TimeSource.Milliseconds;
             float thirdPersonElapsed =
@@ -425,9 +425,9 @@ public sealed partial class GameHost
             // two unrelated places.
             _thirdPerson.Reset();
             _thirdPersonMilliseconds = _loop.TimeSource.Milliseconds;
-            if (_player is not null)
+            if (_mission.Player is not null)
             {
-                _player.AimConvergenceRay = null;
+                _mission.Player.AimConvergenceRay = null;
             }
         }
 
@@ -888,12 +888,12 @@ public sealed partial class GameHost
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && !(_mission.IsPlayerDead && _deathCamera.IsActive)
-            && _player is { View: not null, IsMountedStationaryGun: false };
+            && _mission.Player is { View: not null, IsMountedStationaryGun: false };
 
         // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
         // beside the gun is gone the moment its sight takes the view -- hence the last condition.
         bool showFirstPersonHud = showPlayerHud
-            && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+            && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false };
 
         // The arms and the held weapon hang off the eye, so the moment the camera leaves it they
         // are either filling the frame or behind it. When they stand down, and when they come
@@ -914,7 +914,7 @@ public sealed partial class GameHost
         _lastInteractionPromptMilliseconds = interactionPromptNow;
         _interactionPrompt.Update(
             worldInteractionPrompt && showPlayerHud
-                ? _player?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
+                ? _mission.Player?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
                 : null,
             interactionPromptElapsed);
 
@@ -922,14 +922,14 @@ public sealed partial class GameHost
         // default field of view up to the zoomed range at the tightest magnification, so leaning
         // into the optics resolves a distant figure the wide view does not. The vanilla optics
         // stay retail-uncapped (positive infinity).
-        float binocularZoomIn = _player?.BinocularZoomInFraction(sight.TanX) ?? 0f;
+        float binocularZoomIn = _mission.Player?.BinocularZoomInFraction(sight.TanX) ?? 0f;
         float binocularDetectionRange = remasteredOptics
             ? RenderCVars.BinocularRange.Value
                 + ((RenderCVars.BinocularRangeZoomed.Value - RenderCVars.BinocularRange.Value) * binocularZoomIn)
             : float.PositiveInfinity;
         IReadOnlyList<EnemyOverlayBox> binocularTargets =
             showFirstPersonHud
-            && _player is { IsBinocularsOpen: true }
+            && _mission.Player is { IsBinocularsOpen: true }
             && _soldiers is { } binocularSoldiers
                 ? binocularSoldiers.Simulation.BinocularTargets(
                     // Use the same presented eye that rendered the world. The detector owns
@@ -1561,19 +1561,19 @@ public sealed partial class GameHost
         _gunPickupRenderer?.Draw(eye, projection);
 
         // The grenades in the air, solid geometry among the world's own.
-        if (_grenadeRenderer is not null && _player is not null)
+        if (_grenadeRenderer is not null && _mission.Player is not null)
         {
             _grenadeRenderer.Draw(
-                _player.Grenades,
+                _mission.Player.Grenades,
                 eye,
                 projection,
                 smoothPresentation ? tickBlend : 1f);
         }
-        if (_missileRenderer is not null && _player is not null)
+        if (_missileRenderer is not null && _mission.Player is not null)
         {
-            _missileRenderer.Draw(_player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
+            _missileRenderer.Draw(_mission.Player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
             _missileRenderer.Draw(_mission.VehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
-            _missileRenderer.Draw(_player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
+            _missileRenderer.Draw(_mission.Player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
         }
 
         _device.SetObjectMotion(false);
@@ -1608,7 +1608,7 @@ public sealed partial class GameHost
         // only, as a soldier's is: the muzzle flame is light, and the deferred pass would shade it
         // like scenery.
         if (thirdPersonBody
-            && _player is { } armedBody
+            && _mission.Player is { } armedBody
             && _soldiers is { } handBody
             && _heldWeapon is { IsReady: true } thirdPersonGun
             && armedBody.Weapons?.HideFirstPersonWeapon != true)
@@ -1635,9 +1635,9 @@ public sealed partial class GameHost
         EndStageIfSlow("the soldiers");
 
         // The marks rounds have left, over the world and under the first-person rig.
-        if (_marks is not null && _player is not null && RenderCVars.BulletMarks.Value)
+        if (_marks is not null && _mission.Player is not null && RenderCVars.BulletMarks.Value)
         {
-            _marks.Draw(_player.Marks, eye, projection, _world.DrawPoses);
+            _marks.Draw(_mission.Player.Marks, eye, projection, _world.DrawPoses);
         }
     }
 
@@ -2156,7 +2156,7 @@ public sealed partial class GameHost
         // The player's flashlight, outside the lamps' gate: it lights under every lighting model the
         // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
         _flashlight.Submit(
-            captured && flashlightShown && _player is not null && !_mission.IsPlayerDead,
+            captured && flashlightShown && _mission.Player is not null && !_mission.IsPlayerDead,
             _menuFlow.MenuMode && _menuFlow.PauseMenu,
             flashlightBody,
             eye,
@@ -2255,10 +2255,10 @@ public sealed partial class GameHost
         // and fogged (a dim grey square was exactly what that looked like). Here they draw
         // additively over the finished scene, emissive like the muzzle flame, testing the
         // world's depth but writing none.
-        if (_tracers is not null && _player is not null)
+        if (_tracers is not null && _mission.Player is not null)
         {
             _tracers.Draw(
-                _player.Ballistics,
+                _mission.Player.Ballistics,
                 eye,
                 projection,
                 smoothPresentation ? tickBlend : 1f);
@@ -2301,7 +2301,7 @@ public sealed partial class GameHost
             // so it keeps whatever the player last supplied rather than dropping the splashes.
             // This is only the fallback now: the trace below is what the storm actually lands on,
             // and the plane is what it falls back to where the trace has not reached yet.
-            if (_player is { } stormPlayer)
+            if (_mission.Player is { } stormPlayer)
             {
                 liveStorm.GroundHeightMetres =
                     stormPlayer.Body.Position.Z / WorldScene.UnitsPerMetre;
@@ -2386,7 +2386,7 @@ public sealed partial class GameHost
         // remastered optics are up.
         if (remasteredOptics
             && RenderCVars.BinocularOutline.Value
-            && _player is { IsBinocularsOpen: true })
+            && _mission.Player is { IsBinocularsOpen: true })
         {
             _soldiers?.DrawBinocularOutlines(eye, radiusPixels: 8f);
         }
@@ -2412,13 +2412,13 @@ public sealed partial class GameHost
         // Not while the entry shot is running: the camera is somewhere over the level, and a pair
         // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
         // moment the view is handed over, which is also the moment the player can use them.
-        bool binocularsOpen = _player is { IsBinocularsOpen: true };
+        bool binocularsOpen = _mission.Player is { IsBinocularsOpen: true };
 
         // Scoped, the Dragunov replaces the first-person picture with its scope overlay: retail's
         // 0x473040 latch branch draws snipersight.spr and never poses the rig, so the rifle and the
         // gloves are gone and only the scope picture remains. Hide the whole view model exactly as
         // the binoculars do, or the weapon mesh shows through the aperture.
-        bool sniperScoped = _player is { IsSniperScoped: true };
+        bool sniperScoped = _mission.Player is { IsSniperScoped: true };
         float? binocularRangeMetres = null;
         if (binocularsOpen && _mission.Solids is { } rangeSolids)
         {
@@ -2450,14 +2450,14 @@ public sealed partial class GameHost
         }
         // Not before the rig has a clip: see HumanView.IsPosed. At spawn that is the whole lowering
         // half of the first weapon's change, so the weapon rises into an empty frame, as in retail.
-        if (showViewModel && _player is { View: { IsPosed: true } rig } && !binocularsOpen && !sniperScoped)
+        if (showViewModel && _mission.Player is { View: { IsPosed: true } rig } && !binocularsOpen && !sniperScoped)
         {
             // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
             // than the frame.
-            if (_player.PoseChanged)
+            if (_mission.Player.PoseChanged)
             {
                 _arms?.Invalidate();
-                _player.AcknowledgePose();
+                _mission.Player.AcknowledgePose();
             }
 
             // The view model gets its OWN projection: 0x49F700 saves the current view block,
@@ -2489,11 +2489,11 @@ public sealed partial class GameHost
             // racing.
             Vector3d? rigOriginUnits = null;
             Matrix3f? rigOrientation = null;
-            BoneAttachment? weaponAttachment = _player.HeldWeapon;
-            BoneAttachment? magazineAttachment = _player.HeldWeaponSecondary;
-            BoneAttachment? movingPartAttachment = _player.HeldWeaponTertiary;
+            BoneAttachment? weaponAttachment = _mission.Player.HeldWeapon;
+            BoneAttachment? magazineAttachment = _mission.Player.HeldWeaponSecondary;
+            BoneAttachment? movingPartAttachment = _mission.Player.HeldWeaponTertiary;
             float previousPoseShare = 0f;
-            if (smoothPresentation && _player.HasViewTickPair)
+            if (smoothPresentation && _mission.Player.HasViewTickPair)
             {
                 (
                     Vector3d smoothedOrigin,
@@ -2501,7 +2501,7 @@ public sealed partial class GameHost
                     BoneAttachment? smoothedWeapon,
                     BoneAttachment? smoothedMagazine,
                     BoneAttachment? smoothedMovingPart) =
-                    _player.SmoothedRig(tickBlend);
+                    _mission.Player.SmoothedRig(tickBlend);
                 rigOriginUnits = smoothedOrigin;
                 rigOrientation = smoothedOrientation;
                 weaponAttachment = smoothedWeapon ?? weaponAttachment;
@@ -2524,10 +2524,10 @@ public sealed partial class GameHost
             // follow whatever the cycle put in hand.
             if (_loadedMissionForWeapon is { } missionForWeapon)
             {
-                FollowHeldWeapon(_player, _heldWeapon, missionForWeapon);
+                FollowHeldWeapon(_mission.Player, _heldWeapon, missionForWeapon);
             }
 
-            if (_player.Weapons?.HideFirstPersonWeapon != true
+            if (_mission.Player.Weapons?.HideFirstPersonWeapon != true
                 && weaponAttachment is { } attachment
                 && _heldWeapon is { IsReady: true })
             {
@@ -2538,8 +2538,8 @@ public sealed partial class GameHost
                     // 0x473510 is a separate GunM16A2 task: it does not pass through the
                     // ordinary Gun_Fire/GUNFLAME path. Do not show the rifle muzzle flame on
                     // an M203 launch; the launcher task owns its own launch report/effect.
-                    _player.FiredThisTick && !_player.M203LaunchedThisTick,
-                    _player.ShotSequence,
+                    _mission.Player.FiredThisTick && !_mission.Player.M203LaunchedThisTick,
+                    _mission.Player.ShotSequence,
                     WeaponDrawParts.All,
                     magazineAttachment,
                     movingPartAttachment);
@@ -2597,28 +2597,28 @@ public sealed partial class GameHost
 
         if (RemasteredHudPresentation.UsesRetailWeaponHud(
                 remasterHud,
-                _player?.IsBinocularsOpen == true,
+                _mission.Player?.IsBinocularsOpen == true,
                 remasteredOptics)
             && showFirstPersonHud
-            && _player is { Weapons: { } carried }
+            && _mission.Player is { Weapons: { } carried }
             && _hud is { IsReady: true } retailHud)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
             // never calls the parent handler.
-            if (_player.IsBinocularsOpen)
+            if (_mission.Player.IsBinocularsOpen)
             {
                 retailHud.DrawBinocularOverlay(
                     state.Batch,
                     _window.Width,
                     _window.Height,
                     binocularTargets,
-                    _player.Yaw,
+                    _mission.Player.Yaw,
                     _loop.Clock.TickCount,
                     binocularRangeMetres);
             }
-            else if (_player.IsSniperScoped)
+            else if (_mission.Player.IsSniperScoped)
             {
                 retailHud.DrawSniperScope(state.Batch, _window.Width, _window.Height);
             }
@@ -2626,7 +2626,7 @@ public sealed partial class GameHost
             {
                 CarriedWeapon? held = carried.InHand;
                 int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
-                    && _ammoTypes?.Types.FirstOrDefault(
+                    && _mission.AmmoTypes?.Types.FirstOrDefault(
                         ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
                         ? carried.Ammunition.Count(m203.AmmoId)
                         : 0;
@@ -2650,7 +2650,7 @@ public sealed partial class GameHost
         if (!remasterHud
             && showFirstPersonHud
             && _hud is { IsReady: true } retailActions
-            && _player?.ActionSprite is { } actionSprite)
+            && _mission.Player?.ActionSprite is { } actionSprite)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
@@ -2687,7 +2687,7 @@ public sealed partial class GameHost
         // original dispatch order this follows the weapon handler and precedes StatusScreen's timer.
         if (!remasterHud
             && showPlayerHud
-            && _player is { } retailPlayer
+            && _mission.Player is { } retailPlayer
             && _hud is { IsReady: true } retailStatus)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -2719,12 +2719,12 @@ public sealed partial class GameHost
             && TacticalComputer is null
             && _playerMode
             && !(_mission.IsPlayerDead && _deathCamera.IsActive)
-            && _player is { IsOnLadder: false, IsInWorldInteraction: false })
+            && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false })
         {
-            Camera3D computerEye = _player.Camera;
-            if (smoothPresentation && _player.HasViewTickPair)
+            Camera3D computerEye = _mission.Player.Camera;
+            if (smoothPresentation && _mission.Player.HasViewTickPair)
             {
-                computerEye = _player.SmoothedCamera(tickBlend);
+                computerEye = _mission.Player.SmoothedCamera(tickBlend);
             }
 
             Matrix4f computerViewModelProjection = ViewModelProjection.Create(
@@ -2749,7 +2749,7 @@ public sealed partial class GameHost
 
         if (_computerOpen
             && _mission.Objectives is { } objectiveRuntime
-            && _player is { } computerPlayer)
+            && _mission.Player is { } computerPlayer)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
@@ -2837,7 +2837,7 @@ public sealed partial class GameHost
         // so the centred bar would be the same reading twice.
         if (remasterHud
             && !worldInteractionPrompt
-            && _player?.InteractionProgress is float interactionProgress
+            && _mission.Player?.InteractionProgress is float interactionProgress
             && _remasteredHud is { IsReady: true } interactionHud)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -2854,7 +2854,7 @@ public sealed partial class GameHost
         // both HUD flavours, so the scope is the scope whatever the player's UI taste.
         if (remasterHud
             && showFirstPersonHud
-            && _player is { IsSniperScoped: true }
+            && _mission.Player is { IsSniperScoped: true }
             && _hud is { IsReady: true } scopeHud)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -2865,15 +2865,15 @@ public sealed partial class GameHost
 
         if (remasteredOptics
             && showFirstPersonHud
-            && _player is { IsBinocularsOpen: true }
-            && _player.View is { } binocularView
+            && _mission.Player is { IsBinocularsOpen: true }
+            && _mission.Player.View is { } binocularView
             && _remasteredHud is { IsReady: true } binocularHud)
         {
             _device.Set2DProjection(_window.Width, _window.Height);
             state.Batch.Begin();
             binocularHud.DrawBinocularOverlay(
                 state.Batch,
-                _player.Yaw,
+                _mission.Player.Yaw,
                 binocularView.TanX,
                 _window.Width,
                 _window.Height,
@@ -2885,8 +2885,8 @@ public sealed partial class GameHost
 
         if (remasterHud
             && showFirstPersonHud
-            && _player is { Weapons: { } modernCarried }
-            && !_player.IsBinocularsOpen
+            && _mission.Player is { Weapons: { } modernCarried }
+            && !_mission.Player.IsBinocularsOpen
             && _remasteredHud is { IsReady: true } modernHud)
         {
             CarriedWeapon? inHand = modernCarried.InHand;
@@ -2896,14 +2896,14 @@ public sealed partial class GameHost
                 state.Batch,
                 new RemasteredHudSnapshot(
                     _mission.PlayerHealth.RemainingFraction,
-                    _player.Yaw,
+                    _mission.Player.Yaw,
                     inHand?.Weapon,
                     inHand?.Gun.RoundsInClip ?? 0,
                     inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
                     modernCarried.State,
-                    _player.ActionSprite,
+                    _mission.Player.ActionSprite,
                     _mission.Objectives?.Objectives ?? [],
-                    _player.IsSniperScoped,
+                    _mission.Player.IsSniperScoped,
                     worldInteractionPrompt),
                 _window.Width,
                 _window.Height);
@@ -3098,8 +3098,8 @@ public sealed partial class GameHost
             // Whatever soldier the crosshair is on, ask its brain which detection gate is (not) passing
             // against the point the guards actually test -- the player's own eye in engine units, the same
             // point soldiers.Tick is fed.
-            Vector3d watchedEye = _playerMode && _player is not null
-                ? _player.Body.Eye
+            Vector3d watchedEye = _playerMode && _mission.Player is not null
+                ? _mission.Player.Body.Eye
                 : _camera.Position;
             if (_soldiers is not null
                 && _soldiers.Simulation.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
@@ -3108,17 +3108,17 @@ public sealed partial class GameHost
             }
 
             List<string> lines;
-            if (_playerMode && _player is not null)
+            if (_playerMode && _mission.Player is not null)
             {
-                Vector3d pu = _player.PositionUnits;
-                Vector3d pm = _player.Position;
+                Vector3d pu = _mission.Player.PositionUnits;
+                Vector3d pm = _mission.Player.Position;
                 lines =
                 [
                     "mode: WALK",
                     I($"pos units ({pu.X:F0}, {pu.Y:F0}, {pu.Z:F0})"),
                     I($"pos m     ({pm.X:F2}, {pm.Y:F2}, {pm.Z:F2})"),
-                    I($"yaw {_player.Yaw * 180f / MathF.PI:F1}  pitch {_player.Pitch * 180f / MathF.PI:F1}"),
-                    I($"grounded {_player.IsGrounded}  crouch {_player.IsCrouched}  wall {_player.TouchedWall}"),
+                    I($"yaw {_mission.Player.Yaw * 180f / MathF.PI:F1}  pitch {_mission.Player.Pitch * 180f / MathF.PI:F1}"),
+                    I($"grounded {_mission.Player.IsGrounded}  crouch {_mission.Player.IsCrouched}  wall {_mission.Player.TouchedWall}"),
                     target,
                 ];
             }

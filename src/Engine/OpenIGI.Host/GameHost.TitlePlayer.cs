@@ -73,7 +73,7 @@ public sealed partial class GameHost
         }
 
         ITitlePlayer? player = _gameplay.CreatePlayer(new TitlePlayerRequest(
-            new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, Services: _title.Services),
+            new WorldBuildRequest(loaded, levelRoot, _resources, _mission.MagicObjects, _logger, Services: _title.Services),
             new WorldBuildResult(scene, 0, 0, _ground, _mission.Spins),
             _title.Services,
             (AiDifficulty)Math.Clamp(_mission.PlayerDifficulty, 0, 2),
@@ -94,7 +94,7 @@ public sealed partial class GameHost
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
         _titlePresentation.Reset(_titleFeatures);
-        _player = null;
+        _mission.Player = null;
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
 

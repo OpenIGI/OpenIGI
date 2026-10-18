@@ -134,9 +134,6 @@ public sealed partial class GameHost : IDisposable
     // other, and only one of them names the mission that follows -- so the reader and the campaign order
     // are both the title's to supply.
     private IMissionCatalogue<MissionDescriptor> _missions = null!;
-    private MagicObjectRegistry? _magic;
-    private VehiclePhysicsRegistry? _vehiclePhysics;
-    private HumanAiConfigRegistry? _aiConfig;
     private AnimTriggerRegistry? _animationTriggers;
     private TitleSession _title = null!;
     private MaterialLibrary _materials = null!;
@@ -173,8 +170,6 @@ public sealed partial class GameHost : IDisposable
     private DeathCameraVantage.Blocked? _thirdPersonWalls;
     private ObjectCollisionIndex? _thirdPersonWallsSolids;
     private TerrainData? _thirdPersonWallsTerrain;
-
-    private Random _shotRandom = null!;
 
     /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
     private readonly IgiRandom _soundRandom = new();
@@ -237,7 +232,7 @@ public sealed partial class GameHost : IDisposable
     // Where everyone who casts in a lamp's map stands, in metres: the player and the living soldiers.
     private void LampMapPeople(List<Vector3d> people)
     {
-        if (_player is { } player)
+        if (_mission.Player is { } player)
         {
             people.Add(WorldScene.ToMetres(player.Body.Position));
         }
@@ -442,7 +437,6 @@ public sealed partial class GameHost : IDisposable
     private FreeCamera? _camera;
 
     // --- The player, the held weapon, the HUD and the soldiers ---
-    private PlayerCamera? _player;
     private IHeldWeaponPresenter? _heldWeapon;
     private IGunPickupPresenter? _gunPickupRenderer;
     private IHudPresenter? _hud;
@@ -518,9 +512,6 @@ public sealed partial class GameHost : IDisposable
     // against. Project I.G.I. answers both with one octree and this is simply that; I.G.I. 2's ground is
     // a height field its level declares and nothing can trace through yet, so the two part company.
     private IGroundHeightField? _ground;
-    private GameMaterialRegistry? _worldMaterials;
-    private AmmoTypeRegistry? _ammoTypes;
-    private WeaponTypeRegistry? _weaponTypes;
     private bool _playerMode;
 
     // --- Built once and re-registered into every title's namespace ---
@@ -1360,18 +1351,18 @@ public sealed partial class GameHost : IDisposable
     /// </remarks>
     private void ConvergeThirdPersonAim(in Camera3D drawn)
     {
-        if (_player is null)
+        if (_mission.Player is null)
         {
             return;
         }
 
         if (!_thirdPerson.IsEngaged)
         {
-            _player.AimConvergenceRay = null;
+            _mission.Player.AimConvergenceRay = null;
             return;
         }
 
-        _player.AimConvergenceRay = (
+        _mission.Player.AimConvergenceRay = (
             new Vector3d(
                 drawn.Position.X * WorldScene.UnitsPerMetre,
                 drawn.Position.Y * WorldScene.UnitsPerMetre,

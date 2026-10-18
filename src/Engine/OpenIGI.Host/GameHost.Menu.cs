@@ -68,7 +68,7 @@ public sealed partial class GameHost
 
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene
         // that has just been replaced.
-        _player = null;
+        _mission.Player = null;
         _titleFeatures = null;
         _playerMode = false;
 
@@ -142,7 +142,7 @@ public sealed partial class GameHost
         if (!BackdropLite)
         {
             ISoldierPresenter? soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
-                new SoldierPresentationRequest(_device, preview.Resources, _logger, _magic, _detailMaps));
+                new SoldierPresentationRequest(_device, preview.Resources, _logger, _mission.MagicObjects, _detailMaps));
             _menuBackdrop.ArmSoldiers(soldiers);
             soldiers?.Load(
                 preview.Mission,
@@ -273,7 +273,7 @@ public sealed partial class GameHost
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
         using var loader = new MissionPreviewLoader(
-            _gamePath, _missions, _magic, _baked.ProbeCache, cameras, _previewContext, _logger, _work);
+            _gamePath, _missions, _mission.MagicObjects, _baked.ProbeCache, cameras, _previewContext, _logger, _work);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())

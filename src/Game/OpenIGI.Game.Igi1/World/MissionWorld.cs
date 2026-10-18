@@ -111,4 +111,28 @@ public sealed class MissionWorld
 
     /// <summary>Gets or sets the guards' rounds this mission, once the brains are animated.</summary>
     public GuardRounds? GuardRounds { get; set; }
+
+    /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
+    public PlayerCamera? Player { get; set; }
+
+    /// <summary>Gets or sets the title's magic object table: what a model is, collides as and breaks into.</summary>
+    public MagicObjectRegistry? MagicObjects { get; set; }
+
+    /// <summary>Gets or sets the title's vehicle physics table.</summary>
+    public VehiclePhysicsRegistry? VehiclePhysics { get; set; }
+
+    /// <summary>Gets or sets the title's human AI table.</summary>
+    public HumanAiConfigRegistry? AiConfig { get; set; }
+
+    /// <summary>Gets or sets the title's game materials, which say what a surface sounds and marks like.</summary>
+    public GameMaterialRegistry? Materials { get; set; }
+
+    /// <summary>Gets or sets the title's ammunition table.</summary>
+    public AmmoTypeRegistry? AmmoTypes { get; set; }
+
+    /// <summary>Gets or sets the title's weapon table.</summary>
+    public WeaponTypeRegistry? WeaponTypes { get; set; }
+
+    /// <summary>Gets or sets the generator the guards' rounds draw their spread from.</summary>
+    public Random ShotRandom { get; set; } = null!;
 }

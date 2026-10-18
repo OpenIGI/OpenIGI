@@ -16,15 +16,15 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class GuardRoundHost(GameHost host) : IGuardRoundHost
     {
-        public PlayerCamera? Player => host._player;
+        public PlayerCamera? Player => host._mission.Player;
 
         public HumanHealth PlayerHealth => host._mission.PlayerHealth;
 
-        public Random ShotRandom => host._shotRandom;
+        public Random ShotRandom => host._mission.ShotRandom;
 
-        public GameMaterialRegistry? Materials => host._worldMaterials;
+        public GameMaterialRegistry? Materials => host._mission.Materials;
 
-        public AmmoTypeRegistry? AmmoTypes => host._ammoTypes;
+        public AmmoTypeRegistry? AmmoTypes => host._mission.AmmoTypes;
 
         public GameTask? VehicleRoundOwner => host._mission.VehicleRoundOwner;
 
@@ -39,7 +39,7 @@ public sealed partial class GameHost
             if (host._effects.Particles is { } bursts
                 && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
             {
-                string material = host._worldMaterials is { } names
+                string material = host._mission.Materials is { } names
                     && names.TryGet(worldHit.Material, out GameMaterial struck)
                     ? struck.Name
                     : string.Empty;

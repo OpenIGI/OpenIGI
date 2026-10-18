@@ -265,7 +265,7 @@ public sealed partial class GameHost
         state.ScreenGi = new();
 
         state.ClimbSlideArmed = false;
-        _shotRandom = new(20000101);
+        _mission.ShotRandom = new(20000101);
         state.ReportedHumanHits = 0;
         _scene = null;
         _world = null;
@@ -353,7 +353,7 @@ public sealed partial class GameHost
 
         // The walking player. F1 swaps between it and the free camera: the camera is how a level is
         // inspected, the player is how it is stood in. Both draw through the same Camera3D.
-        _player = null;
+        _mission.Player = null;
         _heldWeapon = null;
         _hud = null;
         _debugOverlay = null;
@@ -375,9 +375,9 @@ public sealed partial class GameHost
 
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).
-        _worldMaterials = null;
-        _ammoTypes = null;
-        _weaponTypes = null;
+        _mission.Materials = null;
+        _mission.AmmoTypes = null;
+        _mission.WeaponTypes = null;
         _mission.AlarmSpeakers = null;
         _mission.Destructibles = null;
         _sirenVoices.Clear();
@@ -517,7 +517,7 @@ public sealed partial class GameHost
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
             state.MissionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
             state.PreviewLoader = new MissionPreviewLoader(
-                _gamePath, _missions, _magic, _baked.ProbeCache, _menuCameras, _previewContext, _logger, _work);
+                _gamePath, _missions, _mission.MagicObjects, _baked.ProbeCache, _menuCameras, _previewContext, _logger, _work);
 
             // The design's four faces — Barlow, Barlow Condensed in two weights, JetBrains Mono — the same
             // set the launcher draws with, uploaded once and shared by every page of the shell.

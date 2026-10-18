@@ -15,7 +15,7 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class InspectedWorld(GameHost host) : IInspectedWorld
     {
-        public PlayerCamera? Player => host._player;
+        public PlayerCamera? Player => host._mission.Player;
 
         public bool PlayerMode => host._playerMode;
 

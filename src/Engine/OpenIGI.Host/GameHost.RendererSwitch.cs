@@ -100,7 +100,7 @@ public sealed partial class GameHost
             return null;
         }
 
-        if (_playerMode && _player is { } player)
+        if (_playerMode && _mission.Player is { } player)
         {
             Vector3d feet = player.Body.Position / PlayerCamera.UnitsPerMetre;
             return new RendererSwitchPose(feet, player.Body.Yaw, player.Body.Pitch, Flying: false);
@@ -153,7 +153,7 @@ public sealed partial class GameHost
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
         }
-        else if (_player is { } player && player.Place(_ground, pose.Position, pose.Yaw))
+        else if (_mission.Player is { } player && player.Place(_ground, pose.Position, pose.Yaw))
         {
             player.Body.Pitch = pose.Pitch;
             _playerMode = true;
