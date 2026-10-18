@@ -3102,9 +3102,35 @@ public sealed partial class GameHost
 
         public void FollowCorpse(Vector3d centre) => host._deathCamera.Follow(centre);
 
+        public OpenIGI.Input.InputState Input => host._window.Input;
+
+        public OpenIGI.Game.Config.PlayerProfile? InputProfile => host._configuration.Active;
+
+        public IGroundHeightField? Ground => host._ground;
+
+        public bool IsInteractionViewActive => State.InteractionCamera.IsActive;
+
+        public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls) =>
+            State.InteractionCamera.Begin(
+                feet,
+                facing,
+                walls is null
+                    ? null
+                    : (Vector3d from, Vector3d to, out Vector3d hit) =>
+                    {
+                        bool blocked = walls(from, to, out WorldRayHit wall);
+                        hit = blocked ? wall.Position : default;
+                        return blocked;
+                    });
+
+        public void FollowInteractionView(Vector3d feet) => State.InteractionCamera.Follow(feet);
+
+        public void TickInteractionView() => State.InteractionCamera.Tick();
+
+        public void ResetInteractionView() => State.InteractionCamera.Reset();
+
         public void CloseTick()
         {
-            host.TickClimbsAndInteractions(State);
             host.FollowPlayerBody(State);
             host.SettleMissionOutcome(State);
         }
@@ -3318,223 +3344,6 @@ public sealed partial class GameHost
         // The first round of a mission, reported once — the same one-shot diagnostic the world
         // draw uses. It is what says the whole chain arrived: the trigger reached the state
         // machine, the machine reached the gun, the gun's clock let a round out, and the round
-    }
-
-    /// <summary>Advances the ladder and the world interactions on the fixed tick, and the camera that frames them.</summary>
-    private void TickClimbsAndInteractions(FrameLoopState state)
-    {
-        // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
-        // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
-        // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
-        if (_mission.Player is not null && _mission.Player.IsOnLadder)
-        {
-            _mission.Player.InputProfile = _configuration.Active;
-            bool climbUp = _mission.Player.IsActionDown(_window.Input, PlayerAction.MoveUp);
-            bool climbDown = _mission.Player.IsActionDown(_window.Input, PlayerAction.MoveDown);
-            bool climbUse = _mission.Player.IsActionDown(_window.Input, PlayerAction.Activate);
-
-            // Mount and use share E. The release gate is a shell detail that prevents the mounting press
-            // from becoming state 40 on the immediately following tick.
-            if (!state.ClimbActive)
-            {
-                state.ClimbActive = true;
-                state.ClimbSlideArmed = false;
-                if (_mission.Player.LadderPhase == LadderTraversalPhase.GettingOnTop)
-                {
-                    _soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
-                }
-                else
-                {
-                    _soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
-                }
-            }
-
-            if (!climbUse)
-            {
-                state.ClimbSlideArmed = true;
-            }
-
-            bool climbSlide = climbUse && state.ClimbSlideArmed;
-            LadderStepResult decision = _mission.Player.DecideLadderStep(
-                climbUp, climbDown, climbSlide, _ground!);
-            switch (decision)
-            {
-                case LadderStepResult.SteppingUp:
-                case LadderStepResult.SteppingDown:
-                    _mission.Soldiers?.SetPlayerLadderPlaybackDirection(_mission.Player.LadderDirection);
-                    break;
-
-                case LadderStepResult.ReachedTop:
-                    _soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderTopAnimation, loops: false);
-                    break;
-
-                case LadderStepResult.Sliding:
-                    _soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderSlideAnimation, loops: true);
-                    break;
-            }
-
-            if (_mission.Player.IsOnLadder && _soldiers is not null)
-            {
-                switch (_mission.Player.LadderPhase)
-                {
-                    case LadderTraversalPhase.Climbing when _mission.Player.LadderDirection != 0:
-                        _soldiers.AdvancePlayerLadderAnimation(
-                            _mission.Player.LadderFacing,
-                            out Vector3d climbDelta,
-                            out bool rungBoundary,
-                            out _);
-                        _mission.Player.MoveLadder(climbDelta);
-                        if (rungBoundary)
-                        {
-                            _mission.Player.CompleteLadderStep();
-                            _soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
-                        }
-
-                        break;
-
-                    case LadderTraversalPhase.GettingOnTop:
-                    case LadderTraversalPhase.GettingOffTop:
-                        _soldiers.AdvancePlayerLadderAnimation(
-                            _mission.Player.LadderFacing,
-                            out Vector3d topDelta,
-                            out _,
-                            out bool topAnimationEnded);
-                        _mission.Player.MoveLadder(topDelta);
-                        if (topAnimationEnded)
-                        {
-                            _mission.Player.CompleteLadderTopTransition(_ground!);
-                            if (_mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
-                            {
-                                _soldiers.StartPlayerLadderAnimation(
-                                    PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
-                            }
-                        }
-
-                        break;
-
-                    case LadderTraversalPhase.SlidingDown:
-                        _soldiers.AdvancePlayerLadderAnimation(
-                            _mission.Player.LadderFacing,
-                            out Vector3d slideDelta,
-                            out _,
-                            out _);
-                        // State 40's entry only installs animation 169 and the sound. Its damped
-                        // velocity function first runs on the following tick.
-                        if (decision != LadderStepResult.Sliding)
-                        {
-                            _mission.Player.TickLadderSlide(slideDelta, _ground!);
-                        }
-
-                        break;
-                }
-            }
-
-            // All four states stay in third person until their actual deinitialization signal.
-            if (_mission.Player.IsOnLadder)
-            {
-                _soldiers?.PlacePlayerBodyClimbing(_mission.Player.LadderFeet, _mission.Player.LadderFacing);
-                if (!state.InteractionCamera.IsActive)
-                {
-                    WorldRayCast? cameraCast = _mission.Solids?.Caster();
-                    state.InteractionCamera.Begin(
-                        _mission.Player.LadderFeet,
-                        _mission.Player.LadderFacing,
-                        cameraCast is null
-                            ? null
-                            : (Vector3d from, Vector3d to, out Vector3d hit) =>
-                            {
-                                bool blocked = cameraCast(from, to, out WorldRayHit wall);
-                                hit = blocked ? wall.Position : default;
-                                return blocked;
-                            });
-                }
-                else
-                {
-                    state.InteractionCamera.Follow(_mission.Player.LadderFeet);
-                }
-
-                state.InteractionCamera.Tick();
-            }
-        }
-
-        if (_mission.Player is { IsInWorldInteraction: true } interacting)
-        {
-            if (!state.WorldInteractionActive)
-            {
-                state.WorldInteractionActive = true;
-                if (interacting.InteractionAnimation >= 0)
-                {
-                    _soldiers?.StartPlayerInteractionAnimation(
-                        interacting.InteractionAnimation,
-                        loops: interacting.InteractionAnimationLoops);
-                }
-            }
-
-            if (interacting.IsMountedStationaryGun)
-            {
-                // The gun's sight sits just in front of the gunner's own chest, and retail draws
-                // no body in that view (captured in mission 4: barrel, stand and scenery only).
-                _mission.Soldiers?.HidePlayerBodyClimbing();
-            }
-            else if (_soldiers is not null)
-            {
-                _soldiers.AdvancePlayerLadderAnimation(
-                    interacting.InteractionFacing,
-                    out Vector3d interactionRootDelta,
-                    out _,
-                    out _);
-                interacting.ApplyInteractionRootMotion(interactionRootDelta);
-                _soldiers.PlacePlayerBodyClimbing(
-                    interacting.InteractionFeet, interacting.InteractionFacing);
-            }
-
-            Vector3d interactionCameraFeet = _mission.Soldiers?.PlayerInteractionCameraFeet(
-                interacting.InteractionFeet) ?? interacting.InteractionFeet;
-
-            // State 33 is the one interaction that keeps a first-person camera: the gun hands
-            // the view its own sight (0x474420), so no orbit is started behind the body.
-            if (interacting.IsMountedStationaryGun)
-            {
-                state.InteractionCamera.Reset();
-            }
-            else if (!state.InteractionCamera.IsActive)
-            {
-                WorldRayCast? cameraCast = _mission.Solids?.Caster();
-                state.InteractionCamera.Begin(
-                    interactionCameraFeet,
-                    interacting.InteractionFacing,
-                    cameraCast is null
-                        ? null
-                        : (Vector3d from, Vector3d to, out Vector3d hit) =>
-                        {
-                            bool blocked = cameraCast(from, to, out WorldRayHit wall);
-                            hit = blocked ? wall.Position : default;
-                            return blocked;
-                        });
-            }
-            else
-            {
-                state.InteractionCamera.Follow(interactionCameraFeet);
-            }
-
-            if (state.InteractionCamera.IsActive)
-            {
-                state.InteractionCamera.Tick();
-            }
-        }
-
-        if ((_mission.Player is null || (!_mission.Player.IsOnLadder && !_mission.Player.IsInWorldInteraction))
-            && (state.ClimbActive || state.WorldInteractionActive || state.InteractionCamera.IsActive))
-        {
-            _mission.Soldiers?.HidePlayerBodyClimbing();
-            state.InteractionCamera.Reset();
-            state.ClimbActive = false;
-            state.WorldInteractionActive = false;
-        }
     }
 
     /// <summary>Walks the character the third-person view looks at with the player, on the same tick as their legs.</summary>

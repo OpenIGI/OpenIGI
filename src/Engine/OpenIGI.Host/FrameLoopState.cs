@@ -37,10 +37,6 @@ internal sealed class FrameLoopState
 
     public InteractionCamera InteractionCamera { get; set; } = default!;
 
-    public bool ClimbActive { get; set; }
-
-    public bool WorldInteractionActive { get; set; }
-
     public int TemporalFrame { get; set; }
 
     public string? CutsceneCaptureDirectory { get; set; }
@@ -76,8 +72,6 @@ internal sealed class FrameLoopState
     public bool ScreenGiDumped { get; set; }
 
     public ScreenGiHistory ScreenGi { get; set; } = default!;
-
-    public bool ClimbSlideArmed { get; set; }
 
     public int ReportedHumanHits { get; set; }
 

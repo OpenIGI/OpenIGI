@@ -201,8 +201,7 @@ public sealed partial class GameHost
         // own third-person rig, which SoldierRenderer loads and poses with the death fall.
         _deathCamera = new();
         state.InteractionCamera = new();
-        state.ClimbActive = false;
-        state.WorldInteractionActive = false;
+        _igi1Tick.ResetClimbs();
         state.TemporalFrame = 0;
 
         // Test-only authored-cutscene capture harness. Set OPENIGI_CUTSCENE_CAPTURE_DIR to enable;
@@ -264,7 +263,6 @@ public sealed partial class GameHost
         // What the screen-space GI keeps from one frame to the next.
         state.ScreenGi = new();
 
-        state.ClimbSlideArmed = false;
         _mission.ShotRandom = new(20000101);
         state.ReportedHumanHits = 0;
         _scene = null;

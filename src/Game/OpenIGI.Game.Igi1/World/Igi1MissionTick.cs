@@ -1,7 +1,11 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Config;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Input;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -46,7 +50,35 @@ public interface IIgi1MissionHost
     /// <param name="centre">The body's centre.</param>
     void FollowCorpse(Vector3d centre);
 
-    /// <summary>Runs what closes the tick: climbs, interactions, the body the camera follows and the mission's outcome.</summary>
+    /// <summary>Gets the keys and buttons held this tick.</summary>
+    InputState Input { get; }
+
+    /// <summary>Gets the active profile, whose bindings the player's keys are read through.</summary>
+    PlayerProfile? InputProfile { get; }
+
+    /// <summary>Gets the ground the player's feet stand on.</summary>
+    IGroundHeightField? Ground { get; }
+
+    /// <summary>Gets a value indicating whether the orbit behind a climbing or interacting body has the view.</summary>
+    bool IsInteractionViewActive { get; }
+
+    /// <summary>Hands the view to the orbit behind a climbing or interacting body.</summary>
+    /// <param name="feet">The body's feet, in world units.</param>
+    /// <param name="facing">The yaw the body faces.</param>
+    /// <param name="walls">What pulls the orbit in, or <see langword="null"/>.</param>
+    void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls);
+
+    /// <summary>Moves the orbit's pivot after the body.</summary>
+    /// <param name="feet">The body's feet, in world units.</param>
+    void FollowInteractionView(Vector3d feet);
+
+    /// <summary>Eases the orbit once on the tick.</summary>
+    void TickInteractionView();
+
+    /// <summary>Takes the view back from the orbit.</summary>
+    void ResetInteractionView();
+
+    /// <summary>Runs what closes the tick: the body the camera follows and the mission's outcome.</summary>
     void CloseTick();
 }
 
@@ -58,6 +90,20 @@ public interface IIgi1MissionHost
 /// <param name="host">What shows and plays it.</param>
 public sealed class Igi1MissionTick(MissionWorld mission, IIgi1MissionHost host)
 {
+    // Whether the player's ladder climb or world interaction has begun its body animation, and whether the
+    // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
+    private bool _climbActive;
+    private bool _climbSlideArmed;
+    private bool _worldInteractionActive;
+
+    /// <summary>Forgets a climb or an interaction in progress, as a new mission starts.</summary>
+    public void ResetClimbs()
+    {
+        _climbActive = false;
+        _climbSlideArmed = false;
+        _worldInteractionActive = false;
+    }
+
     /// <summary>Runs one pass of the loop.</summary>
     /// <param name="tick">Whether the pass is a simulation tick; a render pass only keeps the player's jump gate current.</param>
     public void Run(bool tick)
@@ -304,6 +350,205 @@ public sealed class Igi1MissionTick(MissionWorld mission, IIgi1MissionHost host)
             host.FollowCorpse(corpseCentre);
         }
 
+        TickClimbsAndInteractions();
         host.CloseTick();
+    }
+
+    /// <summary>Advances the ladder and the world interactions on the fixed tick, and the camera that frames them.</summary>
+    private void TickClimbsAndInteractions()
+    {
+        ISoldierPresenter? soldiers = host.SoldierPresenter;
+        // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
+        // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
+        // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
+        if (mission.Player is not null && mission.Player.IsOnLadder)
+        {
+            mission.Player.InputProfile = host.InputProfile;
+            bool climbUp = mission.Player.IsActionDown(host.Input, PlayerAction.MoveUp);
+            bool climbDown = mission.Player.IsActionDown(host.Input, PlayerAction.MoveDown);
+            bool climbUse = mission.Player.IsActionDown(host.Input, PlayerAction.Activate);
+
+            // Mount and use share E. The release gate is a shell detail that prevents the mounting press
+            // from becoming state 40 on the immediately following tick.
+            if (!_climbActive)
+            {
+                _climbActive = true;
+                _climbSlideArmed = false;
+                if (mission.Player.LadderPhase == LadderTraversalPhase.GettingOnTop)
+                {
+                    soldiers?.StartPlayerLadderAnimation(
+                        PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
+                }
+                else
+                {
+                    soldiers?.StartPlayerLadderAnimation(
+                        PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                }
+            }
+
+            if (!climbUse)
+            {
+                _climbSlideArmed = true;
+            }
+
+            bool climbSlide = climbUse && _climbSlideArmed;
+            LadderStepResult decision = mission.Player.DecideLadderStep(
+                climbUp, climbDown, climbSlide, host.Ground!);
+            switch (decision)
+            {
+                case LadderStepResult.SteppingUp:
+                case LadderStepResult.SteppingDown:
+                    mission.Soldiers?.SetPlayerLadderPlaybackDirection(mission.Player.LadderDirection);
+                    break;
+
+                case LadderStepResult.ReachedTop:
+                    soldiers?.StartPlayerLadderAnimation(
+                        PlayerCamera.LadderTopAnimation, loops: false);
+                    break;
+
+                case LadderStepResult.Sliding:
+                    soldiers?.StartPlayerLadderAnimation(
+                        PlayerCamera.LadderSlideAnimation, loops: true);
+                    break;
+            }
+
+            if (mission.Player.IsOnLadder && soldiers is not null)
+            {
+                switch (mission.Player.LadderPhase)
+                {
+                    case LadderTraversalPhase.Climbing when mission.Player.LadderDirection != 0:
+                        soldiers.AdvancePlayerLadderAnimation(
+                            mission.Player.LadderFacing,
+                            out Vector3d climbDelta,
+                            out bool rungBoundary,
+                            out _);
+                        mission.Player.MoveLadder(climbDelta);
+                        if (rungBoundary)
+                        {
+                            mission.Player.CompleteLadderStep();
+                            soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
+                        }
+
+                        break;
+
+                    case LadderTraversalPhase.GettingOnTop:
+                    case LadderTraversalPhase.GettingOffTop:
+                        soldiers.AdvancePlayerLadderAnimation(
+                            mission.Player.LadderFacing,
+                            out Vector3d topDelta,
+                            out _,
+                            out bool topAnimationEnded);
+                        mission.Player.MoveLadder(topDelta);
+                        if (topAnimationEnded)
+                        {
+                            mission.Player.CompleteLadderTopTransition(host.Ground!);
+                            if (mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
+                            {
+                                soldiers.StartPlayerLadderAnimation(
+                                    PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                            }
+                        }
+
+                        break;
+
+                    case LadderTraversalPhase.SlidingDown:
+                        soldiers.AdvancePlayerLadderAnimation(
+                            mission.Player.LadderFacing,
+                            out Vector3d slideDelta,
+                            out _,
+                            out _);
+                        // State 40's entry only installs animation 169 and the sound. Its damped
+                        // velocity function first runs on the following tick.
+                        if (decision != LadderStepResult.Sliding)
+                        {
+                            mission.Player.TickLadderSlide(slideDelta, host.Ground!);
+                        }
+
+                        break;
+                }
+            }
+
+            // All four states stay in third person until their actual deinitialization signal.
+            if (mission.Player.IsOnLadder)
+            {
+                soldiers?.PlacePlayerBodyClimbing(mission.Player.LadderFeet, mission.Player.LadderFacing);
+                if (!host.IsInteractionViewActive)
+                {
+                    WorldRayCast? cameraCast = mission.Solids?.Caster();
+                    host.BeginInteractionView(mission.Player.LadderFeet, mission.Player.LadderFacing, cameraCast);
+                }
+                else
+                {
+                    host.FollowInteractionView(mission.Player.LadderFeet);
+                }
+
+                host.TickInteractionView();
+            }
+        }
+
+        if (mission.Player is { IsInWorldInteraction: true } interacting)
+        {
+            if (!_worldInteractionActive)
+            {
+                _worldInteractionActive = true;
+                if (interacting.InteractionAnimation >= 0)
+                {
+                    soldiers?.StartPlayerInteractionAnimation(
+                        interacting.InteractionAnimation,
+                        loops: interacting.InteractionAnimationLoops);
+                }
+            }
+
+            if (interacting.IsMountedStationaryGun)
+            {
+                // The gun's sight sits just in front of the gunner's own chest, and retail draws
+                // no body in that view (captured in mission 4: barrel, stand and scenery only).
+                mission.Soldiers?.HidePlayerBodyClimbing();
+            }
+            else if (soldiers is not null)
+            {
+                soldiers.AdvancePlayerLadderAnimation(
+                    interacting.InteractionFacing,
+                    out Vector3d interactionRootDelta,
+                    out _,
+                    out _);
+                interacting.ApplyInteractionRootMotion(interactionRootDelta);
+                soldiers.PlacePlayerBodyClimbing(
+                    interacting.InteractionFeet, interacting.InteractionFacing);
+            }
+
+            Vector3d interactionCameraFeet = mission.Soldiers?.PlayerInteractionCameraFeet(
+                interacting.InteractionFeet) ?? interacting.InteractionFeet;
+
+            // State 33 is the one interaction that keeps a first-person camera: the gun hands
+            // the view its own sight (0x474420), so no orbit is started behind the body.
+            if (interacting.IsMountedStationaryGun)
+            {
+                host.ResetInteractionView();
+            }
+            else if (!host.IsInteractionViewActive)
+            {
+                WorldRayCast? cameraCast = mission.Solids?.Caster();
+                host.BeginInteractionView(interactionCameraFeet, interacting.InteractionFacing, cameraCast);
+            }
+            else
+            {
+                host.FollowInteractionView(interactionCameraFeet);
+            }
+
+            if (host.IsInteractionViewActive)
+            {
+                host.TickInteractionView();
+            }
+        }
+
+        if ((mission.Player is null || (!mission.Player.IsOnLadder && !mission.Player.IsInWorldInteraction))
+            && (_climbActive || _worldInteractionActive || host.IsInteractionViewActive))
+        {
+            mission.Soldiers?.HidePlayerBodyClimbing();
+            host.ResetInteractionView();
+            _climbActive = false;
+            _worldInteractionActive = false;
+        }
     }
 }
