@@ -163,6 +163,7 @@ public sealed partial class GameHost
 
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
+        _hudOverlay = null;
         _worldBuilder = binding.WorldBuilder;
         _gameplay = binding.Gameplay;
         RestoreTitleInputBindings();

@@ -41,6 +41,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Host.Services;
@@ -2554,6 +2555,40 @@ public sealed partial class GameHost
         return binocularRangeMetres;
     }
 
+    /// <summary>What the mission's HUD draws from this frame.</summary>
+    private MissionHudFrame HudFrame(
+        FrameLoopState state,
+        bool remasterHud,
+        bool remasteredOptics,
+        bool showFirstPersonHud,
+        bool showPlayerHud,
+        bool tacticalMessages,
+        bool worldInteractionPrompt,
+        IReadOnlyList<EnemyOverlayBox> binocularTargets,
+        float? binocularRangeMetres)
+    {
+        _hudOverlay ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionHudOverlay>(
+            new MissionHudPresentationRequest(_device, _igi1));
+        return new MissionHudFrame(
+            _window.Width,
+            _window.Height,
+            SafeWindowWidth,
+            SafeWindowHeight,
+            UiScale.Resolve(_options.UiScale, _window.Width, _window.Height),
+            _loop.Clock.TickCount,
+            _binocularOptics.Seconds,
+            remasterHud,
+            remasteredOptics,
+            showFirstPersonHud,
+            showPlayerHud,
+            tacticalMessages,
+            worldInteractionPrompt,
+            binocularTargets,
+            binocularRangeMetres,
+            _hud,
+            _remasteredHud);
+    }
+
     /// <summary>Resolves the frame and draws everything 2D over it: the HUD, the messages, the computer, the damage wash and the flash.</summary>
     private void DrawScreenOverlays(
         FrameLoopState state, bool captured, PostProcessSettings postProcess, bool remasterHud, bool remasteredOptics, bool showFirstPersonHud,
@@ -2595,113 +2630,10 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        if (RemasteredHudPresentation.UsesRetailWeaponHud(
-                remasterHud,
-                _mission.Player?.IsBinocularsOpen == true,
-                remasteredOptics)
-            && showFirstPersonHud
-            && _mission.Player is { Weapons: { } carried }
-            && _hud is { IsReady: true } retailHud)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
-            // never calls the parent handler.
-            if (_mission.Player.IsBinocularsOpen)
-            {
-                retailHud.DrawBinocularOverlay(
-                    state.Batch,
-                    _window.Width,
-                    _window.Height,
-                    binocularTargets,
-                    _mission.Player.Yaw,
-                    _loop.Clock.TickCount,
-                    binocularRangeMetres);
-            }
-            else if (_mission.Player.IsSniperScoped)
-            {
-                retailHud.DrawSniperScope(state.Batch, _window.Width, _window.Height);
-            }
-            else
-            {
-                CarriedWeapon? held = carried.InHand;
-                int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
-                    && _mission.AmmoTypes?.Types.FirstOrDefault(
-                        ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
-                        ? carried.Ammunition.Count(m203.AmmoId)
-                        : 0;
-                retailHud.Draw(
-                    state.Batch,
-                    held?.Weapon,
-                    held?.Gun.RoundsInClip ?? 0,
-                    held is { } primary ? primary.Gun.Reserve(carried.Ammunition) : 0,
-                    held?.Gun.State.SecondSubCounter ?? 0,
-                    m203Reserve,
-                    _window.Width,
-                    _window.Height,
-                    UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-            }
+        MissionHudFrame hudFrame = HudFrame(state, remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
+        _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
 
-            state.Batch.End();
-        }
-
-        // Retail action sprites are deliberately retained for the faithful UI. The remaster's
-        // corresponding context label is part of the single modern HUD draw below.
-        if (!remasterHud
-            && showFirstPersonHud
-            && _hud is { IsReady: true } retailActions
-            && _mission.Player?.ActionSprite is { } actionSprite)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            retailActions.DrawAction(
-                state.Batch,
-                actionSprite,
-                _window.Width,
-                _window.Height,
-                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-            state.Batch.End();
-        }
-
-        // The mission's status messages. Kept off screen while the computer is up, as the rest
-        // of the HUD is: the map is a full-screen readout of the same mission and a comms card
-        // over it would be the same information twice.
-        if (!tacticalMessages
-            && showFirstPersonHud
-            && _mission.Objectives is { } messageRuntime
-            && _hud is { IsReady: true } retailMessages)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            retailMessages.DrawStatusMessages(
-                state.Batch,
-                messageRuntime.DisplayedMessages.Where(static message => !message.IsCutscene),
-                _window.Width,
-                _window.Height,
-                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-            state.Batch.End();
-        }
-
-        // The human-owned retail display remains alive when a full-body interaction hides the
-        // hands and weapon: that is precisely when HumanPlayer's timed-use bar is needed. In the
-        // original dispatch order this follows the weapon handler and precedes StatusScreen's timer.
-        if (!remasterHud
-            && showPlayerHud
-            && _mission.Player is { } retailPlayer
-            && _hud is { IsReady: true } retailStatus)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            retailStatus.DrawPlayerStatus(
-                state.Batch,
-                _mission.PlayerHealth.RemainingFraction,
-                retailPlayer.InteractionProgress,
-                _mission.Objectives?.InterfaceTimerRemainingTicks,
-                _window.Width,
-                _window.Height,
-                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-            state.Batch.End();
-        }
+        _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
 
         if (_mission.Cutscenes?.Frame is { } cinematicFraming)
         {
@@ -2780,135 +2712,9 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
-        // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
-        // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
-        // when the arms and the HUD are gone but the last thing the screen showed is still red.
-        float flashStrength = Math.Clamp(RenderCVars.DamageFlash.Value, 0f, 1f);
-        if (_mission.DamageFlash.IsActive && flashStrength > 0f)
-        {
-            float flashWidth = _window.Width;
-            float flashHeight = _window.Height;
+        _hudOverlay?.DrawWashes(state.Batch, hudFrame);
 
-            // The strength scales the alpha only. The four corners still carry their own values
-            // and still decay on the original's schedule, so a hit from the left is still redder
-            // on the left and still fades over the same number of ticks -- it is the peak that
-            // comes down, not the cue.
-            Bgra32 Red(float alpha) =>
-                new(0, 0, 255, (byte)Math.Clamp((int)(alpha * flashStrength * 255f), 0, 255));
-
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            state.Batch.DrawQuad(
-                TextureHandle.None,
-                new Vertex2D(0f, 0f, 0f, 0f, Red(_mission.DamageFlash.TopLeft)),
-                new Vertex2D(flashWidth, 0f, 1f, 0f, Red(_mission.DamageFlash.TopRight)),
-                new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(_mission.DamageFlash.BottomRight)),
-                new Vertex2D(0f, flashHeight, 0f, 1f, Red(_mission.DamageFlash.BottomLeft)));
-            state.Batch.End();
-        }
-
-        // The native player flash handler writes a uniform white screen field. It is stronger
-        // when the eye is inside the grenade radius (2) and still fully white at the first
-        // frame of the 25 m visible effect (1); the close field simply keeps the quad opaque
-        // for longer. This pass follows the red damage wash so the retail flash wins.
-        if (_mission.FlashbangFlash.IsActive)
-        {
-            byte whiteAlpha = (byte)Math.Clamp(
-                (int)(Math.Min(_mission.FlashbangFlash.Strength, 1f) * 255f),
-                0,
-                255);
-            Bgra32 white = new(255, 255, 255, whiteAlpha);
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            state.Batch.DrawQuad(
-                TextureHandle.None,
-                new Vertex2D(0f, 0f, 0f, 0f, white),
-                new Vertex2D(_window.Width, 0f, 1f, 0f, white),
-                new Vertex2D(_window.Width, _window.Height, 1f, 1f, white),
-                new Vertex2D(0f, _window.Height, 0f, 1f, white));
-            state.Batch.End();
-        }
-
-        // HumanPlayer_DrawStatus keeps drawing states 30/31/32/35/36 in third person and adds
-        // the current/total bar at 0x413120. It must therefore sit outside the first-person arms
-        // block, which interactions deliberately suppress.
-        // The world-anchored marker carries the same progress on its own ring, at the object,
-        // so the centred bar would be the same reading twice.
-        if (remasterHud
-            && !worldInteractionPrompt
-            && _mission.Player?.InteractionProgress is float interactionProgress
-            && _remasteredHud is { IsReady: true } interactionHud)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            interactionHud.DrawInteractionProgress(
-                state.Batch, interactionProgress, _window.Width, _window.Height);
-            state.Batch.End();
-        }
-
-        // The modern HUD is intentionally the last gameplay overlay. Rendering it only after the
-        // scene resolve, close foreground device and damage wash means no hand, weapon, world mesh
-        // or post-process pass can cover it.
-        // The scope overlay under the modern HUD: the retail sprite machinery draws it in
-        // both HUD flavours, so the scope is the scope whatever the player's UI taste.
-        if (remasterHud
-            && showFirstPersonHud
-            && _mission.Player is { IsSniperScoped: true }
-            && _hud is { IsReady: true } scopeHud)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            scopeHud.DrawSniperScope(state.Batch, _window.Width, _window.Height);
-            state.Batch.End();
-        }
-
-        if (remasteredOptics
-            && showFirstPersonHud
-            && _mission.Player is { IsBinocularsOpen: true }
-            && _mission.Player.View is { } binocularView
-            && _remasteredHud is { IsReady: true } binocularHud)
-        {
-            _device.Set2DProjection(_window.Width, _window.Height);
-            state.Batch.Begin();
-            binocularHud.DrawBinocularOverlay(
-                state.Batch,
-                _mission.Player.Yaw,
-                binocularView.TanX,
-                _window.Width,
-                _window.Height,
-                binocularTargets,
-                _binocularOptics.Seconds,
-                binocularRangeMetres);
-            state.Batch.End();
-        }
-
-        if (remasterHud
-            && showFirstPersonHud
-            && _mission.Player is { Weapons: { } modernCarried }
-            && !_mission.Player.IsBinocularsOpen
-            && _remasteredHud is { IsReady: true } modernHud)
-        {
-            CarriedWeapon? inHand = modernCarried.InHand;
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            modernHud.Draw(
-                state.Batch,
-                new RemasteredHudSnapshot(
-                    _mission.PlayerHealth.RemainingFraction,
-                    _mission.Player.Yaw,
-                    inHand?.Weapon,
-                    inHand?.Gun.RoundsInClip ?? 0,
-                    inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
-                    modernCarried.State,
-                    _mission.Player.ActionSprite,
-                    _mission.Objectives?.Objectives ?? [],
-                    _mission.Player.IsSniperScoped,
-                    worldInteractionPrompt),
-                _window.Width,
-                _window.Height);
-            state.Batch.End();
-        }
+        _hudOverlay?.DrawRemasteredHud(state.Batch, hudFrame);
 
         // The marker itself, over the finished frame and over the HUD. It is a surface standing
         // in the level rather than an overlay on the picture, so it is handed the same presented
