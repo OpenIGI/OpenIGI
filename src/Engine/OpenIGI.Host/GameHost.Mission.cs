@@ -136,36 +136,6 @@ public sealed partial class GameHost
         return current;
     }
 
-    /// <summary>Gets the along-track extent retail uses to space cars in a Train consist.</summary>
-    /// <summary>Gets a wheel model's rolling radius in world units, for the wheel animation.</summary>
-    private static float CutsceneWheelRadius(LoadedMission mission, string name)
-    {
-        return mission.TryGetModel(name, out MefModel? model) && model is not null
-            ? WorldScene.WheelRadius(model)
-            : 0f;
-    }
-
-    private static float CutsceneModelLength(LoadedMission mission, string name)
-    {
-        if (!mission.TryGetModel(name, out MefModel? model) || model is null)
-        {
-            return 0f;
-        }
-
-        return WorldScene.TrainCouplingDistance(model);
-    }
-
-    /// <summary>Gets the retail origin fraction between a Train model's two coupling vertices.</summary>
-    private static float CutsceneModelPivot(LoadedMission mission, string name)
-    {
-        if (!mission.TryGetModel(name, out MefModel? model) || model is null)
-        {
-            return 0f;
-        }
-
-        return WorldScene.TrainCouplingPivotFraction(model);
-    }
-
     /// <summary>Applies what a title reads off a level once and the renderer keeps for the whole of it.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <remarks>
@@ -324,170 +294,13 @@ public sealed partial class GameHost
     /// <summary>The mission's text and the cutscene runtime, with the natives the level's cutscenes call.</summary>
     private void MissionCutscenes(MissionBuild b)
     {
-        LoadedMission loaded = b.Loaded;
-        LevelTask levelRoot = b.LevelRoot;
-
-        MenuStringTable missionStrings = new(_resources);
-
-        // Mission text is addressed by its own key, not by the menu table's LOCAL:<language>/<key> —
-        // see MissionStringResolver. Everything that resolves mission data goes through this one.
-        MissionStringResolver missionText = new(_resources, missionStrings);
-
-        // The objective runtime owns the message slots but is built after the cutscene runtime, which
-        // needs it for StatusMessageScreen_ClearMessages. The native reads the build's rather than the
-        // field so a clear during construction cannot reach the previous mission's messages.
-        _mission.Cutscenes = new CutsceneRuntime(
-            levelRoot,
-            _loop.Variables,
-            (name, arguments) =>
-            {
-                if (name == GameMusicNatives.EnableNative)
-                {
-                    if (_audioOut.Music is not null)
-                    {
-                        _audioOut.Music.Enabled = true;
-                    }
-                    return QvmValue.FromInt32(1);
-                }
-                if (name == GameMusicNatives.DisableNative)
-                {
-                    if (_audioOut.Music is not null)
-                    {
-                        _audioOut.Music.Enabled = false;
-                    }
-                    return QvmValue.FromInt32(1);
-                }
-                if (name == "MenuManager_SetEnabled")
-                {
-                    // Cutscene start/stop expressions own this native in retail.  The menu manager
-                    // lives in the shared loop task tree, so update its live script context rather
-                    // than returning success while leaving input enabled during cinematics.
-                    MenuManagerTask? manager = FindMenuManager();
-                    if (manager?.ScriptContext is { } context && arguments.Count >= 1)
-                    {
-                        context.IsEnabled = arguments.GetBoolean(0);
-                    }
-
-                    return QvmValue.FromInt32(1);
-                }
-
-                if (name == "StatusMessageScreen_ClearMessages")
-                {
-                    // 0x485AD0: clears every slot and returns true.
-                    b.Objectives?.ClearMessages();
-                    return QvmValue.FromInt32(1);
-                }
-
-                if (AreaOccupancy.TryHandleCutsceneCleanupNative(name, _mission.ClearTransientProjectiles) is { } cleanup)
-                {
-                    return cleanup;
-                }
-
-                return null;
-            },
-            _cutsceneSounds.Set,
-            modelLength: name => CutsceneModelLength(loaded, name),
-            modelPivot: name => CutsceneModelPivot(loaded, name),
-            vehiclePhysics: _mission.VehiclePhysics,
-            terrain: loaded.Terrain,
-            logger: _logger,
-            vehicleObstacleHit: (task, origin, end) =>
-            {
-                if (_mission.Solids?.TryCastIgnoring(
-                        task,
-                        origin,
-                        end,
-                        out WorldRayHit hit,
-                        out GameTask? obstacle,
-                        out string obstacleLabel) == true
-                    && obstacle is not null)
-                {
-                    return (obstacle, hit, obstacleLabel);
-                }
-
-                return null;
-            },
-            vehicleObstacleReleased: obstacle =>
-                _mission.Doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true,
-            walker: b.Walker);
-        bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
-        if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
-        {
-            string parameters = string.Join(
-                ", ",
-                levelTimer.Type.Parameters.Select(
-                    (parameter, index) => $"{parameter.Name}={levelTimer.GetValue(index) ?? "<null>"}"));
-            _logger.Information("Mission.Timer", $"LevelTimer_1608 {parameters}");
-        }
-        if (collectDiagnostics && levelRoot.Tree.FromId(161) is DeclaredTask activation)
-        {
-            string parameters = string.Join(
-                ", ",
-                activation.Type.Parameters.Select(
-                    (parameter, index) => $"{parameter.Name}={activation.GetValue(index) ?? "<null>"}"));
-            _logger.Information("Mission.Timer", $"AreaActivate_161 {parameters}");
-        }
-
-        b.MissionText = missionText;
+        b.MissionText = _igi1Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
     }
 
     /// <summary>The objective runtime, the intro skipped when cinematics are off, and the test captures' script writes.</summary>
     private void MissionObjectives(MissionBuild b)
     {
-        if (_mission.Cutscenes is null)
-        {
-            throw MissingSystem(MissionSystemNames.Cutscenes);
-        }
-
-        LevelTask levelRoot = b.LevelRoot;
-        MissionStringResolver missionText = b.MissionText!;
-
-        // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
-        // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
-        MissionObjectiveRuntime objectives;
-        _mission.Objectives = b.Objectives = objectives = new MissionObjectiveRuntime(
-            levelRoot,
-            _loop.Variables,
-            missionText.Get,
-            _mission.Cutscenes.TryInvokeNative,
-            difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
-            isKeyDown: key => _window.Input.Keyboard.IsDown(key));
-
-        // The areas and edit variables update inside the level's one walk, where the tree places them.
-        objectives.AttachTo(
-            _mission.Cutscenes.Walker,
-            _mission.Cutscenes.VehicleOccupants,
-            () => _mission.Soldiers?.LiveOccupants() ?? [],
-            _igi1Tick.AreaPlayerNow);
-
-        // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
-        // out: the level expressions still use its native surface, and mission outros may activate it
-        // later. Instead take the exact path Escape takes in retail. The objective flow observes the
-        // break key, closes the intro container, and the cutscene tick applies that transition before
-        // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
-        if (!_options.PlayCutscenes && _mission.Cutscenes.IsPlaying)
-        {
-            _mission.Cutscenes.RequestBreak();
-            _mission.Objectives.TickLevelState();
-            _mission.Cutscenes.Tick();
-            _mission.Cutscenes.FinishExpressionTick();
-            _cutsceneSounds.StopAll();
-        }
-
-        // Same native edge as Escape (LevelFlow_GetBreakCutSceneKey). Used by the
-        // agent playtest so lockstep/-frames can skip the intro without a HITL key.
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
-                "1",
-                StringComparison.Ordinal)
-            && _mission.Cutscenes.IsPlaying)
-        {
-            _mission.Cutscenes.RequestBreak();
-            _mission.Objectives.TickLevelState();
-            _mission.Cutscenes.Tick();
-            _mission.Cutscenes.FinishExpressionTick();
-            _cutsceneSounds.StopAll();
-        }
+        _igi1Setup.BuildObjectives(b.LevelRoot, b.MissionText!, _igi1Tick.AreaPlayerNow, made => b.Objectives = made);
 
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
         // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
@@ -512,11 +325,13 @@ public sealed partial class GameHost
                 _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
             }
 
-            _mission.Cutscenes.RequestBreak();
-            _mission.Cutscenes.Tick();
-            _mission.Objectives.TickLevelState();
-            _mission.Objectives.TickAfterLevelState();
-            _mission.Cutscenes.FinishExpressionTick();
+            CutsceneRuntime outroCutscenes = _mission.Cutscenes!;
+            outroCutscenes.RequestBreak();
+            outroCutscenes.Tick();
+            MissionObjectiveRuntime outroObjectives = _mission.Objectives!;
+            outroObjectives.TickLevelState();
+            outroObjectives.TickAfterLevelState();
+            outroCutscenes.FinishExpressionTick();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
     }
@@ -659,7 +474,7 @@ public sealed partial class GameHost
 
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        _mission.Cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
+        _mission.Cutscenes.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
 
         // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
         if (loaded.Terrain is { } carTerrain)
@@ -1412,7 +1227,7 @@ public sealed partial class GameHost
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
             _soldiers?.Arm(loaded, weaponRoster);
-            ArmVehicles(loaded, levelRoot, weaponRoster, candidate);
+            playerSetup.ArmVehicles(loaded, levelRoot, weaponRoster, candidate);
             EndStage("the guards' weapon models");
 
             playerSetup.Configure(candidate);
@@ -2273,140 +2088,6 @@ public sealed partial class GameHost
         return null;
     }
 
-    /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
-    /// <remarks>
-    /// <para>
-    /// A vehicle's guns are attachments of its model (<c>0x4F4800</c> spawns them through <c>0x4C4950</c>);
-    /// each <c>TASKTYPE_AISTATIONARYGUN</c> names its weapon by model (<c>0x413C00</c>). A gun mounted on
-    /// another gun -- a T80's coaxial M2HB on its turret -- sits at the sum of both attachment offsets.
-    /// </para>
-    /// <para>
-    /// Missile rows (T80, APC) launch into the vehicle missile simulation; gunshot rows (M2HB, MIL) go
-    /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
-    /// </para>
-    /// </remarks>
-    private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
-    {
-        if (_mission.Cutscenes is not { } runtime || _mission.MagicObjects is not { } magic)
-        {
-            return;
-        }
-
-        int armed = 0;
-        List<string> weaponModels = [];
-        foreach (DeclaredTask vehicle in levelRoot.Descendants().OfType<DeclaredTask>())
-        {
-            if (vehicle.Type.Name is ("Car" or "Heli")
-                && vehicle.TryGetValue("Model", out object? rawZoneModel)
-                && rawZoneModel is string zoneModel)
-            {
-                runtime.ConfigureDeathZones(
-                    vehicle,
-                    VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
-            }
-
-            // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
-            if (vehicle.Type.Name is not ("Car" or "Heli")
-                || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
-                || rawCanFire is not string canFire
-                || string.IsNullOrWhiteSpace(canFire)
-                || !vehicle.TryGetValue("Model", out object? rawModel)
-                || rawModel is not string modelName)
-            {
-                continue;
-            }
-
-            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
-                modelName,
-                ModelOf,
-                magic,
-                roster,
-                (attachment, weaponModel) => _logger.Warning(
-                    "Ai",
-                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
-            if (guns.Count == 0)
-            {
-                continue;
-            }
-
-            runtime.ConfigureVehicleGuns(vehicle, guns);
-            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
-            armed++;
-            _logger.Information(
-                "Ai",
-                $"{vehicle.Type.Name} {vehicle.Id} ({modelName}) carries "
-                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
-        }
-
-        if (armed == 0)
-        {
-            return;
-        }
-
-        // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
-        if (_scene is { } armedScene)
-        {
-            runtime.BindVehicleGunPlacements(armedScene);
-        }
-
-        _soldiers?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
-
-        // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
-        // about a metre over the feet standing and half that crouched -- not the eye.
-        runtime.VehicleCombatTarget = () => !_mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(
-                0d,
-                0d,
-                player.Body.IsCrouched ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits)
-            : null;
-        // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
-        // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.VehicleSightTarget = () => !_mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(0d, 0d, AiSoldier.DetectionMarkAboveFeet(player.Body.IsCrouched))
-            : null;
-        runtime.VehicleCombatLineOfSight = (owner, from, to) =>
-            _mission.Trace is null
-            || SoldierSimulation.HasLineOfSight(_mission.Trace, from, to, AiSoldier.SightObstructionTolerance, owner);
-        runtime.VehicleCombatShotFired = shot =>
-        {
-            if (shot.IsHitscan)
-            {
-                if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
-                {
-                    _mission.VehicleRoundOwner = shot.Owner;
-                    try
-                    {
-                        _mission.Soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
-                    }
-                    finally
-                    {
-                        _mission.VehicleRoundOwner = null;
-                    }
-                }
-
-                return;
-            }
-
-            // The report is the gun's, on the hold edges Gun_Fire plays it on (VehicleSoundPlayer); the missile
-            // task makes no launch sound of its own.
-            _mission.VehicleMissiles.Spawn(
-                shot.Origin,
-                shot.Target,
-                shot.MissileType,
-                shot.MuzzleVelocityMetresPerSecond,
-                shot.Direction,
-                shot.ModelName,
-                collisionOwner: shot.Owner,
-                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
-        };
-        _logger.Information("Ai", $"{armed} armed vehicle(s).");
-
-        MefModel? ModelOf(string name) =>
-            loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
-                ? mef
-                : null;
-    }
-
     /// <summary>Parses the test-only outro forcing list: "Var=Value,Var=Value".</summary>
     private static List<(string Name, string Value)> TestOutroWrites(string? spec)
     {
@@ -2451,6 +2132,8 @@ public sealed partial class GameHost
         public TerrainData? Terrain => host._playerTerrain;
 
         public WorldScene? Scene => host._scene;
+
+        public ISoldierPresenter? SoldierPresenter => host._soldiers;
 
         public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
         {
@@ -2522,6 +2205,61 @@ public sealed partial class GameHost
                     h = blocked ? wall.Position : default;
                     return blocked;
                 });
+    }
+
+    /// <summary>The host's side of <see cref="Igi1MissionSetup"/>: its natives, sounds, options and keyboard.</summary>
+    /// <param name="host">The host.</param>
+    private sealed class Igi1SetupHost(GameHost host) : IIgi1MissionSetupHost
+    {
+        public IOpenIgiLogger Logger => host._logger;
+
+        public GameLoop Game => host._loop;
+
+        public OpenIGI.Engine.Resources.ResourceRegistry Resources => host._resources;
+
+        public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
+
+        public bool PlayCutscenes => host._options.PlayCutscenes;
+
+        public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
+        {
+        if (name == GameMusicNatives.EnableNative)
+        {
+            if (host._audioOut.Music is not null)
+            {
+                host._audioOut.Music.Enabled = true;
+            }
+            return QvmValue.FromInt32(1);
+        }
+        if (name == GameMusicNatives.DisableNative)
+        {
+            if (host._audioOut.Music is not null)
+            {
+                host._audioOut.Music.Enabled = false;
+            }
+            return QvmValue.FromInt32(1);
+        }
+        if (name == "MenuManager_SetEnabled")
+        {
+            // Cutscene start/stop expressions own this native in retail.  The menu manager
+            // lives in the shared loop task tree, so update its live script context rather
+            // than returning success while leaving input enabled during cinematics.
+            MenuManagerTask? manager = host.FindMenuManager();
+            if (manager?.ScriptContext is { } context && arguments.Count >= 1)
+            {
+                context.IsEnabled = arguments.GetBoolean(0);
+            }
+
+            return QvmValue.FromInt32(1);
+        }
+            return null;
+        }
+
+        public void CutsceneSound(CutsceneSoundEvent sound) => host._cutsceneSounds.Set(sound);
+
+        public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
+
+        public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
     }
 
     /// <summary>The host's side of <see cref="Igi1MissionTick"/>: the picture, the sound and the log of a tick.</summary>

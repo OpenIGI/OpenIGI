@@ -215,6 +215,7 @@ public sealed partial class GameHost : IDisposable
     private readonly Igi1MissionTick _igi1Tick;
     private readonly Igi1PlayerHost _igi1PlayerHost;
     private readonly Igi1PlayerHarm _igi1Harm;
+    private readonly Igi1MissionSetup _igi1Setup;
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -589,6 +590,7 @@ public sealed partial class GameHost : IDisposable
         _igi1Tick = new Igi1MissionTick(_mission, _igi1TickHost);
         _igi1PlayerHost = new Igi1PlayerHost(this);
         _igi1Harm = new Igi1PlayerHarm(_mission, new Igi1HarmHost(this));
+        _igi1Setup = new Igi1MissionSetup(_mission, new Igi1SetupHost(this));
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,
