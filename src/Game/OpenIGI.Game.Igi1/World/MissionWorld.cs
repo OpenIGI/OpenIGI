@@ -203,4 +203,35 @@ public sealed class MissionWorld
 
     /// <summary>Gets or sets the red wash a hit on the player raises, which the HUD draws.</summary>
     public HumanDamageFlash DamageFlash { get; set; } = null!;
+
+    /// <summary>Drops the level's runtimes as the mission is left: the objectives, the cutscenes, the walk and the cameras.</summary>
+    public void ReleaseRuntimes()
+    {
+        Objectives?.Release();
+        Objectives = null;
+        Cutscenes = null;
+        SoldiersInWalk = false;
+        PlayerInWalk = false;
+        SecurityCameras = null;
+    }
+
+    /// <summary>
+    /// Drops what the level put in the world as the mission is left: the soldiers, the player, the collision and the
+    /// registries, and the rockets the vehicles fired, which must not keep flying into the next run.
+    /// </summary>
+    public void ReleaseWorld()
+    {
+        Soldiers = null;
+        Player = null;
+        EffectWalls = null;
+        Solids = null;
+        Destructibles = null;
+        Materials = null;
+        Doors = null;
+        Elevators = null;
+        Interactions = null;
+        GunPickups = null;
+        GenericPickups = null;
+        VehicleMissiles.Clear();
+    }
 }

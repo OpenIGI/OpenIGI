@@ -1523,12 +1523,7 @@ public sealed partial class GameHost
         _messages?.Dispose();
         _messages = null;
         _computerHighlights = null;
-        _mission.Objectives?.Release();
-        _mission.Objectives = null;
-        _mission.Cutscenes = null;
-        _mission.SoldiersInWalk = false;
-        _mission.PlayerInWalk = false;
-        _mission.SecurityCameras = null;
+        _mission.ReleaseRuntimes();
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         _cutsceneSounds.StopAll();
@@ -1590,7 +1585,6 @@ public sealed partial class GameHost
         _terrain = null;
         _world = null;
         _soldiers = null;
-        _mission.Soldiers = null;
         _heldWeapon = null;
         _gunPickupRenderer = null;
         _hud = null;
@@ -1602,27 +1596,16 @@ public sealed partial class GameHost
         _grenadeRenderer = null;
         _missileRenderer = null;
         _arms = null;
-        _mission.Player = null;
         _titleFeatures = null;
         _titleArms = null;
         _playerMode = false;
         _scene = null;
         _playerTerrain = null;
         _ground = null;
-        _mission.EffectWalls = null;
-        _mission.Solids = null;
-        _mission.Destructibles = null;
-        _mission.Materials = null;
-        _mission.Doors = null;
-        _mission.Elevators = null;
-        _mission.Interactions = null;
-        _mission.GunPickups = null;
-        _mission.GenericPickups = null;
+        _mission.ReleaseWorld();
         _loadedMissionForWeapon = null;
 
-        // Rockets a vehicle fired in the run being left must not keep flying into the next one, nor its engines
-        // and guns keep sounding.
-        _mission.VehicleMissiles.Clear();
+        // A vehicle's engines and guns must not keep sounding into the next run.
         _vehicleSounds?.StopAll();
         _vehicleSounds = null;
 
