@@ -3,7 +3,10 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Menus;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -43,6 +46,10 @@ public interface IIgi1MissionSetupHost
 
     /// <summary>Gets where the level's doors, lifts and soldiers send their sounds, and their blows on the player.</summary>
     Igi1SoundSinks Sounds { get; }
+
+    /// <summary>Records that a stage of the load has finished, for the load's timings.</summary>
+    /// <param name="what">What finished.</param>
+    void EndStage(string what);
 
     /// <summary>Stops every cutscene sound.</summary>
     void StopCutsceneSounds();
@@ -409,5 +416,85 @@ public sealed class Igi1MissionSetup(MissionWorld mission, IIgi1MissionSetupHost
             feet.Z / WorldScene.UnitsPerMetre);
         Vector3d closest = Vector3d.ClosestOnSegment(from, to, point);
         return Vector3d.Distance(closest, point) <= 0.5;
+    }
+
+    /// <summary>Builds the security cameras, their sight, and the rotating objects.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="scene">The level's built scene, whose placements the cameras and rotating objects turn.</param>
+    /// <param name="solids">The collision index over the placed objects.</param>
+    /// <param name="terrain">The terrain the sight also tests, or <see langword="null"/>.</param>
+    /// <returns>The trace the cameras see through, which the soldiers see through too.</returns>
+    public WorldTraceCast BuildCameras(LevelTask levelRoot, WorldScene scene, ObjectCollisionIndex solids, TerrainData? terrain)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(solids);
+
+        // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
+        // objects, not navigation actors, so construct them independently of whether this mission
+        // happens to ship any AI graphs.
+        WorldTraceCast worldTrace = terrain is { } ground
+            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
+            : solids.Tracer();
+        mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, host.Game.Variables, worldTrace);
+        mission.SecurityCameras.BindScene(scene.Placements);
+        host.Logger.Information(
+            "Ai",
+            $"{mission.SecurityCameras.Cameras.Count} security camera(s), "
+                + $"{mission.SecurityCameras.ControlCount} camera control(s) placed.");
+
+        // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
+        // what turns them: the walk gives a placement, this gives it an angle per tick.
+        mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, host.Game.Variables, mission.MagicObjects);
+        return worldTrace;
+    }
+
+    /// <summary>Animates the soldiers' brains, and builds the alarm speakers and the guards' rounds.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="scene">The level's built scene, whose placements the speakers sound from.</param>
+    /// <param name="worldTrace">What the soldiers' sight and rounds trace: the placed objects and the terrain.</param>
+    /// <param name="graphs">The level's nav graphs, by their task's id.</param>
+    /// <param name="difficulty">The difficulty every guard reads its combat row at.</param>
+    /// <param name="rounds">What a guard's round asks of whatever shows and plays it.</param>
+    public void AnimateSoldiers(
+        LevelTask levelRoot,
+        WorldScene scene,
+        WorldTraceCast worldTrace,
+        Dictionary<int, GraphFile> graphs,
+        AiDifficulty difficulty,
+        IGuardRoundHost rounds)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(worldTrace);
+        ArgumentNullException.ThrowIfNull(graphs);
+        ArgumentNullException.ThrowIfNull(rounds);
+        SoldierSimulation soldiers = mission.Soldiers
+            ?? throw new InvalidOperationException("The soldiers are made before their brains are animated.");
+
+        // The sight and bullet rays test placed objects AND the terrain, as the original's
+        // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
+        // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
+        // hills.
+        // The level's doors, before the brains: a walker asks the registry for the nearest door
+        // on a door hop, and an open door is switched out of the collision index so the
+        // doorway is walkable. Both have to exist before Animate hands each brain its query.
+        soldiers.Animate(
+            graphs, worldTrace, host.Resources, host.Game.Natives, levelRoot, mission.AiConfig, difficulty,
+            host.Game.Variables);
+        host.EndStage("animating the soldiers' brains");
+
+        // The level's alarm speakers, for the sirens: each follows its own expression over
+        // the same live variables the controls export through.
+        mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
+            levelRoot,
+            host.Game.Variables,
+            () => soldiers.AnyAlarmOn);
+        mission.AlarmSpeakers.BindScene(scene.Placements);
+        host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
+
+        // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
+        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, rounds, host.Logger);
+        soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
     }
 }

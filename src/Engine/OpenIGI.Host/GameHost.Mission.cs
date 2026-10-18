@@ -610,22 +610,13 @@ public sealed partial class GameHost
     /// <summary>The security cameras, their sight, and the rotating objects.</summary>
     private void MissionCameras(MissionBuild b)
     {
-        LevelTask levelRoot = b.LevelRoot;
         WorldScene scene = b.Scene!;
-        ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
 
-        // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
-        // objects, not navigation actors, so construct them independently of whether this mission
-        // happens to ship any AI graphs.
-        WorldTraceCast worldTrace = _playerTerrain is { } ground
-            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
-            : solids.Tracer();
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         _cutsceneSounds.StopAll();
-        _mission.SecurityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
-        _mission.SecurityCameras.BindScene(scene.Placements);
+        b.WorldTrace = _igi1Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
         world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
         _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
@@ -634,17 +625,8 @@ public sealed partial class GameHost
             _cameraStatusLights.Dispose();
             _cameraStatusLights = null;
         }
-        _logger.Information(
-            "Ai",
-            $"{_mission.SecurityCameras.Cameras.Count} security camera(s), "
-                + $"{_mission.SecurityCameras.ControlCount} camera control(s) placed.");
 
-        // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
-        // what turns them: the walk gives a placement, this gives it an angle per tick.
-        _mission.RotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _mission.MagicObjects);
         world.RotatingObjects = _mission.RotatingObjects;
-
-        b.WorldTrace = worldTrace;
     }
 
     /// <summary>The nav graphs and the soldiers' brains, with what their rounds, blasts and alarms do.</summary>
@@ -878,11 +860,6 @@ public sealed partial class GameHost
             return;
         }
 
-        LoadedMission loaded = b.Loaded;
-        LevelTask levelRoot = b.LevelRoot;
-        WorldScene scene = b.Scene!;
-        IWorldPresenter world = b.World!;
-        WorldTraceCast worldTrace = b.WorldTrace!;
         Dictionary<int, GraphFile> graphs = b.Graphs ?? throw MissingSystem(MissionSystemNames.NavGraphs);
 
         // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
@@ -898,33 +875,10 @@ public sealed partial class GameHost
                     ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
                     : "from -difficulty override."));
 
-        // The sight and bullet rays test placed objects AND the terrain, as the original's
-        // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
-        // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
-        // hills.
-        // The level's doors, before the brains: a walker asks the registry for the nearest door
-        // on a door hop, and an open door is switched out of the collision index so the
-        // doorway is walkable. Both have to exist before Animate hands each brain its query.
-        _soldiers.Simulation.Animate(
-            graphs, worldTrace, _resources, _loop.Natives, levelRoot, _mission.AiConfig, effectiveDifficulty,
-            _loop.Variables);
-        EndStage("animating the soldiers' brains");
-
-        // The level's alarm speakers, for the sirens: each follows its own expression over
-        // the same live variables the controls export through.
         _sirenVoices.Clear();
         _reportedSirenFailures.Clear();
-        _mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
-            levelRoot,
-            _loop.Variables,
-            () => _soldiers.Simulation.AnyAlarmOn);
-        _mission.AlarmSpeakers.BindScene(scene.Placements);
-        world.AlarmSpeakers = _mission.AlarmSpeakers;
-        _logger.Information("Ai", $"{_mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
-
-        // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
-        _mission.GuardRounds = new GuardRounds(_soldiers.Simulation, worldTrace, new GuardRoundHost(this), _logger);
-        _soldiers.Simulation.SetRoundHandler(_mission.GuardRounds.Resolve);
+        _igi1Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, new GuardRoundHost(this));
+        b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
 
     /// <summary>The difficulty every guard reads its combat row at.</summary>
@@ -2152,6 +2106,8 @@ public sealed partial class GameHost
         public void CutsceneSound(CutsceneSoundEvent sound) => host._cutsceneSounds.Set(sound);
 
         public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
+
+        public void EndStage(string what) => host.EndStage(what);
 
         public Igi1SoundSinks Sounds { get; } = new(
             host.PlayDoorSound,
