@@ -1053,40 +1053,12 @@ public sealed partial class GameHost
             if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
             {
                 _logger.Information("Player", $"Carrying {loadout}.");
-                _heldWeapon = CarryLoadout(candidate, loadout, loaded, weaponRoster, ammoTable);
+                _heldWeapon = CarryLoadout(playerSetup, candidate, loadout, loaded, weaponRoster, ammoTable);
 
                 // The player's rounds are offered to the soldiers, which own their own health.
                 if (_soldiers is { } guards)
                 {
-                    candidate.Humans = guards.Shooter();
-                    candidate.HumanProbes = guards.Simulation.Probe();
-                    HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();
-                    candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
-                    {
-                        bool found = soldierProximity(center, radiusUnits, out target);
-                        if (!_mission.PlayerHealth.IsDead)
-                        {
-                            double distance = Vector3d.Distance(center, candidate.Body.Position);
-                            if (distance <= radiusUnits && (!found || distance < target.Distance))
-                            {
-                                target = new HumanProximityTarget(candidate.Body.Position, distance);
-                                found = true;
-                            }
-                        }
-
-                        return found;
-                    };
-                    candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(impact, candidate.Body.Position);
-                    candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
-                        noise, candidate.Body.Position, candidate.Body.Position);
-
-                    // A glancing round whizzes where it turned, on the ricochet sound's own limit --
-                    // 0x47BD7B sounds it there directly rather than through the material's window.
-                    candidate.Deflected = PlayRicochetSound;
-
-                    // One grenade pool for both throwers: the player's own and every guard's lob fly,
-                    // bounce and detonate through the same simulation and the same drain.
-                    guards.Simulation.SetGrenades(candidate.Grenades);
+                    playerSetup.ConnectSoldiers(candidate, guards, PlayRicochetSound);
                 }
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
@@ -1677,44 +1649,16 @@ public sealed partial class GameHost
     // one that is carried. That retires the divergence this function used to carry -- see
     // the original. The renderer's model follows whatever ends up in hand.
     private IHeldWeaponPresenter? CarryLoadout(
+        Igi1PlayerSetup setup,
         PlayerCamera candidate,
         PlayerLoadout loadout,
         LoadedMission loadedMission,
         WeaponTypeRegistry roster,
         AmmoTypeRegistry ammunition)
     {
-        if (candidate.View is null || loadout.Weapons.Count == 0)
+        if (!setup.Carry(candidate, loadout, roster, ammunition))
         {
             return null;
-        }
-
-        foreach (LoadoutWeapon declared in loadout.Weapons)
-        {
-            if (!roster.TryGetByScriptId(declared.WeaponId, out WeaponType weapon))
-            {
-                _logger.Warning("Weapon", $"{declared.WeaponId} is not in the roster; it is not carried.");
-                continue;
-            }
-
-            // A weapon finds its ammunition by naming a Calibre ID, and -1 -- the knife's -- names
-            // none at all, which is exactly why a knife never runs out.
-            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-            candidate.Carry(weapon, hasAmmo ? ammo : null);
-        }
-
-        foreach (LoadoutAmmo declared in loadout.Ammunition)
-        {
-            AmmoType? pool = ammunition.Types.FirstOrDefault(a =>
-                string.Equals(a.ScriptId, declared.AmmoId, StringComparison.Ordinal));
-
-            if (pool is not null)
-            {
-                candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
-                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
-                {
-                    candidate.Weapons?.SetM203Ammunition(pool);
-                }
-            }
         }
 
         IHeldWeaponPresenter? presenter = _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest());

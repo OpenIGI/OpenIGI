@@ -492,4 +492,100 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, IIgi1PlayerSetupHost h
                 ? mef
                 : null;
     }
+
+    /// <summary>Hands the player everything the mission declares, with the ammunition each weapon draws from.</summary>
+    /// <param name="candidate">The player's rig.</param>
+    /// <param name="loadout">What the level's <c>HumanPlayer</c> declares.</param>
+    /// <param name="roster">The weapon table.</param>
+    /// <param name="ammunition">The ammunition table.</param>
+    /// <returns>Whether the player carries anything, and so needs a hand to hold it in.</returns>
+    /// <remarks>
+    /// Which weapon ends up in hand is not decided here: the weapon cycle's index starts at -1, and the first tick lands on
+    /// entry 0 of <c>DefineHumanPlayerWeaponCycle</c> and steps on until it finds one that is carried
+    ///.
+    /// </remarks>
+    public bool Carry(PlayerCamera candidate, PlayerLoadout loadout, WeaponTypeRegistry roster, AmmoTypeRegistry ammunition)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(loadout);
+        ArgumentNullException.ThrowIfNull(roster);
+        ArgumentNullException.ThrowIfNull(ammunition);
+
+        if (candidate.View is null || loadout.Weapons.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (LoadoutWeapon declared in loadout.Weapons)
+        {
+            if (!roster.TryGetByScriptId(declared.WeaponId, out WeaponType weapon))
+            {
+                host.Logger.Warning("Weapon", $"{declared.WeaponId} is not in the roster; it is not carried.");
+                continue;
+            }
+
+            // A weapon finds its ammunition by naming a Calibre ID, and -1 -- the knife's -- names
+            // none at all, which is exactly why a knife never runs out.
+            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
+            candidate.Carry(weapon, hasAmmo ? ammo : null);
+        }
+
+        foreach (LoadoutAmmo declared in loadout.Ammunition)
+        {
+            AmmoType? pool = ammunition.Types.FirstOrDefault(a =>
+                string.Equals(a.ScriptId, declared.AmmoId, StringComparison.Ordinal));
+
+            if (pool is not null)
+            {
+                candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
+                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
+                {
+                    candidate.Weapons?.SetM203Ammunition(pool);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Offers the player's rounds, blasts, noise and grenades to the soldiers, which own their own health.</summary>
+    /// <param name="candidate">The player's rig.</param>
+    /// <param name="guards">The soldiers as they are drawn, whose drawn poses the player's rounds strike.</param>
+    /// <param name="deflected">Where a glancing round whizzes.</param>
+    public void ConnectSoldiers(PlayerCamera candidate, ISoldierPresenter guards, Action<Vector3d> deflected)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(guards);
+        ArgumentNullException.ThrowIfNull(deflected);
+
+        candidate.Humans = guards.Shooter();
+        candidate.HumanProbes = guards.Simulation.Probe();
+        HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();
+        candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
+        {
+            bool found = soldierProximity(center, radiusUnits, out target);
+            if (!mission.PlayerHealth.IsDead)
+            {
+                double distance = Vector3d.Distance(center, candidate.Body.Position);
+                if (distance <= radiusUnits && (!found || distance < target.Distance))
+                {
+                    target = new HumanProximityTarget(candidate.Body.Position, distance);
+                    found = true;
+                }
+            }
+
+            return found;
+        };
+        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(impact, candidate.Body.Position);
+        candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
+            noise, candidate.Body.Position, candidate.Body.Position);
+
+        // A glancing round whizzes where it turned, on the ricochet sound's own limit --
+        // 0x47BD7B sounds it there directly rather than through the material's window.
+        candidate.Deflected = deflected;
+
+        // One grenade pool for both throwers: the player's own and every guard's lob fly,
+        // bounce and detonate through the same simulation and the same drain.
+        guards.Simulation.SetGrenades(candidate.Grenades);
+    }
 }
