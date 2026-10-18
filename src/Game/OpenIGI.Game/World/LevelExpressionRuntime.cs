@@ -6,13 +6,14 @@ namespace OpenIGI.Game.World;
 
 /// <summary>Parses and evaluates level-task conditions against their live exported variables.</summary>
 /// <remarks>
-/// Each slot is a <see cref="LevelExpression"/> in the <see cref="LevelExpressionDialect.AsWritten"/> dialect, cached by
-/// its text and its owner: an authored <c>this.field</c> name resolves against the owner the expression was made for, so
-/// a cached or reentrant evaluation cannot answer for another evaluation's <c>this</c> task.
+/// Each slot is a <see cref="LevelExpression"/> through Project I.G.I.'s compile (<see cref="LevelExpressionDialect.Igi1"/>),
+/// cached by its text and its owner: an authored <c>this.field</c> name is compiled to the owner the expression was made
+/// for, so a cached or reentrant evaluation cannot answer for another evaluation's <c>this</c> task, and the words naming
+/// tasks are looked up in the owner's tree.
 /// </remarks>
 public sealed class LevelExpressionRuntime
 {
-    private readonly Dictionary<(string Source, string? Owner), LevelExpression> _cache = [];
+    private readonly Dictionary<(string Source, GameTask? Owner), LevelExpression> _cache = [];
     private readonly Context _context;
 
     /// <summary>Creates an evaluator over a mission's script variables.</summary>
@@ -88,13 +89,20 @@ public sealed class LevelExpressionRuntime
     /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
     public int Execute(string? source, GameTask? owner = null) => EvaluateInt32(source, 0, owner);
 
+    /// <summary>Compiles one of a task's slots as Project I.G.I. does.</summary>
+    /// <param name="source">The slot's text.</param>
+    /// <param name="owner">The task it belongs to, whose name <c>this.</c> stands for and whose tree holds the tasks its
+    /// words name; <see langword="null"/> for none, which takes every named task as present.</param>
+    /// <returns>The expression.</returns>
+    public static LevelExpression Create(string? source, GameTask? owner) =>
+        new(source, owner?.Name, Constant, LevelExpressionDialect.Igi1, owner is { HasTree: true } ? owner.Tree : null);
+
     private LevelExpression Parse(string source, GameTask? owner)
     {
-        string? ownerName = owner?.Name;
-        if (!_cache.TryGetValue((source, ownerName), out LevelExpression? cached))
+        if (!_cache.TryGetValue((source, owner), out LevelExpression? cached))
         {
-            cached = new LevelExpression(source, ownerName, Constant, LevelExpressionDialect.AsWritten);
-            _cache[(source, ownerName)] = cached;
+            cached = Create(source, owner);
+            _cache[(source, owner)] = cached;
         }
 
         return cached;
@@ -111,7 +119,7 @@ public sealed class LevelExpressionRuntime
         _ => null,
     };
 
-    // The mission's variables and natives. The expression itself answers this. and .isExists.
+    // The mission's variables and natives. The compile has already answered this. and .isExists.
     private sealed class Context(
         ScriptVarRegistry variables,
         Func<string, ScriptArguments, QvmValue?>? invoke) : IScriptExpressionContext

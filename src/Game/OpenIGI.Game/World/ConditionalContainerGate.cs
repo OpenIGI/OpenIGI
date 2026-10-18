@@ -30,7 +30,7 @@ public sealed class ConditionalContainerGate
     private readonly IOpenIgiLogger _logger;
 
     // Each condition is compiled once per owner: this. names the container the condition belongs to.
-    private readonly Dictionary<(string Condition, string Owner), LevelExpression> _expressions = [];
+    private readonly Dictionary<(string Condition, ConditionalContainerTask Owner), LevelExpression> _expressions = [];
 
     // Diagnostic (headless verification only): IGI_DIAG_FORCE_CC=3902 or IGI_DIAG_FORCE_CC=3902:Expr forces
     // those container ids open regardless of their authored condition -- optionally until the given
@@ -163,11 +163,10 @@ public sealed class ConditionalContainerGate
     /// <summary>Compiles (once, cached) and evaluates one condition expression against the level variables.</summary>
     private bool Evaluate(ConditionalContainerTask container, string condition)
     {
-        if (!_expressions.TryGetValue((condition, container.Name), out LevelExpression? expression))
+        if (!_expressions.TryGetValue((condition, container), out LevelExpression? expression))
         {
-            expression = new LevelExpression(
-                condition, container.Name, LevelExpressionRuntime.Constant, LevelExpressionDialect.AsWritten);
-            _expressions[(condition, container.Name)] = expression;
+            expression = LevelExpressionRuntime.Create(condition, container);
+            _expressions[(condition, container)] = expression;
             if (expression.IsEmpty)
             {
                 _logger.Warning(
@@ -202,7 +201,7 @@ public sealed class ConditionalContainerGate
 
     // The level's exported script variables. The conditions read task fields (Name.field) and never call natives, so
     // an invoke answers nothing; an unknown name reads zero -- the value an unmodelled progress flag holds at the
-    // start. The expression answers this. and .isExists itself.
+    // start. The compile has already answered this. and .isExists.
     private sealed class VariablesContext(ScriptVarRegistry variables) : IScriptExpressionContext
     {
         public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(name, out value);

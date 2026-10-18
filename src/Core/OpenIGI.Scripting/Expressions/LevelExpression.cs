@@ -3,27 +3,26 @@ using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Scripting.Expressions;
 
-/// <summary>How a title's retail engine turns a level task's script text into the expression it parses.</summary>
+/// <summary>Whose compile a level expression goes through: the retail engine's, a word at a time, before the parse.</summary>
+/// <remarks>
+/// Both engines drop whitespace between words, give <c>this.</c> the owner's name and make any word holding
+/// <c>.isExists</c> a <c>1</c>. They part on three things, listed on each value.
+/// </remarks>
 public enum LevelExpressionDialect
 {
     /// <summary>
-    /// Parsed as written; <c>this.</c> and <c>.isExists</c> are answered as each name is looked up. How the port has
-    /// always read Project I.G.I.'s task slots.
+    /// Project I.G.I.'s compile (<c>0x4F1400</c>). A word whose trailing id names no task in the
+    /// <see cref="ILevelTaskTable"/> becomes <c>0</c> (so <c>.isExists</c> asks a real question); a quoted string loses
+    /// its quotes and has its escapes read (<c>sub_517260</c>); <c>//</c> means nothing.
     /// </summary>
-    /// <remarks>
-    /// Project I.G.I. has a text preprocessor too (<c>0x4F1400</c> writes the owner's name over <c>this</c>, and
-    /// <c>0x4F1574</c> puts <c>1</c> in place of any token holding <c>.isExists</c>), so for the shipped levels the two
-    /// readings agree. Whether its preprocessor is I.G.I. 2's word for word -- whitespace, comments and all -- has not
-    /// been read, and until it has this dialect keeps the port's behaviour.
-    /// </remarks>
-    AsWritten,
+    Igi1,
 
     /// <summary>
-    /// Rewritten a word at a time first, as I.G.I. 2's <c>Level_CompileLevelExpression</c> (<c>igi2 0x545440</c>) does:
-    /// whitespace dropped, <c>this.</c> given the owner's name, a word naming <c>.isExists</c> made <c>1</c>, and
-    /// <c>//</c> between words cutting the line. See <see cref="LevelExpression.Compile"/>.
+    /// I.G.I. 2's <c>Level_CompileLevelExpression</c> (<c>igi2 0x545440</c>). A word naming a missing task is kept as
+    /// written; a quoted string keeps its quotes and escapes (<c>String_GetWordEx</c> with its quote flag clear); <c>//</c>
+    /// between words cuts the line.
     /// </summary>
-    Rewritten,
+    Igi2,
 }
 
 /// <summary>Script text a level task carries in one of its slots, compiled once and evaluated as often as the task asks.</summary>
@@ -34,38 +33,45 @@ public enum LevelExpressionDialect
 /// they want a flag. What differs between them is the compile, which is the <see cref="LevelExpressionDialect"/>.
 /// </para>
 /// <para>
+/// Given a task table, the compile keeps a reference to each task its words name (up to 16, the slots the retail structure
+/// holds), and before each evaluation checks them: once any has died the text is compiled again (<c>sub_4F16E0</c> and
+/// <c>sub_4F1740</c>; I.G.I. 2's <c>Level_RunLevelExpression</c> and <c>Level_ValidateLevelExpression</c>). In Project
+/// I.G.I. that turns the dead task's words into <c>0</c>.
+/// </para>
+/// <para>
 /// An expression that is empty, or that does not parse, is never run (<see cref="IsEmpty"/>).
 /// </para>
 /// </remarks>
 public sealed class LevelExpression
 {
-    private readonly ScriptExpression? _tree;
+    private const int MaxReferences = 16;
+
+    private readonly Func<string, int?> _constants;
+    private readonly ILevelTaskTable? _tasks;
+    private readonly List<object> _references = [];
+    private ScriptExpression? _tree;
 
     /// <summary>Initializes a new instance of the <see cref="LevelExpression"/> class.</summary>
     /// <param name="source">The slot's text, or <see langword="null"/> for none.</param>
     /// <param name="owner">The owning task's unique name, which <c>this.</c> stands for; <see langword="null"/> for none.</param>
     /// <param name="constants">The integer constants the parse folds.</param>
-    /// <param name="dialect">How the title's engine compiles the text.</param>
-    public LevelExpression(string? source, string? owner, Func<string, int?> constants, LevelExpressionDialect dialect)
+    /// <param name="dialect">Whose compile the text goes through.</param>
+    /// <param name="tasks">The level's tasks; <see langword="null"/> takes every task a word names as present.</param>
+    public LevelExpression(
+        string? source,
+        string? owner,
+        Func<string, int?> constants,
+        LevelExpressionDialect dialect,
+        ILevelTaskTable? tasks = null)
     {
         ArgumentNullException.ThrowIfNull(constants);
         Source = source ?? string.Empty;
         Owner = owner;
         Dialect = dialect;
-        Compiled = dialect == LevelExpressionDialect.Rewritten ? Compile(Source, owner) : Source;
-        if (Compiled.Length == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            _tree = ScriptExpressionParser.Parse(Compiled, name => constants(name));
-        }
-        catch (ScriptExpressionException)
-        {
-            _tree = null;
-        }
+        _constants = constants;
+        _tasks = tasks;
+        Compiled = string.Empty;
+        Build();
     }
 
     /// <summary>Gets the slot's text.</summary>
@@ -74,14 +80,21 @@ public sealed class LevelExpression
     /// <summary>Gets the owning task's name, which <c>this.</c> stands for.</summary>
     public string? Owner { get; }
 
-    /// <summary>Gets how the text was compiled.</summary>
+    /// <summary>Gets whose compile the text went through.</summary>
     public LevelExpressionDialect Dialect { get; }
 
-    /// <summary>Gets the text that was parsed.</summary>
-    public string Compiled { get; }
+    /// <summary>Gets the text that was parsed, as of the last compile.</summary>
+    public string Compiled { get; private set; }
 
     /// <summary>Gets a value indicating whether there is nothing to run: no text, nothing left of it, or no expression parsed.</summary>
-    public bool IsEmpty => _tree is null;
+    public bool IsEmpty
+    {
+        get
+        {
+            Validate();
+            return _tree is null;
+        }
+    }
 
     /// <summary>Evaluates the expression in the float walk.</summary>
     /// <param name="context">What its names resolve to.</param>
@@ -89,7 +102,8 @@ public sealed class LevelExpression
     public double Evaluate(IScriptExpressionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return _tree is null ? 0.0 : new ScriptExpressionEvaluator(Scope(context)).EvaluateReal(_tree);
+        Validate();
+        return _tree is null ? 0.0 : new ScriptExpressionEvaluator(context).EvaluateReal(_tree);
     }
 
     /// <summary>Evaluates the expression in the integer walk.</summary>
@@ -98,17 +112,35 @@ public sealed class LevelExpression
     public int EvaluateInt32(IScriptExpressionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return _tree is null ? 0 : new ScriptExpressionEvaluator(Scope(context)).Evaluate(_tree);
+        Validate();
+        return _tree is null ? 0 : new ScriptExpressionEvaluator(context).Evaluate(_tree);
     }
 
-    /// <summary>Rewrites script text as <c>Level_CompileLevelExpression</c> does.</summary>
+    /// <summary>Rewrites script text as I.G.I. 2's <c>Level_CompileLevelExpression</c> does.</summary>
     /// <param name="source">The text.</param>
     /// <param name="owner">The owning task's unique name; <see langword="null"/> leaves <c>this.</c> as written.</param>
     /// <returns>The rewritten text.</returns>
-    public static string Compile(string source, string? owner)
+    public static string Compile(string source, string? owner) => Compile(source, owner, LevelExpressionDialect.Igi2);
+
+    /// <summary>Rewrites script text as the dialect's engine does.</summary>
+    /// <param name="source">The text.</param>
+    /// <param name="owner">The owning task's unique name; <see langword="null"/> leaves <c>this.</c> as written.</param>
+    /// <param name="dialect">Whose compile.</param>
+    /// <param name="tasks">The level's tasks; <see langword="null"/> takes every task a word names as present.</param>
+    /// <returns>The rewritten text.</returns>
+    public static string Compile(string source, string? owner, LevelExpressionDialect dialect, ILevelTaskTable? tasks = null) =>
+        Compile(source, owner, dialect, tasks, references: null);
+
+    private static string Compile(
+        string source,
+        string? owner,
+        LevelExpressionDialect dialect,
+        ILevelTaskTable? tasks,
+        List<object>? references)
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        bool igi1 = dialect == LevelExpressionDialect.Igi1;
         StringBuilder target = new(source.Length);
         int at = 0;
         while (at < source.Length)
@@ -119,14 +151,32 @@ public sealed class LevelExpression
                 break;
             }
 
-            if (TryWord(source, ref at, out string word))
+            if (TryWord(source, ref at, unquote: igi1, out string word))
             {
+                // The task a word names, by the id at its end; a word starting with a digit is a number.
+                int id = TargetId(word);
+                if (tasks is not null && id >= 0 && !char.IsAsciiDigit(word[0]))
+                {
+                    object? task = tasks.FindTask(id);
+                    if (task is null)
+                    {
+                        if (igi1)
+                        {
+                            word = "0";
+                        }
+                    }
+                    else if (references is not null && references.Count < MaxReferences && !references.Contains(task))
+                    {
+                        references.Add(task);
+                    }
+                }
+
                 word = owner is null ? word : LevelExpressionNames.ResolveThis(word, owner);
                 target.Append(LevelExpressionNames.IsExistsProbe(word) ? "1" : word);
                 continue;
             }
 
-            if (source[at] == '/' && at + 1 < source.Length && source[at + 1] == '/')
+            if (!igi1 && source[at] == '/' && at + 1 < source.Length && source[at + 1] == '/')
             {
                 while (at < source.Length && source[at] != '\n')
                 {
@@ -160,12 +210,18 @@ public sealed class LevelExpression
         }
     }
 
-    // String_GetWordEx with its quote flag clear: a quoted string kept with its quotes and escapes, a number (hexadecimal
-    // after 0x, else digits with points and one exponent), or a run of letters, digits, '_' and '.', after an optional '$'.
-    private static bool TryWord(string text, ref int at, out string word)
+    // The word reader: a quoted string, a number (hexadecimal after 0x, else digits with points and one exponent), or a run
+    // of letters, digits, '_' and '.', after an optional '$'. I.G.I. 2's String_GetWordEx with its quote flag clear keeps a
+    // string's quotes and escapes; Project I.G.I.'s sub_517260 has no such flag and always unwraps it.
+    private static bool TryWord(string text, ref int at, bool unquote, out string word)
     {
         int start = at;
         char first = text[at];
+        if (first == '"' && unquote)
+        {
+            return TryUnquote(text, ref at, out word);
+        }
+
         if (first == '"')
         {
             int end = at + 1;
@@ -254,37 +310,114 @@ public sealed class LevelExpression
         return true;
     }
 
-    // A text parsed as written still names this. and .isExists, and they are answered here, at each lookup. A rewritten
-    // one has neither left in it.
-    private IScriptExpressionContext Scope(IScriptExpressionContext context) =>
-        Dialect == LevelExpressionDialect.AsWritten ? new AsWrittenScope(context, Owner) : context;
-
-
-    private sealed class AsWrittenScope(IScriptExpressionContext inner, string? owner) : IScriptExpressionContext
+    // sub_517260's string: the text between the quotes, with \b \n \r \t and \xHH read and any other escaped character
+    // taken as itself. One with no closing quote is no word.
+    private static bool TryUnquote(string text, ref int at, out string word)
     {
-        public bool TryGetValue(string name, out QvmValue value)
+        StringBuilder value = new();
+        int i = at + 1;
+        while (i < text.Length && text[i] != '"')
         {
-            string resolved = Resolve(name);
-            if (LevelExpressionNames.IsExistsProbe(resolved))
+            char c = text[i++];
+            if (c == '\\' && i < text.Length)
             {
-                value = QvmValue.FromInt32(1);
-                return true;
+                c = text[i++];
+                switch (c)
+                {
+                    case 'b':
+                        c = '\b';
+                        break;
+                    case 'n':
+                        c = '\n';
+                        break;
+                    case 'r':
+                        c = '\r';
+                        break;
+                    case 't':
+                        c = '\t';
+                        break;
+                    case 'x' or 'X' when i + 1 < text.Length:
+                        c = (char)(byte)((HexNibble(text[i]) << 4) | HexNibble(text[i + 1]));
+                        i += 2;
+                        break;
+                }
             }
 
-            return inner.TryGetValue(resolved, out value);
+            value.Append(c);
         }
 
-        public QvmValueKind GetValueKind(string name)
+        if (i >= text.Length)
         {
-            string resolved = Resolve(name);
-            return LevelExpressionNames.IsExistsProbe(resolved) ? QvmValueKind.Integer : inner.GetValueKind(resolved);
+            word = string.Empty;
+            return false;
         }
 
-        public bool TrySetValue(string name, QvmValue value) => inner.TrySetValue(Resolve(name), value);
+        at = i + 1;
+        word = value.ToString();
+        return true;
+    }
 
-        public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result) =>
-            inner.TryInvoke(name, arguments, out result);
+    // sub_517260's hexadecimal digit: up to '9' its low bits, above '9' its low bits plus nine.
+    private static int HexNibble(char c) => c > '9' ? (c & 0xF) + 9 : c & 0xF;
 
-        private string Resolve(string name) => owner is null ? name : LevelExpressionNames.ResolveThis(name, owner);
+    // sub_4F17D0 (I.G.I. 2's Level_GetTargetQTaskIDFromSymbol): the digits just before a word's first '.', or before its
+    // end when it has none, read as an id; -1 when there are none. The sum wraps as the original's does.
+    private static int TargetId(string word)
+    {
+        int end = word.IndexOf('.');
+        if (end == 0)
+        {
+            return -1;
+        }
+
+        if (end < 0)
+        {
+            end = word.Length;
+        }
+
+        int value = 0;
+        int scale = 1;
+        bool any = false;
+        for (int i = end - 1; i >= 0 && char.IsAsciiDigit(word[i]); i--)
+        {
+            any = true;
+            value = unchecked(value + (scale * (word[i] - '0')));
+            scale = unchecked(scale * 10);
+        }
+
+        return any ? value : -1;
+    }
+
+    // A reference whose task has died since the compile sends the text through it again.
+    private void Validate()
+    {
+        foreach (object task in _references)
+        {
+            if (!_tasks!.IsLive(task))
+            {
+                Build();
+                return;
+            }
+        }
+    }
+
+    private void Build()
+    {
+        _references.Clear();
+        Compiled = Compile(Source, Owner, Dialect, _tasks, _references);
+        _tree = null;
+        if (Compiled.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _tree = ScriptExpressionParser.Parse(Compiled, name => _constants(name));
+        }
+        catch (ScriptExpressionException)
+        {
+            _tree = null;
+        }
     }
 }

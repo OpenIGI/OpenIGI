@@ -16,7 +16,7 @@ internal static class Igi2LevelExpressions
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(natives);
-        return new LevelExpression(source, owner, name => Igi2LineScript.Constant(natives, name), LevelExpressionDialect.Rewritten);
+        return new LevelExpression(source, owner, name => Igi2LineScript.Constant(natives, name), LevelExpressionDialect.Igi2);
     }
 
     /// <summary>Evaluates the expression in the float walk (<c>Level_RunLevelExpression</c>, <c>0x545790</c>).</summary>

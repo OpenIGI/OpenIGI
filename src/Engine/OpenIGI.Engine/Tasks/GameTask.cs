@@ -45,6 +45,9 @@ public abstract class GameTask
         _tree ?? throw new InvalidOperationException(
             $"The task of CLR type '{GetType().Name}' was not created through a {nameof(TaskTree)}.");
 
+    /// <summary>Gets a value indicating whether the task was created through a <see cref="TaskTree"/>, and so has a <see cref="Tree"/>.</summary>
+    public bool HasTree => _tree is not null;
+
     /// <summary>Gets the parent task, or <see langword="null"/> for a tree root.</summary>
     public GameTask? Parent { get; private set; }
 
