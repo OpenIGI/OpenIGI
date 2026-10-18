@@ -335,74 +335,29 @@ public static class RetailModelRay
         bool cullSpheres = true,
         float[]? spheres = null)
     {
-        int[] links = mesh.Links;
-        float[] sp = spheres ?? mesh.Spheres;
-        Span<int> stack = stackalloc int[100];
-        int top = 0;
-        stack[0] = 0;
-        int node = 0;
-        bool first = true;
-        while (true)
+        Visitor visitor = new(mesh, spheres ?? mesh.Spheres, vertices ?? mesh.Vertices, ls, d, inverse, lenf, portals, search, mirror, cullSpheres);
+        SphereTreeWalk.Walk(mesh.Links, ref visitor);
+    }
+
+    private readonly struct Visitor(
+        RetailRayMesh mesh,
+        float[] spheres,
+        float[] vertices,
+        float[] ls,
+        float[] d,
+        double inverse,
+        float lenf,
+        bool portals,
+        Search search,
+        bool mirror,
+        bool cull) : ISphereTreeVisitor
+    {
+        public bool Sphere(int node, bool sibling) => SphereOk(spheres, node, ls, d, inverse, search, cull);
+
+        public bool Face(int face)
         {
-            if (first)
-            {
-                first = false;
-            }
-            else
-            {
-                int sibling = links[(4 * node) + 3];
-                if (sibling != 0)
-                {
-                    node = sibling;
-                    stack[top] = node;
-                    if (!SphereOk(sp, node, ls, d, inverse, search, cullSpheres))
-                    {
-                        continue;
-                    }
-                }
-                else
-                {
-                    top--;
-                    if (top < 0)
-                    {
-                        break;
-                    }
-
-                    node = stack[top];
-                    continue;
-                }
-            }
-
-            while (true)
-            {
-                int child = links[(4 * node) + 2];
-                if (child == 0)
-                {
-                    break;
-                }
-
-                node = child;
-                if (++top >= stack.Length)
-                {
-                    return;
-                }
-
-                stack[top] = node;
-                if (!SphereOk(sp, node, ls, d, inverse, search, cullSpheres))
-                {
-                    break;
-                }
-            }
-
-            int count = links[(4 * node) + 1];
-            if (count != 0)
-            {
-                int firstFace = links[4 * node];
-                for (int f = firstFace; f < firstFace + count; f++)
-                {
-                    FaceTest(mesh, f, ls, d, lenf, portals, search, mirror, vertices ?? mesh.Vertices);
-                }
-            }
+            FaceTest(mesh, face, ls, d, lenf, portals, search, mirror, vertices);
+            return true;
         }
     }
 

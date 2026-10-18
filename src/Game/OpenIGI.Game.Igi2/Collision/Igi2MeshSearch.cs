@@ -185,68 +185,9 @@ internal sealed class Igi2MeshSearch
     public void Walk<TFaces>(RetailRayMesh mesh, Vector3f start, Vector3f d, Fpu inverse, bool uniformSums, ref TFaces faces)
         where TFaces : struct, IIgi2FaceVisitor
     {
-        int[] links = mesh.Links;
-        Span<int> stack = stackalloc int[100];
-        int level = 0;
-        int node = 0;
-        stack[0] = 0;
-        bool first = true;
-        while (true)
-        {
-            if (first)
-            {
-                first = false;
-            }
-            else
-            {
-                int next = links[(4 * node) + 3];
-                if (next == 0)
-                {
-                    level--;
-                    if (level < 0)
-                    {
-                        return;
-                    }
-
-                    node = stack[level];
-                    continue;
-                }
-
-                node = next;
-                stack[level] = node;
-                if (!SphereOk(mesh, node, start, d, inverse, sibling: true))
-                {
-                    continue;
-                }
-            }
-
-            while (true)
-            {
-                int child = links[(4 * node) + 2];
-                if (child == 0)
-                {
-                    break;
-                }
-
-                node = child;
-                stack[++level] = node;
-                if (!SphereOk(mesh, node, start, d, inverse, sibling: uniformSums))
-                {
-                    break;
-                }
-            }
-
-            int count = links[(4 * node) + 1];
-            int firstFace = links[4 * node];
-            for (int f = firstFace; f < firstFace + count; f++)
-            {
-                faces.Visit(f);
-                if (Stopped)
-                {
-                    return;
-                }
-            }
-        }
+        Walker<TFaces> walker = new(this, mesh, start, d, inverse, uniformSums, faces);
+        SphereTreeWalk.Walk(mesh.Links, ref walker);
+        faces = walker.Faces;
     }
 
     /// <summary>
@@ -491,4 +432,26 @@ internal sealed class Igi2MeshSearch
     private static float Abs(float a) => a < 0f ? -a : a;
 
     private static float Component(Vector3f v, int axis) => axis switch { 0 => v.X, 1 => v.Y, _ => v.Z };
+
+    private struct Walker<TFaces>(
+        Igi2MeshSearch search,
+        RetailRayMesh mesh,
+        Vector3f start,
+        Vector3f d,
+        Fpu inverse,
+        bool uniformSums,
+        TFaces faces) : ISphereTreeVisitor
+        where TFaces : struct, IIgi2FaceVisitor
+    {
+        public TFaces Faces = faces;
+
+        public readonly bool Sphere(int node, bool sibling) =>
+            search.SphereOk(mesh, node, start, d, inverse, sibling: sibling || uniformSums);
+
+        public bool Face(int face)
+        {
+            Faces.Visit(face);
+            return !search.Stopped;
+        }
+    }
 }
