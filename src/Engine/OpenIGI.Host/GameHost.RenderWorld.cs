@@ -104,8 +104,8 @@ public sealed partial class GameHost
         {
             _pacing.Report("vulkan");
         }
-        SightZoomFrame sight = _playerMode && _mission.Player is not null
-            ? _mission.Player.SmoothedSightZoom(tickBlend)
+        SightZoomFrame sight = _playerMode && Viewpoint?.SightZoom(tickBlend) is { } playerSight
+            ? playerSight
             : _playerMode && TitlePlayer is { } titleLens
                 ? new SightZoomFrame(_titlePresentation.FieldOfView(_titlePresentationBlend), HumanView.DefaultViewModelTanX)
                 : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
@@ -185,7 +185,7 @@ public sealed partial class GameHost
         int binocularNow = _loop.TimeSource.Milliseconds;
         float binocularElapsed = Math.Clamp((binocularNow - _lastBinocularMilliseconds) / 1000f, 0f, 0.1f);
         _lastBinocularMilliseconds = binocularNow;
-        _binocularOptics.Update(_mission.Player is { IsBinocularsOpen: true }, binocularElapsed);
+        _binocularOptics.Update(Viewpoint?.IsBinocularsOpen == true, binocularElapsed);
         BinocularDisplaySettings binocularDisplay =
             RenderCVars.BinocularLens.Value ? _binocularOptics.Display : default;
         // A little extra edge fringing while the optics are up, on top of the ordinary value, so
@@ -816,12 +816,12 @@ public sealed partial class GameHost
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && Viewpoint?.IsDeathViewActive != true
-            && _mission.Player is { View: not null, IsMountedStationaryGun: false };
+            && Viewpoint?.HasPlayerHud == true;
 
         // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
         // beside the gun is gone the moment its sight takes the view -- hence the last condition.
         bool showFirstPersonHud = showPlayerHud
-            && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false };
+            && Viewpoint?.HasFirstPersonHud == true;
 
         // The arms and the held weapon hang off the eye, so the moment the camera leaves it they
         // are either filling the frame or behind it. When they stand down, and when they come
@@ -842,7 +842,7 @@ public sealed partial class GameHost
         _lastInteractionPromptMilliseconds = interactionPromptNow;
         _interactionPrompt.Update(
             worldInteractionPrompt && showPlayerHud
-                ? _mission.Player?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
+                ? Viewpoint?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
                 : null,
             interactionPromptElapsed);
 
@@ -850,14 +850,14 @@ public sealed partial class GameHost
         // default field of view up to the zoomed range at the tightest magnification, so leaning
         // into the optics resolves a distant figure the wide view does not. The vanilla optics
         // stay retail-uncapped (positive infinity).
-        float binocularZoomIn = _mission.Player?.BinocularZoomInFraction(sight.TanX) ?? 0f;
+        float binocularZoomIn = Viewpoint?.BinocularZoomIn(sight.TanX) ?? 0f;
         float binocularDetectionRange = remasteredOptics
             ? RenderCVars.BinocularRange.Value
                 + ((RenderCVars.BinocularRangeZoomed.Value - RenderCVars.BinocularRange.Value) * binocularZoomIn)
             : float.PositiveInfinity;
         IReadOnlyList<EnemyOverlayBox> binocularTargets =
             showFirstPersonHud
-            && _mission.Player is { IsBinocularsOpen: true }
+            && Viewpoint?.IsBinocularsOpen == true
             && _soldiers is { } binocularSoldiers
                 ? binocularSoldiers.Simulation.BinocularTargets(
                     // Use the same presented eye that rendered the world. The detector owns
@@ -2301,7 +2301,7 @@ public sealed partial class GameHost
         // remastered optics are up.
         if (remasteredOptics
             && RenderCVars.BinocularOutline.Value
-            && _mission.Player is { IsBinocularsOpen: true })
+            && Viewpoint?.IsBinocularsOpen == true)
         {
             _soldiers?.DrawBinocularOutlines(eye, radiusPixels: 8f);
         }

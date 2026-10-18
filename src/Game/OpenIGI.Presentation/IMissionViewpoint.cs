@@ -52,6 +52,30 @@ public interface IMissionViewpoint
     /// <summary>Gets a value indicating whether the camera is anywhere other than exactly at the player's eye.</summary>
     bool IsThirdPersonEngaged { get; }
 
+    /// <summary>Gets a value indicating whether the player is looking through the binoculars.</summary>
+    bool IsBinocularsOpen { get; }
+
+    /// <summary>Gets a value indicating whether the player has a HUD this frame: a first-person view, and no gun's sight taking it.</summary>
+    bool HasPlayerHud { get; }
+
+    /// <summary>Gets a value indicating whether the player's HUD is the first-person one, rather than a climb's or an interaction's.</summary>
+    bool HasFirstPersonHud { get; }
+
+    /// <summary>Gets the player's sight zoom this frame, or <see langword="null"/> when there is no player.</summary>
+    /// <param name="tickBlend">How far the frame is between ticks.</param>
+    /// <returns>The zoom.</returns>
+    SightZoomFrame? SightZoom(float tickBlend);
+
+    /// <summary>Gets how far the binoculars have zoomed in, from nought at the widest to one at the tightest.</summary>
+    /// <param name="tanX">The frame's horizontal half-angle tangent.</param>
+    /// <returns>The fraction, or nought when there is no player.</returns>
+    float BinocularZoomIn(float tanX);
+
+    /// <summary>Gets what the player's interaction resolver is offering this frame.</summary>
+    /// <param name="tickBlend">How far the frame is between ticks.</param>
+    /// <returns>The target, or <see langword="null"/> when there is none.</returns>
+    InteractionPromptTarget? InteractionPrompt(float tickBlend);
+
     /// <summary>Makes the death and interaction cameras afresh, as the frame loop starts.</summary>
     void Renew();
 

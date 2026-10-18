@@ -48,6 +48,24 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool IsThirdPersonEngaged => _thirdPerson.IsEngaged;
 
     /// <inheritdoc/>
+    public bool IsBinocularsOpen => gameplay.World.Player is { IsBinocularsOpen: true };
+
+    /// <inheritdoc/>
+    public bool HasPlayerHud => gameplay.World.Player is { View: not null, IsMountedStationaryGun: false };
+
+    /// <inheritdoc/>
+    public bool HasFirstPersonHud => gameplay.World.Player is { IsOnLadder: false, IsInWorldInteraction: false };
+
+    /// <inheritdoc/>
+    public SightZoomFrame? SightZoom(float tickBlend) => gameplay.World.Player?.SmoothedSightZoom(tickBlend);
+
+    /// <inheritdoc/>
+    public float BinocularZoomIn(float tanX) => gameplay.World.Player?.BinocularZoomInFraction(tanX) ?? 0f;
+
+    /// <inheritdoc/>
+    public InteractionPromptTarget? InteractionPrompt(float tickBlend) => gameplay.World.Player?.InteractionPrompt(tickBlend);
+
+    /// <inheritdoc/>
     public void Renew()
     {
         // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye to a
