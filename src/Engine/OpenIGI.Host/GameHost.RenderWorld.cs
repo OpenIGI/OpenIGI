@@ -45,6 +45,8 @@ using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Host.Services;
 
+using System.Diagnostics;
+
 namespace OpenIGI.Host;
 
 public sealed partial class GameHost
@@ -60,49 +62,7 @@ public sealed partial class GameHost
             return;
         }
 
-        // The scripted flight, driven off the rendered-frame index so the motion is exactly
-        // reproducible under lockstep. The opening pose is captured once; each subsequent frame
-        // moves the camera a straight fraction of the way to the end pose. An unset end component
-        // holds the opening value, so -camend alone dollies without turning and -yawend alone pans
-        // in place. Only in the free camera -- a flight forces -freecam, so _playerMode is false.
-        if (_options.HasFlight && !_playerMode)
-        {
-            if (!state.FlightStarted)
-            {
-                state.FlightStartPos = _camera.Position;
-                state.FlightStartYaw = _camera.Yaw;
-                state.FlightStartPitch = _camera.Pitch;
-                state.FlightStarted = true;
-            }
-
-            // -flightframes shortens the move without shortening the capture, so the frames past it
-            // hold the end pose and the flight comes to a stop. The clamp is what holds it.
-            int span = Math.Max(
-                1,
-                (_options.FlightFrames
-                    ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
-            float t = Math.Clamp((float)(state.FlightFrame - _options.FlightDelay) / span, 0f, 1f);
-
-            Vector3d endPos = _options.CameraEnd is { } e
-                ? new Vector3d(e.X, e.Y, e.Z)
-                : state.FlightStartPos;
-            float endYaw = _options.CameraYawEnd ?? state.FlightStartYaw;
-            float endPitch = _options.CameraPitchEnd ?? state.FlightStartPitch;
-
-            (float shakeYaw, float shakePitch) = HandheldShake(state.FlightFrame, _options.CameraShake);
-            if ((state.FlightFrame & 1) == 1)
-            {
-                shakeYaw += _options.CameraSwing * (MathF.PI / 180f);
-            }
-
-            _camera.MoveTo(
-                new Vector3d(
-                    state.FlightStartPos.X + ((endPos.X - state.FlightStartPos.X) * t),
-                    state.FlightStartPos.Y + ((endPos.Y - state.FlightStartPos.Y) * t),
-                    state.FlightStartPos.Z + ((endPos.Z - state.FlightStartPos.Z) * t)),
-                state.FlightStartYaw + ((endYaw - state.FlightStartYaw) * t) + shakeYaw,
-                state.FlightStartPitch + ((endPitch - state.FlightStartPitch) * t) + shakePitch);
-        }
+        StepScriptedFlight(state);
 
         // How far this frame sits between the last two simulation ticks. Compute it before
         // either projection: MP5 sight zoom changes the world and view-model FOV on those ticks,
@@ -795,6 +755,285 @@ public sealed partial class GameHost
             }
         }
 
+        PrepareSceneLighting(state, eye, light);
+
+        // The hashed alpha test needs the temporal resolve to average its dither, so it follows the
+        // temporal path: a per-frame seed above zero turns it on, zero leaves the hard cut-out. The
+        // seed only has to change each frame for the dither to differ; the jitter counter does that.
+        _device.SetAlphaHash(
+            RenderCVars.HashedAlpha.Value && wantsTemporal
+                ? 1f + (float)(state.TemporalFrame & 63)
+                : 0f);
+
+        // The derived detail is a deferred-path feature: it changes the normal and the roughness
+        // written into the G-buffer, and without one there is nothing to write them into.
+        //
+        // r_pbr (F9) multiplies the authored strength by one or zero rather than replacing it, so
+        // the maps can be taken out of the frame and put back without disturbing what the preset
+        // chose. Read here, every frame, because that is what makes it instant: nothing is
+        // unloaded and nothing is rebuilt -- the shader simply stops scaling its slope by it.
+        _device.SetMaterialDetail(
+            RenderCVars.OffscreenScene.Value
+            && RenderCVars.Deferred.Value
+            && RenderCVars.MaterialDetailEnabled.Value
+                ? RenderCVars.MaterialDetail.Value
+                : 0f);
+        _device.SetFloorGloss(
+            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                ? RenderCVars.FloorGloss.Value
+                : 1f);
+        _device.SetReflections(
+            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                ? new ReflectionSettings(
+                    RenderCVars.Reflections.Value,
+                    RenderCVars.ReflectionIntensity.Value,
+                    RenderCVars.ReflectionMaxRoughness.Value)
+                : ReflectionSettings.Off);
+
+        // How wet the ground is. Driven by the storm rather than by a number of its own: it is
+        // raining or it is not, and a road that stays dry through a downpour is the single thing
+        // that most gives away rain as an effect rather than as weather. Off the moment the storm
+        // is not drawing, so a level with no rain is not quietly shaded damp.
+        bool wetGround = RenderCVars.Wetness.Value
+            && RenderCVars.OffscreenScene.Value
+            && RenderCVars.Deferred.Value
+            && _storm is { IsActive: true };
+        _device.SetWetness(
+            wetGround
+                ? WetnessSettings.Storm.AtIntensity(
+                    _storm!.Settings.Intensity,
+                    _loop.TimeSource.Milliseconds / 1000f)
+                : WetnessSettings.Dry);
+
+        // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
+        // stop as a second, smaller event -- which is the thing this exists to remove.
+        float probeFade = _baked.ProbeArrivedAt < 0
+            ? 1f
+            : Math.Clamp((_loop.TimeSource.Milliseconds - _baked.ProbeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
+        probeFade = probeFade * probeFade * (3f - (2f * probeFade));
+
+        _device.SetIrradianceVolumeSettings(
+            _baked.ProbeField is not null && RenderCVars.GlobalIllumination.Value
+                ? new IrradianceVolumeSettings(
+                    true,
+                    RenderCVars.GlobalIlluminationIntensity.Value,
+                    light.Ambient,
+                    probeFade)
+                : IrradianceVolumeSettings.Off);
+
+        // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
+        // there is a G-buffer; without one the lighting has no ambient term of its own to shade.
+        _device.SetAmbientOcclusion(
+            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                ? new AmbientOcclusionSettings(
+                    RenderCVars.AmbientOcclusion.Value,
+                    RenderCVars.AmbientOcclusionRadius.Value,
+                    RenderCVars.AmbientOcclusionIntensity.Value,
+                    RenderCVars.ScreenSpaceGi.Value,
+                    RenderCVars.ScreenSpaceGiIntensity.Value)
+                : AmbientOcclusionSettings.Off);
+
+        // Reprojection compares two frames, and the jitter is precisely what differs between them,
+        // so the matrix handed over is the one without it.
+        _device.SetTemporalAntiAliasing(
+            new TemporalAaSettings(
+                wantsTemporal,
+                RenderCVars.TemporalFeedback.Value,
+                jitterX,
+                jitterY,
+                RenderCVars.TemporalSharpening.Value),
+            unjitteredProjection,
+            eye.Position,
+            eye.Orientation.Transposed());
+
+        _device.SetVolumetricFog(
+            medium,
+            new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
+            wantsFog ? state.FogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
+
+        // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
+        // beginning a capture first would leave the shell holding two render targets at once.
+        //
+        // And not filled at all on a frame where nothing can read it: with the traced sun the
+        // ray mask is the ONLY sun shadow the lighting samples, and with the sun faded to
+        // nothing the sun term is nought before the shadow is asked -- either way the cascades
+        // are written and never read, raster spent on a map nobody looks at. The maps and their
+        // matrices stay allocated and uploaded, so the first frame that needs them again (the
+        // r_rt_shadows toggle, or a sunrise scrub) refits and refills BEFORE that frame's
+        // lighting reads -- no stall and no frame of wrong shadows.
+        bool cascadesRead = shadowSettings.SunLit && !_device.SunShadowTraced;
+        RenderShadowMaps(state, cascadeCount, cascadesRead, eye, casterBodies);
+
+        bool captured = OpenSceneCapture(sceneTarget, light, viewSunDirection, mapScene, resolution);
+
+        // Whether the eye is under a roof, which the weather and the HUD read. A title's own screen over
+        // the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a building's
+        // shell does.
+        bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || TitlePlayer?.IsWeatherHidden == true;
+
+        DrawSceneGeometry(mapScene, captured, eye, projection, verticalFieldOfView, aspectRatio, cascadesRead, cascadeCount, smoothPresentation, tickBlend);
+
+        // The remastered-optics decisions and the binocular detector are resolved here, before
+        // the soldiers are drawn, for two reasons: the detector is stateful and must be scanned
+        // exactly once per frame, and the through-wall glow pass below has to mark the very
+        // contacts it finds while the scene is still being captured. The HUD after the resolve
+        // reuses this same target list rather than advancing the detector a second time.
+        bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
+        bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
+            TacticalComputer is not null,
+            _remasteredHud is { IsReady: true });
+        bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
+            remasterHud,
+            RenderCVars.TacticalMessages.Value);
+        bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
+            && _mission.Cutscenes?.IsPlaying != true
+            && !(_playerDead && _deathCamera.IsActive)
+            && _player is { View: not null, IsMountedStationaryGun: false };
+
+        // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
+        // beside the gun is gone the moment its sight takes the view -- hence the last condition.
+        bool showFirstPersonHud = showPlayerHud
+            && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+
+        // The arms and the held weapon hang off the eye, so the moment the camera leaves it they
+        // are either filling the frame or behind it. When they stand down, and when they come
+        // back, is the camera's own call -- see ThirdPersonCamera.ShowsViewModel.
+        bool showViewModel = showFirstPersonHud && _thirdPerson.ShowsViewModel;
+
+        // What the interaction resolver is offering, advanced on its own wall clock so the
+        // marker fades at the same rate whatever the frame rate. Gated on showPlayerHud rather
+        // than showFirstPersonHud on purpose: a timed interaction hides the hands and the
+        // weapon, and that is exactly when the ring filling on the object is what the player
+        // is reading.
+        bool worldInteractionPrompt = InteractionPromptPresentation.UsesWorldPrompt(
+            remasterHud,
+            RenderCVars.InteractionPrompt.Value);
+        int interactionPromptNow = _loop.TimeSource.Milliseconds;
+        float interactionPromptElapsed =
+            Math.Clamp((interactionPromptNow - _lastInteractionPromptMilliseconds) / 1000f, 0f, 0.1f);
+        _lastInteractionPromptMilliseconds = interactionPromptNow;
+        _interactionPrompt.Update(
+            worldInteractionPrompt && showPlayerHud
+                ? _player?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
+                : null,
+            interactionPromptElapsed);
+
+        // The remastered detector's range grows with the zoom: from the base range at the
+        // default field of view up to the zoomed range at the tightest magnification, so leaning
+        // into the optics resolves a distant figure the wide view does not. The vanilla optics
+        // stay retail-uncapped (positive infinity).
+        float binocularZoomIn = _player?.BinocularZoomInFraction(sight.TanX) ?? 0f;
+        float binocularDetectionRange = remasteredOptics
+            ? RenderCVars.BinocularRange.Value
+                + ((RenderCVars.BinocularRangeZoomed.Value - RenderCVars.BinocularRange.Value) * binocularZoomIn)
+            : float.PositiveInfinity;
+        IReadOnlyList<EnemyOverlayBox> binocularTargets =
+            showFirstPersonHud
+            && _player is { IsBinocularsOpen: true }
+            && _soldiers is { } binocularSoldiers
+                ? binocularSoldiers.Simulation.BinocularTargets(
+                    // Use the same presented eye that rendered the world. The detector owns
+                    // authoritative slot lifetime, but its screen rectangle must be projected
+                    // through the frame's smoothed camera or moving/zooming binoculars make the
+                    // box visibly lag behind the soldier it is meant to surround.
+                    eye,
+                    sight.TanX,
+                    _window.Width,
+                    _window.Height,
+                    // FUN_00471F60/FUN_00471B60 use Sys_GetTickCount (the retail
+                    // millisecond counter), not the 30 Hz simulation index. Passing
+                    // TickCount here stretched the native 250 ms entry pulse and
+                    // 3000 ms retention window by a factor of thirty-three.
+                    _loop.Clock.Now,
+                    binocularDetectionRange,
+                    _loop.Clock.TickCount)
+                : [];
+
+        DrawCharacters(eye, projection, tickBlend, thirdPersonBody);
+
+        LightScene(state, eye, captured, sceneTarget, unjitteredProjection);
+
+        SubmitLocalLights(state, captured, eye, unjitteredProjection, flashlightShown, flashlightBody, mapScene, sceneTarget);
+
+        DrawForwardPass(console, captured, eye, projection, mapScene, resolution, sceneTarget, smoothPresentation, tickBlend, cameraIndoors, remasteredOptics);
+
+        float? binocularRangeMetres = DrawFirstPersonView(eye, showViewModel, sight, smoothPresentation, tickBlend);
+
+        // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
+        // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
+        // depth-to-world reconstruction before the gather feeds the frame. Only when no card probe is
+        // running, since that fills the cache atlas with a diagnostic rather than light.
+        if (captured
+            && !state.ScreenGiDumped
+            && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
+            && _gi.DistanceField is { } giField
+            && _gi.CardLighting is { } giCards
+            && RenderCVars.SurfaceCacheProbe.Value == 0)
+        {
+            state.ScreenGiDumped = true;
+            SurfaceCacheDebugDumps.ScreenGather(
+                _device, giCards, giField, eye, unjitteredProjection, FarPlane,
+                _window.Width, _window.Height, giInto, _logger);
+        }
+
+        DrawScreenOverlays(state, captured, postProcess, remasterHud, remasteredOptics, showFirstPersonHud, binocularTargets, binocularRangeMetres, tacticalMessages, showPlayerHud, smoothPresentation, tickBlend, sight, worldInteractionPrompt, eye, horizontalTangent, aspectRatio, cameraIndoors);
+    }
+
+    /// <summary>Moves the free camera along the scripted flight a capture asked for, by the rendered-frame index.</summary>
+    private void StepScriptedFlight(FrameLoopState state)
+    {
+        Debug.Assert(_camera is not null, "Flown only while a level is up; see RenderWorld.");
+
+
+        // The scripted flight, driven off the rendered-frame index so the motion is exactly
+        // reproducible under lockstep. The opening pose is captured once; each subsequent frame
+        // moves the camera a straight fraction of the way to the end pose. An unset end component
+        // holds the opening value, so -camend alone dollies without turning and -yawend alone pans
+        // in place. Only in the free camera -- a flight forces -freecam, so _playerMode is false.
+        if (_options.HasFlight && !_playerMode)
+        {
+            if (!state.FlightStarted)
+            {
+                state.FlightStartPos = _camera.Position;
+                state.FlightStartYaw = _camera.Yaw;
+                state.FlightStartPitch = _camera.Pitch;
+                state.FlightStarted = true;
+            }
+
+            // -flightframes shortens the move without shortening the capture, so the frames past it
+            // hold the end pose and the flight comes to a stop. The clamp is what holds it.
+            int span = Math.Max(
+                1,
+                (_options.FlightFrames
+                ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
+            float t = Math.Clamp((float)(state.FlightFrame - _options.FlightDelay) / span, 0f, 1f);
+
+            Vector3d endPos = _options.CameraEnd is { } e
+                ? new Vector3d(e.X, e.Y, e.Z)
+                : state.FlightStartPos;
+            float endYaw = _options.CameraYawEnd ?? state.FlightStartYaw;
+            float endPitch = _options.CameraPitchEnd ?? state.FlightStartPitch;
+
+            (float shakeYaw, float shakePitch) = HandheldShake(state.FlightFrame, _options.CameraShake);
+            if ((state.FlightFrame & 1) == 1)
+            {
+                shakeYaw += _options.CameraSwing * (MathF.PI / 180f);
+            }
+
+            _camera.MoveTo(
+                new Vector3d(
+                    state.FlightStartPos.X + ((endPos.X - state.FlightStartPos.X) * t),
+                    state.FlightStartPos.Y + ((endPos.Y - state.FlightStartPos.Y) * t),
+                    state.FlightStartPos.Z + ((endPos.Z - state.FlightStartPos.Z) * t)),
+                state.FlightStartYaw + ((endYaw - state.FlightStartYaw) * t) + shakeYaw,
+                state.FlightStartPitch + ((endPitch - state.FlightStartPitch) * t) + shakePitch);
+        }
+    }
+
+    /// <summary>Hands the device this frame's indirect light: the probe field, the sky's fill, the surface cache and the distance field.</summary>
+    private void PrepareSceneLighting(FrameLoopState state, Camera3D eye, DirectionalLightSettings light)
+    {
+
         // The bake stored how much sky reaches each probe, never what colour it was, so the
         // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
         // on its ambient exactly as the fog does.
@@ -1024,112 +1263,12 @@ public sealed partial class GameHost
         }
 
         _device.SetDebugView(RenderCVars.Debug.Value);
+    }
 
-        // The hashed alpha test needs the temporal resolve to average its dither, so it follows the
-        // temporal path: a per-frame seed above zero turns it on, zero leaves the hard cut-out. The
-        // seed only has to change each frame for the dither to differ; the jitter counter does that.
-        _device.SetAlphaHash(
-            RenderCVars.HashedAlpha.Value && wantsTemporal
-                ? 1f + (float)(state.TemporalFrame & 63)
-                : 0f);
+    /// <summary>Fills the sun's cascades and the nearest lamps' shadow maps, before the scene capture opens.</summary>
+    private void RenderShadowMaps(FrameLoopState state, int cascadeCount, bool cascadesRead, Camera3D eye, ICharacterPresenter? casterBodies)
+    {
 
-        // The derived detail is a deferred-path feature: it changes the normal and the roughness
-        // written into the G-buffer, and without one there is nothing to write them into.
-        //
-        // r_pbr (F9) multiplies the authored strength by one or zero rather than replacing it, so
-        // the maps can be taken out of the frame and put back without disturbing what the preset
-        // chose. Read here, every frame, because that is what makes it instant: nothing is
-        // unloaded and nothing is rebuilt -- the shader simply stops scaling its slope by it.
-        _device.SetMaterialDetail(
-            RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value
-            && RenderCVars.MaterialDetailEnabled.Value
-                ? RenderCVars.MaterialDetail.Value
-                : 0f);
-        _device.SetFloorGloss(
-            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
-                ? RenderCVars.FloorGloss.Value
-                : 1f);
-        _device.SetReflections(
-            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
-                ? new ReflectionSettings(
-                    RenderCVars.Reflections.Value,
-                    RenderCVars.ReflectionIntensity.Value,
-                    RenderCVars.ReflectionMaxRoughness.Value)
-                : ReflectionSettings.Off);
-
-        // How wet the ground is. Driven by the storm rather than by a number of its own: it is
-        // raining or it is not, and a road that stays dry through a downpour is the single thing
-        // that most gives away rain as an effect rather than as weather. Off the moment the storm
-        // is not drawing, so a level with no rain is not quietly shaded damp.
-        bool wetGround = RenderCVars.Wetness.Value
-            && RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value
-            && _storm is { IsActive: true };
-        _device.SetWetness(
-            wetGround
-                ? WetnessSettings.Storm.AtIntensity(
-                    _storm!.Settings.Intensity,
-                    _loop.TimeSource.Milliseconds / 1000f)
-                : WetnessSettings.Dry);
-
-        // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
-        // stop as a second, smaller event -- which is the thing this exists to remove.
-        float probeFade = _baked.ProbeArrivedAt < 0
-            ? 1f
-            : Math.Clamp((_loop.TimeSource.Milliseconds - _baked.ProbeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
-        probeFade = probeFade * probeFade * (3f - (2f * probeFade));
-
-        _device.SetIrradianceVolumeSettings(
-            _baked.ProbeField is not null && RenderCVars.GlobalIllumination.Value
-                ? new IrradianceVolumeSettings(
-                    true,
-                    RenderCVars.GlobalIlluminationIntensity.Value,
-                    light.Ambient,
-                    probeFade)
-                : IrradianceVolumeSettings.Off);
-
-        // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
-        // there is a G-buffer; without one the lighting has no ambient term of its own to shade.
-        _device.SetAmbientOcclusion(
-            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
-                ? new AmbientOcclusionSettings(
-                    RenderCVars.AmbientOcclusion.Value,
-                    RenderCVars.AmbientOcclusionRadius.Value,
-                    RenderCVars.AmbientOcclusionIntensity.Value,
-                    RenderCVars.ScreenSpaceGi.Value,
-                    RenderCVars.ScreenSpaceGiIntensity.Value)
-                : AmbientOcclusionSettings.Off);
-
-        // Reprojection compares two frames, and the jitter is precisely what differs between them,
-        // so the matrix handed over is the one without it.
-        _device.SetTemporalAntiAliasing(
-            new TemporalAaSettings(
-                wantsTemporal,
-                RenderCVars.TemporalFeedback.Value,
-                jitterX,
-                jitterY,
-                RenderCVars.TemporalSharpening.Value),
-            unjitteredProjection,
-            eye.Position,
-            eye.Orientation.Transposed());
-
-        _device.SetVolumetricFog(
-            medium,
-            new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
-            wantsFog ? state.FogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
-
-        // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
-        // beginning a capture first would leave the shell holding two render targets at once.
-        //
-        // And not filled at all on a frame where nothing can read it: with the traced sun the
-        // ray mask is the ONLY sun shadow the lighting samples, and with the sun faded to
-        // nothing the sun term is nought before the shadow is asked -- either way the cascades
-        // are written and never read, raster spent on a map nobody looks at. The maps and their
-        // matrices stay allocated and uploaded, so the first frame that needs them again (the
-        // r_rt_shadows toggle, or a sunrise scrub) refits and refills BEFORE that frame's
-        // lighting reads -- no stall and no frame of wrong shadows.
-        bool cascadesRead = shadowSettings.SunLit && !_device.SunShadowTraced;
         BeginStage();
         if (cascadeCount > 0 && _shadowPass is not null && cascadesRead)
         {
@@ -1146,6 +1285,14 @@ public sealed partial class GameHost
             _lampMaps.RenderBounce(_shadowPass, _scene, _world, _gi.CardLighting, _gi.LightFixtures, LampOrderEye);
         }
         EndStageIfSlow("the shadow cascades");
+    }
+
+    /// <summary>Opens the offscreen scene and sets its lighting, or draws straight to the back buffer where there is none.</summary>
+    /// <returns><see langword="true"/> when the scene is being drawn offscreen.</returns>
+    private bool OpenSceneCapture(
+        SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
+        RenderResolution resolution)
+    {
 
         bool captured = RenderCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
         if (captured)
@@ -1279,6 +1426,16 @@ public sealed partial class GameHost
                 Math.Max(1, (int)(insetMap.Viewport.Width * scaleX)),
                 Math.Max(1, (int)(insetMap.Viewport.Height * scaleY))));
         }
+        return captured;
+    }
+
+    /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
+    private void DrawSceneGeometry(
+        MapSceneView? mapScene, bool captured, Camera3D eye, Matrix4f projection, float verticalFieldOfView, float aspectRatio, bool cascadesRead,
+        int cascadeCount, bool smoothPresentation, float tickBlend)
+    {
+        Debug.Assert(_scene is not null && _world is not null, "Drawn only while a level is up; see RenderWorld.");
+
 
         // The SIMOTECH map is the live terrain/object pass, not a view of the sky dome from
         // directly above. The green CRT wash is applied in the 2D computer pass below.
@@ -1345,9 +1502,6 @@ public sealed partial class GameHost
         // fewer. Where the order does decide the picture, the render group is honoured: the sky
         // is drawn first, the water last, and the world's own objects come out grouped, which is
         // what BuildDrawOrder is for.
-        // A title's own screen over the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a
-        // building's shell does.
-        bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || TitlePlayer?.IsWeatherHidden == true;
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
         EndStageIfSlow("the sky and the world's objects");
 
@@ -1383,7 +1537,7 @@ public sealed partial class GameHost
             CastsIntoCascades: cascadesRead && cascadeCount > 0));
         EndStageIfSlow("the terrain");
 
-if (retailFog)
+        if (retailFog)
         {
             _device.SetFog(RetailAir(_globalLight.ObjectFog));
         }
@@ -1426,82 +1580,13 @@ if (retailFog)
         }
 
         _device.SetObjectMotion(false);
+    }
 
-        // The remastered-optics decisions and the binocular detector are resolved here, before
-        // the soldiers are drawn, for two reasons: the detector is stateful and must be scanned
-        // exactly once per frame, and the through-wall glow pass below has to mark the very
-        // contacts it finds while the scene is still being captured. The HUD after the resolve
-        // reuses this same target list rather than advancing the detector a second time.
-        bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
-        bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
-            TacticalComputer is not null,
-            _remasteredHud is { IsReady: true });
-        bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
-            remasterHud,
-            RenderCVars.TacticalMessages.Value);
-        bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && _mission.Cutscenes?.IsPlaying != true
-            && !(_playerDead && _deathCamera.IsActive)
-            && _player is { View: not null, IsMountedStationaryGun: false };
+    /// <summary>Draws the soldiers, the tasks' own presenters, the player's fallen body and what the characters hold, then the marks rounds left.</summary>
+    private void DrawCharacters(Camera3D eye, Matrix4f projection, float tickBlend, bool thirdPersonBody)
+    {
+        Debug.Assert(_scene is not null && _world is not null, "Drawn only while a level is up; see RenderWorld.");
 
-        // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
-        // beside the gun is gone the moment its sight takes the view -- hence the last condition.
-        bool showFirstPersonHud = showPlayerHud
-            && _player is { IsOnLadder: false, IsInWorldInteraction: false };
-
-        // The arms and the held weapon hang off the eye, so the moment the camera leaves it they
-        // are either filling the frame or behind it. When they stand down, and when they come
-        // back, is the camera's own call -- see ThirdPersonCamera.ShowsViewModel.
-        bool showViewModel = showFirstPersonHud && _thirdPerson.ShowsViewModel;
-
-        // What the interaction resolver is offering, advanced on its own wall clock so the
-        // marker fades at the same rate whatever the frame rate. Gated on showPlayerHud rather
-        // than showFirstPersonHud on purpose: a timed interaction hides the hands and the
-        // weapon, and that is exactly when the ring filling on the object is what the player
-        // is reading.
-        bool worldInteractionPrompt = InteractionPromptPresentation.UsesWorldPrompt(
-            remasterHud,
-            RenderCVars.InteractionPrompt.Value);
-        int interactionPromptNow = _loop.TimeSource.Milliseconds;
-        float interactionPromptElapsed =
-            Math.Clamp((interactionPromptNow - _lastInteractionPromptMilliseconds) / 1000f, 0f, 0.1f);
-        _lastInteractionPromptMilliseconds = interactionPromptNow;
-        _interactionPrompt.Update(
-            worldInteractionPrompt && showPlayerHud
-                ? _player?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
-                : null,
-            interactionPromptElapsed);
-
-        // The remastered detector's range grows with the zoom: from the base range at the
-        // default field of view up to the zoomed range at the tightest magnification, so leaning
-        // into the optics resolves a distant figure the wide view does not. The vanilla optics
-        // stay retail-uncapped (positive infinity).
-        float binocularZoomIn = _player?.BinocularZoomInFraction(sight.TanX) ?? 0f;
-        float binocularDetectionRange = remasteredOptics
-            ? RenderCVars.BinocularRange.Value
-                + ((RenderCVars.BinocularRangeZoomed.Value - RenderCVars.BinocularRange.Value) * binocularZoomIn)
-            : float.PositiveInfinity;
-        IReadOnlyList<EnemyOverlayBox> binocularTargets =
-            showFirstPersonHud
-            && _player is { IsBinocularsOpen: true }
-            && _soldiers is { } binocularSoldiers
-                ? binocularSoldiers.Simulation.BinocularTargets(
-                    // Use the same presented eye that rendered the world. The detector owns
-                    // authoritative slot lifetime, but its screen rectangle must be projected
-                    // through the frame's smoothed camera or moving/zooming binoculars make the
-                    // box visibly lag behind the soldier it is meant to surround.
-                    eye,
-                    sight.TanX,
-                    _window.Width,
-                    _window.Height,
-                    // FUN_00471F60/FUN_00471B60 use Sys_GetTickCount (the retail
-                    // millisecond counter), not the 30 Hz simulation index. Passing
-                    // TickCount here stretched the native 250 ms entry pulse and
-                    // 3000 ms retention window by a factor of thirty-three.
-                    _loop.Clock.Now,
-                    binocularDetectionRange,
-                    _loop.Clock.TickCount)
-                : [];
 
         // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
         // never swaps in the view-model block for them (player.md section 15.3).
@@ -1557,6 +1642,11 @@ if (retailFog)
         {
             _marks.Draw(_player.Marks, eye, projection, _world.DrawPoses);
         }
+    }
+
+    /// <summary>Gathers the screen-space indirect light and resolves the deferred lighting.</summary>
+    private void LightScene(FrameLoopState state, Camera3D eye, bool captured, SceneTargetDescription sceneTarget, Matrix4f unjitteredProjection)
+    {
 
         // L6/L9: the live screen probe gather. Traced here, while the G-buffer the geometry pass just
         // filled is still live and BEFORE the pass closes -- because closing it runs the deferred
@@ -1953,6 +2043,13 @@ if (retailFog)
             state.ScreenGi.HasHistory = false;
             state.ScreenGi.ResolveHasHistory = false;
         }
+    }
+
+    /// <summary>Submits the level's lamps and the player's flashlight as point lights for the deferred pass.</summary>
+    private void SubmitLocalLights(
+        FrameLoopState state, bool captured, Camera3D eye, Matrix4f unjitteredProjection, bool flashlightShown, Camera3D flashlightBody,
+        MapSceneView? mapScene, SceneTargetDescription sceneTarget)
+    {
 
         // The level's lamp fixtures, submitted as real point lights for the deferred pass that
         // closes just below -- the same timing as the screen-space fill. Transformed into this
@@ -2086,6 +2183,15 @@ if (retailFog)
             _device.EndStageTiming();
             _device.BeginStageTiming(RenderStage.Forward);
         }
+    }
+
+    /// <summary>Draws what the forward pass owns over the lit picture: the translucent world, the water, the light streaks, the effects and the weather.</summary>
+    private void DrawForwardPass(
+        HostConsole console, bool captured, Camera3D eye, Matrix4f projection, MapSceneView? mapScene, RenderResolution resolution,
+        SceneTargetDescription sceneTarget, bool smoothPresentation, float tickBlend, bool cameraIndoors, bool remasteredOptics)
+    {
+        Debug.Assert(_scene is not null && _world is not null, "Drawn only while a level is up; see RenderWorld.");
+
 
         // The view model and anything translucent belong to the forward pass: it is drawn with its
         // own narrower projection, so its depth must not end up in the buffer the fog and the
@@ -2127,7 +2233,7 @@ if (retailFog)
                 Math.Max(1, (int)(rotorMap.Viewport.Width * scaleX)),
                 Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
         }
-_world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
         // The level's glazing, over a picture the lighting has finished. It has to follow the
         // opaque world for the ordinary reason anything blended does, and it is a pass of its own
@@ -2297,6 +2403,12 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         // in the pass because it carves its silhouette out of the depth buffer to read through
         // walls, and the view model clears depth immediately after.
         _inspector.DrawOutline(console, eye);
+    }
+
+    /// <summary>Draws the first-person rig, or the scope that replaces it.</summary>
+    /// <returns>The binocular range to show, in metres, or <see langword="null"/> when the glasses are down.</returns>
+    private float? DrawFirstPersonView(Camera3D eye, bool showViewModel, SightZoomFrame sight, bool smoothPresentation, float tickBlend)
+    {
 
         // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
         // then ask the human where the weapon is and draw that. Only in player mode, because the
@@ -2445,23 +2557,16 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         {
             DrawTitleFirstPerson(eye);
         }
+        return binocularRangeMetres;
+    }
 
-        // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
-        // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
-        // depth-to-world reconstruction before the gather feeds the frame. Only when no card probe is
-        // running, since that fills the cache atlas with a diagnostic rather than light.
-        if (captured
-            && !state.ScreenGiDumped
-            && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
-            && _gi.DistanceField is { } giField
-            && _gi.CardLighting is { } giCards
-            && RenderCVars.SurfaceCacheProbe.Value == 0)
-        {
-            state.ScreenGiDumped = true;
-            SurfaceCacheDebugDumps.ScreenGather(
-                _device, giCards, giField, eye, unjitteredProjection, FarPlane,
-                _window.Width, _window.Height, giInto, _logger);
-        }
+    /// <summary>Resolves the frame and draws everything 2D over it: the HUD, the messages, the computer, the damage wash and the flash.</summary>
+    private void DrawScreenOverlays(
+        FrameLoopState state, bool captured, PostProcessSettings postProcess, bool remasterHud, bool remasteredOptics, bool showFirstPersonHud,
+        IReadOnlyList<EnemyOverlayBox> binocularTargets, float? binocularRangeMetres, bool tacticalMessages, bool showPlayerHud, bool smoothPresentation,
+        float tickBlend, SightZoomFrame sight, bool worldInteractionPrompt, Camera3D eye, float horizontalTangent, float aspectRatio,
+        bool cameraIndoors)
+    {
 
         // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
         // the menus and the console are authored in display colours and must never be tone mapped.
@@ -2530,8 +2635,8 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
                     && _ammoTypes?.Types.FirstOrDefault(
                         ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
-                    ? carried.Ammunition.Count(m203.AmmoId)
-                    : 0;
+                        ? carried.Ammunition.Count(m203.AmmoId)
+                        : 0;
                 retailHud.Draw(
                     state.Batch,
                     held?.Weapon,
