@@ -35,8 +35,6 @@ internal sealed class FrameLoopState
 
     public bool ReportedShot { get; set; }
 
-    public InteractionCamera InteractionCamera { get; set; } = default!;
-
     public int TemporalFrame { get; set; }
 
     public string? CutsceneCaptureDirectory { get; set; }

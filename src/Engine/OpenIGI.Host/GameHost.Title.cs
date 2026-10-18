@@ -166,6 +166,7 @@ public sealed partial class GameHost
         _hudOverlay = null;
         _firstPerson = null;
         _worldView = null;
+        _viewpoint = null;
         _worldBuilder = binding.WorldBuilder;
         _gameplay = binding.Gameplay;
         RestoreTitleInputBindings();

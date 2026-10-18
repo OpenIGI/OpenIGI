@@ -896,8 +896,10 @@ public sealed partial class GameHost
                 _mission.Player.LookSettings = look;
             }
 
-            _deathCamera.LookSettings = look;
-            state.InteractionCamera.LookSettings = look;
+            if (Viewpoint is { } lookViewpoint)
+            {
+                lookViewpoint.LookSettings = look;
+            }
 
             if (state.Console.WantsPointer)
             {
@@ -931,12 +933,12 @@ public sealed partial class GameHost
                 _mission.Player?.HoldStill();
                 _window.CursorLocked = false;
             }
-            else if (_mission.IsPlayerDead && _deathCamera.IsActive)
+            else if (Viewpoint?.IsDeathViewActive == true)
             {
                 // Dead: the mouse orbits the death camera around the body rather than turning a head that
                 // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                 // so the orbit keeps turning however far the mouse is moved.
-                _deathCamera.Control(rawX, rawY);
+                Viewpoint?.ControlDeathView(rawX, rawY);
                 _window.CursorLocked = !state.CaptureMode;
 
                 // The look is not driving the view this frame, so it must not consider itself
@@ -953,7 +955,7 @@ public sealed partial class GameHost
                 // On a ladder the mouse orbits the third-person interaction camera around the climbing
                 // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
                 // you can look around while you climb rather than being locked behind the character.
-                state.InteractionCamera.Control(rawX, rawY);
+                Viewpoint?.ControlInteractionView(rawX, rawY);
                 _window.CursorLocked = !state.CaptureMode;
                 _mission.Player?.ReleaseLook();
             }

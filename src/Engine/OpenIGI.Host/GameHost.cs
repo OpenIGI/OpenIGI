@@ -151,23 +151,11 @@ public sealed partial class GameHost : IDisposable
     private int _exitCode;
 
     // --- The player's own life, damage and death ---
-    private DeathCamera _deathCamera = null!;
 
-    /// <summary>The over-the-shoulder view and the move between it and the player's own eyes.</summary>
-    /// <remarks>
-    /// Owned here rather than by <see cref="PlayerCamera"/> because it changes nothing the player camera
-    /// is responsible for: the body still walks, aims and fires from exactly where it did, and this only
-    /// decides where the frame is rasterised from. See <see cref="ThirdPersonCamera"/>.
-    /// </remarks>
-    private readonly ThirdPersonCamera _thirdPerson = new();
 
     /// <summary>The wall clock the third-person move is advanced on; it is a camera move, not a tick.</summary>
-    private int _thirdPersonMilliseconds;
 
     /// <summary>The pull-in ray, kept so a frame does not allocate one; rebuilt when the level's does.</summary>
-    private DeathCameraVantage.Blocked? _thirdPersonWalls;
-    private ObjectCollisionIndex? _thirdPersonWallsSolids;
-    private TerrainData? _thirdPersonWallsTerrain;
 
 
     private int _impactSoundQuietUntil;
@@ -445,6 +433,12 @@ public sealed partial class GameHost : IDisposable
     private IMissionHudOverlay? _hudOverlay;
     private IMissionFirstPersonView? _firstPerson;
     private IMissionWorldView? _worldView;
+    private IMissionViewpoint? _viewpoint;
+
+    // The over-the-shoulder camera's and the flashlight's wall cast, cached against the two references it is built from.
+    private DeathCameraVantage.Blocked? _thirdPersonWalls;
+    private ObjectCollisionIndex? _thirdPersonWallsSolids;
+    private TerrainData? _thirdPersonWallsTerrain;
     private DebugOverlayRenderer? _debugOverlay;
     private IMapComputerPresenter? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
@@ -1338,43 +1332,6 @@ public sealed partial class GameHost : IDisposable
         }
 
         return kept;
-    }
-
-    /// <summary>Hands the player the ray their crosshair sits on.</summary>
-    /// <param name="drawn">The camera the frame was rasterised from.</param>
-    /// <remarks>
-    /// <para>
-    /// Only the ray. What it is over is settled on the simulation tick, by
-    /// <see cref="PlayerCamera.AimConvergenceRay"/>, against the same world trace and the same human
-    /// probe a round marches — because a crosshair resolved by one test and a bullet resolved by
-    /// another disagree exactly where it matters. The first attempt at this traced here, with the
-    /// renderer's own wall query, and looked straight through people: every shot at a guard converged on
-    /// whatever stood behind him and landed the camera's own half-metre wide.
-    /// </para>
-    /// <para>
-    /// Cleared the moment the camera is back at the eye, which is what leaves first person firing along
-    /// the body's forward with no branch anywhere to say so.
-    /// </para>
-    /// </remarks>
-    private void ConvergeThirdPersonAim(in Camera3D drawn)
-    {
-        if (_mission.Player is null)
-        {
-            return;
-        }
-
-        if (!_thirdPerson.IsEngaged)
-        {
-            _mission.Player.AimConvergenceRay = null;
-            return;
-        }
-
-        _mission.Player.AimConvergenceRay = (
-            new Vector3d(
-                drawn.Position.X * WorldScene.UnitsPerMetre,
-                drawn.Position.Y * WorldScene.UnitsPerMetre,
-                drawn.Position.Z * WorldScene.UnitsPerMetre),
-            drawn.Orientation.Row3);
     }
 
     /// <summary>The ray the third-person camera keeps itself out of walls with.</summary>

@@ -199,8 +199,7 @@ public sealed partial class GameHost
         // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye
         // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
         // own third-person rig, which SoldierRenderer loads and poses with the death fall.
-        _deathCamera = new();
-        state.InteractionCamera = new();
+        _viewpoint?.Renew();
         _igi1.Tick.ResetClimbs();
         state.TemporalFrame = 0;
 

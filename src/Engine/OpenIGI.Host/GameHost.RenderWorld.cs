@@ -316,47 +316,39 @@ public sealed partial class GameHost
         // is opaque and covers most of the screen, so drawing it before the objects gives the
         // depth test the most to reject.
         //
-        // A dead player watches from the death camera -- pulled back off the eye to a third-person
-        // shot of the body -- rather than from the frozen first-person view.
-        // On a ladder the eye pulls back to a third-person interaction view (camera mode 3), so you
-        // see your character on the rungs rather than the back of your hands.
-        // The ladder and world-interaction view is a third-person orbit whose ANGLES are already
-        // this frame's own -- Control runs per frame -- but whose pivot follows the climbing body
-        // and whose distance eases out, both on the 30 Hz tick. The body itself is drawn
-        // interpolated between its tick pair, so leaving the camera on the tick made a smoothly
-        // climbing Jones judder against a camera that stepped thirty times a second. This is the
-        // other half of that smoothing, and it must run BEFORE the eye is read below.
-        if (state.InteractionCamera.IsActive)
+        // The eye: the title's own viewpoint composes it -- the walking eye, the camera over a dead
+        // body, the orbit around a climbing one and the move over the shoulder -- from the free
+        // camera and a title player's eye, which are the host's. A title with no viewpoint of its
+        // own looks through those two alone.
+        Camera3D? titlePlayerEye = _playerMode && TitlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend) : null;
+        Camera3D eye;
+        Camera3D flashlightBody;
+        if (Viewpoint is { } viewpoint)
         {
-            state.InteractionCamera.Present(smoothPresentation ? tickBlend : 1f);
+            eye = viewpoint.ComposeEye(
+                new ViewpointFrame(
+                    _playerMode,
+                    smoothPresentation,
+                    tickBlend,
+                    titlePlayerEye,
+                    _camera.Camera,
+                    ThirdPersonAllowed: !_session.FailedMenu
+                        && !_computerOpen
+                        && !_entry.IsCameraActive
+                        && _mission.Cutscenes?.IsPlaying != true
+                        && mapScene is null
+                        && !_menuFlow.OverShowcase,
+                    Paused: _menuFlow.MenuMode,
+                    _loop.TimeSource.Milliseconds,
+                    ThirdPersonWalls()),
+                out flashlightBody);
         }
-        if (_deathCamera.IsActive)
+        else
         {
-            _deathCamera.Present(smoothPresentation ? tickBlend : 1f);
-        }
-
-        Camera3D eye = _mission.IsPlayerDead && _deathCamera.IsActive
-            ? _deathCamera.Camera
-            : (_mission.Player is { IsOnLadder: true } or { IsInWorldInteraction: true })
-                && state.InteractionCamera.IsActive
-                ? state.InteractionCamera.Camera
-                : _playerMode && TitlePlayer is not null ? _titlePresentation.Camera(_titlePresentationBlend)
-                : _playerMode && _mission.Player is not null ? _mission.Player.Camera : _camera.Camera;
-
-        // The walking eye glides between its tick pair, and so does the recoil kick inside its
-        // orientation; the mouse half of the look is this frame's own. The fly and death cameras
-        // move per frame on their own and need nothing.
-        if (smoothPresentation
-            && _playerMode
-            && !_mission.IsPlayerDead
-            && _mission.Player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
-        {
-            eye = _mission.Player.SmoothedCamera(tickBlend);
+            eye = titlePlayerEye ?? _camera.Camera;
+            flashlightBody = eye;
         }
 
-        // The body's own eye, before the over-the-shoulder view moves the camera off it: the
-        // flashlight hangs off the body, wherever the camera is.
-        Camera3D flashlightBody = eye;
         bool flashlightShown = _playerMode
             && !_mission.IsPlayerDead
             && !_session.FailedMenu
@@ -367,71 +359,6 @@ public sealed partial class GameHost
             && !_menuFlow.OverShowcase
             && _mission.Player is not null;
 
-        // The over-the-shoulder view, built off whatever camera the player would have had. It is
-        // applied HERE, on the finished first-person eye and before anything reads the eye back,
-        // so the capture log, the aim projection below and every pass of the frame all agree on
-        // where the picture was taken from.
-        //
-        // The four states that own the view outright are excluded rather than blended out of: a
-        // cutscene, the entry shot, the map computer and the menu orbit each replace the eye
-        // below, and running the move underneath one of them would only decide where the camera
-        // was when it was handed back.
-        //
-        // The front end is excluded but the PAUSE is not, and the difference is the whole reason
-        // the test is written this way: a paused frame is still the player's own view of the level
-        // they are standing in, so the camera stays where it was and simply stops moving, while
-        // the menu's showcase orbit is somewhere else entirely and there is nothing to preserve.
-        bool thirdPersonEligible = _playerMode
-            && !_mission.IsPlayerDead
-            && !_session.FailedMenu
-            && !_computerOpen
-            && !_entry.IsCameraActive
-            && _mission.Cutscenes?.IsPlaying != true
-            && mapScene is null
-            && !_menuFlow.OverShowcase
-            && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false };
-
-        if (thirdPersonEligible && _mission.Player is { } thirdPersonPlayer)
-        {
-            int thirdPersonNow = _loop.TimeSource.Milliseconds;
-            float thirdPersonElapsed =
-                Math.Clamp((thirdPersonNow - _thirdPersonMilliseconds) / 1000f, 0f, 0.1f);
-            _thirdPersonMilliseconds = thirdPersonNow;
-
-            _thirdPerson.DistanceInMetres = GameplayCVars.ThirdPersonDistance.Value;
-            _thirdPerson.ShoulderInMetres = GameplayCVars.ThirdPersonShoulder.Value;
-            _thirdPerson.HeightInMetres = GameplayCVars.ThirdPersonHeight.Value;
-            _thirdPerson.BlendSeconds = GameplayCVars.ThirdPersonBlend.Value;
-
-            // Optics are a first-person act. Raising the binoculars or leaning into the Dragunov's
-            // scope replaces the picture with what the eye sees, so the camera comes back to the
-            // eye first -- by the same move, not by a cut -- and goes out again on the way down.
-            bool wantsThirdPerson = GameplayCVars.ThirdPerson.Value
-                && thirdPersonPlayer is { IsBinocularsOpen: false, IsSniperScoped: false };
-
-            // A paused view does not move. Advancing the blend behind the menu would have the
-            // camera quietly travel while the player was reading, and arrive somewhere else.
-            eye = _thirdPerson.Update(
-                _menuFlow.MenuMode ? 0f : thirdPersonElapsed,
-                wantsThirdPerson,
-                eye,
-                ThirdPersonWalls());
-
-            ConvergeThirdPersonAim(eye);
-        }
-        else
-        {
-            // A cut, not a move: the view was taken by something that put the camera somewhere
-            // else entirely, and interpolating back from there draws a frame from a line between
-            // two unrelated places.
-            _thirdPerson.Reset();
-            _thirdPersonMilliseconds = _loop.TimeSource.Milliseconds;
-            if (_mission.Player is not null)
-            {
-                _mission.Player.AimConvergenceRay = null;
-            }
-        }
-
         // Whether the character is drawn at all, read here rather than at the draw because the
         // SHADOW cascades run before it: deciding at the geometry pass left the body's shadow a
         // frame behind the body on the frame it appeared.
@@ -441,7 +368,7 @@ public sealed partial class GameHost
         // the head far enough for a body to be a body rather than the inside of a skull filling
         // the screen. r_player_body overrides that for first person deliberately -- see the cvar
         // for what it buys and what it costs.
-        bool thirdPersonBody = _thirdPerson.ShowsBody || RenderCVars.PlayerBody.Value;
+        bool thirdPersonBody = Viewpoint?.ShowsBody == true || RenderCVars.PlayerBody.Value;
         if (_soldiers is { } shownBody)
         {
             shownBody.PlayerBodyFollowVisible = thirdPersonBody;
@@ -888,7 +815,7 @@ public sealed partial class GameHost
             RenderCVars.TacticalMessages.Value);
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
-            && !(_mission.IsPlayerDead && _deathCamera.IsActive)
+            && Viewpoint?.IsDeathViewActive != true
             && _mission.Player is { View: not null, IsMountedStationaryGun: false };
 
         // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
@@ -899,7 +826,7 @@ public sealed partial class GameHost
         // The arms and the held weapon hang off the eye, so the moment the camera leaves it they
         // are either filling the frame or behind it. When they stand down, and when they come
         // back, is the camera's own call -- see ThirdPersonCamera.ShowsViewModel.
-        bool showViewModel = showFirstPersonHud && _thirdPerson.ShowsViewModel;
+        bool showViewModel = showFirstPersonHud && Viewpoint?.ShowsViewModel != false;
 
         // What the interaction resolver is offering, advanced on its own wall clock so the
         // marker fades at the same rate whatever the frame rate. Gated on showPlayerHud rather
@@ -2148,7 +2075,7 @@ public sealed partial class GameHost
             _menuFlow.MenuMode && _menuFlow.PauseMenu,
             flashlightBody,
             eye,
-            _thirdPerson.IsEngaged,
+            Viewpoint?.IsThirdPersonEngaged == true,
             _loop.TimeSource.Milliseconds,
             _flashlightWalls ??= ThirdPersonWalls);
 
@@ -2388,6 +2315,11 @@ public sealed partial class GameHost
         _inspector.DrawOutline(console, eye);
     }
 
+    /// <summary>Gets the title's own player's viewpoint, made from the title's presentation the first time it is asked for.</summary>
+    private IMissionViewpoint? Viewpoint =>
+        _viewpoint ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionViewpoint>(
+            new MissionHudPresentationRequest(_device, _igi1, _logger));
+
     /// <summary>Gets what the title's player has put in the world, made from the title's presentation the first time a frame asks for it.</summary>
     private IMissionWorldView? WorldView =>
         _worldView ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionWorldView>(
@@ -2489,7 +2421,7 @@ public sealed partial class GameHost
         // later in the draw order and still cover the HUD exactly as they did before this separation.
         if (TitlePlayer is { } titleHudPlayer && _titleHud is { } titleHud
             && _playerMode && !_computerOpen && !_entry.IsCameraActive && _mission.Cutscenes?.IsPlaying != true
-            && _thirdPerson.ShowsViewModel)
+            && Viewpoint?.ShowsViewModel != false)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
@@ -2517,7 +2449,7 @@ public sealed partial class GameHost
         if (_computerOpen
             && TacticalComputer is null
             && _playerMode
-            && !(_mission.IsPlayerDead && _deathCamera.IsActive)
+            && Viewpoint?.IsDeathViewActive != true
             && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false })
         {
             Camera3D computerEye = _mission.Player.Camera;

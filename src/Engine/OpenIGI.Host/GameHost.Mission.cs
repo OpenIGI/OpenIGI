@@ -982,7 +982,7 @@ public sealed partial class GameHost
         _mission.IsPlayerDead = false;
         _mission.DamageFlash = new();
         _mission.FlashbangFlash = new();
-        _deathCamera.Reset();
+        Viewpoint?.ResetDeathView();
         _flashlight.Reset();
 
         EndStage("the terrain, sky, sun, grade and camera");
@@ -1856,7 +1856,7 @@ public sealed partial class GameHost
             }
         }
 
-        public void FollowCorpse(Vector3d centre) => host._deathCamera.Follow(centre);
+        public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(centre);
 
         public OpenIGI.Input.InputState Input => host._window.Input;
 
@@ -1864,26 +1864,16 @@ public sealed partial class GameHost
 
         public IGroundHeightField? Ground => host._ground;
 
-        public bool IsInteractionViewActive => State.InteractionCamera.IsActive;
+        public bool IsInteractionViewActive => host.Viewpoint?.IsInteractionViewActive == true;
 
         public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls) =>
-            State.InteractionCamera.Begin(
-                feet,
-                facing,
-                walls is null
-                    ? null
-                    : (Vector3d from, Vector3d to, out Vector3d hit) =>
-                    {
-                        bool blocked = walls(from, to, out WorldRayHit wall);
-                        hit = blocked ? wall.Position : default;
-                        return blocked;
-                    });
+            host.Viewpoint?.BeginInteractionView(feet, facing, walls);
 
-        public void FollowInteractionView(Vector3d feet) => State.InteractionCamera.Follow(feet);
+        public void FollowInteractionView(Vector3d feet) => host.Viewpoint?.FollowInteractionView(feet);
 
-        public void TickInteractionView() => State.InteractionCamera.Tick();
+        public void TickInteractionView() => host.Viewpoint?.TickInteractionView();
 
-        public void ResetInteractionView() => State.InteractionCamera.Reset();
+        public void ResetInteractionView() => host.Viewpoint?.ResetInteractionView();
 
         public void CloseTick()
         {
@@ -1936,15 +1926,7 @@ public sealed partial class GameHost
         public void ResetWeaponSounds() => host._weaponSounds?.Reset();
 
         public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
-            host._deathCamera.Begin(
-                position,
-                facing,
-                (f, t, out h) =>
-                {
-                    bool blocked = walls(f, t, out WorldRayHit wall);
-                    h = blocked ? wall.Position : default;
-                    return blocked;
-                });
+            host.Viewpoint?.BeginDeathView(position, facing, walls);
 
         public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
 
