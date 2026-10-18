@@ -691,7 +691,7 @@ public sealed partial class GameHost
             scene.Placements,
             _loop.Variables,
             _mission.VehiclePhysics,
-            random: _soundRandom);
+            random: _mission.SoundRandom);
         world.Destructibles = _mission.Destructibles;
         solids.Destructibles = _mission.Destructibles;
         _mission.Cutscenes.Destructibles = _mission.Destructibles;
@@ -786,7 +786,7 @@ public sealed partial class GameHost
         solids.GenericPickups = _mission.GenericPickups;
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
-        _mission.Ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
+        _mission.Ambience = AmbientAreaRegistry.Build(levelRoot, _mission.SoundRandom);
         _ambientVoices.Clear();
         if (_mission.Ambience.Areas.Count > 0)
         {
@@ -828,7 +828,7 @@ public sealed partial class GameHost
 
             // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
             soldiers.Simulation.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
-            soldiers.Simulation.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+            soldiers.Simulation.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_mission.SoundRandom));
             soldiers.Simulation.SetMeleeStrikeSink(StrikePlayer);
             soldiers.Simulation.SetPlayerDeltaTranslationScale(() => _mission.PlayerDeltaTranslationScale);
 
@@ -1384,7 +1384,7 @@ public sealed partial class GameHost
             DamageScale = HumanHealth.DifficultyDamageScale(_mission.PlayerDifficulty),
         };
         _mission.IsPlayerDead = false;
-        _damageFlash = new();
+        _mission.DamageFlash = new();
         _flashbangScreenFlash = new();
         _deathCamera.Reset();
         _flashlight.Reset();
@@ -2237,266 +2237,6 @@ public sealed partial class GameHost
     private ViewModelPresentationRequest ViewModelRequest() =>
         new(_device, _resources, _mission.MagicObjects, _logger, _work);
 
-    /// <summary>The player's grunt — <c>player_hit_</c> through <c>0x4637C0</c>'s per-human rate limit.</summary>
-    /// <remarks>
-    /// Flat, not positional: the sound belongs to the player, who is the listener. The limit is what lets
-    /// sustained fire stagger the player without stuttering the sound.
-    /// </remarks>
-    /// <summary>
-    /// The shake a bullet or a blow puts in the view — <c>0x412440</c> and <c>0x412CE0</c>: a draw clamped
-    /// to <c>[0.25, 1]</c> scales the full 5 cm and 0.75 degrees, for fifteen ticks.
-    /// </summary>
-    private void InstallPlayerHitShake()
-    {
-        float share = Math.Clamp(_soundRandom.NextSingle(), 0.25f, 1f);
-        _mission.Player!.InstallViewShake(
-            HumanViewShake.HitPositionUnits * share, HumanViewShake.HitAngleRadians * share, HumanViewShake.HitTicks);
-    }
-
-    private void PlayPlayerGrunt()
-    {
-        if (_loop.Clock.TickCount < _mission.PlayerHitQuietUntil)
-        {
-            return;
-        }
-
-        _mission.PlayerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
-        PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
-    }
-
-    /// <summary>A soldier's close-combat blow landing on the player — the blunt-hit handler <c>0x412CE0</c>.</summary>
-    /// <param name="attacker">The striking soldier's position.</param>
-    /// <param name="damage">The blow's damage, the settings row's close-combat figure.</param>
-    /// <remarks>
-    /// The zone is 13 when the attacker is in front of the player and 14 when behind, the damage is that
-    /// zone's multiplier times the blow (scaled by difficulty, as every player hit is), and a surviving
-    /// player grunts and then hears <c>punched_01</c> or <c>punched_02</c> by the parity of a random draw.
-    /// Each corner of the red flash takes its own draw.
-    /// </remarks>
-    private void StrikePlayer(Vector3d attacker, float damage)
-    {
-        if (_mission.Player is null || _mission.IsPlayerDead)
-        {
-            return;
-        }
-
-        // The body's forward axis against the direction from the attacker: negative when facing it.
-        Vector3d towardsPlayer = new(
-            _mission.Player.Body.Position.X - attacker.X,
-            _mission.Player.Body.Position.Y - attacker.Y,
-            _mission.Player.Body.Position.Z - attacker.Z);
-        float yaw = _mission.Player.Body.Yaw;
-        double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
-        int zone = facing < 0.0 ? PlayerBluntFrontZone : PlayerBluntBackZone;
-
-        _mission.PlayerHealth.Apply(zone, damage);
-        if (!_mission.PlayerHealth.IsDead)
-        {
-            PlayPlayerGrunt();
-            _audioOut.Sounds?.PlayDefinition(
-                (_soundRandom.NextRaw() & 1) != 0 ? "punched_01" : "punched_02",
-                positionInUnits: null,
-                priority: 250);
-        }
-
-        InstallPlayerHitShake();
-        _damageFlash.HitEveryCorner(
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle());
-
-        if (_mission.PlayerHealth.IsDead)
-        {
-            // A close-combat blow is melee, not a round.
-            BeginPlayerDeath(attacker, zone, bone: -1, WeaponCategory.Knife);
-        }
-    }
-
-    // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
-    private const int PlayerBluntFrontZone = 13;
-    private const int PlayerBluntBackZone = 14;
-
-    /// <summary>Puts the player through the whole death sequence, whatever killed them.</summary>
-    /// <param name="from">Where the killing thing came from — the shooter's muzzle, or the blast.</param>
-    /// <param name="zone">The zone the killing damage landed on.</param>
-    /// <param name="bone">The bone the round went through, or <c>-1</c> when nothing so precise.</param>
-    /// <param name="category">The killing weapon's category, which picks the fall's family.</param>
-    /// <remarks>
-    /// Extracted from the guard-round handler so that EVERYTHING lethal runs it — a grenade that
-    /// zeroes the health must kill exactly the way a bullet does, or the player stands at zero
-    /// health forever, which is precisely the bug this fixed.
-    /// </remarks>
-    private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category)
-    {
-        if (_mission.Player is null || _mission.IsPlayerDead)
-        {
-            return;
-        }
-
-        // Locomotion state 47 (0x40E560): the clip comes from the LAST ZONE STRUCK's row in the
-        // player's own hit-zone table, one of its two reactions by rand(2). The player stops taking
-        // input from here on -- it is a state, not a message.
-        _mission.IsPlayerDead = true;
-        _mission.Player.ResetOptics();
-        _mission.Player.StopWeaponsForDeath();
-        StopBinocularTransitionSound();
-
-        // The player receives no further simulation ticks after death, so the weapon sound player
-        // cannot observe a quiet tick and retire an automatic loop on its own.
-        _weaponSounds?.Reset();
-        int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _mission.ShotRandom.Next(2));
-
-        // The lethal hit has already written the retail corner flash. Do not replace it with a uniform
-        // full-screen wash here: 0x412440 writes the flash as part of damage receipt, before it changes
-        // the locomotion state to death.
-
-        // Which way the body is thrown: the facing whose backward axis points away from the killer,
-        // exactly as the soldier death faces the incoming round (SoldierDeath.TurnToTheShot).
-        double throwX = _mission.Player.Body.Position.X - from.X;
-        double throwY = _mission.Player.Body.Position.Y - from.Y;
-        double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
-        float throwFacing = throwLength > 1e-6
-            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
-            : _mission.Player.Body.Yaw;
-
-        _soldiers?.KillPlayerBody(
-            fall,
-            _mission.Player.Body.Position,
-            throwFacing,
-            bone,
-            new Vector3d(
-                _mission.Player.Body.Position.X - from.X,
-                _mission.Player.Body.Position.Y - from.Y,
-                _mission.Player.Body.Position.Z - from.Z),
-            category,
-            new Vector3d(
-                _mission.Player.Body.Velocity.X,
-                _mission.Player.Body.Velocity.Y,
-                _mission.Player.Body.Velocity.Z));
-
-        if (_mission.Solids is { } deathSolids)
-        {
-            WorldRayCast deathCaster = deathSolids.Caster();
-            _deathCamera.Begin(
-                _mission.Player.Body.Position,
-                throwFacing,
-                (f, t, out h) =>
-                {
-                    bool blocked = deathCaster(f, t, out WorldRayHit wall);
-                    h = blocked ? wall.Position : default;
-                    return blocked;
-                });
-        }
-
-        // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
-        PlayDeathSound(HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
-    }
-
-    /// <summary>Routes a resolved body landing into the desktop-owned presentation and death state.</summary>
-    private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact)
-    {
-        // 0x408460 arms the camera's dip on every ground contact, before it has decided whether the
-        // landing hurt: a step off a crate drops the view a little, a long drop drops it the full
-        // quarter-metre. 0x4659B0 is two stores, so this is unconditional and cannot fail.
-        player.InstallLandingViewKick(impact.ViewKickUnits);
-
-        // The ground's own landing sound, which is what every harmless drop sounds like. Both airborne
-        // states play it on contact from the struck material, independently of the fall-damage cue
-        // below -- a hurting fall is heard twice, once as the surface and once as the player.
-        if (player.TakeLandingSound() is { } landing)
-        {
-            PlayLandingSound(landing);
-        }
-
-        // State 35 names one of these three definitions only when damage is non-zero. Like the player's
-        // own hit and death sounds it belongs to the listener, so it is flat rather than world-panned.
-        if (!string.IsNullOrEmpty(impact.SoundName))
-        {
-            _audioOut.Sounds?.PlayDefinition(impact.SoundName, priority: 250);
-        }
-
-        // Every ground contact posts type 11. A safe landing carries five metres; a damaging one ten.
-        _mission.Soldiers?.NotifyGroundImpact(
-            player.Body.Position,
-            player.Body.Position,
-            impact.HearingRadiusUnits);
-
-        if (impact.Damage <= 0f)
-        {
-            return;
-        }
-
-        // PlayerBody has already added the direct, difficulty-independent dose to the shared health.
-        // Raise the desktop wash that the render pass actually draws rather than the body's standalone one.
-        _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
-        _logger.Information(
-            "Player",
-            $"Fall impact {impact.SpeedMetresPerSecond:F2} m/s dealt {impact.Damage:F3} "
-                + $"({_mission.PlayerHealth.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
-
-        if (_mission.PlayerHealth.IsDead)
-        {
-            // Zone 13 is the retail fall bucket. With no external attacker the source is the feet,
-            // leaving the death fall aligned to the player's current facing.
-            BeginPlayerDeath(
-                player.Body.Position,
-                HumanDamage.FrontZone,
-                bone: -1,
-                WeaponCategory.Gun);
-        }
-    }
-
-    /// <summary>Applies one native electric-fence shock after the player's 45-tick guard permits it.</summary>
-    private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence)
-    {
-        if (_mission.PlayerHealth.IsDead)
-        {
-            return;
-        }
-
-        float healthBefore = _mission.PlayerHealth.RemainingFraction;
-        _logger.Information(
-            "Player.Fence",
-            $"contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
-                + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
-                + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
-
-        ElectricFenceShock shock = ElectricFenceContact.Shock(_mission.PlayerHealth, _mission.ElectricFenceDose);
-        float dealt = shock.Damage;
-        if (dealt <= 0f)
-        {
-            _logger.Warning(
-                "Player.Fence",
-                $"contact produced no damage task={fence.Task.Id} "
-                    + $"health={_mission.PlayerHealth.RemainingFraction:P0} hits={_mission.PlayerHealth.Hits}.");
-            return;
-        }
-
-        // 0x412F80: the full shake for forty-five ticks, and four separate corner draws.
-        player.InstallViewShake(
-            HumanViewShake.HitPositionUnits, HumanViewShake.HitAngleRadians, HumanViewShake.FenceTicks);
-        _damageFlash.HitEveryCorner(
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle());
-        if (!shock.IsLethal)
-        {
-            // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.
-            _audioOut.Sounds?.PlayDefinition("elfence_spark1", priority: 250);
-        }
-
-        _logger.Information(
-            "Player",
-            $"Electric fence shock dealt {dealt:F3} ({_mission.PlayerHealth.RemainingFraction:P0} left).");
-
-        if (shock.IsLethal)
-        {
-            BeginPlayerDeath(fence.Anchor, ElectricFenceContact.Zone, bone: -1, WeaponCategory.Gun);
-        }
-    }
-
     // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
     // anything on the tick the weapon actually changed.
     private void FollowHeldWeapon(PlayerCamera candidate, IHeldWeaponPresenter? held, LoadedMission loadedMission)
@@ -2734,6 +2474,56 @@ public sealed partial class GameHost
         public void FallImpact(PlayerCamera player, HumanFallImpact impact) => host.ResolvePlayerFallImpact(player, impact);
     }
 
+    private void InstallPlayerHitShake() => _igi1Harm.InstallPlayerHitShake();
+
+    private void StrikePlayer(Vector3d attacker, float damage) => _igi1Harm.StrikePlayer(attacker, damage);
+
+    private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category) =>
+        _igi1Harm.BeginPlayerDeath(from, zone, bone, category);
+
+    private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact) =>
+        _igi1Harm.ResolvePlayerFallImpact(player, impact);
+
+    private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence) =>
+        _igi1Harm.ResolvePlayerElectricFence(player, fence);
+
+    /// <summary>The host's side of <see cref="Igi1PlayerHarm"/>: the sounds and the death camera.</summary>
+    /// <param name="host">The host.</param>
+    private sealed class Igi1HarmHost(GameHost host) : IIgi1PlayerHarmHost
+    {
+        public IOpenIgiLogger Logger => host._logger;
+
+        public GameLoop Game => host._loop;
+
+        public ISoldierPresenter? SoldierPresenter => host._soldiers;
+
+        public void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits) =>
+            host.PlayHitSound(prefix, variants, positionInUnits);
+
+        public void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits) =>
+            host.PlayDeathSound(prefix, variants, positionInUnits);
+
+        public void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing) => host.PlayLandingSound(landing);
+
+        public void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0) =>
+            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
+
+        public void StopBinocularTransitionSound() => host.StopBinocularTransitionSound();
+
+        public void ResetWeaponSounds() => host._weaponSounds?.Reset();
+
+        public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
+            host._deathCamera.Begin(
+                position,
+                facing,
+                (f, t, out h) =>
+                {
+                    bool blocked = walls(f, t, out WorldRayHit wall);
+                    h = blocked ? wall.Position : default;
+                    return blocked;
+                });
+    }
+
     /// <summary>The host's side of <see cref="Igi1MissionTick"/>: the picture, the sound and the log of a tick.</summary>
     /// <param name="host">The host.</param>
     private sealed class Igi1TickHost(GameHost host) : IIgi1MissionHost
@@ -2795,7 +2585,7 @@ public sealed partial class GameHost
 
         public void StepScreen()
         {
-            host._damageFlash.Tick();
+            host._mission.DamageFlash.Tick();
             host._flashbangScreenFlash.Tick();
             host._hud?.Tick();
         }

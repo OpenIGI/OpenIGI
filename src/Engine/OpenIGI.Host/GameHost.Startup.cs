@@ -193,7 +193,7 @@ public sealed partial class GameHost
         // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
         // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
         // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
-        _damageFlash = new();
+        _mission.DamageFlash = new();
         _flashbangScreenFlash = new();
 
         // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye

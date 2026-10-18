@@ -51,11 +51,11 @@ public sealed partial class GameHost
             }
         }
 
-        public void PlayPlayerGrunt() => host.PlayPlayerGrunt();
+        public void PlayPlayerGrunt() => host._igi1Harm.PlayPlayerGrunt();
 
         public void InstallPlayerHitShake() => host.InstallPlayerHitShake();
 
-        public void FlashDamage(Vector3f viewIncoming) => host._damageFlash.Hit(viewIncoming, host._soundRandom.NextSingle());
+        public void FlashDamage(Vector3f viewIncoming) => host._mission.DamageFlash.Hit(viewIncoming, host._mission.SoundRandom.NextSingle());
 
         public void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category) =>
             host.BeginPlayerDeath(from, zone, bone, category);

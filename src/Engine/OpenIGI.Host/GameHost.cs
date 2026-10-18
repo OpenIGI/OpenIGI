@@ -151,7 +151,6 @@ public sealed partial class GameHost : IDisposable
     private int _exitCode;
 
     // --- The player's own life, damage and death ---
-    private HumanDamageFlash _damageFlash = null!;
     private FlashbangScreenFlash _flashbangScreenFlash = null!;
     private DeathCamera _deathCamera = null!;
 
@@ -171,8 +170,6 @@ public sealed partial class GameHost : IDisposable
     private ObjectCollisionIndex? _thirdPersonWallsSolids;
     private TerrainData? _thirdPersonWallsTerrain;
 
-    /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
-    private readonly IgiRandom _soundRandom = new();
 
     private int _impactSoundQuietUntil;
     private int _ricochetSoundQuietUntil;
@@ -217,6 +214,7 @@ public sealed partial class GameHost : IDisposable
     private readonly Igi1TickHost _igi1TickHost;
     private readonly Igi1MissionTick _igi1Tick;
     private readonly Igi1PlayerHost _igi1PlayerHost;
+    private readonly Igi1PlayerHarm _igi1Harm;
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -590,6 +588,7 @@ public sealed partial class GameHost : IDisposable
         _igi1TickHost = new Igi1TickHost(this);
         _igi1Tick = new Igi1MissionTick(_mission, _igi1TickHost);
         _igi1PlayerHost = new Igi1PlayerHost(this);
+        _igi1Harm = new Igi1PlayerHarm(_mission, new Igi1HarmHost(this));
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,
@@ -619,7 +618,7 @@ public sealed partial class GameHost : IDisposable
         _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
-        _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
+        _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this));
         _switch = new RendererSwitchService(device, logger);
     }
 

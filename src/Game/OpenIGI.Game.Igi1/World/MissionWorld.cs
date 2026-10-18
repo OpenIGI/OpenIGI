@@ -197,4 +197,10 @@ public sealed class MissionWorld
                 : null;
         VehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
+
+    /// <summary>Gets the engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes and the other draws that share its stream.</summary>
+    public IgiRandom SoundRandom { get; } = new();
+
+    /// <summary>Gets or sets the red wash a hit on the player raises, which the HUD draws.</summary>
+    public HumanDamageFlash DamageFlash { get; set; } = null!;
 }

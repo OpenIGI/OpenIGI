@@ -2785,7 +2785,7 @@ public sealed partial class GameHost
         // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
         // when the arms and the HUD are gone but the last thing the screen showed is still red.
         float flashStrength = Math.Clamp(RenderCVars.DamageFlash.Value, 0f, 1f);
-        if (_damageFlash.IsActive && flashStrength > 0f)
+        if (_mission.DamageFlash.IsActive && flashStrength > 0f)
         {
             float flashWidth = _window.Width;
             float flashHeight = _window.Height;
@@ -2801,10 +2801,10 @@ public sealed partial class GameHost
             state.Batch.Begin();
             state.Batch.DrawQuad(
                 TextureHandle.None,
-                new Vertex2D(0f, 0f, 0f, 0f, Red(_damageFlash.TopLeft)),
-                new Vertex2D(flashWidth, 0f, 1f, 0f, Red(_damageFlash.TopRight)),
-                new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(_damageFlash.BottomRight)),
-                new Vertex2D(0f, flashHeight, 0f, 1f, Red(_damageFlash.BottomLeft)));
+                new Vertex2D(0f, 0f, 0f, 0f, Red(_mission.DamageFlash.TopLeft)),
+                new Vertex2D(flashWidth, 0f, 1f, 0f, Red(_mission.DamageFlash.TopRight)),
+                new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(_mission.DamageFlash.BottomRight)),
+                new Vertex2D(0f, flashHeight, 0f, 1f, Red(_mission.DamageFlash.BottomLeft)));
             state.Batch.End();
         }
 

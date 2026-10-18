@@ -401,7 +401,7 @@ public sealed partial class GameHost
         }
 
         bool faithful = AudioCVars.Preset.Value == AudioProfile.Vanilla;
-        string name = HumanVariantSound.Choose(prefix, variants, _soundRandom, faithful);
+        string name = HumanVariantSound.Choose(prefix, variants, _mission.SoundRandom, faithful);
 
         // Above an ordinary effect but below the score: a firefight must not drop the death that ends it.
         _audioOut.Sounds.PlayDefinition(name, positionInUnits, priority: 300);
@@ -422,7 +422,7 @@ public sealed partial class GameHost
             return;
         }
 
-        string name = HumanVariantSound.ChooseHit(prefix, variants, _soundRandom);
+        string name = HumanVariantSound.ChooseHit(prefix, variants, _mission.SoundRandom);
         _audioOut.Sounds.PlayDefinition(name, positionInUnits, priority: 250);
     }
 
@@ -510,7 +510,7 @@ public sealed partial class GameHost
 
         // One pitch for the whole step: 0x463920 computes it once and hands the same value to the
         // material voice and to the rain voice, so the two halves of a wet step stay together.
-        float pitch = FootstepSounds.Pitch(_soundRandom);
+        float pitch = FootstepSounds.Pitch(_mission.SoundRandom);
 
         _audioOut.Sounds.PlayDefinition(
             step.Sound,
@@ -669,7 +669,7 @@ public sealed partial class GameHost
 
         foreach (GunPickupImpact impact in pickups.Impacts)
         {
-            string sound = _soundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
+            string sound = _mission.SoundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
             _audioOut.Sounds.PlayDefinition(sound, impact.Position, priority: 50);
         }
     }
@@ -689,7 +689,7 @@ public sealed partial class GameHost
             _mission.Materials,
             struckHuman,
             surfaceMaterial,
-            _soundRandom);
+            _mission.SoundRandom);
 
         // The quiet window opens on the CONTACT, not on the sample. 0x47BABE's jump skips only the
         // playback call: 0x47BAE1 timestamps and 0x47BAFB re-rolls the interval on the merge path, so a
@@ -697,14 +697,14 @@ public sealed partial class GameHost
         // least half their slots -- Air, Water and Snow name a sound in one slot of six, and
         // HumanCollision, MetalLadder and MetalFence in none -- so returning early here would let a
         // burst into a ladder re-arm on every round and machine-gun the next surface it caught.
-        _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+        _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_mission.SoundRandom);
 
         if (sound.Length > 0)
         {
             _audioOut.Sounds.PlayDefinition(
                 sound,
                 position,
-                pitch: FootstepSounds.Pitch(_soundRandom),
+                pitch: FootstepSounds.Pitch(_mission.SoundRandom),
                 priority: 45);
         }
 
@@ -729,11 +729,11 @@ public sealed partial class GameHost
             return;
         }
 
-        _ricochetSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+        _ricochetSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_mission.SoundRandom);
         _audioOut.Sounds.PlayDefinition(
-            BulletImpactSounds.PickRicochet(_soundRandom),
+            BulletImpactSounds.PickRicochet(_mission.SoundRandom),
             position,
-            pitch: FootstepSounds.Pitch(_soundRandom),
+            pitch: FootstepSounds.Pitch(_mission.SoundRandom),
             priority: 45);
     }
 
@@ -984,11 +984,11 @@ public sealed partial class GameHost
 
     /// <summary>The flash a damaging blast raises — <c>0x412990</c>'s four independent corner draws.</summary>
     private void FlashPlayerForBlast() =>
-        _damageFlash.HitEveryCorner(
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle());
+        _mission.DamageFlash.HitEveryCorner(
+            _mission.SoundRandom.NextSingle(),
+            _mission.SoundRandom.NextSingle(),
+            _mission.SoundRandom.NextSingle(),
+            _mission.SoundRandom.NextSingle());
 
     // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
     private const int ExplosionShakeTicks = 90;
@@ -1204,7 +1204,7 @@ public sealed partial class GameHost
         {
             // magicobj.qvm registers three retail glass-crush variants. Retail chooses one randomly
             // at shatter time and creates GlassShatter shards from the pane collision faces.
-            int variant = (int)_soundRandom.NextBounded(3u) + 1;
+            int variant = (int)_mission.SoundRandom.NextBounded(3u) + 1;
             _audioOut.Sounds?.PlayDefinition($"glass_crush_{variant}", item.PositionUnits, priority: 55);
             if (item.Placement is { } placement)
             {
