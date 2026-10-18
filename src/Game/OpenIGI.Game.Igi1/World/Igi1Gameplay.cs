@@ -1,0 +1,45 @@
+namespace OpenIGI.Game.Igi1.World;
+
+/// <summary>Everything the first game's mission asks of whatever shows and plays it.</summary>
+public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1PlayerHarmHost, IIgi1MissionSetupHost, IIgi1BlastHost
+{
+}
+
+/// <summary>
+/// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
+/// and how the blasts resolve.
+/// </summary>
+public sealed class Igi1Gameplay
+{
+    private readonly IIgi1Host _host;
+
+    /// <summary>Initializes a new instance of the <see cref="Igi1Gameplay"/> class.</summary>
+    /// <param name="host">What shows and plays it.</param>
+    public Igi1Gameplay(IIgi1Host host)
+    {
+        _host = host ?? throw new ArgumentNullException(nameof(host));
+        Harm = new Igi1PlayerHarm(World, host);
+        Setup = new Igi1MissionSetup(World, host);
+        Blasts = new Igi1Blasts(World, Harm, host);
+        Tick = new Igi1MissionTick(World, Blasts, host);
+    }
+
+    /// <summary>Gets the played mission's world.</summary>
+    public MissionWorld World { get; } = new();
+
+    /// <summary>Gets what hurts the player and how it dies.</summary>
+    public Igi1PlayerHarm Harm { get; }
+
+    /// <summary>Gets what brings the mission's runtimes and registries up.</summary>
+    public Igi1MissionSetup Setup { get; }
+
+    /// <summary>Gets what resolves the level's blasts and what they break.</summary>
+    public Igi1Blasts Blasts { get; }
+
+    /// <summary>Gets the mission's tick.</summary>
+    public Igi1MissionTick Tick { get; }
+
+    /// <summary>Starts making a player for the mission being brought up.</summary>
+    /// <returns>The player's setup.</returns>
+    public Igi1PlayerSetup NewPlayerSetup() => new(World, _host);
+}

@@ -766,62 +766,7 @@ public sealed partial class GameHost
     }
 
     private void ApplyRoundContact(Vector3d impactUnits, GameTask? owner, WorldPlacement? placement, float destructibleDamage = 1f) =>
-        _igi1Blasts.ApplyRoundContact(impactUnits, owner, placement, destructibleDamage);
-
-    /// <summary>The host's side of <see cref="Igi1Blasts"/>: the sounds, the fire and smoke, and the voices a blast cuts.</summary>
-    /// <param name="host">The host.</param>
-    private sealed class Igi1BlastHost(GameHost host) : IIgi1BlastHost
-    {
-        public IOpenIgiLogger Logger => host._logger;
-
-        public OpenIGI.Engine.Flow.GameLoop Game => host._loop;
-
-        public void PlayDefinition(string name, Vector3d positionInUnits, int priority) =>
-            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
-
-        public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
-
-        public void Fireball(Vector3d positionInUnits) =>
-            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-
-        public void MissileScorch(Vector3d positionInUnits, Vector3f normal) =>
-            host._effects.Scorch(positionInUnits, normal, WorldEffects.MissileScorchHalfWidthInUnits);
-
-        public void M203Scorch(Vector3d positionInUnits, Vector3f normal) =>
-            host._effects.Scorch(positionInUnits, normal, WorldEffects.M203ScorchHalfWidthInUnits);
-
-        public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>
-            host._effects.Particles?.SpawnRetailExplosion(positionInUnits, new RetailExplosionShape(fullRangeUnits, fireballs, fragments));
-
-        public void SpeakerExplosion(Vector3d positionInUnits, bool isCameraLens) =>
-            host._effects.Particles?.SpawnRetailExplosion(
-                positionInUnits,
-                isCameraLens ? RetailExplosionShape.CameraLens : RetailExplosionShape.AlarmLight);
-
-        public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
-            host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
-
-        public void SilenceSiren(AlarmSpeaker speaker)
-        {
-            if (host._sirenVoices.Remove(speaker, out AudioVoiceHandle siren))
-            {
-                host._audioOut.Sounds?.Stop(siren);
-            }
-        }
-
-        public void SilenceCamera(SecurityCamera camera)
-        {
-            if (host._cameraBeepVoices.Remove(camera, out var beep))
-            {
-                host._audioOut.Sounds?.Stop(beep.Voice);
-            }
-
-            if (host._cameraMoveVoices.Remove(camera, out AudioVoiceHandle motor))
-            {
-                host._audioOut.Sounds?.Stop(motor);
-            }
-        }
-    }
+        _igi1.Blasts.ApplyRoundContact(impactUnits, owner, placement, destructibleDamage);
 
     /// <summary>Keeps every alarm speaker's siren matched to its own expression, positionally.</summary>
     /// <remarks>

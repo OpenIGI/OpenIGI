@@ -207,15 +207,10 @@ public sealed partial class GameHost : IDisposable
     private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
 
     // The played mission's registries and runtimes, each null until the system that makes it has run.
-    private readonly MissionWorld _mission = new();
-
-    // The mission's tick, and the host's side of it.
-    private readonly Igi1TickHost _igi1TickHost;
-    private readonly Igi1MissionTick _igi1Tick;
-    private readonly Igi1PlayerHost _igi1PlayerHost;
-    private readonly Igi1PlayerHarm _igi1Harm;
-    private readonly Igi1MissionSetup _igi1Setup;
-    private readonly Igi1Blasts _igi1Blasts;
+    // The first game's mission, its world, and the host's side of it.
+    private readonly Igi1Host _igi1Host;
+    private readonly Igi1Gameplay _igi1;
+    private readonly MissionWorld _mission;
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -586,12 +581,9 @@ public sealed partial class GameHost : IDisposable
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
-        _igi1TickHost = new Igi1TickHost(this);
-        _igi1PlayerHost = new Igi1PlayerHost(this);
-        _igi1Harm = new Igi1PlayerHarm(_mission, new Igi1HarmHost(this));
-        _igi1Setup = new Igi1MissionSetup(_mission, new Igi1SetupHost(this));
-        _igi1Blasts = new Igi1Blasts(_mission, _igi1Harm, new Igi1BlastHost(this));
-        _igi1Tick = new Igi1MissionTick(_mission, _igi1Blasts, _igi1TickHost);
+        _igi1Host = new Igi1Host(this);
+        _igi1 = new Igi1Gameplay(_igi1Host);
+        _mission = _igi1.World;
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,

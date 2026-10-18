@@ -262,13 +262,13 @@ public sealed partial class GameHost
     /// <summary>The mission's text and the cutscene runtime, with the natives the level's cutscenes call.</summary>
     private void MissionCutscenes(MissionBuild b)
     {
-        b.MissionText = _igi1Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
+        b.MissionText = _igi1.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
     }
 
     /// <summary>The objective runtime, the intro skipped when cinematics are off, and the test captures' script writes.</summary>
     private void MissionObjectives(MissionBuild b)
     {
-        _igi1Setup.BuildObjectives(b.LevelRoot, b.MissionText!, _igi1Tick.AreaPlayerNow, made => b.Objectives = made);
+        _igi1.Setup.BuildObjectives(b.LevelRoot, b.MissionText!, _igi1.Tick.AreaPlayerNow, made => b.Objectives = made);
 
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
         // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
@@ -424,7 +424,7 @@ public sealed partial class GameHost
             _mission.Solids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
-        _igi1Setup.BuildVehicles(loaded, levelRoot, id, scene, solids);
+        _igi1.Setup.BuildVehicles(loaded, levelRoot, id, scene, solids);
         world.Destructibles = _mission.Destructibles;
         world.Cutscenes = _mission.Cutscenes;
 
@@ -503,7 +503,7 @@ public sealed partial class GameHost
         IWorldPresenter world = b.World!;
 
         _ambientVoices.Clear();
-        _igi1Setup.BuildInteractions(loaded, levelRoot, solids);
+        _igi1.Setup.BuildInteractions(loaded, levelRoot, solids);
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
@@ -532,7 +532,7 @@ public sealed partial class GameHost
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         _cutsceneSounds.StopAll();
-        b.WorldTrace = _igi1Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
+        b.WorldTrace = _igi1.Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
         world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
         _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
@@ -549,7 +549,7 @@ public sealed partial class GameHost
     /// <summary>The level's nav graphs, which the soldiers and the vehicles drive over.</summary>
     private void MissionNavGraphs(MissionBuild b)
     {
-        b.Graphs = _igi1Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, _gamePath);
+        b.Graphs = _igi1.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, _gamePath);
 
         EndStage("reading the nav graphs");
     }
@@ -761,7 +761,7 @@ public sealed partial class GameHost
 
         _sirenVoices.Clear();
         _reportedSirenFailures.Clear();
-        _igi1Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, new GuardRoundHost(this));
+        _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, new GuardRoundHost(this));
         b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
 
@@ -779,7 +779,7 @@ public sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
 
         // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
-        _igi1Tick.AttachToLevelWalk(levelRoot);
+        _igi1.Tick.AttachToLevelWalk(levelRoot);
     }
 
     /// <summary>The terrain, sky, sun, grade and camera; the lamps and the surface cache; what impact effects trace against; the player's state reset.</summary>
@@ -971,7 +971,7 @@ public sealed partial class GameHost
         _titleHud?.Dispose();
         _titleHud = null;
         _playerMode = false;
-        _igi1Blasts.ClearPending();
+        _igi1.Blasts.ClearPending();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -999,7 +999,7 @@ public sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
 
         {
-            Igi1PlayerSetup playerSetup = new(_mission, _igi1PlayerHost);
+            Igi1PlayerSetup playerSetup = _igi1.NewPlayerSetup();
             PlayerCamera candidate = playerSetup.Begin(loaded, levelRoot, solids, missionText);
             Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
             WeaponTypeRegistry weaponRoster = playerSetup.Weapons;
@@ -1772,170 +1772,26 @@ public sealed partial class GameHost
     /// <param name="outcome">What the loop's frame did; only a tick advances anything.</param>
     private void TickMission(FrameLoopState state, FrameOutcome outcome)
     {
-        _igi1TickHost.State = state;
-        _igi1Tick.Run(outcome == FrameOutcome.Tick);
+        _igi1Host.State = state;
+        _igi1.Tick.Run(outcome == FrameOutcome.Tick);
     }
 
-    /// <summary>The host's side of <see cref="Igi1PlayerSetup"/>: the files, the timings, and the sound and picture of what the player meets.</summary>
-    /// <param name="host">The host.</param>
-    private sealed class Igi1PlayerHost(GameHost host) : IIgi1PlayerSetupHost
-    {
-        public IOpenIgiLogger Logger => host._logger;
+    private void InstallPlayerHitShake() => _igi1.Harm.InstallPlayerHitShake();
 
-        public GameLoop Game => host._loop;
-
-        public VirtualFileSystem FileSystem => host._fileSystem;
-
-        public OpenIGI.Engine.Resources.ResourceRegistry Resources => host._resources;
-
-        public TerrainData? Terrain => host._playerTerrain;
-
-        public WorldScene? Scene => host._scene;
-
-        public ISoldierPresenter? SoldierPresenter => host._soldiers;
-
-        public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
-        {
-            host.ReadSharedAnimations();
-            return host._playerBodyAnimations;
-        }
-
-        public void EndStage(string what) => host.EndStage(what);
-
-        public void ElectricFenceTouched(PlayerCamera player, WorldInteraction fence) =>
-            host.ResolvePlayerElectricFence(player, fence);
-
-        public void GenericPickedUp(GenericPickup pickup) => host.PlayGenericPickupSound(pickup);
-
-        public void GunPickedUp(GunPickup pickup) => host.PlayGunPickupSound(pickup);
-
-        public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
-
-        public void TerrainRowRead(int? row) => host._effectTerrainRow = row;
-
-        public void FallImpact(PlayerCamera player, HumanFallImpact impact) => host.ResolvePlayerFallImpact(player, impact);
-    }
-
-    private void InstallPlayerHitShake() => _igi1Harm.InstallPlayerHitShake();
-
-    private void StrikePlayer(Vector3d attacker, float damage) => _igi1Harm.StrikePlayer(attacker, damage);
+    private void StrikePlayer(Vector3d attacker, float damage) => _igi1.Harm.StrikePlayer(attacker, damage);
 
     private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category) =>
-        _igi1Harm.BeginPlayerDeath(from, zone, bone, category);
+        _igi1.Harm.BeginPlayerDeath(from, zone, bone, category);
 
     private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact) =>
-        _igi1Harm.ResolvePlayerFallImpact(player, impact);
+        _igi1.Harm.ResolvePlayerFallImpact(player, impact);
 
     private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence) =>
-        _igi1Harm.ResolvePlayerElectricFence(player, fence);
+        _igi1.Harm.ResolvePlayerElectricFence(player, fence);
 
-    /// <summary>The host's side of <see cref="Igi1PlayerHarm"/>: the sounds and the death camera.</summary>
+    /// <summary>The host's side of <see cref="Igi1Gameplay"/>: the picture, the sound, the files, the menus and the log of the first game's mission.</summary>
     /// <param name="host">The host.</param>
-    private sealed class Igi1HarmHost(GameHost host) : IIgi1PlayerHarmHost
-    {
-        public IOpenIgiLogger Logger => host._logger;
-
-        public GameLoop Game => host._loop;
-
-        public ISoldierPresenter? SoldierPresenter => host._soldiers;
-
-        public void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits) =>
-            host.PlayHitSound(prefix, variants, positionInUnits);
-
-        public void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits) =>
-            host.PlayDeathSound(prefix, variants, positionInUnits);
-
-        public void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing) => host.PlayLandingSound(landing);
-
-        public void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0) =>
-            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
-
-        public void StopBinocularTransitionSound() => host.StopBinocularTransitionSound();
-
-        public void ResetWeaponSounds() => host._weaponSounds?.Reset();
-
-        public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
-            host._deathCamera.Begin(
-                position,
-                facing,
-                (f, t, out h) =>
-                {
-                    bool blocked = walls(f, t, out WorldRayHit wall);
-                    h = blocked ? wall.Position : default;
-                    return blocked;
-                });
-    }
-
-    /// <summary>The host's side of <see cref="Igi1MissionSetup"/>: its natives, sounds, options and keyboard.</summary>
-    /// <param name="host">The host.</param>
-    private sealed class Igi1SetupHost(GameHost host) : IIgi1MissionSetupHost
-    {
-        public IOpenIgiLogger Logger => host._logger;
-
-        public GameLoop Game => host._loop;
-
-        public OpenIGI.Engine.Resources.ResourceRegistry Resources => host._resources;
-
-        public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
-
-        public bool PlayCutscenes => host._options.PlayCutscenes;
-
-        public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
-        {
-        if (name == GameMusicNatives.EnableNative)
-        {
-            if (host._audioOut.Music is not null)
-            {
-                host._audioOut.Music.Enabled = true;
-            }
-            return QvmValue.FromInt32(1);
-        }
-        if (name == GameMusicNatives.DisableNative)
-        {
-            if (host._audioOut.Music is not null)
-            {
-                host._audioOut.Music.Enabled = false;
-            }
-            return QvmValue.FromInt32(1);
-        }
-        if (name == "MenuManager_SetEnabled")
-        {
-            // Cutscene start/stop expressions own this native in retail.  The menu manager
-            // lives in the shared loop task tree, so update its live script context rather
-            // than returning success while leaving input enabled during cinematics.
-            MenuManagerTask? manager = host.FindMenuManager();
-            if (manager?.ScriptContext is { } context && arguments.Count >= 1)
-            {
-                context.IsEnabled = arguments.GetBoolean(0);
-            }
-
-            return QvmValue.FromInt32(1);
-        }
-            return null;
-        }
-
-        public void CutsceneSound(CutsceneSoundEvent sound) => host._cutsceneSounds.Set(sound);
-
-        public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
-
-        public void EndStage(string what) => host.EndStage(what);
-
-        public Igi1SoundSinks Sounds { get; } = new(
-            host.PlayDoorSound,
-            host.PlayElevatorSound,
-            position => host.PlayDeathSound(HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position),
-            (prefix, variants, position) => host.PlayHitSound(prefix, variants, position),
-            (name, position, attached) => host._audioOut.Sounds?.PlayDefinition(name, position, priority: 200),
-            host.TickSoldierWeaponSound,
-            step => host.PlayFootstep(step),
-            host.StrikePlayer);
-
-        public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
-    }
-
-    /// <summary>The host's side of <see cref="Igi1MissionTick"/>: the picture, the sound and the log of a tick.</summary>
-    /// <param name="host">The host.</param>
-    private sealed class Igi1TickHost(GameHost host) : IIgi1MissionHost
+    private sealed class Igi1Host(GameHost host) : IIgi1Host
     {
         /// <summary>Gets or sets the frame loop's state for the pass being run.</summary>
         public FrameLoopState State { get; set; } = null!;
@@ -2056,6 +1912,161 @@ public sealed partial class GameHost
         {
             host.FollowPlayerBody(State);
             host.SettleMissionOutcome(State);
+        }
+
+        public GameLoop Game => host._loop;
+
+        public VirtualFileSystem FileSystem => host._fileSystem;
+
+        public OpenIGI.Engine.Resources.ResourceRegistry Resources => host._resources;
+
+        public TerrainData? Terrain => host._playerTerrain;
+
+        public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
+        {
+            host.ReadSharedAnimations();
+            return host._playerBodyAnimations;
+        }
+
+        public void EndStage(string what) => host.EndStage(what);
+
+        public void ElectricFenceTouched(PlayerCamera player, WorldInteraction fence) =>
+            host.ResolvePlayerElectricFence(player, fence);
+
+        public void GenericPickedUp(GenericPickup pickup) => host.PlayGenericPickupSound(pickup);
+
+        public void GunPickedUp(GunPickup pickup) => host.PlayGunPickupSound(pickup);
+
+        public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
+
+        public void TerrainRowRead(int? row) => host._effectTerrainRow = row;
+
+        public void FallImpact(PlayerCamera player, HumanFallImpact impact) => host.ResolvePlayerFallImpact(player, impact);
+
+        public void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits) =>
+            host.PlayHitSound(prefix, variants, positionInUnits);
+
+        public void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits) =>
+            host.PlayDeathSound(prefix, variants, positionInUnits);
+
+        public void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing) => host.PlayLandingSound(landing);
+
+        public void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0) =>
+            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
+
+        public void StopBinocularTransitionSound() => host.StopBinocularTransitionSound();
+
+        public void ResetWeaponSounds() => host._weaponSounds?.Reset();
+
+        public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
+            host._deathCamera.Begin(
+                position,
+                facing,
+                (f, t, out h) =>
+                {
+                    bool blocked = walls(f, t, out WorldRayHit wall);
+                    h = blocked ? wall.Position : default;
+                    return blocked;
+                });
+
+        public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
+
+        public bool PlayCutscenes => host._options.PlayCutscenes;
+
+        public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
+        {
+        if (name == GameMusicNatives.EnableNative)
+        {
+            if (host._audioOut.Music is not null)
+            {
+                host._audioOut.Music.Enabled = true;
+            }
+            return QvmValue.FromInt32(1);
+        }
+        if (name == GameMusicNatives.DisableNative)
+        {
+            if (host._audioOut.Music is not null)
+            {
+                host._audioOut.Music.Enabled = false;
+            }
+            return QvmValue.FromInt32(1);
+        }
+        if (name == "MenuManager_SetEnabled")
+        {
+            // Cutscene start/stop expressions own this native in retail.  The menu manager
+            // lives in the shared loop task tree, so update its live script context rather
+            // than returning success while leaving input enabled during cinematics.
+            MenuManagerTask? manager = host.FindMenuManager();
+            if (manager?.ScriptContext is { } context && arguments.Count >= 1)
+            {
+                context.IsEnabled = arguments.GetBoolean(0);
+            }
+
+            return QvmValue.FromInt32(1);
+        }
+            return null;
+        }
+
+        public void CutsceneSound(CutsceneSoundEvent sound) => host._cutsceneSounds.Set(sound);
+
+        public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
+
+        public Igi1SoundSinks Sounds { get; } = new(
+            host.PlayDoorSound,
+            host.PlayElevatorSound,
+            position => host.PlayDeathSound(HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position),
+            (prefix, variants, position) => host.PlayHitSound(prefix, variants, position),
+            (name, position, attached) => host._audioOut.Sounds?.PlayDefinition(name, position, priority: 200),
+            host.TickSoldierWeaponSound,
+            step => host.PlayFootstep(step),
+            host.StrikePlayer);
+
+        public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
+
+        public void PlayDefinition(string name, Vector3d positionInUnits, int priority) =>
+            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
+
+        public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
+
+        public void Fireball(Vector3d positionInUnits) =>
+            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+
+        public void MissileScorch(Vector3d positionInUnits, Vector3f normal) =>
+            host._effects.Scorch(positionInUnits, normal, WorldEffects.MissileScorchHalfWidthInUnits);
+
+        public void M203Scorch(Vector3d positionInUnits, Vector3f normal) =>
+            host._effects.Scorch(positionInUnits, normal, WorldEffects.M203ScorchHalfWidthInUnits);
+
+        public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>
+            host._effects.Particles?.SpawnRetailExplosion(positionInUnits, new RetailExplosionShape(fullRangeUnits, fireballs, fragments));
+
+        public void SpeakerExplosion(Vector3d positionInUnits, bool isCameraLens) =>
+            host._effects.Particles?.SpawnRetailExplosion(
+                positionInUnits,
+                isCameraLens ? RetailExplosionShape.CameraLens : RetailExplosionShape.AlarmLight);
+
+        public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
+            host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
+
+        public void SilenceSiren(AlarmSpeaker speaker)
+        {
+            if (host._sirenVoices.Remove(speaker, out OpenIGI.Audio.AudioVoiceHandle siren))
+            {
+                host._audioOut.Sounds?.Stop(siren);
+            }
+        }
+
+        public void SilenceCamera(SecurityCamera camera)
+        {
+            if (host._cameraBeepVoices.Remove(camera, out var beep))
+            {
+                host._audioOut.Sounds?.Stop(beep.Voice);
+            }
+
+            if (host._cameraMoveVoices.Remove(camera, out OpenIGI.Audio.AudioVoiceHandle motor))
+            {
+                host._audioOut.Sounds?.Stop(motor);
+            }
         }
     }
 

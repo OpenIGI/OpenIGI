@@ -51,7 +51,7 @@ public sealed partial class GameHost
             }
         }
 
-        public void PlayPlayerGrunt() => host._igi1Harm.PlayPlayerGrunt();
+        public void PlayPlayerGrunt() => host._igi1.Harm.PlayPlayerGrunt();
 
         public void InstallPlayerHitShake() => host.InstallPlayerHitShake();
 
