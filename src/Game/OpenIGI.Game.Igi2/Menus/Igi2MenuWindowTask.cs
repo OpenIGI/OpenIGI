@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Menus;
 
@@ -45,10 +46,10 @@ public abstract class Igi2MenuWindowTask : Igi2Task
     /// <param name="source">The script's text.</param>
     /// <param name="value">Receives its value.</param>
     /// <returns><see langword="false"/> when there is no script to run.</returns>
-    protected bool TryRun(Igi2LevelRun level, ref Igi2LevelExpression? compiled, string source, out double value)
+    protected bool TryRun(Igi2LevelRun level, ref LevelExpression? compiled, string source, out double value)
     {
         ArgumentNullException.ThrowIfNull(level);
-        compiled ??= new Igi2LevelExpression(source, Name, level.Natives);
+        compiled ??= Igi2LevelExpressions.Create(source, Name, level.Natives);
         if (compiled.IsEmpty)
         {
             value = 0.0;

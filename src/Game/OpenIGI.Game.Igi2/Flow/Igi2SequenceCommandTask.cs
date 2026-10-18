@@ -1,6 +1,7 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -28,10 +29,10 @@ public sealed partial class Igi2SequenceCommandTask : Igi2Task
     /// <summary>The id that moves the sequence to the step after the one it is on.</summary>
     public const int NextStep = -2;
 
-    private Igi2LevelExpression? _isRun;
-    private Igi2LevelExpression? _run;
-    private Igi2LevelExpression? _isNext;
-    private Igi2LevelExpression? _next;
+    private LevelExpression? _isRun;
+    private LevelExpression? _run;
+    private LevelExpression? _isNext;
+    private LevelExpression? _next;
 
     /// <summary>Gets or sets the script that says whether the step runs.</summary>
     [ScriptParam(ScriptParamType.VarString, "IsRun Expression")]
@@ -107,11 +108,11 @@ public sealed partial class Igi2SequenceCommandTask : Igi2Task
 
     private void Step(Igi2LevelRun level)
     {
-        _isRun ??= new Igi2LevelExpression(IsRunScript, Name, level.Natives);
-        _run ??= new Igi2LevelExpression(RunScript, Name, level.Natives);
-        _isNext ??= new Igi2LevelExpression(IsNextScript, Name, level.Natives);
-        _next ??= new Igi2LevelExpression(NextScript, Name, level.Natives);
-        if (_isRun.IsEmpty || (uint)Igi2LevelExpression.Truncate(level.Evaluate(_isRun)) == 0)
+        _isRun ??= Igi2LevelExpressions.Create(IsRunScript, Name, level.Natives);
+        _run ??= Igi2LevelExpressions.Create(RunScript, Name, level.Natives);
+        _isNext ??= Igi2LevelExpressions.Create(IsNextScript, Name, level.Natives);
+        _next ??= Igi2LevelExpressions.Create(NextScript, Name, level.Natives);
+        if (_isRun.IsEmpty || (uint)LevelExpression.Truncate(level.Evaluate(_isRun)) == 0)
         {
             return;
         }
@@ -121,7 +122,7 @@ public sealed partial class Igi2SequenceCommandTask : Igi2Task
             level.Evaluate(_run);
         }
 
-        if (!_isNext.IsEmpty && (uint)Igi2LevelExpression.Truncate(level.Evaluate(_isNext)) != 0 && !_next.IsEmpty)
+        if (!_isNext.IsEmpty && (uint)LevelExpression.Truncate(level.Evaluate(_isNext)) != 0 && !_next.IsEmpty)
         {
             level.Evaluate(_next);
         }

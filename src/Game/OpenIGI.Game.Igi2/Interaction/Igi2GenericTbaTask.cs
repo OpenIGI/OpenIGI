@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -54,7 +55,7 @@ public sealed partial class Igi2GenericTbaTask
     private byte _isFinishedThisTick;
     private int _finishedThisTickTick;
     private int _clientId;
-    private Igi2LevelExpression? _activeExpression;
+    private LevelExpression? _activeExpression;
     private Igi2LevelFlowTask? _flow;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2GenericTbaTask"/> class.</summary>
@@ -223,10 +224,10 @@ public sealed partial class Igi2GenericTbaTask
         }
         else
         {
-            _activeExpression ??= new Igi2LevelExpression(ActiveScript, Name, level.Natives);
+            _activeExpression ??= Igi2LevelExpressions.Create(ActiveScript, Name, level.Natives);
             if (!_activeExpression.IsEmpty)
             {
-                _isActive = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_activeExpression));
+                _isActive = (byte)LevelExpression.Truncate(level.Evaluate(_activeExpression));
             }
         }
 

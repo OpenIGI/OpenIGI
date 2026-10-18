@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -17,8 +18,8 @@ public sealed partial class Igi2LevelFlowTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "LevelFlow";
 
-    private Igi2LevelExpression? _complete;
-    private Igi2LevelExpression? _failed;
+    private LevelExpression? _complete;
+    private LevelExpression? _failed;
     private byte _isComplete;
     private byte _isFailed;
 
@@ -109,18 +110,18 @@ public sealed partial class Igi2LevelFlowTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _complete ??= new Igi2LevelExpression(CompleteScript, Name, level.Natives);
-        _failed ??= new Igi2LevelExpression(FailedScript, Name, level.Natives);
+        _complete ??= Igi2LevelExpressions.Create(CompleteScript, Name, level.Natives);
+        _failed ??= Igi2LevelExpressions.Create(FailedScript, Name, level.Natives);
 
         level.RunChildren(this);
         if (!_complete.IsEmpty)
         {
-            _isComplete = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_complete));
+            _isComplete = (byte)LevelExpression.Truncate(level.Evaluate(_complete));
         }
 
         if (!_failed.IsEmpty)
         {
-            _isFailed = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_failed));
+            _isFailed = (byte)LevelExpression.Truncate(level.Evaluate(_failed));
         }
 
         if (IsFailed)

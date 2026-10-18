@@ -34,7 +34,7 @@ public sealed class RetailIgi2LevelTimerTests
         variable.Value = 1;
         Tick(m, hack, guards, 5);
         Assert.Equal((true, 5, false, 0), (hack.IsRun, hack.Tick, guards.IsRun, guards.Tick));
-        Assert.Equal(5.0, m.Run.Evaluate(new Igi2LevelExpression($"LevelTimer_{Hack}.nTick", "test", m.Run.Natives)));
+        Assert.Equal(5.0, m.Run.Evaluate(Igi2LevelExpressions.Create($"LevelTimer_{Hack}.nTick", "test", m.Run.Natives)));
 
         variable.Value = 2;
         Tick(m, hack, guards, 4);

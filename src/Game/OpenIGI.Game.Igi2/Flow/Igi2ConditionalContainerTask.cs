@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -24,9 +25,9 @@ public sealed partial class Igi2ConditionalContainerTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalContainer";
 
-    private Igi2LevelExpression? _condition;
-    private Igi2LevelExpression? _start;
-    private Igi2LevelExpression? _stop;
+    private LevelExpression? _condition;
+    private LevelExpression? _start;
+    private LevelExpression? _stop;
     private byte _isRun;
 
     /// <summary>Gets or sets the condition, script text.</summary>
@@ -65,14 +66,14 @@ public sealed partial class Igi2ConditionalContainerTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _condition ??= new Igi2LevelExpression(Condition, Name, level.Natives);
-        _start ??= new Igi2LevelExpression(RunAtStart, Name, level.Natives);
-        _stop ??= new Igi2LevelExpression(RunAtStop, Name, level.Natives);
+        _condition ??= Igi2LevelExpressions.Create(Condition, Name, level.Natives);
+        _start ??= Igi2LevelExpressions.Create(RunAtStart, Name, level.Natives);
+        _stop ??= Igi2LevelExpressions.Create(RunAtStop, Name, level.Natives);
 
         bool wasRun = IsRun;
         if (!_condition.IsEmpty)
         {
-            _isRun = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_condition));
+            _isRun = (byte)LevelExpression.Truncate(level.Evaluate(_condition));
         }
 
         if (IsRun)

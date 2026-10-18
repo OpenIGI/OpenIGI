@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -62,9 +63,9 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
     private byte _isLastCanStart = 1;
     private Vector3f _delta;
     private int _runTick = -1;
-    private Igi2LevelExpression? _floorUp;
-    private Igi2LevelExpression? _floorDown;
-    private Igi2LevelExpression? _canStart;
+    private LevelExpression? _floorUp;
+    private LevelExpression? _floorDown;
+    private LevelExpression? _canStart;
     private Igi2Sound? _moveSound;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private Igi2Pose? _built;
@@ -196,11 +197,11 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
         int canStart = 1;
         if (!_canStart!.IsEmpty)
         {
-            canStart = (int)Igi2LevelExpression.Truncate(level.Evaluate(_canStart));
+            canStart = (int)LevelExpression.Truncate(level.Evaluate(_canStart));
         }
 
-        int up = _floorUp!.IsEmpty ? 0 : (int)Igi2LevelExpression.Truncate(level.Evaluate(_floorUp));
-        int down = _floorDown!.IsEmpty ? 0 : (int)Igi2LevelExpression.Truncate(level.Evaluate(_floorDown));
+        int up = _floorUp!.IsEmpty ? 0 : (int)LevelExpression.Truncate(level.Evaluate(_floorUp));
+        int down = _floorDown!.IsEmpty ? 0 : (int)LevelExpression.Truncate(level.Evaluate(_floorDown));
         if (_isMoving == 0 && _activeFloor is { } active)
         {
             Igi2FloorTask? next = null;
@@ -507,9 +508,9 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
             return;
         }
 
-        _floorUp = new Igi2LevelExpression(FloorUpScript, Name, level.Natives);
-        _floorDown = new Igi2LevelExpression(FloorDownScript, Name, level.Natives);
-        _canStart = new Igi2LevelExpression(CanStartScript, Name, level.Natives);
+        _floorUp = Igi2LevelExpressions.Create(FloorUpScript, Name, level.Natives);
+        _floorDown = Igi2LevelExpressions.Create(FloorDownScript, Name, level.Natives);
+        _canStart = Igi2LevelExpressions.Create(CanStartScript, Name, level.Natives);
         _started = true;
     }
 }

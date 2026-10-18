@@ -8,6 +8,7 @@ using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -72,7 +73,7 @@ public sealed partial class Igi2SecurityCameraTask
     public static readonly IReadOnlyList<float> DetectionShare = [2f, 1f, 0.75f];
 
     private readonly Lens _lens = new();
-    private Igi2LevelExpression? _on;
+    private LevelExpression? _on;
     private float[] _holderFrame = Igi2Pose.Rotation(0f, 0f, 0f);
     private Vector3d _position;
     private float _radius = 1f;
@@ -340,10 +341,10 @@ public sealed partial class Igi2SecurityCameraTask
             return;
         }
 
-        _on ??= new Igi2LevelExpression(OnScript, Name, level.Natives);
+        _on ??= Igi2LevelExpressions.Create(OnScript, Name, level.Natives);
         if (!_on.IsEmpty)
         {
-            _isOn = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_on));
+            _isOn = (byte)LevelExpression.Truncate(level.Evaluate(_on));
         }
     }
 

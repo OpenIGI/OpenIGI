@@ -1,4 +1,5 @@
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Computer;
 
@@ -207,8 +208,8 @@ public sealed class Igi2ComputerObjective
     public bool IsFailed { get; internal set; }
 
     /// <summary>Gets or sets the complete expression, compiled.</summary>
-    internal Flow.Igi2LevelExpression? Complete { get; set; }
+    internal OpenIGI.Scripting.Expressions.LevelExpression? Complete { get; set; }
 
     /// <summary>Gets or sets the failed expression, compiled.</summary>
-    internal Flow.Igi2LevelExpression? Failed { get; set; }
+    internal OpenIGI.Scripting.Expressions.LevelExpression? Failed { get; set; }
 }

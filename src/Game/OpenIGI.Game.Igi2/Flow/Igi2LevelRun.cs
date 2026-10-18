@@ -2,6 +2,7 @@
 using OpenIGI.Game.Level;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -123,7 +124,7 @@ public sealed class Igi2LevelRun : LevelRun
     /// <summary>Runs an expression and keeps its value.</summary>
     /// <param name="expression">The expression.</param>
     /// <returns>Its value.</returns>
-    public double Evaluate(Igi2LevelExpression expression)
+    public double Evaluate(LevelExpression expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
         return expression.Run(Natives, Functions);

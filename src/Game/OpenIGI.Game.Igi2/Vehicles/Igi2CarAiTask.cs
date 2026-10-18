@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Vehicles;
 
@@ -45,7 +46,7 @@ public sealed partial class Igi2CarAiTask : Igi2Task, IIgi2PlacedTask
     private Igi2AiPathSearch? _search;
     private Igi2AiGraph? _graph;
     private Igi2CarTask? _car;
-    private Igi2LevelExpression? _driving;
+    private LevelExpression? _driving;
     private Igi2AiGraphNode? _targetNode;
     private Igi2Human? _detected;
     private byte _isDead;
@@ -183,8 +184,8 @@ public sealed partial class Igi2CarAiTask : Igi2Task, IIgi2PlacedTask
 
         if (_isDead == 0)
         {
-            _driving ??= new Igi2LevelExpression(DrivingExpression, Name, level.Natives);
-            _isDriving = _driving.IsEmpty || Igi2LevelExpression.Truncate(level.Evaluate(_driving)) != 0;
+            _driving ??= Igi2LevelExpressions.Create(DrivingExpression, Name, level.Natives);
+            _isDriving = _driving.IsEmpty || LevelExpression.Truncate(level.Evaluate(_driving)) != 0;
         }
 
         if (_isDead != 0 || !_isDriving)

@@ -1,6 +1,7 @@
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -46,8 +47,8 @@ public sealed partial class Igi2MissionTimerTask : Igi2Task
     /// <summary>Where its display is centred down the screen, as a part of its height.</summary>
     public const float DisplayY = 0.9f;
 
-    private Igi2LevelExpression? _start;
-    private Igi2LevelExpression? _pause;
+    private LevelExpression? _start;
+    private LevelExpression? _pause;
 
     /// <summary>Gets or sets the expression that starts it.</summary>
     [ScriptParam(ScriptParamType.VarString, "Start Timer Expression")]
@@ -82,7 +83,7 @@ public sealed partial class Igi2MissionTimerTask : Igi2Task
         switch (Status)
         {
             case Igi2MissionTimerStatus.Waiting:
-                _start ??= new Igi2LevelExpression(StartExpression, Name, level.Natives);
+                _start ??= Igi2LevelExpressions.Create(StartExpression, Name, level.Natives);
                 if (!_start.IsEmpty && level.Evaluate(_start) != 0.0)
                 {
                     Status = Igi2MissionTimerStatus.Running;
@@ -91,7 +92,7 @@ public sealed partial class Igi2MissionTimerTask : Igi2Task
                 break;
 
             case Igi2MissionTimerStatus.Running:
-                _pause ??= new Igi2LevelExpression(PauseExpression, Name, level.Natives);
+                _pause ??= Igi2LevelExpressions.Create(PauseExpression, Name, level.Natives);
                 if (_pause.IsEmpty || level.Evaluate(_pause) == 0.0)
                 {
                     if (TicksLeft != 0)

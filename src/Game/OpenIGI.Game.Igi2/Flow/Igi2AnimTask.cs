@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -46,7 +47,7 @@ public sealed partial class Igi2AnimTask : Igi2Task
     private const int LevelIds = 0x1000;
 
     private AnimDataProgram? _program;
-    private Igi2LevelExpression? _run;
+    private LevelExpression? _run;
     private byte _isRun = 1;
     private int _tick = -1;
     private int _flowTick;
@@ -111,10 +112,10 @@ public sealed partial class Igi2AnimTask : Igi2Task
         }
 
         _flowTick = level.LevelFlow?.Tick ?? 0;
-        _run ??= new Igi2LevelExpression(RunExpression, Name, level.Natives);
+        _run ??= Igi2LevelExpressions.Create(RunExpression, Name, level.Natives);
         if (!_run.IsEmpty)
         {
-            _isRun = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_run));
+            _isRun = (byte)LevelExpression.Truncate(level.Evaluate(_run));
         }
 
         if (_isRun != 0)

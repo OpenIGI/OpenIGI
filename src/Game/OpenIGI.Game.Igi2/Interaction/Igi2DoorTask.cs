@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -68,9 +69,9 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     private byte _isPicked;
     private byte _isOpenDoorChanged;
     private byte _isOpenDoor;
-    private Igi2LevelExpression? _open;
-    private Igi2LevelExpression? _close;
-    private Igi2LevelExpression? _locked;
+    private LevelExpression? _open;
+    private LevelExpression? _close;
+    private LevelExpression? _locked;
     private Igi2Sound? _moveSound;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private bool _started;
@@ -300,7 +301,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
 
         if (!_locked!.IsEmpty)
         {
-            _isLocked = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_locked));
+            _isLocked = (byte)LevelExpression.Truncate(level.Evaluate(_locked));
         }
 
         if (_isPicked != 0)
@@ -684,9 +685,9 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
             return;
         }
 
-        _open = new Igi2LevelExpression(OpenScript, Name, level.Natives);
-        _close = new Igi2LevelExpression(CloseScript, Name, level.Natives);
-        _locked = new Igi2LevelExpression(LockedScript, Name, level.Natives);
+        _open = Igi2LevelExpressions.Create(OpenScript, Name, level.Natives);
+        _close = Igi2LevelExpressions.Create(CloseScript, Name, level.Natives);
+        _locked = Igi2LevelExpressions.Create(LockedScript, Name, level.Natives);
         _started = true;
     }
 

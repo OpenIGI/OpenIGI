@@ -8,6 +8,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -25,8 +26,8 @@ public sealed partial class Igi2AiStationaryGunHolderTask : Igi2Task, IIgi2Place
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AIStationaryGunHolder";
 
-    private Igi2LevelExpression? _onExpression;
-    private Igi2LevelExpression? _teamExpression;
+    private LevelExpression? _onExpression;
+    private LevelExpression? _teamExpression;
     private byte _isOn;
     private int _team = 1;
     private Igi2AiDetection? _detection;
@@ -175,16 +176,16 @@ public sealed partial class Igi2AiStationaryGunHolderTask : Igi2Task, IIgi2Place
     {
         ArgumentNullException.ThrowIfNull(level);
         bool wasOn = _isOn != 0;
-        _teamExpression ??= new Igi2LevelExpression(TeamExpression, Name, level.Natives);
+        _teamExpression ??= Igi2LevelExpressions.Create(TeamExpression, Name, level.Natives);
         if (!_teamExpression.IsEmpty)
         {
-            _team = (int)Igi2LevelExpression.Truncate(level.Evaluate(_teamExpression));
+            _team = (int)LevelExpression.Truncate(level.Evaluate(_teamExpression));
         }
 
-        _onExpression ??= new Igi2LevelExpression(OnExpression, Name, level.Natives);
+        _onExpression ??= Igi2LevelExpressions.Create(OnExpression, Name, level.Natives);
         if (!_onExpression.IsEmpty)
         {
-            _isOn = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_onExpression));
+            _isOn = (byte)LevelExpression.Truncate(level.Evaluate(_onExpression));
         }
 
         if (_isOn != 0)

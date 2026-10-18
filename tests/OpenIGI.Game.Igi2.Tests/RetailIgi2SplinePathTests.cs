@@ -125,7 +125,7 @@ public sealed class RetailIgi2SplinePathTests
         double speed = Math.Sqrt((guide.Velocity.X * (double)guide.Velocity.X) + (guide.Velocity.Y * (double)guide.Velocity.Y));
         Assert.InRange(speed, 21000.0, 24000.0);
         Assert.Equal(plane.CurrentPosition, solid.Position);
-        Assert.Equal(guide.PathPosition, m.Run.Evaluate(new Igi2LevelExpression($"SplinePathGuideQTask_{PlaneGuide}.vPosition", "test", m.Run.Natives)));
+        Assert.Equal(guide.PathPosition, m.Run.Evaluate(Igi2LevelExpressions.Create($"SplinePathGuideQTask_{PlaneGuide}.vPosition", "test", m.Run.Natives)));
     }
 
     /// <summary>

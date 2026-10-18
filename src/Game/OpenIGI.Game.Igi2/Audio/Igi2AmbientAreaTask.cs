@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Audio;
 
@@ -43,7 +44,7 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
     public const int MaxSounds = 8;
 
     private readonly List<string> _sounds = [];
-    private Igi2LevelExpression? _on;
+    private LevelExpression? _on;
     private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
     private bool _isFramed;
     private double _volume;
@@ -205,7 +206,7 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
 
     private void Step(Igi2LevelRun level, IIgi2Listener listener)
     {
-        _on ??= new Igi2LevelExpression(OnExpression, Name, level.Natives);
+        _on ??= Igi2LevelExpressions.Create(OnExpression, Name, level.Natives);
         _target = 0.0;
         bool counts = false;
         if (_on.IsEmpty || (byte)(long)level.Evaluate(_on) != 0)

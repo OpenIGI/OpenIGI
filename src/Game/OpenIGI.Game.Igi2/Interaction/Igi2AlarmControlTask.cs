@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -48,8 +49,8 @@ public sealed partial class Igi2AlarmControlTask
     private int _isAlarm;
     private int _isLastAlarm;
     private int _triggerLastTick = -10000;
-    private Igi2LevelExpression? _triggerExpression;
-    private Igi2LevelExpression? _alarmExpression;
+    private LevelExpression? _triggerExpression;
+    private LevelExpression? _alarmExpression;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2AlarmControlTask"/> class.</summary>
     public Igi2AlarmControlTask()
@@ -261,10 +262,10 @@ public sealed partial class Igi2AlarmControlTask
             return;
         }
 
-        _triggerExpression ??= new Igi2LevelExpression(TriggerScript, Name, level.Natives);
+        _triggerExpression ??= Igi2LevelExpressions.Create(TriggerScript, Name, level.Natives);
         if (!_triggerExpression.IsEmpty)
         {
-            _isTrigger = (sbyte)Igi2LevelExpression.Truncate(level.Evaluate(_triggerExpression));
+            _isTrigger = (sbyte)LevelExpression.Truncate(level.Evaluate(_triggerExpression));
         }
 
         if (_isTrigger != 0)
@@ -272,10 +273,10 @@ public sealed partial class Igi2AlarmControlTask
             _triggerLastTick = level.Ticks;
         }
 
-        _alarmExpression ??= new Igi2LevelExpression(AlarmScript, Name, level.Natives);
+        _alarmExpression ??= Igi2LevelExpressions.Create(AlarmScript, Name, level.Natives);
         if (!_alarmExpression.IsEmpty)
         {
-            _isAlarm = (sbyte)Igi2LevelExpression.Truncate(level.Evaluate(_alarmExpression));
+            _isAlarm = (sbyte)LevelExpression.Truncate(level.Evaluate(_alarmExpression));
         }
 
         // HumanAI_SendEvent (igi2 0x460A90): AIEVENT_ALARMON (7) as it starts, AIEVENT_ALARMOFF (8) as it stops, to every team.

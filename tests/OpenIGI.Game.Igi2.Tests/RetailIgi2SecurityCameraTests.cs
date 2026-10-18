@@ -147,7 +147,7 @@ public sealed class RetailIgi2SecurityCameraTests
 
         m.Run.Tick();
         Assert.True(gate.IsDetection);
-        Assert.Equal(1.0, m.Run.Evaluate(new Igi2LevelExpression($"SCamera_{MainGate}.isDetection", "test", m.Run.Natives)));
+        Assert.Equal(1.0, m.Run.Evaluate(Igi2LevelExpressions.Create($"SCamera_{MainGate}.isDetection", "test", m.Run.Natives)));
         Assert.Contains(m.Sounds.Playing, static s => s.Name == "camera_beep_l");
         Assert.True(gate.Detection!.Find(player.Human)!.IsFullVisible);
     }
@@ -175,7 +175,7 @@ public sealed class RetailIgi2SecurityCameraTests
         gate.BulletDamage(0.05f);
         m.Run.Tick();
         Assert.Equal((true, false), (gate.IsDestroyed, gate.IsOn));
-        Assert.Equal(1.0, m.Run.Evaluate(new Igi2LevelExpression($"SCamera_{MainGate}.isExploded", "test", m.Run.Natives)));
+        Assert.Equal(1.0, m.Run.Evaluate(Igi2LevelExpressions.Create($"SCamera_{MainGate}.isExploded", "test", m.Run.Natives)));
         Assert.Single(dynamic.Tasks.OfType<Igi2Explosion>());
         Assert.Equal(m.Level.ModelFor("335_03_1")!.NativeMarkerBound, lens.Radius);
 

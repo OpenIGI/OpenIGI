@@ -10,6 +10,7 @@ using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Vehicles;
 
@@ -64,9 +65,9 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     private Igi2Pose? _built;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private MefAttachment? _gunAttachment;
-    private Igi2LevelExpression? _playSound;
-    private Igi2LevelExpression? _openDoor;
-    private Igi2LevelExpression? _canFire;
+    private LevelExpression? _playSound;
+    private LevelExpression? _openDoor;
+    private LevelExpression? _canFire;
     private Igi2Sound? _engineSound;
     private Igi2AiDetection? _detection;
     private Igi2DetectionWorld? _detectionWorld;
@@ -358,10 +359,10 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         }
 
         RunEngineSound(level);
-        _openDoor ??= new Igi2LevelExpression(OpenDoorExpression, Name, level.Natives);
+        _openDoor ??= Igi2LevelExpressions.Create(OpenDoorExpression, Name, level.Natives);
         if (!_openDoor.IsEmpty)
         {
-            IsDoorOpen = Igi2LevelExpression.Truncate(level.Evaluate(_openDoor)) != 0;
+            IsDoorOpen = LevelExpression.Truncate(level.Evaluate(_openDoor)) != 0;
         }
 
         RunDetection(level);
@@ -575,8 +576,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     // Car_RunHandler's engine sound: with a play sound expression, it sounds while that holds; with none, always.
     private void RunEngineSound(Igi2LevelRun level)
     {
-        _playSound ??= new Igi2LevelExpression(PlaySoundExpression, Name, level.Natives);
-        if (!_playSound.IsEmpty && Igi2LevelExpression.Truncate(level.Evaluate(_playSound)) == 0)
+        _playSound ??= Igi2LevelExpressions.Create(PlaySoundExpression, Name, level.Natives);
+        if (!_playSound.IsEmpty && LevelExpression.Truncate(level.Evaluate(_playSound)) == 0)
         {
             _engineSound?.Delete();
             _engineSound = null;
@@ -593,14 +594,14 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     // one; when it stops holding, the detection forgets everything.
     private void RunDetection(Igi2LevelRun level)
     {
-        _canFire ??= new Igi2LevelExpression(CanFireExpression, Name, level.Natives);
+        _canFire ??= Igi2LevelExpressions.Create(CanFireExpression, Name, level.Natives);
         if (_canFire.IsEmpty)
         {
             return;
         }
 
         bool wasFire = _isFire;
-        _isFire = Igi2LevelExpression.Truncate(level.Evaluate(_canFire)) != 0;
+        _isFire = LevelExpression.Truncate(level.Evaluate(_canFire)) != 0;
         if (_isFire)
         {
             if (Gun is { IsMounted: true } gun)

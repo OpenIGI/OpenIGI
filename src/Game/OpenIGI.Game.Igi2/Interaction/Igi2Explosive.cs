@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -101,7 +102,7 @@ public sealed class Igi2Explosive
     private float _maxDamage;
     private float _explosionDamage;
     private int _delay = -1;
-    private Igi2LevelExpression? _expression;
+    private LevelExpression? _expression;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2Explosive"/> class.</summary>
@@ -175,10 +176,10 @@ public sealed class Igi2Explosive
 
         if (level is not null && _parameters.ExplosionScript.Length != 0)
         {
-            _expression ??= new Igi2LevelExpression(_parameters.ExplosionScript, _owner.Name, level.Natives);
+            _expression ??= Igi2LevelExpressions.Create(_parameters.ExplosionScript, _owner.Name, level.Natives);
             if (!_expression.IsEmpty)
             {
-                _isExplode = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_expression));
+                _isExplode = (byte)LevelExpression.Truncate(level.Evaluate(_expression));
             }
         }
 

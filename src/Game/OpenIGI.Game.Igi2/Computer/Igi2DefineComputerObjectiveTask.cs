@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Computer;
 
@@ -20,7 +21,7 @@ public sealed partial class Igi2DefineComputerObjectiveTask : Igi2Task
     /// <summary>The objectives a set holds.</summary>
     public const int Count = 8;
 
-    private Igi2LevelExpression? _valid;
+    private LevelExpression? _valid;
 
     /// <summary>Gets the objectives.</summary>
     public IReadOnlyList<Igi2ComputerObjective> Objectives { get; } = [.. Enumerable.Range(0, Count).Select(static _ => new Igi2ComputerObjective())];
@@ -164,7 +165,7 @@ public sealed partial class Igi2DefineComputerObjectiveTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _valid ??= new Igi2LevelExpression(ValidExpression, Name, level.Natives);
+        _valid ??= Igi2LevelExpressions.Create(ValidExpression, Name, level.Natives);
         if (!_valid.IsEmpty && (byte)(long)level.Evaluate(_valid) == 0)
         {
             Computer?.InactiveObjectives = this;
@@ -174,8 +175,8 @@ public sealed partial class Igi2DefineComputerObjectiveTask : Igi2Task
         Computer?.Objectives = this;
         foreach (Igi2ComputerObjective objective in Objectives)
         {
-            objective.Complete ??= new Igi2LevelExpression(objective.CompleteExpression, Name, level.Natives);
-            objective.Failed ??= new Igi2LevelExpression(objective.FailedExpression, Name, level.Natives);
+            objective.Complete ??= Igi2LevelExpressions.Create(objective.CompleteExpression, Name, level.Natives);
+            objective.Failed ??= Igi2LevelExpressions.Create(objective.FailedExpression, Name, level.Natives);
             objective.IsComplete = !objective.Complete.IsEmpty && (sbyte)(long)level.Evaluate(objective.Complete) != 0;
             objective.IsFailed = !objective.Failed.IsEmpty && (sbyte)(long)level.Evaluate(objective.Failed) != 0;
         }

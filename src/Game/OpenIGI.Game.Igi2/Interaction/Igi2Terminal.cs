@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -63,7 +64,7 @@ public sealed class Igi2Terminal(IIgi2TerminalOwner owner)
     private byte _isHackedThisTick;
     private int _hackedThisTickTick;
     private int _clientId;
-    private Igi2LevelExpression? _activeExpression;
+    private LevelExpression? _activeExpression;
     private Igi2LevelFlowTask? _flow;
 
     /// <summary>Gets a value indicating whether it may be hacked, <c>isActive</c>.</summary>
@@ -122,10 +123,10 @@ public sealed class Igi2Terminal(IIgi2TerminalOwner owner)
         }
         else
         {
-            _activeExpression ??= new Igi2LevelExpression(owner.ActiveScript, owner.Name, level.Natives);
+            _activeExpression ??= Igi2LevelExpressions.Create(owner.ActiveScript, owner.Name, level.Natives);
             if (!_activeExpression.IsEmpty)
             {
-                _isActive = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_activeExpression));
+                _isActive = (byte)LevelExpression.Truncate(level.Evaluate(_activeExpression));
             }
         }
 

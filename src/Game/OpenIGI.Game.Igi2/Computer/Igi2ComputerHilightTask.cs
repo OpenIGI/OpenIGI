@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Computer;
 
@@ -26,7 +27,7 @@ public sealed partial class Igi2ComputerHilightTask : Igi2Task
     /// <summary>The most tasks one highlight names.</summary>
     public const int MaxTasks = 64;
 
-    private Igi2LevelExpression? _hilight;
+    private LevelExpression? _hilight;
 
     /// <summary>Gets or sets where the sprite is drawn when it names no task.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -169,7 +170,7 @@ public sealed partial class Igi2ComputerHilightTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _hilight ??= new Igi2LevelExpression(HilightExpression, Name, level.Natives);
+        _hilight ??= Igi2LevelExpressions.Create(HilightExpression, Name, level.Natives);
         if (!_hilight.IsEmpty)
         {
             IsOn = (long)level.Evaluate(_hilight) != 0;

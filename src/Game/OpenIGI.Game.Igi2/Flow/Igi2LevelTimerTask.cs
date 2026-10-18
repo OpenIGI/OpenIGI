@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -14,8 +15,8 @@ public sealed partial class Igi2LevelTimerTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "LevelTimer";
 
-    private Igi2LevelExpression? _on;
-    private Igi2LevelExpression? _reset;
+    private LevelExpression? _on;
+    private LevelExpression? _reset;
     private byte _isRun = 1;
     private int _tick;
 
@@ -55,13 +56,13 @@ public sealed partial class Igi2LevelTimerTask : Igi2Task
         ArgumentNullException.ThrowIfNull(level);
         level.RunChildren(this);
 
-        _on ??= new Igi2LevelExpression(OnScript, Name, level.Natives);
+        _on ??= Igi2LevelExpressions.Create(OnScript, Name, level.Natives);
         if (!_on.IsEmpty)
         {
-            _isRun = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_on));
+            _isRun = (byte)LevelExpression.Truncate(level.Evaluate(_on));
         }
 
-        _reset ??= new Igi2LevelExpression(ResetScript, Name, level.Natives);
+        _reset ??= Igi2LevelExpressions.Create(ResetScript, Name, level.Natives);
         if (!_reset.IsEmpty && level.Evaluate(_reset) != 0.0)
         {
             _tick = 0;

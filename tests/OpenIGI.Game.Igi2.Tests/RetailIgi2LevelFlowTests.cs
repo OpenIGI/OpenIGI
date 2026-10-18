@@ -8,6 +8,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -32,10 +33,10 @@ public sealed class RetailIgi2LevelFlowTests
     {
         Assert.Equal(
             "ConditionalContainer_7.isRun&&1||2",
-            Igi2LevelExpression.Compile("this.isRun  &&  Door_5.isExists // a note\n|| 2", "ConditionalContainer_7"));
-        Assert.Equal("SoundGenerator_PlaySound(\"a b // c\");", Igi2LevelExpression.Compile("SoundGenerator_PlaySound (\"a b // c\");", "X_1"));
-        Assert.Equal("CutScene_3064.nTick>7.76*GAME_FREQUENCY", Igi2LevelExpression.Compile("CutScene_3064.nTick > 7.76*GAME_FREQUENCY", "X_1"));
-        Assert.Equal(string.Empty, Igi2LevelExpression.Compile("  // nothing\n", "X_1"));
+            LevelExpression.Compile("this.isRun  &&  Door_5.isExists // a note\n|| 2", "ConditionalContainer_7"));
+        Assert.Equal("SoundGenerator_PlaySound(\"a b // c\");", LevelExpression.Compile("SoundGenerator_PlaySound (\"a b // c\");", "X_1"));
+        Assert.Equal("CutScene_3064.nTick>7.76*GAME_FREQUENCY", LevelExpression.Compile("CutScene_3064.nTick > 7.76*GAME_FREQUENCY", "X_1"));
+        Assert.Equal(string.Empty, LevelExpression.Compile("  // nothing\n", "X_1"));
     }
 
     /// <summary>

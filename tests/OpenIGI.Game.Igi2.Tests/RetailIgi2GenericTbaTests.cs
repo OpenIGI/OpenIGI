@@ -179,5 +179,5 @@ public sealed class RetailIgi2GenericTbaTests
         player.Tick(RetailIgi2Mission1.Idle with { Held = PlayerAction.Activate, Pressed = pressed ? PlayerAction.Activate : default });
 
     private static double Read(RetailIgi2Mission1 m, string expression) =>
-        m.Run.Evaluate(new Igi2LevelExpression(expression, "test", m.Run.Natives));
+        m.Run.Evaluate(Igi2LevelExpressions.Create(expression, "test", m.Run.Natives));
 }

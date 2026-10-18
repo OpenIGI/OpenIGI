@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -48,11 +49,11 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
     // A shake draw's sixteen bits as a share, 2^-16.
     private const double ShakeUnit = 1.52587890625e-05;
 
-    private Igi2LevelExpression? _run;
-    private Igi2LevelExpression? _reset;
-    private Igi2LevelExpression? _forward;
-    private Igi2LevelExpression? _start;
-    private Igi2LevelExpression? _stop;
+    private LevelExpression? _run;
+    private LevelExpression? _reset;
+    private LevelExpression? _forward;
+    private LevelExpression? _start;
+    private LevelExpression? _stop;
     private bool _started;
     private byte _isRun;
     private byte _isFinished;
@@ -149,22 +150,22 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
             ViewportFadeInTime = ViewportFadeInTime < 0f ? 0f : ViewportFadeInTime;
             ViewportFadeOutTime = ViewportFadeOutTime < 0f ? 0f : ViewportFadeOutTime;
             Tick = Fpu.ToInt32((Fpu)(double)Igi2LevelRun.Frequency * StartTime);
-            _run = new Igi2LevelExpression(RunScript, Name, level.Natives);
-            _reset = new Igi2LevelExpression(ResetScript, Name, level.Natives);
-            _forward = new Igi2LevelExpression(TimeDeltaScript, Name, level.Natives);
-            _start = new Igi2LevelExpression(StartScript, Name, level.Natives);
-            _stop = new Igi2LevelExpression(StopScript, Name, level.Natives);
+            _run = Igi2LevelExpressions.Create(RunScript, Name, level.Natives);
+            _reset = Igi2LevelExpressions.Create(ResetScript, Name, level.Natives);
+            _forward = Igi2LevelExpressions.Create(TimeDeltaScript, Name, level.Natives);
+            _start = Igi2LevelExpressions.Create(StartScript, Name, level.Natives);
+            _stop = Igi2LevelExpressions.Create(StopScript, Name, level.Natives);
             _started = true;
         }
 
         level.RunChildren(this);
-        _isRun = _run!.IsEmpty ? (byte)1 : (byte)Igi2LevelExpression.Truncate(level.Evaluate(_run));
+        _isRun = _run!.IsEmpty ? (byte)1 : (byte)LevelExpression.Truncate(level.Evaluate(_run));
         if (IsRun)
         {
             level.MarkCutsceneRunning();
         }
 
-        if (!_reset!.IsEmpty && Igi2LevelExpression.Flag(level.Evaluate(_reset)))
+        if (!_reset!.IsEmpty && LevelExpression.Flag(level.Evaluate(_reset)))
         {
             Tick = 0;
             _isFinished = 0;
@@ -176,7 +177,7 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
             if (!_forward!.IsEmpty)
             {
                 double seconds = level.Evaluate(_forward);
-                Tick = Math.Max(0, Tick + (int)Igi2LevelExpression.Truncate(seconds * Igi2LevelRun.Frequency));
+                Tick = Math.Max(0, Tick + (int)LevelExpression.Truncate(seconds * Igi2LevelRun.Frequency));
             }
             else
             {

@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -39,7 +40,7 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
     /// <summary>The name a sound slot holds until the level gives it one, <c>"$!undefined!$"</c>.</summary>
     public const string UndefinedSound = "$!undefined!$";
 
-    private Igi2LevelExpression? _active;
+    private LevelExpression? _active;
     private Igi2LevelFlowTask? _flow;
     private byte _isActive = 1;
     private byte _isOn;
@@ -152,7 +153,7 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
         level.RunChildren(this);
         if (!_active!.IsEmpty)
         {
-            _isActive = (byte)Igi2LevelExpression.Truncate(level.Evaluate(_active));
+            _isActive = (byte)LevelExpression.Truncate(level.Evaluate(_active));
         }
 
         bool wasOn = IsOn;
@@ -272,7 +273,7 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
             return;
         }
 
-        _active = new Igi2LevelExpression(ActiveScript, Name, level.Natives);
+        _active = Igi2LevelExpressions.Create(ActiveScript, Name, level.Natives);
         _flow = level.LevelFlow;
         _started = true;
     }

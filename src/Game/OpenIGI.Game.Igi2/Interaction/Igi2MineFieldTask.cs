@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -32,7 +33,7 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
     /// <summary>The model its fragments are thrown as.</summary>
     public const string FragmentModel = "1009_01_1";
 
-    private Igi2LevelExpression? _explode;
+    private LevelExpression? _explode;
 
     /// <summary>Gets or sets where the editor shows it.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -109,7 +110,7 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
             return;
         }
 
-        _explode ??= new Igi2LevelExpression(ExplodeExpression, Name, level.Natives);
+        _explode ??= Igi2LevelExpressions.Create(ExplodeExpression, Name, level.Natives);
         if (!_explode.IsEmpty && level.Evaluate(_explode) != 0.0)
         {
             Explode();

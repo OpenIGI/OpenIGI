@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -50,7 +51,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     /// <summary>The transparencies of the fade modes nought to two.</summary>
     public static readonly int[] FadeModeTransparency = [0x1080000, 0x1000008, 0x1000010];
 
-    private Igi2LevelExpression? _generate;
+    private LevelExpression? _generate;
     private Igi2Particle2DSystem? _system;
     private Vector3d _previous;
     private bool _isPreviousValid;
@@ -238,7 +239,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
         _isPreviousValid = true;
         level.RunChildren(this);
 
-        _generate ??= new Igi2LevelExpression(GenerateExpression, Name, level.Natives);
+        _generate ??= Igi2LevelExpressions.Create(GenerateExpression, Name, level.Natives);
         if (!_generate.IsEmpty)
         {
             GenerateFactor = level.Evaluate(_generate);

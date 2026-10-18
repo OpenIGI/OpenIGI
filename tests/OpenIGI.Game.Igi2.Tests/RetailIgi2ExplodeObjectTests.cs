@@ -64,7 +64,7 @@ public sealed class RetailIgi2ExplodeObjectTests
         Assert.True(barrel.Explosive.IsExploded);
         Assert.Equal("342_02_1", barrel.Explosive.Model);
         Assert.Single(dynamic.Tasks.OfType<Igi2Explosion>());
-        Assert.Equal(1.0, m.Run.Evaluate(new Igi2LevelExpression($"ExplodeObject_{Barrel}.isExploded", "test", m.Run.Natives)));
+        Assert.Equal(1.0, m.Run.Evaluate(Igi2LevelExpressions.Create($"ExplodeObject_{Barrel}.isExploded", "test", m.Run.Natives)));
 
         barrel.Explosive.WeaponHit(5f);
         Assert.Equal(2f, barrel.Explosive.Damage);

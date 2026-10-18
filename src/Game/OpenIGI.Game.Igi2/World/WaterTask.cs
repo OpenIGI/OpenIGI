@@ -1,6 +1,8 @@
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -193,7 +195,7 @@ public sealed partial class WaterTask : Igi2Task
     /// </summary>
     public int EnvmapSlot { get; private set; }
 
-    private Flow.Igi2LevelExpression? _envmapIndex;
+    private OpenIGI.Scripting.Expressions.LevelExpression? _envmapIndex;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -204,7 +206,7 @@ public sealed partial class WaterTask : Igi2Task
     {
         ArgumentNullException.ThrowIfNull(level);
         Body?.Run();
-        _envmapIndex ??= new Flow.Igi2LevelExpression(EnvmapIndexExpression, Name, level.Natives);
+        _envmapIndex ??= Igi2LevelExpressions.Create(EnvmapIndexExpression, Name, level.Natives);
         if (!_envmapIndex.IsEmpty)
         {
             EnvmapSlot = (int)(long)level.Evaluate(_envmapIndex);

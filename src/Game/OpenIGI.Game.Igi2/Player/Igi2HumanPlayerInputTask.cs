@@ -1,6 +1,7 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -19,8 +20,8 @@ public sealed partial class Igi2HumanPlayerInputTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanPlayerInput";
 
-    private Igi2LevelExpression? _on;
-    private Igi2LevelExpression? _unavailable;
+    private LevelExpression? _on;
+    private LevelExpression? _unavailable;
 
     /// <summary>Gets or sets the expression that enables the map computer; blank for always.</summary>
     [ScriptParam(ScriptParamType.VarString, "Mapcomputer on expression")]
@@ -47,8 +48,8 @@ public sealed partial class Igi2HumanPlayerInputTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _on ??= new Igi2LevelExpression(OnExpression, Name, level.Natives);
-        _unavailable ??= new Igi2LevelExpression(UnavailableExpression, Name, level.Natives);
+        _on ??= Igi2LevelExpressions.Create(OnExpression, Name, level.Natives);
+        _unavailable ??= Igi2LevelExpressions.Create(UnavailableExpression, Name, level.Natives);
         IsComputerUnavailable = !_unavailable.IsEmpty && (uint)(long)level.Evaluate(_unavailable) != 0;
         IsComputerEnabled = _on.IsEmpty || (int)(long)level.Evaluate(_on) != 0;
     }

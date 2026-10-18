@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Audio;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -41,7 +42,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     private const string Separators = ",\t\n";
     private const string Comment = "//";
 
-    private Igi2LevelExpression? _send;
+    private LevelExpression? _send;
     private Igi2LevelFlowTask? _flow;
     private Igi2Sound? _sound;
     private int? _next;
@@ -190,7 +191,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
 
         if (_isDisplay == 0)
         {
-            _send ??= new Igi2LevelExpression(SendScript, Name, level.Natives);
+            _send ??= Igi2LevelExpressions.Create(SendScript, Name, level.Natives);
             if (IsForceSend || (!_send.IsEmpty && level.Evaluate(_send) != 0.0))
             {
                 _tickSent = SentAtOnce;

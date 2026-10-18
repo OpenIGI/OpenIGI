@@ -7,6 +7,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Vehicles;
 
@@ -56,7 +57,7 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
     private Igi2Pose? _built;
     private int _movedTick = int.MinValue;
     private int _runTick = -1;
-    private Igi2LevelExpression? _playSound;
+    private LevelExpression? _playSound;
     private Igi2Sound? _sound;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private IReadOnlyList<Igi2DeathZone> _deathZones = [];
@@ -256,8 +257,8 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
         }
 
         _runTick = tick;
-        _playSound ??= new Igi2LevelExpression(PlaySound, Name, level.Natives);
-        if (!_playSound.IsEmpty && Igi2LevelExpression.Truncate(level.Evaluate(_playSound)) != 0)
+        _playSound ??= Igi2LevelExpressions.Create(PlaySound, Name, level.Natives);
+        if (!_playSound.IsEmpty && LevelExpression.Truncate(level.Evaluate(_playSound)) != 0)
         {
             _sound ??= Sounds?.New(_carriages != 0 ? "train_loop_1" : "train_loop_2", _at, () => _at);
         }

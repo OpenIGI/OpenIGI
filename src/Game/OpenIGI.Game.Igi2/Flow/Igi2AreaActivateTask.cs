@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -190,7 +191,7 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
         // Script_ParseLineInt32 reads the criteria once its parameters are; here once the level's constants are at hand.
         _mask ??= Criteria.Length == 0
             ? 0
-            : (int)Igi2LevelExpression.Truncate(level.Evaluate(new Igi2LevelExpression(Criteria, Name, level.Natives)));
+            : (int)LevelExpression.Truncate(level.Evaluate(Igi2LevelExpressions.Create(Criteria, Name, level.Natives)));
         int mask = _mask.Value;
         int sum = 0;
         for (int criterion = 0; criterion < Igi2AreaCriteria.Count; criterion++)

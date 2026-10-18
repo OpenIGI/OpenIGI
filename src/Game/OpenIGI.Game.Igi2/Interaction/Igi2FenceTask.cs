@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -53,7 +54,7 @@ public sealed partial class Igi2FenceTask : Igi2Task, IIgi2PlacedTask, IIgi2Acti
     /// <summary>The seconds a climb's activation counts, <c>Fence_GetActivateTime</c>.</summary>
     public const float ActivateTime = 6f;
 
-    private Igi2LevelExpression? _electric;
+    private LevelExpression? _electric;
     private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
     private Igi2AmbientAreaTask? _hum;
 
@@ -112,8 +113,8 @@ public sealed partial class Igi2FenceTask : Igi2Task, IIgi2PlacedTask, IIgi2Acti
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _electric ??= new Igi2LevelExpression(ElectricExpression, Name, level.Natives);
-        IsElectric = !_electric.IsEmpty && (byte)Igi2LevelExpression.Truncate(level.Evaluate(_electric)) != 0;
+        _electric ??= Igi2LevelExpressions.Create(ElectricExpression, Name, level.Natives);
+        IsElectric = !_electric.IsEmpty && (byte)LevelExpression.Truncate(level.Evaluate(_electric)) != 0;
         if (_hum is not null)
         {
             if (!IsElectric)

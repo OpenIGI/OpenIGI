@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -32,7 +33,7 @@ public sealed partial class Igi2WireTask : Igi2Task, IIgi2PlacedTask, IIgi2Activ
     /// <summary>The tilt beyond which a wire is ridden down rather than climbed, two degrees.</summary>
     public const float SlideTilt = 0.03490658476948738f;
 
-    private Igi2LevelExpression? _useable;
+    private LevelExpression? _useable;
     private WireTransform _transform;
     private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
     private byte _isInUse;
@@ -150,7 +151,7 @@ public sealed partial class Igi2WireTask : Igi2Task, IIgi2PlacedTask, IIgi2Activ
         Vector3d nearest = World(new Vector3d(0.0, along, 0.0));
         if (UseableExpression.Length > 0 && Level is { } level)
         {
-            _useable ??= new Igi2LevelExpression(UseableExpression, Name, level.Natives);
+            _useable ??= Igi2LevelExpressions.Create(UseableExpression, Name, level.Natives);
             if (!_useable.IsEmpty && level.Evaluate(_useable) == 0.0)
             {
                 return;

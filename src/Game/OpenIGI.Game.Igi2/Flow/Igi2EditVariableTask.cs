@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -13,8 +14,8 @@ public sealed partial class Igi2EditVariableTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditVariable";
 
-    private Igi2LevelExpression? _add;
-    private Igi2LevelExpression? _sub;
+    private LevelExpression? _add;
+    private LevelExpression? _sub;
 
     /// <summary>Gets or sets where the editor shows it.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -36,16 +37,16 @@ public sealed partial class Igi2EditVariableTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _add ??= new Igi2LevelExpression(Add, Name, level.Natives);
-        _sub ??= new Igi2LevelExpression(Sub, Name, level.Natives);
+        _add ??= Igi2LevelExpressions.Create(Add, Name, level.Natives);
+        _sub ??= Igi2LevelExpressions.Create(Sub, Name, level.Natives);
         if (!_add.IsEmpty)
         {
-            Value = unchecked(Value + (int)Igi2LevelExpression.Truncate(level.Evaluate(_add)));
+            Value = unchecked(Value + (int)LevelExpression.Truncate(level.Evaluate(_add)));
         }
 
         if (!_sub.IsEmpty)
         {
-            Value = unchecked(Value - (int)Igi2LevelExpression.Truncate(level.Evaluate(_sub)));
+            Value = unchecked(Value - (int)LevelExpression.Truncate(level.Evaluate(_sub)));
         }
     }
 

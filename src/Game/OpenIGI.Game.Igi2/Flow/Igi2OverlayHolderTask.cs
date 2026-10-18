@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
@@ -75,8 +76,8 @@ public sealed partial class Igi2OverlayHolderTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "OverlayHolder";
 
-    private Igi2LevelExpression? _visible;
-    private Igi2LevelExpression? _infrared;
+    private LevelExpression? _visible;
+    private LevelExpression? _infrared;
     private bool _isUp;
 
     /// <summary>Gets or sets the expression that puts it up.</summary>
@@ -105,10 +106,10 @@ public sealed partial class Igi2OverlayHolderTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _visible ??= new Igi2LevelExpression(VisibleExpression, Name, level.Natives);
+        _visible ??= Igi2LevelExpressions.Create(VisibleExpression, Name, level.Natives);
         if (!_visible.IsEmpty)
         {
-            IsVisible = Igi2LevelExpression.Truncate(level.Evaluate(_visible)) != 0;
+            IsVisible = LevelExpression.Truncate(level.Evaluate(_visible)) != 0;
         }
 
         if (!IsVisible)
@@ -122,10 +123,10 @@ public sealed partial class Igi2OverlayHolderTask : Igi2Task
             return;
         }
 
-        _infrared ??= new Igi2LevelExpression(InfraredExpression, Name, level.Natives);
+        _infrared ??= Igi2LevelExpressions.Create(InfraredExpression, Name, level.Natives);
         if (!_infrared.IsEmpty && Screen is { } infraredScreen)
         {
-            infraredScreen.IsInfrared = Igi2LevelExpression.Truncate(level.Evaluate(_infrared)) != 0;
+            infraredScreen.IsInfrared = LevelExpression.Truncate(level.Evaluate(_infrared)) != 0;
         }
 
         if (!_isUp)

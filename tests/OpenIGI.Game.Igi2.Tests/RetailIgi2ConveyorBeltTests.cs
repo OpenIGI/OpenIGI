@@ -47,9 +47,9 @@ public sealed class RetailIgi2ConveyorBeltTests
 
         Igi2ConveyorBeltTask sloping = belts.Single(static b => b.Id == Sloping);
         Assert.Equal(0f, sloping.XSpeed);
-        m.Run.Evaluate(new Igi2LevelExpression("ConveyorBelt_SetSpeed(3758, -30, 0)", "test", m.Run.Natives));
+        m.Run.Evaluate(Igi2LevelExpressions.Create("ConveyorBelt_SetSpeed(3758, -30, 0)", "test", m.Run.Natives));
         Assert.Equal((-20f, 0f), (sloping.XSpeed, sloping.YSpeed));
-        m.Run.Evaluate(new Igi2LevelExpression("ConveyorBelt_SetSpeed(3758, 7.5, 30)", "test", m.Run.Natives));
+        m.Run.Evaluate(Igi2LevelExpressions.Create("ConveyorBelt_SetSpeed(3758, 7.5, 30)", "test", m.Run.Natives));
         Assert.Equal((7.5f, 20f), (sloping.XSpeed, sloping.YSpeed));
     }
 

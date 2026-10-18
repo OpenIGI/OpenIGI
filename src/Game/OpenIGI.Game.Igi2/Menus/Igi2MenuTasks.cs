@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Menus;
 
@@ -59,8 +60,8 @@ public sealed partial class Igi2MenuManagerTask : Igi2MenuWindowTask
     public int DefaultScreen(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        Igi2LevelExpression? expression = null;
-        return TryRun(level, ref expression, DefaultScreenExpression, out double value) ? (int)Igi2LevelExpression.Truncate(value) : -1;
+        LevelExpression? expression = null;
+        return TryRun(level, ref expression, DefaultScreenExpression, out double value) ? (int)LevelExpression.Truncate(value) : -1;
     }
 }
 
@@ -70,8 +71,8 @@ public sealed partial class Igi2MenuScreenTask : Igi2MenuWindowTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "MenuScreen";
 
-    private Igi2LevelExpression? _onInit;
-    private Igi2LevelExpression? _onChange;
+    private LevelExpression? _onInit;
+    private LevelExpression? _onChange;
     private int _userData;
 
     /// <summary>Gets or sets its background picture.</summary>
@@ -157,7 +158,7 @@ public sealed partial class Igi2MenuScreenTask : Igi2MenuWindowTask
     /// <param name="level">The level it is evaluated in.</param>
     public void PressEscape(Igi2LevelRun level)
     {
-        Igi2LevelExpression? escape = null;
+        LevelExpression? escape = null;
         TryRun(level, ref escape, OnPressEscape, out _);
     }
 
@@ -272,7 +273,7 @@ public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
     /// <returns>Whether it can be clicked.</returns>
     public bool IsEnabled(Igi2LevelRun level)
     {
-        Igi2LevelExpression? enabled = null;
+        LevelExpression? enabled = null;
         return !TryRun(level, ref enabled, EnabledExpression, out double value) || value != 0.0;
     }
 
@@ -281,7 +282,7 @@ public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
     /// <returns>Whether it shows.</returns>
     public bool IsVisible(Igi2LevelRun level)
     {
-        Igi2LevelExpression? visible = null;
+        LevelExpression? visible = null;
         return !TryRun(level, ref visible, VisibleExpression, out double value) || value != 0.0;
     }
 
@@ -295,7 +296,7 @@ public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
             return false;
         }
 
-        Igi2LevelExpression? click = null;
+        LevelExpression? click = null;
         TryRun(level, ref click, OnClick, out _);
         return true;
     }
@@ -321,10 +322,10 @@ public sealed partial class Igi2SlideBarTask : Igi2MenuWindowTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SlideBar";
 
-    private Igi2LevelExpression? _getData;
-    private Igi2LevelExpression? _setData;
-    private Igi2LevelExpression? _modifyData;
-    private Igi2LevelExpression? _numOptions;
+    private LevelExpression? _getData;
+    private LevelExpression? _setData;
+    private LevelExpression? _modifyData;
+    private LevelExpression? _numOptions;
     private double _value;
     private int _intValue;
     private int _options;
@@ -390,14 +391,14 @@ public sealed partial class Igi2SlideBarTask : Igi2MenuWindowTask
     {
         if (TryRun(level, ref _numOptions, NumOptionsScript, out double options))
         {
-            _options = (int)Igi2LevelExpression.Truncate(options);
+            _options = (int)LevelExpression.Truncate(options);
         }
 
         if (TryRun(level, ref _getData, GetDataScript, out double data))
         {
             if (_options != 0)
             {
-                _intValue = (int)Igi2LevelExpression.Truncate(data);
+                _intValue = (int)LevelExpression.Truncate(data);
                 _value = (_intValue + 0.5) / _options;
             }
             else
@@ -436,9 +437,9 @@ public sealed partial class Igi2ListBoxTask : Igi2MenuWindowTask, IIgi2MenuItemL
     public const int Capacity = 128;
 
     private readonly List<Igi2MenuItem> _items = [];
-    private Igi2LevelExpression? _collect;
-    private Igi2LevelExpression? _getData;
-    private Igi2LevelExpression? _setData;
+    private LevelExpression? _collect;
+    private LevelExpression? _getData;
+    private LevelExpression? _setData;
     private int _activeId;
 
     /// <summary>Gets or sets its sprite.</summary>
@@ -502,7 +503,7 @@ public sealed partial class Igi2ListBoxTask : Igi2MenuWindowTask, IIgi2MenuItemL
         Menu?.Collect(this, () => TryRun(level, ref _collect, CollectScript, out _));
         if (TryRun(level, ref _getData, GetDataScript, out double id))
         {
-            int wanted = (int)Igi2LevelExpression.Truncate(id);
+            int wanted = (int)LevelExpression.Truncate(id);
             if (_items.Exists(i => i.Id == wanted))
             {
                 _activeId = wanted;
@@ -534,9 +535,9 @@ public sealed partial class Igi2ToggleBoxTask : Igi2MenuWindowTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ToggleBox";
 
-    private Igi2LevelExpression? _getData;
-    private Igi2LevelExpression? _setData;
-    private Igi2LevelExpression? _modifyData;
+    private LevelExpression? _getData;
+    private LevelExpression? _setData;
+    private LevelExpression? _modifyData;
     private int _isOn;
 
     /// <summary>Gets or sets the script whose value it takes in.</summary>
@@ -600,8 +601,8 @@ public sealed partial class Igi2InputBoxTask : Igi2MenuWindowTask
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "InputBox";
 
-    private Igi2LevelExpression? _getData;
-    private Igi2LevelExpression? _setData;
+    private LevelExpression? _getData;
+    private LevelExpression? _setData;
     private string _data = string.Empty;
 
     /// <summary>Gets or sets its width.</summary>
@@ -673,10 +674,10 @@ public sealed partial class Igi2ScrollListBoxTask : Igi2MenuWindowTask, IIgi2Men
     public const string TypeName = "ScrollListBox";
 
     private readonly List<Igi2MenuItem> _items = [];
-    private Igi2LevelExpression? _collect;
-    private Igi2LevelExpression? _getData;
-    private Igi2LevelExpression? _setData;
-    private Igi2LevelExpression? _onSelect;
+    private LevelExpression? _collect;
+    private LevelExpression? _getData;
+    private LevelExpression? _setData;
+    private LevelExpression? _onSelect;
     private int _activeId = -1;
     private int _activeEntry = -1;
     private int _isUpdate;
@@ -757,7 +758,7 @@ public sealed partial class Igi2ScrollListBoxTask : Igi2MenuWindowTask, IIgi2Men
         Menu?.Collect(this, () => TryRun(level, ref _collect, CollectScript, out _));
         if (TryRun(level, ref _getData, GetDataScript, out double id))
         {
-            int wanted = (int)Igi2LevelExpression.Truncate(id);
+            int wanted = (int)LevelExpression.Truncate(id);
             int at = _items.FindIndex(i => i.Id == wanted);
             if (at >= 0)
             {
@@ -793,9 +794,9 @@ public sealed partial class Igi2PictureBoxTask : Igi2MenuWindowTask, IIgi2MenuIt
     public const string TypeName = "PictureBox";
 
     private readonly List<Igi2MenuItem> _items = [];
-    private Igi2LevelExpression? _collect;
-    private Igi2LevelExpression? _active;
-    private Igi2LevelExpression? _rgba;
+    private LevelExpression? _collect;
+    private LevelExpression? _active;
+    private LevelExpression? _rgba;
 
     /// <summary>Gets or sets its width.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
@@ -853,7 +854,7 @@ public sealed partial class Igi2PictureBoxTask : Igi2MenuWindowTask, IIgi2MenuIt
             TryRun(level, ref _collect, CollectScript, out _);
             if (TryRun(level, ref _active, ActivePictureScript, out double active))
             {
-                ActivePicture = (int)Igi2LevelExpression.Truncate(active);
+                ActivePicture = (int)LevelExpression.Truncate(active);
             }
 
             TryRun(level, ref _rgba, RgbaScript, out _);
@@ -896,9 +897,9 @@ public sealed partial class Igi2ColumnViewTask : Igi2MenuWindowTask
     public const string TypeName = "ColumnView";
 
     private readonly List<string[]> _rows = [];
-    private Igi2LevelExpression? _collect;
-    private Igi2LevelExpression? _getData;
-    private Igi2LevelExpression? _setData;
+    private LevelExpression? _collect;
+    private LevelExpression? _getData;
+    private LevelExpression? _setData;
     private int _activeId = -1;
     private int _isUpdate;
 
@@ -983,7 +984,7 @@ public sealed partial class Igi2ColumnViewTask : Igi2MenuWindowTask
     {
         _rows.Clear();
         TryRun(level, ref _collect, CollectScript, out _);
-        _activeId = TryRun(level, ref _getData, GetDataScript, out double id) ? (int)Igi2LevelExpression.Truncate(id) : -1;
+        _activeId = TryRun(level, ref _getData, GetDataScript, out double id) ? (int)LevelExpression.Truncate(id) : -1;
         base.InitData(level);
     }
 

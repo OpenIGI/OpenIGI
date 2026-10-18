@@ -1,5 +1,6 @@
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -51,7 +52,7 @@ public sealed class RetailIgi2CampaignCensusTests
     {
         foreach (string expression in Igi2MissionCensus.RetailUnparsable)
         {
-            Assert.True(new Flow.Igi2LevelExpression(expression, "Task_1", new OpenIGI.Scripting.Runtime.NativeRegistry()).IsEmpty, expression);
+            Assert.True(OpenIGI.Game.Igi2.Flow.Igi2LevelExpressions.Create(expression, "Task_1", new OpenIGI.Scripting.Runtime.NativeRegistry()).IsEmpty, expression);
         }
     }
 

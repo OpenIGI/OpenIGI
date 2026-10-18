@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -33,7 +34,7 @@ public sealed partial class Igi2RainEffectTask : Igi2Task
     /// <summary>The most layers it falls in.</summary>
     public const int MaximumDensity = 32;
 
-    private Igi2LevelExpression? _active;
+    private LevelExpression? _active;
 
     /// <summary>Gets or sets a value indicating whether it is rain, not snow.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Is Rain")]
@@ -76,7 +77,7 @@ public sealed partial class Igi2RainEffectTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _active ??= new Igi2LevelExpression(ActiveExpression, Name, level.Natives);
-        IsActive = _active.IsEmpty || (byte)Igi2LevelExpression.Truncate(level.Evaluate(_active)) != 0;
+        _active ??= Igi2LevelExpressions.Create(ActiveExpression, Name, level.Natives);
+        IsActive = _active.IsEmpty || (byte)LevelExpression.Truncate(level.Evaluate(_active)) != 0;
     }
 }

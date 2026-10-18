@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Saves;
 
@@ -162,7 +163,7 @@ public static class Igi2SaveGame
         {
             if (statement.StartsWith(DefineTaskState, StringComparison.Ordinal))
             {
-                Igi2LevelExpression call = new(statement, "Level", natives);
+                LevelExpression call = Igi2LevelExpressions.Create(statement, "Level", natives);
                 if (!call.IsEmpty)
                 {
                     call.Run(natives, functions);
