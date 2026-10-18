@@ -583,82 +583,25 @@ public sealed partial class GameHost
     {
         LoadedMission loaded = b.Loaded;
         LevelTask levelRoot = b.LevelRoot;
-        int id = b.Id;
         ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
 
-        // Interactions are level systems, not AI systems: build them even when a mission has no usable
-        // navigation graph. The same door objects are shared by player use, AI door hops and collision.
-        _mission.Doors = DoorRegistry.Build(levelRoot);
-        _mission.Elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
-        _mission.Interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _mission.Doors, _loop.Variables, _mission.Elevators);
-        _mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
-        world.GenericPickups = _mission.GenericPickups;
+        _ambientVoices.Clear();
+        _igi1Setup.BuildInteractions(loaded, levelRoot, solids);
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
+        world.GenericPickups = _mission.GenericPickups;
         world.Interactions = _mission.Interactions;
-        solids.GenericPickups = _mission.GenericPickups;
-
-        // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
-        _mission.Ambience = AmbientAreaRegistry.Build(levelRoot, _mission.SoundRandom);
-        _ambientVoices.Clear();
-        if (_mission.Ambience.Areas.Count > 0)
-        {
-            _logger.Information("Audio", $"{_mission.Ambience.Areas.Count} ambient area(s).");
-        }
-
-        // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
-        _mission.Doors.SetSoundSink(PlayDoorSound);
-        _mission.Doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
-        _mission.Elevators.SetSoundSink(PlayElevatorSound);
         world.Doors = _mission.Doors;
         world.Elevators = _mission.Elevators;
-        if (_mission.Doors.Doors.Count > 0)
-        {
-            _logger.Information("World", $"{_mission.Doors.Doors.Count} door(s) available to players and AI.");
-        }
 
-        // The level's own soldiers, where the title has them to draw (a title without IGI1's has none).
+        // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
+        // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
+        // knife leaves: KnifeStab itself never reaches the decal message.
         if (_soldiers is { } soldiers)
         {
-            soldiers.Simulation.Cutscenes = _mission.Cutscenes;
-
-            // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
-            // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
-            // knife leaves: KnifeStab itself never reaches the decal message.
             soldiers.BloodSpray = (owner, at, direction) => _effects.SpawnBlood(owner, at, direction);
-            _mission.Cutscenes?.SetTargetPoseResolver(soldiers.Simulation.CutscenePose);
-
-            soldiers.Simulation.SetAiTaskActivator(id => _mission.Interactions?.ActivateFromAi(id));
-            soldiers.Simulation.UseInteractions(_mission.Interactions);
-            soldiers.Simulation.SetDoors(_mission.Doors, solids);
-            soldiers.Simulation.SetElevators(_mission.Elevators);
-
-            // The first genuinely world-positioned sound in the port. Its distances are the definition's
-            // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
-            // without anything here choosing a range.
-            soldiers.Simulation.SetDeathSound(position => PlayDeathSound(
-                HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
-
-            // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-            soldiers.Simulation.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
-            soldiers.Simulation.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_mission.SoundRandom));
-            soldiers.Simulation.SetMeleeStrikeSink(StrikePlayer);
-            soldiers.Simulation.SetPlayerDeltaTranslationScale(() => _mission.PlayerDeltaTranslationScale);
-
-            // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
-            // HumanAI's current position. Both begin at the same live position; the backend owns any voice
-            // following after that point.
-            soldiers.Simulation.SetScriptSound((name, position, attached) =>
-                _audioOut.Sounds?.PlayDefinition(name, position, priority: 200));
-
-            // Each AI weapon owns its automatic loop and updates its world position every tick. The round
-            // callback handles ballistics only; without this parallel path AI shots were completely silent.
-            soldiers.Simulation.SetWeaponSound(TickSoldierWeaponSound);
-
-            // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
-            soldiers.Simulation.SetFootstepSound(step => PlayFootstep(step));
         }
 
         EndStage("the doors, elevators and world interactions");
@@ -1567,55 +1510,6 @@ public sealed partial class GameHost
         return true;
     }
 
-    /// <summary>
-    /// The mid-swing doorway ray: whether a human currently stands in the opening between the two
-    /// doorway endpoints.
-    /// </summary>
-    /// <param name="from">One end of the doorway segment, in metres.</param>
-    /// <param name="to">The other end of the doorway segment, in metres.</param>
-    /// <remarks>
-    /// This is the player body and every living AI soldier, tested against the doorway segment the
-    /// door spans. The retail ray (0x446D10 at 0x447302) casts across the doorway at roughly body
-    /// height; we test each human's feet against the segment with a generous half-metre radius, which
-    /// finds a body standing in the opening whether it is at waist, chest or head.
-    /// </remarks>
-    private bool DoorwayIsBlockedByHuman(Vector3d from, Vector3d to)
-    {
-        if (HumanStandsInSegment(_mission.Player?.Body.Position, from, to))
-        {
-            return true;
-        }
-
-        if (_soldiers is { } soldiers)
-        {
-            foreach (Vector3d feet in soldiers.Simulation.MapContacts())
-            {
-                if (HumanStandsInSegment(feet, from, to))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>Whether a human's feet (world units) stand within a half metre of the doorway segment (metres).</summary>
-    private static bool HumanStandsInSegment(Vector3d? feetWorld, Vector3d from, Vector3d to)
-    {
-        if (feetWorld is not { } feet)
-        {
-            return false;
-        }
-
-        Vector3d point = new(
-            feet.X / WorldScene.UnitsPerMetre,
-            feet.Y / WorldScene.UnitsPerMetre,
-            feet.Z / WorldScene.UnitsPerMetre);
-        Vector3d closest = Vector3d.ClosestOnSegment(from, to, point);
-        return Vector3d.Distance(closest, point) <= 0.5;
-    }
-
     /// <summary>Builds the level's top-down map of what the solid world stands over, and binds it.</summary>
     /// <param name="scene">The mission's placed objects.</param>
     /// <param name="loaded">The mission whose models bend its spline segments, as the collision index bends them.</param>
@@ -2258,6 +2152,16 @@ public sealed partial class GameHost
         public void CutsceneSound(CutsceneSoundEvent sound) => host._cutsceneSounds.Set(sound);
 
         public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
+
+        public Igi1SoundSinks Sounds { get; } = new(
+            host.PlayDoorSound,
+            host.PlayElevatorSound,
+            position => host.PlayDeathSound(HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position),
+            (prefix, variants, position) => host.PlayHitSound(prefix, variants, position),
+            (name, position, attached) => host._audioOut.Sounds?.PlayDefinition(name, position, priority: 200),
+            host.TickSoldierWeaponSound,
+            step => host.PlayFootstep(step),
+            host.StrikePlayer);
 
         public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
     }
