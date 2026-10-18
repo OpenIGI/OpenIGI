@@ -3535,7 +3535,7 @@ public sealed partial class GameHost
             // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
             // you leave walking mode, so feeding its eye meant every guard in the level was watching an
             // immobile figure at the spawn point while you flew past them: they never saw you because
-            // there was nothing of you to see. A state.Shell affordance, not engine behaviour.
+            // there was nothing of you to see. A shell affordance, not engine behaviour.
             Vector3d watched = _playerMode && _player is not null
                 ? _player.Body.Eye
                 : _camera?.Position ?? _player?.Body.Eye ?? default;
@@ -3640,7 +3640,7 @@ public sealed partial class GameHost
                 bool climbDown = _player.IsActionDown(_window.Input, PlayerAction.MoveDown);
                 bool climbUse = _player.IsActionDown(_window.Input, PlayerAction.Activate);
 
-                // Mount and use share E. The release gate is a state.Shell detail that prevents the mounting press
+                // Mount and use share E. The release gate is a shell detail that prevents the mounting press
                 // from becoming state 40 on the immediately following tick.
                 if (!state.ClimbActive)
                 {
@@ -3845,7 +3845,7 @@ public sealed partial class GameHost
 
             // The character the third-person view looks at, walked with the player on the same tick
             // their own legs are -- see SoldierRenderer.FollowPlayerBody for why it must be the tick
-            // and not the frame. Kept state.Running for the whole of the move back as well as out, so the
+            // and not the frame. Kept running for the whole of the move back as well as out, so the
             // body is already in step whenever the camera is far enough away to show it.
             //
             // The states with a body of their own are left alone: the ladder and the world
@@ -3938,8 +3938,8 @@ public sealed partial class GameHost
                     _computerFlight.Reset();
                     _player?.SetMapComputerOpen(false);
 
-                    // The result is a state.Shell page, not a drawn card, so its two choices can be clicked
-                    // and navigated like every other page and the state.Shell's own cursor is the one on
+                    // The result is a shell page, not a drawn card, so its two choices can be clicked
+                    // and navigated like every other page and the shell's own cursor is the one on
                     // screen. state.MenuMode hands it the frame's input and draw; state.PauseMenu holds the
                     // showcase off, because the level this is drawn over is still loaded -- the same
                     // pair the pause menu sets.
@@ -3947,7 +3947,7 @@ public sealed partial class GameHost
                     state.PauseMenu = true;
                     state.Shell.OpenMissionFailed();
 
-                    // The platform cursor stays hidden: the state.Shell draws its own, so revealing this one
+                    // The platform cursor stays hidden: the shell draws its own, so revealing this one
                     // would put a second, unrelated pointer beside it.
                     _window.CursorVisible = false;
                     _player?.HoldStill();
@@ -3987,7 +3987,7 @@ public sealed partial class GameHost
                     if (state.Shell is not null)
                     {
                         // Event 7 is the retail outro-screen path. The authored final cutscene has
-                        // completed before LevelFlow reaches here, so the state.Shell now continues to its
+                        // completed before LevelFlow reaches here, so the shell now continues to its
                         // campaign-complete destination.
                         state.Shell.OpenOn("extras");
                         state.MenuMode = true;

@@ -4,11 +4,13 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.World;
+using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Animation;
 using OpenIGI.UI.Kit;
 
 namespace OpenIGI.Host;
@@ -22,6 +24,20 @@ namespace OpenIGI.Host;
 internal sealed class FrameLoopState
 {
     public SpriteBatch Batch { get; set; } = default!;
+
+    /// <summary>Gets or sets the developer console, which lives as long as the loop does.</summary>
+    public HostConsole Console { get; set; } = default!;
+
+    /// <summary>Gets the backdrop cross-dissolve.</summary>
+    /// <remarks>
+    /// 1 is the outgoing level's held frame fully covering the incoming one, 0 is the incoming level alone; it runs on
+    /// an eased tween on real elapsed time. There is no dip through black any more: the two pictures blend directly
+    /// into each other.
+    /// </remarks>
+    public Tween Dissolve { get; } = new(0f, duration: 0.42f, Ease.InOutQuad);
+
+    /// <summary>Gets or sets the mission a preview was asked for while another was still being built.</summary>
+    public int? PendingPreviewMissionId { get; set; }
 
     public bool Running { get; set; }
 

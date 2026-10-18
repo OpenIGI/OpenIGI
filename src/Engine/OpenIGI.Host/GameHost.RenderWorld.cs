@@ -413,7 +413,7 @@ public sealed partial class GameHost
         //
         // The four states that own the view outright are excluded rather than blended out of: a
         // cutscene, the entry shot, the map computer and the menu orbit each replace the eye
-        // below, and state.Running the move underneath one of them would only decide where the camera
+        // below, and running the move underneath one of them would only decide where the camera
         // was when it was handed back.
         //
         // The front end is excluded but the PAUSE is not, and the difference is the whole reason
@@ -505,7 +505,7 @@ public sealed partial class GameHost
             // stale while the sun is being scrubbed, which does not matter for standing still.
             Vector3f loggedSun = _effectiveSun?.Direction ?? Vector3f.UnitZ;
 
-            // Warning rather than Information, which reads wrong and is not: the state.Shell's logger
+            // Warning rather than Information, which reads wrong and is not: the shell's logger
             // is built at Warning, so every Information call in the app is discarded and this
             // flag produced no output at all -- the flag existed and did nothing. It is opt-in
             // and its whole purpose is to be read, so it has to be emitted at a level that
@@ -517,7 +517,7 @@ public sealed partial class GameHost
                     + $" -sundir {loggedSun.X:0.######},{loggedSun.Y:0.######},{loggedSun.Z:0.######}");
         }
 
-        // Behind the cinematic state.Shell the eye is the slow menu orbit, on real elapsed time, whatever
+        // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
         // camera the scene would otherwise have used. Not behind the pause menu: the camera the
         // scene would otherwise have used is the player's own, and orbiting away from where they
         // were standing is the one thing a pause must not do. The showcase camera outlives the menu
@@ -922,7 +922,7 @@ public sealed partial class GameHost
                 // the clipmap scrolling new coverage under a card as the camera moves -- and doing
                 // that over the whole cache on the scroll frame was a seventy-millisecond stall that
                 // read as the game lurching every few steps. Sliced, the new shadows arrive over a
-                // handful of frames with no spike, and the bounce keeps its long-state.Running history
+                // handful of frames with no spike, and the bounce keeps its long-running history
                 // instead of being re-seeded from scratch on every scroll.
                 // Skipped once the cache has settled and nothing is scrolling or scrubbing: the sun
                 // is fixed and no new coverage is arriving, so the slice would re-trace the direct
@@ -950,7 +950,7 @@ public sealed partial class GameHost
             // a clipmap rebuild, so a stationary interior never got past its first couple of bounces
             // -- which is most of why a sunless room read dark: bounces three, four and five are
             // what fill a room the sun never reaches. The feedback is clamped below one in the
-            // shader, so it converges rather than state.Running away, and the 1/(1+frames) blend gives the
+            // shader, so it converges rather than running away, and the 1/(1+frames) blend gives the
             // ramp for free. Only when no diagnostic probe owns the direct atlas.
             // Same stand-down as the relight: once settled with nothing scrolling or scrubbing, the
             // scene has reached its multi-bounce equilibrium and folding another bounce in re-derives
@@ -995,7 +995,7 @@ public sealed partial class GameHost
                 cacheCards.UpdateRadianceCache(
                     liveField,
                     SkyFillColour(),
-                    // A short state.Running average while the level is warming up, so the cache climbs to
+                    // A short running average while the level is warming up, so the cache climbs to
                     // its converged value in a handful of frames rather than easing there over a
                     // couple of seconds -- which is what read as the scene loading bright and dimming.
                     // A long one after, where a slow average is what keeps the steady field from
@@ -1120,7 +1120,7 @@ public sealed partial class GameHost
             wantsFog ? state.FogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
 
         // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
-        // beginning a capture first would leave the state.Shell holding two render targets at once.
+        // beginning a capture first would leave the shell holding two render targets at once.
         //
         // And not filled at all on a frame where nothing can read it: with the traced sun the
         // ray mask is the ONLY sun shadow the lighting samples, and with the sun faded to
@@ -1346,7 +1346,7 @@ public sealed partial class GameHost
         // is drawn first, the water last, and the world's own objects come out grouped, which is
         // what BuildDrawOrder is for.
         // A title's own screen over the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a
-        // building's state.Shell does.
+        // building's shell does.
         bool cameraIndoors = IsCameraInsideBuilding(eye.Position) || TitlePlayer?.IsWeatherHidden == true;
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
         EndStageIfSlow("the sky and the world's objects");
@@ -1532,7 +1532,7 @@ if (retailFog)
             && armedBody.Weapons?.HideFirstPersonWeapon != true)
         {
             // The cycle changes the model as well as the animation, and out here nothing else is
-            // watching for that: the first-person block that normally does is not state.Running.
+            // watching for that: the first-person block that normally does is not running.
             if (_loadedMissionForWeapon is { } missionForBody)
             {
                 FollowHeldWeapon(armedBody, _heldWeapon, missionForBody);
@@ -1566,7 +1566,7 @@ if (retailFog)
         // there is no ambient to zero and nothing runs after the lighting.
         const int giStep = 8;
         UpdateTerrainRaster();
-        // The probes' state.Running average, capped at a temporal limit of ten frames. It was
+        // The probes' running average, capped at a temporal limit of ten frames. It was
         // thirty-two, and a history that long outlives every turn of the view -- each frame of
         // motion resamples it through the reprojection and clamps it into the window of one
         // frame's rays, and at one part in thirty-three the bias that leaves takes the better part
@@ -2184,14 +2184,14 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         _effects.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
         // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
-        // While the camera is inside a building's state.Shell the rain is suppressed, exactly as the
+        // While the camera is inside a building's shell the rain is suppressed, exactly as the
         // reference editor does per frame — buildings keep the weather outside.
         _stormEyeMetres = eye.Position;
         if (_storm is { } liveStorm)
         {
             // Assigned BEFORE the active test, never inside it. IsActive reads Indoors, so
             // setting it under `if (IsActive)` latches: the first frame the eye passes through a
-            // building state.Shell turns the storm off, and the assignment that would turn it back on
+            // building shell turns the storm off, and the assignment that would turn it back on
             // is inside the branch that no longer runs. That is what stuck the free camera on
             // the original's rain for the rest of the mission.
             liveStorm.Indoors = cameraIndoors;
@@ -2303,7 +2303,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         // original draws it out of the human's own render and the free camera is not a human -- and
         // NOT once the player is dead, when the death camera is watching the body from the outside
         // and a pair of arms hanging in front of it would be exactly wrong.
-        // Not while the entry shot is state.Running: the camera is somewhere over the level, and a pair
+        // Not while the entry shot is running: the camera is somewhere over the level, and a pair
         // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
         // moment the view is handed over, which is also the moment the player can use them.
         bool binocularsOpen = _player is { IsBinocularsOpen: true };
@@ -2354,7 +2354,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 _player.AcknowledgePose();
             }
 
-            // The view model gets its OWN projection: 0x49F700 state.Saves the current view block,
+            // The view model gets its OWN projection: 0x49F700 saves the current view block,
             // rebuilds [16..19] from dword_B81700 -- HumanCamera+220, filled from HumanView+488 =
             // tan(30 degrees) -- and restores it afterwards, for any bone model with no LOD chain,
             // which the HumanView is (0x464660 leaves +212 at zero). The rebuild is sub_497D70's
@@ -2449,7 +2449,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
         // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
         // depth-to-world reconstruction before the gather feeds the frame. Only when no card probe is
-        // state.Running, since that fills the cache atlas with a diagnostic rather than light.
+        // running, since that fills the cache atlas with a diagnostic rather than light.
         if (captured
             && !state.ScreenGiDumped
             && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
