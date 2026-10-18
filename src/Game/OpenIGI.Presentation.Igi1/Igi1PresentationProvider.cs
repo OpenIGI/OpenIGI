@@ -29,6 +29,8 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
                 new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem))
             .Add<MissionHudPresentationRequest, IMissionHudOverlay>(static (in MissionHudPresentationRequest request) =>
                 new Igi1HudOverlay(request.Device, request.Gameplay))
+            .Add<MissionHudPresentationRequest, IMissionFirstPersonView>(static (in MissionHudPresentationRequest request) =>
+                new Igi1FirstPersonView(request.Device, request.Gameplay, request.Logger))
             .Add<SoldierPresentationRequest, ISoldierPresenter>(static (in SoldierPresentationRequest request) =>
                 new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)

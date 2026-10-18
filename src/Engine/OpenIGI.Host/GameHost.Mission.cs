@@ -1711,29 +1711,6 @@ public sealed partial class GameHost
     private ViewModelPresentationRequest ViewModelRequest() =>
         new(_device, _resources, _mission.MagicObjects, _logger, _work);
 
-    // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
-    // anything on the tick the weapon actually changed.
-    private void FollowHeldWeapon(PlayerCamera candidate, IHeldWeaponPresenter? held, LoadedMission loadedMission)
-    {
-        if (held is null || !candidate.WeaponChanged)
-        {
-            return;
-        }
-
-        candidate.AcknowledgeWeaponChange();
-
-        if (candidate.HeldWeaponType is not { } weapon)
-        {
-            return;
-        }
-
-        if (held.Load(loadedMission, weapon.GunModel))
-        {
-            _logger.Information("Weapon", $"Holding {weapon.ScriptId} ('{weapon.GunModel}') on view bone "
-                + $"{HumanAttachPoints.FirstPersonWeapon}.");
-        }
-    }
-
     private MenuManagerTask? FindMenuManager()
     {
         foreach (GameTask task in _loop.Tasks.Root.Descendants())
