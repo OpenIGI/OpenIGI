@@ -971,7 +971,7 @@ public sealed partial class GameHost
         _titleHud?.Dispose();
         _titleHud = null;
         _playerMode = false;
-        _pendingGenericTbaExplosions.Clear();
+        _igi1Blasts.ClearPending();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -981,7 +981,7 @@ public sealed partial class GameHost
         };
         _mission.IsPlayerDead = false;
         _mission.DamageFlash = new();
-        _flashbangScreenFlash = new();
+        _mission.FlashbangFlash = new();
         _deathCamera.Reset();
         _flashlight.Reset();
 
@@ -2051,7 +2051,7 @@ public sealed partial class GameHost
         public void StepScreen()
         {
             host._mission.DamageFlash.Tick();
-            host._flashbangScreenFlash.Tick();
+            host._mission.FlashbangFlash.Tick();
             host._hud?.Tick();
         }
 
@@ -2248,10 +2248,10 @@ public sealed partial class GameHost
 
             // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
             // and the casualties.
-            ResolveGrenadeDetonations();
-            ResolveGenericTbaExplosions();
-            ResolveMissileDetonations();
-            ResolveM203Detonations();
+            _igi1Blasts.ResolveGrenadeDetonations();
+            _igi1Blasts.ResolveGenericTbaExplosions();
+            _igi1Blasts.ResolveMissileDetonations();
+            _igi1Blasts.ResolveM203Detonations();
             PlayGrenadeBounces();
 
             // The alarm speakers, following their own level expressions -- the siren the
@@ -2261,15 +2261,15 @@ public sealed partial class GameHost
                 destructibles.Tick();
                 foreach (DestructibleObject ready in destructibles.ConsumeReadyExplosions())
                 {
-                    HandleDestructibleImpact(ready);
+                    _igi1Blasts.HandleDestructibleImpact(ready);
                 }
                 foreach (VehicleBlast blast in destructibles.ConsumeVehicleBlasts())
                 {
-                    PresentVehicleBlast(blast);
+                    _igi1Blasts.PresentVehicleBlast(blast);
                 }
                 foreach (DestructibleObject car in destructibles.ConsumeExplodedVehicles())
                 {
-                    ForgetVehicleMarks(destructibles, car);
+                    _igi1Blasts.ForgetVehicleMarks(destructibles, car);
                 }
 
                 // A generator that exploded this tick loses its power this tick, as Generator::Run

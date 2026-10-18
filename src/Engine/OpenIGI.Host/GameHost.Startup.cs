@@ -194,7 +194,7 @@ public sealed partial class GameHost
         // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
         // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
         _mission.DamageFlash = new();
-        _flashbangScreenFlash = new();
+        _mission.FlashbangFlash = new();
 
         // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye
         // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's

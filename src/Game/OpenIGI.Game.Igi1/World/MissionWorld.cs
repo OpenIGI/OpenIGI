@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -234,4 +235,7 @@ public sealed class MissionWorld
         GenericPickups = null;
         VehicleMissiles.Clear();
     }
+
+    /// <summary>Gets or sets the white-out a flashbang raises, which the screen draws.</summary>
+    public FlashbangScreenFlash FlashbangFlash { get; set; } = null!;
 }

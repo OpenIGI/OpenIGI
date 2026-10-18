@@ -151,7 +151,6 @@ public sealed partial class GameHost : IDisposable
     private int _exitCode;
 
     // --- The player's own life, damage and death ---
-    private FlashbangScreenFlash _flashbangScreenFlash = null!;
     private DeathCamera _deathCamera = null!;
 
     /// <summary>The over-the-shoulder view and the move between it and the player's own eyes.</summary>
@@ -216,6 +215,7 @@ public sealed partial class GameHost : IDisposable
     private readonly Igi1PlayerHost _igi1PlayerHost;
     private readonly Igi1PlayerHarm _igi1Harm;
     private readonly Igi1MissionSetup _igi1Setup;
+    private readonly Igi1Blasts _igi1Blasts;
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -591,6 +591,7 @@ public sealed partial class GameHost : IDisposable
         _igi1PlayerHost = new Igi1PlayerHost(this);
         _igi1Harm = new Igi1PlayerHarm(_mission, new Igi1HarmHost(this));
         _igi1Setup = new Igi1MissionSetup(_mission, new Igi1SetupHost(this));
+        _igi1Blasts = new Igi1Blasts(_mission, _igi1Harm, new Igi1BlastHost(this));
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,

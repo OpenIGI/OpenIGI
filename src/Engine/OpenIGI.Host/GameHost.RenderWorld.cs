@@ -2812,10 +2812,10 @@ public sealed partial class GameHost
         // when the eye is inside the grenade radius (2) and still fully white at the first
         // frame of the 25 m visible effect (1); the close field simply keeps the quad opaque
         // for longer. This pass follows the red damage wash so the retail flash wins.
-        if (_flashbangScreenFlash.IsActive)
+        if (_mission.FlashbangFlash.IsActive)
         {
             byte whiteAlpha = (byte)Math.Clamp(
-                (int)(Math.Min(_flashbangScreenFlash.Strength, 1f) * 255f),
+                (int)(Math.Min(_mission.FlashbangFlash.Strength, 1f) * 255f),
                 0,
                 255);
             Bgra32 white = new(255, 255, 255, whiteAlpha);
