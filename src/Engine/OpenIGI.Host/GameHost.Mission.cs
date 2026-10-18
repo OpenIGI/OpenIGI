@@ -993,11 +993,10 @@ public sealed partial class GameHost
         // A promoted backdrop has already built these, behind the menu and against the very same level
         // and collision index, so it hands them over rather than uploading a second copy of every
         // soldier's mesh. Taking the reference is also what stops the backdrop disposing them.
-        if (promoted && _backdropSoldiers is { } armedSoldiers)
+        if (promoted && _menuBackdrop.TakeSoldiers() is { } armedSoldiers)
         {
             _soldiers?.Dispose();
             _soldiers = armedSoldiers;
-            _backdropSoldiers = null;
         }
         else
         {
@@ -2139,7 +2138,7 @@ public sealed partial class GameHost
         // mission now, and its registry and file system are reachable through `_resources` and through
         // the renderers that were built against them — dropping this reference only says the level has
         // stopped being scenery.
-        _backdrop = null;
+        _menuBackdrop.Clear();
         _arming = null;
 
         // Built. What the hold is waiting on from here is the lighting, not the level.
@@ -2444,7 +2443,7 @@ public sealed partial class GameHost
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
-        _backdropSoldiers?.Dispose();
+        _menuBackdrop.ReleaseSoldiers();
         _heldWeapon?.Dispose();
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
@@ -2469,7 +2468,6 @@ public sealed partial class GameHost
         _terrain = null;
         _world = null;
         _soldiers = null;
-        _backdropSoldiers = null;
         _heldWeapon = null;
         _gunPickupRenderer = null;
         _hud = null;

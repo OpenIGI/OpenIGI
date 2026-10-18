@@ -559,8 +559,8 @@ public sealed partial class GameHost
         // cascades and the geometry pass draw identical bodies in identical places.
         // The backdrop's soldiers resolve their frame state too, because the shadow pass below is
         // about to read their poses. Only one of the two is ever live: `_soldiers` belongs to a
-        // played mission, `_backdropSoldiers` to the menu's.
-        ISoldierPresenter? shadowCasters = _soldiers ?? _backdropSoldiers;
+        // played mission, `_menuBackdrop.Soldiers` to the menu's.
+        ISoldierPresenter? shadowCasters = _soldiers ?? _menuBackdrop.Soldiers;
         ICharacterPresenter? casterBodies = shadowCasters is null ? null : new SoldierBodies(shadowCasters);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
@@ -743,7 +743,7 @@ public sealed partial class GameHost
         // mission entered from the campaign -- where that is nought -- was drawn in the generic
         // default haze instead of its own tuned fog, and looked different from the same mission
         // started any other way, a renderer switch included.
-        int fogMission = _activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission;
+        int fogMission = _activeMission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission;
 
         VolumetricFogSettings medium = VolumetricFogSettings.Off;
         if (wantsFog)
@@ -2177,7 +2177,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         // The soldiers' muzzle flames, for the same reason: drawn from the soldier pass they
         // landed in the G-buffer and shaded as scenery -- the one-frame black square at a
         // firing guard's muzzle. Light draws over the lit scene.
-        (_soldiers ?? _backdropSoldiers)?.DrawMuzzleFlashes(eye, projection);
+        (_soldiers ?? _menuBackdrop.Soldiers)?.DrawMuzzleFlashes(eye, projection);
 
         // The world's effects over the lit scene: the impact bursts, the original's own dust, chips and blood,
         // the smoke trails and columns, and the fireball over all of it as light.

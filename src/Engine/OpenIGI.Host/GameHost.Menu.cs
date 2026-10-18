@@ -99,7 +99,7 @@ public sealed partial class GameHost
 
         // Held because the renderers read through the preview's own resource registry and file system for
         // as long as they live; letting it go would pull the packs out from under them.
-        _backdrop = preview;
+        _menuBackdrop.Show(preview);
 
         // The level is a backdrop from here, so the lite profile decides what below is built at all.
         UpdateBackdropProfile();
@@ -120,7 +120,7 @@ public sealed partial class GameHost
             : null;
 
         // Uploaded with the tiles; the preview held a full-size map per tile for as long as it lived.
-        _backdrop = preview with { GroundDetail = [] };
+        _menuBackdrop.Show(preview with { GroundDetail = [] });
         Lap("terrain");
 
         // The mission's soldiers, built while the player is still reading the briefing. They are not drawn
@@ -140,13 +140,13 @@ public sealed partial class GameHost
         // worth of soldier meshes and textures decoded and uploaded on this thread, every swap. Play then
         // loads them the way a cold start does, and the pipeline's first sight of a skinned mesh falls
         // under the warm-up's hold instead.
-        _backdropSoldiers?.Dispose();
-        _backdropSoldiers = null;
+        _menuBackdrop.ReleaseSoldiers();
         if (!BackdropLite)
         {
-            _backdropSoldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
+            ISoldierPresenter? soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
                 new SoldierPresentationRequest(_device, preview.Resources, _logger, _magic, _detailMaps));
-            _backdropSoldiers?.Load(
+            _menuBackdrop.ArmSoldiers(soldiers);
+            soldiers?.Load(
                 preview.Mission,
                 preview.LevelRoot,
                 preview.Mission.Terrain is { IsUsable: true } standing ? standing : null,

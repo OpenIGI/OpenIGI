@@ -23,9 +23,9 @@ public sealed partial class GameHost
 
         public DirectionalLightSettings? EffectiveSun => host._effectiveSun;
 
-        public bool HasLevel => host._activeMission is not null || host._backdrop is not null;
+        public bool HasLevel => host._activeMission is not null || host._menuBackdrop.Preview is not null;
 
-        public int? CurrentMissionId => host._activeMission?.Id ?? host._backdrop?.MissionId;
+        public int? CurrentMissionId => host._activeMission?.Id ?? host._menuBackdrop.MissionId;
 
         public int FrameCount => host._loop.Clock.FrameCount;
 

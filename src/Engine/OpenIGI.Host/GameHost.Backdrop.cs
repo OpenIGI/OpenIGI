@@ -1,29 +1,15 @@
-using OpenIGI.Rendering;
-using OpenIGI.UI.Rhi;
+﻿using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;
 
-/// <summary>The menu's frosted glass: the device's blurred frame, restated in the interface's units.</summary>
 public sealed partial class GameHost
 {
-    private BackdropBlur? _backdropBlur;
-    private RhiBackdrop? _backdropForUi;
-    private int _backdropWidth;
-    private int _backdropHeight;
+    // The level behind the menu: the preview, its soldiers, the lite profile and the frosted glass.
+    private readonly MenuBackdrop _menuBackdrop;
 
-    /// <summary>Gets the interface's view of the blurred frame, made again only when the device's levels or the window change.</summary>
-    /// <param name="blur">This frame's blur, as the device returned it.</param>
-    /// <returns>The backdrop the shell's renderer samples, or <see langword="null"/> when there is none.</returns>
-    private RhiBackdrop? BackdropFor(BackdropBlur blur)
-    {
-        if (!ReferenceEquals(blur, _backdropBlur) || _backdropWidth != SafeWindowWidth || _backdropHeight != SafeWindowHeight)
-        {
-            _backdropBlur = blur;
-            _backdropWidth = SafeWindowWidth;
-            _backdropHeight = SafeWindowHeight;
-            _backdropForUi = RhiBackdrop.From(blur, SafeWindowWidth, SafeWindowHeight);
-        }
+    /// <summary>Gets whether the level on screen is the menu's backdrop, drawn lite.</summary>
+    private bool BackdropLite => _menuBackdrop.IsLite(missionActive: _activeMission is not null);
 
-        return _backdropForUi;
-    }
+    /// <summary>Applies or clears the backdrop's lite profile to match <see cref="BackdropLite"/>. Cheap; call freely.</summary>
+    private void UpdateBackdropProfile() => _menuBackdrop.UpdateProfile(missionActive: _activeMission is not null);
 }

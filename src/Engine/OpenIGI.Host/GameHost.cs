@@ -355,11 +355,6 @@ public sealed partial class GameHost : IDisposable
     private TextureHandle _dissolveTexture;
     private (int Width, int Height) _dissolveSize;
 
-    // The menu backdrop currently on screen, if one is. Held rather than used: the renderers built from it
-    // read models, textures and the sky through ITS resource registry and file system, so it has to outlive
-    // the handover. Replaced whole when the next backdrop arrives.
-    private MissionPreview? _backdrop;
-
     // --- The loaded world and its renderers ---
     private Camera3D _inspectorEye = Camera3D.Default;
     private float _inspectorTangent = 1f;
@@ -428,11 +423,6 @@ public sealed partial class GameHost : IDisposable
     private TextureHandle _shelterMap = TextureHandle.None;
     private Vector3d _stormEyeMetres;
     private ShadowCasterPass? _shadowPass;
-
-    // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
-    // has already met a skinned vertex layout by the time Play is pressed. Handed straight over to
-    // `_soldiers` when the backdrop is promoted, so the played mission never builds them at all.
-    private ISoldierPresenter? _backdropSoldiers;
 
     // Makes the backdrop playable a couple of milliseconds at a time while the menu is idle.
     private MissionArming? _arming;
@@ -674,6 +664,7 @@ public sealed partial class GameHost : IDisposable
         _logger = logger;
         _pacing = new Diagnostics.PresentationPacingProbe(logger);
         _memory = new Services.MemoryDiagnostics(device, logger);
+        _menuBackdrop = new MenuBackdrop(device, logger);
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
         _switch = new RendererSwitchService(device, logger);
@@ -1184,7 +1175,7 @@ public sealed partial class GameHost : IDisposable
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
         // meant changing the table from the console while browsing the campaign re-graded to mission 0.
         WhenChanged(RenderCVars.ColourLookupTable, () =>
-            ApplyColourLookup(_activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission));
+            ApplyColourLookup(_activeMission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission));
 
         // The level's own sun, read from its Dirlight task -- section 12.
         // Null until a level is loaded, and for a level that declares none.
@@ -1427,10 +1418,10 @@ public sealed partial class GameHost : IDisposable
                     // picked, the level is PROMOTED rather than loaded a second time — see
                     // PromoteBackdrop — behind the same going-in sequence a restart gets: the picture
                     // falls out of focus under the card, the promotion runs, and the shot opens over the
-                    // start. `_backdrop` is null over a played mission, so this cannot fire from the pause
+                    // start. The backdrop is gone over a played mission, so this cannot fire from the pause
                     // menu. -lockstep is excluded: the sequence runs on wall-clock time, and a reference
                     // capture has to land on the same frame every run.
-                    if (_backdrop is { } backdrop && backdrop.MissionId == id && !_options.Lockstep)
+                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
 
@@ -1903,7 +1894,7 @@ public sealed partial class GameHost : IDisposable
             // in front of the player -- the same shape as a backdrop swap.
             if (_gi.TryCollectFieldBake(out DistanceFieldBake.Result baked))
             {
-                if (state.MenuMode && !state.PauseMenu && _backdrop is not null)
+                if (state.MenuMode && !state.PauseMenu && _menuBackdrop.Preview is not null)
                 {
                     state.BakedFieldForBackdrop = baked;
                 }
@@ -2039,7 +2030,7 @@ public sealed partial class GameHost : IDisposable
                 // several hundred milliseconds -- has moved onto the preview worker; see AdoptPreview.
                 if (_entry.WantsPromotion)
                 {
-                    if (_backdrop is { } entering && PromoteBackdrop(entering))
+                    if (_menuBackdrop.Preview is { } entering && PromoteBackdrop(entering))
                     {
                         _entry.NotifyPromoted();
                     }
@@ -2370,7 +2361,7 @@ public sealed partial class GameHost : IDisposable
             // -entrycam presses Play the moment the backdrop it was pointed at is armed, which is the
             // state a player's press would find it in after a second of reading. Waiting for the arming
             // rather than only for the backdrop is what keeps the measurement honest.
-            if (state.EntryCamPending && state.MenuMode && !state.PauseMenu && _backdrop is { } entryBackdrop
+            if (state.EntryCamPending && state.MenuMode && !state.PauseMenu && _menuBackdrop.Preview is { } entryBackdrop
                 && entryBackdrop.MissionId == _options.EntryCamMission
                 && _arming is { IsArmed: true })
             {
@@ -2918,7 +2909,7 @@ public sealed partial class GameHost : IDisposable
                     // state.Shell's backdrop and every glass panel sample. The blur closes the 2D pass, so the
                     // state.Batch is flushed around it and the state.Shell draws on a painter that knows the levels.
                     state.Batch.End();
-                    shellPainter = UiPainter.Create(state.Batch, shellPainter.Context, BackdropFor(_device.BlurFrameForBackdrop()));
+                    shellPainter = UiPainter.Create(state.Batch, shellPainter.Context, _menuBackdrop.Glass(_device.BlurFrameForBackdrop(), SafeWindowWidth, SafeWindowHeight));
                     state.Batch.Begin();
 
                     shellPainter.PushOpacity(shellOpacity);
@@ -3687,7 +3678,7 @@ public sealed partial class GameHost : IDisposable
         _water = null;
         _world?.Dispose();
         _soldiers?.Dispose();
-        _backdropSoldiers?.Dispose();
+        _menuBackdrop.Dispose();
         _heldWeapon?.Dispose();
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
