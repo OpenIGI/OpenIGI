@@ -456,60 +456,8 @@ public sealed partial class GameHost
             _mission.Solids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
-        // Mission 4's authored getaway Bell is a one-shot terminal landing. Configure that
-        // behavior explicitly here; CutsceneRuntime remains generic and does not infer it from ids.
-        if (id == 4 && levelRoot.Tree.FromId(800) is { } getawayBell)
-        {
-            _mission.Cutscenes.EnableTerminalTerrainLanding(getawayBell);
-        }
-
-        // Every mission: a car's suspension reads this for the surface under each wheel, and much
-        // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
-        // garage floor above the dirt. Re-seating the helicopters on it stays Mission 4's.
-        _mission.Cutscenes.CollisionIndex = solids;
-        if (id == 4)
-        {
-            _mission.Cutscenes.RestHelicoptersOnSupport();
-        }
-
-        // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
-        // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        _mission.Cutscenes.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
-
-        // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
-        if (loaded.Terrain is { } carTerrain)
-        {
-            RetailTerrainRay carRays = new(
-                carTerrain.Octree,
-                carTerrain.Commands,
-                TerrainDiscardBinding.For(carTerrain).Regions,
-                TerrainHeightBindings.Bind(carTerrain, levelRoot));
-            Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
-            CutsceneRuntime cutscenes = _mission.Cutscenes;
-            _mission.Cutscenes.ConfigureRetailCars(
-                new RetailCarWorld(
-                    carRays,
-                    RetailWorldObjects.Build(
-                        levelRoot,
-                        carModels,
-                        name => _mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
-                    cutscenes.RetailVehicleModels,
-                    static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
-                carModels,
-                name => _mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
-        }
-
-        // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
-        // CarAI stops, and follows its body, through the same registry.
-        _mission.Destructibles = DestructibleObjectRegistry.Build(
-            levelRoot,
-            scene.Placements,
-            _loop.Variables,
-            _mission.VehiclePhysics,
-            random: _mission.SoundRandom);
+        _igi1Setup.BuildVehicles(loaded, levelRoot, id, scene, solids);
         world.Destructibles = _mission.Destructibles;
-        solids.Destructibles = _mission.Destructibles;
-        _mission.Cutscenes.Destructibles = _mission.Destructibles;
         world.Cutscenes = _mission.Cutscenes;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every

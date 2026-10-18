@@ -497,4 +497,73 @@ public sealed class Igi1MissionSetup(MissionWorld mission, IIgi1MissionSetupHost
         mission.GuardRounds = new GuardRounds(soldiers, worldTrace, rounds, host.Logger);
         soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
     }
+
+    /// <summary>Sets the level's vehicles going: their collision, wheels, rigid bodies and what of them can be destroyed.</summary>
+    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="id">The mission id, for the two missions whose vehicles are configured by name.</param>
+    /// <param name="scene">The level's built scene.</param>
+    /// <param name="solids">The collision index over the placed objects.</param>
+    public void BuildVehicles(LoadedMission loaded, LevelTask levelRoot, int id, WorldScene scene, ObjectCollisionIndex solids)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(solids);
+        CutsceneRuntime cutscenes = mission.Cutscenes
+            ?? throw new InvalidOperationException("The cutscene runtime is built before the vehicles.");
+
+        // Mission 4's authored getaway Bell is a one-shot terminal landing. Configure that
+        // behavior explicitly here; CutsceneRuntime remains generic and does not infer it from ids.
+        if (id == 4 && levelRoot.Tree.FromId(800) is { } getawayBell)
+        {
+            cutscenes.EnableTerminalTerrainLanding(getawayBell);
+        }
+
+        // Every mission: a car's suspension reads this for the surface under each wheel, and much
+        // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
+        // garage floor above the dirt. Re-seating the helicopters on it stays Mission 4's.
+        cutscenes.CollisionIndex = solids;
+        if (id == 4)
+        {
+            cutscenes.RestHelicoptersOnSupport();
+        }
+
+        // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
+        // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
+        cutscenes.BindVehicleWheels(scene, name => Igi1MissionSetup.CutsceneWheelRadius(loaded, name));
+
+        // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
+        if (loaded.Terrain is { } carTerrain)
+        {
+            RetailTerrainRay carRays = new(
+                carTerrain.Octree,
+                carTerrain.Commands,
+                TerrainDiscardBinding.For(carTerrain).Regions,
+                TerrainHeightBindings.Bind(carTerrain, levelRoot));
+            Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
+            cutscenes.ConfigureRetailCars(
+                new RetailCarWorld(
+                    carRays,
+                    RetailWorldObjects.Build(
+                        levelRoot,
+                        carModels,
+                        name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
+                    cutscenes.RetailVehicleModels,
+                    static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
+                carModels,
+                name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
+        }
+
+        // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
+        // CarAI stops, and follows its body, through the same registry.
+        mission.Destructibles = DestructibleObjectRegistry.Build(
+            levelRoot,
+            scene.Placements,
+            host.Game.Variables,
+            mission.VehiclePhysics,
+            random: mission.SoundRandom);
+        solids.Destructibles = mission.Destructibles;
+        cutscenes.Destructibles = mission.Destructibles;
+    }
 }
