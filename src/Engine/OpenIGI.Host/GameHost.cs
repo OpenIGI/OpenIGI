@@ -342,11 +342,6 @@ public sealed partial class GameHost : IDisposable
     private const float GiExposureWarmupRate = 0.35f;
     private const float ExposureSteadyRate = 0.04f;
 
-    // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
-    // incoming one. Sized to the window and re-made when that changes.
-    private TextureHandle _dissolveTexture;
-    private (int Width, int Height) _dissolveSize;
-
     // --- The loaded world and its renderers ---
     private Camera3D _inspectorEye = Camera3D.Default;
     private float _inspectorTangent = 1f;
@@ -421,12 +416,6 @@ public sealed partial class GameHost : IDisposable
 
     // The shot that carries the player out of the menu and into their own eyes.
     private readonly MissionEntryCamera _entry = new();
-
-    // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
-    private long _backdropCycleRow = -1;
-
-    // Which step -presetcycle is on, latched the same way.
-    private long _presetCycleStep = -1;
 
     /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
     private const int MaxTicksPerStep = 8;
@@ -657,6 +646,7 @@ public sealed partial class GameHost : IDisposable
         _pacing = new Diagnostics.PresentationPacingProbe(logger);
         _memory = new Services.MemoryDiagnostics(device, logger);
         _menuBackdrop = new MenuBackdrop(device, logger);
+        _menuFlow = new MenuFlow(device);
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
         _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
@@ -971,7 +961,7 @@ public sealed partial class GameHost : IDisposable
             // r_smooth is; the orbit and the tweens run on real time and want every frame the display offers.
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
             _loop.Clock.UncappedRenders = _options.IsBenchmark
-                || state.MenuMode
+                || _menuFlow.MenuMode
                 || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
 
             // The level's own half of the pause, and the reason the frozen picture behind the menu really is
@@ -985,7 +975,7 @@ public sealed partial class GameHost : IDisposable
             // is one the player never gets to watch.
             if (_activeLevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = state.PauseMenu || PresentationHoldsLevel;
+                pausableLevel.IsPaused = _menuFlow.PauseMenu || PresentationHoldsLevel;
             }
 
             BeginStage();
@@ -1015,7 +1005,7 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || state.PauseMenu || PresentationHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel))
             {
                 continue;
             }
@@ -1184,10 +1174,7 @@ public sealed partial class GameHost : IDisposable
         }
         state.MissionWarmer?.Dispose();
         state.PreviewLoader?.Dispose();
-        if (_dissolveTexture.IsValid)
-        {
-            _device.DestroyTexture(_dissolveTexture);
-        }
+        _menuFlow.ReleaseHeldFrame();
 
         // The shell's faces are the device's shared set; the device's teardown takes their textures.
         _logger.Information(
@@ -1701,6 +1688,7 @@ public sealed partial class GameHost : IDisposable
         _world?.Dispose();
         _soldiers?.Dispose();
         _menuBackdrop.Dispose();
+        _menuFlow.Dispose();
         _heldWeapon?.Dispose();
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();

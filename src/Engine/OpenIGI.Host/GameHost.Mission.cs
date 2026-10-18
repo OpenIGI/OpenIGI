@@ -3886,7 +3886,7 @@ public sealed partial class GameHost
                     && !_computerOpen
                     && !_entry.IsCameraActive
                     && _mission.Cutscenes?.IsPlaying != true
-                    && (!state.MenuMode || state.PauseMenu)
+                    && !_menuFlow.OverShowcase
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
 
                 // ...and in FIRST person too, unconditionally, which it did not used to be.
@@ -3968,11 +3968,11 @@ public sealed partial class GameHost
 
                 // The result is a shell page, not a drawn card, so its two choices can be clicked
                 // and navigated like every other page and the shell's own cursor is the one on
-                // screen. state.MenuMode hands it the frame's input and draw; state.PauseMenu holds the
+                // screen. Menu mode hands it the frame's input and draw; the pause flag holds the
                 // showcase off, because the level this is drawn over is still loaded -- the same
                 // pair the pause menu sets.
-                state.MenuMode = true;
-                state.PauseMenu = true;
+                _menuFlow.MenuMode = true;
+                _menuFlow.PauseMenu = true;
                 state.Shell.OpenMissionFailed();
 
                 // The platform cursor stays hidden: the shell draws its own, so revealing this one
@@ -4018,8 +4018,8 @@ public sealed partial class GameHost
                     // completed before LevelFlow reaches here, so the shell now continues to its
                     // campaign-complete destination.
                     state.Shell.OpenOn("extras");
-                    state.MenuMode = true;
-                    state.ShowcasePending = true;
+                    _menuFlow.MenuMode = true;
+                    _menuFlow.ShowcasePending = true;
                 }
             }
         }

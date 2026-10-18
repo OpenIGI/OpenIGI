@@ -1,15 +1,13 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
-using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation;
 using OpenIGI.Rendering;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI;
-using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host;
 
@@ -304,61 +302,6 @@ public sealed partial class GameHost
         }
 
         ShowcasePointFile.Write(path, entries, _logger);
-    }
-
-    /// <summary>Grabs the frame just rendered into the dissolve texture, sizing it to the window first.</summary>
-    /// <remarks>
-    /// Called after the 3D pass and BEFORE the menu is drawn over it, so what is held is the outgoing level
-    /// alone. Catching it after the menu would put a second copy of the menu in the texture and ghost it
-    /// against the live one for the length of the dissolve.
-    /// </remarks>
-    private void HoldFrameForDissolve()
-    {
-        int width = _window.Width;
-        int height = _window.Height;
-        if (width <= 0 || height <= 0)
-        {
-            return;
-        }
-
-        if (_dissolveSize != (width, height))
-        {
-            if (_dissolveTexture.IsValid)
-            {
-                _device.DestroyTexture(_dissolveTexture);
-            }
-
-            _dissolveTexture = _device.CreateTexture(
-                new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Clamp),
-                new Bgra32[width * height]);
-            _dissolveSize = (width, height);
-        }
-
-        _device.CopyFrameToTexture(_dissolveTexture, width, height);
-    }
-
-    /// <summary>Draws the held frame over the live one, so the two cross-dissolve.</summary>
-    /// <param name="painter">The shell's painter, which draws over the resolved scene and under the menu.</param>
-    /// <param name="amount">How much of the held frame is still showing, 1 all of it to 0 none.</param>
-    /// <remarks>
-    /// The renderer keeps one live world, so two levels can never be on screen at once. What can be is the
-    /// last <em>frame</em> of the outgoing one: it is held as a texture and faded off over the incoming
-    /// level, which is a true dissolve rather than a dip through black. The camera's orbit is slow enough
-    /// that a still is indistinguishable from the live picture over a third of a second.
-    /// </remarks>
-    private void DrawDissolve(UiPainter painter, float amount)
-    {
-        if (amount <= 0.002f || !_dissolveTexture.IsValid)
-        {
-            return;
-        }
-
-        painter.DrawSprite(
-            _dissolveTexture,
-            new UiRect(0f, 0f, _window.Width, _window.Height),
-
-            RectF.Unit,
-            Bgra32.White.WithAlpha((byte)(255f * Math.Clamp(amount, 0f, 1f))));
     }
 
     /// <summary>Points the showcase camera at a mission's places, or at the level as a whole when it has none.</summary>

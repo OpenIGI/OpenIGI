@@ -476,17 +476,8 @@ public sealed partial class GameHost
         state.ShellHost = null;
         state.Saves = null;
 
-        // What the mission-entry shot types over its vantage. Filled when the shot begins.
-
-        // Where the shot's character stands, in engine units, and which way it faces.
-        state.MenuMode = false;
-
-        // The shell is up over a LIVE mission -- the pause menu -- rather than over the showcase. It always
-        // implies state.MenuMode; what it adds is that the backdrop is already the right picture. So nothing is
-        // streamed in behind the menu, the showcase orbit does not take the camera off the player, and the
-        // world is frozen instead of advanced. Escape opens it and Escape closes it again.
-        state.PauseMenu = false;
-        state.ShowcasePending = false;
+        // The menu is down and has shown nothing yet; the showcase opens on its default mission.
+        _menuFlow.Reset(ShowcaseMissionId);
         state.FirstFrameReported = false;
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
@@ -497,23 +488,6 @@ public sealed partial class GameHost
         // When the mission-entry shot last read the clock.
         state.LastEntryMilliseconds = 0;
         state.LastComputerMilliseconds = 0;
-        state.CurrentShowcaseMissionId = ShowcaseMissionId;
-        state.PreviewRequestedAtMs = 0;
-
-        // Set on the frame the backdrop is to be held, cleared once the hold has happened; the swap then
-        // runs on the frame after, so what was captured is the OLD level. The very first backdrop has no
-        // outgoing level to hold — the menu is over its dark clear — so there is nothing to dissolve from
-        // and it simply appears.
-        state.HoldFrameForDissolve = false;
-        state.HeldFrameReady = false;
-        state.MissionsSwept = false;
-        state.BackdropSwaps = 0;
-        state.HeldFrameIsPicture = false;
-        state.DissolveRevealPending = false;
-
-        // A field that finished baking for the backdrop, waiting for the frame after the hold to be
-        // adopted -- see the collect further down.
-        state.BakedFieldForBackdrop = null;
 
         // The menu is held to the display's rate rather than rendering as fast as it can, where the
         // platform leaves the rate to the loop. See IFramePacer.
@@ -583,8 +557,8 @@ public sealed partial class GameHost
                     void LeaveTheMenu()
                     {
                         state.Shell?.ClosePauseMenu();
-                        state.MenuMode = false;
-                        state.PauseMenu = false;
+                        _menuFlow.MenuMode = false;
+                        _menuFlow.PauseMenu = false;
                         ApplyGameplayMotionBlur();
                     }
 
@@ -666,7 +640,7 @@ public sealed partial class GameHost
                     // the briefing is still being read. Never over a mission being played: the sky is not
                     // to change under a player halfway through a level, and the hour they chose is picked
                     // up by the next level they load.
-                    if (state.MenuMode && !state.PauseMenu)
+                    if (_menuFlow.OverShowcase)
                     {
                         _dayNight.ResetForLevel(_sun, RenderCVars.TimeOfDay.Value);
                     }
@@ -676,8 +650,8 @@ public sealed partial class GameHost
                     // Nothing is reloaded and nobody is placed again: the level was never torn down, only
                     // left un-ticked, so resuming is this loop putting the menu away.
                     state.Shell?.ClosePauseMenu();
-                    state.MenuMode = false;
-                    state.PauseMenu = false;
+                    _menuFlow.MenuMode = false;
+                    _menuFlow.PauseMenu = false;
                     _window.CursorVisible = false;
                 },
                 restartMission: () =>
@@ -689,8 +663,8 @@ public sealed partial class GameHost
                         void Restart()
                         {
                             state.Shell?.ClosePauseMenu();
-                            state.MenuMode = false;
-                            state.PauseMenu = false;
+                            _menuFlow.MenuMode = false;
+                            _menuFlow.PauseMenu = false;
                             ApplyGameplayMotionBlur();
                             StartMission(mission.Id);
                             _window.CursorVisible = false;
@@ -714,13 +688,13 @@ public sealed partial class GameHost
                     ReleasePlayedMission();
                     state.Shell?.ClosePauseMenu();
                     state.Shell?.OpenOn("campaign");
-                    state.MenuMode = true;
+                    _menuFlow.MenuMode = true;
 
                     // The shell is over the showcase again from here, so the backdrop has to be streamed:
                     // the level it was drawing over has just been released, and it is framed as a
                     // backdrop again rather than as something being played through.
-                    state.PauseMenu = false;
-                    state.ShowcasePending = true;
+                    _menuFlow.PauseMenu = false;
+                    _menuFlow.ShowcasePending = true;
                     _window.CursorVisible = true;
                 },
                 quit: () => state.Running = false,
@@ -731,7 +705,7 @@ public sealed partial class GameHost
                     // the player, which from the pause menu would be the shell demolishing the mission it
                     // is drawn over. The screens already know not to ask (ShellContext.InGame); this is the
                     // guarantee rather than the manners.
-                    if (state.PauseMenu)
+                    if (_menuFlow.PauseMenu)
                     {
                         return;
                     }
@@ -745,19 +719,19 @@ public sealed partial class GameHost
                         wanted = _options.EntryCamMission;
                     }
 
-                    if (wanted != state.CurrentShowcaseMissionId)
+                    if (wanted != _menuFlow.CurrentShowcaseMissionId)
                     {
                         // Warm the level's files on a worker now, and note the moment: once the selection
                         // has held for the settle window the loop asks the preview loader to build it, also
                         // on a worker. Nothing here touches the render thread, so a selection that keeps
                         // moving simply keeps re-arming this.
-                        state.PendingPreviewMissionId = wanted;
-                        state.PreviewRequestedAtMs = _loop.TimeSource.Milliseconds;
+                        _menuFlow.PendingPreviewMissionId = wanted;
+                        _menuFlow.PreviewRequestedAtMs = _loop.TimeSource.Milliseconds;
                         state.MissionWarmer?.Warm(wanted);
                     }
                     else
                     {
-                        state.PendingPreviewMissionId = null;
+                        _menuFlow.PendingPreviewMissionId = null;
                     }
                 },
                 saveSettings: () => state.Console.SaveSettings(),
@@ -810,9 +784,9 @@ public sealed partial class GameHost
                 // asking and the backdrop appearing is that worker's -- so asking now rather than two
                 // frames later is the whole of it earlier. The menu still draws over its dark backdrop
                 // in the meantime, which is what the deferral was protecting.
-                state.MenuMode = true;
+                _menuFlow.MenuMode = true;
                 int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
-                state.CurrentShowcaseMissionId = firstShowcase;
+                _menuFlow.CurrentShowcaseMissionId = firstShowcase;
 
                 if (state.PreviewLoader is { } opening)
                 {
@@ -820,7 +794,7 @@ public sealed partial class GameHost
                 }
                 else
                 {
-                    state.ShowcasePending = true;
+                    _menuFlow.ShowcasePending = true;
                 }
 
                 // -entrycam: open on the campaign and remember that Play is to be pressed as soon as this

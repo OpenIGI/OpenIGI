@@ -78,7 +78,7 @@ public sealed partial class GameHost
         // camera and its parent vehicle stay on the current record makes a seated actor sweep
         // backwards after every tick, then glide forwards again. Retail presents the cinematic
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
-        bool smoothPresentation = !state.PauseMenu
+        bool smoothPresentation = !_menuFlow.PauseMenu
             && _mission.Cutscenes?.IsPlaying != true
             && !_options.Lockstep
             && RenderCVars.SmoothPresentation.Value;
@@ -95,7 +95,7 @@ public sealed partial class GameHost
         _pacing.Sample(
             pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
         _pacing.SampleGate(
-            state.PauseMenu,
+            _menuFlow.PauseMenu,
             _mission.Cutscenes?.IsPlaying == true,
             _options.Lockstep,
             RenderCVars.SmoothPresentation.Value);
@@ -363,7 +363,7 @@ public sealed partial class GameHost
             && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && mapScene is null
-            && (!state.MenuMode || state.PauseMenu)
+            && !_menuFlow.OverShowcase
             && _player is not null;
 
         // The over-the-shoulder view, built off whatever camera the player would have had. It is
@@ -387,7 +387,7 @@ public sealed partial class GameHost
             && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && mapScene is null
-            && (!state.MenuMode || state.PauseMenu)
+            && !_menuFlow.OverShowcase
             && _player is { IsOnLadder: false, IsInWorldInteraction: false };
 
         if (thirdPersonEligible && _player is { } thirdPersonPlayer)
@@ -411,7 +411,7 @@ public sealed partial class GameHost
             // A paused view does not move. Advancing the blend behind the menu would have the
             // camera quietly travel while the player was reading, and arrive somewhere else.
             eye = _thirdPerson.Update(
-                state.MenuMode ? 0f : thirdPersonElapsed,
+                _menuFlow.MenuMode ? 0f : thirdPersonElapsed,
                 wantsThirdPerson,
                 eye,
                 ThirdPersonWalls());
@@ -482,7 +482,7 @@ public sealed partial class GameHost
         // scene would otherwise have used is the player's own, and orbiting away from where they
         // were standing is the one thing a pause must not do. The showcase camera outlives the menu
         // it was built for -- starting a mission does not clear it -- so this has to say so.
-        if (state.MenuMode && !state.PauseMenu && _showcaseCamera is not null)
+        if (_menuFlow.OverShowcase && _showcaseCamera is not null)
         {
             int menuCameraNow = _loop.TimeSource.Milliseconds;
             float menuCameraElapsed = Math.Clamp((menuCameraNow - state.LastMenuCameraMilliseconds) / 1000f, 0f, 0.1f);
@@ -508,7 +508,7 @@ public sealed partial class GameHost
         // The eye has settled by here -- every camera that could have claimed the frame has
         // had its say -- so this is where the inspector's projection can read it.
         _inspectorEye = eye;
-        if (TitlePlayer is not null && _playerMode && !console.WantsPointer && !state.MenuMode)
+        if (TitlePlayer is not null && _playerMode && !console.WantsPointer && !_menuFlow.MenuMode)
         {
             _titleLastLiveLook = _titlePresentation.HasLookPreview;
             Camera3D titleEye = _titlePresentation.Camera(_titlePresentationBlend);
@@ -1509,7 +1509,7 @@ public sealed partial class GameHost
             _device.SetMaterialOverride(SurfaceMaterial.Default);
         }
 
-// The ground is drawn through its own band of the same keyframe. Retail keeps two --
+        // The ground is drawn through its own band of the same keyframe. Retail keeps two --
         // "terrain" and "object category 1" -- and publishes them to different globals; every
         // shipping level happens to author them alike, which is not a reason to draw them alike.
         if (retailFog)
@@ -2157,7 +2157,7 @@ public sealed partial class GameHost
         // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
         _flashlight.Submit(
             captured && flashlightShown && _player is not null && !_playerDead,
-            state.MenuMode && state.PauseMenu,
+            _menuFlow.MenuMode && _menuFlow.PauseMenu,
             flashlightBody,
             eye,
             _thirdPerson.IsEngaged,

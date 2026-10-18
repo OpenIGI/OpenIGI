@@ -173,14 +173,14 @@ public sealed partial class GameHost
     {
         if (_loadSequence.WantsCapture)
         {
-            HoldFrameForDissolve();
+            _menuFlow.HoldFrame(_window.Width, _window.Height);
             _loadSequence.NotifyCaptured();
             return;
         }
 
         if (_loadSequence.WantsLivePicture)
         {
-            HoldFrameForDissolve();
+            _menuFlow.HoldFrame(_window.Width, _window.Height);
         }
     }
 
@@ -791,12 +791,12 @@ public sealed partial class GameHost
             Scanlines: 0.05f,
             Opacity: _loadSequence.Opacity,
             Letterbox: MissionLoadSequence.LetterboxFraction * _loadSequence.Letterbox,
-            HasPicture: _loadSequence.HasPicture && _dissolveTexture.IsValid,
+            HasPicture: _loadSequence.HasPicture && _menuFlow.HeldFrame.IsValid,
             AspectRatio: height > 0f ? width / height : 1.777f,
             Sweep: _loadSequence.Sweep);
 
         _device.BeginStageTiming(RenderStage.UserInterface);
-        _device.DrawLoadingBackdrop(_dissolveTexture, backdrop);
+        _device.DrawLoadingBackdrop(_menuFlow.HeldFrame, backdrop);
 
         float card = _loadSequence.Card;
         if (card > 0.002f)
