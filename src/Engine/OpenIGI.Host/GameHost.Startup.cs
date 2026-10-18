@@ -175,19 +175,19 @@ public sealed partial class GameHost
         // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11). The player's
         // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
         // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
-        _playerDifficulty = (int)(_options.Difficulty
+        _mission.PlayerDifficulty = (int)(_options.Difficulty
             ?? (AiDifficulty)Math.Clamp(_configuration.Active?.Difficulty ?? 1, 0, 2));
 
         // 0x489C30 supplies the universal base value first. Mission loading replaces it with argument 7
         // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
         // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
-        _playerMaximumHealth = HumanHitZoneTable.MaximumHealth;
-        _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
-        _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
+        _mission.PlayerMaximumHealth = HumanHitZoneTable.MaximumHealth;
+        _mission.ElectricFenceDose = ElectricFenceContact.DefaultDamageFactor;
+        _mission.PlayerHealth = new(HumanHitZoneTable.Player, _mission.PlayerMaximumHealth)
         {
-            DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
+            DamageScale = HumanHealth.DifficultyDamageScale(_mission.PlayerDifficulty),
         };
-        _playerDead = false;
+        _mission.IsPlayerDead = false;
         _flashlight.Reset();
 
         // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
@@ -366,10 +366,10 @@ public sealed partial class GameHost
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
-        _soldiersInWalk = false;
-        _playerInWalk = false;
+        _mission.SoldiersInWalk = false;
+        _mission.PlayerInWalk = false;
         _playerTerrain = null;
-        _effectWalls = null;
+        _mission.EffectWalls = null;
         _effectTerrainRow = null;
         _ground = null;
 
@@ -385,8 +385,8 @@ public sealed partial class GameHost
 
         // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The
         // collision index is kept here so the overlay can name the object under the crosshair.
-        _worldSolids = null;
-        _worldTrace = null;
+        _mission.Solids = null;
+        _mission.Trace = null;
         state.ShowDebug = false;
     }
 

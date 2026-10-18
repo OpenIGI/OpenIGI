@@ -74,9 +74,9 @@ public sealed partial class GameHost
 
         ITitlePlayer? player = _gameplay.CreatePlayer(new TitlePlayerRequest(
             new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, Services: _title.Services),
-            new WorldBuildResult(scene, 0, 0, _ground, _spins),
+            new WorldBuildResult(scene, 0, 0, _ground, _mission.Spins),
             _title.Services,
-            (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2),
+            (AiDifficulty)Math.Clamp(_mission.PlayerDifficulty, 0, 2),
             _audioOut.Sounds is { } sounds && _audioOut.Bank is { } bank ? new TitleAudio(sounds, bank) : null,
             _loop.Natives));
         if (player is null)
@@ -163,12 +163,12 @@ public sealed partial class GameHost
             return false;
         }
 
-        if (_playerTicked || !_playerMode || _mission.Cutscenes?.IsPlaying == true)
+        if (_mission.PlayerTicked || !_playerMode || _mission.Cutscenes?.IsPlaying == true)
         {
             return true;
         }
 
-        _playerTicked = true;
+        _mission.PlayerTicked = true;
         PlayerAction held = default;
         foreach ((PlayerInputSlot _, PlayerAction action) in PlayerInputBindings.All)
         {

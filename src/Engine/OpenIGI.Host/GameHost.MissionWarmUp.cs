@@ -492,7 +492,7 @@ public sealed partial class GameHost
         surfaceMetres = default;
         normal = default;
         label = string.Empty;
-        if (_worldSolids is not { } solids)
+        if (_mission.Solids is not { } solids)
         {
             return false;
         }

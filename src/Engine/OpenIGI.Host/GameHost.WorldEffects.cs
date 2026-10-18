@@ -15,7 +15,7 @@ public sealed partial class GameHost
     {
         public bool HasPlayer => host._player is not null;
 
-        public WorldRayCast? Walls => host._effectWalls ?? host._player?.Body.Walls;
+        public WorldRayCast? Walls => host._mission.EffectWalls ?? host._player?.Body.Walls;
 
         public BulletMarks? Marks => host._player?.Marks;
 
@@ -23,7 +23,7 @@ public sealed partial class GameHost
 
         public GameMaterialRegistry? Materials => host._worldMaterials;
 
-        public WorldTraceCast? Trace => host._worldTrace;
+        public WorldTraceCast? Trace => host._mission.Trace;
 
         public bool BloodWanted => host._configuration.Active?.BloodEnabled ?? true;
 

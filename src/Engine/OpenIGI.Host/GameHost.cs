@@ -154,12 +154,6 @@ public sealed partial class GameHost : IDisposable
     private int _exitCode;
 
     // --- The player's own life, damage and death ---
-    private int _playerDifficulty;
-    private float _playerMaximumHealth;
-    private float _playerDeltaTranslationScale = HumanMotion.DefaultDeltaTranslationScale;
-    private float _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
-    private HumanHealth _playerHealth = null!;
-    private bool _playerDead;
     private HumanDamageFlash _damageFlash = null!;
     private FlashbangScreenFlash _flashbangScreenFlash = null!;
     private DeathCamera _deathCamera = null!;
@@ -185,15 +179,12 @@ public sealed partial class GameHost : IDisposable
     /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
     private readonly IgiRandom _soundRandom = new();
 
-    /// <summary>The tick the player may grunt at being hit again — <c>0x4637C0</c>'s per-human gate.</summary>
-    private int _playerHitQuietUntil;
     private int _impactSoundQuietUntil;
     private int _ricochetSoundQuietUntil;
     private int _tracerSkipsLogged;
 
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
     private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
-    private IPlacementSpin? _spins;
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
 
@@ -507,11 +498,6 @@ public sealed partial class GameHost : IDisposable
     private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
 
-    // The world the blood is traced against: placed objects AND the terrain, because a droplet lands
-    // on the ground as readily as on a wall and the player's own movement caster carries neither the
-    // terrain nor a bullet's idea of what is solid.
-    private WorldRayCast? _effectWalls;
-
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
     // and the player's own material lookup already use.
@@ -520,18 +506,9 @@ public sealed partial class GameHost : IDisposable
     private ICameraStatusLightPresenter? _cameraStatusLights;
     private IGrenadePresenter? _grenadeRenderer;
     private IMissilePresenter? _missileRenderer;
-    private readonly MissileSimulation _vehicleMissiles = new();
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
     private ISoldierPresenter? _soldiers;
-
-    // Whether the soldiers and the player update inside the level walk (AttachActorsToLevelWalk), whether the
-    // player's update has run this tick, and whether it advanced the interaction registry itself.
-    private bool _soldiersInWalk;
-    private bool _playerInWalk;
-    private bool _playerTicked;
-    private bool _interactionsTickedByPlayer;
-    private Func<SoldierEnemy>? _soldierEnemy;
 
     // The vehicles' engine sets, gun reports and turret traverse (VehicleSoundPlayer).
     private VehicleSoundPlayer? _vehicleSounds;
@@ -545,8 +522,6 @@ public sealed partial class GameHost : IDisposable
     private AmmoTypeRegistry? _ammoTypes;
     private WeaponTypeRegistry? _weaponTypes;
     private bool _playerMode;
-    private ObjectCollisionIndex? _worldSolids;
-    private WorldTraceCast? _worldTrace;
 
     // --- Built once and re-registered into every title's namespace ---
     // Locals until the shell could change games. All three outlive a title: the config host and the menu
@@ -1420,7 +1395,7 @@ public sealed partial class GameHost : IDisposable
     /// </remarks>
     private DeathCameraVantage.Blocked? ThirdPersonWalls()
     {
-        if (_worldSolids is null && _playerTerrain is null)
+        if (_mission.Solids is null && _playerTerrain is null)
         {
             _thirdPersonWalls = null;
             _thirdPersonWallsSolids = null;
@@ -1429,16 +1404,16 @@ public sealed partial class GameHost : IDisposable
         }
 
         if (_thirdPersonWalls is not null
-            && ReferenceEquals(_thirdPersonWallsSolids, _worldSolids)
+            && ReferenceEquals(_thirdPersonWallsSolids, _mission.Solids)
             && ReferenceEquals(_thirdPersonWallsTerrain, _playerTerrain))
         {
             return _thirdPersonWalls;
         }
 
-        _thirdPersonWallsSolids = _worldSolids;
+        _thirdPersonWallsSolids = _mission.Solids;
         _thirdPersonWallsTerrain = _playerTerrain;
 
-        WorldRayCast? cast = (_worldSolids, _playerTerrain) switch
+        WorldRayCast? cast = (_mission.Solids, _playerTerrain) switch
         {
             ({ } solids, { } ground) => WorldTrace.AsRayCast(
                 WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))),

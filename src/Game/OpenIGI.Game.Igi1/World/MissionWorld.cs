@@ -1,4 +1,9 @@
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
@@ -49,4 +54,61 @@ public sealed class MissionWorld
 
     /// <summary>Gets or sets the objective runtime.</summary>
     public MissionObjectiveRuntime? Objectives { get; set; }
+
+    /// <summary>Gets or sets the difficulty the player's damage is scaled by.</summary>
+    public int PlayerDifficulty { get; set; }
+
+    /// <summary>Gets or sets the player's full health.</summary>
+    public float PlayerMaximumHealth { get; set; }
+
+    /// <summary>Gets or sets how far the player's body animations carry it, the human type's delta translation scale.</summary>
+    public float PlayerDeltaTranslationScale { get; set; } = HumanMotion.DefaultDeltaTranslationScale;
+
+    /// <summary>Gets or sets the damage factor an electric fence deals the player each tick it is touched.</summary>
+    public float ElectricFenceDose { get; set; } = ElectricFenceContact.DefaultDamageFactor;
+
+    /// <summary>Gets or sets the player's health.</summary>
+    public HumanHealth PlayerHealth { get; set; } = null!;
+
+    /// <summary>Gets or sets a value indicating whether the player has died.</summary>
+    public bool IsPlayerDead { get; set; }
+
+    /// <summary>Gets or sets the tick the player may grunt at being hit again — <c>0x4637C0</c>'s per-human gate.</summary>
+    public int PlayerHitQuietUntil { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the soldiers update inside the level walk.</summary>
+    public bool SoldiersInWalk { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the player updates inside the level walk.</summary>
+    public bool PlayerInWalk { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the player's update has run this tick.</summary>
+    public bool PlayerTicked { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the player's update advanced the interactions itself this tick.</summary>
+    public bool InteractionsTickedByPlayer { get; set; }
+
+    /// <summary>Gets or sets what the soldiers read the player as, asked each tick.</summary>
+    public Func<SoldierEnemy>? CurrentEnemy { get; set; }
+
+    /// <summary>Gets or sets the level's placed objects as the rays and the bodies collide with them.</summary>
+    public ObjectCollisionIndex? Solids { get; set; }
+
+    /// <summary>Gets or sets the trace of the objects and the terrain together.</summary>
+    public WorldTraceCast? Trace { get; set; }
+
+    /// <summary>Gets or sets what blood and debris are traced against: the placed objects and the terrain.</summary>
+    public WorldRayCast? EffectWalls { get; set; }
+
+    /// <summary>Gets the missiles the vehicles have fired.</summary>
+    public MissileSimulation VehicleMissiles { get; } = new();
+
+    /// <summary>Gets or sets the vehicle whose gun's round is being cast, so the cast passes through its own hull.</summary>
+    public GameTask? VehicleRoundOwner { get; set; }
+
+    /// <summary>Gets or sets the level's fans and radar heads, which turn a step each tick.</summary>
+    public IPlacementSpin? Spins { get; set; }
+
+    /// <summary>Gets or sets the guards' rounds this mission, once the brains are animated.</summary>
+    public GuardRounds? GuardRounds { get; set; }
 }

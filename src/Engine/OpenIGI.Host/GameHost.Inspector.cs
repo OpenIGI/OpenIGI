@@ -19,7 +19,7 @@ public sealed partial class GameHost
 
         public bool PlayerMode => host._playerMode;
 
-        public bool PlayerDead => host._playerDead;
+        public bool PlayerDead => host._mission.IsPlayerDead;
 
         public FreeCamera? Camera => host._camera;
 

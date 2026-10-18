@@ -931,7 +931,7 @@ public sealed partial class GameHost
                 _player?.HoldStill();
                 _window.CursorLocked = false;
             }
-            else if (_playerDead && _deathCamera.IsActive)
+            else if (_mission.IsPlayerDead && _deathCamera.IsActive)
             {
                 // Dead: the mouse orbits the death camera around the body rather than turning a head that
                 // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked

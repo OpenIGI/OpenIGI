@@ -156,7 +156,7 @@ public sealed partial class GameHost
             return false;
         }
 
-        if (_worldSolids is null)
+        if (_mission.Solids is null)
         {
             return true;
         }
@@ -164,7 +164,7 @@ public sealed partial class GameHost
         Vector3d originU = eye.Position * WorldScene.UnitsPerMetre;
         Vector3d endU = originU + (new Vector3d(forward.X, forward.Y, forward.Z) * (distance * WorldScene.UnitsPerMetre));
 
-        if (_worldSolids.TryIdentify(originU, endU, out _, out WorldRayHit hit))
+        if (_mission.Solids.TryIdentify(originU, endU, out _, out WorldRayHit hit))
         {
             double hitMetres = hit.Distance / WorldScene.UnitsPerMetre;
             double slack = LampOcclusionSlack + _gi.LightFixtures[index].Extent;
@@ -215,7 +215,7 @@ public sealed partial class GameHost
             _gi.LightFixtures,
             _gi.LampsMissionId,
             _shelterField,
-            _effectWalls,
+            _mission.EffectWalls,
             _options.SunDirection is not null,
             _dayNight,
             _cycleSun ?? _sun ?? FallbackSun,

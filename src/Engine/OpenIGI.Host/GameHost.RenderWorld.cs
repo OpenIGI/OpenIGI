@@ -334,7 +334,7 @@ public sealed partial class GameHost
             _deathCamera.Present(smoothPresentation ? tickBlend : 1f);
         }
 
-        Camera3D eye = _playerDead && _deathCamera.IsActive
+        Camera3D eye = _mission.IsPlayerDead && _deathCamera.IsActive
             ? _deathCamera.Camera
             : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                 && state.InteractionCamera.IsActive
@@ -347,7 +347,7 @@ public sealed partial class GameHost
         // move per frame on their own and need nothing.
         if (smoothPresentation
             && _playerMode
-            && !_playerDead
+            && !_mission.IsPlayerDead
             && _player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
         {
             eye = _player.SmoothedCamera(tickBlend);
@@ -357,7 +357,7 @@ public sealed partial class GameHost
         // flashlight hangs off the body, wherever the camera is.
         Camera3D flashlightBody = eye;
         bool flashlightShown = _playerMode
-            && !_playerDead
+            && !_mission.IsPlayerDead
             && !_session.FailedMenu
             && !_computerOpen
             && !_entry.IsCameraActive
@@ -381,7 +381,7 @@ public sealed partial class GameHost
         // they are standing in, so the camera stays where it was and simply stops moving, while
         // the menu's showcase orbit is somewhere else entirely and there is nothing to preserve.
         bool thirdPersonEligible = _playerMode
-            && !_playerDead
+            && !_mission.IsPlayerDead
             && !_session.FailedMenu
             && !_computerOpen
             && !_entry.IsCameraActive
@@ -887,7 +887,7 @@ public sealed partial class GameHost
             RenderCVars.TacticalMessages.Value);
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
-            && !(_playerDead && _deathCamera.IsActive)
+            && !(_mission.IsPlayerDead && _deathCamera.IsActive)
             && _player is { View: not null, IsMountedStationaryGun: false };
 
         // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
@@ -1572,7 +1572,7 @@ public sealed partial class GameHost
         if (_missileRenderer is not null && _player is not null)
         {
             _missileRenderer.Draw(_player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
-            _missileRenderer.Draw(_vehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
+            _missileRenderer.Draw(_mission.VehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
             _missileRenderer.Draw(_player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
         }
 
@@ -2156,7 +2156,7 @@ public sealed partial class GameHost
         // The player's flashlight, outside the lamps' gate: it lights under every lighting model the
         // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
         _flashlight.Submit(
-            captured && flashlightShown && _player is not null && !_playerDead,
+            captured && flashlightShown && _player is not null && !_mission.IsPlayerDead,
             _menuFlow.MenuMode && _menuFlow.PauseMenu,
             flashlightBody,
             eye,
@@ -2420,7 +2420,7 @@ public sealed partial class GameHost
         // the binoculars do, or the weapon mesh shows through the aperture.
         bool sniperScoped = _player is { IsSniperScoped: true };
         float? binocularRangeMetres = null;
-        if (binocularsOpen && _worldSolids is { } rangeSolids)
+        if (binocularsOpen && _mission.Solids is { } rangeSolids)
         {
             // FUN_00471480's DISTANCE readout is a 1000 m ray cast from the eye along the aim
             // direction; its 0.000244140625 scale is 1/4096 = 1/UnitsPerMetre. The range is
@@ -2694,7 +2694,7 @@ public sealed partial class GameHost
             state.Batch.Begin();
             retailStatus.DrawPlayerStatus(
                 state.Batch,
-                _playerHealth.RemainingFraction,
+                _mission.PlayerHealth.RemainingFraction,
                 retailPlayer.InteractionProgress,
                 _mission.Objectives?.InterfaceTimerRemainingTicks,
                 _window.Width,
@@ -2718,7 +2718,7 @@ public sealed partial class GameHost
         if (_computerOpen
             && TacticalComputer is null
             && _playerMode
-            && !(_playerDead && _deathCamera.IsActive)
+            && !(_mission.IsPlayerDead && _deathCamera.IsActive)
             && _player is { IsOnLadder: false, IsInWorldInteraction: false })
         {
             Camera3D computerEye = _player.Camera;
@@ -2895,7 +2895,7 @@ public sealed partial class GameHost
             modernHud.Draw(
                 state.Batch,
                 new RemasteredHudSnapshot(
-                    _playerHealth.RemainingFraction,
+                    _mission.PlayerHealth.RemainingFraction,
                     _player.Yaw,
                     inHand?.Weapon,
                     inHand?.Gun.RoundsInClip ?? 0,
@@ -3043,8 +3043,8 @@ public sealed partial class GameHost
             string target = "target: (nothing / terrain / sky)";
             string? detect = null;
             double bestT = double.MaxValue;
-            if (_worldSolids is not null
-                && _worldSolids.TryIdentify(
+            if (_mission.Solids is not null
+                && _mission.Solids.TryIdentify(
                     originU,
                     endU,
                     out string objLabel,
@@ -3081,11 +3081,11 @@ public sealed partial class GameHost
                 // The floor the game's collision puts under this soldier's feet — so a sunk guard shows
                 // its feet Z below the floor Z, and a correct one shows them level.
                 string floor = "?";
-                if (_worldSolids is not null)
+                if (_mission.Solids is not null)
                 {
                     Vector3d fTop = new(feetU.X, feetU.Y, feetU.Z + 2048.0);
                     Vector3d fBot = new(feetU.X, feetU.Y, feetU.Z - (10.0 * WorldScene.UnitsPerMetre));
-                    if (_worldSolids.TryIdentify(fTop, fBot, out string floorLbl, out WorldRayHit floorHit))
+                    if (_mission.Solids.TryIdentify(fTop, fBot, out string floorLbl, out WorldRayHit floorHit))
                     {
                         floor = I($"{floorHit.Position.Z:F0} ({floorLbl} mat{floorHit.Material}) Δ={(feetU.Z - floorHit.Position.Z) / WorldScene.UnitsPerMetre:F2}m");
                     }

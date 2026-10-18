@@ -12,16 +12,13 @@ namespace OpenIGI.Host;
 
 public sealed partial class GameHost
 {
-    // The guards' rounds this mission, once the brains are animated.
-    private GuardRounds? _guardRounds;
-
     /// <summary>The host's side of a guard's round: the player it holds, and the sound and picture of the hits.</summary>
     /// <param name="host">The host.</param>
     private sealed class GuardRoundHost(GameHost host) : IGuardRoundHost
     {
         public PlayerCamera? Player => host._player;
 
-        public HumanHealth PlayerHealth => host._playerHealth;
+        public HumanHealth PlayerHealth => host._mission.PlayerHealth;
 
         public Random ShotRandom => host._shotRandom;
 
@@ -29,7 +26,7 @@ public sealed partial class GameHost
 
         public AmmoTypeRegistry? AmmoTypes => host._ammoTypes;
 
-        public GameTask? VehicleRoundOwner => host._vehicleRoundOwner;
+        public GameTask? VehicleRoundOwner => host._mission.VehicleRoundOwner;
 
         public void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial) =>
             host.PlayBulletImpactSound(position, struckHuman, surfaceMaterial);

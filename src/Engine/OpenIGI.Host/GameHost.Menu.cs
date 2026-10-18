@@ -56,8 +56,8 @@ public sealed partial class GameHost
         }
 
         _scene = preview.Scene;
-        _worldSolids = preview.Solids;
-        _spins = preview.Spins;
+        _mission.Solids = preview.Solids;
+        _mission.Spins = preview.Spins;
         _sun = preview.Sun;
 
         _playerTerrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
@@ -84,7 +84,7 @@ public sealed partial class GameHost
 
             // The backdrop turns its fans too, and a promoted mission keeps this very renderer, so
             // setting it here is what makes the mission behave the same whichever way it was entered.
-            _world.Spins = _spins;
+            _world.Spins = _mission.Spins;
         }
 
         // Decoded on the pool while this backdrop was being built, so the capture below uploads rather

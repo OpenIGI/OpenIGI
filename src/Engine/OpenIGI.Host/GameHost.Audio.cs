@@ -832,7 +832,7 @@ public sealed partial class GameHost
         {
             _soldiers.Simulation.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
-        foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
+        foreach (MissileDetonation blast in _mission.VehicleMissiles.Detonations)
         {
             _soldiers.Simulation.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
@@ -907,7 +907,7 @@ public sealed partial class GameHost
         {
             ResolveMissileDetonation(blast);
         }
-        foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
+        foreach (MissileDetonation blast in _mission.VehicleMissiles.Detonations)
         {
             ResolveMissileDetonation(blast);
         }
@@ -976,7 +976,7 @@ public sealed partial class GameHost
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
     private void BlastPlayer(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
     {
-        if (_player is null || _playerHealth.IsDead)
+        if (_player is null || _mission.PlayerHealth.IsDead)
         {
             return;
         }
@@ -990,12 +990,12 @@ public sealed partial class GameHost
             damageFactor);
         if (dose > 0f)
         {
-            _playerHealth.Apply(ExplosionDamage.Zone, dose);
+            _mission.PlayerHealth.Apply(ExplosionDamage.Zone, dose);
             FlashPlayerForBlast();
 
             // A blast that zeroes the health kills exactly the way a bullet does -- without this the player stood at
             // zero for ever.
-            if (_playerHealth.IsDead)
+            if (_mission.PlayerHealth.IsDead)
             {
                 BeginPlayerDeath(position, ExplosionDamage.Zone, -1, killedBy);
             }
@@ -1021,7 +1021,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void ReachPlayerWithBlast(Vector3d blastPosition, float radiusUnits, float falloffUnits)
     {
-        if (_player is null || _playerHealth.IsDead || radiusUnits <= 0f)
+        if (_player is null || _mission.PlayerHealth.IsDead || radiusUnits <= 0f)
         {
             return;
         }
@@ -1102,7 +1102,7 @@ public sealed partial class GameHost
                 continue;
             }
 
-            pending.Interaction.MarkExplosionPresented(_worldSolids);
+            pending.Interaction.MarkExplosionPresented(_mission.Solids);
             PresentGenericTbaExplosion(pending.Position, pending.Parameters);
             _pendingGenericTbaExplosions.RemoveAt(i);
         }
