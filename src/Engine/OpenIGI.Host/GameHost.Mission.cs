@@ -88,7 +88,7 @@ public sealed partial class GameHost
         // shipping a later mesh version has every model in it refused on the way in -- the pack still
         // opens, still reports a name, and holds nothing.
         MissionLoader missionLoader = new(
-            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank,
+            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _audioOut.Bank,
             _titleRuntime.Formats);
         LoadedMission loaded = missionLoader.Load(id);
 
@@ -572,7 +572,7 @@ public sealed partial class GameHost
         }
 
         MountMissionSounds(loaded);
-        _music?.Play(MusicPlayer.GameMusic);
+        _audioOut.Music?.Play(MusicPlayer.GameMusic);
     }
 
     /// <summary>The mission's text and the cutscene runtime, with the natives the level's cutscenes call.</summary>
@@ -597,17 +597,17 @@ public sealed partial class GameHost
             {
                 if (name == GameMusicNatives.EnableNative)
                 {
-                    if (_music is not null)
+                    if (_audioOut.Music is not null)
                     {
-                        _music.Enabled = true;
+                        _audioOut.Music.Enabled = true;
                     }
                     return QvmValue.FromInt32(1);
                 }
                 if (name == GameMusicNatives.DisableNative)
                 {
-                    if (_music is not null)
+                    if (_audioOut.Music is not null)
                     {
-                        _music.Enabled = false;
+                        _audioOut.Music.Enabled = false;
                     }
                     return QvmValue.FromInt32(1);
                 }
@@ -1089,7 +1089,7 @@ public sealed partial class GameHost
             // HumanAI's current position. Both begin at the same live position; the backend owns any voice
             // following after that point.
             soldiers.Simulation.SetScriptSound((name, position, attached) =>
-                _sounds?.PlayDefinition(name, position, priority: 200));
+                _audioOut.Sounds?.PlayDefinition(name, position, priority: 200));
 
             // Each AI weapon owns its automatic loop and updates its world position every tick. The round
             // callback handles ballistics only; without this parallel path AI shots were completely silent.
@@ -2520,8 +2520,8 @@ public sealed partial class GameHost
 
         // Back to the front end, so back to the menu theme. Every voice the level started goes with it:
         // an ambience bed outliving its level would follow the player into the menus.
-        _sounds?.StopAll();
-        _music?.Play(MusicPlayer.MenuMusic);
+        _audioOut.Sounds?.StopAll();
+        _audioOut.Music?.Play(MusicPlayer.MenuMusic);
     }
 
     // The path-traced lightmapper's phase 1-2 verification: enumerate the lightmapped texels, bake the
@@ -2783,7 +2783,7 @@ public sealed partial class GameHost
         if (!_playerHealth.IsDead)
         {
             PlayPlayerGrunt();
-            _sounds?.PlayDefinition(
+            _audioOut.Sounds?.PlayDefinition(
                 (_soundRandom.NextRaw() & 1) != 0 ? "punched_01" : "punched_02",
                 positionInUnits: null,
                 priority: 250);
@@ -2903,7 +2903,7 @@ public sealed partial class GameHost
         // own hit and death sounds it belongs to the listener, so it is flat rather than world-panned.
         if (!string.IsNullOrEmpty(impact.SoundName))
         {
-            _sounds?.PlayDefinition(impact.SoundName, priority: 250);
+            _audioOut.Sounds?.PlayDefinition(impact.SoundName, priority: 250);
         }
 
         // Every ground contact posts type 11. A safe landing carries five metres; a damaging one ten.
@@ -2974,7 +2974,7 @@ public sealed partial class GameHost
         if (!shock.IsLethal)
         {
             // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.
-            _sounds?.PlayDefinition("elfence_spark1", priority: 250);
+            _audioOut.Sounds?.PlayDefinition("elfence_spark1", priority: 250);
         }
 
         _logger.Information(
@@ -3264,13 +3264,13 @@ public sealed partial class GameHost
             }
 
             _mission.Cutscenes?.Tick();
-            if (_mission.Cutscenes is { } soundingVehicles && _sounds is { } vehicleSoundSystem)
+            if (_mission.Cutscenes is { } soundingVehicles && _audioOut.Sounds is { } vehicleSoundSystem)
             {
                 _vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
                 _vehicleSounds.Tick(
                     soundingVehicles.VehicleSoundSources(),
                     soundingVehicles.VehicleGunSounds(),
-                    _audio.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
+                    _audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
             }
 
             if (_mission.Cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
@@ -3350,7 +3350,7 @@ public sealed partial class GameHost
                         launchPosition = m203Shots[0].Origin;
                     }
 
-                    _sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
+                    _audioOut.Sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
                 }
 
                 // The grenade's cook tick: a looping sound held while the throw charges, stopped the

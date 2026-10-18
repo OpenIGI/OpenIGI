@@ -221,7 +221,7 @@ public sealed partial class GameHost
             _cycleSun ?? _sun ?? FallbackSun,
             WeatherCloudCover());
         board.Update(elapsed);
-        _lampSounds.Play(board, elapsed, audible, _sounds, _gi.LightFixtures);
+        _lampSounds.Play(board, elapsed, audible, _audioOut.Sounds, _gi.LightFixtures);
 
         if (board.Revision != _gi.LampBounceRevision)
         {

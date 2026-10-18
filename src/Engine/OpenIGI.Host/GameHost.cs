@@ -119,9 +119,6 @@ public sealed partial class GameHost : IDisposable
     // changes therefore bind both; keeping this reference beside the registry makes that split explicit.
     private VirtualFileSystem _resourceFileSystem = null!;
 
-    // Silent until the console has read settings.cfg, so nothing can open a device on stale defaults.
-    private IAudioDevice _audio = new NullAudioDevice();
-
     // The archives that belong to the session rather than to a level, kept as bytes so a preview built on
     // a worker can register them into its own registry without reading through this one.
     private readonly Dictionary<string, byte[]> _sessionArchives = [];
@@ -191,7 +188,6 @@ public sealed partial class GameHost : IDisposable
     private ObjectCollisionIndex? _thirdPersonWallsSolids;
     private TerrainData? _thirdPersonWallsTerrain;
 
-
     private Random _shotRandom = null!;
 
     /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
@@ -217,12 +213,9 @@ public sealed partial class GameHost : IDisposable
     // See BindToCycle.
     private DirectionalLightSettings? _cycleSun;
 
-
-
     // What a person has said outright about which models are lamps, which beats anything the detector
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
-
 
     private int _lampMilliseconds;
 
@@ -286,8 +279,6 @@ public sealed partial class GameHost : IDisposable
     // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
     // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
     private int _giStaticFrames;
-
-
 
     /// <summary>How many frames the near relight is spread over while following a moving sun.</summary>
     private const int GiSunFollowSpread = 4;
@@ -353,8 +344,6 @@ public sealed partial class GameHost : IDisposable
     // A cinematic zoom moves it a ten-thousandth a frame and is reprojected through; a scope snaps it by far
     // more than this in one, and its history is the unzoomed view's.
     private const float GiCutZoom = 0.1f;
-
-
 
     // The exposure adaptation rate during the warm-up and in steady play. Fast while the GI converges so the
     // exposure follows it and the picture holds its brightness; slow after, for an unobtrusive eye-adaptation.
@@ -685,6 +674,7 @@ public sealed partial class GameHost : IDisposable
         _logger = logger;
         _pacing = new Diagnostics.PresentationPacingProbe(logger);
         _memory = new Services.MemoryDiagnostics(device, logger);
+        _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
         _switch = new RendererSwitchService(device, logger);
     }
@@ -1024,7 +1014,7 @@ public sealed partial class GameHost : IDisposable
         // runs. Everything above this line belongs to the process; everything it builds belongs to the
         // game, and changing games rebuilds exactly this much.
         LoadTitleSession();
-        GameMusicNatives musicNatives = new(_music!);
+        GameMusicNatives musicNatives = new(_audioOut.Music!);
 
         state.ReportedWorld = false;
         state.ReportedShot = false;
@@ -1106,9 +1096,6 @@ public sealed partial class GameHost : IDisposable
 
         _baked.Forget();
 
-
-
-
         // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
         // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
         // on the render thread once the bake lands.
@@ -1177,14 +1164,12 @@ public sealed partial class GameHost : IDisposable
         _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
         _detailMaps.Enabled = _detailMaps.DeriveMissing;
 
-
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
         // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
         // checked against and the field cache it reads. Built here because every part of it is finished
         // being written by this point and none of it is mutated afterwards, which is what makes it safe
         // to hand to a worker.
             RebuildPreviewContext();
-
 
         // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
         // They live under common/, so they are the same 2.4 MB of IFF for every mission, and parsing
@@ -1194,7 +1179,6 @@ public sealed partial class GameHost : IDisposable
         // thread, and the read needs nothing from it. The first mission waits for the result, by when it
         // has been sitting finished for several seconds.
         BeginReadingSharedAnimations();
-
 
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
@@ -1269,7 +1253,7 @@ public sealed partial class GameHost : IDisposable
                     // The menu and its hit-test have to agree about the magnification. See UiScale for why the
                     // interface is scaled at all.
                     _options.UiScale,
-                    _sounds,
+                    _audioOut.Sounds,
                     leaving =>
                     {
                         if (leaving == MenuManagerState.StartGame)
@@ -1373,8 +1357,6 @@ public sealed partial class GameHost : IDisposable
         // platform leaves the rate to the loop. See IFramePacer.
         state.MenuPacer = _platform.CreateFramePacer();
         state.LastPassRendered = false;
-
-
 
         // -vanillamenu reaches the retail menus, which carry their own in-game menu; everything else runs
         // the cinematic state.Shell. -mission still opens straight into a level — what it no longer does is leave
@@ -3731,6 +3713,6 @@ public sealed partial class GameHost : IDisposable
         // Before the device: the bed's taps are streams the device owns, and stopping them while it is
         // still alive is what gives the voices back rather than leaving them to the device's teardown.
         _rainAmbience?.Dispose();
-        _audio.Dispose();
+        _audioOut.Dispose();
     }
 }

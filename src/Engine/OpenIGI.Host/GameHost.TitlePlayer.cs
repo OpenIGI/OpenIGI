@@ -77,7 +77,7 @@ public sealed partial class GameHost
             new WorldBuildResult(scene, 0, 0, _ground, _spins),
             _title.Services,
             (AiDifficulty)Math.Clamp(_playerDifficulty, 0, 2),
-            _sounds is { } sounds && _soundBank is { } bank ? new TitleAudio(sounds, bank) : null,
+            _audioOut.Sounds is { } sounds && _audioOut.Bank is { } bank ? new TitleAudio(sounds, bank) : null,
             _loop.Natives));
         if (player is null)
         {

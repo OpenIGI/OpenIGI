@@ -392,6 +392,6 @@ public sealed partial class GameHost
         }
 
         bool on = _flashlight.Toggle();
-        _sounds?.PlayExternal(on ? FlashlightClick.OnSoundName : FlashlightClick.OffSoundName, gain: 0.8f, priority: 180);
+        _audioOut.Sounds?.PlayExternal(on ? FlashlightClick.OnSoundName : FlashlightClick.OffSoundName, gain: 0.8f, priority: 180);
     }
 }

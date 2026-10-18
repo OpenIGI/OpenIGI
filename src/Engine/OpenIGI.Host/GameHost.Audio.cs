@@ -31,21 +31,8 @@ public sealed partial class GameHost
     /// <summary>The menu system's own sound archive, which the original mounts apart from any mission.</summary>
     private const string MenuSoundArchive = "LOCAL:menusystem/sound/sounds.res";
 
-    /// <summary>Every sound the game can name. Rebuilt per mission, as the original rebuilds its table.</summary>
-    private SoundBank? _soundBank;
-
-    /// <summary>Plays sounds by name. Null until the device is open.</summary>
-    private SoundSystem? _sounds;
-
-    /// <summary>
-    /// What every name game code says resolves to. Built once the script namespace exists, and
-    /// reloaded per mission because a mission ships its own <c>sounds/sounds.qvm</c> on top of the
-    /// shared one.
-    /// </summary>
-    private SoundDefinitionRegistry? _soundDefinitions;
-
-    /// <summary>The score. Null until the device is open.</summary>
-    private MusicPlayer? _music;
+    // The device, the bank, the sounds by name, their definitions and the score.
+    private readonly AudioOutput _audioOut;
 
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
@@ -57,7 +44,7 @@ public sealed partial class GameHost
 
     private void SetCutsceneSound(CutsceneSoundEvent sound)
     {
-        if (_sounds is null || string.IsNullOrWhiteSpace(sound.Name))
+        if (_audioOut.Sounds is null || string.IsNullOrWhiteSpace(sound.Name))
         {
             return;
         }
@@ -65,18 +52,18 @@ public sealed partial class GameHost
         // Simple ConditionalSounds have no falling-edge event, but their voices still belong to the
         // cutscene while it is being skipped. Retire completed handles so this set only represents
         // one-shots that can still be stopped by the next cancellation.
-        _cutsceneOneShotVoices.RemoveWhere(voice => !_sounds.IsPlaying(voice));
+        _cutsceneOneShotVoices.RemoveWhere(voice => !_audioOut.Sounds.IsPlaying(voice));
 
         if (!sound.Simple
             && _cutsceneVoices.Remove(sound.Task, out AudioVoiceHandle old)
             && old.IsValidHandle)
         {
-            _sounds.Stop(old);
+            _audioOut.Sounds.Stop(old);
         }
 
         if (sound.Playing)
         {
-            AudioVoiceHandle voice = _sounds.PlayDefinition(
+            AudioVoiceHandle voice = _audioOut.Sounds.PlayDefinition(
                 sound.Name,
                 sound.Position,
                 priority: 320,
@@ -94,13 +81,13 @@ public sealed partial class GameHost
 
     private void StopCutsceneSounds()
     {
-        if (_sounds is not null)
+        if (_audioOut.Sounds is not null)
         {
             foreach (AudioVoiceHandle voice in _cutsceneVoices.Values)
             {
                 if (voice.IsValidHandle)
                 {
-                    _sounds.Stop(voice);
+                    _audioOut.Sounds.Stop(voice);
                 }
             }
 
@@ -108,7 +95,7 @@ public sealed partial class GameHost
             {
                 if (voice.IsValidHandle)
                 {
-                    _sounds.Stop(voice);
+                    _audioOut.Sounds.Stop(voice);
                 }
             }
         }
@@ -116,7 +103,6 @@ public sealed partial class GameHost
         _cutsceneVoices.Clear();
         _cutsceneOneShotVoices.Clear();
     }
-
 
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
@@ -154,7 +140,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void TickGrenadeCook()
     {
-        if (_sounds is null || _player is null || !_player.IsChargingThrow)
+        if (_audioOut.Sounds is null || _player is null || !_player.IsChargingThrow)
         {
             StopGrenadeCook();
             return;
@@ -162,7 +148,7 @@ public sealed partial class GameHost
 
         if (!_grenadeCookStarted)
         {
-            _grenadeCookVoice = _sounds.PlayDefinition("grenade_tick_1", priority: 200);
+            _grenadeCookVoice = _audioOut.Sounds.PlayDefinition("grenade_tick_1", priority: 200);
             _grenadeCookStarted = true;
         }
     }
@@ -171,7 +157,7 @@ public sealed partial class GameHost
     {
         if (_grenadeCookVoice.IsValidHandle)
         {
-            _sounds?.Stop(_grenadeCookVoice);
+            _audioOut.Sounds?.Stop(_grenadeCookVoice);
         }
 
         _grenadeCookVoice = AudioVoiceHandle.None;
@@ -180,14 +166,14 @@ public sealed partial class GameHost
 
     private void TickSoldierWeaponSound(int runtimeId, bool fired, WeaponType? weapon, Vector3d position)
     {
-        if (_sounds is null)
+        if (_audioOut.Sounds is null)
         {
             return;
         }
 
         if (!_soldierWeaponSounds.TryGetValue(runtimeId, out WeaponSoundPlayer? player))
         {
-            player = new WeaponSoundPlayer(_sounds);
+            player = new WeaponSoundPlayer(_audioOut.Sounds);
             _soldierWeaponSounds.Add(runtimeId, player);
         }
 
@@ -202,7 +188,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayPlayerAnimationSounds()
     {
-        if (_sounds is null || _animationTriggers is null || _player?.View is not { } view)
+        if (_audioOut.Sounds is null || _animationTriggers is null || _player?.View is not { } view)
         {
             return;
         }
@@ -212,7 +198,7 @@ public sealed partial class GameHost
             if (view.CrossedEvent(trigger.EventId))
             {
                 // The player's view rig is at the listener, so this is deliberately non-positional.
-                _sounds.PlayDefinition(trigger.Resource, priority: 180);
+                _audioOut.Sounds.PlayDefinition(trigger.Resource, priority: 180);
             }
         }
     }
@@ -227,7 +213,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayBinocularTransitionSound()
     {
-        if (_sounds is null || _player is not { } player)
+        if (_audioOut.Sounds is null || _player is not { } player)
         {
             return;
         }
@@ -238,12 +224,12 @@ public sealed partial class GameHost
             return;
         }
 
-        if (_binocularZoomVoice.IsValidHandle && _sounds.IsPlaying(_binocularZoomVoice))
+        if (_binocularZoomVoice.IsValidHandle && _audioOut.Sounds.IsPlaying(_binocularZoomVoice))
         {
             return;
         }
 
-        _binocularZoomVoice = _sounds.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
+        _binocularZoomVoice = _audioOut.Sounds.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
     }
 
     /// <summary>Stops the looping binocular cue when player ticking is suspended.</summary>
@@ -256,7 +242,7 @@ public sealed partial class GameHost
     {
         if (_binocularZoomVoice.IsValidHandle)
         {
-            _sounds?.Stop(_binocularZoomVoice);
+            _audioOut.Sounds?.Stop(_binocularZoomVoice);
             _binocularZoomVoice = AudioVoiceHandle.None;
         }
     }
@@ -274,7 +260,7 @@ public sealed partial class GameHost
             // A medipack is an injection action, not a gun shot. Some weapon records carry a
             // legacy firearm FireSound field (which produces the shotgun/pistol report); the
             // retail medipack cue is the standalone syringe sound and is always used here.
-            _sounds?.PlayDefinition("syringe", priority: 180);
+            _audioOut.Sounds?.PlayDefinition("syringe", priority: 180);
         }
     }
 
@@ -282,7 +268,7 @@ public sealed partial class GameHost
     private void PlayGunPickupSound(GunPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
-        _sounds?.PlayDefinition("weaponpickup_1", priority: 180);
+        _audioOut.Sounds?.PlayDefinition("weaponpickup_1", priority: 180);
     }
 
     /// <summary>Plays the fixed retail cue after an authored generic item reaches the player.</summary>
@@ -305,7 +291,7 @@ public sealed partial class GameHost
             weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
         }
 
-        _sounds?.PlayDefinition("pickup", priority: 180);
+        _audioOut.Sounds?.PlayDefinition("pickup", priority: 180);
     }
 
     /// <summary>The weather, heard. Null until the device is open; silent until a level rains.</summary>
@@ -314,64 +300,24 @@ public sealed partial class GameHost
     /// <summary>When the rain mix was last reported to the log, as a stopwatch timestamp.</summary>
     private long _rainDebugTimestamp;
 
-    /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
-    private long _audioTimestamp;
-
-    /// <summary>Opens the audio backend and binds the volume variables to it.</summary>
+    /// <summary>Opens the audio output, and binds the volume variables to it.</summary>
     /// <remarks>
-    /// <para>
     /// Called once, after the console has read <c>settings.cfg</c> and the command line's
     /// <c>+statements</c>, because the voice count and the output rate are fixed when the device opens.
-    /// The volumes are not — those are pushed on change, so dragging a slider is heard immediately.
-    /// </para>
-    /// <para>
-    /// A backend that cannot open is not an error. The factory returns a silent device rather than
-    /// throwing, so there is nothing here to handle: the game runs either way.
-    /// </para>
+    /// The volumes are not: those are pushed on change, so dragging a slider is heard immediately.
     /// </remarks>
     private void OpenAudioDevice()
     {
-        _audio.Dispose();
-
-        _audio = AudioCVars.Enabled.Value
-            ? _audioFactory.Open(AudioDeviceOptions.FromCVars(), _logger)
-            : new NullAudioDevice();
-
-        _soundBank = new SoundBank(_fileSystem, _logger);
-        _sounds?.Dispose();
-        _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
-
-        // The remaster's flashlight switch, which the game's banks have no sound for.
-        _sounds.RegisterExternal(FlashlightClick.OnSoundName, FlashlightClick.Format, FlashlightClick.OnPcm);
-        _sounds.RegisterExternal(FlashlightClick.OffSoundName, FlashlightClick.Format, FlashlightClick.OffPcm);
-
-        // And the lamps' starters, ignitors and ballasts, which the original's never needed: they never change.
-        foreach ((string name, byte[] pcm) in LampSounds.All)
-        {
-            _sounds.RegisterExternal(name, LampSounds.Format, pcm);
-        }
-
+        _audioOut.Open();
         _soldierWeaponSounds.Clear();
-        MountMenuSounds();
         LoadRainAmbience();
-
-        // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
-        // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
-        _weaponSounds = new WeaponSoundPlayer(_sounds);
-
-        _music = new MusicPlayer(_sounds, _logger)
-        {
-            FadeSeconds = AudioCVars.Spatial.Value ? 1.5f : 0f,
-            Volume = 1f,
-        };
-
-        ApplyCategoryGains();
+        _weaponSounds = new WeaponSoundPlayer(_audioOut.Sounds!);
 
         // Only when the front end is where we are going. Launching straight into a mission would
         // otherwise start the menu theme and replace it a second later.
         if (_options.StartMission <= 0)
         {
-            _music.Play(MusicPlayer.MenuMusic);
+            _audioOut.Music?.Play(MusicPlayer.MenuMusic);
         }
 
         foreach (ICVar variable in (ICVar[])
@@ -383,27 +329,15 @@ public sealed partial class GameHost
                      AudioCVars.AmbienceVolume,
                  ])
         {
-            WhenChanged(variable, ApplyCategoryGains);
+            WhenChanged(variable, _audioOut.ApplyCategoryGains);
         }
     }
 
-    /// <summary>Advances the device and the score, once a frame.</summary>
-    /// <remarks>
-    /// The fade is driven from the wall clock rather than from ticks. A fade is presentation, and tying
-    /// it to the simulation would make it lurch whenever the loop catches up on a backlog of ticks.
-    /// </remarks>
+    /// <summary>Places the ear, and advances the device, the score and the weather bed, once a frame.</summary>
     private void AdvanceAudio()
     {
         UpdateListener();
-        _audio.Update();
-
-        long now = Stopwatch.GetTimestamp();
-        float delta = _audioTimestamp == 0
-            ? 0f
-            : (float)Stopwatch.GetElapsedTime(_audioTimestamp, now).TotalSeconds;
-
-        _audioTimestamp = now;
-        _music?.Update(delta);
+        float delta = _audioOut.Advance();
         UpdateRainAmbience(delta);
     }
 
@@ -426,7 +360,7 @@ public sealed partial class GameHost
         if (TitlePlayer is { } title)
         {
             // A title's own player: its eyes as the last tick left them, in the camera's own row order.
-            _audio.Listener = AudioListenerState.FromViewRotation(title.EyePosition / TitleUnitsPerMetre, title.ViewOrientation);
+            _audioOut.Device.Listener = AudioListenerState.FromViewRotation(title.EyePosition / TitleUnitsPerMetre, title.ViewOrientation);
             return;
         }
 
@@ -444,24 +378,8 @@ public sealed partial class GameHost
         // sounds whose whole audible range is fifty. And through FromViewRotation, because what the
         // camera hands back is a world-to-view rotation with its axes in its rows -- the listener wants
         // the engine eye basis, which keeps them in its columns and in a different order.
-        _audio.Listener = AudioListenerState.FromViewRotation(
+        _audioOut.Device.Listener = AudioListenerState.FromViewRotation(
             player.SmoothedEyeMetres(alpha), player.SmoothedLookRotation(alpha));
-    }
-
-    /// <summary>Pushes the volume variables onto the device's buses.</summary>
-    /// <remarks>
-    /// The master gain is folded into each bus rather than applied separately, because the device model
-    /// has one gain per bus and no master of its own — the original has no master either, only the three
-    /// per-profile volumes.
-    /// </remarks>
-    private void ApplyCategoryGains()
-    {
-        float master = AudioCVars.MasterVolume.Value;
-
-        _audio.SetCategoryGain(SoundCategory.Effects, master * AudioCVars.EffectsVolume.Value);
-        _audio.SetCategoryGain(SoundCategory.Music, master * AudioCVars.MusicVolume.Value);
-        _audio.SetCategoryGain(SoundCategory.Speech, master * AudioCVars.SpeechVolume.Value);
-        _audio.SetCategoryGain(SoundCategory.Ambience, master * AudioCVars.AmbienceVolume.Value);
     }
 
     /// <summary>Empties the bank and re-mounts what does not belong to a mission.</summary>
@@ -490,16 +408,7 @@ public sealed partial class GameHost
         }
         _soldierWeaponSounds.Clear();
         _rainAmbience?.Stop();
-
-        // Before the buffers, and explicitly rather than through the device-wide stop UnloadBuffers
-        // does: the score has to be told, not merely silenced. It treats a repeat of the playing track
-        // as a no-op so that re-entering the mission state does not stutter the music, and a track it
-        // still believes is playing is a track the next Play(game_music) would decline to start.
-        _music?.Stop();
-
-        _sounds?.UnloadBuffers();
-        _soundBank?.Clear();
-        MountMenuSounds();
+        _audioOut.ResetForMission();
     }
 
     /// <summary>Mounts the sound directories a mission plays out of.</summary>
@@ -512,7 +421,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void MountMissionSounds(LoadedMission loaded)
     {
-        if (_soundBank is null)
+        if (_audioOut.Bank is null)
         {
             return;
         }
@@ -526,26 +435,9 @@ public sealed partial class GameHost
             _resourceFileSystem.SetAlias(VirtualFileSystem.MissionAlias, loaded.Descriptor.MissionAliasTarget);
         }
 
-        _soundBank.MountDirectory(MissionLoader.CommonSoundDirectory);
-        _soundBank.MountDirectory(MissionLoader.MissionSoundDirectory);
-
-        // And the definitions that give those banked sounds their names. Game code says `ai_death_1`,
-        // which is a definition; the bank holds `AI_DEATH_01`. Without this every game-side sound
-        // resolves to nothing at all.
-        //
-        // Registered here, per mission, and not once at start-up: a second GameLoop is built for every
-        // mission the menu previews and one of them takes the session over, so `_loop.Natives` at
-        // start-up is NOT the namespace a promoted mission's scripts resolve against. The weapon,
-        // ammo and material tables are registered per mission for exactly this reason; re-registering
-        // a name rebinds it rather than failing.
-        _soundDefinitions ??= new SoundDefinitionRegistry(_logger);
-        _soundDefinitions.Register(_loop.Natives);
-        _soundDefinitions.LoadForMission(_resources, _loop.Natives);
-
-        if (_sounds is not null)
-        {
-            _sounds.Definitions = _soundDefinitions;
-        }
+        // And the definitions that give those banked sounds their names, against the namespace this
+        // mission's scripts resolve in.
+        _audioOut.MountMission(_resources, _loop.Natives);
     }
 
     /// <summary>
@@ -564,7 +456,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits)
     {
-        if (_sounds is null)
+        if (_audioOut.Sounds is null)
         {
             return;
         }
@@ -573,7 +465,7 @@ public sealed partial class GameHost
         string name = HumanVariantSound.Choose(prefix, variants, _soundRandom, faithful);
 
         // Above an ordinary effect but below the score: a firefight must not drop the death that ends it.
-        _sounds.PlayDefinition(name, positionInUnits, priority: 300);
+        _audioOut.Sounds.PlayDefinition(name, positionInUnits, priority: 300);
     }
 
     /// <summary>Plays a human's grunt at being hit — the naming half of <c>0x4637C0</c>.</summary>
@@ -586,13 +478,13 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits)
     {
-        if (_sounds is null)
+        if (_audioOut.Sounds is null)
         {
             return;
         }
 
         string name = HumanVariantSound.ChooseHit(prefix, variants, _soundRandom);
-        _sounds.PlayDefinition(name, positionInUnits, priority: 250);
+        _audioOut.Sounds.PlayDefinition(name, positionInUnits, priority: 250);
     }
 
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
@@ -605,7 +497,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void TickAmbience(Vector3d listenerInUnits)
     {
-        if (_mission.Ambience is not { } ambience || _sounds is null)
+        if (_mission.Ambience is not { } ambience || _audioOut.Sounds is null)
         {
             return;
         }
@@ -618,7 +510,7 @@ public sealed partial class GameHost
             {
                 if (_ambientVoices.Remove(area, out AudioVoiceHandle running))
                 {
-                    _sounds.Stop(running);
+                    _audioOut.Sounds.Stop(running);
                 }
 
                 area.IsSounding = false;
@@ -627,7 +519,7 @@ public sealed partial class GameHost
 
             if (area.PendingSound.Length > 0)
             {
-                AudioVoiceHandle started = _sounds.PlayDefinition(
+                AudioVoiceHandle started = _audioOut.Sounds.PlayDefinition(
                     area.PendingSound, gain: (float)area.Fade, priority: 60);
 
                 if (started != AudioVoiceHandle.None)
@@ -638,9 +530,9 @@ public sealed partial class GameHost
             }
             else if (area.IsSounding && _ambientVoices.TryGetValue(area, out AudioVoiceHandle voice))
             {
-                if (_sounds.IsPlaying(voice))
+                if (_audioOut.Sounds.IsPlaying(voice))
                 {
-                    _sounds.SetVoiceParameters(voice, VoiceParameters.Default with { Gain = (float)area.Fade });
+                    _audioOut.Sounds.SetVoiceParameters(voice, VoiceParameters.Default with { Gain = (float)area.Fade });
                 }
                 else
                 {
@@ -661,7 +553,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayJumpSound()
     {
-        _sounds?.PlayDefinition(PlayerBody.JumpSoundName, priority: 200);
+        _audioOut.Sounds?.PlayDefinition(PlayerBody.JumpSoundName, priority: 200);
     }
 
     /// <summary>Plays a footstep where it landed.</summary>
@@ -672,7 +564,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayFootstep(in Footstep step)
     {
-        if (_sounds is null || step.Sound.Length == 0)
+        if (_audioOut.Sounds is null || step.Sound.Length == 0)
         {
             return;
         }
@@ -681,7 +573,7 @@ public sealed partial class GameHost
         // material voice and to the rain voice, so the two halves of a wet step stay together.
         float pitch = FootstepSounds.Pitch(_soundRandom);
 
-        _sounds.PlayDefinition(
+        _audioOut.Sounds.PlayDefinition(
             step.Sound,
             step.PositionInUnits,
             gain: step.VolumeScale,
@@ -693,7 +585,7 @@ public sealed partial class GameHost
         // which is what the rain ambience already reads through the RainEffect task.
         if (_rain?.IsWeatherEnabled == true)
         {
-            _sounds.PlayDefinition(
+            _audioOut.Sounds.PlayDefinition(
                 FootstepSounds.RainSoundName(step.CycleSlot),
                 step.PositionInUnits,
                 gain: step.VolumeScale,
@@ -711,12 +603,12 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing)
     {
-        if (_sounds is null || landing.Sound.Length == 0)
+        if (_audioOut.Sounds is null || landing.Sound.Length == 0)
         {
             return;
         }
 
-        _sounds.PlayDefinition(landing.Sound, landing.PositionInUnits, priority: 60);
+        _audioOut.Sounds.PlayDefinition(landing.Sound, landing.PositionInUnits, priority: 60);
     }
 
     /// <summary>Loads the rain recording the weather bed is built from.</summary>
@@ -731,12 +623,12 @@ public sealed partial class GameHost
         _rainAmbience?.Dispose();
         _rainAmbience = null;
 
-        if (_sounds is null)
+        if (_audioOut.Sounds is null)
         {
             return;
         }
 
-        RainAmbience rain = new(_sounds, _logger);
+        RainAmbience rain = new(_audioOut.Sounds, _logger);
         if (rain.TryLoad(Path.Combine(AppContext.BaseDirectory, "Assets", "sounds", "rain-loop.wav")))
         {
             _rainAmbience = rain;
@@ -773,7 +665,7 @@ public sealed partial class GameHost
             : 0f;
 
         rain.Update(
-            _audio.Listener.Position,
+            _audioOut.Device.Listener.Position,
             _shelterField,
             _player?.GrenadeWalls,
             WorldScene.UnitsPerMetre,
@@ -831,7 +723,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayWeaponDropSounds()
     {
-        if (_sounds is null || _mission.GunPickups is not { } pickups)
+        if (_audioOut.Sounds is null || _mission.GunPickups is not { } pickups)
         {
             return;
         }
@@ -839,14 +731,14 @@ public sealed partial class GameHost
         foreach (GunPickupImpact impact in pickups.Impacts)
         {
             string sound = _soundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
-            _sounds.PlayDefinition(sound, impact.Position, priority: 50);
+            _audioOut.Sounds.PlayDefinition(sound, impact.Position, priority: 50);
         }
     }
 
     /// <summary>Plays one player or AI bullet contact through the retail sound definitions.</summary>
     private void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial)
     {
-        if (_sounds is null
+        if (_audioOut.Sounds is null
             || _worldMaterials is null
             || !GameplayCVars.BallisticsImpactSounds.Value
             || _loop.Clock.TickCount < _impactSoundQuietUntil)
@@ -870,7 +762,7 @@ public sealed partial class GameHost
 
         if (sound.Length > 0)
         {
-            _sounds.PlayDefinition(
+            _audioOut.Sounds.PlayDefinition(
                 sound,
                 position,
                 pitch: FootstepSounds.Pitch(_soundRandom),
@@ -893,13 +785,13 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayRicochetSound(Vector3d position)
     {
-        if (_sounds is null || _loop.Clock.TickCount < _ricochetSoundQuietUntil)
+        if (_audioOut.Sounds is null || _loop.Clock.TickCount < _ricochetSoundQuietUntil)
         {
             return;
         }
 
         _ricochetSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
-        _sounds.PlayDefinition(
+        _audioOut.Sounds.PlayDefinition(
             BulletImpactSounds.PickRicochet(_soundRandom),
             position,
             pitch: FootstepSounds.Pitch(_soundRandom),
@@ -975,7 +867,7 @@ public sealed partial class GameHost
         // This is a one-shot rising-edge cue, not the mine's placement/arming sound.
         foreach (Vector3d origin in _player.Grenades.MineTriggers)
         {
-            _sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
+            _audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
         }
 
         _player.Grenades.ClearMineTriggerEvents();
@@ -1039,7 +931,7 @@ public sealed partial class GameHost
                 // (0x0047E820) -- no fireball and no explo_02_m. The world residue is a smoke task
                 // (smoke2.spr), while the player handler at 0x00413090 writes the distance-based
                 // whiteout fields from the player's eye. That handler does not perform a wall trace.
-                _sounds?.PlayDefinition("explo_flash", blast.Position, priority: 90);
+                _audioOut.Sounds?.PlayDefinition("explo_flash", blast.Position, priority: 90);
                 _effects.SpawnFlashbangSmoke(blast.Position);
                 float eyeDistance = (float)(_player.EyeUnits - blast.Position).Length;
                 (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
@@ -1054,7 +946,7 @@ public sealed partial class GameHost
             }
 
             // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
-            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+            _audioOut.Sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
             _effects.SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
 
             // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
@@ -1091,7 +983,7 @@ public sealed partial class GameHost
 
         // The missile's own impact (0x428390, at 0x42854D) sets off an Explosion0 with explo_03_l -- the launcher's
         // rocket and a vehicle's alike, since both are the same Missile task.
-        _sounds?.PlayDefinition("explo_03_l", blast.Position, priority: 90);
+        _audioOut.Sounds?.PlayDefinition("explo_03_l", blast.Position, priority: 90);
         _effects.SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
         _effects.Scorch(blast.Position, blast.Normal, WorldEffects.MissileScorchHalfWidthInUnits);
 
@@ -1241,7 +1133,7 @@ public sealed partial class GameHost
             // GunM203's native projectile callback (0x476340) sends the proxy explosion tag, not the
             // hand-grenade fireball. The distinct sound/effect is audible proof that the M203 task
             // reached its own detonation path.
-            _sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
+            _audioOut.Sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
             _effects.SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
             _effects.Scorch(blast.Position, blast.Normal, WorldEffects.M203ScorchHalfWidthInUnits);
             Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Gun);
@@ -1280,7 +1172,7 @@ public sealed partial class GameHost
     private void PresentGenericTbaExplosion(Vector3d position, GenericTbaExplosionParameters parameters)
     {
         string sound = parameters.ExplosionSound.Length > 0 ? parameters.ExplosionSound : "explo_02_m";
-        _sounds?.PlayDefinition(sound, position, priority: 90);
+        _audioOut.Sounds?.PlayDefinition(sound, position, priority: 90);
         // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
         // at presentation time as the other world blasts, including after an authored delay.
         _soldiers?.Simulation.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
@@ -1363,12 +1255,12 @@ public sealed partial class GameHost
         // Silenced on the spot, not on the next tick's sweep -- a shot speaker cuts mid-wail.
         if (_sirenVoices.Remove(destroyed, out AudioVoiceHandle siren))
         {
-            _sounds?.Stop(siren);
+            _audioOut.Sounds?.Stop(siren);
         }
 
         if (destroyed.DestructionSound.Length > 0)
         {
-            _sounds?.PlayDefinition(destroyed.DestructionSound, destroyed.PositionUnits, priority: 60);
+            _audioOut.Sounds?.PlayDefinition(destroyed.DestructionSound, destroyed.PositionUnits, priority: 60);
         }
 
         if (_mission.SecurityCameras?.Destroy(destroyed.Task) == true
@@ -1377,11 +1269,11 @@ public sealed partial class GameHost
         {
             if (_cameraBeepVoices.Remove(camera, out var beep))
             {
-                _sounds?.Stop(beep.Voice);
+                _audioOut.Sounds?.Stop(beep.Voice);
             }
             if (_cameraMoveVoices.Remove(camera, out AudioVoiceHandle motor))
             {
-                _sounds?.Stop(motor);
+                _audioOut.Sounds?.Stop(motor);
             }
         }
 
@@ -1441,7 +1333,7 @@ public sealed partial class GameHost
             // magicobj.qvm registers three retail glass-crush variants. Retail chooses one randomly
             // at shatter time and creates GlassShatter shards from the pane collision faces.
             int variant = (int)_soundRandom.NextBounded(3u) + 1;
-            _sounds?.PlayDefinition($"glass_crush_{variant}", item.PositionUnits, priority: 55);
+            _audioOut.Sounds?.PlayDefinition($"glass_crush_{variant}", item.PositionUnits, priority: 55);
             if (item.Placement is { } placement)
             {
                 _effects.Particles?.SpawnGlassShatter(placement, impactUnits ?? item.PositionUnits);
@@ -1508,7 +1400,7 @@ public sealed partial class GameHost
     private void PresentVehicleBlast(VehicleBlast blast)
     {
         Vector3d position = blast.PositionUnits;
-        _sounds?.PlayDefinition(VehicleBlast.Sound, position, priority: 90);
+        _audioOut.Sounds?.PlayDefinition(VehicleBlast.Sound, position, priority: 90);
         _effects.Particles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
@@ -1530,7 +1422,7 @@ public sealed partial class GameHost
 
         if (item.ExplosionSound.Length > 0)
         {
-            _sounds?.PlayDefinition(item.ExplosionSound, item.PositionUnits, priority: 90);
+            _audioOut.Sounds?.PlayDefinition(item.ExplosionSound, item.PositionUnits, priority: 90);
         }
 
         // ExplodeMagicObj (0x43C0B0) and ExplodeObject (0x481A60) hand Explosion0 their authored full
@@ -1571,7 +1463,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void TickAlarmSpeakers()
     {
-        if (_sounds is null || _mission.AlarmSpeakers is null)
+        if (_audioOut.Sounds is null || _mission.AlarmSpeakers is null)
         {
             return;
         }
@@ -1580,7 +1472,7 @@ public sealed partial class GameHost
         {
             bool on = _mission.AlarmSpeakers.IsOn(speaker) && speaker.SirenSound.Length > 0;
             bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
-            bool playing = sounding && _sounds.IsPlaying(voice);
+            bool playing = sounding && _audioOut.Sounds.IsPlaying(voice);
 
             if (on && (!sounding || !playing))
             {
@@ -1591,7 +1483,7 @@ public sealed partial class GameHost
                         $"voice {voice.Value} for {speaker.Task.Name} ended while its condition remained true; restarting.");
                 }
 
-                AudioVoiceHandle started = _sounds.PlayDefinition(
+                AudioVoiceHandle started = _audioOut.Sounds.PlayDefinition(
                     speaker.SirenSound,
                     speaker.PositionUnits,
                     priority: 70);
@@ -1602,11 +1494,11 @@ public sealed partial class GameHost
                     _logger.Information(
                         "Audio.Alarm",
                         $"start {speaker.Task.Name}: sound='{speaker.SirenSound}', voice={started.Value}, "
-                            + $"playing={_sounds.IsPlaying(started)}, position={speaker.PositionUnits}, "
+                            + $"playing={_audioOut.Sounds.IsPlaying(started)}, position={speaker.PositionUnits}, "
                             + $"condition='{speaker.AlarmExpression}'.");
                 }
 
-                if ((!started.IsValidHandle || !_sounds.IsPlaying(started))
+                if ((!started.IsValidHandle || !_audioOut.Sounds.IsPlaying(started))
                     && _reportedSirenFailures.Add(speaker))
                 {
                     _logger.Warning(
@@ -1616,7 +1508,7 @@ public sealed partial class GameHost
             }
             else if (!on && sounding)
             {
-                _sounds.Stop(voice);
+                _audioOut.Sounds.Stop(voice);
                 _sirenVoices.Remove(speaker);
                 _reportedSirenFailures.Remove(speaker);
                 _logger.Information(
@@ -1629,7 +1521,7 @@ public sealed partial class GameHost
     /// <summary>Keeps the detection and motor loops owned by each <c>SCameraLens</c> in sync.</summary>
     private void TickSecurityCameraSounds()
     {
-        if (_mission.SecurityCameras is not { } cameras || _sounds is null)
+        if (_mission.SecurityCameras is not { } cameras || _audioOut.Sounds is null)
         {
             return;
         }
@@ -1647,28 +1539,28 @@ public sealed partial class GameHost
             if (_cameraBeepVoices.TryGetValue(camera, out var sounding)
                 && (beep.Length == 0
                     || !string.Equals(sounding.Sound, beep, StringComparison.Ordinal)
-                    || !_sounds.IsPlaying(sounding.Voice)))
+                    || !_audioOut.Sounds.IsPlaying(sounding.Voice)))
             {
-                _sounds.Stop(sounding.Voice);
+                _audioOut.Sounds.Stop(sounding.Voice);
                 _cameraBeepVoices.Remove(camera);
             }
 
             if (beep.Length > 0 && !_cameraBeepVoices.ContainsKey(camera))
             {
-                AudioVoiceHandle voice = _sounds.PlayDefinition(beep, camera.HeadPositionUnits, priority: 72);
+                AudioVoiceHandle voice = _audioOut.Sounds.PlayDefinition(beep, camera.HeadPositionUnits, priority: 72);
                 _cameraBeepVoices[camera] = (beep, voice);
             }
 
             if (_cameraMoveVoices.TryGetValue(camera, out AudioVoiceHandle moving)
-                && (!camera.IsMoving || !_sounds.IsPlaying(moving)))
+                && (!camera.IsMoving || !_audioOut.Sounds.IsPlaying(moving)))
             {
-                _sounds.Stop(moving);
+                _audioOut.Sounds.Stop(moving);
                 _cameraMoveVoices.Remove(camera);
             }
 
             if (camera.IsMoving && !_cameraMoveVoices.ContainsKey(camera))
             {
-                _cameraMoveVoices[camera] = _sounds.PlayDefinition(
+                _cameraMoveVoices[camera] = _audioOut.Sounds.PlayDefinition(
                     "camera_move",
                     camera.HeadPositionUnits,
                     priority: 55);
@@ -1681,7 +1573,7 @@ public sealed partial class GameHost
     /// <param name="what">Which of its four moments this is.</param>
     private void PlayDoorSound(PlacedDoor door, DoorSoundEvent what)
     {
-        if (_sounds is null)
+        if (_audioOut.Sounds is null)
         {
             return;
         }
@@ -1690,7 +1582,7 @@ public sealed partial class GameHost
         {
             if (_doorVoices.Remove(door, out AudioVoiceHandle running))
             {
-                _sounds.Stop(running);
+                _audioOut.Sounds.Stop(running);
             }
 
             return;
@@ -1708,7 +1600,7 @@ public sealed partial class GameHost
             return;
         }
 
-        AudioVoiceHandle voice = _sounds.PlayDefinition(name, door.Position, priority: 120);
+        AudioVoiceHandle voice = _audioOut.Sounds.PlayDefinition(name, door.Position, priority: 120);
 
         if (what == DoorSoundEvent.StartedMoving && voice != AudioVoiceHandle.None)
         {
@@ -1724,7 +1616,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void PlayElevatorSound(PlacedElevator elevator, ElevatorSoundEvent what)
     {
-        if (_sounds is null)
+        if (_audioOut.Sounds is null)
         {
             return;
         }
@@ -1735,7 +1627,7 @@ public sealed partial class GameHost
 
             if (elevator.StopSound.Length > 0)
             {
-                _sounds.PlayDefinition(elevator.StopSound, elevator.State.Position, priority: 120);
+                _audioOut.Sounds.PlayDefinition(elevator.StopSound, elevator.State.Position, priority: 120);
             }
 
             return;
@@ -1745,7 +1637,7 @@ public sealed partial class GameHost
         {
             if (elevator.StartSound.Length > 0)
             {
-                _sounds.PlayDefinition(elevator.StartSound, elevator.State.Position, priority: 120);
+                _audioOut.Sounds.PlayDefinition(elevator.StartSound, elevator.State.Position, priority: 120);
             }
 
             return;
@@ -1756,7 +1648,7 @@ public sealed partial class GameHost
             // A repeat start can happen after a scripted retarget. Retire the old voice first so a
             // replaced dictionary entry can never leave an untracked, permanently looping sample.
             StopElevatorTravelVoice(elevator);
-            AudioVoiceHandle voice = _sounds.PlayDefinition(
+            AudioVoiceHandle voice = _audioOut.Sounds.PlayDefinition(
                 elevator.MoveSound,
                 elevator.State.Position,
                 priority: 120);
@@ -1770,16 +1662,16 @@ public sealed partial class GameHost
     /// <summary>Stops and forgets the one travel voice currently owned by an elevator.</summary>
     private void StopElevatorTravelVoice(PlacedElevator elevator)
     {
-        if (_sounds is not null && _elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
+        if (_audioOut.Sounds is not null && _elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
         {
-            _sounds.Stop(running);
+            _audioOut.Sounds.Stop(running);
         }
     }
 
     /// <summary>Keeps each retail elevator travel loop attached to the moving car.</summary>
     private void UpdateElevatorSoundPositions()
     {
-        if (_sounds is null || _mission.Elevators is null)
+        if (_audioOut.Sounds is null || _mission.Elevators is null)
         {
             return;
         }
@@ -1795,18 +1687,18 @@ public sealed partial class GameHost
             {
                 // Retail owns this handle from request acceptance through arrival, including the
                 // door-close gate before physical travel (IGI.exe 0x43D58E-0x43D5C8).
-                _sounds.Stop(voice);
+                _audioOut.Sounds.Stop(voice);
                 _elevatorVoices.Remove(elevator);
                 continue;
             }
 
-            if (!_sounds.IsPlaying(voice))
+            if (!_audioOut.Sounds.IsPlaying(voice))
             {
                 _elevatorVoices.Remove(elevator);
                 continue;
             }
 
-            _sounds.SetDefinitionVoicePosition(
+            _audioOut.Sounds.SetDefinitionVoicePosition(
                 elevator.MoveSound,
                 voice,
                 elevator.State.Position,
@@ -1841,37 +1733,18 @@ public sealed partial class GameHost
     {
         ResetSoundsForMission();
 
-        _soundDefinitions = null;
-        if (_sounds is not null)
-        {
-            _sounds.Definitions = null;
-        }
+        _audioOut.ForgetDefinitions();
 
         // A switch always lands in the front end: the played mission was released and the incoming
         // title has not been asked for one, so the menu theme is what should be sounding.
-        _music?.Play(MusicPlayer.MenuMusic);
-    }
-
-    /// <summary>Mounts the menu system's sound archive, which belongs to no mission.</summary>
-    private void MountMenuSounds()
-    {
-        if (_soundBank is null)
-        {
-            return;
-        }
-
-        int mounted = _soundBank.MountArchive(MenuSoundArchive);
-        if (mounted == 0)
-        {
-            _logger.Warning("Audio", $"No menu sounds in '{MenuSoundArchive}'.");
-        }
+        _audioOut.Music?.Play(MusicPlayer.MenuMusic);
     }
 
     /// <summary>The cinematic shell's own feedback, played through the title's sound bank as the retail menus' is.</summary>
     /// <param name="host">The host, whose sound system is the one open at the time.</param>
     private sealed class ShellSounds(GameHost host) : IUiSoundSink
     {
-        public void Play(string name) => host._sounds?.Play(
+        public void Play(string name) => host._audioOut.Sounds?.Play(
             name,
             VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
     }
@@ -1891,7 +1764,7 @@ public sealed partial class GameHost
 
         foreach (Vector3d at in _player.Grenades.Bounces)
         {
-            _sounds?.PlayDefinition("grenade_bnc_1", at, priority: 120);
+            _audioOut.Sounds?.PlayDefinition("grenade_bnc_1", at, priority: 120);
         }
     }
 }

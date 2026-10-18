@@ -317,9 +317,9 @@ public sealed partial class GameHost
         _missions.Register(_loop.Natives);
         _missionState.Register(_loop.Natives);
 
-        if (_music is not null)
+        if (_audioOut.Music is not null)
         {
-            new GameMusicNatives(_music).Register(_loop.Natives);
+            new GameMusicNatives(_audioOut.Music).Register(_loop.Natives);
         }
 
         _title = TitleSession.Start(
