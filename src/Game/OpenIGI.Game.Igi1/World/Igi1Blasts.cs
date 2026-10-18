@@ -618,4 +618,50 @@ public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, IIgi1B
         public GenericTbaExplosionParameters Parameters { get; } = parameters;
         public int RemainingTicks { get; set; } = remainingTicks;
     }
+
+    /// <summary>Steps the destructibles a tick: their fuses, the blasts that went off, the cars that left the world, and the generators they settle.</summary>
+    public void TickDestructibles()
+    {
+        if (mission.Destructibles is { } destructibles)
+        {
+            destructibles.Tick();
+            foreach (DestructibleObject ready in destructibles.ConsumeReadyExplosions())
+            {
+                HandleDestructibleImpact(ready);
+            }
+            foreach (VehicleBlast blast in destructibles.ConsumeVehicleBlasts())
+            {
+                PresentVehicleBlast(blast);
+            }
+            foreach (DestructibleObject car in destructibles.ConsumeExplodedVehicles())
+            {
+                ForgetVehicleMarks(destructibles, car);
+            }
+
+            // A generator that exploded this tick loses its power this tick, as Generator::Run
+            // (0x43B500) sees its own explosion before it reads the On expression.
+            mission.Interactions?.SettleGenerators();
+        }
+    }
+
+    /// <summary>Hands each of the player's rounds this tick to the exact object it struck.</summary>
+    public void ApplyPlayerRounds()
+    {
+        if (mission.Player is not { } player)
+        {
+            return;
+        }
+
+        foreach (GunImpact playerImpact in player.Impacts)
+        {
+            if (playerImpact.HitSomething)
+            {
+                ApplyRoundContact(
+                    playerImpact.Position,
+                    playerImpact.Owner,
+                    playerImpact.Placement,
+                    player.HeldWeaponType?.DamageFactor ?? 1f);
+            }
+        }
+    }
 }

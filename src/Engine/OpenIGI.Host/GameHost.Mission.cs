@@ -2256,43 +2256,14 @@ public sealed partial class GameHost
 
             // The alarm speakers, following their own level expressions -- the siren the
             // room hears when a guard reaches a switch.
-            if (_mission.Destructibles is { } destructibles)
-            {
-                destructibles.Tick();
-                foreach (DestructibleObject ready in destructibles.ConsumeReadyExplosions())
-                {
-                    _igi1Blasts.HandleDestructibleImpact(ready);
-                }
-                foreach (VehicleBlast blast in destructibles.ConsumeVehicleBlasts())
-                {
-                    _igi1Blasts.PresentVehicleBlast(blast);
-                }
-                foreach (DestructibleObject car in destructibles.ConsumeExplodedVehicles())
-                {
-                    _igi1Blasts.ForgetVehicleMarks(destructibles, car);
-                }
-
-                // A generator that exploded this tick loses its power this tick, as Generator::Run
-                // (0x43B500) sees its own explosion before it reads the On expression.
-                _mission.Interactions?.SettleGenerators();
-            }
+            _igi1Blasts.TickDestructibles();
             TickAlarmSpeakers();
             TickSecurityCameraSounds();
 
             // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
             // impact list carries both the instant rays and the ballistic arrivals, so either
             // mode can shoot the siren off the wall.
-            foreach (GunImpact playerImpact in _mission.Player.Impacts)
-            {
-                if (playerImpact.HitSomething)
-                {
-                    ApplyRoundContact(
-                        playerImpact.Position,
-                        playerImpact.Owner,
-                        playerImpact.Placement,
-                        _mission.Player.HeldWeaponType?.DamageFactor ?? 1f);
-                }
-            }
+            _igi1Blasts.ApplyPlayerRounds();
 
             // The level's ambience, which is keyed off where the ear is rather than where the
             // body stands: an area is a box you listen from the inside of.
