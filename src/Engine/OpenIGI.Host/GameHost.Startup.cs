@@ -340,7 +340,7 @@ public sealed partial class GameHost
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
         // meant changing the table from the console while browsing the campaign re-graded to mission 0.
         WhenChanged(RenderCVars.ColourLookupTable, () =>
-            ApplyColourLookup(_activeMission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission));
+            ApplyColourLookup(_session.Mission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission));
     }
 
     /// <summary>Starts the session with no level, no player and no world.</summary>
@@ -656,7 +656,7 @@ public sealed partial class GameHost
                 },
                 restartMission: () =>
                 {
-                    if (_activeMission is { } mission && !_loadSequence.IsActive)
+                    if (_session.Mission is { } mission && !_loadSequence.IsActive)
                     {
                         // The frozen mission under the pause menu is the picture the sequence holds: the
                         // menu leaves, the place falls out of focus, and it comes back reset.

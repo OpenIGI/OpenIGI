@@ -11,8 +11,8 @@ public sealed partial class GameHost
     private readonly MenuFlow _menuFlow;
 
     /// <summary>Gets whether the level on screen is the menu's backdrop, drawn lite.</summary>
-    private bool BackdropLite => _menuBackdrop.IsLite(missionActive: _activeMission is not null);
+    private bool BackdropLite => _menuBackdrop.IsLite(missionActive: _session.Mission is not null);
 
     /// <summary>Applies or clears the backdrop's lite profile to match <see cref="BackdropLite"/>. Cheap; call freely.</summary>
-    private void UpdateBackdropProfile() => _menuBackdrop.UpdateProfile(missionActive: _activeMission is not null);
+    private void UpdateBackdropProfile() => _menuBackdrop.UpdateProfile(missionActive: _session.Mission is not null);
 }

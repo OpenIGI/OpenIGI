@@ -18,6 +18,7 @@ using OpenIGI.Game;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
+using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
@@ -36,6 +37,9 @@ namespace OpenIGI.Host;
 
 public sealed partial class GameHost
 {
+    // The mission being played: which, its level tree, and how far it has got to being decided.
+    private readonly MissionSession _session;
+
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];
     private void StartMission(int id)
@@ -58,12 +62,10 @@ public sealed partial class GameHost
 
         _logger.Information("Mission", $"Starting {chosen}.");
         LevelTask levelRoot = (LevelTask)_loop.Tasks.New(_loop.Tasks.Root, _loop.Types.Get(EngineTaskTypes.Level));
-        _activeLevelRoot = levelRoot;
-        _activeMission = chosen;
+        _session.Begin(chosen, levelRoot);
 
         // The menu's lite profile ends here, before anything below reads the variables it overrides.
         UpdateBackdropProfile();
-        _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();
 
@@ -379,7 +381,7 @@ public sealed partial class GameHost
             || !_playerMode
             || _player is not { } player
             || _playerDead
-            || _missionFailedMenu)
+            || _session.FailedMenu)
         {
             return;
         }
@@ -2207,13 +2209,11 @@ public sealed partial class GameHost
         _loop = preview.Loop;
         _resourceFileSystem = preview.FileSystem;
         _resources = preview.Resources;
-        _activeLevelRoot = preview.LevelRoot;
-        _activeMission = chosen;
+        _session.Begin(chosen, preview.LevelRoot);
 
         // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the
         // real-time structures it skipped are built from here, under the warm-up's hold.
         UpdateBackdropProfile();
-        _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();
 
@@ -2390,9 +2390,7 @@ public sealed partial class GameHost
 
         _computerOpen = false;
         _computerFlight.Reset();
-        _missionFailureTicks = 0;
-        _missionFailedMenu = false;
-        _missionResultHandled = false;
+        _session.ResetOutcome();
         _mapComputer?.Dispose();
         _mapComputer = null;
         _mapComputerDevice?.Dispose();
@@ -2411,7 +2409,7 @@ public sealed partial class GameHost
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         _cutsceneSounds.StopAll();
-        _activeMission = null;
+        _session.Mission = null;
 
         // The level's own sun goes with the level. It is read on load only when it is not already set --
         // which is how a promoted backdrop hands its own in -- so a sun left standing here was taken for
@@ -2504,7 +2502,7 @@ public sealed partial class GameHost
         _vehicleSounds?.StopAll();
         _vehicleSounds = null;
 
-        if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)
+        if (_session.LevelRoot is not null && !_session.LevelRoot.IsDeleted)
         {
             // Deleting a task does not unexport its names (TaskTree.Delete), and a restart reuses this loop's
             // variables. Left bound, AreaActivate_175.nActive, Car_361.isExploded and the rest answered for the
@@ -2512,10 +2510,10 @@ public sealed partial class GameHost
             // already been decided. Mission 7's real T80 (ConditionalContainer_700, which latches itself through
             // this.isRun) came up live at tick 0 whenever the player restarted from inside its trigger area.
             // Unbound, the new level starts from the same zeros a first load does.
-            _loop.Variables.UnexportTree(_activeLevelRoot);
-            _loop.Tasks.Delete(_activeLevelRoot);
+            _loop.Variables.UnexportTree(_session.LevelRoot);
+            _loop.Tasks.Delete(_session.LevelRoot);
         }
-        _activeLevelRoot = null;
+        _session.LevelRoot = null;
 
         // Back to the front end, so back to the menu theme. Every voice the level started goes with it:
         // an ambience bed outliving its level would follow the player into the menus.
@@ -3882,7 +3880,7 @@ public sealed partial class GameHost
             // authored full-body clip or a camera of its own that must own the whole character.
             if (_playerMode
                     && !_playerDead
-                    && !_missionFailedMenu
+                    && !_session.FailedMenu
                     && !_computerOpen
                     && !_entry.IsCameraActive
                     && _mission.Cutscenes?.IsPlaying != true
@@ -3949,11 +3947,10 @@ public sealed partial class GameHost
         _mission.Objectives?.TickAfterLevelState();
         if (_mission.Objectives is { IsFailed: true } || TitlePlayer is { Outcome: TitleMissionOutcome.Failed })
         {
-            // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
-            // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
-            if (!_missionFailedMenu && ++_missionFailureTicks > 151 && state.Shell is not null)
+            // The retail grace period first; see MissionSession.CountFailure.
+            if (_session.CountFailure() && state.Shell is not null)
             {
-                _missionFailedMenu = true;
+                _session.FailedMenu = true;
 
                 // Said out loud because the level decided this, not the player: a LevelFlow
                 // 'Failed' expression is authored out of message and area state, and when it
@@ -3984,13 +3981,13 @@ public sealed partial class GameHost
         }
         else
         {
-            _missionFailureTicks = 0;
+            _session.ClearFailure();
         }
-        if (!_missionResultHandled
+        if (!_session.ResultHandled
             && (_mission.Objectives is { IsComplete: true } || TitlePlayer is { Outcome: TitleMissionOutcome.Completed })
-            && _activeMission is { } completedMission)
+            && _session.Mission is { } completedMission)
         {
-            _missionResultHandled = true;
+            _session.ResultHandled = true;
             // A successor the catalogue does not offer ends the campaign the way the last mission
             // does -- in a build cut to the opening missions, the last one offered is its finale.
             int nextMissionId = completedMission.NextMissionId;

@@ -537,7 +537,7 @@ public sealed partial class GameHost
     /// </remarks>
     private bool ReloadTerrainTiles()
     {
-        if (_terrain is null || _activeMission is not { } mission)
+        if (_terrain is null || _session.Mission is not { } mission)
         {
             return false;
         }

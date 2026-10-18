@@ -57,7 +57,7 @@ public sealed partial class GameHost
                 }
 
                 _switch.Request(new RendererSwitch(
-                    _activeMission?.Id ?? 0,
+                    _session.Mission?.Id ?? 0,
                     _conditions,
                     SwitchedHour(),
                     CurrentPose()));
@@ -88,14 +88,14 @@ public sealed partial class GameHost
     /// sun, and every session after the first switch looked different from the first.
     /// </remarks>
     private float SwitchedHour() =>
-        _activeMission is null ? -1f
+        _session.Mission is null ? -1f
         : RenderCVars.DayNightCycle.Value ? _dayNight.TimeHours
         : RenderCVars.TimeOfDay.Value;
 
     /// <summary>Where the view is now, or null where there is no mission to be anywhere in.</summary>
     private RendererSwitchPose? CurrentPose()
     {
-        if (_activeMission is null)
+        if (_session.Mission is null)
         {
             return null;
         }

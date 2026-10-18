@@ -240,7 +240,7 @@ public sealed partial class GameHost
     {
         PlayerProfile? profile = _configuration.Active;
         bool available = smooth && _playerMode && !_computerOpen && !_entry.IsCameraActive
-            && !_missionFailedMenu;
+            && !_session.FailedMenu;
         if (!available && _titleFeatures?.Look is { } stopped) { stopped.ResetLook(); }
         _titlePresentation.SetLookPreview(available && _titleFeatures?.Look is { CanPreviewLook: true } look
             ? look.PreviewLook(_titleMouseX, _titleMouseY, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,

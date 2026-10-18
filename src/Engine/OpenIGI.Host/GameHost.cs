@@ -481,8 +481,6 @@ public sealed partial class GameHost : IDisposable
     private long _benchmarkAllocStart;
     private (int, int, int) _benchmarkGcStart;
     private IComputerHighlightCatalogue? _computerHighlights;
-    private MissionDescriptor? _activeMission;
-    private LevelTask? _activeLevelRoot;
     private bool _computerOpen;
     private bool _computerCamFired;
     private readonly HashSet<int> _deferredCommandsFired = [];
@@ -506,9 +504,6 @@ public sealed partial class GameHost : IDisposable
     private ITacticalComputerPresenter? TacticalComputer =>
         RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
-    private bool _missionResultHandled;
-    private int _missionFailureTicks;
-    private bool _missionFailedMenu;
     private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
 
@@ -647,6 +642,7 @@ public sealed partial class GameHost : IDisposable
         _memory = new Services.MemoryDiagnostics(device, logger);
         _menuBackdrop = new MenuBackdrop(device, logger);
         _menuFlow = new MenuFlow(device);
+        _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
         _effects = new WorldEffects(device, logger, _soundRandom, new WorldEffectsHost(this));
@@ -973,7 +969,7 @@ public sealed partial class GameHost : IDisposable
             // its patrols and its scripted clocks all start from the frame the player first SEES, not
             // from the frame the load finished -- a cut-scene that played out behind the loading screen
             // is one the player never gets to watch.
-            if (_activeLevelRoot is { } pausableLevel)
+            if (_session.LevelRoot is { } pausableLevel)
             {
                 pausableLevel.IsPaused = _menuFlow.PauseMenu || PresentationHoldsLevel;
             }
@@ -1005,7 +1001,7 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel))
             {
                 continue;
             }

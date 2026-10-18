@@ -358,7 +358,7 @@ public sealed partial class GameHost
         Camera3D flashlightBody = eye;
         bool flashlightShown = _playerMode
             && !_playerDead
-            && !_missionFailedMenu
+            && !_session.FailedMenu
             && !_computerOpen
             && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
@@ -382,7 +382,7 @@ public sealed partial class GameHost
         // the menu's showcase orbit is somewhere else entirely and there is nothing to preserve.
         bool thirdPersonEligible = _playerMode
             && !_playerDead
-            && !_missionFailedMenu
+            && !_session.FailedMenu
             && !_computerOpen
             && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
@@ -703,7 +703,7 @@ public sealed partial class GameHost
         // mission entered from the campaign -- where that is nought -- was drawn in the generic
         // default haze instead of its own tuned fog, and looked different from the same mission
         // started any other way, a renderer switch included.
-        int fogMission = _activeMission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission;
+        int fogMission = _session.Mission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission;
 
         VolumetricFogSettings medium = VolumetricFogSettings.Off;
         if (wantsFog)

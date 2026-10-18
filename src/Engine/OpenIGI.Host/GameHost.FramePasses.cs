@@ -95,7 +95,7 @@ public sealed partial class GameHost
             RenderCVars.FrameGeneration.Value,
             gameplay: !_menuFlow.MenuMode
                 && !_menuFlow.PauseMenu
-                && _activeMission is not null
+                && _session.Mission is not null
                 && !PresentationHoldsLevel
                 && _mission.Cutscenes?.IsPlaying != true);
         _device.BeginLatencyFrame();
@@ -350,7 +350,7 @@ public sealed partial class GameHost
             if (leg != _missionCycleLeg)
             {
                 _missionCycleLeg = leg;
-                if (_activeMission is { } cycling)
+                if (_session.Mission is { } cycling)
                 {
                     _logger.Information("Mission", $"-missioncycle: abandoning {cycling.Id}.");
                     _missionCycleMission = cycling.Id;
@@ -398,11 +398,11 @@ public sealed partial class GameHost
         if (!_menuFlow.MenuMode
             && !state.Console.IsOpen
             && !_computerOpen
-            && !_missionFailedMenu
+            && !_session.FailedMenu
             && _mission.Cutscenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
             && state.Shell is not null
-            && _activeMission is not null
+            && _session.Mission is not null
             && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
         {
             _menuFlow.MenuMode = true;
@@ -847,7 +847,7 @@ public sealed partial class GameHost
             int dayNightNow = _loop.TimeSource.Milliseconds;
             float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
             _dayNightMilliseconds = dayNightNow;
-            bool clockRuns = RenderCVars.DayNightCycle.Value && !_menuFlow.MenuMode && _activeMission is not null;
+            bool clockRuns = RenderCVars.DayNightCycle.Value && !_menuFlow.MenuMode && _session.Mission is not null;
             _dayNight.Update(
                 _window.Input.Keyboard,
                 dayNightElapsed,
@@ -860,7 +860,7 @@ public sealed partial class GameHost
         // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
         // steady lamps and returns. The daylight's photocells ride on the same pass, reading the sun
         // the sweep above has just moved.
-        UpdateLamps(_loop.TimeSource.Milliseconds, audible: !_menuFlow.MenuMode && _activeMission is not null);
+        UpdateLamps(_loop.TimeSource.Milliseconds, audible: !_menuFlow.MenuMode && _session.Mission is not null);
     }
 
     /// <summary>Steers the free camera and the sun gizmo.</summary>
@@ -913,7 +913,7 @@ public sealed partial class GameHost
                 _player?.HoldStill();
                 _window.CursorLocked = false;
             }
-            else if (MenuOwnsPointer(_menuFlow.PauseMenu, _missionFailedMenu))
+            else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu))
             {
                 // A paused view does not turn, and the cursor has to be free to reach the menu. The
                 // release is repeated every pass rather than done once on the way in, so nothing can
@@ -1189,7 +1189,7 @@ public sealed partial class GameHost
             Directory.CreateDirectory(state.CutsceneCaptureDirectory!);
             Bgra32[] capture = new Bgra32[_window.Width * _window.Height];
             _device.CaptureFrame(_window.Width, _window.Height, capture);
-            int missionId = _activeMission?.Id ?? 0;
+            int missionId = _session.Mission?.Id ?? 0;
             string path = Path.Combine(
                 state.CutsceneCaptureDirectory!,
                 state.CutsceneCaptureEvery > 0
