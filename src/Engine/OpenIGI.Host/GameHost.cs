@@ -216,6 +216,7 @@ public sealed partial class GameHost : IDisposable
     // The mission's tick, and the host's side of it.
     private readonly Igi1TickHost _igi1TickHost;
     private readonly Igi1MissionTick _igi1Tick;
+    private readonly Igi1PlayerHost _igi1PlayerHost;
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -588,6 +589,7 @@ public sealed partial class GameHost : IDisposable
         _inspector = new WorldInspector(new InspectedWorld(this));
         _igi1TickHost = new Igi1TickHost(this);
         _igi1Tick = new Igi1MissionTick(_mission, _igi1TickHost);
+        _igi1PlayerHost = new Igi1PlayerHost(this);
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,
