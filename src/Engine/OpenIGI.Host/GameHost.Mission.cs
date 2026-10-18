@@ -235,40 +235,6 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
-    /// <remarks>
-    /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
-    /// <c>Dynamic</c>: its HumanView, Shadow, then HumanPlayerInput, whose CHANNELS packet moves it, then the
-    /// binoculars and the gun. A level without a player task keeps
-    /// updating the player after the walk.
-    /// </remarks>
-    private void AttachActorsToLevelWalk(GameTask levelRoot)
-    {
-        _mission.SoldiersInWalk = false;
-        _mission.PlayerInWalk = false;
-        if (_mission.Cutscenes is not { } cutscenes)
-        {
-            return;
-        }
-
-        LevelUpdateWalker walker = cutscenes.Walker;
-        if (_soldiers is { } soldiers)
-        {
-            soldiers.Simulation.AttachTo(walker);
-            _mission.SoldiersInWalk = true;
-        }
-
-        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
-        {
-            walker.Bind(playerTask, task =>
-            {
-                _igi1Tick.UpdatePlayer();
-                walker.RunChildren(task);
-            });
-            _mission.PlayerInWalk = true;
-        }
-    }
-
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -1217,7 +1183,7 @@ public sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
 
         // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
-        AttachActorsToLevelWalk(levelRoot);
+        _igi1Tick.AttachToLevelWalk(levelRoot);
     }
 
     /// <summary>The terrain, sky, sun, grade and camera; the lamps and the surface cache; what impact effects trace against; the player's state reset.</summary>

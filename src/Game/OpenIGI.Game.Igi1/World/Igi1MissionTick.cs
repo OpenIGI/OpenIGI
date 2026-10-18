@@ -724,4 +724,39 @@ public sealed class Igi1MissionTick(MissionWorld mission, IIgi1MissionHost host)
             soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
     }
+
+    /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
+    /// <remarks>
+    /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
+    /// <c>Dynamic</c>: its HumanView, Shadow, then HumanPlayerInput, whose CHANNELS packet moves it, then the
+    /// binoculars and the gun. A level without a player task keeps
+    /// updating the player after the walk.
+    /// </remarks>
+    /// <param name="levelRoot">The level's task tree.</param>
+    public void AttachToLevelWalk(GameTask levelRoot)
+    {
+        mission.SoldiersInWalk = false;
+        mission.PlayerInWalk = false;
+        if (mission.Cutscenes is not { } cutscenes)
+        {
+            return;
+        }
+
+        LevelUpdateWalker walker = cutscenes.Walker;
+        if (mission.Soldiers is { } soldiers)
+        {
+            soldiers.AttachTo(walker);
+            mission.SoldiersInWalk = true;
+        }
+
+        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
+        {
+            walker.Bind(playerTask, task =>
+            {
+                UpdatePlayer();
+                walker.RunChildren(task);
+            });
+            mission.PlayerInWalk = true;
+        }
+    }
 }
