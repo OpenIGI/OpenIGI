@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
@@ -112,6 +113,9 @@ public sealed class MissionWorld
     /// <summary>Gets or sets the guards' rounds this mission, once the brains are animated.</summary>
     public GuardRounds? GuardRounds { get; set; }
 
+    /// <summary>Gets or sets the soldiers' simulation: their brains, bodies and rounds, or <see langword="null"/> before a level has any.</summary>
+    public SoldierSimulation? Soldiers { get; set; }
+
     /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
     public PlayerCamera? Player { get; set; }
 
@@ -135,4 +139,62 @@ public sealed class MissionWorld
 
     /// <summary>Gets or sets the generator the guards' rounds draw their spread from.</summary>
     public Random ShotRandom { get; set; } = null!;
+
+    /// <summary>Clears the grenades, missiles and launcher rounds in flight, as <c>Game_CutsceneDelete</c> does.</summary>
+    public void ClearTransientProjectiles()
+    {
+        Player?.Grenades.Clear();
+        Player?.Missiles.Clear();
+        VehicleMissiles.Clear();
+        Player?.M203.Clear();
+    }
+
+    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
+    public void TickVehicleMissiles()
+    {
+        if (Player is not { } player)
+        {
+            return;
+        }
+        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
+        {
+            hit = default;
+            if (PlayerHealth.IsDead)
+            {
+                return false;
+            }
+            if (Soldiers?.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
+            {
+                return true;
+            }
+            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
+        }
+        MissileWorldTraceCast? walls = Trace is { } trace
+            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+            {
+                bool found = trace(
+                    new WorldTraceRequest(
+                        from,
+                        to,
+                        WorldTraceMask.World,
+                        IgnoredOwner: missile.CollisionOwner),
+                    out hit);
+                return found;
+            }
+            : EffectWalls is { } effectWalls
+                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+                {
+                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
+                    hit = found
+                        ? WorldTraceHit.FromRayHit(
+                            new WorldTraceRequest(from, to, WorldTraceMask.World),
+                            rayHit,
+                            WorldTraceHitKind.StaticObject)
+                        : default;
+                    return found;
+                }
+                : null;
+        VehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
+    }
 }

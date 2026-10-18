@@ -166,69 +166,6 @@ public sealed partial class GameHost
         return WorldScene.TrainCouplingPivotFraction(model);
     }
 
-    /// <summary>Chooses the engine-unit occupant used by retail AreaActivate volumes.</summary>
-    /// <param name="playerUnits">The player's body position in engine units.</param>
-    /// <param name="cutsceneViewMetres">
-    /// The authored cutscene camera in renderer metres when it owns the frame; otherwise null.
-    /// </param>
-    /// <param name="freeViewMetres">
-    /// The diagnostic free camera in renderer metres. It is only a fallback when no player body exists;
-    /// moving a debug camera must never satisfy gameplay gates such as Mission 4's extraction volume.
-    /// </param>
-    internal static Vector3d? AreaActivationOccupant(
-        Vector3d? playerUnits,
-        Vector3d? cutsceneViewMetres,
-        Vector3d? freeViewMetres = null)
-    {
-        if (cutsceneViewMetres is { } cutscene)
-        {
-            return cutscene * WorldScene.UnitsPerMetre;
-        }
-
-        if (playerUnits is { } player)
-        {
-            return player;
-        }
-
-        return freeViewMetres is { } free
-            ? free * WorldScene.UnitsPerMetre
-            : null;
-    }
-
-    /// <summary>
-    /// Gets the player-body projection that preserves occupancy while a cutscene camera drives activation.
-    /// </summary>
-    /// <param name="playerUnits">The player's body position in engine units.</param>
-    /// <param name="cutsceneViewMetres">
-    /// The authored cutscene camera in renderer metres when it owns the frame; otherwise null.
-    /// </param>
-    /// <remarks>
-    /// Retail queries humans rather than cameras, so the stationary body never stops occupying its
-    /// volume when a cinematic starts. Without this, Mission 4's latch-less outro gate
-    /// (<c>AreaActivate_156.nActive</c>) drops as soon as the <c>CutScene_2222</c> camera leaves the
-    /// extraction volume, aborting the cutscene and refiring it every other tick. The camera remains
-    /// the primary projection (Mission 14 streams tunnel sections off it), while the body is an
-    /// alternate projection of that same logical player rather than another occupant.
-    /// </remarks>
-    internal static Vector3d? AreaActivationExtraOccupant(
-        Vector3d? playerUnits,
-        Vector3d? cutsceneViewMetres) =>
-        cutsceneViewMetres is not null && playerUnits is { } player ? player : null;
-
-    /// <summary>Feeds the desktop host's player projections and liveness into authored areas.</summary>
-    internal static void TickAreaActivations(
-        MissionObjectiveRuntime? objectives,
-        Vector3d? playerUnits,
-        int playerTeam,
-        Vector3d? cutsceneViewMetres,
-        Vector3d? freeViewMetres,
-        bool playerAlive) =>
-        objectives?.TickLevelState(
-            AreaActivationOccupant(playerUnits, cutsceneViewMetres, freeViewMetres),
-            playerTeam,
-            AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres),
-            playerAlive);
-
     /// <summary>Applies what a title reads off a level once and the renderer keeps for the whole of it.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <remarks>
@@ -298,37 +235,6 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>
-    /// Handles the retail transient-object cleanup native without giving it ownership of cinematic state.
-    /// </summary>
-    /// <param name="name">The native the script called.</param>
-    /// <param name="clearTransientProjectiles">What to run when it is the cleanup one.</param>
-    /// <returns>The script's answer, or null when this native is not the one.</returns>
-    /// <remarks>
-    /// <c>IGI.EXE!Game_CutsceneDelete</c> walks the mine/grenade/missile registry, not the QVM
-    /// <c>CutScene</c> registry. Mission 3 calls it while scene 700 is starting, so completing scene 700
-    /// here would immediately satisfy the authored mission-complete expression.
-    /// </remarks>
-    internal static QvmValue? TryHandleCutsceneCleanupNative(string name, Action clearTransientProjectiles)
-    {
-        ArgumentNullException.ThrowIfNull(clearTransientProjectiles);
-        if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        clearTransientProjectiles();
-        return QvmValue.FromInt32(1);
-    }
-
-    private void ClearTransientCutsceneObjects()
-    {
-        _mission.Player?.Grenades.Clear();
-        _mission.Player?.Missiles.Clear();
-        _mission.VehicleMissiles.Clear();
-        _mission.Player?.M203.Clear();
-    }
-    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
     /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
     /// <remarks>
     /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
@@ -389,7 +295,7 @@ public sealed partial class GameHost
         _mission.PlayerTicked = true;
 
         // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
-        _soldiers?.Simulation.PublishCollisionBodies();
+        _mission.Soldiers?.PublishCollisionBodies();
         player.InputProfile = _configuration.Active;
         GrantCheatWeapons(player);
         if (_computerOpen)
@@ -405,7 +311,7 @@ public sealed partial class GameHost
             _mission.InteractionsTickedByPlayer = true;
         }
 
-        TickVehicleMissiles();
+        _mission.TickVehicleMissiles();
         CheckRunOver();
 
         // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
@@ -438,58 +344,10 @@ public sealed partial class GameHost
         Vector3d? cutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
         Vector3d? freeView = !_playerMode ? _camera?.Position : null;
         return new AreaPlayer(
-            AreaActivationOccupant(_mission.Player?.Body.Origin, cutsceneView, freeView),
-            _soldiers?.Simulation.PlayerTeam ?? 0,
-            AreaActivationExtraOccupant(_mission.Player?.Body.Origin, cutsceneView),
+            AreaOccupancy.AreaActivationOccupant(_mission.Player?.Body.Origin, cutsceneView, freeView),
+            _mission.Soldiers?.PlayerTeam ?? 0,
+            AreaOccupancy.AreaActivationExtraOccupant(_mission.Player?.Body.Origin, cutsceneView),
             !_mission.IsPlayerDead);
-    }
-
-    private void TickVehicleMissiles()
-    {
-        if (_mission.Player is not { } player)
-        {
-            return;
-        }
-        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
-        {
-            hit = default;
-            if (_mission.PlayerHealth.IsDead)
-            {
-                return false;
-            }
-            if (_soldiers?.Simulation.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
-            {
-                return true;
-            }
-            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
-            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
-        }
-        MissileWorldTraceCast? walls = _mission.Trace is { } trace
-            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
-            {
-                bool found = trace(
-                    new WorldTraceRequest(
-                        from,
-                        to,
-                        WorldTraceMask.World,
-                        IgnoredOwner: missile.CollisionOwner),
-                    out hit);
-                return found;
-            }
-            : _mission.EffectWalls is { } effectWalls
-                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
-                {
-                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
-                    hit = found
-                        ? WorldTraceHit.FromRayHit(
-                            new WorldTraceRequest(from, to, WorldTraceMask.World),
-                            rayHit,
-                            WorldTraceHitKind.StaticObject)
-                        : default;
-                    return found;
-                }
-                : null;
-        _mission.VehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
 
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
@@ -635,7 +493,7 @@ public sealed partial class GameHost
                     return QvmValue.FromInt32(1);
                 }
 
-                if (TryHandleCutsceneCleanupNative(name, ClearTransientCutsceneObjects) is { } cleanup)
+                if (AreaOccupancy.TryHandleCutsceneCleanupNative(name, _mission.ClearTransientProjectiles) is { } cleanup)
                 {
                     return cleanup;
                 }
@@ -714,7 +572,7 @@ public sealed partial class GameHost
         objectives.AttachTo(
             _mission.Cutscenes.Walker,
             _mission.Cutscenes.VehicleOccupants,
-            () => _soldiers?.Simulation.LiveOccupants() ?? [],
+            () => _mission.Soldiers?.LiveOccupants() ?? [],
             AreaPlayerNow);
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
@@ -1000,12 +858,14 @@ public sealed partial class GameHost
         {
             _soldiers?.Dispose();
             _soldiers = armedSoldiers;
+            _mission.Soldiers = armedSoldiers.Simulation;
         }
         else
         {
             _soldiers?.Dispose();
             _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
                 new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps));
+            _mission.Soldiers = _soldiers?.Simulation;
             _soldiers?.Load(
                 loaded,
                 levelRoot,
@@ -1708,7 +1568,7 @@ public sealed partial class GameHost
             if (_mission.Interactions is { } interactions)
             {
                 candidate.UseInteractions(interactions);
-                candidate.TaskActivated += id => _soldiers?.Simulation.ActivateTask(id);
+                candidate.TaskActivated += id => _mission.Soldiers?.ActivateTask(id);
                 candidate.ElectrifiedFenceTouched += fence => ResolvePlayerElectricFence(candidate, fence);
                 candidate.UnarmedStationaryGun += gun => _logger.Warning(
                     "Player",
@@ -1771,7 +1631,7 @@ public sealed partial class GameHost
 
                 int materialCount = materialTable.Load(_resources, _loop.Natives);
                 candidate.UseMaterials(materialTable);
-                _soldiers?.Simulation.UseMaterials(materialTable);
+                _mission.Soldiers?.UseMaterials(materialTable);
                 _mission.Materials = materialTable;
                 _logger.Information("Material", $"Read {materialCount} game material(s).");
 
@@ -1802,8 +1662,8 @@ public sealed partial class GameHost
                     string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
                     _mission.Objectives?.ShowTransientMessage(missionText.Get(key));
                 };
-                _soldiers?.Simulation.UseDroppedWeaponPickups(gunPickups);
-                _soldiers?.Simulation.SetWeaponDropSink((weapon, position, orientation, velocity) =>
+                _mission.Soldiers?.UseDroppedWeaponPickups(gunPickups);
+                _mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
                 {
                     GunPickup pickup = gunPickups.Spawn(position, orientation, weapon, velocity);
                     _gunPickupRenderer?.Add(loaded, pickup);
@@ -1813,7 +1673,7 @@ public sealed partial class GameHost
                 // for the realistic body and as one ray for the original's fifty-metre drop probe.
                 ObjectCollisionIndex? dropSolids = _mission.Solids;
                 TerrainData? dropTerrain = _playerTerrain;
-                _soldiers?.Simulation.SetDroppedWeaponWorld(
+                _mission.Soldiers?.SetDroppedWeaponWorld(
                     (min, max, into) =>
                     {
                         dropSolids?.CollectTriangles(min, max, into);
@@ -2467,6 +2327,7 @@ public sealed partial class GameHost
         _terrain = null;
         _world = null;
         _soldiers = null;
+        _mission.Soldiers = null;
         _heldWeapon = null;
         _gunPickupRenderer = null;
         _hud = null;
@@ -2904,7 +2765,7 @@ public sealed partial class GameHost
         }
 
         // Every ground contact posts type 11. A safe landing carries five metres; a damaging one ten.
-        _soldiers?.Simulation.NotifyGroundImpact(
+        _mission.Soldiers?.NotifyGroundImpact(
             player.Body.Position,
             player.Body.Position,
             impact.HearingRadiusUnits);
@@ -3123,7 +2984,7 @@ public sealed partial class GameHost
                     _mission.VehicleRoundOwner = shot.Owner;
                     try
                     {
-                        _soldiers?.Simulation.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
+                        _mission.Soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
                     }
                     finally
                     {
@@ -3242,19 +3103,19 @@ public sealed partial class GameHost
             // During an authored cinematic the area occupant is the cutscene camera rather than the
             // stationary player body; a diagnostic free camera must not impersonate a player that exists
             // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
-            _mission.Objectives?.SetSoldierOccupants(_soldiers?.Simulation.Occupants() ?? []);
+            _mission.Objectives?.SetSoldierOccupants(_mission.Soldiers?.Occupants() ?? []);
             Vector3d? areaCutsceneView = _mission.Cutscenes?.Frame?.Camera.Position;
             Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
             _mission.Objectives?.SetLevelStateInputs(
-                AreaActivationOccupant(_mission.Player?.Body.Origin, areaCutsceneView, areaFreeView),
-                _soldiers?.Simulation.PlayerTeam ?? 0,
-                AreaActivationExtraOccupant(_mission.Player?.Body.Origin, areaCutsceneView),
+                AreaOccupancy.AreaActivationOccupant(_mission.Player?.Body.Origin, areaCutsceneView, areaFreeView),
+                _mission.Soldiers?.PlayerTeam ?? 0,
+                AreaOccupancy.AreaActivationExtraOccupant(_mission.Player?.Body.Origin, areaCutsceneView),
                 playerAlive: !_mission.IsPlayerDead);
             _mission.PlayerTicked = false;
             _mission.InteractionsTickedByPlayer = false;
             if (_mission.SoldiersInWalk)
             {
-                _soldiers?.Simulation.BeginTick(_mission.CurrentEnemy ??= SoldierEnemyNow);
+                _mission.Soldiers?.BeginTick(_mission.CurrentEnemy ??= SoldierEnemyNow);
             }
 
             _mission.Cutscenes?.Tick();
@@ -3330,7 +3191,7 @@ public sealed partial class GameHost
                 _logger.Information(
                     "Weapon",
                     $"Hit a guard in zone {_mission.Player.LastHumanZone} "
-                        + $"({state.ReportedHumanHits} hit(s), {_soldiers?.Simulation.Killed ?? 0} killed).");
+                        + $"({state.ReportedHumanHits} hit(s), {_mission.Soldiers?.Killed ?? 0} killed).");
             }
         }
 
@@ -3404,8 +3265,8 @@ public sealed partial class GameHost
                     watchedFeet,
                     crouching,
                     targetAlive: !_mission.IsPlayerDead,
-                    playerOnCamerasSide: (_soldiers?.Simulation.PlayerTeam ?? 0) == 1,
-                    _soldiers?.Simulation.CameraSubjects() ?? []);
+                    playerOnCamerasSide: (_mission.Soldiers?.PlayerTeam ?? 0) == 1,
+                    _mission.Soldiers?.CameraSubjects() ?? []);
                 if (_mission.Solids is { } cameraSolids)
                 {
                     foreach (SecurityCamera camera in cameras.Cameras)
@@ -3483,7 +3344,7 @@ public sealed partial class GameHost
             // silenced weapons no longer wake the whole 30-metre neighbourhood.
             if (_mission.Player.FiredThisTick && _mission.Player.HeldWeaponType is { } audibleWeapon)
             {
-                _soldiers?.Simulation.NotifyGunshot(_mission.Player.Body.Eye, audibleWeapon.AiDetectionRange);
+                _mission.Soldiers?.NotifyGunshot(_mission.Player.Body.Eye, audibleWeapon.AiDetectionRange);
             }
 
             // And the sound of it. Driven every tick rather than only on the ones that fire,
@@ -3548,7 +3409,7 @@ public sealed partial class GameHost
                 // starts hunting.
                 if (!_mission.Player.IsCrouched)
                 {
-                    _soldiers?.Simulation.NotifyWalk(
+                    _mission.Soldiers?.NotifyWalk(
                         step.PositionInUnits, _mission.Player.Body.Position, step.HearingRadiusInUnits);
                 }
             }
@@ -3685,7 +3546,7 @@ public sealed partial class GameHost
             {
                 case LadderStepResult.SteppingUp:
                 case LadderStepResult.SteppingDown:
-                    _soldiers?.Simulation.SetPlayerLadderPlaybackDirection(_mission.Player.LadderDirection);
+                    _mission.Soldiers?.SetPlayerLadderPlaybackDirection(_mission.Player.LadderDirection);
                     break;
 
                 case LadderStepResult.ReachedTop:
@@ -3800,7 +3661,7 @@ public sealed partial class GameHost
             {
                 // The gun's sight sits just in front of the gunner's own chest, and retail draws
                 // no body in that view (captured in mission 4: barrel, stand and scenery only).
-                _soldiers?.Simulation.HidePlayerBodyClimbing();
+                _mission.Soldiers?.HidePlayerBodyClimbing();
             }
             else if (_soldiers is not null)
             {
@@ -3814,7 +3675,7 @@ public sealed partial class GameHost
                     interacting.InteractionFeet, interacting.InteractionFacing);
             }
 
-            Vector3d interactionCameraFeet = _soldiers?.Simulation.PlayerInteractionCameraFeet(
+            Vector3d interactionCameraFeet = _mission.Soldiers?.PlayerInteractionCameraFeet(
                 interacting.InteractionFeet) ?? interacting.InteractionFeet;
 
             // State 33 is the one interaction that keeps a first-person camera: the gun hands
@@ -3852,7 +3713,7 @@ public sealed partial class GameHost
         if ((_mission.Player is null || (!_mission.Player.IsOnLadder && !_mission.Player.IsInWorldInteraction))
             && (state.ClimbActive || state.WorldInteractionActive || state.InteractionCamera.IsActive))
         {
-            _soldiers?.Simulation.HidePlayerBodyClimbing();
+            _mission.Soldiers?.HidePlayerBodyClimbing();
             state.InteractionCamera.Reset();
             state.ClimbActive = false;
             state.WorldInteractionActive = false;

@@ -962,7 +962,7 @@ public sealed partial class GameHost
         DestructibleObject? source = null,
         int sourceWeaponId = 0)
     {
-        _soldiers?.Simulation.ApplyExplosion(position, radiusUnits, falloffUnits, damageFactor);
+        _mission.Soldiers?.ApplyExplosion(position, radiusUnits, falloffUnits, damageFactor);
         HandleDestructibleBlast(source, position, radiusUnits, falloffUnits, damageFactor, sourceWeaponId);
         DamageAlarmSpeakers(position, radiusUnits, falloffUnits, damageFactor);
         BlastPlayer(position, radiusUnits, falloffUnits, damageFactor, killedBy);
@@ -1114,7 +1114,7 @@ public sealed partial class GameHost
         _audioOut.Sounds?.PlayDefinition(sound, position, priority: 90);
         // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
         // at presentation time as the other world blasts, including after an authored delay.
-        _soldiers?.Simulation.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
+        _mission.Soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
         _effects.Particles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(
@@ -1287,7 +1287,7 @@ public sealed partial class GameHost
             // GlassShatter_Sound is a world noise. The existing retail ground-impact route is the
             // matching AI event used for non-human world contacts; it also keeps a pane behind a wall
             // from becoming a global alert.
-            _soldiers?.Simulation.NotifyGroundImpact(
+            _mission.Soldiers?.NotifyGroundImpact(
                 impactUnits ?? item.PositionUnits,
                 _mission.Player?.Body.Position ?? item.PositionUnits);
             _logger.Information("World", $"{item.TypeName} at {item.PositionUnits} shattered.");
@@ -1343,7 +1343,7 @@ public sealed partial class GameHost
         _effects.Particles?.SpawnRetailExplosion(
             position,
             new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
-        _soldiers?.Simulation.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
+        _mission.Soldiers?.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
         Explode(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade, blast.Source);
 
         _logger.Information("World", $"{blast.Source.Owner.Name} blast at {position}: radius={blast.RadiusUnits}.");
@@ -1369,7 +1369,7 @@ public sealed partial class GameHost
         _effects.Particles?.SpawnRetailExplosion(
             item.PositionUnits,
             new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
-        _soldiers?.Simulation.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
+        _mission.Soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
 
         // Explosion0 (0x47F200) hands its message -- the damage, the shove and the shake -- to every human
         // only when its damage is not 0. A wooden window authors 0: it splinters, and nobody is hurt.
@@ -1380,7 +1380,7 @@ public sealed partial class GameHost
         }
 
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
-        _soldiers?.Simulation.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
+        _mission.Soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
 
         BlastPlayer(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade);
 

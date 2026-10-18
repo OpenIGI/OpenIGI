@@ -2759,7 +2759,7 @@ public sealed partial class GameHost
                     state.Batch,
                     objectiveRuntime,
                     computerPlayer.Body.Position,
-                    _soldiers?.Simulation.MapContacts() ?? [],
+                    _mission.Soldiers?.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
                     _window.Width,
                     _window.Height,
@@ -2771,7 +2771,7 @@ public sealed partial class GameHost
                     state.Batch,
                     objectiveRuntime,
                     computerPlayer.Body.Position,
-                    _soldiers?.Simulation.MapContacts() ?? [],
+                    _mission.Soldiers?.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
                     _window.Width,
                     _window.Height);

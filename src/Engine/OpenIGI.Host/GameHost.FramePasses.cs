@@ -311,7 +311,7 @@ public sealed partial class GameHost
             if (_entry.Phase == MissionEntryPhase.Done)
             {
                 _entry.Reset();
-                _soldiers?.Simulation.HidePlayerBody();
+                _mission.Soldiers?.HidePlayerBody();
                 ApplyGameplayMotionBlur();
                 ReportWatchedFramePassesIn(1);
 
@@ -1225,7 +1225,7 @@ public sealed partial class GameHost
                 WriteLightingDump(lightingDumpPath);
             }
 
-            _soldiers?.Simulation.LogAiSummary();
+            _mission.Soldiers?.LogAiSummary();
             state.Running = false;
         }
     }

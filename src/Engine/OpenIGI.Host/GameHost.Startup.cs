@@ -366,6 +366,7 @@ public sealed partial class GameHost
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
+        _mission.Soldiers = null;
         _mission.SoldiersInWalk = false;
         _mission.PlayerInWalk = false;
         _playerTerrain = null;
