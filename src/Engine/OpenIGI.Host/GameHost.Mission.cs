@@ -104,38 +104,6 @@ public sealed partial class GameHost
         BringMissionUp(loaded, levelRoot, id, promoted: false);
     }
 
-    /// <summary>Resolves a retail directory without assuming the install's casing matches the script.</summary>
-    private static string? ResolveDirectoryCaseInsensitive(string root, string relativePath)
-    {
-        string current = Path.GetFullPath(root);
-        foreach (string part in relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            string exact = Path.Combine(current, part);
-            if (Directory.Exists(exact))
-            {
-                current = exact;
-                continue;
-            }
-
-            if (!Directory.Exists(current))
-            {
-                return null;
-            }
-
-            string? match = Directory.EnumerateDirectories(current)
-                .FirstOrDefault(path => string.Equals(
-                    Path.GetFileName(path), part, StringComparison.OrdinalIgnoreCase));
-            if (match is null)
-            {
-                return null;
-            }
-
-            current = match;
-        }
-
-        return current;
-    }
-
     /// <summary>Applies what a title reads off a level once and the renderer keeps for the whole of it.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <remarks>
@@ -581,39 +549,7 @@ public sealed partial class GameHost
     /// <summary>The level's nav graphs, which the soldiers and the vehicles drive over.</summary>
     private void MissionNavGraphs(MissionBuild b)
     {
-        string graphDirectory = ResolveDirectoryCaseInsensitive(
-                _gamePath, Path.Combine(b.Loaded.Descriptor.MissionDirectory, "graphs"))
-            ?? Path.Combine(_gamePath, b.Loaded.Descriptor.MissionDirectory, "graphs");
-        try
-        {
-            b.Graphs = NavGraphs.Read(graphDirectory, b.LevelRoot, _logger);
-        }
-        catch (IOException ex)
-        {
-            _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
-            b.Graphs = [];
-        }
-
-        Dictionary<int, GraphFile> graphs = b.Graphs;
-        if (graphs.Count > 0)
-        {
-            _logger.Information(
-                "Ai",
-                $"Nav graphs: {graphs.Count} — " +
-                string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
-
-            // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
-            // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
-            // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
-            // PatrolPath route. d843661b dropped this call and left every one of them parked.
-            _mission.Cutscenes?.ConfigureCarAi(graphs);
-        }
-        else
-        {
-            // A missing patrol graph only removes movement: retail still registers every HumanAI as a live human, which
-            // can stand, be seen and be selected by the binocular detector.
-            _logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
-        }
+        b.Graphs = _igi1Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, _gamePath);
 
         EndStage("reading the nav graphs");
     }

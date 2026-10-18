@@ -566,4 +566,88 @@ public sealed class Igi1MissionSetup(MissionWorld mission, IIgi1MissionSetupHost
         solids.Destructibles = mission.Destructibles;
         cutscenes.Destructibles = mission.Destructibles;
     }
+
+    /// <summary>Reads the level's nav graphs, which the soldiers and the vehicles drive over.</summary>
+    /// <param name="loaded">The mission, whose directory holds them.</param>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="gamePath">The install's root.</param>
+    /// <returns>The graphs by their task's id, in world space; empty when the level ships none.</returns>
+    public Dictionary<int, GraphFile> ReadNavGraphs(LoadedMission loaded, LevelTask levelRoot, string gamePath)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(gamePath);
+
+        string graphDirectory = ResolveDirectoryCaseInsensitive(
+                gamePath, Path.Combine(loaded.Descriptor.MissionDirectory, "graphs"))
+            ?? Path.Combine(gamePath, loaded.Descriptor.MissionDirectory, "graphs");
+
+        Dictionary<int, GraphFile> graphs;
+        try
+        {
+            graphs = NavGraphs.Read(graphDirectory, levelRoot, host.Logger);
+        }
+        catch (IOException ex)
+        {
+            host.Logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
+            graphs = [];
+        }
+
+        if (graphs.Count > 0)
+        {
+            host.Logger.Information(
+                "Ai",
+                $"Nav graphs: {graphs.Count} — " +
+                string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
+
+            // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
+            // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
+            // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
+            // PatrolPath route. d843661b dropped this call and left every one of them parked.
+            mission.Cutscenes?.ConfigureCarAi(graphs);
+        }
+        else
+        {
+            // A missing patrol graph only removes movement: retail still registers every HumanAI as a live human, which
+            // can stand, be seen and be selected by the binocular detector.
+            host.Logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
+        }
+
+        return graphs;
+    }
+
+    /// <summary>Resolves a retail directory without assuming the install's casing matches the script.</summary>
+    /// <param name="root">The directory it is under.</param>
+    /// <param name="relativePath">The path below it, as the script spells it.</param>
+    /// <returns>The directory as the install spells it, or <see langword="null"/> when there is none.</returns>
+    public static string? ResolveDirectoryCaseInsensitive(string root, string relativePath)
+    {
+        string current = Path.GetFullPath(root);
+        foreach (string part in relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string exact = Path.Combine(current, part);
+            if (Directory.Exists(exact))
+            {
+                current = exact;
+                continue;
+            }
+
+            if (!Directory.Exists(current))
+            {
+                return null;
+            }
+
+            string? match = Directory.EnumerateDirectories(current)
+                .FirstOrDefault(path => string.Equals(
+                    Path.GetFileName(path), part, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                return null;
+            }
+
+            current = match;
+        }
+
+        return current;
+    }
 }
