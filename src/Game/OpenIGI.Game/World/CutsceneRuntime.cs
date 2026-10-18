@@ -348,7 +348,7 @@ public sealed class CutsceneRuntime
             {
                 _visions[task] = new VehicleVision(NextVisionPhase());
             }
-            if (task is ConditionalContainerTask container)
+            if (task is ConditionalContainerTask { SettlesOutsideTheTick: true } container)
             {
                 _containers.Add(container);
             }
@@ -448,8 +448,7 @@ public sealed class CutsceneRuntime
             }
         }
 
-        _walker.ContainerTransition = (container, started) =>
-            _expressions.Execute(started ? container.RunAtStart : container.RunAtStop, container);
+        _walker.ContainerScript = (container, script) => _expressions.Execute(script, container);
         _walker.HoldContainer = RetainsLevelFourOutro;
 
         // Capture the whole authored hierarchy before parking a vehicle. Moving a

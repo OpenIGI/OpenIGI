@@ -138,7 +138,7 @@ public sealed class ConditionalContainerGate
         return dormant;
     }
 
-    private bool Resolve(ConditionalContainerTask container)
+    private bool? Resolve(ConditionalContainerTask container)
     {
         if (_forcedContainers.TryGetValue(container.Id, out string? forcedCondition))
         {
@@ -152,9 +152,8 @@ public sealed class ConditionalContainerGate
 
         if (string.IsNullOrWhiteSpace(container.Condition))
         {
-            // An unconditional container runs; nothing in retail level data reaches this, but hiding a
-            // subtree on an empty condition would be the wrong default.
-            return true;
+            // With no condition the original leaves isRun as it is (0x4874E0 asks sub_4F16C0 first).
+            return null;
         }
 
         return Evaluate(container, container.Condition);
@@ -180,17 +179,17 @@ public sealed class ConditionalContainerGate
             return true;
         }
 
-        // The integer walk. Each evaluation makes its own evaluator, so resolving one container's condition
-        // can re-enter this method through another container's exported isRun without disturbing the outer
-        // one's per-run error state or its this owner.
-        return expression.EvaluateInt32(_context) != 0;
+        // The float walk, chopped into the isRun byte (0x4874E0 stores (char)(__int64)sub_4F16E0). Each evaluation makes its
+        // own evaluator, so resolving one container's condition can re-enter this method through another container's
+        // exported isRun without disturbing the outer one's per-run error state or its this owner.
+        return LevelExpression.Flag(expression.Evaluate(_context));
     }
 
     private static void Collect(GameTask task, List<ConditionalContainerTask> into)
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is ConditionalContainerTask container)
+            if (child is ConditionalContainerTask { SettlesOutsideTheTick: true } container)
             {
                 into.Add(container);
             }

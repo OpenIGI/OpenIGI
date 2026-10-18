@@ -17,12 +17,12 @@ namespace OpenIGI.Game.World;
 /// <para>
 /// It is I.G.I.'s <see cref="LevelRun"/>. Subsystems bind the update of the tasks they own; a task nobody bound behaves as a plain
 /// container and walks its children -- except <c>Static</c> and <c>Idle</c>, whose update is a no-op in the
-/// original, freezing everything beneath them, and <see cref="ConditionalContainerTask"/>, which runs its
-/// own rules (<see cref="ConditionalContainerTask.Update"/>). Unlike I.G.I. 2's run, the walk does not pass over a task already
-/// marked deleted.
+/// original, freezing everything beneath them. A <see cref="ConditionalContainerTask"/> runs the shared handler under the
+/// first game's rules (<see cref="IConditionalContainerRules"/>). Unlike I.G.I. 2's run, the walk does not pass over a task
+/// already marked deleted.
 /// </para>
 /// </remarks>
-public sealed class LevelUpdateWalker : LevelRun
+public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
 {
     private readonly Dictionary<GameTask, Action<GameTask>> _deactivations = [];
 
@@ -33,8 +33,8 @@ public sealed class LevelUpdateWalker : LevelRun
     {
     }
 
-    /// <summary>Gets or sets what runs when a conditional container starts or stops, after its children ran.</summary>
-    public Action<ConditionalContainerTask, bool>? ContainerTransition { get; set; }
+    /// <summary>Gets or sets what runs a conditional container's start or stop script, after its children ran.</summary>
+    public Action<ConditionalContainerTask, string>? ContainerScript { get; set; }
 
     /// <summary>Gets or sets a container whose run state is held rather than re-evaluated this tick.</summary>
     public Func<ConditionalContainerTask, bool>? HoldContainer { get; set; }
@@ -57,16 +57,36 @@ public sealed class LevelUpdateWalker : LevelRun
     }
 
     /// <inheritdoc/>
-    /// <remarks>A conditional container runs its own rules; <c>Static</c> and <c>Idle</c> do nothing; anything else walks its children.</remarks>
+    /// <remarks>Project I.G.I.'s handler (<c>0x4874E0</c>) runs the children while the container runs or ran last tick.</remarks>
+    bool IConditionalContainerRules.RunsChildrenTheTickItStops => true;
+
+    /// <inheritdoc/>
+    /// <remarks>A held container keeps its state; one no gate prepared runs.</remarks>
+    bool? IConditionalContainerRules.Condition(ConditionalContainerTask container)
+    {
+        if (HoldContainer?.Invoke(container) == true)
+        {
+            return null;
+        }
+
+        return container.ConditionResolver is { } resolve ? resolve(container) : true;
+    }
+
+    /// <inheritdoc/>
+    void IConditionalContainerRules.RunScript(ConditionalContainerTask container, string script) =>
+        ContainerScript?.Invoke(container, script);
+
+    /// <inheritdoc/>
+    void IConditionalContainerRules.PutChildrenInWorld(ConditionalContainerTask container) => Activate(container);
+
+    /// <inheritdoc/>
+    void IConditionalContainerRules.TakeChildrenOutOfWorld(ConditionalContainerTask container) => Deactivate(container);
+
+    /// <inheritdoc/>
+    /// <remarks><c>Static</c> and <c>Idle</c> do nothing; anything else walks its children.</remarks>
     protected override void RunUntyped(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (task is ConditionalContainerTask container)
-        {
-            container.Update(this);
-            return;
-        }
-
         if (task.Type.Name is "Static" or "Idle")
         {
             return;

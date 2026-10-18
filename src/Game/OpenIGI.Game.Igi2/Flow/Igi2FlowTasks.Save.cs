@@ -47,16 +47,16 @@ public sealed partial class Igi2ConditionalContainerTask : IIgi2Serialized
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        writer.Bool(AreChildrenInWorld);
-        writer.Bool(_isRun != 0);
+        writer.Bool(IsActive);
+        writer.Bool(RunByte != 0);
     }
 
     /// <inheritdoc/>
     public void ReadState(Igi2StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        AreChildrenInWorld = reader.Bool();
-        _isRun = reader.Bool() ? (byte)1 : (byte)0;
+        IsActive = reader.Bool();
+        SetRunByte(reader.Bool() ? (byte)1 : (byte)0);
     }
 }
 

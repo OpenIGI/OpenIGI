@@ -270,7 +270,7 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask
     {
         for (GameTask? task = Parent; task is not null; task = task.Parent)
         {
-            if (task is Igi2ConditionalContainerTask { AreChildrenInWorld: false })
+            if (task is Igi2ConditionalContainerTask { IsActive: false })
             {
                 return false;
             }

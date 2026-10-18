@@ -1,110 +1,32 @@
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Scripting.Expressions;
+using OpenIGI.Game.Level;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
-/// <summary>
-/// A container whose children run only while a condition holds, I.G.I. 2's <c>ConditionalContainer</c>, exporting
-/// <c>isRun</c>.
-/// </summary>
+/// <summary>I.G.I. 2's <c>ConditionalContainer</c>: the shared <see cref="ConditionalContainerTask"/>, with the title's save state.</summary>
 /// <remarks>
-/// <para>
-/// <c>ConditionalContainer_RunHandler</c> (<c>igi2 0x520EF0</c>): the condition, when there is one, is run and its value
-/// truncated into <c>isRun</c>; with none, <c>isRun</c> keeps what it had, which is nought until something writes it. While it
-/// runs, children taken out of the world are put back (<c>ConditionalContainer_RegisterChildren</c>, <c>0x520D20</c>) and run;
-/// while it does not, they are taken out (<c>ConditionalContainer_RemoveChildren</c>, <c>0x520DC0</c>). The tick it starts its
-/// <c>Run at start</c> script runs, and the tick it stops its <c>Run at stop</c>.
-/// </para>
-/// <para>
-/// A level's children are in the world as it loads (<c>ConditionalContainer_CreateHandler</c>, <c>0x520E90</c>, sets the flag),
-/// so a container whose condition fails on its first tick takes them out then.
-/// </para>
+/// It runs the shared handler under <see cref="Igi2LevelRun"/>'s rules. Its <c>isRun</c> is nought until something writes it
+/// or its condition first runs; nothing settles it before the first tick.
 /// </remarks>
-public sealed partial class Igi2ConditionalContainerTask : Igi2Task
+public sealed partial class Igi2ConditionalContainerTask : ConditionalContainerTask
 {
-    /// <summary>The script name level data instantiates this type under.</summary>
-    public const string TypeName = "ConditionalContainer";
-
-    private LevelExpression? _condition;
-    private LevelExpression? _start;
-    private LevelExpression? _stop;
-    private byte _isRun;
-
-    /// <summary>Gets or sets the condition, script text.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Condition")]
-    public string Condition { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script run the tick the condition starts holding.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Run at start")]
-    public string RunAtStart { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script run the tick the condition stops holding.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Run at stop")]
-    public string RunAtStop { get; set; } = string.Empty;
-
-    /// <summary>Gets a value indicating whether the children run, <c>isRun</c>.</summary>
-    public bool IsRun => _isRun != 0;
-
-    /// <summary>Gets a value indicating whether the children are in the world.</summary>
-    public bool AreChildrenInWorld { get; private set; } = true;
-
-    /// <summary>Tells every task under a task that it is taken out of the world, in tree order.</summary>
-    private static void RemoveFromWorld(Engine.Tasks.GameTask task)
-    {
-        foreach (Engine.Tasks.GameTask child in task.Children)
-        {
-            if (child is World.IIgi2WorldMember member)
-            {
-                member.RemoveFromWorld();
-            }
-
-            RemoveFromWorld(child);
-        }
-    }
+    /// <summary>Initializes a new instance of the <see cref="Igi2ConditionalContainerTask"/> class.</summary>
+    public Igi2ConditionalContainerTask() => SetRunByte(0);
 
     /// <inheritdoc/>
-    public override void Run(Igi2LevelRun level)
+    public override bool SettlesOutsideTheTick => false;
+
+    /// <inheritdoc/>
+    /// <remarks>Any other title's run sees it as it sees an <see cref="Igi2Task"/>: a container whose children it walks.</remarks>
+    public override void Run(LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        _condition ??= Igi2LevelExpressions.Create(Condition, Name, level.Natives);
-        _start ??= Igi2LevelExpressions.Create(RunAtStart, Name, level.Natives);
-        _stop ??= Igi2LevelExpressions.Create(RunAtStop, Name, level.Natives);
-
-        bool wasRun = IsRun;
-        if (!_condition.IsEmpty)
+        if (level is Igi2LevelRun)
         {
-            _isRun = (byte)LevelExpression.Truncate(level.Evaluate(_condition));
+            base.Run(level);
+            return;
         }
 
-        if (IsRun)
-        {
-            AreChildrenInWorld = true;
-            level.RunChildren(this);
-            if (!wasRun && !_start.IsEmpty)
-            {
-                level.Evaluate(_start);
-            }
-        }
-        else
-        {
-            if (AreChildrenInWorld)
-            {
-                RemoveFromWorld(this);
-            }
-
-            AreChildrenInWorld = false;
-            if (wasRun && !_stop.IsEmpty)
-            {
-                level.Evaluate(_stop);
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    /// <remarks><c>ConditionalContainer_RegisterScriptSymbolsHandler</c> (<c>igi2 0x521210</c>): a byte, writable.</remarks>
-    protected override void OnExportVars(ScriptVarRegistry variables)
-    {
-        ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "isRun", () => _isRun, value => _isRun = (byte)value, sizeof(byte));
+        level.RunChildren(this);
     }
 }

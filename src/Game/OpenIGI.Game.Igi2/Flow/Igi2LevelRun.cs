@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Level;
+using OpenIGI.Game.World;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
@@ -29,9 +30,12 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// <see cref="LevelRun.Frequency"/>, <c>GAME_FREQUENCY</c>.
 /// </para>
 /// </remarks>
-public sealed class Igi2LevelRun : LevelRun
+public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
 {
     private readonly List<Action> _delayed = [];
+
+    // A conditional container's scripts, each compiled the first time it runs.
+    private readonly Dictionary<(GameTask Owner, string Source), LevelExpression> _containerScripts = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2LevelRun"/> class.</summary>
     /// <param name="root">The level's root task.</param>
@@ -128,6 +132,62 @@ public sealed class Igi2LevelRun : LevelRun
     {
         ArgumentNullException.ThrowIfNull(expression);
         return expression.Run(Natives, Functions);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>ConditionalContainer_RunHandler</c> runs the children only while the container runs.</remarks>
+    bool IConditionalContainerRules.RunsChildrenTheTickItStops => false;
+
+    /// <inheritdoc/>
+    bool? IConditionalContainerRules.Condition(ConditionalContainerTask container)
+    {
+        LevelExpression condition = ContainerScript(container, container.Condition);
+        return condition.IsEmpty ? null : LevelExpression.Flag(Evaluate(condition));
+    }
+
+    /// <inheritdoc/>
+    void IConditionalContainerRules.RunScript(ConditionalContainerTask container, string script)
+    {
+        LevelExpression expression = ContainerScript(container, script);
+        if (!expression.IsEmpty)
+        {
+            Evaluate(expression);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing of the title's world needs telling yet; the container's flag is enough.</remarks>
+    void IConditionalContainerRules.PutChildrenInWorld(ConditionalContainerTask container)
+    {
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every task under the container that is in the world is told, in tree order.</remarks>
+    void IConditionalContainerRules.TakeChildrenOutOfWorld(ConditionalContainerTask container) => RemoveFromWorld(container);
+
+    // Tells every task under a task that it is taken out of the world, in tree order.
+    private static void RemoveFromWorld(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            if (child is World.IIgi2WorldMember member)
+            {
+                member.RemoveFromWorld();
+            }
+
+            RemoveFromWorld(child);
+        }
+    }
+
+    private LevelExpression ContainerScript(ConditionalContainerTask container, string source)
+    {
+        if (!_containerScripts.TryGetValue((container, source), out LevelExpression? expression))
+        {
+            expression = Igi2LevelExpressions.Create(source, container.Name, Natives);
+            _containerScripts[(container, source)] = expression;
+        }
+
+        return expression;
     }
 
     private void RunDelayed()
