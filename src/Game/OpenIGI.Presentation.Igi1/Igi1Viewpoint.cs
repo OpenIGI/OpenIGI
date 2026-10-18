@@ -48,6 +48,15 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool IsThirdPersonEngaged => _thirdPerson.IsEngaged;
 
     /// <inheritdoc/>
+    public bool HasPlayer => gameplay.World.Player is not null;
+
+    /// <inheritdoc/>
+    public Vector3d? BodyPositionUnits => gameplay.World.Player?.Body.Position;
+
+    /// <inheritdoc/>
+    public WorldRayCast? GroundTrace => gameplay.World.Player?.GrenadeWalls;
+
+    /// <inheritdoc/>
     public bool IsBinocularsOpen => gameplay.World.Player is { IsBinocularsOpen: true };
 
     /// <inheritdoc/>
@@ -64,6 +73,17 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
 
     /// <inheritdoc/>
     public InteractionPromptTarget? InteractionPrompt(float tickBlend) => gameplay.World.Player?.InteractionPrompt(tickBlend);
+
+    /// <inheritdoc/>
+    public Camera3D? WalkingEye(bool smooth, float tickBlend)
+    {
+        if (gameplay.World.Player is not { IsOnLadder: false, IsInWorldInteraction: false } player)
+        {
+            return null;
+        }
+
+        return smooth && player.HasViewTickPair ? player.SmoothedCamera(tickBlend) : player.Camera;
+    }
 
     /// <inheritdoc/>
     public void Renew()

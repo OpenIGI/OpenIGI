@@ -52,6 +52,15 @@ public interface IMissionViewpoint
     /// <summary>Gets a value indicating whether the camera is anywhere other than exactly at the player's eye.</summary>
     bool IsThirdPersonEngaged { get; }
 
+    /// <summary>Gets a value indicating whether the title has a player of its own in the level.</summary>
+    bool HasPlayer { get; }
+
+    /// <summary>Gets where the player's feet are, in world units, or <see langword="null"/> when there is no player.</summary>
+    Vector3d? BodyPositionUnits { get; }
+
+    /// <summary>Gets the trace that covers the terrain and the placed collision, which the rain lands on, or <see langword="null"/>.</summary>
+    WorldRayCast? GroundTrace { get; }
+
     /// <summary>Gets a value indicating whether the player is looking through the binoculars.</summary>
     bool IsBinocularsOpen { get; }
 
@@ -75,6 +84,12 @@ public interface IMissionViewpoint
     /// <param name="tickBlend">How far the frame is between ticks.</param>
     /// <returns>The target, or <see langword="null"/> when there is none.</returns>
     InteractionPromptTarget? InteractionPrompt(float tickBlend);
+
+    /// <summary>Gets the walking player's own eye, smoothed between ticks when asked, which the map computer is held in front of.</summary>
+    /// <param name="smooth">Whether the frame is smoothed between ticks.</param>
+    /// <param name="tickBlend">How far the frame is between ticks.</param>
+    /// <returns>The eye, or <see langword="null"/> when there is no player or a climb or an interaction has the body.</returns>
+    Camera3D? WalkingEye(bool smooth, float tickBlend);
 
     /// <summary>Makes the death and interaction cameras afresh, as the frame loop starts.</summary>
     void Renew();

@@ -145,12 +145,12 @@ public sealed partial class GameHost
         // camera and its field of view, which is what makes the climb and the fall a move of the
         // player's own eye rather than a cut to a second one.
         MapSceneView? mapScene = null;
-        if (_computerOpen && _mission.Player is { } mapPlayer)
+        if (_computerOpen && Viewpoint?.BodyPositionUnits is { } mapBody)
         {
             if (TacticalComputer is { } tacticalView)
             {
                 MapSceneView steady = tacticalView.SceneView(
-                    mapPlayer.Body.Position, _window.Width, _window.Height);
+                    mapBody, _window.Width, _window.Height);
                 mapScene = _computerFlight.IsFlying
                     ? steady with
                     {
@@ -162,7 +162,7 @@ public sealed partial class GameHost
             else if (_mapComputer is { IsReady: true, ShowsMap: true } computerView)
             {
                 mapScene = computerView.SceneView(
-                    mapPlayer.Body.Position, _window.Width, _window.Height);
+                    mapBody, _window.Width, _window.Height);
             }
         }
 
@@ -357,7 +357,7 @@ public sealed partial class GameHost
             && _mission.Cutscenes?.IsPlaying != true
             && mapScene is null
             && !_menuFlow.OverShowcase
-            && _mission.Player is not null;
+            && Viewpoint?.HasPlayer == true;
 
         // Whether the character is drawn at all, read here rather than at the draw because the
         // SHADOW cascades run before it: deciding at the geometry pass left the body's shadow a
@@ -1523,10 +1523,9 @@ public sealed partial class GameHost
         // only, as a soldier's is: the muzzle flame is light, and the deferred pass would shade it
         // like scenery.
         if (thirdPersonBody
-            && _mission.Player is { } armedBody
             && _soldiers is { } handBody
             && _heldWeapon is { IsReady: true } thirdPersonGun
-            && armedBody.Weapons?.HideFirstPersonWeapon != true)
+            && WorldView?.TryHeldWeapon(out int heldShotSequence) == true)
         {
             // The cycle changes the model as well as the animation, and out here nothing else is
             // watching for that: the first-person block that normally does is not running.
@@ -1542,7 +1541,7 @@ public sealed partial class GameHost
                     eye,
                     projection,
                     firedThisTick: false,
-                    armedBody.ShotSequence,
+                    heldShotSequence,
                     WeaponDrawParts.BodyOnly);
             }
         }
@@ -2071,7 +2070,7 @@ public sealed partial class GameHost
         // The player's flashlight, outside the lamps' gate: it lights under every lighting model the
         // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
         _flashlight.Submit(
-            captured && flashlightShown && _mission.Player is not null && !_mission.IsPlayerDead,
+            captured && flashlightShown && !_mission.IsPlayerDead,
             _menuFlow.MenuMode && _menuFlow.PauseMenu,
             flashlightBody,
             eye,
@@ -2216,14 +2215,14 @@ public sealed partial class GameHost
             // so it keeps whatever the player last supplied rather than dropping the splashes.
             // This is only the fallback now: the trace below is what the storm actually lands on,
             // and the plane is what it falls back to where the trace has not reached yet.
-            if (_mission.Player is { } stormPlayer)
+            if (Viewpoint?.BodyPositionUnits is { } stormFeet)
             {
                 liveStorm.GroundHeightMetres =
-                    stormPlayer.Body.Position.Z / WorldScene.UnitsPerMetre;
+                    stormFeet.Z / WorldScene.UnitsPerMetre;
 
                 // The grenade caster, which is the one trace in the game that already covers the
                 // terrain AND the placed collision meshes -- the same two things rain lands on.
-                liveStorm.Ground = stormPlayer.GrenadeWalls;
+                liveStorm.Ground = Viewpoint.GroundTrace;
                 liveStorm.UnitsPerMetre = WorldScene.UnitsPerMetre;
             }
         }
@@ -2450,13 +2449,8 @@ public sealed partial class GameHost
             && TacticalComputer is null
             && _playerMode
             && Viewpoint?.IsDeathViewActive != true
-            && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false })
+            && Viewpoint?.WalkingEye(smoothPresentation, tickBlend) is { } computerEye)
         {
-            Camera3D computerEye = _mission.Player.Camera;
-            if (smoothPresentation && _mission.Player.HasViewTickPair)
-            {
-                computerEye = _mission.Player.SmoothedCamera(tickBlend);
-            }
 
             Matrix4f computerViewModelProjection = ViewModelProjection.Create(
                 sight.ViewModelTanX,
@@ -2480,7 +2474,7 @@ public sealed partial class GameHost
 
         if (_computerOpen
             && _mission.Objectives is { } objectiveRuntime
-            && _mission.Player is { } computerPlayer)
+            && Viewpoint?.BodyPositionUnits is { } computerBody)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
@@ -2489,7 +2483,7 @@ public sealed partial class GameHost
                 tacticalChrome.Draw(
                     state.Batch,
                     objectiveRuntime,
-                    computerPlayer.Body.Position,
+                    computerBody,
                     _mission.Soldiers?.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
                     _window.Width,
@@ -2501,7 +2495,7 @@ public sealed partial class GameHost
                 computer.Draw(
                     state.Batch,
                     objectiveRuntime,
-                    computerPlayer.Body.Position,
+                    computerBody,
                     _mission.Soldiers?.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
                     _window.Width,

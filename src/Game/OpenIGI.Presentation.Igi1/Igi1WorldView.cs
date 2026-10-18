@@ -15,6 +15,19 @@ internal sealed class Igi1WorldView(Igi1Gameplay gameplay) : IMissionWorldView
     public BallisticSimulation? Ballistics => gameplay.World.Player?.Ballistics;
 
     /// <inheritdoc/>
+    public bool TryHeldWeapon(out int shotSequence)
+    {
+        if (gameplay.World.Player is { } player && player.Weapons?.HideFirstPersonWeapon != true)
+        {
+            shotSequence = player.ShotSequence;
+            return true;
+        }
+
+        shotSequence = 0;
+        return false;
+    }
+
+    /// <inheritdoc/>
     public void DrawProjectiles(IGrenadePresenter? grenades, IMissilePresenter? missiles, in Camera3D eye, in Matrix4f projection, float tickBlend)
     {
         MissionWorld mission = gameplay.World;

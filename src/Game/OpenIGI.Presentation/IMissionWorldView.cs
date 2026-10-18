@@ -11,6 +11,11 @@ public interface IMissionWorldView
     /// <summary>Gets the rounds in flight whose streaks are drawn, or <see langword="null"/> when there is no player to have fired any.</summary>
     BallisticSimulation? Ballistics { get; }
 
+    /// <summary>Gets whether the player's weapon is drawn in its hand, and the shot it is on.</summary>
+    /// <param name="shotSequence">The player's shot counter, which the muzzle's parts follow.</param>
+    /// <returns><see langword="false"/> when there is no player or what it holds hides its weapon.</returns>
+    bool TryHeldWeapon(out int shotSequence);
+
     /// <summary>Draws the grenades, rockets and launcher rounds in the air.</summary>
     /// <param name="grenades">The grenades' presenter, or <see langword="null"/>.</param>
     /// <param name="missiles">The rockets' presenter, or <see langword="null"/>.</param>
