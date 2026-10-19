@@ -219,32 +219,14 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
         // is a counter, and the renderer turns the transform from it when it draws.
         mission.Spins?.Advance();
-        if (mission.SecurityCameras is { } cameras)
+        // A level the walk does not reach updates its cameras here, after everything else.
+        if (!mission.CamerasInWalk && mission.SecurityCameras is { } cameras)
         {
-            bool crouching = Walking() && mission.Player!.IsCrouched;
-
-            // Retail's lenses scan every human and every camera (0x489750): a guard's body or a
-            // destroyed camera in view raises the alarm at once, as the player does after 90 ticks.
-            cameras.Tick(
-                watchedFeet,
-                crouching,
-                targetAlive: !mission.IsPlayerDead,
-                playerOnCamerasSide: (mission.Soldiers?.PlayerTeam ?? 0) == 1,
-                mission.Soldiers?.CameraSubjects() ?? []);
-            if (mission.Solids is { } cameraSolids)
+            SecurityCameraScan scan = CameraScanNow();
+            cameras.Tick(scan.TargetFeet, scan.TargetCrouching, scan.TargetAlive, scan.PlayerOnCamerasSide, scan.Soldiers);
+            foreach (SecurityCamera camera in cameras.Cameras)
             {
-                foreach (SecurityCamera camera in cameras.Cameras)
-                {
-                    Vector3d headMetres = new(
-                        camera.HeadPositionUnits.X / WorldScene.UnitsPerMetre,
-                        camera.HeadPositionUnits.Y / WorldScene.UnitsPerMetre,
-                        camera.HeadPositionUnits.Z / WorldScene.UnitsPerMetre);
-                    cameraSolids.UpdateTransform(
-                        camera.Task,
-                        camera.HeadModelName,
-                        headMetres,
-                        camera.Orientation);
-                }
+                CarryCameraHead(camera);
             }
         }
 
@@ -642,6 +624,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         mission.SoldiersInWalk = false;
         mission.PlayerInWalk = false;
         mission.ElevatorsInWalk = false;
+        mission.CamerasInWalk = false;
         if (mission.Cutscenes is not { } cutscenes)
         {
             return;
@@ -666,6 +649,27 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
 
             mission.ElevatorsInWalk = true;
         }
+
+        // A camera updates where the walk reaches it (SCamera's UPDATE, 0x442610): its lens sweeps and scans the
+        // humans as they stand at that moment, then the holder takes its power for the next tick. Its controls
+        // (0x440D70) read the isDetection of the cameras ahead of them this tick.
+        if (mission.SecurityCameras is { } cameras)
+        {
+            cameras.AttachTo(walker, CameraScanNow, CarryCameraHead);
+            mission.CamerasInWalk = true;
+        }
+
+        // A RotatingObject updates where the walk reaches it (0x439090), reading its On expression then.
+        if (mission.RotatingObjects is { } rotators)
+        {
+            rotators.AttachTo(walker, rotator =>
+            {
+                if (mission.Solids is { } rotatorSolids)
+                {
+                    RotatingObjectRegistry.ApplyCollision(rotatorSolids, rotator);
+                }
+            });
+        }
         if (mission.Soldiers is { } soldiers)
         {
             soldiers.AttachTo(walker);
@@ -680,6 +684,36 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
                 walker.RunChildren(task);
             });
             mission.PlayerInWalk = true;
+        }
+    }
+
+    // What a lens scans as it updates (0x489750): every human and every camera, so a guard's body or a destroyed camera
+    // in view raises the alarm at once, as the player does after 90 ticks. In the fly-through the free camera stands in
+    // for the player's feet.
+    private SecurityCameraScan CameraScanNow()
+    {
+        bool walking = Walking();
+        Vector3d feet = walking
+            ? mission.Player!.Body.Position
+            : host.FreeCameraPosition ?? mission.Player?.Body.Eye ?? default;
+        return new SecurityCameraScan(
+            feet,
+            walking && mission.Player!.IsCrouched,
+            TargetAlive: !mission.IsPlayerDead,
+            PlayerOnCamerasSide: (mission.Soldiers?.PlayerTeam ?? 0) == 1,
+            mission.Soldiers?.CameraSubjects() ?? []);
+    }
+
+    // A camera's head collides where its update left it.
+    private void CarryCameraHead(SecurityCamera camera)
+    {
+        if (mission.Solids is { } cameraSolids)
+        {
+            Vector3d headMetres = new(
+                camera.HeadPositionUnits.X / WorldScene.UnitsPerMetre,
+                camera.HeadPositionUnits.Y / WorldScene.UnitsPerMetre,
+                camera.HeadPositionUnits.Z / WorldScene.UnitsPerMetre);
+            cameraSolids.UpdateTransform(camera.Task, camera.HeadModelName, headMetres, camera.Orientation);
         }
     }
 

@@ -44,11 +44,36 @@ public sealed class SecurityCameraRegistryTests
         _ = WorldInteractionRegistry.Build(root, mission, doors, loop.Variables, elevators);
         SecurityCameraRegistry cameras = SecurityCameraRegistry.Build(root, loop.Variables);
 
+        // The first tick's lens reads the power the constructor left (0x4423F0: nought); the holder powers up after it.
         cameras.Tick(default, targetCrouching: false, targetAlive: true);
-
         SecurityCamera[] controlled = [.. cameras.Cameras.Where(static c => c.OnExpression.Contains("SCameraControl_", StringComparison.Ordinal))];
         Assert.NotEmpty(controlled);
+        Assert.All(controlled, static camera => Assert.False(camera.IsActive, $"{camera.Task.Name} lit before its holder was powered."));
+        Assert.All(controlled, static camera => Assert.True(camera.IsPowered, $"{camera.Task.Name} ({camera.OnExpression}) is unpowered."));
+
+        cameras.Tick(default, targetCrouching: false, targetAlive: true);
         Assert.All(controlled, static camera => Assert.True(camera.IsActive, $"{camera.Task.Name} ({camera.OnExpression}) is dark."));
+    }
+
+    [RequiresGameDataFact]
+    public void ALensReadsItsHoldersPowerFromTheTickBefore()
+    {
+        // SCamera's update (0x442610) runs its lens before it evaluates its own On Expression, so a camera switched off
+        // this tick still sweeps once more, and one switched on stays dark for a tick.
+        Fixture fixture = Build();
+        SecurityCamera camera = fixture.Registry.Cameras[0];
+        camera.IsPowered = false;
+
+        fixture.Registry.Tick(default, targetCrouching: false, targetAlive: false);
+        Assert.False(camera.IsActive);
+        Assert.True(camera.IsPowered);
+
+        fixture.Registry.Tick(default, targetCrouching: false, targetAlive: false);
+        Assert.True(camera.IsActive);
+
+        Assert.True(fixture.Registry.Destroy(camera.Task));
+        fixture.Registry.Tick(default, targetCrouching: false, targetAlive: false);
+        Assert.False(camera.IsPowered);
     }
 
     [RequiresGameDataFact]
@@ -313,6 +338,12 @@ public sealed class SecurityCameraRegistryTests
         registry.BindScene(scene.Placements);
         Assert.Equal(5, registry.Cameras.Count);
         Assert.Equal(2, registry.ControlCount);
+
+        // As a tick already run leaves them: each holder has taken its On Expression (all true at the start of mission 1).
+        foreach (SecurityCamera camera in registry.Cameras)
+        {
+            camera.IsPowered = true;
+        }
         AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(root, loop.Variables);
         speakers.BindScene(scene.Placements);
         return new Fixture(registry, loop.Variables, speakers);
