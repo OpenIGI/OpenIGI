@@ -86,7 +86,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
     /// <inheritdoc cref="ISoldierPresenter.PlayerRagdollCentre"/>
     public Vector3d? RagdollCentre => _ragdoll?.Centre;
 
-    /// <inheritdoc cref="ISoldierPresenter.LoadPlayerBody"/>
+    /// <inheritdoc cref="ISoldierBodies.LoadPlayerBody"/>
     public bool Load(
         LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma)
     {
@@ -272,7 +272,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
         CaptureTickState(snap: false);
     }
 
-    /// <inheritdoc cref="ISoldierPresenter.StandPlayerBodyAt"/>
+    /// <inheritdoc cref="ISoldierBodies.StandPlayerBodyAt"/>
     public void StandAt(Vector3d feetUnits, float facing)
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);

@@ -81,26 +81,6 @@ public interface ISoldierPresenter : ISoldierBodies
         Func<IEnumerable<VehicleGunVisual>> guns);
 
     /// <summary>
-    /// Loads the player's third-person body — the model the level's <c>HumanPlayer</c> declares, on
-    /// skeleton 0's set, standing in clip 2 — so the death camera has a body to reveal.
-    /// </summary>
-    /// <param name="mission">The mission whose packs hold the model.</param>
-    /// <param name="model">The player's model, from the <c>HumanPlayer</c> task's <c>Model</c> parameter.</param>
-    /// <param name="animations">Skeleton 0's animation set (<c>000.iff</c>), the same one the player walks on.</param>
-    /// <param name="position">Where the level places the player, in engine units.</param>
-    /// <param name="gamma">The heading the player starts facing.</param>
-    /// <returns><see langword="false"/> when the model does not resolve or does not upload.</returns>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// The body is built from a synthetic <see cref="HumanSoldierTask"/> because that is all
-    /// <see cref="SoldierView"/> needs — skeleton, stand clip, position and heading — and the player's
-    /// constructor (<c>0x410370</c>) builds exactly that on <c>Human+104</c> (see <see cref="HumanPlayerBody"/>).
-    /// It is kept out of <c>_groups</c> so nothing else draws or ticks it; only the death path does.
-    /// </remarks>
-    bool LoadPlayerBody(
-        LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma);
-
-    /// <summary>
     /// Poses the player's body with its death fall and starts drawing it — the player has died.
     /// </summary>
     /// <param name="deathAnimation">The fall clip the death state chose, from the player's hit-zone row.</param>
@@ -130,31 +110,6 @@ public interface ISoldierPresenter : ISoldierBodies
     /// and the body's own mesh is rebuilt from the new pose so the fall plays through.
     /// </remarks>
     void TickPlayerBody();
-
-    /// <summary>Stands the player's body at a place and draws it, outside death and outside climbing.</summary>
-    /// <param name="feetUnits">Where the body stands, in engine units — the level's own spawn.</param>
-    /// <param name="facing">Which way it faces, as the spawn's gamma.</param>
-    /// <remarks>
-    /// <para>
-    /// A third reason to draw the body, and deliberately a separate flag rather than a reuse of either
-    /// existing one. The mission-entry shot dives onto the character standing at their spawn and seats
-    /// the view inside their head, so it needs the body visible for a second — but it must not touch
-    /// <c>_playerBodyActive</c>, which is the death latch and also drives the fall's per-tick re-skin and
-    /// the knock-back, nor the climbing latch, which the ladder code clears on its own schedule.
-    /// </para>
-    /// <para>
-    /// <b>It has to place and re-skin, not merely make visible.</b> <see cref="LoadPlayerBody"/> uploads
-    /// the model's REST mesh and leaves the body unplaced — the death path places and poses it, the
-    /// climbing path places and poses it, and until one of them runs there is no pose in the vertex
-    /// buffer at all. Drawing it in that state put enormous black shards across the middle of the descent,
-    /// which is exactly what an unskinned rig looks like when its vertices are still at the origin.
-    /// </para>
-    /// <para>
-    /// Cleared by <see cref="SoldierSimulation.HidePlayerBody"/> and by <c>Release</c>, so a mission that ends
-    /// mid-shot does not leave a body standing in the next one.
-    /// </para>
-    /// </remarks>
-    void StandPlayerBodyAt(Vector3d feetUnits, float facing);
 
     /// <summary>Walks the third-person body with the player, in the clip the player's own legs are in.</summary>
     /// <param name="feetUnits">Where the player is standing, in engine units — <c>PlayerBody.Position</c>.</param>
@@ -291,6 +246,15 @@ public interface ISoldierPresenter : ISoldierBodies
 
     /// <inheritdoc/>
     void ISoldierBodies.Snapshot(List<SoldierSnapshot> into) => Simulation.Snapshot(into);
+
+    /// <inheritdoc/>
+    void ISoldierBodies.HidePlayerBody() => Simulation.HidePlayerBody();
+
+    /// <inheritdoc/>
+    IReadOnlyList<Vector3d> ISoldierBodies.MapContacts() => Simulation.MapContacts();
+
+    /// <inheritdoc/>
+    void ISoldierBodies.LogAiSummary() => Simulation.LogAiSummary();
 
     /// <inheritdoc/>
     IReadOnlyList<EnemyOverlayBox> ISoldierBodies.BinocularTargets(

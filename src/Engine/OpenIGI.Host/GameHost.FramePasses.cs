@@ -288,7 +288,7 @@ public sealed partial class GameHost
             // camera is close enough that its head fills the frame. Placed and re-skinned every frame
             // it is shown rather than merely switched on: the body is uploaded as a rest mesh and has
             // no pose until something puts one in it.
-            if (_mission.SoldierPresenter is { } bodies)
+            if (_soldiers is { } bodies)
             {
                 if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
                 {
@@ -301,7 +301,7 @@ public sealed partial class GameHost
                 }
                 else
                 {
-                    bodies.Simulation.HidePlayerBody();
+                    bodies.HidePlayerBody();
                 }
             }
 
@@ -311,7 +311,7 @@ public sealed partial class GameHost
             if (_entry.Phase == MissionEntryPhase.Done)
             {
                 _entry.Reset();
-                _mission.Soldiers?.HidePlayerBody();
+                _soldiers?.HidePlayerBody();
                 ApplyGameplayMotionBlur();
                 ReportWatchedFramePassesIn(1);
 
@@ -1227,7 +1227,7 @@ public sealed partial class GameHost
                 WriteLightingDump(lightingDumpPath);
             }
 
-            _mission.Soldiers?.LogAiSummary();
+            _soldiers?.LogAiSummary();
             state.Running = false;
         }
     }

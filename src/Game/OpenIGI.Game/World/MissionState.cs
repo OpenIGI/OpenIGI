@@ -173,6 +173,22 @@ public class MissionState : IInspectableMission
         DamageFlash = new();
     }
 
+    /// <summary>Starts a fresh life at the same difficulty: the last one's death and its wash do not carry over.</summary>
+    public virtual void StartFreshLife()
+    {
+        PlayerHealth = new(HumanHitZoneTable.Player, PlayerMaximumHealth)
+        {
+            DamageScale = HumanHealth.DifficultyDamageScale(PlayerDifficulty),
+        };
+        IsPlayerDead = false;
+        DamageFlash = new();
+    }
+
+    /// <summary>Forgets the title's own player, as another takes the level or the level goes.</summary>
+    public virtual void ForgetPlayer()
+    {
+    }
+
     /// <summary>Takes the level's soldiers as the frame draws them; a title with a simulation of its own reads it from them.</summary>
     /// <param name="bodies">The soldiers, or <see langword="null"/> to drop them.</param>
     public virtual void AdoptSoldiers(ISoldierBodies? bodies)

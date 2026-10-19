@@ -295,6 +295,8 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
     {
         // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
         // fixed tick, for the same determinism reason the bodies are.
+        mission.DamageFlash.Tick();
+        mission.FlashbangFlash.Tick();
         host.StepScreen();
 
         // The player's eye is what the guards' view cones are tested against -- and in the

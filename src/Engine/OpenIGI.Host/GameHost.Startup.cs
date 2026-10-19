@@ -325,7 +325,7 @@ public sealed partial class GameHost
 
         // The walking player. F1 swaps between it and the free camera: the camera is how a level is
         // inspected, the player is how it is stood in. Both draw through the same Camera3D.
-        _mission.Player = null;
+        _mission.ForgetPlayer();
         _heldWeapon = null;
         _hud = null;
         _debugOverlay = null;

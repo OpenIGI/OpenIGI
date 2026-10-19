@@ -20,6 +20,9 @@ public interface IHostedPlayer
     /// <summary>Gets the body that stands in the level.</summary>
     PlayerBody Body { get; }
 
+    /// <summary>Gets the rockets the player's launcher has fired.</summary>
+    MissileSimulation Missiles { get; }
+
     /// <summary>Gets where the feet are, in the renderer's metres.</summary>
     Vector3d Position { get; }
 

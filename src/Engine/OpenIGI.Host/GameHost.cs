@@ -185,7 +185,7 @@ public sealed partial class GameHost : IDisposable
     // The first game's mission, its world, and the host's side of it.
     private readonly Igi1Host _igi1Host;
     private readonly Igi1Gameplay _igi1;
-    private readonly MissionWorld _mission;
+    private readonly MissionState _mission;
 
     // The player the host steers and looks through, when the mission has one.
     private IHostedPlayer? HostedPlayer => _igi1.Player;

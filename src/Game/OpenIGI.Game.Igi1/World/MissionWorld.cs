@@ -121,6 +121,16 @@ public sealed class MissionWorld : MissionState
         FlashbangFlash = new();
     }
 
+    /// <inheritdoc/>
+    public override void StartFreshLife()
+    {
+        base.StartFreshLife();
+        FlashbangFlash = new();
+    }
+
+    /// <inheritdoc/>
+    public override void ForgetPlayer() => Player = null;
+
     /// <summary>Takes the level's soldiers as the frame draws them, and the simulation they carry.</summary>
     /// <param name="bodies">The soldiers, or <see langword="null"/> to drop them.</param>
     public override void AdoptSoldiers(ISoldierBodies? bodies)

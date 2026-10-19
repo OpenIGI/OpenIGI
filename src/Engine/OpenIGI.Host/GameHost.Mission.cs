@@ -729,7 +729,7 @@ public sealed partial class GameHost
             throw MissingSystem(MissionSystemNames.Scene);
         }
 
-        if (_mission.Soldiers is null)
+        if (_igi1.World.Soldiers is null)
         {
             // A title without IGI1's soldiers has no brains to animate here.
             return;
@@ -956,7 +956,7 @@ public sealed partial class GameHost
                 return true;
             }
             : null;
-        _mission.Player = null;
+        _mission.ForgetPlayer();
         _titleFeatures = null;
         _titleHud?.Dispose();
         _titleHud = null;
@@ -965,13 +965,7 @@ public sealed partial class GameHost
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
-        _mission.PlayerHealth = new(HumanHitZoneTable.Player, _mission.PlayerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(_mission.PlayerDifficulty),
-        };
-        _mission.IsPlayerDead = false;
-        _mission.DamageFlash = new();
-        _mission.FlashbangFlash = new();
+        _mission.StartFreshLife();
         Viewpoint?.ResetDeathView();
         _flashlight.Reset();
 
@@ -1114,7 +1108,7 @@ public sealed partial class GameHost
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
                 // player walks on. It stays invisible until the player dies. Without the spawn's model or
                 // the set there is simply no body to show, and death falls back to the frozen view.
-                if (_mission.SoldierPresenter is { } bodies
+                if (_soldiers is { } bodies
                     && playerBodySet is { } bodySet
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
@@ -1759,12 +1753,7 @@ public sealed partial class GameHost
 
         public void StepEffectsAfterDeath() => host.StepEffectsAfterDeath();
 
-        public void StepScreen()
-        {
-            host._mission.DamageFlash.Tick();
-            host._mission.FlashbangFlash.Tick();
-            host._hud?.Tick();
-        }
+        public void StepScreen() => host._hud?.Tick();
 
         // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates whose variables the level
         // scripts reset stay satisfied while the scene plays.
@@ -1898,7 +1887,7 @@ public sealed partial class GameHost
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
     private void PresentPlayerImpacts()
     {
-        PlayerCamera player = _mission.Player!;
+        IHostedPlayer player = HostedPlayer!;
 
         // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
         // material table, where the round arrived rather than where it was fired.
@@ -1969,7 +1958,7 @@ public sealed partial class GameHost
                     $"The level's LevelFlow has failed the mission; opening the failed page.");
                 _computerOpen = false;
                 _computerFlight.Reset();
-                _mission.Player?.SetMapComputerOpen(false);
+                HostedPlayer?.SetMapComputerOpen(false);
 
                 // The result is a shell page, not a drawn card, so its two choices can be clicked
                 // and navigated like every other page and the shell's own cursor is the one on
@@ -1983,7 +1972,7 @@ public sealed partial class GameHost
                 // The platform cursor stays hidden: the shell draws its own, so revealing this one
                 // would put a second, unrelated pointer beside it.
                 _window.CursorVisible = false;
-                _mission.Player?.HoldStill();
+                HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;
             }
         }

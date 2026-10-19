@@ -68,7 +68,7 @@ public sealed partial class GameHost
 
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene
         // that has just been replaced.
-        _mission.Player = null;
+        _mission.ForgetPlayer();
         _titleFeatures = null;
         _playerMode = false;
 

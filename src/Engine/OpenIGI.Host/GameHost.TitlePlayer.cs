@@ -94,7 +94,7 @@ public sealed partial class GameHost
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
         _titlePresentation.Reset(_titleFeatures);
-        _mission.Player = null;
+        _mission.ForgetPlayer();
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
 
