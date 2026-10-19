@@ -44,11 +44,6 @@ public interface IIgi1PlayerSetupHost
     /// <param name="what">What finished.</param>
     void EndStage(string what);
 
-    /// <summary>Answers the player touching a powered fence.</summary>
-    /// <param name="player">The player.</param>
-    /// <param name="fence">The fence.</param>
-    void ElectricFenceTouched(PlayerCamera player, WorldInteraction fence);
-
     /// <summary>Shows a gun a soldier dropped.</summary>
     /// <param name="loaded">The mission, whose packs hold the gun's model.</param>
     /// <param name="pickup">The dropped gun.</param>
@@ -58,10 +53,6 @@ public interface IIgi1PlayerSetupHost
     /// <param name="row">The material's row, or <see langword="null"/> when the terrain declares none.</param>
     void TerrainRowRead(int? row);
 
-    /// <summary>Answers the player's landing: its sound, the red wash, the AI hearing it and a lethal fall.</summary>
-    /// <param name="player">The player.</param>
-    /// <param name="impact">The landing.</param>
-    void FallImpact(PlayerCamera player, HumanFallImpact impact);
 }
 
 /// <summary>
@@ -69,9 +60,10 @@ public interface IIgi1PlayerSetupHost
 /// material tables, the guns lying in the level, and <c>humanplayer.qvm</c>'s tuning.
 /// </summary>
 /// <param name="mission">The mission's world, which keeps the tables and the player's health.</param>
+/// <param name="harm">What a fall and a powered fence do to the player.</param>
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1MissionAudio audio, IIgi1PlayerSetupHost host)
+public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IIgi1PlayerSetupHost host)
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
@@ -141,7 +133,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1MissionAudio audio
         {
             candidate.UseInteractions(interactions);
             candidate.TaskActivated += id => mission.Soldiers?.ActivateTask(id);
-            candidate.ElectrifiedFenceTouched += fence => host.ElectricFenceTouched(candidate, fence);
+            candidate.ElectrifiedFenceTouched += fence => harm.ResolvePlayerElectricFence(candidate, fence);
             candidate.UnarmedStationaryGun += gun => host.Logger.Warning(
                 "Player",
                 $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
@@ -338,7 +330,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1MissionAudio audio
         // accumulator the HUD, guard hits and death state already share. The sink crosses the
         // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
         candidate.UseHealth(mission.PlayerHealth);
-        candidate.Body.SetFallImpactSink(impact => host.FallImpact(candidate, impact));
+        candidate.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(candidate, impact));
     }
 
     /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>

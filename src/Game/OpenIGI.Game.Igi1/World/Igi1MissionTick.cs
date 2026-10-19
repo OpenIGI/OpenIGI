@@ -47,20 +47,12 @@ public interface IIgi1MissionHost
     /// <returns>Whether it ran, in which case the first game's player does not.</returns>
     bool TickTitlePlayer();
 
-    /// <summary>Gives the player every weapon, when the cheat asks for it, and a hand to hold them in.</summary>
-    /// <param name="player">The player.</param>
-    void GrantCheatWeapons(PlayerCamera player);
+    /// <summary>Gives the hand a presenter, once the all-weapons cheat has put weapons in it.</summary>
+    void CheatWeaponsGranted();
 
     /// <summary>Plays a proximity mine's arming cue.</summary>
     /// <param name="origin">Where the mine is, in world units.</param>
     void PlayMineTrigger(Vector3d origin);
-
-    /// <summary>Kills the player, and starts what shows the death.</summary>
-    /// <param name="from">Where the blow came from, in world units.</param>
-    /// <param name="zone">The damage zone struck.</param>
-    /// <param name="bone">The bone struck, or -1.</param>
-    /// <param name="category">The kind of weapon that killed.</param>
-    void KillPlayer(Vector3d from, int zone, int bone, WeaponCategory category);
 
     /// <summary>Reports the player's first shot and every round that lands on a guard.</summary>
     void ReportPlayerShots();
@@ -118,10 +110,11 @@ public interface IIgi1MissionHost
 /// the soldiers, in the order the port runs them each tick.
 /// </summary>
 /// <param name="mission">The mission's world.</param>
+/// <param name="harm">What a vehicle that runs the player down does to them.</param>
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, Igi1MissionAudio audio, IIgi1MissionHost host)
+public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IIgi1MissionHost host)
 {
     // Whether the player's ladder climb or world interaction has begun its body animation, and whether the
     // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
@@ -614,7 +607,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, Igi
         // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
         mission.Soldiers?.PublishCollisionBodies();
         player.InputProfile = host.InputProfile;
-        host.GrantCheatWeapons(player);
+        GrantCheatWeapons(player);
         if (host.ComputerOpen)
         {
             player.TickMapComputer();
@@ -657,7 +650,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, Igi
             Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
                 ? metres * WorldScene.UnitsPerMetre
                 : origin;
-            host.KillPlayer(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+            harm.BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
         }
     }
 
@@ -830,5 +823,27 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, Igi
         {
             host.StepEffectsAfterDeath();
         }
+    }
+
+    // Tops the player's inventory up to the whole roster while the all-weapons cheat is in force. Runs
+    // before every player tick, so it covers both mission start and switching the cheat on mid-mission;
+    // a weapon already carried is left exactly as it is. Switching the cheat off takes nothing away.
+    private void GrantCheatWeapons(PlayerCamera player)
+    {
+        if (!PlayerCheatOptions.Current.AllWeapons
+            || mission.WeaponTypes is not { } roster
+            || mission.AmmoTypes is not { } ammunition)
+        {
+            return;
+        }
+
+        int added = player.EnsureAllWeapons(roster.Weapons, ammunition);
+        if (added == 0)
+        {
+            return;
+        }
+
+        host.Logger.Information("Player", $"All-weapons cheat added {added} weapon(s).");
+        host.CheatWeaponsGranted();
     }
 }

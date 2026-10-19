@@ -1667,29 +1667,12 @@ public sealed partial class GameHost
         return presenter;
     }
 
-    // Tops the player's inventory up to the whole roster while the all-weapons cheat is in force. Runs
-    // before every player tick, so it covers both mission start and switching the cheat on mid-mission;
-    // a weapon already carried is left exactly as it is. Switching the cheat off takes nothing away.
-    private void GrantCheatWeapons(PlayerCamera player)
+    // The all-weapons cheat put weapons in the player's hands (Igi1MissionTick tops the inventory up).
+    private void ShowCheatWeapons()
     {
-        if (!PlayerCheatOptions.Current.AllWeapons
-            || _mission.WeaponTypes is not { } roster
-            || _mission.AmmoTypes is not { } ammunition)
-        {
-            return;
-        }
-
-        int added = player.EnsureAllWeapons(roster.Weapons, ammunition);
-        if (added == 0)
-        {
-            return;
-        }
-
-        _logger.Information("Player", $"All-weapons cheat added {added} weapon(s).");
-
         // A level that declared no loadout never built a presenter for the hand, so the first granted
         // weapon would be carried but never drawn.
-        if (_heldWeapon is null && player.View is not null
+        if (_heldWeapon is null && HostedPlayer?.View is not null
             && _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest()) is { } presenter)
         {
             presenter.Materials = _materials;
@@ -1736,19 +1719,6 @@ public sealed partial class GameHost
         _igi1Host.State = state;
         _igi1.Tick.Run(outcome == FrameOutcome.Tick);
     }
-
-    private void InstallPlayerHitShake() => _igi1.Harm.InstallPlayerHitShake();
-
-    private void StrikePlayer(Vector3d attacker, float damage) => _igi1.Harm.StrikePlayer(attacker, damage);
-
-    private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category) =>
-        _igi1.Harm.BeginPlayerDeath(from, zone, bone, category);
-
-    private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact) =>
-        _igi1.Harm.ResolvePlayerFallImpact(player, impact);
-
-    private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence) =>
-        _igi1.Harm.ResolvePlayerElectricFence(player, fence);
 
     /// <summary>The host's side of <see cref="Igi1Gameplay"/>: the picture, the sound, the files, the menus and the log of the first game's mission.</summary>
     /// <param name="host">The host.</param>
@@ -1811,13 +1781,10 @@ public sealed partial class GameHost
 
         public bool TickTitlePlayer() => host.TickTitlePlayer();
 
-        public void GrantCheatWeapons(PlayerCamera player) => host.GrantCheatWeapons(player);
+        public void CheatWeaponsGranted() => host.ShowCheatWeapons();
 
         public void PlayMineTrigger(Vector3d origin) =>
             host._audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
-
-        public void KillPlayer(Vector3d from, int zone, int bone, WeaponCategory category) =>
-            host.BeginPlayerDeath(from, zone, bone, category);
 
         public void ReportPlayerShots() => host.ReportPlayerShots(State);
 
@@ -1891,16 +1858,11 @@ public sealed partial class GameHost
 
         public void EndStage(string what) => host.EndStage(what);
 
-        public void ElectricFenceTouched(PlayerCamera player, WorldInteraction fence) =>
-            host.ResolvePlayerElectricFence(player, fence);
-
 
 
         public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
 
         public void TerrainRowRead(int? row) => host._effectTerrainRow = row;
-
-        public void FallImpact(PlayerCamera player, HumanFallImpact impact) => host.ResolvePlayerFallImpact(player, impact);
 
         public SoundSystem? SoundOutput => host._audioOut.Sounds;
 

@@ -26,7 +26,7 @@ public sealed class Igi1Gameplay : IMissionGameplay
         Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
         Blasts = new Igi1Blasts(World, Harm, Audio, host);
         Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, host);
-        Tick = new Igi1MissionTick(World, Blasts, Audio, host);
+        Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
     }
 
     /// <summary>Gets the played mission's world.</summary>
@@ -55,5 +55,5 @@ public sealed class Igi1Gameplay : IMissionGameplay
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>
-    public Igi1PlayerSetup NewPlayerSetup() => new(World, Audio, _host);
+    public Igi1PlayerSetup NewPlayerSetup() => new(World, Harm, Audio, _host);
 }

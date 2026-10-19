@@ -290,9 +290,6 @@ public sealed partial class GameHost
         }
     }
 
-    private void ApplyRoundContact(Vector3d impactUnits, GameTask? owner, WorldPlacement? placement, float destructibleDamage = 1f) =>
-        _igi1.Blasts.ApplyRoundContact(impactUnits, owner, placement, destructibleDamage);
-
     /// <summary>Empties the bank and the score for a different game, and starts that game's theme.</summary>
     /// <remarks>
     /// <para>
