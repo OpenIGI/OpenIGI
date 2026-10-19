@@ -225,6 +225,11 @@ public sealed class RetailElevatorTests
                 })
                 .ToArray();
 
+            // A door reports closed only once it has updated (0x446D10 writes the flag at the end of its update), so the
+            // cab's doors are given that first update; the check below then holds them still, to see that the switch
+            // alone does not toggle them.
+            doors.Tick();
+
             Assert.True(interactions.ActivateFromAi(switchTask.Id));
 
             // Retail wanted-floor expressions gate on Switch.isLastPressed, the falling-edge pulse

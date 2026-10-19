@@ -139,9 +139,18 @@ public sealed class DoorState
     /// <summary>Commands the door closed, however it stands.</summary>
     public void CommandClosed() => _latch = false;
 
+    /// <summary>Gets a value indicating whether the door has updated at least once.</summary>
+    /// <remarks>
+    /// Its open and closed flags (<c>+409</c>/<c>+410</c>) are written only at the end of its update (<c>0x446D10</c>);
+    /// the constructor (<c>0x4468F0</c>) leaves them as the allocation found them, and the lock flag (<c>+408</c>) at
+    /// nought. A door in a section the level has not streamed in yet reports none of them.
+    /// </remarks>
+    public bool HasTicked { get; private set; }
+
     /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>, with its x87 arithmetic.</summary>
     public void Tick()
     {
+        HasTicked = true;
         PreviousAngleDegrees = _angleDegrees;
         PreviousSlideFraction = _slide;
         WasFullyOpen = IsFullyOpen;

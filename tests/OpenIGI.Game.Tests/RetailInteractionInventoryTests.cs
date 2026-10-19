@@ -26,6 +26,42 @@ public sealed class RetailInteractionInventoryTests
         "SCameraControl",
     };
 
+    /// <summary>
+    /// Mission 14 streams its building sections in through AreaActivate containers. A task in one that is not running
+    /// still has its variables -- retail binds them as it creates the task -- and is simply not in the world until the
+    /// container's ACTIVATE (0x487A70) puts it there.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_door_in_a_dormant_section_keeps_its_exports_and_comes_into_the_world_with_it()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        _ = loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        LevelLoader level = new(root, loop.TaskCommands, loop.Natives, resources);
+        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level).Load(14);
+        ScriptVarRegistry variables = loop.Variables;
+        ConditionalContainerTask section = root.Descendants().OfType<ConditionalContainerTask>()
+            .First(static container => container.Descendants().Any(static task => task.Type.Name == "Door"));
+        section.IsActive = false;
+        DeclaredTask door = section.Descendants().OfType<DeclaredTask>().First(static task => task.Type.Name == "Door");
+
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, DoorRegistry.Build(root), variables);
+
+        Assert.True(variables.TryRead($"{door.Name}.isClosed", out _), $"{door.Name}.isClosed is not exported.");
+        Assert.True(variables.TryRead($"{door.Name}.nDoorOpenTicks", out _), $"{door.Name}.nDoorOpenTicks is not exported.");
+        Assert.True(interactions.TryGet(door, out WorldInteraction? interaction));
+        Assert.False(interaction!.IsInWorld);
+
+        section.IsActive = true;
+        Assert.True(interaction.IsInWorld);
+    }
+
     [RequiresGameDataTheory]
     [InlineData(400, 500, "this.isClosed && Switch_500.isLastPressed", "this.isOpen && Switch_500.isLastPressed")]
     [InlineData(

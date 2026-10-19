@@ -118,6 +118,9 @@ public sealed class WorldInteraction
     public bool ExplosionTriggeredThisTick { get; private set; }
     public GenericTbaExplosionParameters? Explosion { get; }
 
+    /// <summary>Gets a value indicating whether the task is in the world: every conditional container above it is active.</summary>
+    public bool IsInWorld => ConditionalContainerGate.IsTaskActive(Task);
+
     /// <summary>Whether the task still offers itself to the retail activation scan.</summary>
     public bool IsAvailable => Type switch
     {
@@ -653,20 +656,33 @@ public sealed class WorldInteractionRegistry
     {
         foreach (GeneratorPowerState generator in _generators)
         {
-            generator.Settle();
+            if (generator.IsInWorld())
+            {
+                generator.Settle();
+            }
         }
     }
 
     /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz.</summary>
     public void Tick()
     {
+        // A task in a container that is not running is not in the world: the walk does not reach it, so it does not
+        // update, and nothing can be activated on it.
         foreach (GeneratorPowerState generator in _generators)
         {
-            generator.Tick();
+            if (generator.IsInWorld())
+            {
+                generator.Tick();
+            }
         }
 
         foreach (WorldInteraction item in _items)
         {
+            if (!item.IsInWorld)
+            {
+                continue;
+            }
+
             item.EvaluateConditions();
 
             // An empty gun's aim sinks on its own tick (0x474190). An occupied one is ticked by
@@ -682,7 +698,10 @@ public sealed class WorldInteractionRegistry
         // the authored task tree; Terminal_552 precedes its door in mission 3.
         foreach (WorldInteraction item in _items)
         {
-            item.CommitTick();
+            if (item.IsInWorld)
+            {
+                item.CommitTick();
+            }
         }
     }
 
@@ -744,11 +763,11 @@ public sealed class WorldInteractionRegistry
 
     /// <summary>Finds a powered electric fence touched by a player movement segment.</summary>
     public WorldInteraction? FindElectrifiedFenceContact(Vector3d from, Vector3d to) =>
-        _items.FirstOrDefault(item => item.SegmentTouchesFence(from, to));
+        _items.FirstOrDefault(item => item.IsInWorld && item.SegmentTouchesFence(from, to));
 
     /// <summary>Finds the powered fence whose collision volume contains a nearby player centre.</summary>
     public WorldInteraction? FindElectrifiedFenceNear(Vector3d point) =>
-        _items.FirstOrDefault(item => item.PointTouchesFence(point));
+        _items.FirstOrDefault(item => item.IsInWorld && item.PointTouchesFence(point));
 
     /// <summary>Finds the eligible task nearest the centre of the player's aim.</summary>
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch = 0f)
@@ -766,7 +785,7 @@ public sealed class WorldInteractionRegistry
 
         foreach (WorldInteraction item in _items)
         {
-            if (!item.IsAvailable || !item.CanOfferFrom(eye))
+            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye))
             {
                 continue;
             }
@@ -822,11 +841,10 @@ public sealed class WorldInteractionRegistry
         LevelExpressionRuntime expressions,
         ElevatorRegistry? elevators)
     {
-        if (ConditionalContainerGate.IsDormant(task))
-        {
-            return;
-        }
-
+        // Every task is collected, in a container that is running or not: retail binds a task's variables as it is
+        // created, and a container's ACTIVATE only puts its children in the world (0x487A70). Mission 14 streams its
+        // building sections in through AreaActivate containers; skipping their subtrees at load left every door,
+        // switch and terminal in them without its exports or its prompt once the player walked in.
         if (task is DeclaredTask declared && TypeOf(task.Type.Name) is { } type)
         {
             Vector3d taskPosition = PositionOf(declared, type);
@@ -959,11 +977,6 @@ public sealed class WorldInteractionRegistry
         ScriptVarRegistry variables,
         LevelExpressionRuntime expressions)
     {
-        if (ConditionalContainerGate.IsDormant(task))
-        {
-            return;
-        }
-
         if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "Generator", StringComparison.Ordinal))
         {
@@ -978,7 +991,8 @@ public sealed class WorldInteractionRegistry
                 () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared),
                 () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
                 ReadBool(declared, "Use backup timer"),
-                Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)));
+                Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)),
+                () => ConditionalContainerGate.IsTaskActive(declared));
             registry._generators.Add(state);
             variables.BindBool(declared, "isOn", () => state.IsOn, value => state.IsOn = value);
             variables.BindInt(
@@ -986,7 +1000,13 @@ public sealed class WorldInteractionRegistry
                 "nBackupTimer",
                 () => state.BackupTimer,
                 value => state.BackupTimer = value);
-            state.Initialize();
+
+            // The constructor (0x43B490) leaves isOn (+572) off; only the update (0x43B500) evaluates it. A generator in
+            // a section the level has not streamed in yet therefore reads off until it first updates.
+            if (ConditionalContainerGate.IsTaskActive(declared))
+            {
+                state.Initialize();
+            }
         }
 
         foreach (GameTask child in task.Children)
@@ -999,8 +1019,11 @@ public sealed class WorldInteractionRegistry
         Func<bool> onCondition,
         Func<bool> isExploded,
         bool useBackupTimer,
-        int backupDelayTicks)
+        int backupDelayTicks,
+        Func<bool> isInWorld)
     {
+        public Func<bool> IsInWorld { get; } = isInWorld;
+
         private bool _explodedWhenTicked;
 
         public bool IsOn { get; set; }
@@ -1102,11 +1125,12 @@ public sealed class WorldInteractionRegistry
                 variables.BindBool(item.Task, "isFinishedThisTick", () => item.CompletedThisTick, _ => { });
                 break;
             case InteractionActivateType.Door when item.Door is { } door:
-                variables.BindBool(item.Task, "isLocked", () => item.IsLocked, _ => { });
-                variables.BindBool(item.Task, "isOpen", () => door.IsFullyOpen, _ => { });
-                variables.BindBool(item.Task, "isClosed", () => door.IsFullyClosed, _ => { });
-                variables.BindBool(item.Task, "isLastOpen", () => door.WasFullyOpen, _ => { });
-                variables.BindBool(item.Task, "isLastClosed", () => door.WasFullyClosed, _ => { });
+                // A door that has never updated reports nothing yet (see DoorState.HasTicked).
+                variables.BindBool(item.Task, "isLocked", () => door.HasTicked && item.IsLocked, _ => { });
+                variables.BindBool(item.Task, "isOpen", () => door.HasTicked && door.IsFullyOpen, _ => { });
+                variables.BindBool(item.Task, "isClosed", () => door.HasTicked && door.IsFullyClosed, _ => { });
+                variables.BindBool(item.Task, "isLastOpen", () => door.HasTicked && door.WasFullyOpen, _ => { });
+                variables.BindBool(item.Task, "isLastClosed", () => door.HasTicked && door.WasFullyClosed, _ => { });
                 variables.BindBool(item.Task, "isPicked", () => item.IsPicked, _ => { });
                 variables.BindInt(item.Task, "nDoorOpenTicks", () => door.TicksOpen, _ => { });
                 break;
