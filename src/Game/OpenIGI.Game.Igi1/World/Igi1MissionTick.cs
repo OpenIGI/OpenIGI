@@ -131,25 +131,19 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         // while the player is down.
         host.StepWeather();
 
-        // The lifts step ahead of the walk, so they still move before the doors that ride them and before
-        // the player they carry; they do not yet update at their own place in the tree.
         if (mission.Elevators is { } elevators)
         {
             // Feed the player's current position to the elevators so their start gate can refuse
             // to move an empty car or one with an open door. Provider is read every tick.
             elevators.SetPlayerPositionProvider(mission.Player is { } p ? () => p.Body.Position : null);
-            elevators.Tick();
-            audio.UpdateElevatorSoundPositions();
-            if (mission.Solids is { } elevatorSolids)
-            {
-                elevators.ApplyCollision(elevatorSolids);
-            }
 
-            if (host.PlayerMode && mission.Player is { } passenger
-                && elevators.TryGetPassengerDisplacement(
-                    passenger.Body.Position, mission.Solids, out Vector3d displacement))
+            // A level the walk does not reach steps its lifts here, ahead of everything else.
+            if (!mission.ElevatorsInWalk)
             {
-                passenger.Body.Position += displacement;
+                foreach (PlacedElevator elevator in elevators.Elevators)
+                {
+                    StepElevator(elevators, elevator);
+                }
             }
         }
 
@@ -647,12 +641,31 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
     {
         mission.SoldiersInWalk = false;
         mission.PlayerInWalk = false;
+        mission.ElevatorsInWalk = false;
         if (mission.Cutscenes is not { } cutscenes)
         {
             return;
         }
 
         LevelUpdateWalker walker = cutscenes.Walker;
+
+        // A lift updates where the walk reaches it (Elevator's UPDATE, 0x43D280): its children first -- the
+        // doors, switches and indicators that ride it -- then its own floor expressions and its move, after
+        // which it carries what stands on it. One under a Static, or under a container that is not
+        // running, does not move at all, as in the original.
+        if (mission.Elevators is { } elevators)
+        {
+            foreach (PlacedElevator elevator in elevators.Elevators)
+            {
+                walker.Bind(elevator.Task, task =>
+                {
+                    walker.RunChildren(task);
+                    StepElevator(elevators, elevator);
+                });
+            }
+
+            mission.ElevatorsInWalk = true;
+        }
         if (mission.Soldiers is { } soldiers)
         {
             soldiers.AttachTo(walker);
@@ -667,6 +680,24 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
                 walker.RunChildren(task);
             });
             mission.PlayerInWalk = true;
+        }
+    }
+
+    // One lift's tick: its floor expressions and its move, then what the move carries -- its sound, its collision and the
+    // player standing in it. Per lift, because a lift the walk has not reached yet this tick still holds last tick's move.
+    private void StepElevator(ElevatorRegistry elevators, PlacedElevator elevator)
+    {
+        elevators.TickElevator(elevator);
+        audio.UpdateElevatorSoundPositions();
+        if (mission.Solids is { } elevatorSolids)
+        {
+            ElevatorRegistry.ApplyCollision(elevatorSolids, elevator);
+        }
+
+        if (host.PlayerMode && mission.Player is { } passenger
+            && ElevatorRegistry.TryGetPassengerDisplacement(elevator, passenger.Body.Position, mission.Solids, out Vector3d displacement))
+        {
+            passenger.Body.Position += displacement;
         }
     }
 

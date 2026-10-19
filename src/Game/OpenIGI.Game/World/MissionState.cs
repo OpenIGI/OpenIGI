@@ -72,6 +72,9 @@ public class MissionState : IInspectableMission
     /// <summary>Gets or sets a value indicating whether the soldiers update inside the level walk.</summary>
     public bool SoldiersInWalk { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the lifts update inside the level walk.</summary>
+    public bool ElevatorsInWalk { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the player updates inside the level walk.</summary>
     public bool PlayerInWalk { get; set; }
 
@@ -131,6 +134,7 @@ public class MissionState : IInspectableMission
         Cutscenes = null;
         SoldiersInWalk = false;
         PlayerInWalk = false;
+        ElevatorsInWalk = false;
         SecurityCameras = null;
     }
 
