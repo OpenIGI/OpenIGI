@@ -13,6 +13,7 @@ namespace OpenIGI.Game.Ai;
 /// <param name="DestructionSound">The report it dies with — the second, which <c>0x43A5F0</c> hands its explosion.</param>
 /// <param name="FollowsAnyAlarm">Whether it sounds while any alarm control is on, instead of by expression.</param>
 /// <param name="CanBeDestroyed">Whether world damage can permanently silence this emitter.</param>
+/// <param name="FaultySound">The loop a shot-out siren sounds instead while its expression holds, or empty.</param>
 public sealed class AlarmSpeaker(
     DeclaredTask Task,
     Vector3d PositionUnits,
@@ -20,7 +21,8 @@ public sealed class AlarmSpeaker(
     string SirenSound,
     string DestructionSound,
     bool FollowsAnyAlarm = false,
-    bool CanBeDestroyed = true)
+    bool CanBeDestroyed = true,
+    string FaultySound = "")
 {
     /// <summary>Gets the placed task.</summary>
     public DeclaredTask Task { get; } = Task;
@@ -37,6 +39,14 @@ public sealed class AlarmSpeaker(
     /// <summary>Gets the report it dies with.</summary>
     public string DestructionSound { get; } = DestructionSound;
 
+    /// <summary>Gets the loop a shot-out siren sounds instead of its working one while its expression holds.</summary>
+    /// <remarks>
+    /// Siren's update (<c>0x4494D0</c>) keeps evaluating its On expression after the ExplodeObject it derives from has
+    /// exploded (<c>+400</c>): it stops the working sound (<c>+568</c>) and starts the faulty one (<c>+600</c>) instead.
+    /// The shipped sirens name <c>alarmsystem_working</c> for both, so a siren that is shot out still wails.
+    /// </remarks>
+    public string FaultySound { get; } = FaultySound;
+
     /// <summary>Gets whether it sounds while any alarm control is on, instead of by its own expression.</summary>
     /// <remarks>
     /// The security camera's alarm loop (<c>0x441AE0</c>) follows its control's alarm byte rather than a
@@ -48,7 +58,7 @@ public sealed class AlarmSpeaker(
     public bool CanBeDestroyed { get; } = CanBeDestroyed;
 
     /// <summary>Gets or sets whether the speaker has been shot out — retail's <c>+417</c>.</summary>
-    /// <remarks>Permanent: a destroyed speaker never sounds again, whatever its expression says.</remarks>
+    /// <remarks>Permanent: a destroyed speaker never sounds its working loop again; only a siren's faulty loop is left.</remarks>
     public bool IsDestroyed { get; set; }
 
     /// <summary>Gets whether damage adds up before it breaks, as a camera lens's does.</summary>
@@ -149,6 +159,24 @@ public sealed class AlarmSpeakerRegistry
 
         return !string.IsNullOrWhiteSpace(speaker.AlarmExpression)
             && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false, speaker.Task);
+    }
+
+    /// <summary>Gets what a speaker sounds this tick: its working loop, a shot-out siren's faulty loop, or nothing.</summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <returns>The definition to loop, or empty while it is silent.</returns>
+    public string SoundNow(AlarmSpeaker speaker)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        if (speaker.IsDestroyed)
+        {
+            return speaker.FaultySound.Length > 0
+                && !string.IsNullOrWhiteSpace(speaker.AlarmExpression)
+                && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false, speaker.Task)
+                    ? speaker.FaultySound
+                    : string.Empty;
+        }
+
+        return IsOn(speaker) ? speaker.SirenSound : string.Empty;
     }
 
     /// <summary>Gets whether the placed destructible task has already been shot out.</summary>
@@ -319,13 +347,14 @@ public sealed class AlarmSpeakerRegistry
         {
             // Retail Siren's QVM declaration supplies these explicitly. The visual comes from Model;
             // its destruction path clears that model when Destroyed model is empty, plays Explosion
-            // sound, spawns the fireballs, and permanently suppresses both working/faulty loops.
+            // sound and spawns the fireballs; after that its faulty loop stands in for the working one.
             Add(new AlarmSpeaker(
                 sirenTask,
                 FirstPosition(sirenTask),
                 FirstString(sirenTask, "on expression"),
                 FirstString(sirenTask, "working sound"),
-                FirstString(sirenTask, "explosion sound")));
+                FirstString(sirenTask, "explosion sound"),
+                FaultySound: FirstString(sirenTask, "faulty sound")));
         }
         else if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "AlarmLight", StringComparison.Ordinal))

@@ -95,6 +95,47 @@ public sealed class AiAlarmRuntimeTests
         Assert.Equal(raises ? 1 : 0, Read(variables, "AlarmControl_98.isTrigger").Integer);
     }
 
+    /// <summary>Siren's update (0x4494D0) swaps a shot-out siren's working loop for its faulty one while its expression holds.</summary>
+    [Fact]
+    public void A_shot_out_siren_sounds_its_faulty_loop_while_the_alarm_is_on()
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("Siren"),
+                QvmExpression.Text("Explosion sound"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Working Sound"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Faulty Sound"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("On Expression"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(93),
+                QvmExpression.Text("Siren"),
+                QvmExpression.Text("Siren"),
+                QvmExpression.Text("explosion_1"),
+                QvmExpression.Text("alarmsystem_working"),
+                QvmExpression.Text("alarmsystem_faulty"),
+                QvmExpression.Text("TRUE"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        AlarmSpeaker siren = Assert.Single(speakers.Speakers);
+        Assert.Equal("alarmsystem_working", speakers.SoundNow(siren));
+
+        siren.IsDestroyed = true;
+        Assert.False(speakers.IsOn(siren));
+        Assert.Equal("alarmsystem_faulty", speakers.SoundNow(siren));
+    }
+
     [Fact]
     public void AlarmStatusIsIndependentOfTheSoldiersAlertLatch()
     {

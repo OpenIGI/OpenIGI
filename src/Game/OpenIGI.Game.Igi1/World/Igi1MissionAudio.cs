@@ -43,6 +43,9 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
 
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
 
+    // Which loop each sounding speaker's voice is playing: a siren shot out mid-alarm swaps its working for its faulty one.
+    private readonly Dictionary<AlarmSpeaker, string> _sirenSounds = [];
+
     private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
 
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
@@ -362,8 +365,19 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
 
         foreach (AlarmSpeaker speaker in mission.AlarmSpeakers.Speakers)
         {
-            bool on = mission.AlarmSpeakers.IsOn(speaker) && speaker.SirenSound.Length > 0;
+            string sound = mission.AlarmSpeakers.SoundNow(speaker);
+            bool on = sound.Length > 0;
             bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
+
+            // A siren shot out mid-alarm swaps its working loop for its faulty one (0x4494D0).
+            if (sounding && on && _sirenSounds.TryGetValue(speaker, out string? playingSound)
+                && !string.Equals(playingSound, sound, StringComparison.Ordinal))
+            {
+                host.SoundOutput.Stop(voice);
+                _sirenVoices.Remove(speaker);
+                sounding = false;
+            }
+
             bool playing = sounding && host.SoundOutput.IsPlaying(voice);
 
             if (on && (!sounding || !playing))
@@ -376,16 +390,17 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
                 }
 
                 AudioVoiceHandle started = host.SoundOutput.PlayDefinition(
-                    speaker.SirenSound,
+                    sound,
                     speaker.PositionUnits,
                     priority: 70);
                 _sirenVoices[speaker] = started;
+                _sirenSounds[speaker] = sound;
 
                 if (!sounding)
                 {
                     host.Logger.Information(
                         "Audio.Alarm",
-                        $"start {speaker.Task.Name}: sound='{speaker.SirenSound}', voice={started.Value}, "
+                        $"start {speaker.Task.Name}: sound='{sound}', voice={started.Value}, "
                             + $"playing={host.SoundOutput.IsPlaying(started)}, position={speaker.PositionUnits}, "
                             + $"condition='{speaker.AlarmExpression}'.");
                 }
@@ -395,7 +410,7 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
                 {
                     host.Logger.Warning(
                         "Audio.Alarm",
-                        $"'{speaker.SirenSound}' failed to produce a playing voice for {speaker.Task.Name}.");
+                        $"'{sound}' failed to produce a playing voice for {speaker.Task.Name}.");
                 }
             }
             else if (!on && sounding)
