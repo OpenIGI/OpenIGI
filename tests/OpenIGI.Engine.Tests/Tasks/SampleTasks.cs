@@ -133,6 +133,22 @@ internal sealed partial class ElevationTask : GameTask
     protected override void OnParsed() => Parsed = Origin != default;
 }
 
+/// <summary>Another version's <c>HeightMap</c>: the same names, another order, one added.</summary>
+internal sealed partial class LaterHeightMapTask : GameTask
+{
+    [ScriptParam(ScriptParamType.Int32, "Size")]
+    public int Size;
+
+    [ScriptParam(ScriptParamType.Int32, "Smoothing")]
+    public int Smoothing = 3;
+
+    [ScriptParam(ScriptParamType.ObjectPos, "Position")]
+    public Vector3d Position;
+
+    [ScriptParam(ScriptParamType.Int32, "Level")]
+    public int Level;
+}
+
 /// <summary>Sets an <see cref="ElevationTask"/> from a <c>HeightMap</c>'s values.</summary>
 internal sealed class HeightMapToElevation : ITaskParameterAdapter
 {

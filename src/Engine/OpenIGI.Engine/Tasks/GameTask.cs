@@ -339,6 +339,17 @@ public abstract class GameTask
         return false;
     }
 
+    /// <summary>Sets a parameter by the name level data declares it under, when the value is of the parameter's type.</summary>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">The value.</param>
+    /// <returns><see langword="true"/> when the type declares a parameter with that name and the value was of its type.</returns>
+    /// <remarks>
+    /// The other half of <see cref="TryGetScriptValue"/>, emitted by the same generator: what lets a level's values reach a
+    /// class whose own parameters are the same names in another order -- another version of the engine's declaration of a
+    /// type -- through <see cref="ByNameParameterAdapter"/>.
+    /// </remarks>
+    public virtual bool TrySetScriptValue(string name, object? value) => false;
+
     /// <summary>Gets the script parameters this task type declares, in wire order.</summary>
     /// <remarks>Overridden by the generated code; empty for a type that declares none.</remarks>
     protected virtual IReadOnlyList<TaskParameter> ScriptParameters => [];
