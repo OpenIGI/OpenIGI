@@ -836,60 +836,84 @@ public sealed class DestructibleObjectRegistry
         Func<DestructibleObject, bool>? canContact = null,
         int sourceWeaponId = 0)
     {
-        float contactRadius = Math.Max(0f, radiusUnits) + Math.Max(0f, falloffUnits);
         List<DestructibleObject> affected = [];
-
         foreach (DestructibleObject item in _objects)
         {
-            // Explosion0 messages every listener, near or far (0x480003). An ExplodeObject weighs it by
-            // distance and arms its own countdown; nothing happens here until that countdown runs out.
-            if (item.ExplodesOnCountdown)
-            {
-                if (!ReferenceEquals(item, source) && (canContact is null || canContact(item)))
-                {
-                    float reach = (float)(item.PositionUnits - originUnits).Length;
-                    ArmCountdown(
-                        item,
-                        ContactDose(reach, item.ExplosionContactRadiusUnits, radiusUnits, falloffUnits, damageFactor),
-                        explosion: true);
-                }
-
-                continue;
-            }
-
-            if (item.IsDestroyed
-                || ReferenceEquals(item, source)
-                || (item.PositionUnits - originUnits).Length
-                    > contactRadius + Math.Max(0f, item.ExplosionContactRadiusUnits))
-            {
-                continue;
-            }
-
-            if (item.Kind == DestructibleObjectKind.Vehicle
-                && (item.IsDying || sourceWeaponId != CarDestroyingWeaponId))
-            {
-                continue;
-            }
-
-            if (canContact is not null && !canContact(item))
-            {
-                continue;
-            }
-
-            float distance = (float)(item.PositionUnits - originUnits).Length;
-            float dose = ContactDose(
-                distance,
-                item.ExplosionContactRadiusUnits,
-                radiusUnits,
-                falloffUnits,
-                damageFactor);
-            if (ApplyDamage(item, dose, explosion: true) is { } destroyed)
+            if (ExplosionHit(item, source, originUnits, radiusUnits, falloffUnits, damageFactor, canContact, sourceWeaponId) is { } destroyed)
             {
                 affected.Add(destroyed);
             }
         }
 
         return affected;
+    }
+
+    /// <summary>One destructible's share of an <c>Explosion0</c>: its own <c>ExplosionHit</c>, as the explosion list sends it.</summary>
+    /// <param name="item">The destructible.</param>
+    /// <param name="source">The object that owns the blast, which its own fireball does not hit.</param>
+    /// <param name="originUnits">The explosion centre in engine units.</param>
+    /// <param name="radiusUnits">The full-damage radius.</param>
+    /// <param name="falloffUnits">The outer contact range after the full-damage radius.</param>
+    /// <param name="damageFactor">The damage delivered by a full-strength contact.</param>
+    /// <param name="canContact">Optional world-visibility gate for the exact target.</param>
+    /// <param name="sourceWeaponId">The weapon whose record the blast carries as its source, or 0.</param>
+    /// <returns>The glass or explosive object whose native hit callback should run, or <see langword="null"/>.</returns>
+    public static DestructibleObject? ExplosionHit(
+        DestructibleObject item,
+        DestructibleObject? source,
+        Vector3d originUnits,
+        float radiusUnits,
+        float falloffUnits = 0f,
+        float damageFactor = 1f,
+        Func<DestructibleObject, bool>? canContact = null,
+        int sourceWeaponId = 0)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        float contactRadius = Math.Max(0f, radiusUnits) + Math.Max(0f, falloffUnits);
+
+        // Explosion0 messages every listener, near or far (0x480003). An ExplodeObject weighs it by
+        // distance and arms its own countdown; nothing happens here until that countdown runs out.
+        if (item.ExplodesOnCountdown)
+        {
+            if (!ReferenceEquals(item, source) && (canContact is null || canContact(item)))
+            {
+                float reach = (float)(item.PositionUnits - originUnits).Length;
+                ArmCountdown(
+                    item,
+                    ContactDose(reach, item.ExplosionContactRadiusUnits, radiusUnits, falloffUnits, damageFactor),
+                    explosion: true);
+            }
+
+            return null;
+        }
+
+        if (item.IsDestroyed
+            || ReferenceEquals(item, source)
+            || (item.PositionUnits - originUnits).Length
+                > contactRadius + Math.Max(0f, item.ExplosionContactRadiusUnits))
+        {
+            return null;
+        }
+
+        if (item.Kind == DestructibleObjectKind.Vehicle
+            && (item.IsDying || sourceWeaponId != CarDestroyingWeaponId))
+        {
+            return null;
+        }
+
+        if (canContact is not null && !canContact(item))
+        {
+            return null;
+        }
+
+        float distance = (float)(item.PositionUnits - originUnits).Length;
+        float dose = ContactDose(
+            distance,
+            item.ExplosionContactRadiusUnits,
+            radiusUnits,
+            falloffUnits,
+            damageFactor);
+        return ApplyDamage(item, dose, explosion: true);
     }
 
     private static float ContactDose(

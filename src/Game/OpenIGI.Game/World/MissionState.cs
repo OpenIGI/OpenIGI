@@ -92,6 +92,9 @@ public class MissionState : IInspectableMission
     /// <summary>Gets or sets the level's placed objects as the rays and the bodies collide with them.</summary>
     public ObjectCollisionIndex? Solids { get; set; }
 
+    /// <summary>Gets or sets the level's task tree, in the order its tasks were made.</summary>
+    public LevelTask? LevelRoot { get; set; }
+
     /// <summary>Gets or sets the mission's terrain when it is live data to stand on and trace, or <see langword="null"/>.</summary>
     /// <remarks>Mission 14 has none: it is entirely inside placed building and tunnel models, whose floors are walked on.</remarks>
     public TerrainData? Terrain { get; set; }
@@ -237,6 +240,7 @@ public class MissionState : IInspectableMission
     {
         EffectWalls = null;
         Solids = null;
+        LevelRoot = null;
         Destructibles = null;
         Materials = null;
         Doors = null;

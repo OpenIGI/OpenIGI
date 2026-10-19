@@ -35,6 +35,10 @@ public sealed class Igi1Blasts(
 
     private readonly List<PendingGenericTbaExplosion> _pending = [];
 
+    // Where each task stands in the order the level made them, for the explosion list.
+    private readonly Dictionary<GameTask, long> _joinOrder = [];
+    private LevelTask? _orderedRoot;
+
     /// <summary>Forgets the authored explosions waiting on their delay, as a new mission starts.</summary>
     public void ClearPending() => _pending.Clear();
 
@@ -156,10 +160,135 @@ public sealed class Igi1Blasts(
         DestructibleObject? source = null,
         int sourceWeaponId = 0)
     {
-        mission.Soldiers?.ApplyExplosion(position, radiusUnits, falloffUnits, damageFactor);
-        HandleDestructibleBlast(source, position, radiusUnits, falloffUnits, damageFactor, sourceWeaponId);
-        DamageAlarmSpeakers(position, radiusUnits, falloffUnits, damageFactor);
-        SendPlayerTheBlast(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, killedBy));
+        Explosion0(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, killedBy), source, sourceWeaponId);
+    }
+
+    /// <summary>
+    /// <c>Explosion0</c>'s message (<c>0x47F200</c>): with any damage at all, <c>ExplosionHit</c> to every member of the
+    /// explosion list in the order they joined it.
+    /// </summary>
+    /// <param name="blast">The blast.</param>
+    /// <param name="source">The destructible that went off, which its own blast does not set off again.</param>
+    /// <param name="sourceWeaponId">The weapon whose round it was, which decides what may blow a car up.</param>
+    /// <remarks>
+    /// <para>
+    /// The list (<c>dword_57BAA8</c>, <c>0x4168D0</c>) is joined in each member's create handler -- every Human
+    /// (<c>0x45EB30</c>), car (<c>0x42E160</c>), helicopter (<c>0x431540</c>), alarm light (<c>0x43A0E0</c>), camera
+    /// (<c>0x4415C0</c>), pane (<c>0x4497F0</c>) and explosive (<c>0x481780</c>, <c>0x43BE80</c>) -- so it holds them in the
+    /// order the level made them, and each weighs the blast in its own handler. A task made later joins at the end.
+    /// </para>
+    /// <para>
+    /// A blast of no damage messages nobody: a wooden window authors 0, and it splinters with nobody hurt or shoved.
+    /// </para>
+    /// </remarks>
+    private void Explosion0(Igi1ExplosionHit blast, DestructibleObject? source, int sourceWeaponId)
+    {
+        if (blast.DamageFactor == 0f)
+        {
+            return;
+        }
+
+        ExplosionHit shared = blast.ToShared();
+        foreach (Action hit in ExplosionList(blast, shared, source, sourceWeaponId))
+        {
+            hit();
+        }
+    }
+
+    // The explosion list's members as this blast reaches them, in the order they joined.
+    private List<Action> ExplosionList(Igi1ExplosionHit blast, ExplosionHit shared, DestructibleObject? source, int sourceWeaponId)
+    {
+        List<(long Order, int Joined, Action Hit)> members = [];
+
+        void Join(GameTask owner, Action hit) => members.Add((JoinOrder(owner), members.Count, hit));
+
+        if (mission.LevelRoot is { } root)
+        {
+            foreach (GameTask task in root.DescendantsAndSelf())
+            {
+                if (task is IExplosionHitTarget target)
+                {
+                    IExplosionHitTarget member = target;
+                    Join(task, () => member.ExplosionHit(shared));
+                }
+            }
+        }
+
+        if (mission.PlayerTask is null && mission.Player is not null)
+        {
+            // A level that declares no HumanPlayer still has the player the opening camera stood.
+            members.Add((long.MaxValue, members.Count, () => SendPlayerTheBlast(blast)));
+        }
+
+        if (mission.Destructibles is { } registry)
+        {
+            foreach (DestructibleObject item in registry.Objects)
+            {
+                DestructibleObject member = item;
+                Join(item.Owner, () =>
+                {
+                    if (DestructibleObjectRegistry.ExplosionHit(
+                            member,
+                            source,
+                            blast.Position,
+                            blast.RadiusUnits,
+                            blast.FalloffUnits,
+                            blast.DamageFactor,
+                            target => ConditionalContainerGate.IsTaskActive(target.Owner),
+                            sourceWeaponId) is { } destroyed)
+                    {
+                        // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
+                        // nearby collision faces, just as Glass_ExplosionHitHandler hands the native shatter task
+                        // the fireball's contact point rather than the pane's origin.
+                        HandleDestructibleImpact(destroyed, blast.Position);
+                    }
+                });
+            }
+        }
+
+        if (mission.AlarmSpeakers is { } speakers)
+        {
+            foreach (AlarmSpeaker speaker in speakers.Speakers)
+            {
+                AlarmSpeaker member = speaker;
+                Join(speaker.Task, () =>
+                {
+                    if (AlarmSpeakerRegistry.ExplosionHit(member, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor))
+                    {
+                        ShootOutSpeaker(member);
+                    }
+                });
+            }
+        }
+
+        members.Sort(static (a, b) => a.Order != b.Order ? a.Order.CompareTo(b.Order) : a.Joined.CompareTo(b.Joined));
+        return members.ConvertAll(static m => m.Hit);
+    }
+
+    // Where a task stands in the order the level made its tasks: its place in the tree as it was first walked, and a task
+    // made since then after all of those, in the order it was first seen.
+    private long JoinOrder(GameTask task)
+    {
+        if (!ReferenceEquals(_orderedRoot, mission.LevelRoot))
+        {
+            _joinOrder.Clear();
+            _orderedRoot = mission.LevelRoot;
+            if (_orderedRoot is { } root)
+            {
+                foreach (GameTask made in root.DescendantsAndSelf())
+                {
+                    _joinOrder[made] = _joinOrder.Count;
+                }
+            }
+        }
+
+        if (!_joinOrder.TryGetValue(task, out long order))
+        {
+            order = _joinOrder.Count;
+            _joinOrder[task] = order;
+        }
+
+        return order;
     }
 
     // The blast's ExplosionHit to the player's task, whose handler is HumanPlayer's (0x412990); a level that declares no
@@ -363,24 +492,6 @@ public sealed class Igi1Blasts(
         }
     }
 
-    /// <summary>Hands a blast to the alarm emitters: cameras add its dose, a siren or lamp inside breaks.</summary>
-    /// <param name="impactUnits">Where the blast went off, in world units.</param>
-    /// <param name="radiusUnits">The blast's radius.</param>
-    /// <param name="falloffUnits">How far past the radius its damage takes to reach zero.</param>
-    /// <param name="damageFactor">The blast's damage factor.</param>
-    private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits, float falloffUnits, float damageFactor)
-    {
-        if (mission.AlarmSpeakers is null)
-        {
-            return;
-        }
-
-        foreach (AlarmSpeaker speaker in mission.AlarmSpeakers.ApplyExplosion(impactUnits, radiusUnits, falloffUnits, damageFactor))
-        {
-            ShootOutSpeaker(speaker);
-        }
-    }
-
     /// <summary>Silences a destroyed alarm speaker or camera and plays its destruction.</summary>
     /// <remarks>
     /// AlarmLight_Explode (<c>0x43A5F0</c>) and the SCameraLens destruction branch (<c>0x441770</c>)
@@ -409,43 +520,6 @@ public sealed class Igi1Blasts(
         // the light a 4096 range, two FireBalls and five.
         host.SpeakerExplosion(destroyed.PositionUnits, string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal));
         host.Logger.Information("Ai", $"{destroyed.Task.Name} was shot out.");
-    }
-
-    /// <summary>Runs the native explosion-hit callbacks for every authored object in a blast.</summary>
-    /// <remarks>
-    /// Nothing is traced to. Cars (<c>0x42E160</c>), ExplodeObjects (<c>0x481780</c>) and glass
-    /// (<c>0x4497F0</c>) all join Explosion0's listener list (<c>0x4C1790</c> on <c>dword_57BAA8</c>), and
-    /// the fireball messages every entry on it (<c>0x480003</c>). Each handler weighs the blast by distance
-    /// alone (<c>0x416C90</c>), so a wall -- or the ground over Mission 7's buried Generator_99 -- stops
-    /// nothing.
-    /// </remarks>
-    private void HandleDestructibleBlast(
-        DestructibleObject? source,
-        Vector3d originUnits,
-        float radiusUnits,
-        float falloffUnits,
-        float damageFactor = 1f,
-        int sourceWeaponId = 0)
-    {
-        if (mission.Destructibles is not { } registry)
-        {
-            return;
-        }
-
-        foreach (DestructibleObject target in registry.ApplyExplosionHits(
-            source,
-            originUnits,
-            radiusUnits,
-            falloffUnits,
-            damageFactor,
-            target => ConditionalContainerGate.IsTaskActive(target.Owner),
-            sourceWeaponId))
-        {
-            // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
-            // nearby collision faces, just as Glass_ExplosionHitHandler hands the native shatter task
-            // the fireball's contact point rather than the pane's origin.
-            HandleDestructibleImpact(target, originUnits);
-        }
     }
 
     /// <summary>Applies the retail presentation and blast side effects of one destroyed world object.</summary>
@@ -559,10 +633,7 @@ public sealed class Igi1Blasts(
             return;
         }
 
-        HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
-        mission.Soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
-
-        SendPlayerTheBlast(new Igi1ExplosionHit(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade));
+        Explosion0(new Igi1ExplosionHit(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade), item, sourceWeaponId: 0);
 
         host.Logger.Information(
             "World",

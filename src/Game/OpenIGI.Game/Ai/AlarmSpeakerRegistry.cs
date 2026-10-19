@@ -196,8 +196,23 @@ public sealed class AlarmSpeakerRegistry
 
         foreach (WorldPlacement placement in placements)
         {
-            if (!_byTask.TryGetValue(placement.Owner, out AlarmSpeaker? speaker)
-                || !string.Equals(speaker.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+            if (!_byTask.TryGetValue(placement.Owner, out AlarmSpeaker? speaker))
+            {
+                continue;
+            }
+
+            if (string.Equals(speaker.Task.Type.Name, "AlarmLight", StringComparison.Ordinal))
+            {
+                // AlarmLight's ExplosionHit (0x43A660) weighs a blast against its own model's bound (0x4D0950).
+                if (placement.Model is { NativeMarkerBound: > 0f } light && float.IsFinite(light.NativeMarkerBound))
+                {
+                    speaker.ExplosionContactRadiusUnits = light.NativeMarkerBound;
+                }
+
+                continue;
+            }
+
+            if (!string.Equals(speaker.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
                 || !string.Equals(placement.Instance.Name, CameraModelName(speaker.Task), StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -248,7 +263,8 @@ public sealed class AlarmSpeakerRegistry
     /// <remarks>
     /// A camera takes the shared contact dose (<c>0x416C90</c>) measured from its head's bound and adds it
     /// to what it has already taken (<c>0x4422F0</c>), so a grenade in reach breaks it outright while a
-    /// weak or distant one only wears it down. The other emitters keep the nearest-inside-the-radius rule.
+    /// weak or distant one only wears it down. An alarm light (<c>0x43A660</c>) breaks on any dose, so a blast breaks
+    /// every light it reaches.
     /// </remarks>
     public IReadOnlyList<AlarmSpeaker> ApplyExplosion(
         Vector3d impactUnits,
@@ -256,30 +272,46 @@ public sealed class AlarmSpeakerRegistry
         float falloffUnits,
         float damageFactor)
     {
+        // Every speaker weighs the blast in its own handler (0x43A660, 0x4422F0): every light it reaches breaks.
         List<AlarmSpeaker> destroyed = [];
-        foreach (AlarmSpeaker camera in _speakers)
+        foreach (AlarmSpeaker speaker in _speakers)
         {
-            if (camera.AccumulatesDamage && !camera.IsDestroyed && camera.CanBeDestroyed)
+            if (ExplosionHit(speaker, impactUnits, radiusUnits, falloffUnits, damageFactor))
             {
-                float dose = ExplosionDamage.Dose(
-                    (float)(camera.PositionUnits - impactUnits).Length,
-                    camera.ExplosionContactRadiusUnits,
-                    radiusUnits,
-                    falloffUnits,
-                    damageFactor);
-                if (dose > 0f && Damage(camera, dose))
-                {
-                    destroyed.Add(camera);
-                }
+                destroyed.Add(speaker);
             }
         }
 
-        if (TryDestroyAt(impactUnits, radiusUnits) is { } speaker)
+        return destroyed;
+    }
+
+    /// <summary>One speaker's share of a blast: its own <c>ExplosionHit</c>, as the explosion list sends it.</summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <param name="impactUnits">Where the blast went off.</param>
+    /// <param name="radiusUnits">The blast's full-damage radius.</param>
+    /// <param name="falloffUnits">How far past it its damage fades.</param>
+    /// <param name="damageFactor">The blast's damage.</param>
+    /// <returns><see langword="true"/> when the blast destroyed it.</returns>
+    /// <remarks>
+    /// Each weighs the blast by distance against its own model's bound (<c>0x416C90</c>), whatever stands between. An
+    /// <c>AlarmLight</c> (<c>0x43A660</c>) explodes on any dose at all, so a blast breaks every light it reaches; a camera's
+    /// lens (<c>0x4422F0</c>) adds the dose to its sum.
+    /// </remarks>
+    public static bool ExplosionHit(AlarmSpeaker speaker, Vector3d impactUnits, float radiusUnits, float falloffUnits, float damageFactor)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        if (speaker.IsDestroyed || !speaker.CanBeDestroyed)
         {
-            destroyed.Add(speaker);
+            return false;
         }
 
-        return destroyed;
+        float dose = ExplosionDamage.Dose(
+            (float)(speaker.PositionUnits - impactUnits).Length,
+            speaker.ExplosionContactRadiusUnits,
+            radiusUnits,
+            falloffUnits,
+            damageFactor);
+        return dose != 0f && Damage(speaker, dose);
     }
 
     /// <summary>Destroys whatever speaker an impact landed on, if it landed on one.</summary>
