@@ -71,6 +71,87 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
     /// <summary>Gets the ammunition table, once <see cref="Begin"/> has read it.</summary>
     public AmmoTypeRegistry Ammunition { get; private set; } = null!;
 
+    /// <summary>Gets the rig being brought up, once <see cref="Begin"/> has made it.</summary>
+    public PlayerCamera Candidate { get; private set; } = null!;
+
+    /// <summary>Gets the rig being brought up, as the host steers it.</summary>
+    public IHostedPlayer Player => Candidate;
+
+    /// <summary>Arms the level's vehicles from the weapon table, against the rig being brought up.</summary>
+    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
+    /// <param name="levelRoot">The level's task tree.</param>
+    public void ArmVehicles(LoadedMission loaded, LevelTask levelRoot) => ArmVehicles(loaded, levelRoot, Weapons, Candidate);
+
+    /// <summary>Tunes the rig being brought up from <c>humanplayer.qvm</c>.</summary>
+    public void Configure() => Configure(Candidate);
+
+    /// <summary>Gives the rig being brought up the first-person rig every Human builds (skeleton 5, model 005_01_1).</summary>
+    /// <param name="animations">The first-person rig's animation set.</param>
+    public void UseViewRig(BoneAnimationSet animations) => Candidate.UseViewRig(animations);
+
+    /// <summary>Hands the rig being brought up what the level's own <c>HumanPlayer</c> declares it carries.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="carried">Whether a weapon was put in its hands.</param>
+    /// <returns>Whether the level declares a loadout at all.</returns>
+    public bool CarryDeclaredLoadout(LevelTask levelRoot, out bool carried)
+    {
+        carried = false;
+        if (!PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) || loadout is null)
+        {
+            return false;
+        }
+
+        host.Logger.Information("Player", $"Carrying {loadout}.");
+        carried = Carry(Candidate, loadout, Weapons, Ammunition);
+        return true;
+    }
+
+    /// <summary>Offers the rig's rounds to the level's soldiers, when it has any.</summary>
+    /// <param name="deflected">Where a glancing round whizzes.</param>
+    public void ConnectSoldiers(Action<Vector3d> deflected)
+    {
+        if (mission.SoldierPresenter is { } guards)
+        {
+            ConnectSoldiers(Candidate, guards, deflected);
+        }
+    }
+
+    /// <summary>
+    /// Stands the rig being brought up where the level places its player, and makes it the mission's player.
+    /// </summary>
+    /// <param name="levelRoot">The level's task tree, whose <c>HumanPlayer</c> declares a Position and a Gamma.</param>
+    /// <param name="ground">The ground it stands on.</param>
+    /// <param name="solids">The collision index, whose floors it may stand on.</param>
+    /// <param name="opening">Where the opening camera looks from, for a level that declares no spawn.</param>
+    /// <param name="openingYaw">The opening camera's heading.</param>
+    /// <param name="spawn">The level's declared spawn, when it has one.</param>
+    /// <returns>Whether it found something to stand on.</returns>
+    public bool Stand(
+        LevelTask levelRoot,
+        IGroundHeightField? ground,
+        ObjectCollisionIndex solids,
+        Vector3d? opening,
+        float openingYaw,
+        out PlayerSpawnPoint spawn)
+    {
+        ArgumentNullException.ThrowIfNull(solids);
+
+        // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
+        // with a Position and a Gamma. Standing there is standing where the game starts you.
+        // Without a declared spawn the player is stood where the opening camera looks from, so that
+        // fallback needs a camera to read.
+        bool placed = PlayerSpawn.TryFindGameplay(levelRoot, out spawn)
+            ? Candidate.PlaceAt(ground, spawn, solids.PlayerRegistrationCaster())
+            : opening is { } at && Candidate.Place(ground, at, openingYaw);
+
+        if (placed)
+        {
+            mission.Player = Candidate;
+        }
+
+        return placed;
+    }
+
     /// <summary>Makes the player's rig and reads the tables it and the soldiers use.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -84,6 +165,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(missionText);
         PlayerCamera candidate = new(host.Logger);
+        Candidate = candidate;
 
         // 000.iff, kept so the player's third-person body can be built from the same set it walks on
         // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the

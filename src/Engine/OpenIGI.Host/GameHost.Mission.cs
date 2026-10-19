@@ -997,26 +997,24 @@ public sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
 
         {
-            Igi1PlayerSetup playerSetup = _igi1.NewPlayerSetup();
-            PlayerCamera candidate = playerSetup.Begin(loaded, levelRoot, solids, missionText);
+            var playerSetup = _igi1.NewPlayerSetup();
+            playerSetup.Begin(loaded, levelRoot, solids, missionText);
             Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
-            WeaponTypeRegistry weaponRoster = playerSetup.Weapons;
-            AmmoTypeRegistry ammoTable = playerSetup.Ammunition;
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
-            _soldiers?.Arm(loaded, weaponRoster);
-            playerSetup.ArmVehicles(loaded, levelRoot, weaponRoster, candidate);
+            _soldiers?.Arm(loaded, playerSetup.Weapons);
+            playerSetup.ArmVehicles(loaded, levelRoot);
             EndStage("the guards' weapon models");
 
-            playerSetup.Configure(candidate);
+            playerSetup.Configure();
 
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
             // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
             // without it there is nothing to draw a gun on.
             if (_viewRigAnimations is { } viewRigSet)
             {
-                candidate.UseViewRig(viewRigSet);
+                playerSetup.UseViewRig(viewRigSet);
 
                 // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
                 // skinning: 005_01_1 is mesh format 1.
@@ -1048,16 +1046,12 @@ public sealed partial class GameHost
             // later is loaded from this mission's packs like any other.
             _loadedMissionForWeapon = loaded;
 
-            if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
+            if (playerSetup.CarryDeclaredLoadout(levelRoot, out bool carried))
             {
-                _logger.Information("Player", $"Carrying {loadout}.");
-                _heldWeapon = CarryLoadout(playerSetup, candidate, loadout, loaded, weaponRoster, ammoTable);
+                _heldWeapon = carried ? CreateHeldWeapon() : null;
 
                 // The player's rounds are offered to the soldiers, which own their own health.
-                if (_mission.SoldierPresenter is { } guards)
-                {
-                    playerSetup.ConnectSoldiers(candidate, guards, _igi1.Sounds.PlayRicochet);
-                }
+                playerSetup.ConnectSoldiers(_igi1.Sounds.PlayRicochet);
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
@@ -1118,18 +1112,11 @@ public sealed partial class GameHost
 
             EndStage("the loadout, the bullet marks and the HUD");
 
-            // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
-            // with a Position and a Gamma. Standing there is standing where the game starts you.
-            // Without a declared spawn the player is stood where the opening camera looks from, so that
-            // fallback needs a camera to read; a level with neither is simply not placed, which the
+            // A level with neither a declared spawn nor an opening camera is simply not placed, which the
             // warning below already covers.
-            bool placed = PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
-                ? candidate.PlaceAt(_ground, spawn, solids.PlayerRegistrationCaster())
-                : _camera is { } opening && candidate.Place(_ground, opening.Position, _options.CameraYaw);
-
-            if (placed)
+            if (playerSetup.Stand(levelRoot, _ground, solids, _camera?.Position, _options.CameraYaw, out PlayerSpawnPoint spawn))
             {
-                _mission.Player = candidate;
+                IHostedPlayer candidate = playerSetup.Player;
 
                 // The player's own third-person body -- the rig the death camera reveals. Built from the
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
@@ -1638,26 +1625,10 @@ public sealed partial class GameHost
         _logger.Information("Lightmap", $"Dumped {dumped} page(s) to {outputDirectory}.");
     }
 
-    // Puts a weapon in the player's hands and loads the model its roster entry names.
-    //
-    // Hands the player everything the mission declares, with the ammunition each weapon draws from.
-    // WHICH of them ends up in hand is no longer decided here: the weapon cycler's index starts at -1
-    // and the first tick lands on entry 0 of DefineHumanPlayerWeaponCycle, stepping on until it finds
-    // one that is carried. That retires the divergence this function used to carry -- see
-    // the original. The renderer's model follows whatever ends up in hand.
-    private IHeldWeaponPresenter? CarryLoadout(
-        Igi1PlayerSetup setup,
-        PlayerCamera candidate,
-        PlayerLoadout loadout,
-        LoadedMission loadedMission,
-        WeaponTypeRegistry roster,
-        AmmoTypeRegistry ammunition)
+    // The presenter for the player's hand, which follows whatever weapon ends up in it (Igi1PlayerSetup.Carry hands
+    // the player everything the mission declares).
+    private IHeldWeaponPresenter? CreateHeldWeapon()
     {
-        if (!setup.Carry(candidate, loadout, roster, ammunition))
-        {
-            return null;
-        }
-
         IHeldWeaponPresenter? presenter = _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest());
         if (presenter is not null)
         {
