@@ -1,3 +1,4 @@
+using OpenIGI.Game.Menus;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
@@ -142,7 +143,7 @@ public sealed class Igi2InGameMenu
     public int PopupScreenId { get; private set; } = -1;
 
     /// <summary>Gets the popup open, <c>ptActivePopupScreen</c>: a dialog window.</summary>
-    public Igi2MenuWindowTask? PopupScreen { get; private set; }
+    public MenuWindowTask? PopupScreen { get; private set; }
 
     /// <summary>Gets the status, <c>eStatus</c>.</summary>
     public Igi2MenuStatus Status { get; private set; } = Igi2MenuStatus.Idle;
@@ -288,8 +289,8 @@ public sealed class Igi2InGameMenu
     /// <summary>Gets a window of the menu by its id, among the menu's own tasks: a screen, or a popup's dialog window.</summary>
     /// <param name="id">The window's id.</param>
     /// <returns>The window, or <see langword="null"/>.</returns>
-    public Igi2MenuWindowTask? Window(int id) =>
-        Manager is null || id < 0 ? null : Manager.Descendants().OfType<Igi2MenuWindowTask>().FirstOrDefault(w => w.Id == id);
+    public MenuWindowTask? Window(int id) =>
+        Manager is null || id < 0 ? null : Manager.Descendants().OfType<MenuWindowTask>().FirstOrDefault(w => w.Id == id);
 
     /// <summary>Opens the menu on its default screen, pausing the game, as Escape does while the game plays.</summary>
     /// <param name="level">The level the default screen's expression is evaluated in.</param>
@@ -445,7 +446,7 @@ public sealed class Igi2InGameMenu
                 break;
             case Igi2MenuStatus.ActivatePopup:
                 PopupScreen = Window(PopupScreenId);
-                PopupScreen?.InitData(level);
+                (PopupScreen as IIgi2MenuData)?.InitData(level);
                 (Status, _fade) = (Igi2MenuStatus.PopupFadeIn, 0);
                 break;
             case Igi2MenuStatus.PopupGone:
@@ -543,7 +544,7 @@ public sealed class Igi2InGameMenu
     private void ForceUpdateWindow(int id)
     {
         if (Manager is not null && Level is { } level
-            && Window(id) is { } window)
+            && Window(id) is IIgi2MenuData window)
         {
             window.InitData(level);
         }

@@ -630,13 +630,21 @@ public sealed class Igi2MenuContentModule : IContentModule
     /// <inheritdoc/>
     public string Name => "In-game menu";
 
+    // A menu window made of a shared control, whose parameters this game declares in its own order: set by name.
+    private static void RegisterByName<T>(Engine.Tasks.TaskTypeRegistry types, string name)
+        where T : Engine.Tasks.GameTask, new()
+    {
+        types.Register<T>(name);
+        types.Replace(name, static () => new T(), Engine.Tasks.ByNameParameterAdapter.Instance);
+    }
+
     /// <inheritdoc/>
     public void Register(ContentRegistrationContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Types.Register<Menus.Igi2MenuManagerTask>(Menus.Igi2MenuManagerTask.TypeName);
-        context.Types.Register<Menus.Igi2MenuScreenTask>(Menus.Igi2MenuScreenTask.TypeName);
-        context.Types.Register<Menus.Igi2MenuFrameTask>(Menus.Igi2MenuFrameTask.TypeName);
+        RegisterByName<Menus.Igi2MenuScreenTask>(context.Types, Menus.Igi2MenuScreenTask.TypeName);
+        RegisterByName<Menus.Igi2MenuFrameTask>(context.Types, Menus.Igi2MenuFrameTask.TypeName);
         context.Types.Register<Menus.Igi2MenuTextTask>(Menus.Igi2MenuTextTask.TypeName);
         context.Types.Register<Menus.Igi2MenuTextSelectionTask>(Menus.Igi2MenuTextSelectionTask.TypeName);
         context.Types.Register<Menus.Igi2SlideBarTask>(Menus.Igi2SlideBarTask.TypeName);
@@ -645,7 +653,7 @@ public sealed class Igi2MenuContentModule : IContentModule
         context.Types.Register<Menus.Igi2InputBoxTask>(Menus.Igi2InputBoxTask.TypeName);
         context.Types.Register<Menus.Igi2ScrollListBoxTask>(Menus.Igi2ScrollListBoxTask.TypeName);
         context.Types.Register<Menus.Igi2PictureBoxTask>(Menus.Igi2PictureBoxTask.TypeName);
-        context.Types.Register<Menus.Igi2DialogWindowTask>(Menus.Igi2DialogWindowTask.TypeName);
+        RegisterByName<Menus.Igi2DialogWindowTask>(context.Types, Menus.Igi2DialogWindowTask.TypeName);
         context.Types.Register<Menus.Igi2ColumnViewTask>(Menus.Igi2ColumnViewTask.TypeName);
         context.Types.Register<Menus.Igi2ColumnViewColumnTask>(Menus.Igi2ColumnViewColumnTask.TypeName);
         context.Types.Register<Menus.Igi2ControlsMenuTask>(Menus.Igi2ControlsMenuTask.TypeName);

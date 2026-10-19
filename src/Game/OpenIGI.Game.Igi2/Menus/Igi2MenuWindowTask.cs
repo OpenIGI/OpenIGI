@@ -5,52 +5,63 @@ using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Menus;
 
-/// <summary>
-/// A window of I.G.I. 2's menu system, <c>MenuWindow</c> (menuwindow.c): the base every menu task derives from, which hands its data
-/// events on to its children. A screen being opened takes its data in (<c>MenuWindow_eInitDataEvent</c>); one being accepted gives it
-/// back (<c>MenuWindow_eChangeDataEvent</c>).
-/// </summary>
-/// <remarks>
-/// Layout, drawing, fonts and input (<c>MenuWindow_eFormatEvent</c>, the draw and run handlers) are the presentation's: the OpenIGI
-/// shell presents the in-game menu, so only the menu's data and its state are kept here.
-/// </remarks>
-public abstract class Igi2MenuWindowTask : MenuWindowTask
+/// <summary>A window of I.G.I. 2's menu as it takes its data in and gives it back, <c>MenuWindow</c>'s init and change handlers.</summary>
+/// <remarks>Every I.G.I. 2 menu window is one, whichever shared window it is: the menu reaches its windows' data through this.</remarks>
+public interface IIgi2MenuData
 {
-    /// <summary>Takes the window's data in, as it is opened: <c>MenuWindow_InitDataHandler</c>, its children in turn.</summary>
-    /// <param name="level">The level the window's scripts are evaluated in.</param>
-    public virtual void InitData(Igi2LevelRun level)
+    /// <summary>Takes its data in, then its windows do (<c>MenuWindow_InitDataHandler</c>).</summary>
+    /// <param name="level">The level its scripts are evaluated in.</param>
+    void InitData(Igi2LevelRun level);
+
+    /// <summary>Gives its data back, then its windows do (<c>MenuWindow_ChangeDataHandler</c>).</summary>
+    /// <param name="level">The level its scripts are evaluated in.</param>
+    void ChangeData(Igi2LevelRun level);
+}
+
+/// <summary>What every I.G.I. 2 menu window's data handlers share: the walk into its windows, and its scripts' evaluation.</summary>
+public static class Igi2MenuData
+{
+    /// <summary>Has every window under a window take its data in.</summary>
+    /// <param name="window">The window.</param>
+    /// <param name="level">The level its scripts are evaluated in.</param>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static void InitChildren(GameTask window, Igi2LevelRun level)
     {
+        ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(level);
-        foreach (Igi2MenuWindowTask child in Children.OfType<Igi2MenuWindowTask>())
+        foreach (IIgi2MenuData child in window.Children.OfType<IIgi2MenuData>())
         {
             child.InitData(level);
         }
     }
 
-    /// <summary>Gives the window's data back, as it is accepted: <c>MenuWindow_ChangeDataHandler</c>, its children in turn.</summary>
-    /// <param name="level">The level the window's scripts are evaluated in.</param>
-    public virtual void ChangeData(Igi2LevelRun level)
+    /// <summary>Has every window under a window give its data back.</summary>
+    /// <param name="window">The window.</param>
+    /// <param name="level">The level its scripts are evaluated in.</param>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static void ChangeChildren(GameTask window, Igi2LevelRun level)
     {
+        ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(level);
-        foreach (Igi2MenuWindowTask child in Children.OfType<Igi2MenuWindowTask>())
+        foreach (IIgi2MenuData child in window.Children.OfType<IIgi2MenuData>())
         {
             child.ChangeData(level);
         }
     }
 
-    /// <summary>
-    /// Runs one of the window's scripts, <c>Level_RunLevelExpression</c>: compiled the first time against the window's name, so a
-    /// script's <c>this.</c> names the window.
-    /// </summary>
+    /// <summary>Runs one of a window's scripts, compiling it the first time.</summary>
     /// <param name="level">The level it is evaluated in.</param>
-    /// <param name="compiled">The compiled script, kept between runs.</param>
-    /// <param name="source">The script's text.</param>
+    /// <param name="compiled">The script compiled, kept by the window.</param>
+    /// <param name="source">Its source.</param>
+    /// <param name="owner">The window, which the script's <c>this</c> names.</param>
     /// <param name="value">Receives its value.</param>
-    /// <returns><see langword="false"/> when there is no script to run.</returns>
-    protected bool TryRun(Igi2LevelRun level, ref LevelExpression? compiled, string source, out double value)
+    /// <returns><see langword="false"/> for an empty script.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static bool TryRun(Igi2LevelRun level, ref LevelExpression? compiled, string source, GameTask owner, out double value)
     {
         ArgumentNullException.ThrowIfNull(level);
-        compiled ??= Igi2LevelExpressions.Create(source, Name, level.Natives);
+        ArgumentNullException.ThrowIfNull(owner);
+        compiled ??= Igi2LevelExpressions.Create(source, owner.Name, level.Natives);
         if (compiled.IsEmpty)
         {
             value = 0.0;
@@ -60,4 +71,23 @@ public abstract class Igi2MenuWindowTask : MenuWindowTask
         value = level.Evaluate(compiled);
         return true;
     }
+}
+
+/// <summary>An I.G.I. 2 menu window not yet made of a shared control: its data handlers walk into its windows.</summary>
+public abstract class Igi2MenuWindowTask : MenuWindowTask, IIgi2MenuData
+{
+    /// <inheritdoc/>
+    public virtual void InitData(Igi2LevelRun level) => Igi2MenuData.InitChildren(this, level);
+
+    /// <inheritdoc/>
+    public virtual void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
+
+    /// <summary>Runs one of this window's scripts, compiling it the first time.</summary>
+    /// <param name="level">The level it is evaluated in.</param>
+    /// <param name="compiled">The script compiled, kept by the window.</param>
+    /// <param name="source">Its source.</param>
+    /// <param name="value">Receives its value.</param>
+    /// <returns><see langword="false"/> for an empty script.</returns>
+    protected bool TryRun(Igi2LevelRun level, ref LevelExpression? compiled, string source, out double value) =>
+        Igi2MenuData.TryRun(level, ref compiled, source, this, out value);
 }

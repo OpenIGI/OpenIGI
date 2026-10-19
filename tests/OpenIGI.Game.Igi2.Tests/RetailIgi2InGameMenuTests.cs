@@ -82,6 +82,29 @@ public sealed class RetailIgi2InGameMenuTests
         Assert.Equal(0.0, manager.EvaluateReal(string.Empty));
     }
 
+    [RequiresTitleDataFact("igi2")]
+    public void Every_parameter_the_level_declares_for_a_shared_window_reaches_the_class()
+    {
+        (Igi2InGameMenu menu, _, _) = Load();
+        int checkedWindows = 0;
+        foreach (Engine.Tasks.GameTask window in RetailIgi2Mission1.All(menu.Manager!)
+            .Where(static t => t is Igi2MenuScreenTask or Igi2MenuFrameTask or Igi2DialogWindowTask))
+        {
+            foreach (Engine.Tasks.TaskParameter parameter in window.Type.Parameters)
+            {
+                Assert.True(window.TrySetScriptValue(parameter.Name, Value(window, parameter.Name)), $"{window.Type.Name} has no '{parameter.Name}' to set.");
+            }
+
+            checkedWindows++;
+        }
+
+        Assert.True(checkedWindows > 10, $"only {checkedWindows} windows were checked.");
+        Assert.Contains(RetailIgi2Mission1.All(menu.Manager!).OfType<Igi2MenuScreenTask>(), static s => s.Background.Length > 0);
+
+        static object? Value(Engine.Tasks.GameTask window, string name) =>
+            window.TryGetScriptValue(name, out object? value) ? value : null;
+    }
+
     private static (Igi2InGameMenu Menu, Igi2LevelRun Level, Igi2GameConfig Config) Load()
     {
         Igi2Level mission = Igi2Level.Find("location1", "level1");

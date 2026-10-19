@@ -107,63 +107,34 @@ public sealed partial class Igi2MenuManagerTask : Igi2MenuWindowTask, IMenuManag
     }
 }
 
-/// <summary>A screen of the menu, <c>MenuScreen</c> (menuscreen.c): its init and change scripts run before its windows'.</summary>
-public sealed partial class Igi2MenuScreenTask : Igi2MenuWindowTask
+/// <summary>A screen of the menu, <c>MenuScreen</c> (menuscreen.c): the shared screen, with what I.G.I. 2 adds to it.</summary>
+/// <remarks>
+/// I.G.I. 2 declares its screen's parameters with its own between Project I.G.I.'s -- the logo and the frame switch before the
+/// frame, the timeout and the justification after -- so it is set by name.
+/// </remarks>
+public sealed partial class Igi2MenuScreenTask : MenuScreenTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "MenuScreen";
 
     private LevelExpression? _onInit;
     private LevelExpression? _onChange;
-    private int _userData;
-
-    /// <summary>Gets or sets its background picture.</summary>
-    [ScriptParam(ScriptParamType.String32, "Background")]
-    public string Background { get; set; } = string.Empty;
 
     /// <summary>Gets or sets its logo.</summary>
     [ScriptParam(ScriptParamType.String32, "Logo")]
-    public string Logo { get; set; } = string.Empty;
+    public string LogoPicture { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the logo's centre across.</summary>
     [ScriptParam(ScriptParamType.Int32, "Center Logo X")]
-    public int LogoX { get; set; }
+    public int LogoCentreX { get; set; }
 
     /// <summary>Gets or sets the logo's centre down.</summary>
     [ScriptParam(ScriptParamType.Int32, "Center Logo Y")]
-    public int LogoY { get; set; }
+    public int LogoCentreY { get; set; }
 
     /// <summary>Gets or sets a value indicating whether it is framed.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Use Frame?")]
-    public bool UseFrame { get; set; }
-
-    /// <summary>Gets or sets its frame's left.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Frame x0")]
-    public int FrameX0 { get; set; }
-
-    /// <summary>Gets or sets its frame's top.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Frame y0")]
-    public int FrameY0 { get; set; }
-
-    /// <summary>Gets or sets its frame's right.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Frame x1")]
-    public int FrameX1 { get; set; }
-
-    /// <summary>Gets or sets its frame's bottom.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Frame y1")]
-    public int FrameY1 { get; set; }
-
-    /// <summary>Gets or sets the script Escape runs on it.</summary>
-    [ScriptParam(ScriptParamType.VarString, "On Press Escape")]
-    public string OnPressEscape { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that runs as it takes its data in.</summary>
-    [ScriptParam(ScriptParamType.VarString, "On Init Data")]
-    public string OnInitData { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that runs as it gives its data back.</summary>
-    [ScriptParam(ScriptParamType.VarString, "On Change Data")]
-    public string OnChangeData { get; set; } = string.Empty;
+    public bool UseFrame { get; set; } = true;
 
     /// <summary>Gets or sets the ticks it waits before it times out; -1 for never.</summary>
     [ScriptParam(ScriptParamType.Int32, "Ticks to Timeout")]
@@ -177,23 +148,20 @@ public sealed partial class Igi2MenuScreenTask : Igi2MenuWindowTask
     [ScriptParam(ScriptParamType.Bool8, "Right Justify?")]
     public bool RightJustify { get; set; }
 
-    /// <summary>Gets the script value its scripts keep on it, <c>nUserData</c>.</summary>
-    public int UserData => _userData;
-
     /// <inheritdoc/>
     /// <remarks><c>MenuScreen_InitDataHandler</c>: its init script, then its windows.</remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        TryRun(level, ref _onInit, OnInitData, out _);
-        base.InitData(level);
+        Igi2MenuData.TryRun(level, ref _onInit, OnInitData, this, out _);
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
     /// <remarks><c>MenuScreen_ChangeDataHandler</c>: its change script, then its windows.</remarks>
-    public override void ChangeData(Igi2LevelRun level)
+    public void ChangeData(Igi2LevelRun level)
     {
-        TryRun(level, ref _onChange, OnChangeData, out _);
-        base.ChangeData(level);
+        Igi2MenuData.TryRun(level, ref _onChange, OnChangeData, this, out _);
+        Igi2MenuData.ChangeChildren(this, level);
     }
 
     /// <summary>Runs its Escape script, as Escape pressed on it does.</summary>
@@ -201,62 +169,53 @@ public sealed partial class Igi2MenuScreenTask : Igi2MenuWindowTask
     public void PressEscape(Igi2LevelRun level)
     {
         LevelExpression? escape = null;
-        TryRun(level, ref escape, OnPressEscape, out _);
+        Igi2MenuData.TryRun(level, ref escape, OnPressEscape, this, out _);
     }
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "nUserData", () => _userData, value => _userData = value);
+        variables.BindInt(this, "nUserData", () => UserData, value => UserData = value);
     }
 }
 
-/// <summary>A frame that lines up the menu's items, <c>MenuFrame</c> (menuframe.c).</summary>
-public sealed partial class Igi2MenuFrameTask : Igi2MenuWindowTask
+/// <summary>A frame that lines up the menu's items, <c>MenuFrame</c> (menuframe.c): the shared frame, with its alignment mode.</summary>
+/// <remarks>I.G.I. 2 declares its alignment between Project I.G.I.'s line-up and spacing, so it is set by name.</remarks>
+public sealed partial class Igi2MenuFrameTask : MenuFrameTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "MenuFrame";
 
-    /// <summary>Gets or sets its sprite.</summary>
-    [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
-    public string Sprite { get; set; } = string.Empty;
+    /// <summary>Initializes a new instance of the <see cref="Igi2MenuFrameTask"/> class with <c>MenuFrame_CreateHandler</c>'s defaults.</summary>
+    /// <remarks>Its rectangle is 220, 220, 200 wide and 40 high until the level's parameters say otherwise (menuframe.c).</remarks>
+    public Igi2MenuFrameTask()
+    {
+        X = 220;
+        Y = 220;
+        Width = 200;
+        Height = 40;
+    }
 
-    /// <summary>Gets or sets its left.</summary>
-    [ScriptParam(ScriptParamType.Int32, "X-Pos")]
-    public int X { get; set; }
-
-    /// <summary>Gets or sets its top.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Y-Pos")]
-    public int Y { get; set; }
-
-    /// <summary>Gets or sets its width.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
-
-    /// <summary>Gets or sets its height.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
-
-    /// <summary>Gets or sets how it lines its items up.</summary>
-    [ScriptParam(ScriptParamType.Int32, "LineUpMode")]
-    public int LineUpMode { get; set; }
-
-    /// <summary>Gets or sets how it aligns its items.</summary>
+    /// <summary>Gets or sets how it is placed across its parent: 0 as positioned, 1 centred, 2 at the parent's left (<c>eHorAlignmentMode</c>).</summary>
     [ScriptParam(ScriptParamType.Int32, "AlignmentMode")]
-    public int AlignmentMode { get; set; }
+    public int AlignmentMode
+    {
+        get => _alignmentMode;
+        set
+        {
+            _alignmentMode = value;
+            CentreHorizontally = value == 1;
+        }
+    }
 
-    /// <summary>Gets or sets the space between its items across.</summary>
-    [ScriptParam(ScriptParamType.Int16, "X-Spacing")]
-    public short XSpacing { get; set; }
+    private int _alignmentMode;
 
-    /// <summary>Gets or sets the space between its items down.</summary>
-    [ScriptParam(ScriptParamType.Int16, "Y-Spacing")]
-    public short YSpacing { get; set; }
+    /// <inheritdoc/>
+    public void InitData(Igi2LevelRun level) => Igi2MenuData.InitChildren(this, level);
 
-    /// <summary>Gets or sets a value indicating whether it is selected as one item.</summary>
-    [ScriptParam(ScriptParamType.Bool8, "Is Selectable")]
-    public bool IsSelectable { get; set; }
+    /// <inheritdoc/>
+    public void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
 }
 
 /// <summary>A line of the menu's text, <c>MenuText</c> (menutext.c): clicked, it runs its script.</summary>
@@ -905,31 +864,21 @@ public sealed partial class Igi2PictureBoxTask : Igi2MenuWindowTask, IIgi2MenuIt
     }
 }
 
-/// <summary>A popup window, <c>DialogWindow</c> (dialogwindow.c).</summary>
-public sealed partial class Igi2DialogWindowTask : Igi2MenuWindowTask
+/// <summary>A popup's window, <c>DialogWindow</c> (dialogwindow.c): the shared one, its keys swapped unless the level says not.</summary>
+public sealed partial class Igi2DialogWindowTask : DialogWindowTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "DialogWindow";
 
-    /// <summary>Gets or sets its left.</summary>
-    [ScriptParam(ScriptParamType.Int32, "X-Pos")]
-    public int X { get; set; }
+    /// <summary>Initializes a new instance of the <see cref="Igi2DialogWindowTask"/> class.</summary>
+    /// <remarks>I.G.I. 2's create handler sets <c>SwapKeys</c> (dialogwindow.c, byte <c>0x61</c>); Project I.G.I.'s leaves it clear.</remarks>
+    public Igi2DialogWindowTask() => SwapKeys = true;
 
-    /// <summary>Gets or sets its top.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Y-Pos")]
-    public int Y { get; set; }
+    /// <inheritdoc/>
+    public void InitData(Igi2LevelRun level) => Igi2MenuData.InitChildren(this, level);
 
-    /// <summary>Gets or sets its width.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
-
-    /// <summary>Gets or sets its height.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
-
-    /// <summary>Gets or sets a value indicating whether its keys are swapped.</summary>
-    [ScriptParam(ScriptParamType.Bool8, "SwapKeys")]
-    public bool SwapKeys { get; set; }
+    /// <inheritdoc/>
+    public void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
 }
 
 /// <summary>A table of rows in columns, <c>ColumnView</c> (columnview.c), filled by its collect script and sorted by a column.</summary>
