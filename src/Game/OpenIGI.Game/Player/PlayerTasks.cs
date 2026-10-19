@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Player;
@@ -15,7 +16,7 @@ namespace OpenIGI.Game.Player;
 /// <c>Position, Gamma, Model, Team</c>).
 /// </para>
 /// </remarks>
-public abstract class HumanTask : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget
+public abstract class HumanTask : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget
 {
     /// <summary>Gets or sets the handlers the human's game gives its hit events; <see langword="null"/> takes every bullet and does nothing.</summary>
     /// <remarks>
@@ -34,6 +35,9 @@ public abstract class HumanTask : ContainerTask, IWeaponCollisionTarget, IWeapon
 
     /// <inheritdoc/>
     public void ExplosionHit(in ExplosionHit hit) => Events?.ExplosionHit(this, hit);
+
+    /// <inheritdoc/>
+    public void SendEvent(in HumanAiEvent aiEvent) => Events?.SendEvent(this, aiEvent);
 
     /// <summary>Gets or sets the world position, in engine units.</summary>
     /// <remarks>The original keeps this as three <see cref="double"/> at <c>Human+32</c>.</remarks>
@@ -204,6 +208,14 @@ public interface IHumanEvents
     /// <param name="human">The human reached.</param>
     /// <param name="hit">The blast.</param>
     void ExplosionHit(HumanTask human, in ExplosionHit hit);
+
+    /// <summary>An AI event reached the human, for its brain: <c>HumanAISendEvent</c> (<c>0x45FDA0</c> hands it on).</summary>
+    /// <param name="human">The human it reached.</param>
+    /// <param name="aiEvent">The event.</param>
+    /// <remarks>A human with no brain lets it go.</remarks>
+    void SendEvent(HumanTask human, in HumanAiEvent aiEvent)
+    {
+    }
 }
 
 /// <summary>A female soldier — the original's <c>HumanSoldierFemale</c>, registered at <c>0x454970</c>.</summary>

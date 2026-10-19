@@ -1877,6 +1877,11 @@ public sealed class SoldierSimulation : IHumanEvents
             ? spawn.Team
             : 0;
         PlayerTask = levelRoot is null ? null : PlayerSpawn.FindGameplayTask(levelRoot);
+        Humans.Clear();
+        if (levelRoot is not null)
+        {
+            Humans.AddRange(levelRoot.DescendantsAndSelf().OfType<IHumanAiEventTarget>());
+        }
         AlarmControls = levelRoot is not null && variables is not null
             ? AiAlarmControlRegistry.Build(levelRoot, variables)
             : null;
@@ -2363,29 +2368,25 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <summary>Delivers a gunshot using the firing weapon's exact AI detection range.</summary>
     public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
             if (except is not null && Brains.TryGetValue(except, out AiSoldier? shooter) && ReferenceEquals(shooter, brain))
             {
-                continue;
+                return false;
             }
 
             // The record carries the shooter's side (the player's, when nobody is excepted), and a
             // listener on that side does not admit it.
             int shooterTeam = except?.Soldier.Team ?? _playerTeam;
             int shooterId = except?.Soldier.Id ?? AiDetectionCandidate.PlayerId;
-            if (brain.HearGunshot(origin, range, fromSameSide: shooterTeam == view.Soldier.Team, shooterId))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise("gunshot", heard, range);
+            return brain.HearGunshot(origin, range, fromSameSide: shooterTeam == view.Soldier.Team, shooterId);
+        });
+        Broadcast(noise);
+        ReportNoise("gunshot", noise.Heard, range);
     }
 
     /// <summary>Delivers IGI1's type-21 explosion alert to every active soldier in the blast envelope.</summary>
@@ -2399,21 +2400,17 @@ public sealed class SoldierSimulation : IHumanEvents
         Vector3d origin,
         double rangeUnits = AiSoldier.FlashbangEventRadiusInUnits)
     {
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
 
-            if (brain.ReceiveExplosion(origin, rangeUnits))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise("explosion", heard, rangeUnits);
+            return brain.ReceiveExplosion(origin, rangeUnits);
+        });
+        Broadcast(noise);
+        ReportNoise("explosion", noise.Heard, rangeUnits);
     }
 
     /// <summary>Delivers a player's world-impact event to every guard inside its authored radius.</summary>
@@ -2425,20 +2422,16 @@ public sealed class SoldierSimulation : IHumanEvents
         Vector3d shooterPosition,
         double radiusInUnits = AiSoldier.GroundImpactRadiusInUnits)
     {
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
-            if (brain.ReceiveGroundImpact(impact, shooterPosition, radiusInUnits))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise("impact", heard, radiusInUnits);
+            return brain.ReceiveGroundImpact(impact, shooterPosition, radiusInUnits);
+        });
+        Broadcast(noise);
+        ReportNoise("impact", noise.Heard, radiusInUnits);
     }
 
     /// <summary>Delivers the player's footstep noise to every guard the step's radius reaches.</summary>
@@ -2459,40 +2452,32 @@ public sealed class SoldierSimulation : IHumanEvents
         Vector3d source,
         double radiusUnits = AiSoldier.HumanNoiseRadiusInUnits)
     {
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
-            if (brain.ReceiveHumanNoise(type, position, source, radiusUnits))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise(type.ToString().ToLowerInvariant(), heard, radiusUnits);
+            return brain.ReceiveHumanNoise(type, position, source, radiusUnits);
+        });
+        Broadcast(noise);
+        ReportNoise(type.ToString().ToLowerInvariant(), noise.Heard, radiusUnits);
     }
 
     /// <summary>Delivers IGI1's visible grenade-takeoff event (type 17).</summary>
     public void NotifyGrenadeThrown(Vector3d origin)
     {
-        int seen = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
 
-            if (brain.ReceiveGrenadeThrown(origin))
-            {
-                seen++;
-            }
-        }
-
-        ReportNoise("grenade-thrown", seen, AiSoldier.GrenadeLandRadiusInUnits);
+            return brain.ReceiveGrenadeThrown(origin);
+        });
+        Broadcast(noise);
+        ReportNoise("grenade-thrown", noise.Heard, AiSoldier.GrenadeLandRadiusInUnits);
     }
 
     /// <summary>Delivers IGI1's five-metre grenade-land event (type 18).</summary>
@@ -2500,21 +2485,17 @@ public sealed class SoldierSimulation : IHumanEvents
         Vector3d origin,
         double radiusUnits = AiSoldier.GrenadeLandRadiusInUnits)
     {
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
 
-            if (brain.ReceiveGrenadeLand(origin, radiusUnits))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise("grenade-land", heard, radiusUnits);
+            return brain.ReceiveGrenadeLand(origin, radiusUnits);
+        });
+        Broadcast(noise);
+        ReportNoise("grenade-land", noise.Heard, radiusUnits);
     }
 
     /// <summary>Delivers IGI1's ten-metre in-view flashbang event (type 19).</summary>
@@ -2522,21 +2503,17 @@ public sealed class SoldierSimulation : IHumanEvents
         Vector3d origin,
         double radiusUnits = AiSoldier.FlashbangEventRadiusInUnits)
     {
-        int affected = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
 
-            if (brain.ReceiveFlashbang(origin, radiusUnits))
-            {
-                affected++;
-            }
-        }
-
-        ReportNoise("flashbang", affected, radiusUnits);
+            return brain.ReceiveFlashbang(origin, radiusUnits);
+        });
+        Broadcast(noise);
+        ReportNoise("flashbang", noise.Heard, radiusUnits);
     }
 
     /// <summary>
@@ -2551,24 +2528,20 @@ public sealed class SoldierSimulation : IHumanEvents
     {
         ArgumentNullException.ThrowIfNull(shooter);
         int source = shooter.Soldier.Id;
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
                 || ReferenceEquals(view, shooter)
                 || ReferenceEquals(view, struck))
             {
-                continue;
+                return false;
             }
 
             bool otherSide = view.Soldier.Team != shooter.Soldier.Team;
-            if (brain.ReceiveGunshotMiss(origin, liveEnd, shooter.Position, otherSide, source))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise("near-miss", heard, AiSoldier.GunshotMissRadiusInUnits);
+            return brain.ReceiveGunshotMiss(origin, liveEnd, shooter.Position, otherSide, source);
+        });
+        Broadcast(noise);
+        ReportNoise("near-miss", noise.Heard, AiSoldier.GunshotMissRadiusInUnits);
     }
 
     /// <summary>
@@ -2581,29 +2554,57 @@ public sealed class SoldierSimulation : IHumanEvents
         SoldierView? struck,
         Vector3d shooterPosition)
     {
-        int heard = 0;
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        Igi1Noise noise = new((view, brain) =>
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
-                continue;
+                return false;
             }
             // A body the round actually damaged receives TAKINGDAMAGE, not the avoidance event for a miss.
             if (struck is not null && ReferenceEquals(struck, view))
             {
-                continue;
+                return false;
             }
 
-            if (brain.ReceiveGunshotMiss(origin, end, shooterPosition))
-            {
-                heard++;
-            }
-        }
-
-        ReportNoise("near-miss", heard, AiSoldier.GunshotMissRadiusInUnits);
+            return brain.ReceiveGunshotMiss(origin, end, shooterPosition);
+        });
+        Broadcast(noise);
+        ReportNoise("near-miss", noise.Heard, AiSoldier.GunshotMissRadiusInUnits);
     }
 
     /// <summary>One rate-limited delivery line per noise kind — the receipt half of the [aiflow] diff.</summary>
+    /// <summary>Gets or sets the level's humans in the order they joined the human list, every game's, which AI events are sent to.</summary>
+    /// <remarks>Made when the soldiers are animated, from the level's tree; a guard spawned since joins at the end.</remarks>
+    internal List<IHumanAiEventTarget> Humans { get; } = [];
+
+    // The engine's broadcast (0x450CE0): the event to every human on the list, each taking it in its own handler.
+    private void Broadcast(Igi1Noise noise)
+    {
+        HumanAiEvents.Send(
+            Humans.Count > 0 ? Humans : Brains.Keys.Select(static view => (IHumanAiEventTarget)view.Soldier),
+            new HumanAiEvent(Type: -1, Team: -1, Flags: 0, Radius: 0f, Position: null, Source: null, Subject: null, Context: noise));
+    }
+
+    /// <inheritdoc/>
+    void IHumanEvents.SendEvent(HumanTask human, in HumanAiEvent aiEvent)
+    {
+        if (aiEvent.Context is Igi1Noise noise
+            && _viewsByTask.TryGetValue(human, out SoldierView? view)
+            && Brains.TryGetValue(view, out AiSoldier? brain)
+            && noise.Hear(view, brain))
+        {
+            noise.Heard++;
+        }
+    }
+
+    // Project I.G.I.'s own context for an AI event: the listening brain's test for it, and how many heard.
+    private sealed class Igi1Noise(Func<SoldierView, AiSoldier, bool> hear)
+    {
+        public int Heard { get; set; }
+
+        public bool Hear(SoldierView view, AiSoldier brain) => hear(view, brain);
+    }
+
     private void ReportNoise(string kind, int heard, double radiusUnits)
     {
         if (heard == 0 || TickCount - _lastNoiseLogTick < 30)
@@ -4140,6 +4141,10 @@ public sealed class SoldierSimulation : IHumanEvents
         Brains[freshView] = freshBrain;
         BrainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
         TakeEvents(freshView);
+        if (Humans.Count > 0)
+        {
+            Humans.Add(freshView.Soldier);
+        }
 
         _logger.Information(
             LogCategory,
