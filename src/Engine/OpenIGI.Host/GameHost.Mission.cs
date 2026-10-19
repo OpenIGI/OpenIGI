@@ -24,8 +24,6 @@ using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
@@ -743,15 +741,12 @@ public sealed partial class GameHost
         // leaving every guard on GD_2/Normal whatever the profile said. -difficulty still overrides,
         // for testing a difficulty without editing a profile.
         AiDifficulty effectiveDifficulty = EffectiveDifficulty();
-        _logger.Information(
-            "Ai",
-            $"Difficulty {HumanAiConfigRegistry.NameOf(effectiveDifficulty)} ({effectiveDifficulty}) "
-                + (_options.Difficulty is null
-                    ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
-                    : "from -difficulty override."));
+        string difficultySource = _options.Difficulty is null
+            ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
+            : "from -difficulty override.";
 
         _igi1.Audio.ForgetSirens();
-        _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty);
+        _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, difficultySource);
         b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
 

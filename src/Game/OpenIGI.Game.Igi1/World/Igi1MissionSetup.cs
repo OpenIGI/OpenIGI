@@ -457,13 +457,16 @@ public sealed class Igi1MissionSetup(
     /// <param name="worldTrace">What the soldiers' sight and rounds trace: the placed objects and the terrain.</param>
     /// <param name="graphs">The level's nav graphs, by their task's id.</param>
     /// <param name="difficulty">The difficulty every guard reads its combat row at.</param>
+    /// <param name="difficultySource">Where the difficulty came from, for the log.</param>
     public void AnimateSoldiers(
         LevelTask levelRoot,
         WorldScene scene,
         WorldTraceCast worldTrace,
         Dictionary<int, GraphFile> graphs,
-        AiDifficulty difficulty)
+        AiDifficulty difficulty,
+        string difficultySource)
     {
+        host.Logger.Information("Ai", $"Difficulty {HumanAiConfigRegistry.NameOf(difficulty)} ({difficulty}) {difficultySource}");
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(worldTrace);
