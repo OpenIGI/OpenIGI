@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
 
@@ -230,11 +231,20 @@ public sealed class GunPickupRegistry
     /// <summary>Gets every resolved pickup, including consumed ones for diagnostics.</summary>
     public IReadOnlyList<GunPickup> Items => _items;
 
-    /// <summary>Builds the pickup list from a loaded level tree.</summary>
+    /// <summary>Builds the pickup list from a loaded level tree, and exports each authored pickup's <c>isPickedUp</c>.</summary>
+    /// <param name="root">The level's task tree.</param>
+    /// <param name="weapons">The weapon table, which names what each pickup is.</param>
+    /// <param name="ammunition">The ammunition table, which names what each weapon is loaded with.</param>
+    /// <param name="variables">Where the pickups' variables are exported, or <see langword="null"/> for none.</param>
+    /// <remarks>
+    /// GunPickup exports <c>%s.isPickedUp</c> on its byte <c>+297</c> (<c>0x46D170</c>), as GenericPickup and AmmoPickup
+    /// do theirs. Mission 11 counts GunPickup_202's into EditVariable_101.
+    /// </remarks>
     public static GunPickupRegistry Build(
         GameTask root,
         WeaponTypeRegistry weapons,
-        AmmoTypeRegistry ammunition)
+        AmmoTypeRegistry ammunition,
+        ScriptVarRegistry? variables = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(weapons);
@@ -242,6 +252,17 @@ public sealed class GunPickupRegistry
 
         GunPickupRegistry registry = new(ammunition);
         Collect(root, registry, weapons, ammunition);
+        if (variables is not null)
+        {
+            foreach (GunPickup pickup in registry._items)
+            {
+                if (pickup.Task is { } task)
+                {
+                    variables.BindBool(task, "isPickedUp", () => pickup.IsCollected, value => pickup.IsCollected = value);
+                }
+            }
+        }
+
         return registry;
     }
 

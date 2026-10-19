@@ -266,7 +266,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
                 host.Logger.Information("Material", $"Terrain walks on '{groundRow.Name}' (row {row}).");
             }
 
-            mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
+            mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable, host.Game.Variables);
             GunPickupRegistry gunPickups = mission.GunPickups;
             candidate.UseGunPickups(gunPickups);
             candidate.GunPickedUp += pickup =>
