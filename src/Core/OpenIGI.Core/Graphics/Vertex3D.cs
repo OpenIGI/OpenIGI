@@ -1,8 +1,7 @@
 using System.Runtime.InteropServices;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Rendering;
+namespace OpenIGI.Core.Graphics;
 
 /// <summary>
 /// A world-space vertex: position, normal, a diffuse texture coordinate, a lightmap coordinate and a

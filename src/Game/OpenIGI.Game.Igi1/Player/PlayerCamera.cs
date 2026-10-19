@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
@@ -10,7 +11,6 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
 using OpenIGI.Input;
-using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
 

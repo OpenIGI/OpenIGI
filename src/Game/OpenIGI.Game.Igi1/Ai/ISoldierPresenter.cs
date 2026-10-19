@@ -13,7 +13,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
-using OpenIGI.Rendering;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.Igi1.Ai;
@@ -27,16 +26,12 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <remarks>
 /// Declared beside <see cref="SoldierSimulation"/> because every member speaks its language; the title's presentation
 /// implements it and registers it, as the <see cref="ISoldierBodies"/> the frame draws, for a
-/// <see cref="SoldierPresentationRequest"/>. The simulation it carries is the one it draws.
+/// <c>SoldierPresentationRequest</c>. The simulation it carries is the one it draws.
 /// </remarks>
 public interface ISoldierPresenter : ISoldierBodies
 {
     /// <summary>Gets the soldiers' simulation, which the renderer draws.</summary>
     SoldierSimulation Simulation { get; }
-
-    /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
-    /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
-    MaterialDetailPack? DetailMaps { get; set; }
 
     /// <summary>Raised where a round met a body, so the blood can be thrown there.</summary>
     /// <remarks>

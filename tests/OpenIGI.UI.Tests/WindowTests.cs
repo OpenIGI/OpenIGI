@@ -1,5 +1,4 @@
 using OpenIGI.Input;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;

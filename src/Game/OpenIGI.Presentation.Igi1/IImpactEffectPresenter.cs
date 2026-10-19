@@ -3,10 +3,11 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>How the original's own impact effects are drawn: the dust a round kicks up, the chips it knocks loose, and blood.</summary>
 /// <remarks>The title's presentation implements it and registers it for an <see cref="ImpactEffectPresentationRequest"/>.</remarks>

@@ -5,7 +5,6 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.

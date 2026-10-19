@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;

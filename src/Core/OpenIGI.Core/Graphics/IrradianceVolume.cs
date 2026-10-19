@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Rendering;
+namespace OpenIGI.Core.Graphics;
 
 /// <summary>
 /// A grid of probes holding how much light arrives at each point in the level, and from where.

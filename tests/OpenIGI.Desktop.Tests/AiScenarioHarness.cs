@@ -614,7 +614,7 @@ public sealed class AiScenarioHarness : IDisposable
                 {
                     // The generator's own mesh, model space, with each subset's texture name.
                     StringBuilder obj = new();
-                    foreach (OpenIGI.Rendering.Vertex3D vertex in mesh.Vertices)
+                    foreach (OpenIGI.Core.Graphics.Vertex3D vertex in mesh.Vertices)
                     {
                         obj.AppendLine(CultureInfo.InvariantCulture, $"v {vertex.Position.X} {vertex.Position.Y} {vertex.Position.Z}");
                         obj.AppendLine(CultureInfo.InvariantCulture, $"vt {vertex.DiffuseU} {vertex.DiffuseV}");

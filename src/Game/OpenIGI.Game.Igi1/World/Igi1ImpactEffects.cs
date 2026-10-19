@@ -1,11 +1,11 @@
-﻿using OpenIGI.Game.Hosting;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -112,7 +112,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             return;
         }
 
-        Runtime.BloodEnabled = RenderCVars.ImpactEffects.Value && host.BloodWanted;
+        Runtime.BloodEnabled = host.ImpactEffectsWanted && host.BloodWanted;
         Runtime.Tick(Walls, mission.Player?.Marks, mission.Materials);
     }
 
@@ -134,7 +134,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     public void SpawnSurfaceImpacts(IEnumerable<GunImpact> landed)
     {
         ArgumentNullException.ThrowIfNull(landed);
-        if (mission.Materials is not { } materials || !RenderCVars.ImpactEffects.Value)
+        if (mission.Materials is not { } materials || !host.ImpactEffectsWanted)
         {
             return;
         }
@@ -168,7 +168,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// </remarks>
     public BloodReport SpawnBlood(object owner, Vector3d position, Vector3f direction)
     {
-        if (mission.Player is null || !RenderCVars.ImpactEffects.Value)
+        if (mission.Player is null || !host.ImpactEffectsWanted)
         {
             return default;
         }

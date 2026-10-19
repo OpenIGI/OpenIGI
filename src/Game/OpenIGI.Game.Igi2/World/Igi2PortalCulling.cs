@@ -1,7 +1,7 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.World;
 

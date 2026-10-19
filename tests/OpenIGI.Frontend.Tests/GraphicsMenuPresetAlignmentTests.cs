@@ -3,7 +3,7 @@ using System.Text;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;

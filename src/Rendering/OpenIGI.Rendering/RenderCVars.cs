@@ -1,5 +1,5 @@
 ﻿using OpenIGI.Core.Configuration;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 
 namespace OpenIGI.Rendering;
 
@@ -14,7 +14,7 @@ namespace OpenIGI.Rendering;
 /// </para>
 /// <para>
 /// Each remaster stage adds its own variables to this file and, where the value differs by quality
-/// tier, registers them with <see cref="Presets.GraphicsPresetRegistry"/> in the same place.
+/// tier, registers them with <see cref="Core.Configuration.Presets.GraphicsPresetRegistry"/> in the same place.
 /// </para>
 /// </remarks>
 [CVarContainer]

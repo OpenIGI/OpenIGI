@@ -1,11 +1,12 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Igi1.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Presentation.Igi1.Menus;
 
 /// <summary>The retail menu system's shell: its screens drawn, its pointer and keys read, its sounds played.</summary>
 /// <remarks>

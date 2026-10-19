@@ -1,8 +1,10 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// Renders every model into its cards' pages of the surface cache atlas, once, at load.

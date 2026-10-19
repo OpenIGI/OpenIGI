@@ -1,10 +1,11 @@
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.Shaders;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// Checks a clipmap the GPU built against the exact answer the CPU can compute.

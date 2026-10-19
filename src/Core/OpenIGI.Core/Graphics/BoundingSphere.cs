@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Rendering;
+namespace OpenIGI.Core.Graphics;
 
 /// <summary>A conservative local-space sphere used to reject whole meshes before rasterisation.</summary>
 public readonly record struct BoundingSphere(Vector3f Centre, float Radius)

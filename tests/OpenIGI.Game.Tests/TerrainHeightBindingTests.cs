@@ -8,7 +8,6 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Igi1.World;

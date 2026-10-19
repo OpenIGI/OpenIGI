@@ -3,7 +3,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi2;

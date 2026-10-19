@@ -1,9 +1,11 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.Shaders;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// Lights every card page, so that a ray hitting a surface reads light rather than albedo.

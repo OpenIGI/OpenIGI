@@ -1,8 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// The level's own air and its flat light on models — the <c>GlobalLight</c> task and the keyframe it is

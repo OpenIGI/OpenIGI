@@ -1,7 +1,7 @@
-﻿using OpenIGI.Engine.Resources;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Engine.Resources;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;

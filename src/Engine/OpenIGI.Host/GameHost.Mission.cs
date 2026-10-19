@@ -1862,6 +1862,8 @@ public sealed partial class GameHost
 
         public bool IsRaining => host._rain?.IsWeatherEnabled == true;
 
+        public bool ImpactEffectsWanted => RenderCVars.ImpactEffects.Value;
+
         public bool BloodWanted => host._configuration.Active?.BloodEnabled ?? true;
 
         public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);

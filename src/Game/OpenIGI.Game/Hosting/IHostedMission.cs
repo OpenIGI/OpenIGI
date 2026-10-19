@@ -1,5 +1,6 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
@@ -9,7 +10,6 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Hosting;
 

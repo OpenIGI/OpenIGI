@@ -1,6 +1,6 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Cameras;
 

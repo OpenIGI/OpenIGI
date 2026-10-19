@@ -8,7 +8,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI;

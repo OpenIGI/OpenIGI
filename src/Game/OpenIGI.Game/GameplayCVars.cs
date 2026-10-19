@@ -80,7 +80,7 @@ public static class GameplayCVars
     /// preset forces it off, and the regression gate runs Vanilla.
     /// </para>
     /// </remarks>
-    public static readonly BoolCVar RealisticDrops = Rendering.Presets.GraphicsPresetRegistry.Default.Define(
+    public static readonly BoolCVar RealisticDrops = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
         CVar.Bool(
             "g_realistic_drops",
             true,

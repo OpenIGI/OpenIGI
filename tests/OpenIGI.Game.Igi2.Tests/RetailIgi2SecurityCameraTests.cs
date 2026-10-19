@@ -98,7 +98,7 @@ public sealed class RetailIgi2SecurityCameraTests
         Assert.True(renderer.Load(built.Scene.Mission));
         Vector3f ambient = new(0.1f, 0.2f, 0.3f);
         device.SetModelAmbient(ambient);
-        renderer.DrawWorldSprites([light], new Rendering.Camera3D(default, Matrix3f.Identity), Matrix4f.Identity);
+        renderer.DrawWorldSprites([light], new Core.Graphics.Camera3D(default, Matrix3f.Identity), Matrix4f.Identity);
         RecordingGraphicsDevice.MeshDrawCall draw = Assert.Single(device.MeshDraws);
         Assert.Equal(Rendering.DepthState.TestOnly, draw.DepthState);
         Assert.Equal(Rendering.BlendMode.Additive, draw.Blend);

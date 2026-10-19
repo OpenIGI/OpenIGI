@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;

@@ -1,9 +1,9 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 

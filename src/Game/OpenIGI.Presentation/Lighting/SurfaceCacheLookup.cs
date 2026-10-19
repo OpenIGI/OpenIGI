@@ -1,8 +1,9 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// Finds which card page covers a point in the world, so that a ray which hits a surface can read what

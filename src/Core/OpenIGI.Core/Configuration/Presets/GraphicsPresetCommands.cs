@@ -1,6 +1,6 @@
 using OpenIGI.Core.Configuration;
 
-namespace OpenIGI.Rendering.Presets;
+namespace OpenIGI.Core.Configuration.Presets;
 
 /// <summary>
 /// Registers the <c>gfx_preset</c> console command.

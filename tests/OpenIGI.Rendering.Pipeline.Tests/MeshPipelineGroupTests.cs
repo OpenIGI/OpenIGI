@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.TestSupport.Rhi;

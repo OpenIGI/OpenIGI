@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering;
+namespace OpenIGI.Core.Graphics;
 
 /// <summary>
 /// A rectangular render target region with a depth range.

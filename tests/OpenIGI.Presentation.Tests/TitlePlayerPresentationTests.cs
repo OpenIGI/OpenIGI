@@ -1,8 +1,8 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Rendering;
 using Xunit;
 
 namespace OpenIGI.Presentation.Tests;

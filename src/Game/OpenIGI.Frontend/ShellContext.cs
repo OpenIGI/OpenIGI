@@ -2,7 +2,7 @@
 using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Config;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Widgets;
 

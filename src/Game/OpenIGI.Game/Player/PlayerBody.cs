@@ -635,7 +635,7 @@ public sealed class PlayerBody
     /// </para>
     /// <para>
     /// <b>The columns are the view's own axes</b>, because the root-motion multiply reads the matrix by
-    /// rows. <see cref="OpenIGI.Rendering.Camera3D.LookRotation"/> gives right as
+    /// rows. <see cref="OpenIGI.Core.Graphics.Camera3D.LookRotation"/> gives right as
     /// <c>(cos, −sin, 0)</c> and forward as <c>(sin, cos, 0)</c>; putting those in as columns is what
     /// makes a delta of <c>(strafe, forward, 0)</c> come out along the axes the player is looking down.
     /// Building it the other way up transposes it, and the player then walks at right angles to the

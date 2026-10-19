@@ -1,3 +1,5 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.Presentation.Lighting;
 using Xunit;
 using OpenIGI.TestSupport;
 using OpenIGI.Core.Numerics;

@@ -1,5 +1,5 @@
 ﻿using OpenIGI.Core.Configuration;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using Xunit;
 
 namespace OpenIGI.Rendering.Tests;

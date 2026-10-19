@@ -1,3 +1,5 @@
+using OpenIGI.Core.Graphics;
+
 namespace OpenIGI.Rendering.Vulkan.RayTracing;
 
 /// <summary>What the traced world reads of a mesh: where its triangles are and whether they move.</summary>

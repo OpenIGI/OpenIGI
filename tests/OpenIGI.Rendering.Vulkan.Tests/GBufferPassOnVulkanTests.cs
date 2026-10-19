@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;

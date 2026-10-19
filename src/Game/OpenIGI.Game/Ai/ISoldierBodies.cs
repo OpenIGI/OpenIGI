@@ -5,13 +5,12 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Ai;
 
 /// <summary>A level's soldiers as the frame draws and asks after them: their bodies, the player's own, and who stands where.</summary>
 /// <remarks>
-/// The title's presentation implements it and registers it for a <see cref="SoldierPresentationRequest"/>. What the title's
+/// The title's presentation implements it and registers it for a <c>SoldierPresentationRequest</c>. What the title's
 /// own simulation needs of the soldiers it keeps to its own extension of this.
 /// </remarks>
 public interface ISoldierBodies : IDisposable

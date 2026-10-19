@@ -16,7 +16,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
-using OpenIGI.Rendering;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using System.Runtime.InteropServices;

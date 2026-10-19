@@ -1,7 +1,7 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Cameras;
 

@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation;
 

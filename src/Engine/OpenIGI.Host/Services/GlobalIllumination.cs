@@ -4,6 +4,7 @@ using OpenIGI.Core.Threading;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.Services;

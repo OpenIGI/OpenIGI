@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Rendering;
+namespace OpenIGI.Core.Graphics;
 
 /// <summary>
 /// A world camera: a double-precision position and a single-precision orientation, exactly as the

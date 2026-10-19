@@ -8,6 +8,7 @@ using OpenIGI.Presentation.Igi1.Menus;
 using OpenIGI.Game.Igi1.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Igi1.World;
 

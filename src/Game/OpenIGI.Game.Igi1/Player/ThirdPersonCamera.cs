@@ -1,6 +1,6 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi1.Player;
 

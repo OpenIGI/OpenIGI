@@ -16,7 +16,7 @@ using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.UI.Screens;
 using OpenIGI.UI.Widgets;
 using OpenIGI.Frontend.Saves;

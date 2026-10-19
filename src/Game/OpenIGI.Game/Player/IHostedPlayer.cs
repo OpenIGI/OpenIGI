@@ -1,10 +1,10 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Player;
 

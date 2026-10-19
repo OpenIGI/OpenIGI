@@ -4,7 +4,7 @@ using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit.Widgets;

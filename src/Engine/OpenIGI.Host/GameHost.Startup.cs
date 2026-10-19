@@ -14,6 +14,7 @@ using OpenIGI.Host.Menu;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Widgets;

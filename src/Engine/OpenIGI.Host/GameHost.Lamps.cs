@@ -1,9 +1,9 @@
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Lighting;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 

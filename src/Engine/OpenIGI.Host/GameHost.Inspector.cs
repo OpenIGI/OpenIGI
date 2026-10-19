@@ -1,10 +1,10 @@
-﻿using OpenIGI.Game.Ai;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 

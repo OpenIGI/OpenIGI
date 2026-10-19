@@ -1,7 +1,8 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// A lighting page for every placement of every card, and where each one stands in the world.

@@ -4,7 +4,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 

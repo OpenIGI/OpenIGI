@@ -1,6 +1,6 @@
 using OpenIGI.Core.Configuration;
 
-namespace OpenIGI.Rendering.Presets;
+namespace OpenIGI.Core.Configuration.Presets;
 
 /// <summary>
 /// Knows what each graphics preset means, and notices when the settings stop matching one.

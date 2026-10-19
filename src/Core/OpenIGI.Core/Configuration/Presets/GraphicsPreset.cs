@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering.Presets;
+namespace OpenIGI.Core.Configuration.Presets;
 
 /// <summary>
 /// A named group of graphics settings.

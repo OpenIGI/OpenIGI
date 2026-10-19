@@ -3,7 +3,7 @@ using Xunit;
 namespace OpenIGI.Rendering.Tests;
 
 /// <summary>
-/// Groups every test that applies a preset to the one shared <see cref="Presets.GraphicsPresetRegistry"/>.
+/// Groups every test that applies a preset to the one shared <see cref="Core.Configuration.Presets.GraphicsPresetRegistry"/>.
 /// </summary>
 /// <remarks>
 /// <b>The registry the game uses is a singleton, and so are the variables it writes.</b> xUnit runs test

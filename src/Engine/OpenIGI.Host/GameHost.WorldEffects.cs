@@ -1,6 +1,5 @@
 ﻿using OpenIGI.Game.World;
 using OpenIGI.Host.Services;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 

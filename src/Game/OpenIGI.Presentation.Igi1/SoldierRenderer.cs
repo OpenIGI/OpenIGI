@@ -85,7 +85,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// <inheritdoc/>
     public SoldierSimulation Simulation => _sim;
 
-    /// <inheritdoc/>
+    /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
+    /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
     public MaterialDetailPack? DetailMaps { get; set; }
 
     /// <inheritdoc/>

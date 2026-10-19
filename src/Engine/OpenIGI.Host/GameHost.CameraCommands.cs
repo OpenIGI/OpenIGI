@@ -1,6 +1,6 @@
 ﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
 using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Host;

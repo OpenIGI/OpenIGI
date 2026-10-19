@@ -8,7 +8,7 @@ using OpenIGI.Frontend;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;

@@ -2,7 +2,7 @@
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 
 namespace OpenIGI.Host.Configuration;
 

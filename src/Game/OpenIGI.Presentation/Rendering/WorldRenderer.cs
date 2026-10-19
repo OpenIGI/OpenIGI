@@ -10,6 +10,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 using System.Runtime.InteropServices;
 

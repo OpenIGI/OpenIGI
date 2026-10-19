@@ -1,6 +1,7 @@
 using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
@@ -26,9 +27,10 @@ using OpenIGI.Host.Services;
 using OpenIGI.Host.Titles;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;

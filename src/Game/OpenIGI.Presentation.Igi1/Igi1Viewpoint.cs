@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game;
 using OpenIGI.Game.Igi1.Player;
@@ -6,7 +7,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1;
 

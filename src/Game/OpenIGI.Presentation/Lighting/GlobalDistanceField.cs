@@ -1,10 +1,11 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.Shaders;
 using InstanceView = OpenIGI.Game.World.SceneDistanceField.InstanceView;
 
-namespace OpenIGI.Game.World;
+namespace OpenIGI.Presentation.Lighting;
 
 /// <summary>
 /// The level's distance field resampled onto grids that follow the camera, so a trace step is one fetch.
