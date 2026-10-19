@@ -28,14 +28,14 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
                 new Igi1RetailMenus(request))
             .Add<ImpactEffectPresentationRequest, IImpactEffectPresenter>(static (in ImpactEffectPresentationRequest request) =>
                 new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem))
-            .Add<MissionHudPresentationRequest, IMissionHudOverlay>(static (in MissionHudPresentationRequest request) =>
-                new Igi1HudOverlay(request.Device, request.Gameplay))
-            .Add<MissionHudPresentationRequest, IMissionFirstPersonView>(static (in MissionHudPresentationRequest request) =>
-                new Igi1FirstPersonView(request.Device, request.Gameplay, request.Logger))
-            .Add<MissionHudPresentationRequest, IMissionWorldView>(static (in MissionHudPresentationRequest request) =>
-                new Igi1WorldView(request.Gameplay))
-            .Add<MissionHudPresentationRequest, IMissionViewpoint>(static (in MissionHudPresentationRequest request) =>
-                new Igi1Viewpoint(request.Gameplay))
+            .Add<MissionPresentationRequest, IMissionHudOverlay>(static (in MissionPresentationRequest request) =>
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1HudOverlay(request.Device, gameplay) : null)
+            .Add<MissionPresentationRequest, IMissionFirstPersonView>(static (in MissionPresentationRequest request) =>
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1FirstPersonView(request.Device, gameplay, request.Logger) : null)
+            .Add<MissionPresentationRequest, IMissionWorldView>(static (in MissionPresentationRequest request) =>
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1WorldView(gameplay) : null)
+            .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay) : null)
             .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
                 new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)

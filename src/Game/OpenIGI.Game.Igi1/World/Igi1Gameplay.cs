@@ -1,3 +1,4 @@
+using OpenIGI.Game.World;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.World;
@@ -11,7 +12,7 @@ public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1Player
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay
+public sealed class Igi1Gameplay : IMissionGameplay
 {
     private readonly IIgi1Host _host;
 

@@ -2316,18 +2316,18 @@ public sealed partial class GameHost
 
     /// <summary>Gets the title's own player's viewpoint, made from the title's presentation the first time it is asked for.</summary>
     private IMissionViewpoint? Viewpoint =>
-        _viewpoint ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionViewpoint>(
-            new MissionHudPresentationRequest(_device, _igi1, _logger));
+        _viewpoint ??= _presentation.Presenters.Create<MissionPresentationRequest, IMissionViewpoint>(
+            new MissionPresentationRequest(_device, _igi1, _logger));
 
     /// <summary>Gets what the title's player has put in the world, made from the title's presentation the first time a frame asks for it.</summary>
     private IMissionWorldView? WorldView =>
-        _worldView ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionWorldView>(
-            new MissionHudPresentationRequest(_device, _igi1, _logger));
+        _worldView ??= _presentation.Presenters.Create<MissionPresentationRequest, IMissionWorldView>(
+            new MissionPresentationRequest(_device, _igi1, _logger));
 
     /// <summary>Gets the title's first-person view, made from the title's presentation the first time a frame asks for it.</summary>
     private IMissionFirstPersonView? FirstPersonView =>
-        _firstPerson ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionFirstPersonView>(
-            new MissionHudPresentationRequest(_device, _igi1, _logger));
+        _firstPerson ??= _presentation.Presenters.Create<MissionPresentationRequest, IMissionFirstPersonView>(
+            new MissionPresentationRequest(_device, _igi1, _logger));
 
     /// <summary>Draws the first-person rig, or the scope that replaces it.</summary>
     /// <returns>The binocular range to show, in metres, or <see langword="null"/> when the glasses are down.</returns>
@@ -2365,8 +2365,8 @@ public sealed partial class GameHost
         IReadOnlyList<EnemyOverlayBox> binocularTargets,
         float? binocularRangeMetres)
     {
-        _hudOverlay ??= _presentation.Presenters.Create<MissionHudPresentationRequest, IMissionHudOverlay>(
-            new MissionHudPresentationRequest(_device, _igi1, _logger));
+        _hudOverlay ??= _presentation.Presenters.Create<MissionPresentationRequest, IMissionHudOverlay>(
+            new MissionPresentationRequest(_device, _igi1, _logger));
         return new MissionHudFrame(
             _window.Width,
             _window.Height,
