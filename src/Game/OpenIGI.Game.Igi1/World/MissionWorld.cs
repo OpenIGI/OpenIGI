@@ -44,6 +44,12 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets the soldiers' presenter, which draws the simulation it carries, or <see langword="null"/> while none is up.</summary>
     public ISoldierPresenter? SoldierPresenter { get; private set; }
 
+    /// <summary>Gets or sets the level's player task, which the rounds and blasts that reach the player are sent to.</summary>
+    public HumanPlayerTask? PlayerTask { get; set; }
+
+    /// <summary>Gets or sets the player's own hit handlers, which its task is given when the player is stood in the level.</summary>
+    public Igi1PlayerEvents? PlayerEvents { get; set; }
+
     /// <summary>Clears the grenades, missiles and launcher rounds in flight, as <c>Game_CutsceneDelete</c> does.</summary>
     public void ClearTransientProjectiles()
     {
@@ -146,6 +152,7 @@ public sealed class MissionWorld : MissionState
         Soldiers = null;
         SoldierPresenter = null;
         Player = null;
+        PlayerTask = null;
         base.ReleaseWorld();
     }
 }

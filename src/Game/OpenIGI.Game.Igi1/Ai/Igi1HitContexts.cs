@@ -42,7 +42,13 @@ public sealed record Igi1WeaponHit(
 /// <param name="RadiusUnits">How far its full damage reaches.</param>
 /// <param name="FalloffUnits">How far past that it fades.</param>
 /// <param name="DamageFactor">Its damage.</param>
-public sealed record Igi1ExplosionHit(Vector3d Position, float RadiusUnits, float FalloffUnits, float DamageFactor)
+/// <param name="KilledBy">The weapon category a death it causes is reported under.</param>
+public sealed record Igi1ExplosionHit(
+    Vector3d Position,
+    float RadiusUnits,
+    float FalloffUnits,
+    float DamageFactor,
+    WeaponCategory KilledBy = WeaponCategory.Grenade)
 {
     /// <summary>The blast as either game's targets read it.</summary>
     /// <returns>The shared explosion, this as its context.</returns>

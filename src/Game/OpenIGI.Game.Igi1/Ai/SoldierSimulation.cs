@@ -31,7 +31,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// soldiers are walked through <see cref="Roster"/>, group by group in the order the level made them, which is the
 /// order their brains tick in.
 /// </remarks>
-public sealed class SoldierSimulation : IHumanSoldierEvents
+public sealed class SoldierSimulation : IHumanEvents
 {
     private const string LogCategory = "Soldier";
 
@@ -39,7 +39,7 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
     private const string KnifeStabSound = "stab_01";
 
     // Each soldier's view by its task, for the hit events the task receives.
-    private readonly Dictionary<HumanSoldierTask, SoldierView> _viewsByTask = [];
+    private readonly Dictionary<HumanTask, SoldierView> _viewsByTask = [];
 
     private readonly IOpenIgiLogger _logger;
 
@@ -1876,8 +1876,7 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
         _playerTeam = levelRoot is not null && PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
             ? spawn.Team
             : 0;
-        PlayerTask = levelRoot?.Descendants().OfType<HumanPlayerTask>().FirstOrDefault(static t => t.Id == 0)
-            ?? levelRoot?.Descendants().OfType<HumanPlayerTask>().FirstOrDefault();
+        PlayerTask = levelRoot is null ? null : PlayerSpawn.FindGameplayTask(levelRoot);
         AlarmControls = levelRoot is not null && variables is not null
             ? AiAlarmControlRegistry.Build(levelRoot, variables)
             : null;
@@ -3922,7 +3921,7 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
     /// <c>Human</c>'s evaluate (<c>0x45E3E0</c>), for a soldier: never the shooter or what the shot ignores, and a round from
     /// someone on the soldier's side passes through it. The probability roll is the player's alone.
     /// </remarks>
-    bool IHumanSoldierEvents.EvaluateWeaponCollision(HumanSoldierTask soldier, in WeaponCollisionQuery query)
+    bool IHumanEvents.EvaluateWeaponCollision(HumanTask soldier, in WeaponCollisionQuery query)
     {
         if (ReferenceEquals(soldier, query.Shooter) || ReferenceEquals(soldier, query.Ignore))
         {
@@ -3933,7 +3932,7 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
     }
 
     /// <inheritdoc/>
-    void IHumanSoldierEvents.WeaponHit(HumanSoldierTask soldier, in WeaponHit hit)
+    void IHumanEvents.WeaponHit(HumanTask soldier, in WeaponHit hit)
     {
         if (hit.Context is Igi1WeaponHit round && _viewsByTask.TryGetValue(soldier, out SoldierView? view))
         {
@@ -3942,7 +3941,7 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
     }
 
     /// <inheritdoc/>
-    void IHumanSoldierEvents.ExplosionHit(HumanSoldierTask soldier, in ExplosionHit hit)
+    void IHumanEvents.ExplosionHit(HumanTask soldier, in ExplosionHit hit)
     {
         if (hit.Context is not Igi1ExplosionHit blast || !_viewsByTask.TryGetValue(soldier, out SoldierView? view))
         {

@@ -112,6 +112,13 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
         if (placed)
         {
             mission.Player = Candidate;
+
+            // The task the rounds and blasts that reach the player are sent to, with HumanPlayer's own handlers.
+            mission.PlayerTask = PlayerSpawn.FindGameplayTask(levelRoot);
+            if (mission.PlayerTask is { } task)
+            {
+                task.Events = mission.PlayerEvents;
+            }
         }
 
         return placed;

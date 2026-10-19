@@ -23,6 +23,7 @@ public sealed class Igi1Gameplay : IHostedMission
         Impacts = new Igi1ImpactEffects(World, host);
         Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
         Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
+        World.PlayerEvents = new Igi1PlayerEvents(World, Harm, Blasts, Sounds);
         Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, host);
         Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
     }

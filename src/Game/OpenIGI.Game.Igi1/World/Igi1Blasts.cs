@@ -159,7 +159,21 @@ public sealed class Igi1Blasts(
         mission.Soldiers?.ApplyExplosion(position, radiusUnits, falloffUnits, damageFactor);
         HandleDestructibleBlast(source, position, radiusUnits, falloffUnits, damageFactor, sourceWeaponId);
         DamageAlarmSpeakers(position, radiusUnits, falloffUnits, damageFactor);
-        BlastPlayer(position, radiusUnits, falloffUnits, damageFactor, killedBy);
+        SendPlayerTheBlast(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, killedBy));
+    }
+
+    // The blast's ExplosionHit to the player's task, whose handler is HumanPlayer's (0x412990); a level that declares no
+    // HumanPlayer still has the player the opening camera stood.
+    private void SendPlayerTheBlast(Igi1ExplosionHit blast)
+    {
+        if (mission.PlayerTask is { } task)
+        {
+            task.ExplosionHit(blast.ToShared());
+        }
+        else
+        {
+            BlastPlayer(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
+        }
     }
 
     /// <summary>A blast's share of the player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death.</summary>
@@ -548,7 +562,7 @@ public sealed class Igi1Blasts(
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
         mission.Soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
 
-        BlastPlayer(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade);
+        SendPlayerTheBlast(new Igi1ExplosionHit(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade));
 
         host.Logger.Information(
             "World",

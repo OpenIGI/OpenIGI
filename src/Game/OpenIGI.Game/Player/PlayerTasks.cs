@@ -15,8 +15,26 @@ namespace OpenIGI.Game.Player;
 /// <c>Position, Gamma, Model, Team</c>).
 /// </para>
 /// </remarks>
-public abstract class HumanTask : ContainerTask
+public abstract class HumanTask : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget
 {
+    /// <summary>Gets or sets the handlers the human's game gives its hit events; <see langword="null"/> takes every bullet and does nothing.</summary>
+    /// <remarks>
+    /// Every type the shot or a blast can strike takes the engine's hit events itself (<c>Human</c>, <c>0x45E450</c>, links
+    /// <c>WeaponCollisionEvaluate</c>, <c>WeaponHit</c> and <c>ExplosionHit</c>; <c>HumanPlayer</c> and each soldier class
+    /// override the last two). What the handlers read -- the health, the brain, the view -- the game keeps, so the game
+    /// gives its humans these.
+    /// </remarks>
+    public IHumanEvents? Events { get; set; }
+
+    /// <inheritdoc/>
+    public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Events?.EvaluateWeaponCollision(this, query) ?? true;
+
+    /// <inheritdoc/>
+    public void WeaponHit(in WeaponHit hit) => Events?.WeaponHit(this, hit);
+
+    /// <inheritdoc/>
+    public void ExplosionHit(in ExplosionHit hit) => Events?.ExplosionHit(this, hit);
+
     /// <summary>Gets or sets the world position, in engine units.</summary>
     /// <remarks>The original keeps this as three <see cref="double"/> at <c>Human+32</c>.</remarks>
     public Vector3d Position { get; set; }
@@ -117,13 +135,11 @@ public partial class HumanPlayerTask : HumanTask
 /// data as their <see cref="Class"/>.
 /// </para>
 /// <para>
-/// <b>It takes the engine's hit events itself</b>, as every type the shot or a blast can strike does: <c>0x45CAB0</c> links
-/// <c>WeaponHit</c> to <c>0x45D3C0</c> and <c>ExplosionHit</c> to <c>0x45A3D0</c>, and <c>Human</c> its
-/// <c>WeaponCollisionEvaluate</c> (<c>0x45E3E0</c>). What those handlers read -- the health, the brain -- the game keeps, so
-/// the game gives its soldiers their <see cref="Events"/>.
+/// Its hit events are <see cref="HumanTask"/>'s: <c>0x45CAB0</c> links <c>WeaponHit</c> to <c>0x45D3C0</c> and
+/// <c>ExplosionHit</c> to <c>0x45A3D0</c>, over <c>Human</c>'s <c>WeaponCollisionEvaluate</c> (<c>0x45E3E0</c>).
 /// </para>
 /// </remarks>
-public partial class HumanSoldierTask : HumanTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget
+public partial class HumanSoldierTask : HumanTask
 {
     /// <summary>Initializes an ordinary soldier with its constructor's defaults.</summary>
     public HumanSoldierTask()
@@ -168,38 +184,26 @@ public partial class HumanSoldierTask : HumanTask, IWeaponCollisionTarget, IWeap
     /// <summary>Gets or sets the animation the soldier stands in.</summary>
     [ScriptParam(ScriptParamType.Int32, "Stand Animation")]
     public int StandAnimation { get; set; }
-
-    /// <summary>Gets or sets the handlers the soldier's game gives its hit events; <see langword="null"/> takes every bullet and does nothing.</summary>
-    public IHumanSoldierEvents? Events { get; set; }
-
-    /// <inheritdoc/>
-    public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Events?.EvaluateWeaponCollision(this, query) ?? true;
-
-    /// <inheritdoc/>
-    public void WeaponHit(in WeaponHit hit) => Events?.WeaponHit(this, hit);
-
-    /// <inheritdoc/>
-    public void ExplosionHit(in ExplosionHit hit) => Events?.ExplosionHit(this, hit);
 }
 
-/// <summary>The handlers a game gives its soldiers' engine events, as the soldier's type links them.</summary>
-public interface IHumanSoldierEvents
+/// <summary>The handlers a game gives its humans' engine events, as each human's type links them.</summary>
+public interface IHumanEvents
 {
-    /// <summary>Answers whether a bullet may strike the soldier: <c>WeaponCollisionEvaluate</c>.</summary>
-    /// <param name="soldier">The soldier asked.</param>
+    /// <summary>Answers whether a bullet may strike the human: <c>WeaponCollisionEvaluate</c>.</summary>
+    /// <param name="human">The human asked.</param>
     /// <param name="query">The trace's context.</param>
     /// <returns>Whether it may.</returns>
-    bool EvaluateWeaponCollision(HumanSoldierTask soldier, in WeaponCollisionQuery query);
+    bool EvaluateWeaponCollision(HumanTask human, in WeaponCollisionQuery query);
 
-    /// <summary>A round or a blade struck the soldier: <c>WeaponHit</c>.</summary>
-    /// <param name="soldier">The soldier struck.</param>
+    /// <summary>A round or a blade struck the human: <c>WeaponHit</c>.</summary>
+    /// <param name="human">The human struck.</param>
     /// <param name="hit">The hit.</param>
-    void WeaponHit(HumanSoldierTask soldier, in WeaponHit hit);
+    void WeaponHit(HumanTask human, in WeaponHit hit);
 
-    /// <summary>A blast reached the soldier: <c>ExplosionHit</c>.</summary>
-    /// <param name="soldier">The soldier reached.</param>
+    /// <summary>A blast reached the human: <c>ExplosionHit</c>.</summary>
+    /// <param name="human">The human reached.</param>
     /// <param name="hit">The blast.</param>
-    void ExplosionHit(HumanSoldierTask soldier, in ExplosionHit hit);
+    void ExplosionHit(HumanTask human, in ExplosionHit hit);
 }
 
 /// <summary>A female soldier — the original's <c>HumanSoldierFemale</c>, registered at <c>0x454970</c>.</summary>

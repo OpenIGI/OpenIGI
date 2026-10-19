@@ -349,48 +349,20 @@ public sealed class GuardRounds
             return GunShotBallistics.Penetrates(weapon.PenetrationPower, face.BulletResistance, sample);
         }
 
-        // One call of the player's hit handler (0x412440): the damage, the grunt, the shake, the flash
-        // and the shove. Returns whether it killed the player.
+        // The round's WeaponHit to the player (HumanPlayer's handler, 0x412440: the damage, the grunt, the shake, the
+        // flash and the shove). Returns whether it killed the player.
         bool StrikePlayer(HumanHit struck)
         {
-            health.Apply(struck.Zone, weapon.DamageFactor);
-            _sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
             HitsOnPlayer++;
-
-            // The retail handler transforms the round into camera space before writing the four
-            // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
-            // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
-            Vector3f incoming = new(
-                (float)(to.X - from.X),
-                (float)(to.Y - from.Y),
-                (float)(to.Z - from.Z));
-            Vector3f viewIncoming = player.Camera.Orientation.Transposed().Transform(incoming);
-
-            // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
-            if (!health.IsDead)
+            Igi1WeaponHit round = new(struck, from, to, weapon.DamageFactor, weapon.Category, shooter, FromPlayer: false);
+            if (_mission.PlayerTask is { } task)
             {
-                _harm.PlayPlayerGrunt();
+                task.WeaponHit(round.ToShared());
             }
-
-            _harm.InstallPlayerHitShake();
-            _mission.DamageFlash.Hit(viewIncoming, _mission.SoundRandom.NextSingle());
-
-            // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
-            // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
-            // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
-            // what makes sustained fire stagger the player in retail.
-            if (!health.IsDead)
+            else
             {
-                double shoveX = to.X - from.X;
-                double shoveY = to.Y - from.Y;
-                double shoveZ = to.Z - from.Z;
-                double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
-                if (length > 1e-6)
-                {
-                    player.Body.AddHitShove(
-                        (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
-                        (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
-                }
+                // A level that declares no HumanPlayer still has the player the opening camera stood.
+                _mission.PlayerEvents?.TakeRound(round);
             }
 
             _logger.Information(
@@ -401,7 +373,6 @@ public sealed class GuardRounds
 
             if (health.IsDead)
             {
-                _harm.BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
                 _logger.Information(
                     "Weapon",
                     $"The player is DEAD after {HitsOnPlayer} hit(s) from {Fired} round(s), "
