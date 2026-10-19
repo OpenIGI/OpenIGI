@@ -7,7 +7,7 @@ namespace OpenIGI.Game.Menus;
 /// Registered by the original at <c>0x4170A0</c> with an instance size of 10392. Its parameters are
 /// declared by the menu script, not by the engine — see the original.
 /// </remarks>
-public partial class MenuManagerTask : MenuWindowTask
+public partial class MenuManagerTask : MenuWindowTask, IMenuManager
 {
     /// <summary>Gets or sets the screen the manager starts on.</summary>
     [ScriptParam(ScriptParamType.Int32, "Current menuscreen")]

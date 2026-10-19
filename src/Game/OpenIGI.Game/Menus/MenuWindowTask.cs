@@ -118,13 +118,13 @@ public abstract class MenuWindowTask : ContainerTask
     /// Field <c>+68</c> in the original, which the base constructor threads down from the parent. Here
     /// the tree already has the parent links, so it is a walk rather than a stored copy.
     /// </remarks>
-    public MenuManagerTask? Manager
+    public IMenuManager? Manager
     {
         get
         {
             for (GameTask? task = Parent; task is not null; task = task.Parent)
             {
-                if (task is MenuManagerTask manager)
+                if (task is IMenuManager manager)
                 {
                     return manager;
                 }

@@ -104,7 +104,7 @@ public sealed class MenuRenderer : IDisposable
                 BlendMode.Opaque);
         }
 
-        DrawBackgroundFx(batch, screen.Manager?.BackgroundFx, screenWidth, screenHeight);
+        DrawBackgroundFx(batch, (screen.Manager as MenuManagerTask)?.BackgroundFx, screenWidth, screenHeight);
         DrawLogo(batch, screenWidth, screenHeight);
         DrawScreenPanel(batch, screen, screenWidth, screenHeight);
         DrawSubtree(batch, screen, screenWidth, screenHeight);
@@ -578,7 +578,7 @@ public sealed class MenuRenderer : IDisposable
     /// </remarks>
     private void DrawScreenPanel(SpriteBatch batch, MenuScreenTask screen, int screenWidth, int screenHeight)
     {
-        MenuScreenPanel panel = MenuScreenPanel.For(screen, screen.Manager?.Navigator.Alpha ?? MenuNavigator.FullAlpha);
+        MenuScreenPanel panel = MenuScreenPanel.For(screen, (screen.Manager as MenuManagerTask)?.Navigator.Alpha ?? MenuNavigator.FullAlpha);
         if (panel.IsEmpty)
         {
             return;
