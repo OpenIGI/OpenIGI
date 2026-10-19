@@ -48,6 +48,9 @@ public sealed class SimulationTraceTests : IDisposable
     [RequiresGameDataTheory]
     [InlineData(1)]
     [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(8)]
+    [InlineData(14)]
     public void Igi1_mission_draws_as_it_did(int mission) =>
         Trace(GameDataSource.Igi1, GameTitle.Igi1, mission);
 
