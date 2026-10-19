@@ -73,6 +73,55 @@ public sealed class ModLoadingTests : IDisposable
     }
 
     [Fact]
+    public void A_mods_task_replacement_takes_the_games_type_once_the_game_has_registered_it()
+    {
+        Adapter adapter = new();
+        ModSet mods = new([new InstalledMod(new ModManifest("standin", "Stand-in", "1.0", ModApi.Version, []), string.Empty, new StandInMod(adapter))]);
+        IGameTitleRuntime modded = mods.Extend(new Igi2Runtime());
+
+        NativeRegistry natives = new();
+        TaskTypeRegistry types = new();
+        TaskType soldier = types.Register<GameSoldier>("HumanSoldier");
+        ContentRegistrationContext registration = new(types, natives, new ScriptVarRegistry(natives), new ServiceCatalog(), NullLogger.Instance);
+        foreach (IContentModule module in modded.Modules.Skip(new Igi2Runtime().Modules.Count))
+        {
+            module.Register(registration);
+        }
+
+        Assert.Same(adapter, soldier.ParameterAdapter);
+        TaskTree tree = new(types);
+        Assert.IsType<StandInSoldier>(tree.New(tree.Root, soldier));
+    }
+
+    [Fact]
+    public void A_mod_mounts_another_games_installed_data_and_goes_without_when_it_is_absent()
+    {
+        string installed = Write("igi2-install", "{}");
+        File.WriteAllText(Path.Combine(installed, GameTitle.Igi2.SignatureFile), string.Empty);
+        File.WriteAllText(Path.Combine(installed, "probe.txt"), "from the other game");
+        ModSet mods = new([new InstalledMod(new ModManifest("mount", "Mount", "1.0", ModApi.Version, []), string.Empty, new MountMod())]);
+        IContentModule mount = mods.Extend(new Igi2Runtime()).Modules.Single(static m => m.Name == "mount.Mount.OTHER");
+
+        Engine.Vfs.VirtualFileSystem found = Load(mount, new Locator(installed));
+        Engine.Vfs.VirtualFileSystem missing = Load(mount, new Locator(null));
+
+        Assert.True(found.TryGetDevice("OTHER", out Engine.Vfs.IFileDevice? device));
+        Assert.True(device.Exists("probe.txt"));
+        Assert.False(missing.TryGetDevice("OTHER", out _));
+
+        static Engine.Vfs.VirtualFileSystem Load(IContentModule module, ITitleDataLocator locator)
+        {
+            Engine.Vfs.VirtualFileSystem fileSystem = new();
+            ServiceCatalog services = new();
+            services.Provide(locator);
+            NativeRegistry natives = new();
+            module.LoadTables(new ContentLoadContext(
+                fileSystem, new Engine.Resources.ResourceRegistry(fileSystem), natives, new TaskTree(new TaskTypeRegistry()), services, NullLogger.Instance));
+            return fileSystem;
+        }
+    }
+
+    [Fact]
     public void A_mod_for_another_game_leaves_this_one_as_it_ships()
     {
         InstallSample("sample", """{ "id": "sample", "name": "Sample", "version": "1.0", "apiVersion": 1, "titles": ["igi1"], "assembly": "SampleMod.dll" }""");
@@ -129,6 +178,40 @@ public sealed class ModLoadingTests : IDisposable
         {
             File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
         }
+    }
+
+    private sealed class MountMod : IOpenIgiMod
+    {
+        public void Configure(IModBuilder builder) => builder.MountTitleData(GameTitle.Igi2, "OTHER:");
+    }
+
+    private sealed class Locator(string? root) : ITitleDataLocator
+    {
+        public bool TryGetDataRoot(GameTitle title, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? dataRoot)
+        {
+            dataRoot = title == GameTitle.Igi2 ? root : null;
+            return dataRoot is not null;
+        }
+    }
+
+    private sealed class GameSoldier : GameTask
+    {
+    }
+
+    private sealed class StandInSoldier : GameTask
+    {
+    }
+
+    private sealed class Adapter : ITaskParameterAdapter
+    {
+        public void Apply(TaskParameterValues values, GameTask task)
+        {
+        }
+    }
+
+    private sealed class StandInMod(ITaskParameterAdapter adapter) : IOpenIgiMod
+    {
+        public void Configure(IModBuilder builder) => builder.ReplaceTask("HumanSoldier", static () => new StandInSoldier(), adapter);
     }
 
     private string Write(string directory, string manifest)

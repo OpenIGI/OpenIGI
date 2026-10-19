@@ -1,4 +1,5 @@
-﻿using OpenIGI.Host.DevTools;
+﻿using System.Diagnostics.CodeAnalysis;
+using OpenIGI.Host.DevTools;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
@@ -317,8 +318,11 @@ public sealed partial class GameHost
             new GameMusicNatives(_audioOut.Music).Register(_loop.Natives);
         }
 
+        // Every session can find the other games' installations, for content that reads one game's data in another.
+        ServiceCatalog hostServices = new();
+        hostServices.Provide<ITitleDataLocator>(new InstalledTitles(_titles));
         _title = TitleSession.Start(
-            _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false);
+            _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false, inherited: hostServices);
 
         _mission.AdoptTitleServices(_title.Services);
 
@@ -541,6 +545,18 @@ public sealed partial class GameHost
         {
             _logger.Warning("Overrides", $"The ground atlas did not decode: {error.Message}");
             return false;
+        }
+    }
+
+    // The games installed beside this one, as the catalogue binds them.
+    private sealed class InstalledTitles(ITitleCatalog titles) : ITitleDataLocator
+    {
+        public bool TryGetDataRoot(GameTitle title, [NotNullWhen(true)] out string? dataRoot)
+        {
+            dataRoot = titles.TryResolve(title, out TitleBinding? binding) ? binding.DataRoot : null;
+            return !string.IsNullOrWhiteSpace(dataRoot)
+                && Directory.Exists(dataRoot)
+                && File.Exists(Path.Combine(dataRoot, title.SignatureFile));
         }
     }
 }

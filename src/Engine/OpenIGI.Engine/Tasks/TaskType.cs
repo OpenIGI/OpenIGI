@@ -120,8 +120,18 @@ public sealed class TaskType
     /// <inheritdoc/>
     public override string ToString() => Name;
 
+    /// <summary>
+    /// Gets what reads this type's parameters into the class that makes it, when that class's own parameters are not the ones
+    /// level data writes; <see langword="null"/> when the class binds them itself.
+    /// </summary>
+    public ITaskParameterAdapter? ParameterAdapter { get; private set; }
+
     // Swaps the class that implements this type, keeping its id, its name and its parent.
-    internal void Reimplement(Func<GameTask> factory) => _factory = factory;
+    internal void Reimplement(Func<GameTask> factory, ITaskParameterAdapter? adapter = null)
+    {
+        _factory = factory;
+        ParameterAdapter = adapter;
+    }
 
     internal GameTask CreateInstance()
     {

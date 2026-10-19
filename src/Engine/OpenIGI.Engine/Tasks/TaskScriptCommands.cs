@@ -176,7 +176,15 @@ public sealed class TaskScriptCommands
         }
 
         var reader = new ScriptArgumentReader(call, ScriptArgumentReader.FirstParameterArgument);
-        task.InvokeBindScriptParameters(reader);
+        if (type.ParameterAdapter is { } adapter)
+        {
+            // A class made to stand in for this type: the level's values, read in the level's terms, adapted onto it.
+            adapter.Apply(TaskParameterValues.Read(reader, type.Parameters), task);
+        }
+        else
+        {
+            task.InvokeBindScriptParameters(reader);
+        }
 
         if (hasId)
         {

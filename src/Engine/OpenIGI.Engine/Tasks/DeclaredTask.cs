@@ -18,7 +18,7 @@ namespace OpenIGI.Engine.Tasks;
 /// </remarks>
 public sealed class DeclaredTask : GameTask
 {
-    private object?[] _values = [];
+    private TaskParameterValues? _values;
 
     /// <inheritdoc/>
     protected override IReadOnlyList<TaskParameter> ScriptParameters => Type.Parameters;
@@ -30,8 +30,8 @@ public sealed class DeclaredTask : GameTask
     public object? GetValue(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _values.Length);
-        return _values[index];
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _values?.Count ?? 0);
+        return _values![index];
     }
 
     /// <summary>Gets the parsed value of a parameter by its declared name.</summary>
@@ -63,51 +63,16 @@ public sealed class DeclaredTask : GameTask
     public override bool TryGetScriptValue(string name, out object? value)
     {
         ArgumentNullException.ThrowIfNull(name);
-
-        IReadOnlyList<TaskParameter> parameters = ScriptParameters;
-        for (int i = 0; i < parameters.Count && i < _values.Length; i++)
+        if (_values is null)
         {
-            if (string.Equals(parameters[i].Name, name, StringComparison.Ordinal))
-            {
-                value = _values[i];
-                return true;
-            }
+            value = null;
+            return false;
         }
 
-        value = null;
-        return false;
+        return _values.TryGetValue(name, out value);
     }
 
     /// <inheritdoc/>
-    protected override void BindScriptParameters(ScriptArgumentReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-
-        IReadOnlyList<TaskParameter> parameters = ScriptParameters;
-        _values = new object?[parameters.Count];
-
-        for (int i = 0; i < parameters.Count; i++)
-        {
-            _values[i] = ReadValue(reader, parameters[i].Type);
-        }
-    }
-
-    private static object? ReadValue(ScriptArgumentReader reader, ScriptParamType type) =>
-        ScriptParamTypeInfo.GetBaseType(type) switch
-        {
-            ScriptParamType.Int32 => reader.ReadInt32(),
-            ScriptParamType.Int16 => reader.ReadInt16(),
-            ScriptParamType.Bool8 => reader.ReadBool8(),
-            ScriptParamType.Real32 => reader.ReadReal32(),
-            ScriptParamType.Real64 => reader.ReadReal64(),
-            ScriptParamType.Real32x3 => reader.ReadReal32x3(),
-            ScriptParamType.Real64x3 => reader.ReadReal64x3(),
-            ScriptParamType.Real32x9 => reader.ReadReal32x9(),
-            ScriptParamType.Quat32 => reader.ReadQuat32(),
-            ScriptParamType.GraphEnvelope => reader.ReadGraphEnvelope(),
-            ScriptParamType.Graph => reader.ReadGraph(),
-            ScriptParamType.AnimData => reader.ReadAnimData(),
-            ScriptParamType.QTaskNote => null,
-            _ => reader.ReadString(),
-        };
+    protected override void BindScriptParameters(ScriptArgumentReader reader) =>
+        _values = TaskParameterValues.Read(reader, ScriptParameters);
 }

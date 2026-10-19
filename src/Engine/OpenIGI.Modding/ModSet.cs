@@ -1,5 +1,8 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
+using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Game.Level;
 
@@ -89,6 +92,22 @@ public sealed class ModSet
             return this;
         }
 
+        public IModBuilder MountTitleData(GameTitle other, string deviceName)
+        {
+            ArgumentNullException.ThrowIfNull(other);
+            ArgumentException.ThrowIfNullOrWhiteSpace(deviceName);
+            modules.Add(new MountTitleDataModule(manifest.Id, other, deviceName.TrimEnd(':')));
+            return this;
+        }
+
+        public IModBuilder ReplaceTask(string typeName, Func<GameTask> factory, ITaskParameterAdapter? adapter = null)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(typeName);
+            ArgumentNullException.ThrowIfNull(factory);
+            modules.Add(new ReplaceTaskModule(manifest.Id, typeName, factory, adapter));
+            return this;
+        }
+
         public IModBuilder EditLevelSystems<TBuild>(Action<LevelSystems<TBuild>> edit)
             where TBuild : LevelBuild
         {
@@ -107,6 +126,50 @@ public sealed class ModSet
         public AssetFormatProfile Formats => inner.Formats;
 
         public IReadOnlyList<IContentModule> Modules => modules;
+    }
+
+    // Another game's installation as a device, found through the host's locator when the session loads its tables.
+    private sealed class MountTitleDataModule(string modId, GameTitle other, string deviceName) : IContentModule
+    {
+        public string Name => $"{modId}.Mount.{deviceName}";
+
+        public void Register(ContentRegistrationContext context)
+        {
+        }
+
+        public void LoadTables(ContentLoadContext context)
+        {
+            if (context.Services.TryGet(out ITitleDataLocator? locator) && locator.TryGetDataRoot(other, out string? root))
+            {
+                context.FileSystem.RegisterDevice(new LocalFileDevice(root, deviceName));
+                return;
+            }
+
+            context.Logger.Warning("Mods", $"The mod '{modId}' reads {other.DisplayName}'s data, which is not installed; '{deviceName}:' is not mounted.");
+        }
+    }
+
+    // One of the game's task types made by a mod's class, replaced once the game's own modules have registered it.
+    private sealed class ReplaceTaskModule(string modId, string typeName, Func<GameTask> factory, ITaskParameterAdapter? adapter)
+        : IContentModule
+    {
+        public string Name => $"{modId}.Replace.{typeName}";
+
+        public void Register(ContentRegistrationContext context)
+        {
+            if (adapter is null)
+            {
+                context.Types.Replace(typeName, factory);
+            }
+            else
+            {
+                context.Types.Replace(typeName, factory, adapter);
+            }
+        }
+
+        public void LoadTables(ContentLoadContext context)
+        {
+        }
     }
 
     // Publishes the mods' level-system edits to every session, the preview's sharing the played one's.

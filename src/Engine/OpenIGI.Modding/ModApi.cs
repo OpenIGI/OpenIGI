@@ -42,6 +42,26 @@ public interface IModBuilder
     /// <returns>This builder.</returns>
     IModBuilder AddModule(IContentModule contentModule);
 
+    /// <summary>Mounts another game's installed data as a device of its own, for the mod's content to read that game's files.</summary>
+    /// <param name="title">The game whose data is mounted.</param>
+    /// <param name="deviceName">The device's name, without its colon: files are read as <c>NAME:path</c>.</param>
+    /// <returns>This builder.</returns>
+    /// <remarks>
+    /// Mounted when the session loads its tables, before any level. When the game is not installed nothing is mounted and a
+    /// warning says so; what the mod reads from the device is then missing, as any absent file is.
+    /// </remarks>
+    IModBuilder MountTitleData(GameTitle title, string deviceName);
+
+    /// <summary>Makes the level's tasks of one of the game's types out of a class of the mod's, after the game registers its own.</summary>
+    /// <param name="typeName">The task type's name, as the level's data spawns it.</param>
+    /// <param name="factory">Creates an instance of the mod's class.</param>
+    /// <param name="adapter">
+    /// Sets the class from the parameters the level writes for the type, when the class's own are not those; or
+    /// <see langword="null"/> when the class reads the same parameters the game's did.
+    /// </param>
+    /// <returns>This builder.</returns>
+    IModBuilder ReplaceTask(string typeName, Func<Engine.Tasks.GameTask> factory, Engine.Tasks.ITaskParameterAdapter? adapter = null);
+
     /// <summary>Edits the systems that bring each of the game's levels up: inserts one, replaces one, removes one.</summary>
     /// <typeparam name="TBuild">The game's level build type, which names the game's systems.</typeparam>
     /// <param name="edit">The edit, run over a fresh list for every level.</param>

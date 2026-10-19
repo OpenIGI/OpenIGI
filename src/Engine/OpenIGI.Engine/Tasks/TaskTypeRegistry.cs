@@ -126,6 +126,36 @@ public sealed class TaskTypeRegistry
     }
 
     /// <summary>
+    /// Replaces the class that implements a registered task type with one whose parameters are its own, an adapter setting it
+    /// from the ones level data writes.
+    /// </summary>
+    /// <param name="name">The type's name.</param>
+    /// <param name="factory">Creates an instance of the new class.</param>
+    /// <param name="adapter">Sets the new class's members from the values the level gives the type.</param>
+    /// <returns>The type, now made as the new class.</returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> or <paramref name="adapter"/> is <see langword="null"/>.</exception>
+    /// <exception cref="KeyNotFoundException">No class implements a type of that name.</exception>
+    /// <remarks>
+    /// The type keeps the parameters it has, the replaced class's, until level data declares its own, which then stand: they
+    /// are what the level writes, and the adapter reads them, so they are never checked against the new class.
+    /// </remarks>
+    public TaskType Replace(string name, Func<GameTask> factory, ITaskParameterAdapter adapter)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(factory);
+        ArgumentNullException.ThrowIfNull(adapter);
+        if (!_types.TryGetValue(name, out TaskType? existing) || existing.IsDeclarationOnly)
+        {
+            throw new KeyNotFoundException($"No class implements the task type '{name}'.");
+        }
+
+        existing.Reimplement(factory, adapter);
+        _logger.Debug(LogCategory, $"Task type '{name}' is now made by another class, its parameters adapted.");
+        return existing;
+    }
+
+    /// <summary>
     /// Records the parameter list level data declares for a type, registering a placeholder when no class
     /// implements it yet.
     /// </summary>
@@ -148,7 +178,7 @@ public sealed class TaskTypeRegistry
 
         if (_types.TryGetValue(name, out TaskType? existing))
         {
-            if (existing.IsDeclarationOnly)
+            if (existing.IsDeclarationOnly || existing.ParameterAdapter is not null)
             {
                 existing.Parameters = [.. parameters];
                 existing.IsDeclared = true;
