@@ -761,7 +761,7 @@ public sealed partial class GameHost
 
         _sirenVoices.Clear();
         _reportedSirenFailures.Clear();
-        _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, new GuardRoundHost(this));
+        _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty);
         b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
 
@@ -1770,6 +1770,26 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class Igi1Host(GameHost host) : IIgi1Host
     {
+        public void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial) =>
+            host.PlayBulletImpactSound(position, struckHuman, surfaceMaterial);
+
+        public void SpawnImpactBurst(in WorldRayHit worldHit)
+        {
+            if (host._effects.Particles is { } bursts
+                && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
+            {
+                string material = host._mission.Materials is { } names
+                    && names.TryGet(worldHit.Material, out GameMaterial struck)
+                    ? struck.Name
+                    : string.Empty;
+                bursts.SpawnBurst(
+                    worldHit.Position,
+                    worldHit.Normal,
+                    ImpactParticleRenderer.KindOf(material),
+                    intensity);
+            }
+        }
+
         /// <summary>Gets or sets the frame loop's state for the pass being run.</summary>
         public FrameLoopState State { get; set; } = null!;
 

@@ -2,66 +2,25 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
-/// <summary>What a guard's round reaches beyond the soldiers: the player, and the sound and picture of the hits.</summary>
+/// <summary>What a guard's round asks of whatever plays and shows it: the sound and the burst of the hits.</summary>
 public interface IGuardRoundHost
 {
-    /// <summary>Gets the player's rig, or <see langword="null"/> while none stands in the level.</summary>
-    PlayerCamera? Player { get; }
-
-    /// <summary>Gets the player's health.</summary>
-    HumanHealth PlayerHealth { get; }
-
-    /// <summary>Gets the stream the hit rolls draw from.</summary>
-    Random ShotRandom { get; }
-
-    /// <summary>Gets the level's surface materials, once loaded.</summary>
-    GameMaterialRegistry? Materials { get; }
-
-    /// <summary>Gets the ammunition table, once loaded.</summary>
-    AmmoTypeRegistry? AmmoTypes { get; }
-
-    /// <summary>Gets the vehicle whose gun is firing, whose own hull never stops its round.</summary>
-    GameTask? VehicleRoundOwner { get; }
-
     /// <summary>Plays a round's impact.</summary>
     /// <param name="position">Where it struck, in world units.</param>
     /// <param name="struckHuman">Whether it struck a body.</param>
     /// <param name="surfaceMaterial">The surface's material, when it struck the world.</param>
     void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial);
 
-    /// <summary>Hands a round's contact to what it struck: a speaker, a destructible.</summary>
-    /// <param name="impactUnits">Where it struck, in world units.</param>
-    /// <param name="owner">The struck object's task.</param>
-    /// <param name="placement">The struck placement.</param>
-    /// <param name="destructibleDamage">The round's damage factor.</param>
-    void ApplyRoundContact(Vector3d impactUnits, GameTask? owner, WorldPlacement? placement, float destructibleDamage);
-
     /// <summary>Kicks the burst of a round landing on a surface.</summary>
     /// <param name="hit">Where it landed.</param>
     void SpawnImpactBurst(in WorldRayHit hit);
-
-    /// <summary>The player's grunt at a hit.</summary>
-    void PlayPlayerGrunt();
-
-    /// <summary>The player's view shake at a hit.</summary>
-    void InstallPlayerHitShake();
-
-    /// <summary>The red corners at a hit.</summary>
-    /// <param name="viewIncoming">The round's travel, in camera space.</param>
-    void FlashDamage(Vector3f viewIncoming);
-
-    /// <summary>The player's death.</summary>
-    /// <param name="from">Where the killing round came from.</param>
-    /// <param name="zone">The damage zone it struck.</param>
-    /// <param name="bone">The bone it struck.</param>
-    /// <param name="category">The killing weapon's category.</param>
-    void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category);
 }
 
 /// <summary>A guard's rounds, made casts: against the player's body, the soldiers behind it and the world.</summary>
@@ -74,16 +33,32 @@ public sealed class GuardRounds
 {
     private readonly SoldierSimulation _soldiers;
     private readonly WorldTraceCast _trace;
+    private readonly MissionWorld _mission;
+    private readonly Igi1PlayerHarm _harm;
+    private readonly Igi1Blasts _blasts;
     private readonly IGuardRoundHost _host;
     private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="GuardRounds"/> class.</summary>
     /// <param name="soldiers">The soldiers, who fire the rounds and may take the ones that pass the player.</param>
     /// <param name="trace">Where the world stops a round.</param>
-    /// <param name="host">The player, and the sound and picture of the hits.</param>
+    /// <param name="mission">The mission's world: the player, its health and the shot stream.</param>
+    /// <param name="harm">What a hit does to the player.</param>
+    /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
+    /// <param name="host">The sound and the burst of the hits.</param>
     /// <param name="logger">Told about every hit on the player.</param>
-    public GuardRounds(SoldierSimulation soldiers, WorldTraceCast trace, IGuardRoundHost host, IOpenIgiLogger logger)
+    public GuardRounds(
+        SoldierSimulation soldiers,
+        WorldTraceCast trace,
+        MissionWorld mission,
+        Igi1PlayerHarm harm,
+        Igi1Blasts blasts,
+        IGuardRoundHost host,
+        IOpenIgiLogger logger)
     {
+        _mission = mission ?? throw new ArgumentNullException(nameof(mission));
+        _harm = harm ?? throw new ArgumentNullException(nameof(harm));
+        _blasts = blasts ?? throw new ArgumentNullException(nameof(blasts));
         _soldiers = soldiers ?? throw new ArgumentNullException(nameof(soldiers));
         _trace = trace ?? throw new ArgumentNullException(nameof(trace));
         _host = host ?? throw new ArgumentNullException(nameof(host));
@@ -105,13 +80,13 @@ public sealed class GuardRounds
     public void Resolve(Vector3d from, Vector3d at, float probability, WeaponType weapon, SoldierView? shooter)
     {
         Fired++;
-        if (_host.Player is not { } player)
+        if (_mission.Player is not { } player)
         {
             return;
         }
 
-        HumanHealth health = _host.PlayerHealth;
-        Random random = _host.ShotRandom;
+        HumanHealth health = _mission.PlayerHealth;
+        Random random = _mission.ShotRandom;
 
         // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
         // extended past the target, exactly as the retail round is a cast from the muzzle to
@@ -168,7 +143,7 @@ public sealed class GuardRounds
         // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
         // owner through), so its own hull never stops the round.
         bool worldBlocked = _trace(
-            new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _host.VehicleRoundOwner),
+            new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _mission.VehicleRoundOwner),
             out WorldTraceHit blocker);
         WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
 
@@ -201,7 +176,7 @@ public sealed class GuardRounds
             double lineLength = line.Length;
             if (lineLength > 1e-6)
             {
-                AmmoType? streakAmmo = _host.AmmoTypes is { } table
+                AmmoType? streakAmmo = _mission.AmmoTypes is { } table
                     && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
                     ? found
                     : null;
@@ -224,7 +199,7 @@ public sealed class GuardRounds
                 return;
             }
 
-            if (_host.Materials is { } table)
+            if (_mission.Materials is { } table)
             {
                 player.Marks.TryAdd(
                     worldHit,
@@ -241,7 +216,7 @@ public sealed class GuardRounds
 
             // A guard's stray round pops a speaker exactly as the player's does -- the
             // retail damage message never asked who fired.
-            _host.ApplyRoundContact(
+            _blasts.ApplyRoundContact(
                 worldHit.Position,
                 blocker.Owner,
                 blocker.Placement,
@@ -373,7 +348,7 @@ public sealed class GuardRounds
         // Whether the round gets through a face of this material; the equal case draws its sample.
         bool Penetrates(int material)
         {
-            if (_host.Materials is not { } materials || !materials.TryGet(material, out GameMaterial face))
+            if (_mission.Materials is not { } materials || !materials.TryGet(material, out GameMaterial face))
             {
                 return false;
             }
@@ -403,11 +378,11 @@ public sealed class GuardRounds
             // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
             if (!health.IsDead)
             {
-                _host.PlayPlayerGrunt();
+                _harm.PlayPlayerGrunt();
             }
 
-            _host.InstallPlayerHitShake();
-            _host.FlashDamage(viewIncoming);
+            _harm.InstallPlayerHitShake();
+            _mission.DamageFlash.Hit(viewIncoming, _mission.SoundRandom.NextSingle());
 
             // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
             // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
@@ -435,7 +410,7 @@ public sealed class GuardRounds
 
             if (health.IsDead)
             {
-                _host.BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
+                _harm.BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
                 _logger.Information(
                     "Weapon",
                     $"The player is DEAD after {HitsOnPlayer} hit(s) from {Fired} round(s), "

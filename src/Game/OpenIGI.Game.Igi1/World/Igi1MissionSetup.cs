@@ -17,7 +17,7 @@ using OpenIGI.Scripting.Runtime;
 namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>What bringing up Project I.G.I.'s cutscenes and objectives asks of whatever plays and shows them.</summary>
-public interface IIgi1MissionSetupHost
+public interface IIgi1MissionSetupHost : IGuardRoundHost
 {
     /// <summary>Gets the log.</summary>
     IOpenIgiLogger Logger { get; }
@@ -81,8 +81,10 @@ public sealed record Igi1SoundSinks(
 
 /// <summary>Brings up Project I.G.I.'s cutscene runtime and objective runtime for a loaded level.</summary>
 /// <param name="mission">The mission's world, which keeps them.</param>
+/// <param name="harm">What a guard's round does to the player.</param>
+/// <param name="blasts">What a guard's round does to a speaker or a destructible.</param>
 /// <param name="host">What plays and shows them.</param>
-public sealed class Igi1MissionSetup(MissionWorld mission, IIgi1MissionSetupHost host)
+public sealed class Igi1MissionSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, IIgi1MissionSetupHost host)
 {
     /// <summary>Makes the mission's text and its cutscene runtime, with the natives the level's cutscenes call.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
@@ -455,20 +457,17 @@ public sealed class Igi1MissionSetup(MissionWorld mission, IIgi1MissionSetupHost
     /// <param name="worldTrace">What the soldiers' sight and rounds trace: the placed objects and the terrain.</param>
     /// <param name="graphs">The level's nav graphs, by their task's id.</param>
     /// <param name="difficulty">The difficulty every guard reads its combat row at.</param>
-    /// <param name="rounds">What a guard's round asks of whatever shows and plays it.</param>
     public void AnimateSoldiers(
         LevelTask levelRoot,
         WorldScene scene,
         WorldTraceCast worldTrace,
         Dictionary<int, GraphFile> graphs,
-        AiDifficulty difficulty,
-        IGuardRoundHost rounds)
+        AiDifficulty difficulty)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(worldTrace);
         ArgumentNullException.ThrowIfNull(graphs);
-        ArgumentNullException.ThrowIfNull(rounds);
         SoldierSimulation soldiers = mission.Soldiers
             ?? throw new InvalidOperationException("The soldiers are made before their brains are animated.");
 
@@ -494,7 +493,7 @@ public sealed class Igi1MissionSetup(MissionWorld mission, IIgi1MissionSetupHost
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
         // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
-        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, rounds, host.Logger);
+        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, host, host.Logger);
         soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
     }
 

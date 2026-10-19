@@ -21,8 +21,8 @@ public sealed class Igi1Gameplay
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         Harm = new Igi1PlayerHarm(World, host);
-        Setup = new Igi1MissionSetup(World, host);
         Blasts = new Igi1Blasts(World, Harm, host);
+        Setup = new Igi1MissionSetup(World, Harm, Blasts, host);
         Tick = new Igi1MissionTick(World, Blasts, host);
     }
 
