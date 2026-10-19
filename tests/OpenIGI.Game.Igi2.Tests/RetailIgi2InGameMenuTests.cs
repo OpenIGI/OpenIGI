@@ -70,6 +70,18 @@ public sealed class RetailIgi2InGameMenuTests
         Assert.Equal(Igi2MenuRequest.None, menu.TakeRequest());
     }
 
+    [RequiresTitleDataFact("igi2")]
+    public void The_manager_reads_a_controls_expression_in_this_games_dialect()
+    {
+        (Igi2InGameMenu menu, Igi2LevelRun level, _) = Load();
+        Igi2MenuManagerTask manager = menu.Manager!;
+
+        Assert.Equal(0.0, manager.EvaluateReal("1 + 2"));
+        manager.Run(level);
+        Assert.Equal(3.0, manager.EvaluateReal("1 + 2"));
+        Assert.Equal(0.0, manager.EvaluateReal(string.Empty));
+    }
+
     private static (Igi2InGameMenu Menu, Igi2LevelRun Level, Igi2GameConfig Config) Load()
     {
         Igi2Level mission = Igi2Level.Find("location1", "level1");

@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Game.Menus;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Menus;
@@ -22,8 +23,11 @@ public interface IIgi2MenuItemList
 }
 
 /// <summary>The in-game menu's manager, I.G.I. 2's <c>MenuManager</c> (menumanager.c); its state is the <see cref="Igi2InGameMenu"/>'s.</summary>
-public sealed partial class Igi2MenuManagerTask : Igi2MenuWindowTask
+public sealed partial class Igi2MenuManagerTask : Igi2MenuWindowTask, IMenuManager
 {
+    private readonly Dictionary<(string Source, GameTask? Self), LevelExpression> _compiled = [];
+    private Igi2LevelRun? _level;
+
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "MenuManager";
 
@@ -51,8 +55,43 @@ public sealed partial class Igi2MenuManagerTask : Igi2MenuWindowTask
     public Igi2InGameMenu? Menu { get; set; }
 
     /// <inheritdoc/>
+    public MenuPointer Pointer { get; } = new();
+
+    /// <summary>Gets or sets where the menu's sounds are played; <see langword="null"/> plays none.</summary>
+    /// <remarks>Whatever presents the menu connects it, as it connects the pointer.</remarks>
+    public Action<string>? Sounds { get; set; }
+
+    /// <inheritdoc/>
     /// <remarks><c>MenuManager_RunHandler</c>: the menu's state takes its step.</remarks>
-    public override void Run(Igi2LevelRun level) => Menu?.Run(level);
+    public override void Run(Igi2LevelRun level)
+    {
+        _level = level;
+        Menu?.Run(level);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>In this game's dialect, against the level the manager last ran in, compiled once per control.</remarks>
+    public void RunAction(string source, GameTask? self = null) => _ = EvaluateReal(source, self);
+
+    /// <inheritdoc/>
+    public double EvaluateReal(string source, GameTask? self = null)
+    {
+        if (_level is not { } level || string.IsNullOrWhiteSpace(source))
+        {
+            return 0.0;
+        }
+
+        if (!_compiled.TryGetValue((source, self), out LevelExpression? compiled))
+        {
+            compiled = Igi2LevelExpressions.Create(source, (self ?? this).Name, level.Natives);
+            _compiled[(source, self)] = compiled;
+        }
+
+        return compiled.IsEmpty ? 0.0 : level.Evaluate(compiled);
+    }
+
+    /// <inheritdoc/>
+    public void PlaySound(string name) => Sounds?.Invoke(name);
 
     /// <summary>The screen the menu opens on, <c>MenuManager_GetDefaultMenuID</c>: the default expression's value, or -1 for none.</summary>
     /// <param name="level">The level it is evaluated in.</param>
