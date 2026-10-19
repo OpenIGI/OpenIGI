@@ -1,9 +1,8 @@
 ﻿using OpenIGI.Game.Config;
 
 using OpenIGI.Engine.Titles;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>Retail campaign-unlock semantics from Config_UpdateActiveMissionID (IGI1 0x406340).</summary>
 public static class MissionProgression

@@ -1,8 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Whether the terrain stands between two points — the ground's part of a sight or bullet ray.
