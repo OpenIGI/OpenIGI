@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
 

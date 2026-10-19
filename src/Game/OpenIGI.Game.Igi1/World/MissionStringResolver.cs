@@ -1,5 +1,5 @@
 using OpenIGI.Engine.Resources;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
 

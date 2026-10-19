@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
 

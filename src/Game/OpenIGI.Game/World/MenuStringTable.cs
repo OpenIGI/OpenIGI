@@ -1,6 +1,6 @@
 using OpenIGI.Engine.Resources;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Resolves a menu item's <c>Text Resource</c> key to the localised string it names.
