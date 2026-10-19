@@ -187,30 +187,38 @@ public sealed partial class GameHost
         BeginStage();
         LevelUpdateWalker walker = new(levelRoot);
         MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted);
-        (_missionSystems ??= MissionSystems()).BuildAll(build);
+        LevelSystems<MissionLevelBuild> systems = MissionSystems();
+        if (_title.Services.TryGet(out LevelSystemEdits? edits))
+        {
+            // A mod's systems join the host's by their names (MissionSystemNames), for this session's missions.
+            edits.Apply(systems);
+        }
+
+        systems.BuildAll(build);
     }
 
-    // The systems a mission is brought up by, in order; see MissionSystemNames.
-    private LevelSystems<MissionBuild>? _missionSystems;
-
     /// <summary>Makes the host's mission systems, in the order a mission is brought up.</summary>
-    /// <returns>A fresh list.</returns>
-    private LevelSystems<MissionBuild> MissionSystems() => new LevelSystems<MissionBuild>()
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Sounds, MissionSounds))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Cutscenes, MissionCutscenes))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Objectives, MissionObjectives))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Computer, MissionComputer))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Scene, MissionScene))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Soldiers, MissionSoldiers))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Interactions, MissionInteractions))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Cameras, MissionCameras))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.NavGraphs, MissionNavGraphs))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.LightBakes, MissionLightBakes))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.NavigationAi, MissionNavigationAi))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.LevelWalk, MissionLevelWalk))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Picture, MissionPicture))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Player, MissionPlayer))
-        .Add(new LevelSystem<MissionBuild>(MissionSystemNames.Adornments, MissionAdornments));
+    /// <returns>A fresh list, which the session's level-system edits may change.</returns>
+    private LevelSystems<MissionLevelBuild> MissionSystems() => new LevelSystems<MissionLevelBuild>()
+        .Add(HostSystem(MissionSystemNames.Sounds, MissionSounds))
+        .Add(HostSystem(MissionSystemNames.Cutscenes, MissionCutscenes))
+        .Add(HostSystem(MissionSystemNames.Objectives, MissionObjectives))
+        .Add(HostSystem(MissionSystemNames.Computer, MissionComputer))
+        .Add(HostSystem(MissionSystemNames.Scene, MissionScene))
+        .Add(HostSystem(MissionSystemNames.Soldiers, MissionSoldiers))
+        .Add(HostSystem(MissionSystemNames.Interactions, MissionInteractions))
+        .Add(HostSystem(MissionSystemNames.Cameras, MissionCameras))
+        .Add(HostSystem(MissionSystemNames.NavGraphs, MissionNavGraphs))
+        .Add(HostSystem(MissionSystemNames.LightBakes, MissionLightBakes))
+        .Add(HostSystem(MissionSystemNames.NavigationAi, MissionNavigationAi))
+        .Add(HostSystem(MissionSystemNames.LevelWalk, MissionLevelWalk))
+        .Add(HostSystem(MissionSystemNames.Picture, MissionPicture))
+        .Add(HostSystem(MissionSystemNames.Player, MissionPlayer))
+        .Add(HostSystem(MissionSystemNames.Adornments, MissionAdornments));
+
+    // One of the host's own systems, which reads the host's build; a mod's reads the public one.
+    private static LevelSystem<MissionLevelBuild> HostSystem(string name, Action<MissionBuild> build) =>
+        new(name, b => build((MissionBuild)b));
 
     // A system ran before the one it depends on.
     private static InvalidOperationException MissingSystem(string name) =>
