@@ -8,7 +8,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using System.Globalization;
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host.DevTools;
@@ -822,7 +822,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 internal interface IInspectedWorld
 {
     /// <summary>Gets the player's rig, when one stands in the level.</summary>
-    PlayerCamera? Player { get; }
+    IHostedPlayer? Player { get; }
 
     /// <summary>Gets whether the view is the player's rather than the free camera's.</summary>
     bool PlayerMode { get; }

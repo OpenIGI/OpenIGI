@@ -20,6 +20,9 @@ public interface IHostedPlayer
     /// <summary>Gets the body that stands in the level.</summary>
     PlayerBody Body { get; }
 
+    /// <summary>Gets where the feet are, in the renderer's metres.</summary>
+    Vector3d Position { get; }
+
     /// <summary>Gets the first-person rig, or <see langword="null"/> before it is built.</summary>
     HumanView? View { get; }
 

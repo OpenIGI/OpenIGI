@@ -1,5 +1,5 @@
 ﻿using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
@@ -15,7 +15,7 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class InspectedWorld(GameHost host) : IInspectedWorld
     {
-        public PlayerCamera? Player => host._mission.Player;
+        public IHostedPlayer? Player => host.HostedPlayer;
 
         public bool PlayerMode => host._playerMode;
 

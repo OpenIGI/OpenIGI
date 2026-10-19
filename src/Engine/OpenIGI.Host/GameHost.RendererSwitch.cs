@@ -1,7 +1,7 @@
 ﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.World;
 using OpenIGI.Host.Services;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
@@ -102,7 +102,7 @@ public sealed partial class GameHost
 
         if (_playerMode && HostedPlayer is { } player)
         {
-            Vector3d feet = player.Body.Position / PlayerCamera.UnitsPerMetre;
+            Vector3d feet = player.Body.Position / WorldScene.UnitsPerMetre;
             return new RendererSwitchPose(feet, player.Body.Yaw, player.Body.Pitch, Flying: false);
         }
 
