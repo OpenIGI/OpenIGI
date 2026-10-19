@@ -1,9 +1,8 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.Config;
 
-namespace OpenIGI.Game.Igi1.Config;
+namespace OpenIGI.Game.Config;
 
 /// <summary>
 /// Reads <c>config.qvm</c>, which is where the game keeps every setting it remembers.

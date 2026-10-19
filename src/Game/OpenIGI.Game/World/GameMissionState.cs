@@ -1,8 +1,7 @@
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>The mission the game will start when it next leaves the menus.</summary>
 /// <remarks>

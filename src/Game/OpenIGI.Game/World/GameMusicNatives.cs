@@ -1,9 +1,8 @@
 using OpenIGI.Engine.Audio;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// The three script natives that control the score.

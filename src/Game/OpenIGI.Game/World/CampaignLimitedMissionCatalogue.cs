@@ -3,9 +3,8 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// A title's missions cut to the opening stretch of its campaign: the first so many along the

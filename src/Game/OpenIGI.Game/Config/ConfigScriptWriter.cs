@@ -2,9 +2,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using OpenIGI.Scripting.Qvm;
-using OpenIGI.Game.Config;
 
-namespace OpenIGI.Game.Igi1.Config;
+namespace OpenIGI.Game.Config;
 
 /// <summary>
 /// Writes a configuration back out as a compiled script, in the format the original saves.
