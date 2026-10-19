@@ -24,8 +24,9 @@ public sealed class Igi1WorldBuilder : ITitleWorldBuilder
         ArgumentNullException.ThrowIfNull(request.Mission);
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
 
+        Igi1Quirks quirks = request.Services?.TryGet(out Igi1Quirks? published) == true ? published : new Igi1Quirks();
         WorldScene scene = WorldScene.Build(
-            request.Mission, request.LevelRoot, request.Magic, request.Logger, request.VehiclePhysics);
+            request.Mission, request.LevelRoot, request.Magic, request.Logger, request.VehiclePhysics, quirks.DestroyedModelArchiveName);
         return new WorldBuildResult(scene, 0, 0);
     }
 

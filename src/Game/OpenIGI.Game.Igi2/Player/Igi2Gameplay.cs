@@ -257,6 +257,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.MapHumans = humans;
         player.MissionId = request.World.Mission.Descriptor.Id;
+        player.Quirks = request.Services.TryGet(out Igi2Quirks? quirks) ? quirks : new Igi2Quirks();
         Engine.Tasks.GameTask? taskRoot = request.World.LevelRoot;
         player.TaskById = id => taskRoot?.Tree.FromId(id);
         player.Level = LevelRun(request, player);

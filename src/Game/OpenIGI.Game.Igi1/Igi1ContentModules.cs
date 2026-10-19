@@ -116,6 +116,7 @@ public sealed class WorldContentModule : IContentModule
         context.Services.GetOrProvide(() => new MagicObjectRegistry(context.Logger)).Register(context.Natives);
         context.Services.GetOrProvide(() => new AnimTriggerRegistry(context.Logger)).Register(context.Natives);
         context.Services.GetOrProvide(() => new VehiclePhysicsRegistry(context.Logger));
+        context.Services.GetOrProvide(static () => new Igi1Quirks());
     }
 
     /// <inheritdoc/>

@@ -35,8 +35,11 @@ public sealed partial class Igi2TitlePlayer
     /// <summary>Gets or sets the level's tasks by id, which the objectives' map buttons look at.</summary>
     internal Func<int, GameTask?>? TaskById { get; set; }
 
-    /// <summary>Gets or sets the mission's number, which picks the broken casing for mission 17.</summary>
+    /// <summary>Gets or sets the mission's number, which the quirks pick the broken casing by.</summary>
     public int MissionId { get; set; }
+
+    /// <summary>Gets or sets the title's special cases, which say which missions have the broken casing.</summary>
+    public Igi2Quirks Quirks { get; set; } = new();
 
     // The game screen's ComputerMenu task, after the player: it opens as the player's computer state opens the computer, runs,
     // and closes with it.
@@ -54,7 +57,7 @@ public sealed partial class Igi2TitlePlayer
             Log = StatusMessages.Log,
             Saves = new ComputerSaves(this),
         };
-        display.IsBroken = MissionId == 17;
+        display.IsBroken = Quirks.HasBrokenComputer(MissionId);
         if (computer.IsOpen && !display.IsOpen)
         {
             display.Open(() => Human.Position);

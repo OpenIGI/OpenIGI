@@ -224,6 +224,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Types.Register<Computer.Igi2ComputerHilightTask>(Computer.Igi2ComputerHilightTask.TypeName);
         Computer.Igi2Computer.RegisterConstants(context.Natives);
         context.Services.GetOrProvide(static () => new Computer.Igi2Computer());
+        context.Services.GetOrProvide(static () => new Igi2Quirks());
         context.Types.Register<Flow.Igi2CutSceneTask>(Flow.Igi2CutSceneTask.TypeName);
         context.Types.Register<Flow.Igi2EditCameraTask>(Flow.Igi2EditCameraTask.TypeName);
         context.Types.Register<Flow.Igi2LevelFlowTask>(Flow.Igi2LevelFlowTask.TypeName);
