@@ -9,7 +9,7 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Player;
-using OpenIGI.Engine.Graphics;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;

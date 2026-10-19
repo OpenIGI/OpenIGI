@@ -1,7 +1,7 @@
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Engine.Graphics;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Humans;

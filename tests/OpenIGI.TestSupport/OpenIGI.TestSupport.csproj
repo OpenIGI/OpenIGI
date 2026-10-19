@@ -10,6 +10,7 @@
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
     <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
   </ItemGroup>
 

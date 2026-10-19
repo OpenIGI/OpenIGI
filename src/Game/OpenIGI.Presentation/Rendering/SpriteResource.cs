@@ -3,7 +3,7 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Engine.Graphics;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// A <see cref="SpriteAsset"/> uploaded to a graphics device: the decoded pixels become device

@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Engine.Graphics;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Player;

@@ -6,7 +6,6 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\..\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
     <ProjectReference Include="..\..\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
   </ItemGroup>
 

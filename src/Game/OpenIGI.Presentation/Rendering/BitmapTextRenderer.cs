@@ -2,7 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Engine.Graphics;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Lays out and draws strings with a bitmap font.

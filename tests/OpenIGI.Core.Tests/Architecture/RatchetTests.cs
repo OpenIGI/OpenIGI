@@ -21,11 +21,16 @@ public sealed class RatchetTests
 {
     private const string UpdateVariable = "OPENIGI_RATCHET_UPDATE";
 
-    /// <summary>The abstraction projects' concrete neighbours: a gameplay or engine project naming one is a layering break.</summary>
+    /// <summary>What a gameplay or engine project may not name: the picture, the window and the presentation above it.</summary>
+    /// <remarks>
+    /// <c>OpenIGI.Audio</c> and <c>OpenIGI.Input</c> are the device-neutral layers (their backends are <c>.OpenAL</c>,
+    /// <c>.Web</c> and <c>.Desktop</c>): the engine's sound system stands on the one, and the game reads its keys from the
+    /// other, as each title's gameplay already may. The game reaches sound through the engine's sound system.
+    /// </remarks>
     private static readonly Dictionary<string, string[]> ForbiddenReferences = new(StringComparer.Ordinal)
     {
-        ["OpenIGI.Engine"] = ["OpenIGI.Rendering", "OpenIGI.Audio", "OpenIGI.Platform", "OpenIGI.Presentation"],
-        ["OpenIGI.Game"] = ["OpenIGI.Rendering", "OpenIGI.Audio", "OpenIGI.Input", "OpenIGI.Platform", "OpenIGI.Presentation"],
+        ["OpenIGI.Engine"] = ["OpenIGI.Rendering", "OpenIGI.Platform", "OpenIGI.Presentation"],
+        ["OpenIGI.Game"] = ["OpenIGI.Rendering", "OpenIGI.Audio", "OpenIGI.Platform", "OpenIGI.Presentation"],
         ["OpenIGI.Game.Igi1"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Audio", "OpenIGI.Platform"],
         ["OpenIGI.Game.Igi2"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Audio", "OpenIGI.Platform"],
         ["OpenIGI.Modding"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Host", "OpenIGI.Game.Igi1", "OpenIGI.Game.Igi2"],
