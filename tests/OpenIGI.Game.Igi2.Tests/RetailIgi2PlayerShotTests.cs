@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
@@ -28,13 +29,13 @@ public sealed class RetailIgi2PlayerShotTests
         Igi2HumanPlayer human = player.Human;
         human.LevelTick = static () => 100;
 
-        Assert.False(human.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(null, null, -1f)));
+        Assert.False(human.EvaluateWeaponCollision(new WeaponCollisionQuery(null, null, -1f)));
         Assert.Equal(100, human.WhizzbyClock.LastTick);
-        Assert.True(human.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(null, null, 1f)));
-        Assert.False(human.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(human, null, 1f)));
+        Assert.True(human.EvaluateWeaponCollision(new WeaponCollisionQuery(null, null, 1f)));
+        Assert.False(human.EvaluateWeaponCollision(new WeaponCollisionQuery(human, null, 1f)));
 
         human.WhizzbyClock.LastTick = 0;
-        human.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(human, null, 1f));
+        human.EvaluateWeaponCollision(new WeaponCollisionQuery(human, null, 1f));
         Assert.Equal(0, human.WhizzbyClock.LastTick);
         Assert.NotNull(m.Collision);
     }
@@ -49,7 +50,7 @@ public sealed class RetailIgi2PlayerShotTests
         (RetailIgi2Mission1 m, Igi2TitlePlayer player) = Player();
         Igi2HumanPlayer human = player.Human;
         Vector3d p = human.Position;
-        Igi2LineTrace trace = new(1) { Includes = static o => o is not IIgi2WeaponCollisionTarget t || t.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(null, null, 1f)) };
+        Igi2LineTrace trace = new(1) { Includes = static o => o is not IWeaponCollisionTarget t || t.EvaluateWeaponCollision(new WeaponCollisionQuery(null, null, 1f)) };
         trace.Starts[0] = new Vector3d(p.X + 20480.0, p.Y, p.Z + 5120.0);
         trace.Ends[0] = new Vector3d(p.X - 20480.0, p.Y, p.Z + 5120.0);
         m.Collision!.TraceLines(trace, Igi2CollisionWorld.HumanGroup);

@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -253,7 +254,7 @@ public sealed class Igi2GunShot
 
         world.EvaluateGunShot(this, shooter);
         uint groups = ObjectGroups | ((Options & Igi2GunShotOptions.IgnoreTerrain) == 0 ? Igi2CollisionWorld.TerrainGroup : 0u);
-        Igi2WeaponCollisionQuery query = new(shooter, Ignore, hitProbability);
+        WeaponCollisionQuery query = new(shooter, Ignore, hitProbability);
         _trace.Mesh = 0;
         _trace.TracePortals = false;
         _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
@@ -275,9 +276,9 @@ public sealed class Igi2GunShot
     /// </summary>
     /// <param name="query">The line's context.</param>
     /// <returns>The filter, given what a collider stands for.</returns>
-    public static Func<object, bool> WeaponCollisionIncludes(Igi2WeaponCollisionQuery query) => owner => owner switch
+    public static Func<object, bool> WeaponCollisionIncludes(WeaponCollisionQuery query) => owner => owner switch
     {
-        IIgi2WeaponCollisionTarget target => target.EvaluateWeaponCollision(query),
+        IWeaponCollisionTarget target => target.EvaluateWeaponCollision(query),
         Igi2CollisionOwner solid => EvaluateSolid(solid, query),
         _ => true,
     };
@@ -287,7 +288,7 @@ public sealed class Igi2GunShot
     /// (<c>ExplodeObject_</c>, <c>Car_</c>, <c>Missile_WeaponCollisionEvaluateHandler</c>): not the weapon's holder nor the shot's
     /// ignored task, and never a missile. Every other type takes every bullet.
     /// </summary>
-    private static bool EvaluateSolid(Igi2CollisionOwner solid, in Igi2WeaponCollisionQuery query)
+    private static bool EvaluateSolid(Igi2CollisionOwner solid, in WeaponCollisionQuery query)
     {
         if (solid.TypeName == MissileType)
         {
@@ -450,9 +451,19 @@ public sealed class Igi2GunShot
         Fpu falloff = 1.0f - ((new Fpu(travelled) / bullet.Range) * 0.30000001f);
         float damage = ((falloff * bullet.DamageFactor) * left).F;
         Vector3f shot = new((new Fpu(end.X) - start.X).F, (new Fpu(end.Y) - start.Y).F, (new Fpu(end.Z) - start.Z).F);
-        if ((hit.HitObject?.Handler ?? hit.HitObject?.Owner) is IIgi2WeaponHitTarget target)
+        object? struck = hit.HitObject?.Handler ?? hit.HitObject?.Owner;
+        if (struck is IWeaponHitTarget target)
         {
-            target.WeaponHit(new Igi2WeaponHit(hit, damage, shot, shooter, bullet.WeaponType, bullet.AmmoType));
+            // The engine's WeaponHit to whatever was struck; one of this game's takes it whole.
+            Igi2WeaponHit own = new(hit, damage, shot, shooter, bullet.WeaponType, bullet.AmmoType);
+            if (target is IIgi2WeaponHitTarget same)
+            {
+                same.WeaponHit(own);
+            }
+            else
+            {
+                target.WeaponHit(own.ToShared());
+            }
         }
 
         Igi2GameMaterial? material = world.Materials[row];

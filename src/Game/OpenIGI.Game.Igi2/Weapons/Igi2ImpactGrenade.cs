@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -134,7 +135,7 @@ public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
         _path.Starts[0] = from;
         _path.Ends[0] = Position;
         _path.Count = 1;
-        _path.Includes = Igi2GunShot.WeaponCollisionIncludes(new Igi2WeaponCollisionQuery(_shooter, _shooter, 1f));
+        _path.Includes = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(_shooter, _shooter, 1f));
         _collision.TraceLines(_path, uint.MaxValue);
         Igi2Intersection hit = _path.Intersections[0];
         if (hit.IsHit)

@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -203,7 +204,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2WeaponHitTarget
     /// <c>whizzby_</c> sounds drawn, at the view.
     /// </summary>
     /// <param name="query">The trace's context.</param>
-    protected override void HearBulletPass(in Igi2WeaponCollisionQuery query)
+    protected override void HearBulletPass(in WeaponCollisionQuery query)
     {
         if (ReferenceEquals(query.Ignore, this) || ReferenceEquals(query.Shooter, this))
         {

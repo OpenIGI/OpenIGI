@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -60,7 +61,7 @@ internal sealed class Igi2ProximityMineFire(bool remote) : IIgi2FireHandler
             _trace.Mesh = 0;
             _trace.TracePortals = false;
             _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
-            _trace.Includes = Igi2GunShot.WeaponCollisionIncludes(new Igi2WeaponCollisionQuery(request.Operator, null, 1f));
+            _trace.Includes = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(request.Operator, null, 1f));
             world.Collision.TraceLines(_trace, uint.MaxValue);
             Igi2Intersection hit = _trace.Intersections[0];
             if (hit.IsHit && !Refuses(hit.HitObject, world))

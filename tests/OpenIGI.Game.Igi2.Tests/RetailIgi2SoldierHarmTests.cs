@@ -7,6 +7,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -42,12 +43,12 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.Null(Shoot(m.Collision!, body, height: 40960.0, includes: null));
 
         Igi2HumanSoldier friend = soldiers.Bodies.First(b => !ReferenceEquals(b, body) && b.Team == body.Team);
-        Igi2WeaponCollisionQuery own = new(friend, null, 1f);
+        WeaponCollisionQuery own = new(friend, null, 1f);
         Assert.False(body.EvaluateWeaponCollision(own));
-        Assert.False(body.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(body, null, 1f)));
-        Assert.Null(Shoot(m.Collision!, body, height: 4096.0, includes: o => o is not IIgi2WeaponCollisionTarget t || t.EvaluateWeaponCollision(own)));
+        Assert.False(body.EvaluateWeaponCollision(new WeaponCollisionQuery(body, null, 1f)));
+        Assert.Null(Shoot(m.Collision!, body, height: 4096.0, includes: o => o is not IWeaponCollisionTarget t || t.EvaluateWeaponCollision(own)));
         friend.Team = body.Team + 1;
-        Assert.True(body.EvaluateWeaponCollision(new Igi2WeaponCollisionQuery(friend, null, 1f)));
+        Assert.True(body.EvaluateWeaponCollision(new WeaponCollisionQuery(friend, null, 1f)));
     }
 
     /// <summary>

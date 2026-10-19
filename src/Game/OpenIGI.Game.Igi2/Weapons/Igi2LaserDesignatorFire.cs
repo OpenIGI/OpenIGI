@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -41,8 +42,8 @@ internal sealed class Igi2LaserDesignatorFire : IIgi2FireHandler
         _trace.Mesh = 0;
         _trace.TracePortals = false;
         _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
-        Igi2WeaponCollisionQuery query = new(request.Operator, null, 1f);
-        _trace.Includes = owner => owner is not IIgi2WeaponCollisionTarget target || target.EvaluateWeaponCollision(query);
+        WeaponCollisionQuery query = new(request.Operator, null, 1f);
+        _trace.Includes = owner => owner is not IWeaponCollisionTarget target || target.EvaluateWeaponCollision(query);
         world.Collision.TraceLines(_trace, uint.MaxValue);
 
         Igi2Intersection hit = _trace.Intersections[0];

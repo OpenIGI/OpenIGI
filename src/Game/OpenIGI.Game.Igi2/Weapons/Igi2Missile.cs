@@ -3,6 +3,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -257,7 +258,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         _shooter = launch.Thrower;
         _weaponType = launch.WeaponType;
         IIgi2WeaponOwner? shooter = _shooter;
-        Func<object, bool> lines = Igi2GunShot.WeaponCollisionIncludes(new Igi2WeaponCollisionQuery(shooter, shooter, 1f));
+        Func<object, bool> lines = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(shooter, shooter, 1f));
         _world = world with { Includes = owner => lines(owner) && owner is not Igi2Missile };
 
         float[] m = launch.Orientation;

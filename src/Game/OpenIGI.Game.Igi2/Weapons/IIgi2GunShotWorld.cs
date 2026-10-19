@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -55,31 +56,28 @@ public readonly record struct Igi2WeaponHit(
     Vector3f ShotVector,
     IIgi2WeaponOwner? Shooter,
     Igi2WeaponTypeTask WeaponType,
-    Igi2AmmoTypeTask? AmmoType);
+    Igi2AmmoTypeTask? AmmoType)
+{
+    /// <summary>The hit as either game's targets read it: its fields, and the whole of it as the context.</summary>
+    /// <returns>The shared hit.</returns>
+    public WeaponHit ToShared() => new(Intersection.Position, Intersection.Normal, Damage, ShotVector, Shooter, this);
+}
 
 /// <summary>An object that answers a bullet striking it, a type with a <c>GameFunctions_eWeaponHitQTaskEvent</c> handler.</summary>
-public interface IIgi2WeaponHitTarget
+/// <remarks>The engine's <see cref="IWeaponHitTarget"/>, read in this game's terms: a hit this game sent is taken whole.</remarks>
+public interface IIgi2WeaponHitTarget : IWeaponHitTarget
 {
     /// <summary>Takes a bullet's hit.</summary>
     /// <param name="hit">The hit.</param>
     void WeaponHit(in Igi2WeaponHit hit);
+
+    /// <inheritdoc/>
+    void IWeaponHitTarget.WeaponHit(in WeaponHit hit)
+    {
+        if (hit.Context is Igi2WeaponHit own)
+        {
+            WeaponHit(own);
+        }
+    }
 }
 
-/// <summary>
-/// What a weapon's trace hands an object asked whether the bullet may strike it,
-/// <c>GameFunctions_eWeaponCollisionEvaluateQTaskEvent</c>'s context.
-/// </summary>
-/// <param name="Shooter">The human whose weapon fired, the weapon task's parent: an object never stops its own bullet.</param>
-/// <param name="Ignore">What the shot passes through as though it were not there, <c>ptGunShotIgnoreQTaskRef</c>.</param>
-/// <param name="HitProbability">How likely the bullet is to strike the player, the weapon's own (<c>Weapon+0x64</c>, 1 unless set).</param>
-public readonly record struct Igi2WeaponCollisionQuery(object? Shooter, object? Ignore, float HitProbability);
-
-/// <summary>An object that decides for itself whether a bullet may strike it, a type with a <c>GameFunctions_eWeaponCollisionEvaluateQTaskEvent</c> handler.</summary>
-/// <remarks>A type with no handler takes every bullet.</remarks>
-public interface IIgi2WeaponCollisionTarget
-{
-    /// <summary>Answers whether the bullet may strike this object.</summary>
-    /// <param name="query">The trace's context.</param>
-    /// <returns>Whether it may.</returns>
-    bool EvaluateWeaponCollision(in Igi2WeaponCollisionQuery query);
-}

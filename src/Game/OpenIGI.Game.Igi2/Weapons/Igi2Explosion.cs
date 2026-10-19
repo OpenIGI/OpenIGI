@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -84,6 +85,10 @@ public readonly record struct Igi2ExplosionHit(
     IIgi2WeaponOwner? Owner,
     Igi2ExplosionFalloff Falloff)
 {
+    /// <summary>The explosion as either game's targets read it: its fields, and the whole of it as the context.</summary>
+    /// <returns>The shared explosion.</returns>
+    public ExplosionHit ToShared() => new(Position, Team, Damage, FullRange, FalloffRange, Owner, this);
+
     /// <summary>The damage it does a target, <c>GameFunctions_ResolveExplosionHit</c> (<c>igi2 0x48D1F0</c>).</summary>
     /// <param name="target">Where the target is, <c>tPos</c>.</param>
     /// <param name="radius">How big the target is.</param>
@@ -99,11 +104,21 @@ public readonly record struct Igi2ExplosionHit(
 }
 
 /// <summary>Something an explosion can hurt: a member of <c>GameFunctions_ptExplosionQTaskList</c>.</summary>
-public interface IIgi2ExplosionTarget
+/// <remarks>The engine's <see cref="IExplosionHitTarget"/>, read in this game's terms: an explosion this game set off is taken whole.</remarks>
+public interface IIgi2ExplosionTarget : IExplosionHitTarget
 {
     /// <summary>An explosion reaches it, its <c>ExplosionHit</c> handler.</summary>
     /// <param name="hit">The explosion.</param>
     void ExplosionHit(in Igi2ExplosionHit hit);
+
+    /// <inheritdoc/>
+    void IExplosionHitTarget.ExplosionHit(in ExplosionHit hit)
+    {
+        if (hit.Context is Igi2ExplosionHit own)
+        {
+            ExplosionHit(own);
+        }
+    }
 }
 
 /// <summary>What an explosion shows and sounds, behind which none of its logic depends.</summary>
@@ -508,7 +523,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// <summary>The ticks a blast's shake runs over, <c>nExplosionTime</c> in the hit context.</summary>
     public const int ShakeTime = 90;
 
-    private readonly List<IIgi2ExplosionTarget> _targets = [];
+    private readonly List<IExplosionHitTarget> _targets = [];
     private readonly Igi2LineTrace _blast = new(1);
 
     /// <summary>Gets the run stream.</summary>
@@ -565,11 +580,11 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     public const string UnderwaterSound = "explo_water";
 
     /// <summary>Gets the targets explosions reach, in the order they joined.</summary>
-    public IReadOnlyList<IIgi2ExplosionTarget> Targets => _targets;
+    public IReadOnlyList<IExplosionHitTarget> Targets => _targets;
 
     /// <summary>Adds a target, <c>QTaskList_Register(GameFunctions_ptExplosionQTaskList)</c> in its create handler.</summary>
     /// <param name="target">The target.</param>
-    public void AddTarget(IIgi2ExplosionTarget target)
+    public void AddTarget(IExplosionHitTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
         _targets.Add(target);
@@ -577,7 +592,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
 
     /// <summary>Removes a target, <c>QTaskList_Remove(GameFunctions_ptExplosionQTaskList)</c>.</summary>
     /// <param name="target">The target.</param>
-    public void RemoveTarget(IIgi2ExplosionTarget target) => _targets.Remove(target);
+    public void RemoveTarget(IExplosionHitTarget target) => _targets.Remove(target);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -789,7 +804,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
         }
 
         // The line is a weapon's: the target and the explosion's owner never stop it, other objects as they answer a bullet.
-        _blast.Includes = Igi2GunShot.WeaponCollisionIncludes(new Igi2WeaponCollisionQuery(hit.Owner, self, 1f));
+        _blast.Includes = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(hit.Owner, self, 1f));
 
         Fpu step = (Fpu)StillStep / length;
         tx = ((Fpu)tx * step).F;
@@ -898,9 +913,16 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             r.WeaponType,
             r.Owner,
             r.Falloff);
-        foreach (IIgi2ExplosionTarget target in _targets.ToArray())
+        foreach (IExplosionHitTarget target in _targets.ToArray())
         {
-            target.ExplosionHit(hit);
+            if (target is IIgi2ExplosionTarget same)
+            {
+                same.ExplosionHit(hit);
+            }
+            else
+            {
+                target.ExplosionHit(hit.ToShared());
+            }
         }
     }
 

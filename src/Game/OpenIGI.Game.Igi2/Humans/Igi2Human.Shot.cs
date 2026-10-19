@@ -1,9 +1,10 @@
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
 /// <content>Whether a bullet may strike the body.</content>
-public abstract partial class Igi2Human : IIgi2WeaponCollisionTarget
+public abstract partial class Igi2Human : IWeaponCollisionTarget
 {
     /// <summary>Gets a value indicating whether this human is the player, <c>Human_IsPlayer</c> (<c>igi2 0x501F30</c>).</summary>
     protected virtual bool IsThePlayer => false;
@@ -16,7 +17,7 @@ public abstract partial class Igi2Human : IIgi2WeaponCollisionTarget
     /// </summary>
     /// <param name="query">The trace's context.</param>
     /// <returns>Whether it may.</returns>
-    public bool EvaluateWeaponCollision(in Igi2WeaponCollisionQuery query)
+    public bool EvaluateWeaponCollision(in WeaponCollisionQuery query)
     {
         bool hit;
         if (ReferenceEquals(query.Ignore, this) || ReferenceEquals(query.Shooter, this))
@@ -43,7 +44,7 @@ public abstract partial class Igi2Human : IIgi2WeaponCollisionTarget
 
     /// <summary>A bullet the trace asked about passes by: only the player hears it.</summary>
     /// <param name="query">The trace's context.</param>
-    protected virtual void HearBulletPass(in Igi2WeaponCollisionQuery query)
+    protected virtual void HearBulletPass(in WeaponCollisionQuery query)
     {
     }
 }
