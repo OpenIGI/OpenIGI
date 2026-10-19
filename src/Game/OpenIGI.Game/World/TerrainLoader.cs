@@ -4,9 +4,8 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Loads a level's terrain: <c>Terrain_Load</c> (<c>0x4C6240</c>), plus the <c>terrain.lmp</c> that

@@ -3,7 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Scripting.Runtime;
 using System.Diagnostics;

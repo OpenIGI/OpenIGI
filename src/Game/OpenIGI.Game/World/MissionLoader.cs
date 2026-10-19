@@ -6,9 +6,8 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Formats;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Game.World;
 
 /// <summary>
 /// Loads a mission: the ordered sequence <c>Mission_Load</c> (<c>0x415B30</c>) performs, from the
