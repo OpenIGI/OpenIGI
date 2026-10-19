@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <summary>Project I.G.I.'s humans' cries and the sounds of rounds landing: which sample, and when it is allowed to play.</summary>
 /// <param name="mission">The mission, whose sound stream picks the samples and whose material table names them.</param>
 /// <param name="host">Where they play.</param>
-public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host)
+public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host) : IMissionCries
 {
     private int _impactQuietUntil;
     private int _ricochetQuietUntil;

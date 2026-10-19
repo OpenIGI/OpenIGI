@@ -12,7 +12,7 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -184,11 +184,11 @@ public sealed partial class GameHost : IDisposable
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     // The first game's mission, its world, and the host's side of it.
     private readonly MissionHostServices _missionHost;
-    private readonly Igi1Gameplay _igi1;
+    private readonly IHostedMission _hosted;
     private readonly MissionState _mission;
 
     // The player the host steers and looks through, when the mission has one.
-    private IHostedPlayer? HostedPlayer => _igi1.Player;
+    private IHostedPlayer? HostedPlayer => _hosted.Player;
 
     // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
     private readonly LampShadowMaps _lampMaps;
@@ -574,8 +574,8 @@ public sealed partial class GameHost : IDisposable
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
         _missionHost = new MissionHostServices(this);
-        _igi1 = new Igi1Gameplay(_missionHost);
-        _mission = _igi1.World;
+        _hosted = titles.CreateHostedMission(_missionHost);
+        _mission = _hosted.World;
         _contentLayers = new ContentLayerCommands(
             () => _overrides,
             () => _resources,

@@ -13,8 +13,8 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class WorldEffectsHost(GameHost host) : IWorldEffectsHost
     {
-        public IMissionGameplay Gameplay => host._igi1;
+        public IMissionGameplay Gameplay => host._hosted;
 
-        public void ResetTitleImpacts(int mistFrames) => host._igi1.Impacts.Reset(mistFrames);
+        public void ResetTitleImpacts(int mistFrames) => host._hosted.Impacts.Reset(mistFrames);
     }
 }

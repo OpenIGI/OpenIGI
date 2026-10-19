@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="impacts">The scorch a rocket or a launcher round burns.</param>
 /// <param name="host">What shows and plays them.</param>
 public sealed class Igi1Blasts(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host) : IMissionBlasts
 {
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;

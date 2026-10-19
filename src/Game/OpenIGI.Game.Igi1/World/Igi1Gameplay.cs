@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IMissionGameplay
+public sealed class Igi1Gameplay : IHostedMission
 {
     private readonly IMissionHostServices _host;
 
@@ -52,6 +52,30 @@ public sealed class Igi1Gameplay : IMissionGameplay
 
     /// <summary>Gets the mission's tick.</summary>
     public Igi1MissionTick Tick { get; }
+
+    /// <inheritdoc/>
+    MissionState IHostedMission.World => World;
+
+    /// <inheritdoc/>
+    IMissionTick IHostedMission.Tick => Tick;
+
+    /// <inheritdoc/>
+    IMissionSetup IHostedMission.Setup => Setup;
+
+    /// <inheritdoc/>
+    IMissionAudio IHostedMission.Audio => Audio;
+
+    /// <inheritdoc/>
+    IMissionCries IHostedMission.Sounds => Sounds;
+
+    /// <inheritdoc/>
+    IMissionImpacts IHostedMission.Impacts => Impacts;
+
+    /// <inheritdoc/>
+    IMissionBlasts IHostedMission.Blasts => Blasts;
+
+    /// <inheritdoc/>
+    IPlayerBringUp IHostedMission.NewPlayerSetup() => NewPlayerSetup();
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>

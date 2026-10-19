@@ -48,7 +48,7 @@ public sealed partial class GameHost
     {
         _audioOut.Open();
         LoadRainAmbience();
-        _igi1.Audio.OnDeviceOpened();
+        _hosted.Audio.OnDeviceOpened();
 
         // Only when the front end is where we are going. Launching straight into a mission would
         // otherwise start the menu theme and replace it a second later.
@@ -136,7 +136,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void ResetSoundsForMission()
     {
-        _igi1.Audio.ResetForMission();
+        _hosted.Audio.ResetForMission();
         _rainAmbience?.Stop();
         _audioOut.ResetForMission();
     }

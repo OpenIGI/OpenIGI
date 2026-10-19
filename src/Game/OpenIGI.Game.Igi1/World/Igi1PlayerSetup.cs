@@ -24,7 +24,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="harm">What a fall and a powered fence do to the player.</param>
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IPlayerSetupHost host)
+public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IPlayerSetupHost host) : IPlayerBringUp
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
@@ -37,6 +37,10 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
 
     /// <summary>Gets the rig being brought up, as the host steers it.</summary>
     public IHostedPlayer Player => Candidate;
+
+    /// <inheritdoc/>
+    void IPlayerBringUp.Begin(LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, MissionStringResolver missionText) =>
+        Begin(loaded, levelRoot, solids, missionText);
 
     /// <summary>Arms the level's vehicles from the weapon table, against the rig being brought up.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>

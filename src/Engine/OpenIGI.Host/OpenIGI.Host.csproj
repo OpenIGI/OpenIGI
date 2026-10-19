@@ -10,9 +10,6 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\..\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
-    <!-- Project I.G.I.'s gameplay and drawing, which the host still builds and drives itself. Every other
-         title reaches the host through ITitleGameplay; these two leave as I.G.I. does the same. -->
-    <ProjectReference Include="..\..\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
     <ProjectReference Include="..\OpenIGI.Modding\OpenIGI.Modding.csproj" />
     <ProjectReference Include="..\..\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\..\Game\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />

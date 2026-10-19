@@ -25,7 +25,6 @@ using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
 using System.Diagnostics;
@@ -259,13 +258,13 @@ public sealed partial class GameHost
     /// <summary>The mission's text and the cutscene runtime, with the natives the level's cutscenes call.</summary>
     private void MissionCutscenes(MissionBuild b)
     {
-        b.MissionText = _igi1.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
+        b.MissionText = _hosted.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
     }
 
     /// <summary>The objective runtime, the intro skipped when cinematics are off, and the test captures' script writes.</summary>
     private void MissionObjectives(MissionBuild b)
     {
-        _igi1.Setup.BuildObjectives(b.LevelRoot, b.MissionText!, _igi1.Tick.AreaPlayerNow, made => b.Objectives = made);
+        _hosted.Setup.BuildObjectives(b.LevelRoot, b.MissionText!, _hosted.Tick.AreaPlayerNow, made => b.Objectives = made);
 
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
         // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
@@ -421,7 +420,7 @@ public sealed partial class GameHost
             _mission.Solids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
-        _igi1.Setup.BuildVehicles(loaded, levelRoot, id, scene, solids);
+        _hosted.Setup.BuildVehicles(loaded, levelRoot, id, scene, solids);
         world.Destructibles = _mission.Destructibles;
         world.Cutscenes = _mission.Cutscenes;
 
@@ -499,8 +498,8 @@ public sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
 
-        _igi1.Audio.ForgetAmbience();
-        _igi1.Setup.BuildInteractions(loaded, levelRoot, solids);
+        _hosted.Audio.ForgetAmbience();
+        _hosted.Setup.BuildInteractions(loaded, levelRoot, solids);
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
@@ -509,7 +508,7 @@ public sealed partial class GameHost
         world.Doors = _mission.Doors;
         world.Elevators = _mission.Elevators;
 
-        _igi1.Impacts.ConnectSoldiers();
+        _hosted.Impacts.ConnectSoldiers();
 
         EndStage("the doors, elevators and world interactions");
     }
@@ -520,9 +519,9 @@ public sealed partial class GameHost
         WorldScene scene = b.Scene!;
         IWorldPresenter world = b.World!;
 
-        _igi1.Audio.ForgetCameras();
+        _hosted.Audio.ForgetCameras();
         _cutsceneSounds.StopAll();
-        b.WorldTrace = _igi1.Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
+        b.WorldTrace = _hosted.Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
         world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
         _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
@@ -539,7 +538,7 @@ public sealed partial class GameHost
     /// <summary>The level's nav graphs, which the soldiers and the vehicles drive over.</summary>
     private void MissionNavGraphs(MissionBuild b)
     {
-        b.Graphs = _igi1.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, _gamePath);
+        b.Graphs = _hosted.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, _gamePath);
 
         EndStage("reading the nav graphs");
     }
@@ -728,7 +727,7 @@ public sealed partial class GameHost
             throw MissingSystem(MissionSystemNames.Scene);
         }
 
-        if (_igi1.World.Soldiers is null)
+        if (!_hosted.Setup.HasSoldiers)
         {
             // A title without IGI1's soldiers has no brains to animate here.
             return;
@@ -746,8 +745,8 @@ public sealed partial class GameHost
             ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
             : "from -difficulty override.";
 
-        _igi1.Audio.ForgetSirens();
-        _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, difficultySource);
+        _hosted.Audio.ForgetSirens();
+        _hosted.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, difficultySource);
         b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
 
@@ -765,7 +764,7 @@ public sealed partial class GameHost
         LevelTask levelRoot = b.LevelRoot;
 
         // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
-        _igi1.Tick.AttachToLevelWalk(levelRoot);
+        _hosted.Tick.AttachToLevelWalk(levelRoot);
     }
 
     /// <summary>The terrain, sky, sun, grade and camera; the lamps and the surface cache; what impact effects trace against; the player's state reset.</summary>
@@ -957,7 +956,7 @@ public sealed partial class GameHost
         _titleHud?.Dispose();
         _titleHud = null;
         _playerMode = false;
-        _igi1.Blasts.ClearPending();
+        _hosted.Blasts.ClearPending();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -979,7 +978,7 @@ public sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
 
         {
-            var playerSetup = _igi1.NewPlayerSetup();
+            var playerSetup = _hosted.NewPlayerSetup();
             playerSetup.Begin(loaded, levelRoot, solids, missionText);
             Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
 
@@ -1033,7 +1032,7 @@ public sealed partial class GameHost
                 _heldWeapon = carried ? CreateHeldWeapon() : null;
 
                 // The player's rounds are offered to the soldiers, which own their own health.
-                playerSetup.ConnectSoldiers(_igi1.Sounds.PlayRicochet);
+                playerSetup.ConnectSoldiers(_hosted.Sounds.PlayRicochet);
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
@@ -1399,7 +1398,7 @@ public sealed partial class GameHost
         _messages = null;
         _computerHighlights = null;
         _mission.ReleaseRuntimes();
-        _igi1.Audio.ForgetCameras();
+        _hosted.Audio.ForgetCameras();
         _cutsceneSounds.StopAll();
         _session.Mission = null;
 
@@ -1670,10 +1669,10 @@ public sealed partial class GameHost
     private void TickMission(FrameLoopState state, FrameOutcome outcome)
     {
         _missionHost.State = state;
-        _igi1.Tick.Run(outcome == FrameOutcome.Tick);
+        _hosted.Tick.Run(outcome == FrameOutcome.Tick);
     }
 
-    /// <summary>The host's side of <see cref="Igi1Gameplay"/>: the picture, the sound, the files, the menus and the log of the first game's mission.</summary>
+    /// <summary>The host's side of <see cref="IHostedMission"/>: the picture, the sound, the files, the menus and the log of a title's mission.</summary>
     /// <param name="host">The host.</param>
     private sealed class MissionHostServices(GameHost host) : IMissionHostServices
     {
@@ -1887,8 +1886,8 @@ public sealed partial class GameHost
 
         // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
         // material table, where the round arrived rather than where it was fired.
-        _igi1.Sounds.PlayPlayerImpacts();
-        _igi1.Sounds.PlayWeaponDrops();
+        _hosted.Sounds.PlayPlayerImpacts();
+        _hosted.Sounds.PlayWeaponDrops();
 
         // The same impacts, seen: sparks and dust composed from the struck material.
         // Ticked before spawning so a new burst draws its birth frame unmoved.
@@ -1898,10 +1897,10 @@ public sealed partial class GameHost
         // blood droplets in the air are traced against the world, marking whatever they
         // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
         // it was born.
-        _igi1.Impacts.Tick();
+        _hosted.Impacts.Tick();
 
         SpawnBallisticImpactParticles();
-        _igi1.Impacts.SpawnPlayerImpacts();
+        _hosted.Impacts.SpawnPlayerImpacts();
 
         // The launcher rockets in the air lay their smoke trail, one column of puffs per
         // segment they crossed this tick.
@@ -1916,7 +1915,7 @@ public sealed partial class GameHost
     private void StepEffectsAfterDeath()
     {
         _effects.Tick();
-        _igi1.Impacts.Tick();
+        _hosted.Impacts.Tick();
     }
 
     /// <summary>Holds the objectives' messages, and opens the failure menu or moves on once the mission is decided.</summary>

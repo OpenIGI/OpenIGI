@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host)
+public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
 {
     private bool _reportedShot;
     private int _reportedHumanHits;

@@ -48,7 +48,7 @@ public sealed partial class GameHost
         RegisterTimeOfDayCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
-        _igi1.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
+        _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterRendererSwitchCommand(state.Console.System);
         _contentLayers.Register(state.Console.System);
@@ -166,7 +166,7 @@ public sealed partial class GameHost
     private void ResetPlayerAndCaptures(FrameLoopState state)
     {
         state.ReportedWorld = false;
-        _igi1.Tick.ResetReports();
+        _hosted.Tick.ResetReports();
 
         _mission.ResetPlayerLife((int)(_options.Difficulty
             ?? (AiDifficulty)Math.Clamp(_configuration.Active?.Difficulty ?? 1, 0, 2)));
@@ -176,7 +176,7 @@ public sealed partial class GameHost
         // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
         // own third-person rig, which SoldierRenderer loads and poses with the death fall.
         _viewpoint?.Renew();
-        _igi1.Tick.ResetClimbs();
+        _hosted.Tick.ResetClimbs();
         state.TemporalFrame = 0;
 
         // Test-only authored-cutscene capture harness. Set OPENIGI_CUTSCENE_CAPTURE_DIR to enable;
@@ -353,7 +353,7 @@ public sealed partial class GameHost
         _mission.WeaponTypes = null;
         _mission.AlarmSpeakers = null;
         _mission.Destructibles = null;
-        _igi1.Audio.ForgetSirens();
+        _hosted.Audio.ForgetSirens();
         _playerMode = false;
 
         // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The

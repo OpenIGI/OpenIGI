@@ -30,8 +30,11 @@ public sealed class Igi1MissionSetup(
     Igi1Blasts blasts,
     Igi1HumanSounds sounds,
     Igi1MissionAudio audio,
-    IMissionSetupHost host)
+    IMissionSetupHost host) : IMissionSetup
 {
+    /// <inheritdoc/>
+    public bool HasSoldiers => mission.Soldiers is not null;
+
     /// <summary>Makes the mission's text and its cutscene runtime, with the natives the level's cutscenes call.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree.</param>

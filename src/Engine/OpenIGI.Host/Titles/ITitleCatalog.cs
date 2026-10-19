@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
@@ -63,4 +64,13 @@ public interface ITitleCatalog
     /// <param name="binding">Receives the resolved services.</param>
     /// <returns><see langword="false"/> when this build has no implementation for that title.</returns>
     bool TryResolve(GameTitle title, [NotNullWhen(true)] out TitleBinding? binding);
+
+    /// <summary>Makes the mission machinery the host runs every title's levels with.</summary>
+    /// <param name="services">What the mission asks of the host.</param>
+    /// <returns>The mission, made once for the host's lifetime.</returns>
+    /// <remarks>
+    /// Project I.G.I.'s, today, for every title: the sequel brings its own player and simulation through
+    /// <see cref="TitleBinding.Gameplay"/> and runs beside it.
+    /// </remarks>
+    IHostedMission CreateHostedMission(IMissionHostServices services);
 }

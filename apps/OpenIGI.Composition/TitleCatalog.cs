@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Game.Hosting;
+using OpenIGI.Core.Configuration;
 using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
@@ -194,6 +195,8 @@ public static class TitleCatalog
             binding = package?.Bind(dataRoot(title));
             return binding is not null;
         }
+
+        public IHostedMission CreateHostedMission(IMissionHostServices services) => new Igi1Gameplay(services);
     }
 
     /// <summary>Where a title is installed, as a desktop finds it.</summary>

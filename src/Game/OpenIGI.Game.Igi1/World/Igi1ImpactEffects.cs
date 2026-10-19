@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <remarks>The title's impact presenter draws <see cref="Runtime"/>; this steps it and feeds it on the fixed tick.</remarks>
 /// <param name="mission">The mission, whose player's marks and walls the effects use.</param>
 /// <param name="host">Whether the player wants blood.</param>
-public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost host)
+public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost host) : IMissionImpacts
 {
     /// <summary>The missile's scorch half-width: <c>0x476AC0</c> hands <c>Explosion0</c> 6144.</summary>
     public const float MissileScorchHalfWidthInUnits = 6144f;

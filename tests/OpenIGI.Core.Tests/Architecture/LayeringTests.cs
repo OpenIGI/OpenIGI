@@ -91,13 +91,10 @@ public sealed class LayeringTests
     }
 
     /// <summary>
-    /// The edges rule 2 still allows while Project I.G.I.'s gameplay is built and driven by the host itself rather than
-    /// through <c>ITitleGameplay</c>, as I.G.I. 2's is. Each goes when the host stops naming that project; none is added.
+    /// The edges rule 2 allows by exception: none. The host last named Project I.G.I.'s gameplay, and now holds it as the
+    /// shared <c>IHostedMission</c> the composition root makes; an edge is never added here.
     /// </summary>
-    private static readonly string[] TitleReferencesBaseline =
-    [
-        "OpenIGI.Host -> OpenIGI.Game.Igi1",
-    ];
+    private static readonly string[] TitleReferencesBaseline = [];
 
     /// <summary>Rule 2 — and nothing below an app references a title project either.</summary>
     [Fact]
