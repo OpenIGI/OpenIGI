@@ -4,7 +4,7 @@ using OpenIGI.Game.Player;
 namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Everything the first game's mission asks of whatever shows and plays it.</summary>
-public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1PlayerHarmHost, IIgi1MissionSetupHost, IIgi1BlastHost, IIgi1SoundHost
+public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1PlayerHarmHost, IIgi1MissionSetupHost, IIgi1BlastHost, IIgi1SoundHost, IIgi1EffectsHost
 {
 }
 
@@ -23,8 +23,9 @@ public sealed class Igi1Gameplay : IMissionGameplay
         _host = host ?? throw new ArgumentNullException(nameof(host));
         Sounds = new Igi1HumanSounds(World, host);
         Audio = new Igi1MissionAudio(World, host);
+        Impacts = new Igi1ImpactEffects(World, host);
         Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
-        Blasts = new Igi1Blasts(World, Harm, Audio, host);
+        Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
         Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, host);
         Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
     }
@@ -43,6 +44,9 @@ public sealed class Igi1Gameplay : IMissionGameplay
 
     /// <summary>Gets the mission heard: every voice its things hold.</summary>
     public Igi1MissionAudio Audio { get; }
+
+    /// <summary>Gets the original's own impact effects: the dust and chips, and the blood.</summary>
+    public Igi1ImpactEffects Impacts { get; }
 
     /// <summary>Gets what brings the mission's runtimes and registries up.</summary>
     public Igi1MissionSetup Setup { get; }

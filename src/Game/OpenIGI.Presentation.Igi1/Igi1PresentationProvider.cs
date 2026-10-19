@@ -26,8 +26,10 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         Presenters = new PresenterRegistry()
             .Add<RetailMenusRequest, IRetailMenus>(static (in RetailMenusRequest request) =>
                 new Igi1RetailMenus(request))
-            .Add<ImpactEffectPresentationRequest, IImpactEffectPresenter>(static (in ImpactEffectPresentationRequest request) =>
-                new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem))
+            .Add<MissionEffectsRequest, IMissionImpactView>(static (in MissionEffectsRequest request) =>
+                request.Gameplay is Igi1Gameplay gameplay
+                    ? new Igi1ImpactView(new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem), gameplay)
+                    : null)
             .Add<MissionPresentationRequest, IMissionHudOverlay>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1HudOverlay(request.Device, gameplay) : null)
             .Add<MissionPresentationRequest, IMissionFirstPersonView>(static (in MissionPresentationRequest request) =>

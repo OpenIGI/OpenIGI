@@ -13,20 +13,8 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class WorldEffectsHost(GameHost host) : IWorldEffectsHost
     {
-        public bool HasPlayer => host.HostedPlayer is not null;
+        public IMissionGameplay Gameplay => host._igi1;
 
-        public WorldRayCast? Walls => host._mission.EffectWalls ?? host.HostedPlayer?.Body.Walls;
-
-        public BulletMarks? Marks => host.HostedPlayer?.Marks;
-
-        public WorldRayCast? MarkProbe => host.HostedPlayer?.MarkProbe;
-
-        public GameMaterialRegistry? Materials => host._mission.Materials;
-
-        public WorldTraceCast? Trace => host._mission.Trace;
-
-        public bool BloodWanted => host._configuration.Active?.BloodEnabled ?? true;
-
-        public Camera3D Eye => host._inspectorEye;
+        public void ResetTitleImpacts(int mistFrames) => host._igi1.Impacts.Reset(mistFrames);
     }
 }

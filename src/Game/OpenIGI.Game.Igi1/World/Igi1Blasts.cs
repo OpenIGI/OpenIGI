@@ -36,16 +36,6 @@ public interface IIgi1BlastHost
     /// <param name="positionInUnits">Where it went off.</param>
     void Fireball(Vector3d positionInUnits);
 
-    /// <summary>Burns a rocket's scorch onto what it struck.</summary>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="normal">The struck face's normal.</param>
-    void MissileScorch(Vector3d positionInUnits, Vector3f normal);
-
-    /// <summary>Burns a launcher round's scorch onto what it struck.</summary>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="normal">The struck face's normal.</param>
-    void M203Scorch(Vector3d positionInUnits, Vector3f normal);
-
     /// <summary>Spawns an <c>Explosion0</c>'s fire and fragments.</summary>
     /// <param name="positionInUnits">Where.</param>
     /// <param name="fullRangeUnits">Its full range.</param>
@@ -73,8 +63,10 @@ public interface IIgi1BlastHost
 /// <param name="mission">The mission's world.</param>
 /// <param name="harm">What a blast does to the player when it kills.</param>
 /// <param name="audio">The sirens and cameras a blast silences.</param>
+/// <param name="impacts">The scorch a rocket or a launcher round burns.</param>
 /// <param name="host">What shows and plays them.</param>
-public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IIgi1BlastHost host)
+public sealed class Igi1Blasts(
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IIgi1BlastHost host)
 {
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;
@@ -168,7 +160,7 @@ public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, Igi1Mi
         // rocket and a vehicle's alike, since both are the same Missile task.
         host.PlayDefinition("explo_03_l", blast.Position, 90);
         host.Fireball(blast.Position);
-        host.MissileScorch(blast.Position, blast.Normal);
+        impacts.Scorch(blast.Position, blast.Normal, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
 
         // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
         // which is what lets a LAW rocket -- and nothing else -- blow a car up.
@@ -312,7 +304,7 @@ public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, Igi1Mi
             // reached its own detonation path.
             host.PlayDefinition("explo_proxy", blast.Position, 90);
             host.Fireball(blast.Position);
-            host.M203Scorch(blast.Position, blast.Normal);
+            impacts.Scorch(blast.Position, blast.Normal, Igi1ImpactEffects.M203ScorchHalfWidthInUnits);
             Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Gun);
         }
     }

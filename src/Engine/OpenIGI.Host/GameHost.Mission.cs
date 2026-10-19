@@ -512,13 +512,7 @@ public sealed partial class GameHost
         world.Doors = _mission.Doors;
         world.Elevators = _mission.Elevators;
 
-        // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
-        // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
-        // knife leaves: KnifeStab itself never reaches the decal message.
-        if (_mission.SoldierPresenter is { } soldiers)
-        {
-            soldiers.BloodSpray = (owner, at, direction) => _effects.SpawnBlood(owner, at, direction);
-        }
+        _igi1.Impacts.ConnectSoldiers();
 
         EndStage("the doors, elevators and world interactions");
     }
@@ -1878,6 +1872,8 @@ public sealed partial class GameHost
 
         public bool IsRaining => host._rain?.IsWeatherEnabled == true;
 
+        public bool BloodWanted => host._configuration.Active?.BloodEnabled ?? true;
+
         public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
 
         public void PlayDefinition(string name, Vector3d positionInUnits, int priority) =>
@@ -1888,11 +1884,6 @@ public sealed partial class GameHost
         public void Fireball(Vector3d positionInUnits) =>
             host._effects.SpawnBlast(positionInUnits, Math.Max(1f, RenderCVars.ImpactParticles.Value));
 
-        public void MissileScorch(Vector3d positionInUnits, Vector3f normal) =>
-            host._effects.Scorch(positionInUnits, normal, WorldEffects.MissileScorchHalfWidthInUnits);
-
-        public void M203Scorch(Vector3d positionInUnits, Vector3f normal) =>
-            host._effects.Scorch(positionInUnits, normal, WorldEffects.M203ScorchHalfWidthInUnits);
 
         public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>
             host._effects.Particles?.SpawnRetailExplosion(positionInUnits, new RetailExplosionShape(fullRangeUnits, fireballs, fragments));
@@ -1924,10 +1915,10 @@ public sealed partial class GameHost
         // blood droplets in the air are traced against the world, marking whatever they
         // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
         // it was born.
-        _effects.TickRetailImpacts();
+        _igi1.Impacts.Tick();
 
         SpawnBallisticImpactParticles();
-        _effects.SpawnSurfaceImpacts(player.Impacts);
+        _igi1.Impacts.SpawnPlayerImpacts();
 
         // The launcher rockets in the air lay their smoke trail, one column of puffs per
         // segment they crossed this tick.
@@ -1942,7 +1933,7 @@ public sealed partial class GameHost
     private void StepEffectsAfterDeath()
     {
         _effects.Tick();
-        _effects.TickRetailImpacts();
+        _igi1.Impacts.Tick();
     }
 
     /// <summary>Holds the objectives' messages, and opens the failure menu or moves on once the mission is decided.</summary>
