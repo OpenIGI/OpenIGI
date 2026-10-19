@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 
@@ -443,9 +444,9 @@ public sealed class Igi2AiDetection
                 continue;
             }
 
-            if (!(Distance(target.DetectablePosition, view.Position) + target.DetectableRadius <= view.ConeLength)
+            if (!(Igi2AiMath.DistanceInRegister(target.DetectablePosition, view.Position).Value + target.DetectableRadius <= view.ConeLength)
                 && (!view.IsSecondaryViewUsed
-                    || !(Distance(target.DetectablePosition, view.Position) + target.DetectableRadius <= view.SecondaryConeLength))
+                    || !(Igi2AiMath.DistanceInRegister(target.DetectablePosition, view.Position).Value + target.DetectableRadius <= view.SecondaryConeLength))
                 && FindItem(Enemies, target) is null)
             {
                 continue;
@@ -455,7 +456,7 @@ public sealed class Igi2AiDetection
             List<Igi2DetectionItem>? list = ListFor(info, sourceTeam);
             if (list is not null && (Flags & NoVisibilityRange) == 0 && target.VisibilityFactor is { } factor)
             {
-                double distance = Distance(target.DetectablePosition, view.Position);
+                double distance = Igi2AiMath.DistanceInRegister(target.DetectablePosition, view.Position).Value;
                 if (distance > ((Fpu)factor * view.ConeLength).Value && distance > ((Fpu)factor * view.SecondaryConeLength).Value)
                 {
                     list = null;
@@ -488,14 +489,6 @@ public sealed class Igi2AiDetection
     {
         Enemies.Clear();
         Friends.Clear();
-    }
-
-    // The distance with the first two parts stored as floats and the third left in the register, summed x, y, z.
-    private static double Distance(Vector3d target, Vector3d view)
-    {
-        float dx = ((Fpu)target.X - view.X).F, dy = ((Fpu)target.Y - view.Y).F;
-        Fpu dz = (Fpu)target.Z - view.Z;
-        return Fpu.Sqrt((((Fpu)dx * dx) + ((Fpu)dy * dy)) + (dz * dz)).Value;
     }
 
     private List<Igi2DetectionItem>? ListFor(Igi2DetectionInfo info, int sourceTeam)

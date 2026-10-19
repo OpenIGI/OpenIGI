@@ -55,7 +55,7 @@ public static class ScriptTableLoader
 
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<string> scripts = [];
-        Walk(fileSystem, root, scriptName, scripts, 0, maxDepth);
+        FindScripts(fileSystem, root, scriptName, scripts, 0, maxDepth);
 
         int ran = 0;
 
@@ -126,7 +126,7 @@ public static class ScriptTableLoader
         return prefix + normalized.TrimStart('/');
     }
 
-    private static void Walk(
+    private static void FindScripts(
         VirtualFileSystem fileSystem,
         string directory,
         string scriptName,
@@ -143,7 +143,7 @@ public static class ScriptTableLoader
 
         foreach (string child in fileSystem.EnumerateDirectories(directory))
         {
-            Walk(fileSystem, child, scriptName, scripts, depth + 1, maxDepth);
+            FindScripts(fileSystem, child, scriptName, scripts, depth + 1, maxDepth);
         }
     }
 }

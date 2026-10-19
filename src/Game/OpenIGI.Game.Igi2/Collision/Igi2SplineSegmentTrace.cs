@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -80,7 +81,7 @@ public static class Igi2SplineSegmentTrace
 
         Vector3f start = new(((Fpu)s.X - p.X).F, ((Fpu)s.Y - p.Y).F, ((Fpu)s.Z - p.Z).F);
         Vector3f end = new(((Fpu)e.X - p.X).F, ((Fpu)e.Y - p.Y).F, ((Fpu)e.Z - p.Z).F);
-        float lineLength = Distance(s, e).F;
+        float lineLength = Igi2Real64x3.Distance(s, e).F;
         Igi2MeshSearch search = new()
         {
             IsHit = hit.IsHit,
@@ -179,7 +180,7 @@ public static class Igi2SplineSegmentTrace
         float tz = ((ex * m[6]) + (ez * m[8]) + (ey * m[7])).F;
         Vector3f end = new(((Fpu)middle + tx).F, ty, tz);
 
-        float lineLength = Distance(s, e).F;
+        float lineLength = Igi2Real64x3.Distance(s, e).F;
         Igi2MeshSearch search = new()
         {
             IsHit = hit.IsHit,
@@ -235,7 +236,7 @@ public static class Igi2SplineSegmentTrace
         Vector3d p = o.Position;
         Vector3d world = new((wx + p.X).Value, ((Fpu)wy + p.Y).Value, ((Fpu)wz + p.Z).Value);
 
-        double closest = Distance(s, world).Value;
+        double closest = Igi2Real64x3.Distance(s, world).Value;
         if (wasHit && !(closest < hit.Distance))
         {
             return;
@@ -278,13 +279,6 @@ public static class Igi2SplineSegmentTrace
             o.IsBuildingMesh && mesh.Lightmaps[f] != Igi2MeshSearch.None && o.IsLightmapped,
             normal,
             trace.Lighting);
-    }
-
-    /// <summary><c>Real64x3_Distance</c> (<c>igi2 0x5624C0</c>): the first point less the second, squared z, y, x.</summary>
-    private static Fpu Distance(Vector3d a, Vector3d b)
-    {
-        Fpu dx = (Fpu)a.X - b.X, dy = (Fpu)a.Y - b.Y, dz = (Fpu)a.Z - b.Z;
-        return Fpu.Sqrt((dz * dz) + (dy * dy) + (dx * dx));
     }
 
     /// <summary>One bent face against the line: the shared crossing, its normal reversed on a flipped segment, and the tie rules.</summary>

@@ -56,7 +56,7 @@ public sealed class IresArchive
         }
 
         List<IresEntry> entries = [];
-        Walk(container, entries);
+        CollectEntries(container, entries);
 
         Dictionary<string, IresEntry> byName = new(entries.Count, StringComparer.OrdinalIgnoreCase);
         foreach (IresEntry entry in entries)
@@ -104,7 +104,7 @@ public sealed class IresArchive
     /// <inheritdoc/>
     public override string ToString() => $"IRES archive, {Entries.Count} entries, {Container.Size} bytes";
 
-    private static void Walk(IlffContainer container, List<IresEntry> entries)
+    private static void CollectEntries(IlffContainer container, List<IresEntry> entries)
     {
         string? currentName = null;
 
@@ -140,7 +140,7 @@ public sealed class IresArchive
                 if (nested.FormType == IlffTags.Ires)
                 {
                     // Nested archives contribute their entries to the parent's namespace.
-                    Walk(nested, entries);
+                    CollectEntries(nested, entries);
                 }
 
                 // A nested DBUG sub-form only carries debug context strings; the game ignores them and

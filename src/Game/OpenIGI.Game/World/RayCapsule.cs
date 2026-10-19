@@ -68,12 +68,13 @@ public static class RayCapsule
         Vector3d y = Vector3d.Cross(z, x);
 
         // The ray in that frame, measured from axisA.
-        double ox = Dot(origin.X - axisA.X, origin.Y - axisA.Y, origin.Z - axisA.Z, x);
-        double oy = Dot(origin.X - axisA.X, origin.Y - axisA.Y, origin.Z - axisA.Z, y);
-        double oz = Dot(origin.X - axisA.X, origin.Y - axisA.Y, origin.Z - axisA.Z, z);
-        double dx = Dot(direction.X, direction.Y, direction.Z, x);
-        double dy = Dot(direction.X, direction.Y, direction.Z, y);
-        double dz = Dot(direction.X, direction.Y, direction.Z, z);
+        Vector3d fromA = origin - axisA;
+        double ox = Vector3d.Dot(fromA, x);
+        double oy = Vector3d.Dot(fromA, y);
+        double oz = Vector3d.Dot(fromA, z);
+        double dx = Vector3d.Dot(direction, x);
+        double dy = Vector3d.Dot(direction, y);
+        double dz = Vector3d.Dot(direction, z);
 
         double best = double.MaxValue;
         Vector3d bestNormal = default;
@@ -209,7 +210,4 @@ public static class RayCapsule
 
         return false;
     }
-
-    private static double Dot(double x, double y, double z, Vector3d axis) =>
-        (x * axis.X) + (y * axis.Y) + (z * axis.Z);
 }

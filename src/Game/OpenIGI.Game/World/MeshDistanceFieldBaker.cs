@@ -147,7 +147,7 @@ public static class MeshDistanceFieldBaker
                             min.Y + ((y + 0.5f) * voxelSize.Y),
                             min.Z + ((z + 0.5f) * voxelSize.Z));
 
-                        float d = Distance(p, a, b, c);
+                        float d = DistanceToTriangle(p, a, b, c);
                         int index = (((z * sizeY) + y) * sizeX) + x;
 
                         if (d < distance[index])
@@ -274,7 +274,7 @@ public static class MeshDistanceFieldBaker
     /// projects into. Ericson's formulation, which decides that with comparisons rather than by solving
     /// and rejecting.
     /// </remarks>
-    private static float Distance(Vector3f p, Vector3f a, Vector3f b, Vector3f c)
+    private static float DistanceToTriangle(Vector3f p, Vector3f a, Vector3f b, Vector3f c)
     {
         Vector3f ab = Subtract(b, a);
         Vector3f ac = Subtract(c, a);

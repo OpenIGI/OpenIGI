@@ -130,8 +130,8 @@ public sealed class LadderPlacement
         Vector3d fromOrigin = Subtract(playerPosition, Origin);
         Vector3f columnOne = Orientation.Column1;
         Vector3f columnTwo = Orientation.Column2;
-        double across = Dot(fromOrigin, columnOne);
-        double normalDistance = Dot(fromOrigin, columnTwo);
+        double across = Vector3d.Dot(fromOrigin, Widen(columnOne));
+        double normalDistance = Vector3d.Dot(fromOrigin, Widen(columnTwo));
 
         double forwardX = Math.Sin(playerYaw);
         double forwardY = Math.Cos(playerYaw);
@@ -160,7 +160,7 @@ public sealed class LadderPlacement
         Vector3d toTop = Subtract(ActivationTop, playerPosition);
         double topDistance = toTop.Length;
         double topForward = (forwardX * toTop.X) + (forwardY * toTop.Y);
-        bool topCandidate = Dot(fromTop, columnTwo) < 0.0
+        bool topCandidate = Vector3d.Dot(fromTop, Widen(columnTwo)) < 0.0
             && topDistance < ActivateRadiusUnits
             && topForward > 0.0;
 
@@ -188,7 +188,6 @@ public sealed class LadderPlacement
     private static Vector3d Subtract(Vector3d left, Vector3d right) =>
         new(left.X - right.X, left.Y - right.Y, left.Z - right.Z);
 
-    private static double Dot(Vector3d value, Vector3f axis) =>
-        (value.X * axis.X) + (value.Y * axis.Y) + (value.Z * axis.Z);
+    private static Vector3d Widen(Vector3f axis) => new(axis.X, axis.Y, axis.Z);
 
 }

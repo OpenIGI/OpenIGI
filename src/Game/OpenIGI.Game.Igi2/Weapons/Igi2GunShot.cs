@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 
@@ -327,14 +328,14 @@ public sealed class Igi2GunShot
             Fpu vx = (Fpu)bullet.Range * bullet.Direction.X;
             Fpu vy = (Fpu)bullet.Range * bullet.Direction.Y;
             Fpu vz = (Fpu)bullet.Range * bullet.Direction.Z;
-            if (!(Distance(p0, target).Value >= Near))
+            if (!(Igi2AiMath.DistanceInRegister(p0, target).Value >= Near))
             {
                 into[found++] = p0;
                 continue;
             }
 
             Vector3d p1 = new((vx + p0.X).Value, (vy + p0.Y).Value, (vz + p0.Z).Value);
-            if (Distance(p1, target).Value < Near)
+            if (Igi2AiMath.DistanceInRegister(p1, target).Value < Near)
             {
                 into[found++] = p1;
                 continue;
@@ -354,7 +355,7 @@ public sealed class Igi2GunShot
             }
 
             Vector3d nearest = new(((vx * along) + p0.X).Value, ((vy * along) + p0.Y).Value, ((vz * along) + p0.Z).Value);
-            if (Distance(nearest, target).Value < Near)
+            if (Igi2AiMath.DistanceInRegister(nearest, target).Value < Near)
             {
                 into[found++] = nearest;
             }
@@ -363,14 +364,6 @@ public sealed class Igi2GunShot
         return found;
     }
 
-    // |a - b| at the client's precision: the X and Y differences kept as floats, the Z inline.
-    private static Fpu Distance(Vector3d a, Vector3d b)
-    {
-        float dx = ((Fpu)a.X - b.X).F;
-        float dy = ((Fpu)a.Y - b.Y).F;
-        Fpu dz = (Fpu)a.Z - b.Z;
-        return Fpu.Sqrt((((Fpu)dx * dx) + ((Fpu)dy * dy)) + (dz * dz));
-    }
 
     /// <summary>One bullet's flight, from its muzzle to where it stops, and the effects of the faces it crossed.</summary>
     private void Trace(Igi2GunShotInstant bullet, IIgi2WeaponOwner shooter, uint groups, IIgi2GunShotWorld world, IIgi2GunShotEffects effects, ref bool rung)

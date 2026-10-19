@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
@@ -132,7 +133,8 @@ public sealed partial class Igi2DoorTask
         int status = Status;
         if (Camera?.Invoke() is { } camera)
         {
-            double toPortal = DistanceSquared(_portalPos, camera), toPlace = DistanceSquared(Position, camera);
+            // Door_RunHandler: the squares summed z, y, x on the client's FPU, as Real64x3_Distance sums them.
+            double toPortal = Igi2Real64x3.DistanceSquared(_portalPos, camera).Value, toPlace = Igi2Real64x3.DistanceSquared(Position, camera).Value;
             if (toPortal < toPlace && status == 1)
             {
                 if (!_isAttachedToPortal)
@@ -198,11 +200,5 @@ public sealed partial class Igi2DoorTask
             ((double)m[0] * v.X) + ((double)m[1] * v.Y) + ((double)m[2] * v.Z) + _start.X,
             ((double)m[3] * v.X) + ((double)m[4] * v.Y) + ((double)m[5] * v.Z) + _start.Y,
             ((double)m[6] * v.X) + ((double)m[7] * v.Y) + ((double)m[8] * v.Z) + _start.Z);
-    }
-
-    private static double DistanceSquared(Vector3d a, Vector3d b)
-    {
-        double x = a.X - b.X, y = a.Y - b.Y, z = a.Z - b.Z;
-        return (z * z) + (y * y) + (x * x);
     }
 }

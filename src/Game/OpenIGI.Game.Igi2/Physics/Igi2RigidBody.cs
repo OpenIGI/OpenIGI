@@ -205,8 +205,8 @@ public sealed class Igi2RigidBody
         qz = new Fpu((dz + qz).F);
         qw = ((qw + t) + a) - zz;
 
-        Normalise(ref qx, ref qy, ref qz, ref qw);
-        Normalise(ref qx, ref qy, ref qz, ref qw);
+        NormaliseQuaternion(ref qx, ref qy, ref qz, ref qw);
+        NormaliseQuaternion(ref qx, ref qy, ref qz, ref qw);
         ToMatrix(qx, qy, qz, qw, m);
         UpdateSpeedApproximation();
         return true;
@@ -317,8 +317,11 @@ public sealed class Igi2RigidBody
         static Fpu Twice(Fpu v) => v + v;
     }
 
-    /// <summary>Divides the quaternion by its length: <c>1.0 / fsqrt(((z*z + y*y) + x*x) + w*w)</c>.</summary>
-    private static void Normalise(ref Fpu x, ref Fpu y, ref Fpu z, ref Fpu w)
+    /// <summary>
+    /// Divides the quaternion by its length, <c>1.0 / fsqrt(((z*z + y*y) + x*x) + w*w)</c>: x, y and z stored, w left in the
+    /// register, as the integrator inlines it.
+    /// </summary>
+    private static void NormaliseQuaternion(ref Fpu x, ref Fpu y, ref Fpu z, ref Fpu w)
     {
         Fpu s = (Fpu)1.0 / Fpu.Sqrt((((z * z) + (y * y)) + (x * x)) + (w * w));
         x = new Fpu((x * s).F);

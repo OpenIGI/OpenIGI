@@ -223,7 +223,7 @@ public static class RetailModelRay
             Hi = hi,
         };
 
-        Walk(mesh, ls, d, inverse, lenf, portals: false, search, mirror: false);
+        WalkSphereTree(mesh, ls, d, inverse, lenf, portals: false, search, mirror: false);
         if (!search.Found)
         {
             return;
@@ -322,7 +322,7 @@ public static class RetailModelRay
     }
 
     /// <summary>§5.4: the sphere-tree walk with its quirk, and the face tests of every node it reaches.</summary>
-    internal static void Walk(
+    internal static void WalkSphereTree(
         RetailRayMesh mesh,
         float[] ls,
         float[] d,

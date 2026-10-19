@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -294,23 +295,11 @@ internal sealed class Igi2MovementCamera
             forward = new((dx * inverse).F, (dy * inverse).F, (dz * inverse).F);
         }
 
-        Vector3f right = Normalize(new(forward.Y, -forward.X, 0f));
-        Vector3f up = Normalize(new(
+        Vector3f right = Igi2RigidBody.Normalised(new(forward.Y, -forward.X, 0f));
+        Vector3f up = Igi2RigidBody.Normalised(new(
             (((Fpu)right.Y * forward.Z) - ((Fpu)right.Z * forward.Y)).F,
             (((Fpu)right.Z * forward.X) - ((Fpu)right.X * forward.Z)).F,
             (((Fpu)right.X * forward.Y) - ((Fpu)right.Y * forward.X)).F));
         Orientation = new(right.X, forward.X, up.X, right.Y, forward.Y, up.Y, right.Z, forward.Z, up.Z);
-    }
-
-    private static Vector3f Normalize(Vector3f value)
-    {
-        Fpu length = Fpu.Sqrt((((Fpu)value.X * value.X) + ((Fpu)value.Y * value.Y)) + ((Fpu)value.Z * value.Z));
-        if (length.Value == 0.0)
-        {
-            return value;
-        }
-
-        Fpu inverse = (Fpu)1.0 / length;
-        return new(((Fpu)value.X * inverse).F, ((Fpu)value.Y * inverse).F, ((Fpu)value.Z * inverse).F);
     }
 }

@@ -2753,7 +2753,7 @@ public sealed class CutsceneRuntime
             Math.Clamp(viewportHeight, 0f, 1f),
             active.Filter,
             noise,
-            Lerp(active.FilterColor, timed[i2].Shot.FilterColor, colorLocal),
+            Vector3f.Lerp(active.FilterColor, timed[i2].Shot.FilterColor, colorLocal),
             timeOfDay,
             scene,
             current);
@@ -3938,8 +3938,6 @@ public sealed class CutsceneRuntime
 
         return string.Empty;
     }
-    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
     /// <summary>
     /// Ports the retail Heli live update (0x431B70), its force helper (0x431E30), Rotor::Tick
     /// (0x42D440), and the force accumulator at 0x4EC6A0.

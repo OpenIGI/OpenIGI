@@ -51,11 +51,20 @@ public static class Igi2AiMath
     /// <param name="a">One point.</param>
     /// <param name="b">The other.</param>
     /// <returns>The distance.</returns>
-    public static float Distance(Vector3d a, Vector3d b)
+    public static float Distance(Vector3d a, Vector3d b) => DistanceInRegister(a, b).F;
+
+    /// <summary>
+    /// The same distance left in the register, as the detection cones and a shot's near test compare it: the first two
+    /// differences stored as floats and the third left in the register, summed x, y, z.
+    /// </summary>
+    /// <param name="a">One point.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>The distance, unstored.</returns>
+    public static Fpu DistanceInRegister(Vector3d a, Vector3d b)
     {
         float dx = ((Fpu)a.X - b.X).F, dy = ((Fpu)a.Y - b.Y).F;
         Fpu dz = (Fpu)a.Z - b.Z;
-        return Fpu.Sqrt((((Fpu)dx * dx) + ((Fpu)dy * dy)) + (dz * dz)).F;
+        return Fpu.Sqrt((((Fpu)dx * dx) + ((Fpu)dy * dy)) + (dz * dz));
     }
 }
 

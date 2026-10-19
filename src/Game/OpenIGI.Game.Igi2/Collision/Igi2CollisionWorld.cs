@@ -356,7 +356,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(pose);
         int next = 0;
-        Walk(models, modelName, pose, depth: 0, (_, name, at, depth) =>
+        WalkAttachments(models, modelName, pose, depth: 0, (_, name, at, depth) =>
         {
             // Build made a solid of only some of the models the walk visits; the next one it made is the next one met
             // that it could have been made of.
@@ -425,7 +425,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
     }
 
     // A placed model and everything hanging off it, depth first: the model, then each of its attachments in turn.
-    private static void Walk(
+    private static void WalkAttachments(
         Func<string, MefModel?> models,
         string modelName,
         Igi2Pose pose,

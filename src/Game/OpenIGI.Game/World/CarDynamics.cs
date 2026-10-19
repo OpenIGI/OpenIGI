@@ -203,7 +203,7 @@ public static class CarDynamics
                 // onto its across axis while the smoothed steering is positive.
                 Vector3d drive = ((forward * cos) + (lateral * sin)) * magnitude;
                 force += drive;
-                torque += Cross(offset, drive);
+                torque += Vector3d.Cross(offset, drive).Z;
             }
 
             // The contact point's own velocity, which is what the tyre resists.
@@ -242,7 +242,7 @@ public static class CarDynamics
                 : slip * mass * SlipForceScale;
             Vector3d friction = ((lateral * bodyAcross) + (forward * bodyAlong)) * grip;
             force += friction;
-            torque += Cross(offset, friction);
+            torque += Vector3d.Cross(offset, friction).Z;
         }
 
         motion.Velocity += force / mass;
@@ -468,7 +468,4 @@ public static class CarDynamics
 
     private static Vector3d Perpendicular(Vector3d offset, double yawRate) =>
         new(-offset.Y * yawRate, offset.X * yawRate, 0d);
-
-    private static double Cross(Vector3d offset, Vector3d force) =>
-        (offset.X * force.Y) - (offset.Y * force.X);
 }
