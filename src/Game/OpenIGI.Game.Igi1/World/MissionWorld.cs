@@ -141,8 +141,17 @@ public sealed class MissionWorld : MissionState
     /// <param name="bodies">The soldiers, or <see langword="null"/> to drop them.</param>
     public override void AdoptSoldiers(ISoldierBodies? bodies)
     {
+        if (SoldierPresenter is not null)
+        {
+            Bodies.Remove(SoldierPresenter);
+        }
+
         SoldierPresenter = bodies as ISoldierPresenter;
         Soldiers = SoldierPresenter?.Simulation;
+        if (SoldierPresenter is not null)
+        {
+            Bodies.Add(SoldierPresenter);
+        }
     }
 
     /// <inheritdoc/>

@@ -28,7 +28,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// implements it and registers it, as the <see cref="ISoldierBodies"/> the frame draws, for a
 /// <c>SoldierPresentationRequest</c>. The simulation it carries is the one it draws.
 /// </remarks>
-public interface ISoldierPresenter : ISoldierBodies
+public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
 {
     /// <summary>Gets the soldiers' simulation, which the renderer draws.</summary>
     SoldierSimulation Simulation { get; }

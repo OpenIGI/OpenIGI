@@ -3951,6 +3951,11 @@ public sealed class SoldierSimulation : IHumanEvents
         TakeExplosion(view, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
     }
 
+    /// <summary>Gets the soldier a task stands for.</summary>
+    /// <param name="task">The soldier's task.</param>
+    /// <returns>The soldier, or <see langword="null"/> when the task is not one of these soldiers.</returns>
+    public SoldierView? ViewOf(HumanTask task) => _viewsByTask.TryGetValue(task, out SoldierView? view) ? view : null;
+
     // Gives a soldier's task this simulation's handlers for its hit events.
     private void TakeEvents(SoldierView view)
     {

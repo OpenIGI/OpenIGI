@@ -92,6 +92,9 @@ public class MissionState : IInspectableMission
     /// <summary>Gets or sets the level's placed objects as the rays and the bodies collide with them.</summary>
     public ObjectCollisionIndex? Solids { get; set; }
 
+    /// <summary>Gets the humans the level's shots may meet, from every source: the game's own soldiers, and any a mod brings.</summary>
+    public LevelBodies Bodies { get; } = new();
+
     /// <summary>Gets or sets the level's task tree, in the order its tasks were made.</summary>
     public LevelTask? LevelRoot { get; set; }
 
@@ -238,6 +241,7 @@ public class MissionState : IInspectableMission
     /// </summary>
     public virtual void ReleaseWorld()
     {
+        Bodies.Clear();
         EffectWalls = null;
         Solids = null;
         LevelRoot = null;

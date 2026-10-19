@@ -594,7 +594,14 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
         ArgumentNullException.ThrowIfNull(guards);
         ArgumentNullException.ThrowIfNull(deflected);
 
-        candidate.Humans = guards.Shooter();
+        // The round goes to the level's bodies -- this game's soldiers, and any a mod brings -- as the shot's trace meets them.
+        candidate.Humans = (Vector3d origin, Vector3d end, float damageFactor, WeaponCategory category, out HumanHit hit) =>
+            mission.Bodies.Shoot(
+                origin,
+                end,
+                mission.PlayerTask,
+                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true).ToShared(),
+                out hit);
         candidate.HumanProbes = guards.Simulation.Probe();
         HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();
         candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>

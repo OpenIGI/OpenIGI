@@ -1473,166 +1473,165 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The player's round, as the shot's trace offers it to the humans it meets: each living soldier weighs it
+    /// (<c>Human</c>'s <c>WeaponCollisionEvaluate</c>, <c>0x45E3E0</c>), the nearest that agrees takes its
+    /// <c>WeaponHit</c>, and the rest hear it pass. The round is cast at the body the crosshair was drawn over.
+    /// </remarks>
     public bool TryShoot(
         Vector3d origin,
         Vector3d rayEnd,
         float damageFactor,
         WeaponCategory category,
-        out HumanHit hit)
-    {
-        hit = default;
+        out HumanHit hit) =>
+        LevelBodies.Shoot(
+            [this],
+            origin,
+            rayEnd,
+            _sim.PlayerTask,
+            struck => new Igi1WeaponHit(struck, origin, rayEnd, damageFactor, category, Shooter: null, FromPlayer: true).ToShared(),
+            out hit);
 
-        HumanHealth? struck = null;
-        SoldierView? struckView = null;
+    /// <inheritdoc/>
+    public HumanShot Shooter() => TryShoot;
+
+    /// <inheritdoc/>
+    public IEnumerable<IShootableBody> Bodies()
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView soldier = member.Agent.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier) || _sim.HealthOf(soldier).IsDead)
+                {
+                    continue;
+                }
+
+                yield return member.Body ??= new MemberBody(this, group, member);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Human_EvaluateGunShotHandler</c> evaluates each live projectile segment independently of ordinary shot
+    /// audibility, after the nearest collision is chosen, so the struck guard gets the TAKINGDAMAGE path while nearby
+    /// guards get GUNSHOTMISS.
+    /// </remarks>
+    public void RoundPassed(Vector3d origin, Vector3d target, GameTask? struck) =>
+        _sim.NotifyGunshotMiss(origin, target, struck is HumanTask human ? _sim.ViewOf(human) : null, origin);
+
+    // One soldier's colliders as the player's round meets them, in the pose it was drawn in.
+    private bool TryCastMember(Group group, Member member, Vector3d origin, Vector3d rayEnd, out HumanHit candidate)
+    {
+        SoldierView soldier = member.Agent.View;
         Vector3d ray = new(rayEnd.X - origin.X, rayEnd.Y - origin.Y, rayEnd.Z - origin.Z);
         double reach = Math.Sqrt((ray.X * ray.X) + (ray.Y * ray.Y) + (ray.Z * ray.Z));
         Vector3d direction = reach > 0.0
             ? new Vector3d(ray.X / reach, ray.Y / reach, ray.Z / reach)
             : default;
 
-        foreach (Group group in _groups)
+        // The player fires against the body the crosshair was drawn over. With r_smooth that is
+        // the last presentation transform, not the newer simulation state the next tick has just
+        // published. AI fire stays on its own fixed-tick path below: this is only the player-shot
+        // delegate supplied by Shooter().
+        bool presented = _frameSmooth && member.HasFrameState;
+        Vector3d feet;
+        Matrix3f m;
+        if (presented)
         {
-            foreach (Member member in group.Soldiers)
+            Vector3d root = member.DrawnWhere * WorldScene.UnitsPerMetre;
+            feet = new Vector3d(root.X, root.Y, root.Z - soldier.RootSample.Z);
+            m = member.DrawnOrientation;
+        }
+        else
+        {
+            // r_smooth off is the vanilla simulation transform verbatim. The feet the round is
+            // cast at must be the SAME feet the body is drawn on — grounded onto the floor — and
+            // the bones sit a root height above them, exactly as the draw lifts the pelvis.
+            double snappedZ = _sim.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+            feet = new Vector3d(soldier.Position.X, soldier.Position.Y, snappedZ);
+            m = soldier.Orientation;
+        }
+        Vector3f facing = new(m.M12, m.M22, m.M32);
+
+        // The faithful path: trace the round at the soldier's skinned collision mesh and score it by
+        // the bone the round actually went through (BoneDynCubeObj_TraceLinesHandler). Skinning every
+        // collision vertex for every guard is far costlier than the ray itself, so reject bodies the
+        // segment cannot reach with the same generous body sphere TryPick uses. Starting inside the
+        // sphere still reaches the mesh, which preserves point-blank hits even when the round ends
+        // before it leaves the broad-phase sphere. Only if the model ships no collision mesh does it
+        // fall back to the cylinder-and-nearest-bone stand-in.
+        bool met;
+        if (group.Body.CollisionMesh is { } collision)
+        {
+            Vector3d centre = new(feet.X, feet.Y, feet.Z + SoldierSimulation.PickChestUnits);
+            double offsetX = origin.X - centre.X;
+            double offsetY = origin.Y - centre.Y;
+            double offsetZ = origin.Z - centre.Z;
+            bool startsInside = (offsetX * offsetX) + (offsetY * offsetY) + (offsetZ * offsetZ)
+                <= SoldierSimulation.PickCullRadiusUnits * SoldierSimulation.PickCullRadiusUnits;
+            if (reach <= 0.0 || (!startsInside
+                && !SoldierSimulation.RaySphere(origin, direction, centre, SoldierSimulation.PickCullRadiusUnits, reach, out _)))
             {
-                SoldierView soldier = member.Agent.View;
-                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
-                {
-                    continue;
-                }
-                HumanHealth health = _sim.HealthOf(soldier);
+                candidate = default;
+                return false;
+            }
 
-                if (health.IsDead)
-                {
-                    continue;
-                }
-
-                // Human's WeaponCollisionEvaluate (0x45E3E0): a round passes THROUGH a soldier on the shooter's side.
-                if (!soldier.Soldier.EvaluateWeaponCollision(new WeaponCollisionQuery(_sim.PlayerTask, null, 1f)))
-                {
-                    continue;
-                }
-
-                // The player fires against the body the crosshair was drawn over. With r_smooth that is
-                // the last presentation transform, not the newer simulation state the next tick has just
-                // published. AI fire stays on its own fixed-tick path below: this is only the player-shot
-                // delegate supplied by Shooter().
-                bool presented = _frameSmooth && member.HasFrameState;
-                Vector3d feet;
-                Matrix3f m;
-                if (presented)
-                {
-                    Vector3d root = member.DrawnWhere * WorldScene.UnitsPerMetre;
-                    feet = new Vector3d(root.X, root.Y, root.Z - soldier.RootSample.Z);
-                    m = member.DrawnOrientation;
-                }
-                else
-                {
-                    // r_smooth off is the vanilla simulation transform verbatim. The feet the round is
-                    // cast at must be the SAME feet the body is drawn on — grounded onto the floor — and
-                    // the bones sit a root height above them, exactly as the draw lifts the pelvis.
-                    double snappedZ = _sim.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
-                    feet = new Vector3d(soldier.Position.X, soldier.Position.Y, snappedZ);
-                    m = soldier.Orientation;
-                }
-                Vector3f facing = new(m.M12, m.M22, m.M32);
-
-                // The faithful path: trace the round at the soldier's skinned collision mesh and score it by
-                // the bone the round actually went through (BoneDynCubeObj_TraceLinesHandler). Skinning every
-                // collision vertex for every guard is far costlier than the ray itself, so reject bodies the
-                // segment cannot reach with the same generous body sphere TryPick uses. Starting inside the
-                // sphere still reaches the mesh, which preserves point-blank hits even when the round ends
-                // before it leaves the broad-phase sphere. Only if the model ships no collision mesh does it
-                // fall back to the cylinder-and-nearest-bone stand-in.
-                bool met;
-                HumanHit candidate;
-                if (group.Body.CollisionMesh is { } collision)
-                {
-                    Vector3d centre = new(feet.X, feet.Y, feet.Z + SoldierSimulation.PickChestUnits);
-                    double offsetX = origin.X - centre.X;
-                    double offsetY = origin.Y - centre.Y;
-                    double offsetZ = origin.Z - centre.Z;
-                    bool startsInside = (offsetX * offsetX) + (offsetY * offsetY) + (offsetZ * offsetZ)
-                        <= SoldierSimulation.PickCullRadiusUnits * SoldierSimulation.PickCullRadiusUnits;
-                    if (reach <= 0.0 || (!startsInside
-                        && !SoldierSimulation.RaySphere(origin, direction, centre, SoldierSimulation.PickCullRadiusUnits, reach, out _)))
-                    {
-                        continue;
-                    }
-
-                    if (presented
-                        && member.SkinnedPose is { } currentPose
-                        && member.PreviousSkinnedPose is { } previousPose)
-                    {
-                        // The renderer already owns both poses used by the motion-blended draw. Reuse
-                        // them directly; do not re-evaluate the animation for a candidate that has
-                        // already survived the broad phase.
-                        met = HumanHitTest.TryCastMeshBlended(
-                            origin,
-                            rayEnd,
-                            member.DrawnWhere * WorldScene.UnitsPerMetre,
-                            facing,
-                            collision,
-                            currentPose,
-                            previousPose,
-                            member.DrawnOrientation,
-                            member.PoseBlend,
-                            out candidate);
-                    }
-                    else
-                    {
-                        // Pose evaluation (especially a presented-orientation re-evaluation) skins the
-                        // complete rig. Keep it behind the ray/sphere rejection so off-ray soldiers do
-                        // not pay that cost on every scoped shot.
-                        BonePose pose = presented
-                            ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m)
-                            : soldier.Pose();
-                        met = HumanHitTest.TryCastMesh(
-                            origin, rayEnd, feet, facing, collision, pose, soldier.RootSample.Z, out candidate);
-                    }
-                }
-                else
-                {
-                    // The cylinder fallback still needs a pose for bone-zone refinement, but only after
-                    // there is no collision mesh broad phase to skip.
-                    BonePose pose = presented
-                        ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m)
-                        : soldier.Pose();
-                    met = HumanHitTest.TryCast(
-                        origin, rayEnd, feet, facing, pose, out candidate, soldier.RootSample.Z);
-                }
-
-                if (!met)
-                {
-                    continue;
-                }
-
-                if (struck is null || candidate.Distance < hit.Distance)
-                {
-                    hit = candidate;
-                    struck = health;
-                    struckView = soldier;
-                }
+            if (presented
+                && member.SkinnedPose is { } currentPose
+                && member.PreviousSkinnedPose is { } previousPose)
+            {
+                // The renderer already owns both poses used by the motion-blended draw. Reuse
+                // them directly; do not re-evaluate the animation for a candidate that has
+                // already survived the broad phase.
+                met = HumanHitTest.TryCastMeshBlended(
+                    origin,
+                    rayEnd,
+                    member.DrawnWhere * WorldScene.UnitsPerMetre,
+                    facing,
+                    collision,
+                    currentPose,
+                    previousPose,
+                    member.DrawnOrientation,
+                    member.PoseBlend,
+                    out candidate);
+            }
+            else
+            {
+                // Pose evaluation (especially a presented-orientation re-evaluation) skins the
+                // complete rig. Keep it behind the ray/sphere rejection so off-ray soldiers do
+                // not pay that cost on every scoped shot.
+                BonePose pose = presented
+                    ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m)
+                    : soldier.Pose();
+                met = HumanHitTest.TryCastMesh(
+                    origin, rayEnd, feet, facing, collision, pose, soldier.RootSample.Z, out candidate);
             }
         }
-
-        // Human_EvaluateGunShotHandler evaluates each live projectile segment independently of ordinary
-        // shot audibility. Do this after choosing the nearest collision so the struck guard gets the
-        // TAKINGDAMAGE path while nearby guards get GUNSHOTMISS.
-        _sim.NotifyGunshotMiss(origin, rayEnd, struckView, origin);
-
-        if (struck is null || struckView is null)
+        else
         {
-            return false;
+            // The cylinder fallback still needs a pose for bone-zone refinement, but only after
+            // there is no collision mesh broad phase to skip.
+            BonePose pose = presented
+                ? SoldierSimulation.PoseAtPresentationOrientation(soldier, m)
+                : soldier.Pose();
+            met = HumanHitTest.TryCast(
+                origin, rayEnd, feet, facing, pose, out candidate, soldier.RootSample.Z);
         }
 
-        // The shot's WeaponHit to the soldier struck (0x47BA54); its own handler bleeds it, hurts it and logs the hit.
-        struckView.Soldier.WeaponHit(
-            new Igi1WeaponHit(hit, origin, rayEnd, damageFactor, category, Shooter: null, FromPlayer: true).ToShared());
-        return true;
+        return met;
     }
 
-    /// <inheritdoc/>
-    public HumanShot Shooter() => TryShoot;
+    // A soldier as the shots find it: its task, and its colliders in the drawn pose.
+    private sealed class MemberBody(SoldierRenderer renderer, Group group, Member member) : IShootableBody
+    {
+        public GameTask Task => member.Agent.View.Soldier;
+
+        public bool TryMeet(Vector3d origin, Vector3d target, out HumanHit hit) =>
+            renderer.TryCastMember(group, member, origin, target, out hit);
+    }
 
     /// <inheritdoc/>
     public void Dispose()
@@ -1858,6 +1857,9 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// </remarks>
     internal sealed class Member(SoldierAgent agent, MeshHandle mesh)
     {
+        /// <summary>The soldier as the shots find it, made the first time one looks.</summary>
+        public IShootableBody? Body { get; set; }
+
         /// <summary>The soldier this draws: who it is, where it spawned, what it is armed with.</summary>
         public SoldierAgent Agent { get; } = agent;
 
