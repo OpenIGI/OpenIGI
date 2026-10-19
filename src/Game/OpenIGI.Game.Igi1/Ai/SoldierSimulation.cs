@@ -1876,6 +1876,8 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
         _playerTeam = levelRoot is not null && PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
             ? spawn.Team
             : 0;
+        PlayerTask = levelRoot?.Descendants().OfType<HumanPlayerTask>().FirstOrDefault(static t => t.Id == 0)
+            ?? levelRoot?.Descendants().OfType<HumanPlayerTask>().FirstOrDefault();
         AlarmControls = levelRoot is not null && variables is not null
             ? AiAlarmControlRegistry.Build(levelRoot, variables)
             : null;
@@ -3566,6 +3568,9 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
     /// </remarks>
     public int PlayerTeam => _playerTeam;
 
+    /// <summary>Gets the level's player task, which the player's rounds name as their shooter; <see langword="null"/> for none.</summary>
+    public HumanPlayerTask? PlayerTask { get; private set; }
+
     /// <summary>Pushes every living, active soldier's body into the shared collision index.</summary>
     /// <remarks>
     /// Called once per tick after the roster has moved. A body is the analytic
@@ -3856,7 +3861,7 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
             // No probability roll against a soldier: the Human's evaluate (0x45E3E0) rolls the round's
             // probability only when the struck human is player 0. Any other body is hit outright unless
             // the shooter is on its side (Human+252), and then the round passes THROUGH it and flies on.
-            if (shooter is not null && struckView.Soldier.Team == shooter.Soldier.Team)
+            if (!struckView.Soldier.EvaluateWeaponCollision(new WeaponCollisionQuery(shooter?.Soldier, null, hitProbability)))
             {
                 continue;
             }
@@ -3913,24 +3918,26 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
     public Action<object, Vector3d, Vector3f>? BloodSpray { get; set; }
 
     /// <inheritdoc/>
-    /// <remarks>Every bullet may strike a soldier here yet: the shots still choose their bodies themselves.</remarks>
-    bool IHumanSoldierEvents.EvaluateWeaponCollision(HumanSoldierTask soldier, in WeaponCollisionQuery query) => true;
+    /// <remarks>
+    /// <c>Human</c>'s evaluate (<c>0x45E3E0</c>), for a soldier: never the shooter or what the shot ignores, and a round from
+    /// someone on the soldier's side passes through it. The probability roll is the player's alone.
+    /// </remarks>
+    bool IHumanSoldierEvents.EvaluateWeaponCollision(HumanSoldierTask soldier, in WeaponCollisionQuery query)
+    {
+        if (ReferenceEquals(soldier, query.Shooter) || ReferenceEquals(soldier, query.Ignore))
+        {
+            return false;
+        }
+
+        return query.Shooter is not HumanTask shooter || shooter.Team != soldier.Team;
+    }
 
     /// <inheritdoc/>
     void IHumanSoldierEvents.WeaponHit(HumanSoldierTask soldier, in WeaponHit hit)
     {
-        if (hit.Context is not Igi1WeaponHit round || !_viewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (hit.Context is Igi1WeaponHit round && _viewsByTask.TryGetValue(soldier, out SoldierView? view))
         {
-            return;
-        }
-
-        if (round.FromPlayer)
-        {
-            TakePlayerRound(view, round);
-        }
-        else
-        {
-            TakeGuardRound(view, round);
+            TakeRound(view, round);
         }
     }
 
@@ -3952,101 +3959,62 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
         view.Soldier.Events = this;
     }
 
-    // The player's round or blade on a soldier the shot chose.
-    private void TakePlayerRound(SoldierView struckView, Igi1WeaponHit round)
+    /// <summary>A round or a blade on a soldier, whoever fired it: <c>HumanSoldier</c>'s <c>WeaponHit</c>, <c>0x45D3C0</c>.</summary>
+    /// <remarks>
+    /// <para>
+    /// Invulnerability (<c>HumanAI+15036</c>) skips the whole damage block -- the round still meets the body, it just does
+    /// nothing; instant death disabled (<c>+15037</c>) makes a head or neck hit take the plain damage. The blood follows the
+    /// damage (<c>0x45D45C</c>), then the death or the flinch and the grunt, and the blade's own sound for a knife.
+    /// </para>
+    /// <para>
+    /// Whatever the round did, the brain is told last: the <c>TAKINGDAMAGE</c> event (type 15) goes out at <c>0x45D577</c>
+    /// to an invulnerable soldier as much as to a wounded one.
+    /// </para>
+    /// </remarks>
+    private void TakeRound(SoldierView struckView, Igi1WeaponHit round)
     {
-        HumanHealth struck = HealthOf(struckView);
+        HumanHealth health = HealthOf(struckView);
         HumanHit hit = round.Hit;
-        Vector3d origin = round.Origin;
-        Vector3d rayEnd = round.End;
-        float damageFactor = round.DamageFactor;
-        WeaponCategory category = round.Category;
-
-        // 0x45F94A, before anything else the damage handler does.
-        if (BloodSpray is { } bleed)
-        {
-            Vector3d line = rayEnd - origin;
-            double length = line.Length;
-            bleed(
-                struckView,
-                hit.Position,
-                length > 1e-6
-                    ? new Vector3f(
-                        (float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length))
-                    : default);
-        }
-
-        // The soldier's brain carries two flags the damage handler 0x45D3C0 reads: invulnerability skips
-        // the whole damage block (the round still MEETS the body, it just does nothing), and instant-death
-        // being disabled makes a head/neck hit take the plain damage factor rather than the x100 lethal
-        // multiplier. Both default off, so an ordinary guard is unaffected.
         AiSoldier? brain = Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
-
-        // Friendly fire: the player's round cannot hurt a soldier on the player's own team. The round
-        // still meets the body and the hit registers, but it does nothing.
-        bool friendlyFire = struckView.Soldier.Team == PlayerTeam;
-        bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
+        bool invulnerable = brain?.IsInvulnerable ?? false;
         if (!invulnerable)
         {
-            float dealt = struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
-            brain?.ReceiveDamage(origin);
-
-            if (struck.IsDead)
+            float dealt = health.Apply(hit.Zone, round.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
+            if (BloodSpray is { } bleed)
             {
-                Die(struckView, hit, origin, rayEnd, category, SoldierDeath.ModeFor(category));
+                Vector3d line = round.End - round.Origin;
+                double length = line.Length;
+                bleed(
+                    struckView,
+                    hit.Position,
+                    length > 1e-6
+                        ? new Vector3f((float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length))
+                        : default);
+            }
+
+            if (health.IsDead)
+            {
+                Die(struckView, hit, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category));
             }
             else
             {
                 ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
-
-                // 0x45D3C0 adds the blade's own sound to the grunt when the weapon's category is the knife.
-                if (category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
+                if (round.Category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
                 {
                     ScriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
                 }
             }
         }
 
+        brain?.ReceiveDamage(round.Origin, round.Shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
+
         // Deliberately the same shape as the probe's [dmg] line from the retail game (probes.cpp
         // OnDamageHandler), so a run of the port and a capture of the original diff directly.
-        _logger.Information(LogCategory + ".Damage",
-            $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
-            + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
-            + $"friendly={(friendlyFire ? 1 : 0)} accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
-    }
-
-    // A guard's round on a soldier its cast chose.
-    private void TakeGuardRound(SoldierView struckView, Igi1WeaponHit round)
-    {
-        HumanHealth health = HealthOf(struckView);
-        HumanHit candidate = round.Hit;
-        AiSoldier? brain = Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
-
-        // Scripted invulnerability makes the round MEET the body but do nothing. The round is still consumed:
-        // an invulnerable body is a physical obstacle.
-        bool invulnerable = brain?.IsInvulnerable ?? false;
-        if (!invulnerable)
-        {
-            float dealt = health.Apply(candidate.Zone, round.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
-
-            if (health.IsDead)
-            {
-                Die(struckView, candidate, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category));
-            }
-            else
-            {
-                brain?.ReceiveDamage(round.Origin, round.Shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
-                ReactToHit(struckView, brain, candidate.Zone, dealt, explosion: false);
-            }
-        }
-
         _logger.Information(
             LogCategory + ".Damage",
-            $"port zone={candidate.Zone} ({HumanDamage.ZoneName(candidate.Zone)}) bone={candidate.Bone} "
-                + $"dmgFactor={round.DamageFactor:0.000} invuln={(invulnerable ? 1 : 0)} "
-                + $"instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
-                + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "
-                + $"dead={(health.IsDead ? 1 : 0)}");
+            $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={round.DamageFactor:0.000} "
+                + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
+                + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} dead={(health.IsDead ? 1 : 0)}");
     }
 
     // One blast on one soldier.
@@ -4086,8 +4054,8 @@ public sealed class SoldierSimulation : IHumanSoldierEvents
             return;
         }
 
+        // 0x45A3D0 posts no AI event: what a soldier makes of a blast it hears through NotifyExplosion.
         float dealt = health.Apply(ExplosionDamage.Zone, dose, brain?.IsInstantDeathDisabled ?? false);
-        brain?.ReceiveDamage(position);
 
         if (health.IsDead)
         {

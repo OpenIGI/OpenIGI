@@ -1506,6 +1506,12 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                     continue;
                 }
 
+                // Human's WeaponCollisionEvaluate (0x45E3E0): a round passes THROUGH a soldier on the shooter's side.
+                if (!soldier.Soldier.EvaluateWeaponCollision(new WeaponCollisionQuery(_sim.PlayerTask, null, 1f)))
+                {
+                    continue;
+                }
+
                 // The player fires against the body the crosshair was drawn over. With r_smooth that is
                 // the last presentation transform, not the newer simulation state the next tick has just
                 // published. AI fire stays on its own fixed-tick path below: this is only the player-shot

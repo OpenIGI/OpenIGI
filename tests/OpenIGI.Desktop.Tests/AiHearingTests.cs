@@ -45,9 +45,13 @@ public sealed class AiHearingTests
         Assert.Equal(0, fixture.RecipientBrain.Events.PendingCount(AiEvent.Alert));
     }
 
-    /// <summary>An explosion's damage, likewise, is news only to the soldier it hurt.</summary>
+    /// <summary>
+    /// An explosion's damage is news to nobody's brain: <c>HumanSoldier</c>'s ExplosionHit (<c>0x45A3D0</c>) posts no AI
+    /// event -- only the WeaponHit and close-combat handlers call <c>0x450D50</c> -- and a soldier hears a blast through the
+    /// explosion's own noise event instead.
+    /// </summary>
     [RequiresGameDataFact]
-    public void AnExplosionHitTellsOnlyTheSoldierItHit()
+    public void AnExplosionHitTellsNoBrain()
     {
         using PublisherFixture fixture = PublisherFixture.Create();
 
@@ -57,8 +61,47 @@ public sealed class AiHearingTests
             falloffUnits: 0f,
             damageFactor: 0.1f);
 
-        Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
         Assert.Equal(0, fixture.RecipientBrain.Events.PendingCount(AiEvent.Alert));
+    }
+
+    /// <summary>
+    /// The player's round passes through a soldier on the player's side: <c>Human</c>'s WeaponCollisionEvaluate
+    /// (<c>0x45E3E0</c>) lets a body stop a round only when the shooter is of another team, and nobody hears of it.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void APlayersRoundPassesThroughSoldiersOnThePlayersSide()
+    {
+        using PublisherFixture fixture = PublisherFixture.Create(playerOnTheSoldiersSide: true);
+
+        Assert.False(fixture.Renderer.TryShoot(
+            fixture.BulletOrigin,
+            fixture.BulletEnd,
+            damageFactor: 0.1f,
+            WeaponCategory.Gun,
+            out _));
+
+        Assert.Equal(0, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
+    }
+
+    /// <summary>
+    /// An invulnerable soldier's brain still hears the round: <c>0x45D3C0</c> skips the damage, then posts TAKINGDAMAGE
+    /// (<c>0x45D577</c>) whatever the round did.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AnInvulnerableSoldierStillHearsTheRound()
+    {
+        using PublisherFixture fixture = PublisherFixture.Create();
+        fixture.StruckBrain.IsInvulnerable = true;
+
+        Assert.True(fixture.Renderer.TryShoot(
+            fixture.BulletOrigin,
+            fixture.BulletEnd,
+            damageFactor: 0.1f,
+            WeaponCategory.Gun,
+            out _));
+
+        Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
     }
 
     private sealed class PublisherFixture : IDisposable
@@ -86,7 +129,7 @@ public sealed class AiHearingTests
 
         public Vector3d BulletEnd { get; }
 
-        public static PublisherFixture Create()
+        public static PublisherFixture Create(bool playerOnTheSoldiersSide = false)
         {
             VirtualFileSystem fileSystem = new();
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -125,9 +168,17 @@ public sealed class AiHearingTests
                 template,
                 new Vector3d(6 * Metre, 0, 0));
 
+            if (playerOnTheSoldiersSide)
+            {
+                HumanPlayerTask player = (HumanPlayerTask)testTree.New(testTree.Root, loop.Types.Get(PlayerTaskTypes.HumanPlayer));
+                player.Team = template.Team;
+            }
+
             SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
             Assert.Equal(2, renderer.Load(mission, testTree.Root));
-            Assert.Equal(2, renderer.Simulation.Animate(new Dictionary<int, GraphFile>()));
+            Assert.Equal(2, renderer.Simulation.Animate(
+                new Dictionary<int, GraphFile>(),
+                levelRoot: playerOnTheSoldiersSide ? testTree.Root : null));
 
             AiSoldier[] brains = [.. renderer.Simulation.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
             return new PublisherFixture(renderer, brains[0], brains[1], struck.Position);
