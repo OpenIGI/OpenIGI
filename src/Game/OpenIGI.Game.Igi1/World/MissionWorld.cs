@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// is dropped again as the mission is released. Held in one place so that what reads the level -- the inspector, the
 /// sounds, the effects -- is handed the mission rather than the whole host.
 /// </remarks>
-public sealed class MissionWorld
+public sealed class MissionWorld : IInspectableMission
 {
     /// <summary>Gets or sets the doors.</summary>
     public DoorRegistry? Doors { get; set; }

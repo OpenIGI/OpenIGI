@@ -7,9 +7,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using System.Globalization;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Host.DevTools;
 
@@ -284,7 +282,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
     private void AddSoldiers(List<InspectableEntity> into, string needle, Vector3d eye)
     {
         _inspectorSoldiers.Clear();
-        game.Soldiers?.Simulation.Snapshot(_inspectorSoldiers);
+        game.Soldiers?.Snapshot(_inspectorSoldiers);
 
         for (int i = 0; i < _inspectorSoldiers.Count; i++)
         {
@@ -846,10 +844,10 @@ internal interface IInspectedWorld
     IGroundHeightField? Ground { get; }
 
     /// <summary>Gets the soldiers.</summary>
-    ISoldierPresenter? Soldiers { get; }
+    ISoldierBodies? Soldiers { get; }
 
     /// <summary>Gets the mission's registries.</summary>
-    MissionWorld Mission { get; }
+    IInspectableMission Mission { get; }
 
     /// <summary>Gets the eye the last frame was drawn from.</summary>
     Camera3D InspectorEye { get; }

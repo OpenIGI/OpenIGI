@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -158,6 +159,30 @@ public interface ISoldierBodies : IDisposable
     /// same two ticks the body itself is drawn between, or the gun steps at 30 Hz in a hand that glides.
     /// </remarks>
     BoneAttachment? PlayerBodyHandAttachment();
+
+    /// <summary>Draws a selection glow around one soldier.</summary>
+    /// <param name="index">The soldier's index in the order <see cref="Snapshot"/> fills.</param>
+    /// <param name="camera">The eye the frame is drawn from.</param>
+    /// <param name="colour">The glow colour.</param>
+    /// <param name="radius">How far the glow reaches past the silhouette, in pixels.</param>
+    /// <param name="throughWalls">Whether it ignores the depth buffer.</param>
+    /// <returns><see langword="true"/> when something was drawn.</returns>
+    /// <remarks>
+    /// <para>
+    /// The pose is handed to the device the same way the ordinary draw hands it over, because a
+    /// soldier's mesh is uploaded as two poses the shader blends between. Without it the glow would
+    /// stand in whichever pose was uploaded last and lag a step behind the body inside it.
+    /// </para>
+    /// <para>
+    /// The walk mirrors <see cref="Snapshot"/> exactly — group, then member — because that walk is what
+    /// defines the handle the inspector asks with.
+    /// </para>
+    /// </remarks>
+    bool DrawOutline(int index, in Camera3D camera, Bgra32 colour, float radius, bool throughWalls);
+
+    /// <summary>Copies every soldier's state into a list, group by group and member by member.</summary>
+    /// <param name="into">The list, which is filled in the order <see cref="DrawOutline"/> indexes.</param>
+    void Snapshot(List<SoldierSnapshot> into);
 
     /// <summary>Every soldier where it stands at this moment.</summary>
     /// <returns>The soldiers, dead and alive.</returns>

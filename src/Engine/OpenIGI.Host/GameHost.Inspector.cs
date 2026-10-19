@@ -1,6 +1,5 @@
-﻿using OpenIGI.Game.Igi1.Ai;
+﻿using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Presentation;
@@ -31,9 +30,9 @@ public sealed partial class GameHost
 
         public IGroundHeightField? Ground => host._ground;
 
-        public ISoldierPresenter? Soldiers => host._mission.SoldierPresenter;
+        public ISoldierBodies? Soldiers => host._soldiers;
 
-        public MissionWorld Mission => host._mission;
+        public IInspectableMission Mission => host._mission;
 
         public Camera3D InspectorEye => host._inspectorEye;
 

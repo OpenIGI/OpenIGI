@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi1.Ai;
+namespace OpenIGI.Game.Ai;
 
 /// <summary>
 /// What one soldier looked like at the moment the developer inspector asked.

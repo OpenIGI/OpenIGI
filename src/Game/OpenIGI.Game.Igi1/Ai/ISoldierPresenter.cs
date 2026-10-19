@@ -66,26 +66,6 @@ public interface ISoldierPresenter : ISoldierBodies
     /// <summary>Gets the number of soldiers that resolved and will draw.</summary>
     int Count { get; }
 
-    /// <summary>Draws a selection glow around one soldier.</summary>
-    /// <param name="index">The soldier's index in the order <see cref="SoldierSimulation.Snapshot"/> fills.</param>
-    /// <param name="camera">The eye the frame is drawn from.</param>
-    /// <param name="colour">The glow colour.</param>
-    /// <param name="radius">How far the glow reaches past the silhouette, in pixels.</param>
-    /// <param name="throughWalls">Whether it ignores the depth buffer.</param>
-    /// <returns><see langword="true"/> when something was drawn.</returns>
-    /// <remarks>
-    /// <para>
-    /// The pose is handed to the device the same way the ordinary draw hands it over, because a
-    /// soldier's mesh is uploaded as two poses the shader blends between. Without it the glow would
-    /// stand in whichever pose was uploaded last and lag a step behind the body inside it.
-    /// </para>
-    /// <para>
-    /// The walk mirrors <see cref="SoldierSimulation.Snapshot"/> exactly — group, then member — because that walk is what
-    /// defines the handle the inspector asks with.
-    /// </para>
-    /// </remarks>
-    bool DrawOutline(int index, in Camera3D camera, Bgra32 colour, float radius, bool throughWalls);
-
     /// <summary>Loads the weapon models the vehicles' guns carry and takes where the runtime poses them.</summary>
     /// <param name="mission">The mission whose packs hold the models.</param>
     /// <param name="weaponModels">Every vehicle gun's weapon model (magic-object argument 1).</param>
@@ -308,6 +288,9 @@ public interface ISoldierPresenter : ISoldierBodies
 
     /// <inheritdoc/>
     IEnumerable<HumanOccupant> ISoldierBodies.LiveOccupants() => Simulation.LiveOccupants();
+
+    /// <inheritdoc/>
+    void ISoldierBodies.Snapshot(List<SoldierSnapshot> into) => Simulation.Snapshot(into);
 
     /// <inheritdoc/>
     IReadOnlyList<EnemyOverlayBox> ISoldierBodies.BinocularTargets(
