@@ -591,7 +591,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
     /// <remarks>
     /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
     /// stepped rather than being stepped with no input. Without this a corpse walks around. What the update set
-    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="MissionWorld.PlayerTicked"/> holds.
+    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="MissionState.PlayerTicked"/> holds.
     /// </remarks>
     public void UpdatePlayer()
     {
