@@ -139,7 +139,7 @@ public sealed class ElevatorState
     public bool TransformChangedThisTick => Position != PreviousPosition;
     public double SpeedUnitsPerSecond => _speed;
 
-    public void Tick(bool canStart, bool floorUp, bool floorDown, int? wantedFloor = null)
+    public void Tick(bool canStart, bool floorUp, bool floorDown, int? wantedFloor = null, bool enabled = true)
     {
         double paramBefore = FloorPosition;
         int wantedBefore = WantedFloorIndex;
@@ -153,7 +153,7 @@ public sealed class ElevatorState
         _lastUp = floorUp;
         _lastDown = floorDown;
 
-        // Elevator_Activate (0x43C440): Floor-up / Floor-down pulses rewrite nWantedFloor first;
+        // The update (0x43D280): Floor-up / Floor-down pulses rewrite nWantedFloor first;
         // otherwise the last true isWantedFloorN wins. Both apply even while the car is travelling.
         if (upPulse)
         {
@@ -212,8 +212,17 @@ public sealed class ElevatorState
             return;
         }
 
-        // Elevator_UpdatePosition (0x43C8A0) walks the spline parameter toward nWantedFloor
-        // without stopping at intermediate waypoints. Speed only zeros on the final node.
+        // The move (0x43D6E0) runs only while the lift's own "Can start" expression holds: the
+        // update (0x43D280) skips it outright otherwise, mid-trip as much as at a floor, so the car
+        // stands where it is and keeps its speed until the expression comes true again.
+        if (!enabled)
+        {
+            FinishExports(paramBefore, wantedBefore, canStart);
+            return;
+        }
+
+        // The move (0x43D6E0) walks the spline parameter toward nWantedFloor without stopping at
+        // intermediate waypoints. Speed only zeros on the final node.
         double remaining = DistanceAlongFloors(CurrentFloorIndex, targetIndex);
         if (remaining <= BrakeDistanceUnits)
         {

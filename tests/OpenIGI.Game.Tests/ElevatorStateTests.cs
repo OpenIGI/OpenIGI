@@ -357,4 +357,32 @@ public sealed class ElevatorStateTests
         Assert.True(registry.TryGetPassengerDisplacement(offCentre, out Vector3d displacement));
         Assert.Equal(movingState.Position - movingState.PreviousPosition, displacement);
     }
+
+    [Fact]
+    public void A_trip_halts_where_it_is_while_can_start_is_false()
+    {
+        // The update (0x43D280) skips the move (0x43D6E0) whenever the lift's own "Can start" expression is false,
+        // mid-trip as much as at a floor; the car stands still and resumes when the expression comes true again.
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors:
+            [
+                new ElevatorFloor(10, new Vector3d(0, 0, 0)),
+                new ElevatorFloor(20, new Vector3d(0, 0, 100000)),
+            ],
+            maxSpeedUnitsPerSecond: 3000,
+            speedInertiaUnitsPerSecondSquared: 3000);
+
+        elevator.Tick(canStart: true, floorUp: true, floorDown: false);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Vector3d underway = elevator.Position;
+        Assert.True(underway.Z > 0);
+
+        elevator.Tick(canStart: false, floorUp: false, floorDown: false, enabled: false);
+        Assert.Equal(underway, elevator.Position);
+        Assert.True(elevator.IsMoving);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.True(elevator.Position.Z > underway.Z);
+    }
 }

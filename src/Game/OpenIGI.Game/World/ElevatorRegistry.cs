@@ -101,6 +101,11 @@ public sealed class ElevatorRegistry
         return true;
     }
 
+    /// <summary>Steps every lift one tick, in the order they were declared.</summary>
+    /// <remarks>
+    /// For a lift no level walk reaches. A walked level steps each lift where the walk reaches it, with
+    /// <see cref="TickElevator"/>, as the original's Elevator update (<c>0x43D280</c>) does.
+    /// </remarks>
     public void Tick()
     {
         // The retail elevator start path is evaluated against the live human's ground-hit owner. A
@@ -109,47 +114,63 @@ public sealed class ElevatorRegistry
         Vector3d? playerPosition = _playerPositionProvider?.Invoke();
         foreach (ElevatorCommand command in _commands)
         {
-            bool wasMoving = command.Elevator.State.HasMovementRequest;
-            // Elevator_Activate writes isWantedFloor[0..9] then, if there is no up/down pulse,
-            // sets nWantedFloor to the last true index. A held expression is a destination, not a
-            // rising-edge command, and a later floor overwrites an earlier one the same tick.
-            int? wantedFloor = null;
-            for (int i = 0; i < command.WantedFloors.Count; i++)
+            TickCommand(command, playerPosition);
+        }
+    }
+
+    /// <summary>Steps one lift one tick, where the level walk reaches it.</summary>
+    /// <param name="elevator">The lift.</param>
+    public void TickElevator(PlacedElevator elevator)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        ElevatorCommand command = _commands.First(c => ReferenceEquals(c.Elevator, elevator));
+        TickCommand(command, _playerPositionProvider?.Invoke());
+    }
+
+    private void TickCommand(ElevatorCommand command, Vector3d? playerPosition)
+    {
+        bool wasMoving = command.Elevator.State.HasMovementRequest;
+        // The update (0x43D280) writes isWantedFloor[0..9] then, if there is no up/down pulse,
+        // sets nWantedFloor to the last true index. A held expression is a destination, not a
+        // rising-edge command, and a later floor overwrites an earlier one the same tick.
+        int? wantedFloor = null;
+        for (int i = 0; i < command.WantedFloors.Count; i++)
+        {
+            if (command.WantedFloors[i]())
             {
-                if (command.WantedFloors[i]())
-                {
-                    wantedFloor = i;
-                }
+                wantedFloor = i;
+            }
+        }
+
+        bool enabled = command.CanStart();
+        bool playerInside = !playerPosition.HasValue
+            || (IsPlayerInsideElevator(playerPosition.Value, out PlacedElevator? containing)
+                && ReferenceEquals(containing, command.Elevator));
+        command.Elevator.State.Tick(
+            enabled && (playerInside || command.HasExteriorRequest),
+            command.FloorUp(),
+            command.FloorDown(),
+            wantedFloor,
+            enabled);
+        command.ClearExteriorRequestAfterStart();
+
+        if (_sounds is not null)
+        {
+            if (command.Elevator.State.IsStart)
+            {
+                _sounds(command.Elevator, ElevatorSoundEvent.Started);
             }
 
-            bool playerInside = !playerPosition.HasValue
-                || (IsPlayerInsideElevator(playerPosition.Value, out PlacedElevator? containing)
-                    && ReferenceEquals(containing, command.Elevator));
-            command.Elevator.State.Tick(
-                command.CanStart() && (playerInside || command.HasExteriorRequest),
-                command.FloorUp(),
-                command.FloorDown(),
-                wantedFloor);
-            command.ClearExteriorRequestAfterStart();
-
-            if (_sounds is not null)
+            if (!wasMoving && command.Elevator.State.HasMovementRequest)
             {
-                if (command.Elevator.State.IsStart)
-                {
-                    _sounds(command.Elevator, ElevatorSoundEvent.Started);
-                }
+                command.Elevator.IsSounding = true;
+                _sounds(command.Elevator, ElevatorSoundEvent.Traveling);
+            }
 
-                if (!wasMoving && command.Elevator.State.HasMovementRequest)
-                {
-                    command.Elevator.IsSounding = true;
-                    _sounds(command.Elevator, ElevatorSoundEvent.Traveling);
-                }
-
-                if (command.Elevator.State.IsStop)
-                {
-                    command.Elevator.IsSounding = false;
-                    _sounds(command.Elevator, ElevatorSoundEvent.Stopped);
-                }
+            if (command.Elevator.State.IsStop)
+            {
+                command.Elevator.IsSounding = false;
+                _sounds(command.Elevator, ElevatorSoundEvent.Stopped);
             }
         }
     }
@@ -209,21 +230,34 @@ public sealed class ElevatorRegistry
         int updated = 0;
         foreach (PlacedElevator elevator in _elevators)
         {
-            if (!elevator.State.TransformChangedThisTick)
-            {
-                continue;
-            }
-
-            Vector3d increment = (elevator.State.Position - elevator.State.PreviousPosition)
-                / WorldScene.UnitsPerMetre;
-            if (solids.UpdateTransform(elevator.Task, elevator.DrawPosition, elevator.Orientation))
-            {
-                updated++;
-            }
-
-            updated += solids.UpdateDescendantTranslation(elevator.Task, increment, IsDoorTask);
+            updated += ApplyCollision(solids, elevator);
         }
 
+        return updated;
+    }
+
+    /// <summary>Writes one lift's collision, and its non-door children's, after it moved this tick.</summary>
+    /// <param name="solids">The collision index.</param>
+    /// <param name="elevator">The lift.</param>
+    /// <returns>How many entries were moved.</returns>
+    public static int ApplyCollision(ObjectCollisionIndex solids, PlacedElevator elevator)
+    {
+        ArgumentNullException.ThrowIfNull(solids);
+        ArgumentNullException.ThrowIfNull(elevator);
+        if (!elevator.State.TransformChangedThisTick)
+        {
+            return 0;
+        }
+
+        int updated = 0;
+        Vector3d increment = (elevator.State.Position - elevator.State.PreviousPosition)
+            / WorldScene.UnitsPerMetre;
+        if (solids.UpdateTransform(elevator.Task, elevator.DrawPosition, elevator.Orientation))
+        {
+            updated++;
+        }
+
+        updated += solids.UpdateDescendantTranslation(elevator.Task, increment, IsDoorTask);
         return updated;
     }
 
@@ -243,18 +277,38 @@ public sealed class ElevatorRegistry
     {
         foreach (PlacedElevator elevator in _elevators)
         {
-            Vector3d delta = elevator.State.Position - elevator.State.PreviousPosition;
-            if (delta == Vector3d.Zero || !IsPassengerOn(elevator, passenger, solids))
+            if (TryGetPassengerDisplacement(elevator, passenger, solids, out displacement))
             {
-                continue;
+                return true;
             }
-
-            displacement = delta;
-            return true;
         }
 
         displacement = default;
         return false;
+    }
+
+    /// <summary>Gets the displacement one lift gave a passenger standing on it this tick.</summary>
+    /// <param name="elevator">The lift.</param>
+    /// <param name="passenger">Where the passenger stands, in world units.</param>
+    /// <param name="solids">The live collision, whose ground-hit owner says what the passenger stands on.</param>
+    /// <param name="displacement">How far the lift carried it.</param>
+    /// <returns>Whether the passenger rides this lift and it moved.</returns>
+    public static bool TryGetPassengerDisplacement(
+        PlacedElevator elevator,
+        Vector3d passenger,
+        ObjectCollisionIndex? solids,
+        out Vector3d displacement)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        Vector3d delta = elevator.State.Position - elevator.State.PreviousPosition;
+        if (delta == Vector3d.Zero || !IsPassengerOn(elevator, passenger, solids))
+        {
+            displacement = default;
+            return false;
+        }
+
+        displacement = delta;
+        return true;
     }
 
     /// <summary>Checks whether a world position sits inside any elevator's cab volume.</summary>
