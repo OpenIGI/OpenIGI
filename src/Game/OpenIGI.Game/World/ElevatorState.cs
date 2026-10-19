@@ -111,7 +111,13 @@ public sealed class ElevatorState
         || (_pendingDirection > 0 && CurrentFloorIndex + 1 < _floors.Count)
         || (_pendingDirection < 0 && CurrentFloorIndex > 0);
 
-    /// <summary>Continuous spline coordinate exported as <c>vFloor</c> (Activate at 0x43C440).</summary>
+    /// <summary>The car's place between floors, exported as <c>vFloor</c> (<c>+416</c>, bound by <c>0x43DF20</c>).</summary>
+    /// <remarks>
+    /// Retail's update (<c>0x43D280</c>, at <c>0x43D4B1</c>) recomputes it every tick from the spline parameter <c>+388</c>
+    /// against each floor's knot parameter: the first floor past the car, less how far short of it the car is as a share of
+    /// the span. This measures the share by distance between the floors' positions instead, which is the same on a lift
+    /// whose spline is a straight run between its floors.
+    /// </remarks>
     public double FloorPosition
     {
         get

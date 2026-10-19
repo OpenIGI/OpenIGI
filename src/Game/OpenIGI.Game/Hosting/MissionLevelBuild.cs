@@ -75,11 +75,18 @@ public class MissionLevelBuild : LevelBuild
     public Dictionary<int, GraphFile>? Graphs { get; set; }
 }
 
-/// <summary>The host's mission systems, in the order a mission is brought up.</summary>
+/// <summary>The mission systems, in the order a mission is brought up.</summary>
 /// <remarks>
+/// <para>
 /// The order is load-bearing: the AI's ray cast closes over the terrain the first system sets, the interactions exist before
 /// the brains are animated, and the weapon rosters load before <c>humanplayer.qvm</c> runs. A mod inserts its own system by
 /// these names.
+/// </para>
+/// <para>
+/// The game brings its own steps (the cutscenes, objectives, vehicles, interactions, cameras, nav graphs, brains and walk)
+/// and sets them before the host's; a <c>...View</c> system is the host's half of a step, handing what the game's left to the
+/// picture.
+/// </para>
 /// </remarks>
 public static class MissionSystemNames
 {
@@ -92,11 +99,20 @@ public static class MissionSystemNames
     /// <summary>The objective runtime.</summary>
     public const string Objectives = "Objectives";
 
+    /// <summary>The test captures' script writes, made over the objectives just built.</summary>
+    public const string TestCaptures = "TestCaptures";
+
     /// <summary>The map computer, the tactical computer and the comms cards.</summary>
     public const string Computer = "Computer";
 
-    /// <summary>The scene walk, the world renderer, the collision index, the vehicles and the weather.</summary>
+    /// <summary>The scene walk, the world renderer and the collision index.</summary>
     public const string Scene = "Scene";
+
+    /// <summary>The vehicles, and what can be destroyed.</summary>
+    public const string Vehicles = "Vehicles";
+
+    /// <summary>The destructibles and the cutscenes handed to the world renderer, and the weather.</summary>
+    public const string SceneView = "SceneView";
 
     /// <summary>The soldiers' meshes.</summary>
     public const string Soldiers = "Soldiers";
@@ -104,8 +120,14 @@ public static class MissionSystemNames
     /// <summary>The doors, elevators, pickups and interactions.</summary>
     public const string Interactions = "Interactions";
 
-    /// <summary>The security cameras and the rotating objects.</summary>
+    /// <summary>The doors, elevators, pickups and interactions handed to the world renderer.</summary>
+    public const string InteractionsView = "InteractionsView";
+
+    /// <summary>The security cameras, their sight, and the rotating objects.</summary>
     public const string Cameras = "Cameras";
+
+    /// <summary>The cameras and the rotating objects handed to the world renderer, and the cameras' status lights.</summary>
+    public const string CamerasView = "CamerasView";
 
     /// <summary>The nav graphs.</summary>
     public const string NavGraphs = "NavGraphs";
@@ -115,6 +137,9 @@ public static class MissionSystemNames
 
     /// <summary>The soldiers' brains, the alarm speakers and the guards' rounds.</summary>
     public const string NavigationAi = "NavigationAi";
+
+    /// <summary>The alarm speakers handed to the world renderer.</summary>
+    public const string AlarmsView = "AlarmsView";
 
     /// <summary>The actors joining the level's walk.</summary>
     public const string LevelWalk = "LevelWalk";

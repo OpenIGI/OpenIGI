@@ -197,24 +197,29 @@ public sealed partial class GameHost
         systems.BuildAll(build);
     }
 
-    /// <summary>Makes the host's mission systems, in the order a mission is brought up.</summary>
+    /// <summary>Makes the mission systems, in the order a mission is brought up: the host's, and the game's set among them.</summary>
     /// <returns>A fresh list, which the session's level-system edits may change.</returns>
-    private LevelSystems<MissionLevelBuild> MissionSystems() => new LevelSystems<MissionLevelBuild>()
-        .Add(HostSystem(MissionSystemNames.Sounds, MissionSounds))
-        .Add(HostSystem(MissionSystemNames.Cutscenes, MissionCutscenes))
-        .Add(HostSystem(MissionSystemNames.Objectives, MissionObjectives))
-        .Add(HostSystem(MissionSystemNames.Computer, MissionComputer))
-        .Add(HostSystem(MissionSystemNames.Scene, MissionScene))
-        .Add(HostSystem(MissionSystemNames.Soldiers, MissionSoldiers))
-        .Add(HostSystem(MissionSystemNames.Interactions, MissionInteractions))
-        .Add(HostSystem(MissionSystemNames.Cameras, MissionCameras))
-        .Add(HostSystem(MissionSystemNames.NavGraphs, MissionNavGraphs))
-        .Add(HostSystem(MissionSystemNames.LightBakes, MissionLightBakes))
-        .Add(HostSystem(MissionSystemNames.NavigationAi, MissionNavigationAi))
-        .Add(HostSystem(MissionSystemNames.LevelWalk, MissionLevelWalk))
-        .Add(HostSystem(MissionSystemNames.Picture, MissionPicture))
-        .Add(HostSystem(MissionSystemNames.Player, MissionPlayer))
-        .Add(HostSystem(MissionSystemNames.Adornments, MissionAdornments));
+    private LevelSystems<MissionLevelBuild> MissionSystems()
+    {
+        LevelSystems<MissionLevelBuild> systems = new LevelSystems<MissionLevelBuild>()
+            .Add(HostSystem(MissionSystemNames.Sounds, MissionSounds))
+            .Add(HostSystem(MissionSystemNames.TestCaptures, MissionTestCaptures))
+            .Add(HostSystem(MissionSystemNames.Computer, MissionComputer))
+            .Add(HostSystem(MissionSystemNames.Scene, MissionScene))
+            .Add(HostSystem(MissionSystemNames.SceneView, MissionSceneView))
+            .Add(HostSystem(MissionSystemNames.Soldiers, MissionSoldiers))
+            .Add(HostSystem(MissionSystemNames.InteractionsView, MissionInteractionsView))
+            .Add(HostSystem(MissionSystemNames.CamerasView, MissionCamerasView))
+            .Add(HostSystem(MissionSystemNames.LightBakes, MissionLightBakes))
+            .Add(HostSystem(MissionSystemNames.AlarmsView, MissionAlarmsView))
+            .Add(HostSystem(MissionSystemNames.Picture, MissionPicture))
+            .Add(HostSystem(MissionSystemNames.Player, MissionPlayer))
+            .Add(HostSystem(MissionSystemNames.Adornments, MissionAdornments));
+
+        // The cutscenes, objectives, vehicles, interactions, cameras, nav graphs, brains and walk are the game's own.
+        _hosted.AddMissionSystems(systems);
+        return systems;
+    }
 
     // One of the host's own systems, which reads the host's build; a mod's reads the public one.
     private static LevelSystem<MissionLevelBuild> HostSystem(string name, Action<MissionBuild> build) =>
@@ -263,17 +268,9 @@ public sealed partial class GameHost
         _audioOut.Music?.Play(MusicPlayer.GameMusic);
     }
 
-    /// <summary>The mission's text and the cutscene runtime, with the natives the level's cutscenes call.</summary>
-    private void MissionCutscenes(MissionBuild b)
+    /// <summary>The test captures' script writes, made over the objectives the game just built.</summary>
+    private void MissionTestCaptures(MissionBuild b)
     {
-        b.MissionText = _hosted.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
-    }
-
-    /// <summary>The objective runtime, the intro skipped when cinematics are off, and the test captures' script writes.</summary>
-    private void MissionObjectives(MissionBuild b)
-    {
-        _hosted.Setup.BuildObjectives(b.LevelRoot, b.MissionText!, _hosted.Tick.AreaPlayerNow, made => b.Objectives = made);
-
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
         // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
         // "EditVariable_199.nValue=1,AreaActivate_5.nActive=1"; the same writes are re-applied on
@@ -372,7 +369,6 @@ public sealed partial class GameHost
 
         LoadedMission loaded = b.Loaded;
         LevelTask levelRoot = b.LevelRoot;
-        int id = b.Id;
         bool promoted = b.Promoted;
 
         ObjectCollisionIndex solids;
@@ -428,7 +424,19 @@ public sealed partial class GameHost
             _mission.Solids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
-        _hosted.Setup.BuildVehicles(loaded, levelRoot, id, scene, solids);
+        b.Scene = scene;
+        b.Solids = solids;
+        b.World = world;
+    }
+
+    /// <summary>The destructibles and the cutscenes handed to the world renderer, and the weather fresh for the mission.</summary>
+    private void MissionSceneView(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        WorldScene scene = b.Scene ?? throw MissingSystem(MissionSystemNames.Scene);
+        IWorldPresenter world = b.World ?? throw MissingSystem(MissionSystemNames.Scene);
+
         world.Destructibles = _mission.Destructibles;
         world.Cutscenes = _mission.Cutscenes;
 
@@ -453,10 +461,6 @@ public sealed partial class GameHost
         // second time, and shelters under the same roofs.
         _storm.SetShelter(_shelterField);
         ApplyWeatherSettings();
-
-        b.Scene = scene;
-        b.Solids = solids;
-        b.World = world;
     }
 
     /// <summary>The soldiers' meshes and textures.</summary>
@@ -498,16 +502,10 @@ public sealed partial class GameHost
         EndStage("the soldiers' meshes and textures");
     }
 
-    /// <summary>The doors, elevators, pickups and world interactions, and the soldiers' sounds.</summary>
-    private void MissionInteractions(MissionBuild b)
+    /// <summary>The doors, elevators, pickups and world interactions handed to the world renderer.</summary>
+    private void MissionInteractionsView(MissionBuild b)
     {
-        LoadedMission loaded = b.Loaded;
-        LevelTask levelRoot = b.LevelRoot;
-        ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
-
-        _hosted.Audio.ForgetAmbience();
-        _hosted.Setup.BuildInteractions(loaded, levelRoot, solids);
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
@@ -516,20 +514,14 @@ public sealed partial class GameHost
         world.Doors = _mission.Doors;
         world.Elevators = _mission.Elevators;
 
-        _hosted.Impacts.ConnectSoldiers();
-
         EndStage("the doors, elevators and world interactions");
     }
 
-    /// <summary>The security cameras, their sight, and the rotating objects.</summary>
-    private void MissionCameras(MissionBuild b)
+    /// <summary>The security cameras and the rotating objects handed to the world renderer, and the cameras' status lights.</summary>
+    private void MissionCamerasView(MissionBuild b)
     {
-        WorldScene scene = b.Scene!;
         IWorldPresenter world = b.World!;
 
-        _hosted.Audio.ForgetCameras();
-        _cutsceneSounds.StopAll();
-        b.WorldTrace = _hosted.Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
         world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
         _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
@@ -540,15 +532,6 @@ public sealed partial class GameHost
         }
 
         world.RotatingObjects = _mission.RotatingObjects;
-    }
-
-    /// <summary>The nav graphs and the soldiers' brains, with what their rounds, blasts and alarms do.</summary>
-    /// <summary>The level's nav graphs, which the soldiers and the vehicles drive over.</summary>
-    private void MissionNavGraphs(MissionBuild b)
-    {
-        b.Graphs = _hosted.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, _gamePath);
-
-        EndStage("reading the nav graphs");
     }
 
     /// <summary>The level's baked lighting: the probe field, the path-traced lightmaps and the distance fields, started.</summary>
@@ -727,53 +710,31 @@ public sealed partial class GameHost
         EndStage("starting the light bakes");
     }
 
-    /// <summary>The soldiers' brains, the alarm speakers and the guards' rounds.</summary>
-    private void MissionNavigationAi(MissionBuild b)
+    /// <summary>The alarm speakers the game's brains left, handed to the world renderer.</summary>
+    private void MissionAlarmsView(MissionBuild b)
     {
-        if (_scene is null)
+        if (_hosted.Setup.HasSoldiers)
         {
-            throw MissingSystem(MissionSystemNames.Scene);
+            b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
         }
-
-        if (!_hosted.Setup.HasSoldiers)
-        {
-            // A title without IGI1's soldiers has no brains to animate here.
-            return;
-        }
-
-        Dictionary<int, GraphFile> graphs = b.Graphs ?? throw MissingSystem(MissionSystemNames.NavGraphs);
-
-        // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
-        // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
-        // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
-        // leaving every guard on GD_2/Normal whatever the profile said. -difficulty still overrides,
-        // for testing a difficulty without editing a profile.
-        AiDifficulty effectiveDifficulty = EffectiveDifficulty();
-        string difficultySource = _options.Difficulty is null
-            ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
-            : "from -difficulty override.";
-
-        _hosted.Audio.ForgetSirens();
-        _hosted.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty, difficultySource);
-        b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
 
     /// <summary>The difficulty every guard reads its combat row at.</summary>
     /// <returns>The <c>-difficulty</c> override, or else the active profile's.</returns>
+    /// <remarks>
+    /// Faithfully the ACTIVE PLAYER PROFILE's (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the
+    /// player picked in the menu reaches the AI; -difficulty still overrides, for testing one without editing a profile.
+    /// </remarks>
     private AiDifficulty EffectiveDifficulty() => _options.Difficulty
         ?? (AiDifficulty)Math.Clamp(
             _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
             (int)AiDifficulty.Easy,
             (int)AiDifficulty.Hard);
 
-    /// <summary>The soldiers, the doors, the alarm controls and the player join the level's walk.</summary>
-    private void MissionLevelWalk(MissionBuild b)
-    {
-        LevelTask levelRoot = b.LevelRoot;
-
-        // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
-        _hosted.Tick.AttachToLevelWalk(levelRoot);
-    }
+    /// <summary>Where <see cref="EffectiveDifficulty"/> came from, for the log.</summary>
+    private string DifficultySource => _options.Difficulty is null
+        ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
+        : "from -difficulty override.";
 
     /// <summary>The terrain, sky, sun, grade and camera; the lamps and the surface cache; what impact effects trace against; the player's state reset.</summary>
     private void MissionPicture(MissionBuild b)
@@ -1832,6 +1793,12 @@ public sealed partial class GameHost
             host.Viewpoint?.BeginDeathView(position, facing, walls);
 
         public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
+
+        public AiDifficulty Difficulty => host.EffectiveDifficulty();
+
+        public string DifficultySource => host.DifficultySource;
+
+        public string GamePath => host._gamePath;
 
         public bool PlayCutscenes => host._options.PlayCutscenes;
 

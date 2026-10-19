@@ -1,4 +1,5 @@
 using OpenIGI.Game.Hosting;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Player;
 
@@ -76,6 +77,9 @@ public sealed class Igi1Gameplay : IHostedMission
 
     /// <inheritdoc/>
     IPlayerBringUp IHostedMission.NewPlayerSetup() => NewPlayerSetup();
+
+    /// <inheritdoc/>
+    public void AddMissionSystems(LevelSystems<MissionLevelBuild> systems) => Igi1MissionSystems.AddTo(systems, this, _host);
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>

@@ -1,0 +1,100 @@
+using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Hosting;
+using OpenIGI.Game.Level;
+
+namespace OpenIGI.Game.Igi1.World;
+
+/// <summary>Project I.G.I.'s own steps in bringing a mission up, each set among the host's by the names they stand before.</summary>
+/// <remarks>
+/// <para>
+/// What the game is made of -- the cutscenes and objectives, the vehicles, the interactions, the cameras, the nav graphs, the
+/// soldiers' brains and the level's walk -- and nothing of how it is drawn: the host's own systems, which hand what these leave
+/// to the picture, run right after each. The order is the one the mission has always come up in.
+/// </para>
+/// <para>
+/// A mod finds them by <see cref="MissionSystemNames"/> like any other, so it can replace the game's half of a step and keep
+/// the host's.
+/// </para>
+/// </remarks>
+public static class Igi1MissionSystems
+{
+    /// <summary>Inserts the game's steps among the host's.</summary>
+    /// <param name="systems">The host's systems, the game's to be set among them.</param>
+    /// <param name="game">The game the steps bring up.</param>
+    /// <param name="host">What the host tells the steps.</param>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static void AddTo(LevelSystems<MissionLevelBuild> systems, Igi1Gameplay game, IMissionSetupHost host)
+    {
+        ArgumentNullException.ThrowIfNull(systems);
+        ArgumentNullException.ThrowIfNull(game);
+        ArgumentNullException.ThrowIfNull(host);
+
+        systems
+            .InsertBefore(MissionSystemNames.TestCaptures, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Cutscenes, b =>
+                b.MissionText = game.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives)))
+            .InsertBefore(MissionSystemNames.TestCaptures, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Objectives, b =>
+                game.Setup.BuildObjectives(
+                    b.LevelRoot,
+                    b.MissionText ?? throw Missing(MissionSystemNames.Cutscenes),
+                    game.Tick.AreaPlayerNow,
+                    made => b.Objectives = made)))
+            .InsertBefore(MissionSystemNames.SceneView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Vehicles, b =>
+                game.Setup.BuildVehicles(
+                    b.Loaded,
+                    b.LevelRoot,
+                    b.Id,
+                    b.Scene ?? throw Missing(MissionSystemNames.Scene),
+                    b.Solids ?? throw Missing(MissionSystemNames.Scene))))
+            .InsertBefore(MissionSystemNames.InteractionsView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Interactions, b =>
+            {
+                game.Audio.ForgetAmbience();
+                game.Setup.BuildInteractions(b.Loaded, b.LevelRoot, b.Solids ?? throw Missing(MissionSystemNames.Scene));
+                game.Impacts.ConnectSoldiers();
+            }))
+            .InsertBefore(MissionSystemNames.CamerasView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Cameras, b =>
+            {
+                game.Audio.ForgetCameras();
+                host.StopCutsceneSounds();
+
+                // Mission 14 has no live terrain: its cameras see through the placed models alone.
+                b.WorldTrace = game.Setup.BuildCameras(
+                    b.LevelRoot,
+                    b.Scene ?? throw Missing(MissionSystemNames.Scene),
+                    b.Solids ?? throw Missing(MissionSystemNames.Scene),
+                    b.Loaded.Terrain is { IsUsable: true } terrain ? terrain : null);
+            }))
+            .InsertBefore(MissionSystemNames.LightBakes, new LevelSystem<MissionLevelBuild>(MissionSystemNames.NavGraphs, b =>
+            {
+                b.Graphs = game.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, host.GamePath);
+                host.EndStage("reading the nav graphs");
+            }))
+            .InsertBefore(MissionSystemNames.AlarmsView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.NavigationAi, b =>
+            {
+                if (b.Scene is null)
+                {
+                    throw Missing(MissionSystemNames.Scene);
+                }
+
+                if (!game.Setup.HasSoldiers)
+                {
+                    // A title without this game's soldiers has no brains to animate here.
+                    return;
+                }
+
+                Dictionary<int, GraphFile> graphs = b.Graphs ?? throw Missing(MissionSystemNames.NavGraphs);
+                game.Audio.ForgetSirens();
+                game.Setup.AnimateSoldiers(
+                    b.LevelRoot,
+                    b.Scene,
+                    b.WorldTrace ?? throw Missing(MissionSystemNames.Cameras),
+                    graphs,
+                    host.Difficulty,
+                    host.DifficultySource);
+            }))
+            .InsertAfter(MissionSystemNames.AlarmsView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.LevelWalk, b =>
+                game.Tick.AttachToLevelWalk(b.LevelRoot)));
+    }
+
+    // A step ran before the one it depends on.
+    private static InvalidOperationException Missing(string name) => new($"The mission system '{name}' has not run.");
+}

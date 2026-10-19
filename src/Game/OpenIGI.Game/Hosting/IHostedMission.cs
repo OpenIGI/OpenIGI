@@ -7,6 +7,7 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -47,6 +48,10 @@ public interface IHostedMission : IMissionGameplay
     /// <summary>Starts bringing up a level's player.</summary>
     /// <returns>The bring-up, whose rig is made by <see cref="IPlayerBringUp.Begin"/>.</returns>
     IPlayerBringUp NewPlayerSetup();
+
+    /// <summary>Sets the game's own steps in bringing a mission up among the host's, by the names in <see cref="MissionSystemNames"/>.</summary>
+    /// <param name="systems">The host's systems, a fresh list for the mission being brought up.</param>
+    void AddMissionSystems(LevelSystems<MissionLevelBuild> systems);
 }
 
 /// <summary>The mission's fixed tick, and what it keeps between ticks.</summary>

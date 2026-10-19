@@ -29,6 +29,15 @@ public interface IMissionSetupHost : IGuardRoundHost
     /// <summary>Gets the difficulty <c>LevelFlow</c> exports as <c>eDifficulty</c>, unclamped.</summary>
     int ScriptDifficulty { get; }
 
+    /// <summary>Gets the difficulty every guard reads its combat row at: the <c>-difficulty</c> override, or the active profile's.</summary>
+    AiDifficulty Difficulty { get; }
+
+    /// <summary>Gets where <see cref="Difficulty"/> came from, for the log.</summary>
+    string DifficultySource { get; }
+
+    /// <summary>Gets where the game is installed, which the nav graphs are read from.</summary>
+    string GamePath { get; }
+
     /// <summary>Gets a value indicating whether the level's cinematics play, or are broken as Escape breaks them.</summary>
     bool PlayCutscenes { get; }
 
