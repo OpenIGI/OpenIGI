@@ -33,9 +33,6 @@ internal static class Igi2WorldSystems
             {
                 camera.AiEvents = e => player.Ai?.SendEvent(e);
                 camera.IsAlarmSounding = levelAlarm is null ? null : () => levelAlarm.IsAlarm;
-                camera.Models = b.Models;
-                camera.Sounds = player.Sounds;
-                camera.Explosions = player.Explosions;
                 camera.Difficulty = player.Human.Difficulty;
                 camera.Prepare();
                 camera.Bind(detection, player.CollisionWorld.SolidsOf(Interaction.Igi2SecurityCameraTask.TypeName, camera.Id));

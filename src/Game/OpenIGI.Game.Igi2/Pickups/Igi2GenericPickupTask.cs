@@ -58,6 +58,7 @@ public sealed partial class Igi2GenericPickupTask : Igi2Task, IIgi2PlacedTask, I
     public bool IsDestroyed => !IsInWorld;
 
     /// <summary>Gets or sets the level's models, which its reach is taken from.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Gets or sets how it sounds, as the game's simple sounds play.</summary>

@@ -88,6 +88,7 @@ public sealed partial class Igi2FenceTask : Igi2Task, IIgi2PlacedTask, IIgi2Acti
     public IReadOnlyList<float> Frame => _frame;
 
     /// <summary>Gets or sets the level's models.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Gets or sets what a hum it makes is given: the sounds, the listener and the run stream.</summary>

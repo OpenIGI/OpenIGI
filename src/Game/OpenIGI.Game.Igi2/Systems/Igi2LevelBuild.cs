@@ -46,6 +46,15 @@ public sealed class Igi2LevelBuild : LevelBuild
         PlayerTask = playerTask ?? throw new ArgumentNullException(nameof(playerTask));
         Models = models ?? throw new ArgumentNullException(nameof(models));
         Magic = request.Services.TryGet(out World.Igi2MagicObjTypes? magic) ? magic : null;
+
+        // What every task of the level may be handed from the start (the Services system binds them).
+        LevelServices.Provide(models);
+        LevelServices.Provide(level);
+        LevelServices.Provide(player.Sounds);
+        if (player.Explosions is { } explosions)
+        {
+            LevelServices.Provide(explosions);
+        }
     }
 
     /// <summary>Gets the level and the session.</summary>

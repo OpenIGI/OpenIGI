@@ -58,7 +58,6 @@ internal static class Igi2FlowSystems
             () => level.Ticks);
         foreach (Audio.Igi2AmbientAreaTask area in b.Root.Descendants().OfType<Audio.Igi2AmbientAreaTask>())
         {
-            area.Audio = player.Sounds;
             area.Listener = b.Listener;
             area.Random = player.Human.Random;
             area.Prepare();
@@ -97,15 +96,6 @@ internal static class Igi2FlowSystems
         }
     }
 
-    /// <summary>Sound generators play through the level's sounds.</summary>
-    public static void SoundGenerators(Igi2LevelBuild b)
-    {
-        foreach (Igi2SoundGeneratorTask generator in b.Root.Descendants().OfType<Igi2SoundGeneratorTask>())
-        {
-            generator.Sounds = b.Player.Sounds;
-        }
-    }
-
     /// <summary>The areas that count humans and cars: the level's humans in <c>Human_ptQTaskList</c>'s order, its cars as made.</summary>
     public static void Areas(Igi2LevelBuild b)
     {
@@ -133,7 +123,6 @@ internal static class Igi2FlowSystems
         {
             message.Strings = strings;
             message.Screen = player.StatusMessages;
-            message.Sounds = player.Sounds;
             message.Listener = () => player.Human.View.Position;
             message.InitText();
         }

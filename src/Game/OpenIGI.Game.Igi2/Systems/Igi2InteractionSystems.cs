@@ -17,7 +17,6 @@ internal static class Igi2InteractionSystems
         Audio.Igi2CameraListener? listener = b.Listener;
         foreach (Igi2FenceTask fence in b.Root.Descendants().OfType<Igi2FenceTask>())
         {
-            fence.Models = b.Models;
             fence.EquipHum = hum =>
             {
                 hum.Audio = player.Sounds;
@@ -53,7 +52,6 @@ internal static class Igi2InteractionSystems
     {
         foreach (Igi2CabinetTask cabinet in b.Root.Descendants().OfType<Igi2CabinetTask>())
         {
-            cabinet.Models = b.Models;
             cabinet.Prepare(b.Magic);
             b.Activatables.Add(cabinet);
         }
@@ -64,8 +62,6 @@ internal static class Igi2InteractionSystems
     {
         foreach (Igi2WireTask wire in b.Root.Descendants().OfType<Igi2WireTask>())
         {
-            wire.Models = b.Models;
-            wire.Level = b.Level;
             wire.Prepare();
             b.Activatables.Add(wire);
         }
@@ -79,7 +75,6 @@ internal static class Igi2InteractionSystems
     {
         foreach (Igi2LadderTask ladder in b.Root.Descendants().OfType<Igi2LadderTask>())
         {
-            ladder.Models = b.Models;
             ladder.Sight = b.Sight;
             ladder.Prepare();
             b.Activatables.Add(ladder);
@@ -105,8 +100,6 @@ internal static class Igi2InteractionSystems
     {
         foreach (Igi2SwitchTask button in b.Root.Descendants().OfType<Igi2SwitchTask>())
         {
-            button.Models = b.Models;
-            button.Sounds = b.Player.Sounds;
             b.Activatables.Add(button);
         }
     }
@@ -116,9 +109,6 @@ internal static class Igi2InteractionSystems
     {
         foreach (Igi2LiftTask lift in b.Root.Descendants().OfType<Igi2LiftTask>())
         {
-            lift.Models = b.Models;
-            lift.Magic = b.Magic;
-            lift.Sounds = b.Player.Sounds;
             lift.Bind(b.Player.CollisionWorld.SolidsOf(Igi2LiftTask.TypeName, lift.Id));
             b.Movers.Add(lift);
         }
@@ -129,9 +119,6 @@ internal static class Igi2InteractionSystems
     {
         foreach (Igi2DoorTask door in b.Root.Descendants().OfType<Igi2DoorTask>())
         {
-            door.Models = b.Models;
-            door.Magic = b.Magic;
-            door.Sounds = b.Player.Sounds;
             door.Bind(b.Player.CollisionWorld.SolidsOf(Igi2DoorTask.TypeName, door.Id));
             b.Activatables.Add(door);
             b.Movers.Add(door);
@@ -194,7 +181,6 @@ internal static class Igi2InteractionSystems
         List<Pickups.Igi2GenericPickupTask> genericPickups = [];
         foreach (Pickups.Igi2GenericPickupTask pickup in b.Root.Descendants().OfType<Pickups.Igi2GenericPickupTask>())
         {
-            pickup.Models = b.Models;
             pickup.PlaySound = name => player.Human.Surroundings.PlaySound(name);
             genericPickups.Add(pickup);
             destructibles.Add(pickup);
@@ -236,7 +222,6 @@ internal static class Igi2InteractionSystems
         Dictionary<int, object> placed = b.PlacedById;
         foreach (Igi2MineFieldTask field in b.Root.Descendants().OfType<Igi2MineFieldTask>())
         {
-            field.Explosions = b.Player.Explosions;
             field.Collision = b.Player.CollisionWorld;
             field.TaskById = id => placed.GetValueOrDefault(id);
         }

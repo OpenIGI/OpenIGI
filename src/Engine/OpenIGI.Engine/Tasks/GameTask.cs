@@ -343,6 +343,16 @@ public abstract class GameTask
     /// <remarks>Overridden by the generated code; empty for a type that declares none.</remarks>
     protected virtual IReadOnlyList<TaskParameter> ScriptParameters => [];
 
+    /// <summary>Takes the level's services this task's <see cref="LevelServiceAttribute"/> properties ask for.</summary>
+    /// <param name="services">The level's services.</param>
+    /// <remarks>
+    /// Overridden by the code the <c>[LevelService]</c> source generator emits, which sets each attributed property the level
+    /// provides a service for and leaves the rest. An override calls the base first, so a derived type binds its base's too.
+    /// </remarks>
+    protected virtual void BindLevelServices(Titles.IServiceCatalog services)
+    {
+    }
+
     /// <inheritdoc/>
     public override string ToString() => _type is null ? GetType().Name : Name;
 
@@ -351,6 +361,8 @@ public abstract class GameTask
     internal IReadOnlyList<TaskParameter> GetDeclaredScriptParameters() => ScriptParameters;
 
     internal void InvokeBindScriptParameters(ScriptArgumentReader reader) => BindScriptParameters(reader);
+
+    internal void InvokeBindLevelServices(Titles.IServiceCatalog services) => BindLevelServices(services);
 
     internal void InvokeExportVars(ScriptVarRegistry variables) => OnExportVars(variables);
 

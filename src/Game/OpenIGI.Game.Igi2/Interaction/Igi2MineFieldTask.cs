@@ -87,6 +87,7 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
     public int Pause { get; private set; }
 
     /// <summary>Gets or sets the blasts it sets off.</summary>
+    [LevelService]
     public Igi2ExplosionWorld? Explosions { get; set; }
 
     /// <summary>Gets or sets the world its blasts are put on the ground of.</summary>

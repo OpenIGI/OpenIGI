@@ -163,12 +163,15 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
     public IReadOnlyList<float> AttachOrientation => _orientation;
 
     /// <summary>Gets or sets the level's models, which its solids' attachments are read from.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Gets or sets the magic object types its attachments were built through, which it moves them through.</summary>
+    [LevelService]
     public World.Igi2MagicObjTypes? Magic { get; set; }
 
     /// <summary>Gets or sets the level's sounds it sounds through, or <see langword="null"/> for none.</summary>
+    [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
     /// <summary>Takes the solids the collision world built of it, which it carries from now on.</summary>

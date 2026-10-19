@@ -15,6 +15,9 @@ namespace OpenIGI.Game.Igi2.Systems;
 /// </remarks>
 public static class Igi2LevelSystems
 {
+    /// <summary>The level's services handed to every task that declares them (<see cref="Engine.Tasks.LevelServiceAttribute"/>).</summary>
+    public const string Services = "Services";
+
     /// <summary>The flow, the menu and the player bound to its task.</summary>
     public const string Flow = "Flow";
 
@@ -23,9 +26,6 @@ public static class Igi2LevelSystems
 
     /// <summary>The map computer's tasks.</summary>
     public const string MapComputer = "MapComputer";
-
-    /// <summary>The sound generators.</summary>
-    public const string SoundGenerators = "SoundGenerators";
 
     /// <summary>The areas that count humans and cars.</summary>
     public const string Areas = "Areas";
@@ -141,10 +141,10 @@ public static class Igi2LevelSystems
     /// <summary>Makes the title's systems, in order.</summary>
     /// <returns>A fresh list, which the caller may edit.</returns>
     public static LevelSystems<Igi2LevelBuild> Create() => new LevelSystems<Igi2LevelBuild>()
+        .Add(System(Services, static b => b.BindTaskServices()))
         .Add(System(Flow, Igi2FlowSystems.Flow))
         .Add(System(Ambience, Igi2FlowSystems.Ambience))
         .Add(System(MapComputer, Igi2FlowSystems.MapComputer))
-        .Add(System(SoundGenerators, Igi2FlowSystems.SoundGenerators))
         .Add(System(Areas, Igi2FlowSystems.Areas))
         .Add(System(StatusMessages, Igi2FlowSystems.StatusMessages))
         .Add(System(LevelClock, Igi2FlowSystems.LevelClock))

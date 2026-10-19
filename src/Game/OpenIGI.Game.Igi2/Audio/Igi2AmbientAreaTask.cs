@@ -114,6 +114,7 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
     public int Delay => _delay;
 
     /// <summary>Gets or sets the sounds it plays through.</summary>
+    [LevelService]
     public Igi2Sounds? Audio { get; set; }
 
     /// <summary>Gets or sets where the game hears from.</summary>

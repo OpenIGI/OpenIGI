@@ -22,6 +22,7 @@ public abstract class LevelBuild
     {
         Run = run ?? throw new ArgumentNullException(nameof(run));
         Services = services ?? throw new ArgumentNullException(nameof(services));
+        LevelServices = new ScopedServiceCatalog(services);
     }
 
     /// <summary>Gets the level's run, which a system binds the tasks it drives to.</summary>
@@ -32,4 +33,14 @@ public abstract class LevelBuild
 
     /// <summary>Gets the session's services: the tables the content modules loaded, and what the title published.</summary>
     public IServiceCatalog Services { get; }
+
+    /// <summary>
+    /// Gets this level's own services, which read through to the session's: what the level's tasks are handed by their
+    /// <see cref="LevelServiceAttribute"/> properties. They go with the level.
+    /// </summary>
+    public ScopedServiceCatalog LevelServices { get; }
+
+    /// <summary>Hands every task of the level the services its <see cref="LevelServiceAttribute"/> properties ask for.</summary>
+    /// <remarks>A title runs this as its first system, after it has provided what its level knows from the start.</remarks>
+    public void BindTaskServices() => TaskServiceBinder.Bind(Root, LevelServices);
 }

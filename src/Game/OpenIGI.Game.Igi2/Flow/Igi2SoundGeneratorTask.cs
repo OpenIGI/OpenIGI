@@ -47,6 +47,7 @@ public sealed partial class Igi2SoundGeneratorTask : Igi2Task
     public bool IsPlaying => _isPlaying != 0;
 
     /// <summary>Gets or sets the level's sounds it plays through, or <see langword="null"/> for none.</summary>
+    [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
     /// <summary>Registers the two natives, which act on the generator their symbols' context names.</summary>

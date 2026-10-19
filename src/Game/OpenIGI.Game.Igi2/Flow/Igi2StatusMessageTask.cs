@@ -141,6 +141,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     public Igi2StatusMessageScreen? Screen { get; set; }
 
     /// <summary>Gets or sets the level's sounds.</summary>
+    [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
     /// <summary>Gets or sets where the listener is, which its sound plays at.</summary>

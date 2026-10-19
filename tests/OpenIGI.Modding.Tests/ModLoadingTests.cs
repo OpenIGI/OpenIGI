@@ -69,7 +69,7 @@ public sealed class ModLoadingTests : IDisposable
         Assert.True(natives.TryResolve("SampleMod_Answer", out _));
         Assert.True(services.TryGet(out LevelSystemEdits? edits));
         LevelSystems<Igi2LevelBuild> systems = edits.Apply(Igi2LevelSystems.Create());
-        Assert.Equal([Igi2LevelSystems.Flow, "SampleMod.Greeting", Igi2LevelSystems.Ambience], systems.Take(3).Select(static s => s.Name));
+        Assert.Equal([Igi2LevelSystems.Services, Igi2LevelSystems.Flow, "SampleMod.Greeting", Igi2LevelSystems.Ambience], systems.Take(4).Select(static s => s.Name));
     }
 
     [Fact]

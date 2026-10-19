@@ -240,12 +240,15 @@ public sealed partial class Igi2SecurityCameraTask
     public Igi2AiDetection? Detection => _lens.Detection;
 
     /// <summary>Gets or sets the level's models.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Gets or sets the level's sounds.</summary>
+    [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
     /// <summary>Gets or sets the explosions the destroyed lens goes off in.</summary>
+    [LevelService]
     public Igi2ExplosionWorld? Explosions { get; set; }
 
     /// <summary>Gets or sets the difficulty the detection clock is set by.</summary>

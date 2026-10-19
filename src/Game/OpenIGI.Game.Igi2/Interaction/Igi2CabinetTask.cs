@@ -99,6 +99,7 @@ public sealed partial class Igi2CabinetTask : Igi2Task, IIgi2PlacedTask, IIgi2Ac
     public IReadOnlyList<float> Frame => _frame;
 
     /// <summary>Gets or sets the level's models.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <inheritdoc/>

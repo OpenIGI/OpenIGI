@@ -130,9 +130,11 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
     };
 
     /// <summary>Gets or sets the level's models, which its magic vertex and its radius are read from.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Gets or sets the level's sounds a press sounds through, or <see langword="null"/> for none.</summary>
+    [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
     /// <inheritdoc/>

@@ -233,12 +233,15 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     public bool IsPickable => !(_isOpen != 0 && Slider > OpenEnough) && _isOpenDoor == 0 && _isClosed != 0 && Pickable;
 
     /// <summary>Gets or sets the level's models, which its magic vertex, its radius and its attachments are read from.</summary>
+    [LevelService]
     public Func<string, MefModel?>? Models { get; set; }
 
     /// <summary>Gets or sets the magic object types its attachments were built through, which it moves them through.</summary>
+    [LevelService]
     public World.Igi2MagicObjTypes? Magic { get; set; }
 
     /// <summary>Gets or sets the level's sounds it sounds through, or <see langword="null"/> for none.</summary>
+    [LevelService]
     public Igi2Sounds? Sounds { get; set; }
 
     /// <inheritdoc/>
