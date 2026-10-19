@@ -427,10 +427,9 @@ public sealed partial class GameHost : IDisposable
     private IMissionWorldView? _worldView;
     private IMissionViewpoint? _viewpoint;
 
-    // The over-the-shoulder camera's and the flashlight's wall cast, cached against the two references it is built from.
+    // The over-the-shoulder camera's and the flashlight's wall cast, cached against the collision it is built from.
     private DeathCameraVantage.Blocked? _thirdPersonWalls;
-    private ObjectCollisionIndex? _thirdPersonWallsSolids;
-    private TerrainData? _thirdPersonWallsTerrain;
+    private LevelCollision? _thirdPersonWallsCollision;
     private DebugOverlayRenderer? _debugOverlay;
     private IMapComputerPresenter? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
@@ -496,12 +495,6 @@ public sealed partial class GameHost : IDisposable
 
     // The vehicles' engine sets, gun reports and turret traverse (VehicleSoundPlayer).
     private VehicleSoundPlayer? _vehicleSounds;
-    private TerrainData? _playerTerrain;
-
-    // What the player's feet stand on, which is not always the terrain the rest of the level traces
-    // against. Project I.G.I. answers both with one octree and this is simply that; I.G.I. 2's ground is
-    // a height field its level declares and nothing can trace through yet, so the two part company.
-    private IGroundHeightField? _ground;
     private bool _playerMode;
 
     // --- Built once and re-registered into every title's namespace ---
@@ -1342,41 +1335,26 @@ public sealed partial class GameHost : IDisposable
     /// </remarks>
     private DeathCameraVantage.Blocked? ThirdPersonWalls()
     {
-        if (_mission.Solids is null && _playerTerrain is null)
+        LevelCollision collision = _mission.Collision;
+        if (collision.IsEmpty)
         {
             _thirdPersonWalls = null;
-            _thirdPersonWallsSolids = null;
-            _thirdPersonWallsTerrain = null;
+            _thirdPersonWallsCollision = null;
             return null;
         }
 
-        if (_thirdPersonWalls is not null
-            && ReferenceEquals(_thirdPersonWallsSolids, _mission.Solids)
-            && ReferenceEquals(_thirdPersonWallsTerrain, _playerTerrain))
+        if (_thirdPersonWalls is not null && ReferenceEquals(_thirdPersonWallsCollision, collision))
         {
             return _thirdPersonWalls;
         }
 
-        _thirdPersonWallsSolids = _mission.Solids;
-        _thirdPersonWallsTerrain = _playerTerrain;
-
-        WorldRayCast? cast = (_mission.Solids, _playerTerrain) switch
+        _thirdPersonWallsCollision = collision;
+        _thirdPersonWalls = (Vector3d from, Vector3d to, out Vector3d hit) =>
         {
-            ({ } solids, { } ground) => WorldTrace.AsRayCast(
-                WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))),
-            ({ } solids, null) => solids.Caster(),
-            (null, { } ground) => WorldTrace.AsRayCast(TerrainRayTrace.Caster(ground)),
-            _ => null,
+            bool blocked = collision.Cast(from, to, out WorldRayHit wall);
+            hit = blocked ? wall.Position : default;
+            return blocked;
         };
-
-        _thirdPersonWalls = cast is null
-            ? null
-            : (Vector3d from, Vector3d to, out Vector3d hit) =>
-            {
-                bool blocked = cast(from, to, out WorldRayHit wall);
-                hit = blocked ? wall.Position : default;
-                return blocked;
-            };
 
         return _thirdPersonWalls;
     }

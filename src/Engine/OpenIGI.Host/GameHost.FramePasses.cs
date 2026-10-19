@@ -813,7 +813,7 @@ public sealed partial class GameHost
             _playerMode = !_playerMode;
             if (_playerMode)
             {
-                if (!HostedPlayer.Place(_ground, _camera.Position, _camera.Yaw))
+                if (!HostedPlayer.Place(_mission.Ground, _camera.Position, _camera.Yaw))
                 {
                     _playerMode = false;
                     _logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");

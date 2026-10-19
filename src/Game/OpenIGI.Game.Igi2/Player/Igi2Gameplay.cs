@@ -626,7 +626,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2TerrainSurface? ground = built.Ground is Igi2Ground level ? level.Surface : null;
         Igi2Forest forests = Igi2Forest.Build(world.LevelRoot, world.Resources);
         World.Igi2MagicObjTypes? magic = world.Services is { } services && services.TryGet(out World.Igi2MagicObjTypes? table) ? table : null;
-        return Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner, forests, magic);
+        Igi2CollisionWorld collision = Igi2CollisionWorld.Build(scene, models, ground, TerrainOwner, forests, magic);
+        collision.Ground = built.Ground;
+        return collision;
     }
 
     /// <summary>Resolves a placed model name to its mesh through the mission's packs.</summary>

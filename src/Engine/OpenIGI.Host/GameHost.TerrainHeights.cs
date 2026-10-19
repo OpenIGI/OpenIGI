@@ -35,7 +35,7 @@ public sealed partial class GameHost
     private void StartTerrainRaster()
     {
         ReleaseTerrainRaster();
-        if (_playerTerrain is not { } terrain || _shelterField.IsEmpty)
+        if (_mission.Terrain is not { } terrain || _shelterField.IsEmpty)
         {
             return;
         }

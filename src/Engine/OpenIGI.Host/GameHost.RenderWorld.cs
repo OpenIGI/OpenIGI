@@ -2339,7 +2339,7 @@ public sealed partial class GameHost
                 smoothPresentation,
                 tickBlend,
                 FarPlane,
-                _playerTerrain,
+                _mission.Terrain,
                 _arms,
                 _heldWeapon,
                 _loadedMissionForWeapon)) ?? default;

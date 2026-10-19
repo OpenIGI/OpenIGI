@@ -179,7 +179,7 @@ public sealed partial class GameHost
     /// and camera were all built by <see cref="AdoptPreview"/> off the render thread — so the steps that
     /// would rebuild them are skipped and the rest runs exactly as it does for a cold start. The order of
     /// everything else is deliberately untouched between the two paths: the AI's ray cast closes over
-    /// <c>_playerTerrain</c>, the interactions have to exist before the brains are animated, and the
+    /// <c>_mission.Terrain</c>, the interactions have to exist before the brains are animated, and the
     /// weapon rosters have to load before <c>humanplayer.qvm</c> runs (weapons.md section 8).
     /// </param>
     private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
@@ -244,7 +244,7 @@ public sealed partial class GameHost
         //
         // Terrain stays optional: Mission 14 is entirely inside placed building and tunnel models, whose
         // collision floors are enough to walk on even though its terrain files are not live data.
-        _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
+        _mission.Terrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
 
         // The mission's sounds and its score. Both routes into a mission come through here -- a cold
         // start and a backdrop being promoted -- and only the cold one passes the mission loader, so
@@ -389,7 +389,7 @@ public sealed partial class GameHost
                 new WorldBuildRequest(loaded, levelRoot, _resources, _mission.MagicObjects, _logger, Services: _title.Services));
             scene = built.Scene;
             _scene = scene;
-            _ground = built.Ground;
+            _mission.Ground = built.Ground;
             _mission.Spins = built.Spins;
 
             if (built.UnresolvedCount > 0 || built.LightmappedCount > 0)
@@ -494,8 +494,8 @@ public sealed partial class GameHost
                 loaded,
                 levelRoot,
                 // The walk's ground when the title keeps one in the level, and the mission's terrain
-                // otherwise. _ground itself is not settled until the player is stood up below.
-                _ground ?? _playerTerrain,
+                // otherwise. _mission.Ground itself is not settled until the player is stood up below.
+                _mission.Ground ?? _mission.Terrain,
                 solids.Caster());
         }
 
@@ -630,7 +630,7 @@ public sealed partial class GameHost
             WorldRayCast bakeCast = (a, b, out blockedAt) =>
             {
                 bool hitObject = seeThroughObjectCast(a, b, out WorldRayHit onObject);
-                if (_playerTerrain is { } bakeGround
+                if (_mission.Terrain is { } bakeGround
                     && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
                     && (!hitObject || onGround.Distance < onObject.Distance))
                 {
@@ -884,9 +884,9 @@ public sealed partial class GameHost
 
         // The walk has already spoken for a title that keeps its ground in the level; for the one that
         // keeps it in the mission, the terrain IS the ground.
-        _ground ??= _playerTerrain;
+        _mission.Ground ??= _mission.Terrain;
         _mission.Trace = _mission.Solids is { } liveSolids
-            ? _playerTerrain is { } liveTerrain
+            ? _mission.Terrain is { } liveTerrain
                 ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
                 : liveSolids.Tracer()
             : null;
@@ -1064,7 +1064,7 @@ public sealed partial class GameHost
 
             // A level with neither a declared spawn nor an opening camera is simply not placed, which the
             // warning below already covers.
-            if (playerSetup.Stand(levelRoot, _ground, solids, _camera?.Position, _options.CameraYaw, out PlayerSpawnPoint spawn))
+            if (playerSetup.Stand(levelRoot, _mission.Ground, solids, _camera?.Position, _options.CameraYaw, out PlayerSpawnPoint spawn))
             {
                 IHostedPlayer candidate = playerSetup.Player;
 
@@ -1442,8 +1442,8 @@ public sealed partial class GameHost
         _titleArms = null;
         _playerMode = false;
         _scene = null;
-        _playerTerrain = null;
-        _ground = null;
+        _mission.Terrain = null;
+        _mission.Ground = null;
         _mission.ReleaseWorld();
         _loadedMissionForWeapon = null;
 
@@ -1737,7 +1737,7 @@ public sealed partial class GameHost
 
         public OpenIGI.Game.Config.PlayerProfile? InputProfile => host._configuration.Active;
 
-        public IGroundHeightField? Ground => host._ground;
+        public IGroundHeightField? Ground => host._mission.Ground;
 
         public bool IsInteractionViewActive => host.Viewpoint?.IsInteractionViewActive == true;
 
@@ -1765,7 +1765,7 @@ public sealed partial class GameHost
 
         public OpenIGI.Engine.Resources.ResourceRegistry Resources => host._resources;
 
-        public TerrainData? Terrain => host._playerTerrain;
+        public TerrainData? Terrain => host._mission.Terrain;
 
         public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
         {

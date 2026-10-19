@@ -54,7 +54,7 @@ public sealed record Igi2MagicPlacement(World.Igi2MagicObjType Type, Igi2Pose Po
 /// exactly the same distance a line keeps: a handler replaces a hit only when it is strictly nearer.
 /// </para>
 /// </remarks>
-public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
+public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, ICollisionWorld
 {
     /// <summary>The query-group bit that asks for the ground, <c>0x80000000</c>.</summary>
     public const uint TerrainGroup = 0x80000000;
@@ -171,6 +171,34 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery
 
     /// <summary>Gets the ground, or <see langword="null"/> for a level with none.</summary>
     public Igi2TerrainCollider? Terrain => _terrain;
+
+    /// <summary>Gets or sets the ground a body stands on, the level's height grid; <see langword="null"/> for none.</summary>
+    public IGroundHeightField? Ground { get; set; }
+
+    /// <summary>
+    /// Casts one line through every object and the ground, as <see cref="TraceLines"/> does, and reports what it met
+    /// nearest: the title-neutral question the other game's code asks.
+    /// </summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="target">Where it stops.</param>
+    /// <param name="hit">Receives the nearest surface; its material is the level material row the line went into.</param>
+    /// <returns><see langword="true"/> when the line met something before its end.</returns>
+    public bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit)
+    {
+        Igi2LineTrace trace = new(1);
+        trace.Starts[0] = origin;
+        trace.Ends[0] = target;
+        TraceLines(trace, EveryTypeGroup | TerrainGroup);
+        Igi2Intersection met = trace.Intersections[0];
+        if (!met.IsHit)
+        {
+            hit = default;
+            return false;
+        }
+
+        hit = new WorldRayHit(met.Position, met.Normal, met.Distance, met.EnterMaterial ?? 0);
+        return true;
+    }
 
     /// <summary>Builds the collision world for a level's placements and ground.</summary>
     /// <param name="scene">What the level places.</param>

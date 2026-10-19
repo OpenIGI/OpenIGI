@@ -153,7 +153,7 @@ public sealed partial class GameHost
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
         }
-        else if (HostedPlayer is { } player && player.Place(_ground, pose.Position, pose.Yaw))
+        else if (HostedPlayer is { } player && player.Place(_mission.Ground, pose.Position, pose.Yaw))
         {
             player.Body.Pitch = pose.Pitch;
             _playerMode = true;

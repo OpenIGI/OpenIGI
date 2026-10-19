@@ -28,7 +28,7 @@ public sealed partial class GameHost
 
         public ITerrainPresenter? Terrain => host._terrain;
 
-        public IGroundHeightField? Ground => host._ground;
+        public IGroundHeightField? Ground => host._mission.Ground;
 
         public ISoldierBodies? Soldiers => host._soldiers;
 

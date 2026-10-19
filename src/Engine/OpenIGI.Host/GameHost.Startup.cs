@@ -342,10 +342,10 @@ public sealed partial class GameHost
         _mission.AdoptSoldiers(null);
         _mission.SoldiersInWalk = false;
         _mission.PlayerInWalk = false;
-        _playerTerrain = null;
+        _mission.Terrain = null;
         _mission.EffectWalls = null;
         _effectTerrainRow = null;
-        _ground = null;
+        _mission.Ground = null;
 
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).

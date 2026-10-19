@@ -18,6 +18,8 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public class MissionState : IInspectableMission
 {
+    private LevelCollision _collision = LevelCollision.Empty;
+
     /// <summary>Gets or sets the doors.</summary>
     public DoorRegistry? Doors { get; set; }
 
@@ -89,6 +91,30 @@ public class MissionState : IInspectableMission
 
     /// <summary>Gets or sets the level's placed objects as the rays and the bodies collide with them.</summary>
     public ObjectCollisionIndex? Solids { get; set; }
+
+    /// <summary>Gets or sets the mission's terrain when it is live data to stand on and trace, or <see langword="null"/>.</summary>
+    /// <remarks>Mission 14 has none: it is entirely inside placed building and tunnel models, whose floors are walked on.</remarks>
+    public TerrainData? Terrain { get; set; }
+
+    /// <summary>Gets or sets the ground the player stands on: the walk's own when the game keeps one, else the terrain.</summary>
+    public IGroundHeightField? Ground { get; set; }
+
+    /// <summary>Gets the level's walls and ground as one collision: the placed objects and the terrain, the nearer answering.</summary>
+    /// <remarks>Made again only when one of the three it is built from changes, so it can be asked every frame.</remarks>
+    public LevelCollision Collision
+    {
+        get
+        {
+            if (!ReferenceEquals(_collision.Solids, Solids)
+                || !ReferenceEquals(_collision.Terrain, Terrain)
+                || !ReferenceEquals(_collision.Ground, Ground))
+            {
+                _collision = new LevelCollision(Solids, Terrain, Ground);
+            }
+
+            return _collision;
+        }
+    }
 
     /// <summary>Gets or sets the trace of the objects and the terrain together.</summary>
     public WorldTraceCast? Trace { get; set; }

@@ -64,6 +64,24 @@ public sealed class RetailIgi2TerrainLineTraceTests
         Assert.True(struck > 20, $"only {struck} slanted lines struck.");
     }
 
+    /// <summary>The title-neutral cast meets the ground where the game's own line trace does.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void The_neutral_cast_meets_the_ground_the_line_trace_meets()
+    {
+        Igi2TerrainSurface surface = Mission1.Value;
+        Igi2TerrainCollider collider = new(surface, "terrain");
+        Igi2CollisionWorld world = new([], collider);
+        Vector3d at = Points(surface).First();
+        Vector3d start = new(at.X, at.Y, at.Z + 8192.0), end = new(at.X, at.Y, at.Z - 8192.0);
+        Igi2LineTrace trace = Line(start, end);
+        collider.TraceLines(trace);
+
+        Assert.True(world.Cast(start, end, out Game.World.WorldRayHit hit));
+        Assert.Equal(trace.Intersections[0].Position, hit.Position);
+        Assert.Equal(trace.Intersections[0].Distance, hit.Distance);
+        Assert.False(world.Cast(start, new Vector3d(at.X, at.Y, at.Z + 4096.0), out _));
+    }
+
     /// <summary>A line that stays well above the ground strikes nothing.</summary>
     [RequiresTitleDataFact("igi2")]
     public void A_line_above_the_ground_misses()
