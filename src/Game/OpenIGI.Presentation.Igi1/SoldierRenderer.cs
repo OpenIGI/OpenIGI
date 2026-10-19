@@ -69,7 +69,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     private readonly HashSet<int> _reportedStationaryVisuals = [];
 
     // The sound 0x45D3C0 adds to a soldier's grunt when a knife made the hit.
-    private const string KnifeStabSound = "stab_01";
 
     private bool _disposed;
 
@@ -97,7 +96,11 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
-    public Action<object, Vector3d, Vector3f>? BloodSpray { get; set; }
+    public Action<object, Vector3d, Vector3f>? BloodSpray
+    {
+        get => _sim.BloodSpray;
+        set => _sim.BloodSpray = value;
+    }
 
     /// <inheritdoc/>
     public bool IsPlayerBodyActive => _playerBody.IsActive;
@@ -1611,67 +1614,14 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         // TAKINGDAMAGE path while nearby guards get GUNSHOTMISS.
         _sim.NotifyGunshotMiss(origin, rayEnd, struckView, origin);
 
-        if (struck is null)
+        if (struck is null || struckView is null)
         {
             return false;
         }
 
-        // 0x45F94A, before anything else the damage handler does.
-        if (BloodSpray is { } bleed)
-        {
-            Vector3d line = rayEnd - origin;
-            double length = line.Length;
-            bleed(
-                (object?)struckView ?? struck,
-                hit.Position,
-                length > 1e-6
-                    ? new Vector3f(
-                        (float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length))
-                    : default);
-        }
-
-        // The soldier's brain carries two flags the damage handler 0x45D3C0 reads: invulnerability skips
-        // the whole damage block (the round still MEETS the body, it just does nothing), and instant-death
-        // being disabled makes a head/neck hit take the plain damage factor rather than the ×100 lethal
-        // multiplier. Both default off, so an ordinary guard is unaffected.
-        AiSoldier? brain = struckView is not null && _sim.Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
-
-        // Friendly fire: the player's round cannot hurt a soldier on the player's own team. Retail disables
-        // same-team damage (the round still meets the body and the hit registers, but it does nothing), so
-        // a friendly stands where the round landed without a scratch. Same mechanism as invulnerability:
-        // the whole damage block is skipped, and the death branch never runs.
-        bool friendlyFire = struckView is not null && struckView.Soldier.Team == _sim.PlayerTeam;
-        bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
-        if (!invulnerable)
-        {
-            float dealt = struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
-            brain?.ReceiveDamage(origin);
-
-            if (struck.IsDead && struckView is not null)
-            {
-                _sim.Die(struckView, hit, origin, rayEnd, category, SoldierDeath.ModeFor(category));
-            }
-            else if (struckView is not null)
-            {
-                _sim.ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
-
-                // 0x45D3C0 adds the blade's own sound to the grunt when the weapon's category is the knife.
-                if (category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
-                {
-                    _sim.ScriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
-                }
-            }
-        }
-
-        // Deliberately the same shape as the probe's [dmg] line from the retail game (probes.cpp
-        // OnDamageHandler), so a run of the port and a capture of the original diff directly. The port
-        // resolves the zone from the pose (HumanHitTest.NearestBone) where the engine reads a part index
-        // the bullet physics recorded, so a zone that disagrees for the same shot is the one to chase.
-        _logger.Information(LogCategory + ".Damage",
-            $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
-            + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
-            + $"friendly={(friendlyFire ? 1 : 0)} accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
-
+        // The shot's WeaponHit to the soldier struck (0x47BA54); its own handler bleeds it, hurts it and logs the hit.
+        struckView.Soldier.WeaponHit(
+            new Igi1WeaponHit(hit, origin, rayEnd, damageFactor, category, Shooter: null, FromPlayer: true).ToShared());
         return true;
     }
 

@@ -31,9 +31,15 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// soldiers are walked through <see cref="Roster"/>, group by group in the order the level made them, which is the
 /// order their brains tick in.
 /// </remarks>
-public sealed class SoldierSimulation
+public sealed class SoldierSimulation : IHumanSoldierEvents
 {
     private const string LogCategory = "Soldier";
+
+    // The blade's own sound, which 0x45D3C0 adds to the grunt when a knife lands.
+    private const string KnifeStabSound = "stab_01";
+
+    // Each soldier's view by its task, for the hit events the task receives.
+    private readonly Dictionary<HumanSoldierTask, SoldierView> _viewsByTask = [];
 
     private readonly IOpenIgiLogger _logger;
 
@@ -2034,6 +2040,7 @@ public sealed class SoldierSimulation
 
                 Brains[view] = brain;
                 BrainsByRuntimeId[brain.RuntimeId] = brain;
+                TakeEvents(view);
                 index++;
             }
         }
@@ -3855,33 +3862,10 @@ public sealed class SoldierSimulation
             }
 
             hit = candidate;
-            AiSoldier? brain = Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
 
-            // Scripted invulnerability makes the round MEET the body but do nothing -- exactly like the
-            // player's TryShoot. The round is still consumed: an invulnerable body is a physical obstacle.
-            bool invulnerable = brain?.IsInvulnerable ?? false;
-            if (!invulnerable)
-            {
-                float dealt = health.Apply(candidate.Zone, weapon.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
-
-                if (health.IsDead)
-                {
-                    Die(struckView, candidate, origin, end, weapon.Category, SoldierDeath.ModeFor(weapon.Category));
-                }
-                else
-                {
-                    brain?.ReceiveDamage(origin, shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
-                    ReactToHit(struckView, brain, candidate.Zone, dealt, explosion: false);
-                }
-            }
-
-            _logger.Information(
-                LogCategory + ".Damage",
-                $"port zone={candidate.Zone} ({HumanDamage.ZoneName(candidate.Zone)}) bone={candidate.Bone} "
-                    + $"dmgFactor={weapon.DamageFactor:0.000} invuln={(invulnerable ? 1 : 0)} "
-                    + $"instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
-                    + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "
-                    + $"dead={(health.IsDead ? 1 : 0)}");
+            // The shot's WeaponHit to the struck soldier (0x47BA54), which its own handler takes.
+            struckView.Soldier.WeaponHit(
+                new Igi1WeaponHit(candidate, origin, end, weapon.DamageFactor, weapon.Category, shooter, FromPlayer: false).ToShared());
             PassedBy(candidate.Position, struckView);
             return true;
         }
@@ -3914,59 +3898,206 @@ public sealed class SoldierSimulation
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        // Every soldier on the explosion list is told (0x45A3D0 is HumanSoldier's ExplosionHit); each decides for itself.
+        ExplosionHit blast = new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor).ToShared();
         foreach (SoldierModelGroup group in Roster)
         {
             foreach (SoldierAgent member in group.Agents)
             {
-                SoldierView soldier = member.View;
-                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
-                {
-                    continue;
-                }
-                HumanHealth health = HealthOf(soldier);
+                member.View.Soldier.ExplosionHit(blast);
+            }
+        }
+    }
 
-                if (health.IsDead)
-                {
-                    continue;
-                }
+    /// <summary>Gets or sets where a wounded body's blood is thrown: the body, where the round entered, and its direction.</summary>
+    public Action<object, Vector3d, Vector3f>? BloodSpray { get; set; }
 
-                Vector3d feet = soldier.Position;
-                double distance = Math.Sqrt(
-                    ((feet.X - position.X) * (feet.X - position.X))
-                    + ((feet.Y - position.Y) * (feet.Y - position.Y))
-                    + ((feet.Z - position.Z) * (feet.Z - position.Z)));
+    /// <inheritdoc/>
+    /// <remarks>Every bullet may strike a soldier here yet: the shots still choose their bodies themselves.</remarks>
+    bool IHumanSoldierEvents.EvaluateWeaponCollision(HumanSoldierTask soldier, in WeaponCollisionQuery query) => true;
 
-                float dose = ExplosionDamage.Dose(
-                    (float)distance,
-                    ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                    radiusUnits,
-                    falloffUnits,
-                    damageFactor);
-                if (dose <= 0f)
-                {
-                    continue;
-                }
+    /// <inheritdoc/>
+    void IHumanSoldierEvents.WeaponHit(HumanSoldierTask soldier, in WeaponHit hit)
+    {
+        if (hit.Context is not Igi1WeaponHit round || !_viewsByTask.TryGetValue(soldier, out SoldierView? view))
+        {
+            return;
+        }
 
-                AiSoldier? brain = Brains.TryGetValue(soldier, out AiSoldier? b) ? b : null;
-                if (brain?.IsInvulnerable ?? false)
-                {
-                    continue;
-                }
+        if (round.FromPlayer)
+        {
+            TakePlayerRound(view, round);
+        }
+        else
+        {
+            TakeGuardRound(view, round);
+        }
+    }
 
-                float dealt = health.Apply(ExplosionDamage.Zone, dose, brain?.IsInstantDeathDisabled ?? false);
-                brain?.ReceiveDamage(position);
+    /// <inheritdoc/>
+    void IHumanSoldierEvents.ExplosionHit(HumanSoldierTask soldier, in ExplosionHit hit)
+    {
+        if (hit.Context is not Igi1ExplosionHit blast || !_viewsByTask.TryGetValue(soldier, out SoldierView? view))
+        {
+            return;
+        }
 
-                if (health.IsDead)
+        TakeExplosion(view, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+    }
+
+    // Gives a soldier's task this simulation's handlers for its hit events.
+    private void TakeEvents(SoldierView view)
+    {
+        _viewsByTask[view.Soldier] = view;
+        view.Soldier.Events = this;
+    }
+
+    // The player's round or blade on a soldier the shot chose.
+    private void TakePlayerRound(SoldierView struckView, Igi1WeaponHit round)
+    {
+        HumanHealth struck = HealthOf(struckView);
+        HumanHit hit = round.Hit;
+        Vector3d origin = round.Origin;
+        Vector3d rayEnd = round.End;
+        float damageFactor = round.DamageFactor;
+        WeaponCategory category = round.Category;
+
+        // 0x45F94A, before anything else the damage handler does.
+        if (BloodSpray is { } bleed)
+        {
+            Vector3d line = rayEnd - origin;
+            double length = line.Length;
+            bleed(
+                struckView,
+                hit.Position,
+                length > 1e-6
+                    ? new Vector3f(
+                        (float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length))
+                    : default);
+        }
+
+        // The soldier's brain carries two flags the damage handler 0x45D3C0 reads: invulnerability skips
+        // the whole damage block (the round still MEETS the body, it just does nothing), and instant-death
+        // being disabled makes a head/neck hit take the plain damage factor rather than the x100 lethal
+        // multiplier. Both default off, so an ordinary guard is unaffected.
+        AiSoldier? brain = Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
+
+        // Friendly fire: the player's round cannot hurt a soldier on the player's own team. The round
+        // still meets the body and the hit registers, but it does nothing.
+        bool friendlyFire = struckView.Soldier.Team == PlayerTeam;
+        bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
+        if (!invulnerable)
+        {
+            float dealt = struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            brain?.ReceiveDamage(origin);
+
+            if (struck.IsDead)
+            {
+                Die(struckView, hit, origin, rayEnd, category, SoldierDeath.ModeFor(category));
+            }
+            else
+            {
+                ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
+
+                // 0x45D3C0 adds the blade's own sound to the grunt when the weapon's category is the knife.
+                if (category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
                 {
-                    // 0x45A3D0 records death mode 0 for a blast: the body is thrown, turned to it.
-                    HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
-                    Die(soldier, hit, position, feet, WeaponCategory.Grenade, SoldierDeathMode.Untouched);
-                }
-                else
-                {
-                    ReactToHit(soldier, brain, ExplosionDamage.Zone, dealt, explosion: true);
+                    ScriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
                 }
             }
+        }
+
+        // Deliberately the same shape as the probe's [dmg] line from the retail game (probes.cpp
+        // OnDamageHandler), so a run of the port and a capture of the original diff directly.
+        _logger.Information(LogCategory + ".Damage",
+            $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
+            + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
+            + $"friendly={(friendlyFire ? 1 : 0)} accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
+    }
+
+    // A guard's round on a soldier its cast chose.
+    private void TakeGuardRound(SoldierView struckView, Igi1WeaponHit round)
+    {
+        HumanHealth health = HealthOf(struckView);
+        HumanHit candidate = round.Hit;
+        AiSoldier? brain = Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
+
+        // Scripted invulnerability makes the round MEET the body but do nothing. The round is still consumed:
+        // an invulnerable body is a physical obstacle.
+        bool invulnerable = brain?.IsInvulnerable ?? false;
+        if (!invulnerable)
+        {
+            float dealt = health.Apply(candidate.Zone, round.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
+
+            if (health.IsDead)
+            {
+                Die(struckView, candidate, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category));
+            }
+            else
+            {
+                brain?.ReceiveDamage(round.Origin, round.Shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
+                ReactToHit(struckView, brain, candidate.Zone, dealt, explosion: false);
+            }
+        }
+
+        _logger.Information(
+            LogCategory + ".Damage",
+            $"port zone={candidate.Zone} ({HumanDamage.ZoneName(candidate.Zone)}) bone={candidate.Bone} "
+                + $"dmgFactor={round.DamageFactor:0.000} invuln={(invulnerable ? 1 : 0)} "
+                + $"instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
+                + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "
+                + $"dead={(health.IsDead ? 1 : 0)}");
+    }
+
+    // One blast on one soldier.
+    private void TakeExplosion(SoldierView soldier, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor)
+    {
+        if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
+        {
+            return;
+        }
+        HumanHealth health = HealthOf(soldier);
+
+        if (health.IsDead)
+        {
+            return;
+        }
+
+        Vector3d feet = soldier.Position;
+        double distance = Math.Sqrt(
+            ((feet.X - position.X) * (feet.X - position.X))
+            + ((feet.Y - position.Y) * (feet.Y - position.Y))
+            + ((feet.Z - position.Z) * (feet.Z - position.Z)));
+
+        float dose = ExplosionDamage.Dose(
+            (float)distance,
+            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+            radiusUnits,
+            falloffUnits,
+            damageFactor);
+        if (dose <= 0f)
+        {
+            return;
+        }
+
+        AiSoldier? brain = Brains.TryGetValue(soldier, out AiSoldier? b) ? b : null;
+        if (brain?.IsInvulnerable ?? false)
+        {
+            return;
+        }
+
+        float dealt = health.Apply(ExplosionDamage.Zone, dose, brain?.IsInstantDeathDisabled ?? false);
+        brain?.ReceiveDamage(position);
+
+        if (health.IsDead)
+        {
+            // 0x45A3D0 records death mode 0 for a blast: the body is thrown, turned to it.
+            HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
+            Die(soldier, hit, position, feet, WeaponCategory.Grenade, SoldierDeathMode.Untouched);
+        }
+        else
+        {
+            ReactToHit(soldier, brain, ExplosionDamage.Zone, dealt, explosion: true);
         }
     }
 
@@ -4036,6 +4167,7 @@ public sealed class SoldierSimulation
         freshBrain.SetDefaultTarget(PlayerTarget);
         Brains[freshView] = freshBrain;
         BrainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
+        TakeEvents(freshView);
 
         _logger.Information(
             LogCategory,

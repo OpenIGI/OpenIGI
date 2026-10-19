@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Player;
 
@@ -115,8 +116,14 @@ public partial class HumanPlayerTask : HumanTask
 /// different data. <see cref="HumanSoldierFemaleTask"/> and <see cref="HumanSoldierRpgTask"/> carry that
 /// data as their <see cref="Class"/>.
 /// </para>
+/// <para>
+/// <b>It takes the engine's hit events itself</b>, as every type the shot or a blast can strike does: <c>0x45CAB0</c> links
+/// <c>WeaponHit</c> to <c>0x45D3C0</c> and <c>ExplosionHit</c> to <c>0x45A3D0</c>, and <c>Human</c> its
+/// <c>WeaponCollisionEvaluate</c> (<c>0x45E3E0</c>). What those handlers read -- the health, the brain -- the game keeps, so
+/// the game gives its soldiers their <see cref="Events"/>.
+/// </para>
 /// </remarks>
-public partial class HumanSoldierTask : HumanTask
+public partial class HumanSoldierTask : HumanTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget
 {
     /// <summary>Initializes an ordinary soldier with its constructor's defaults.</summary>
     public HumanSoldierTask()
@@ -161,6 +168,38 @@ public partial class HumanSoldierTask : HumanTask
     /// <summary>Gets or sets the animation the soldier stands in.</summary>
     [ScriptParam(ScriptParamType.Int32, "Stand Animation")]
     public int StandAnimation { get; set; }
+
+    /// <summary>Gets or sets the handlers the soldier's game gives its hit events; <see langword="null"/> takes every bullet and does nothing.</summary>
+    public IHumanSoldierEvents? Events { get; set; }
+
+    /// <inheritdoc/>
+    public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Events?.EvaluateWeaponCollision(this, query) ?? true;
+
+    /// <inheritdoc/>
+    public void WeaponHit(in WeaponHit hit) => Events?.WeaponHit(this, hit);
+
+    /// <inheritdoc/>
+    public void ExplosionHit(in ExplosionHit hit) => Events?.ExplosionHit(this, hit);
+}
+
+/// <summary>The handlers a game gives its soldiers' engine events, as the soldier's type links them.</summary>
+public interface IHumanSoldierEvents
+{
+    /// <summary>Answers whether a bullet may strike the soldier: <c>WeaponCollisionEvaluate</c>.</summary>
+    /// <param name="soldier">The soldier asked.</param>
+    /// <param name="query">The trace's context.</param>
+    /// <returns>Whether it may.</returns>
+    bool EvaluateWeaponCollision(HumanSoldierTask soldier, in WeaponCollisionQuery query);
+
+    /// <summary>A round or a blade struck the soldier: <c>WeaponHit</c>.</summary>
+    /// <param name="soldier">The soldier struck.</param>
+    /// <param name="hit">The hit.</param>
+    void WeaponHit(HumanSoldierTask soldier, in WeaponHit hit);
+
+    /// <summary>A blast reached the soldier: <c>ExplosionHit</c>.</summary>
+    /// <param name="soldier">The soldier reached.</param>
+    /// <param name="hit">The blast.</param>
+    void ExplosionHit(HumanSoldierTask soldier, in ExplosionHit hit);
 }
 
 /// <summary>A female soldier — the original's <c>HumanSoldierFemale</c>, registered at <c>0x454970</c>.</summary>
