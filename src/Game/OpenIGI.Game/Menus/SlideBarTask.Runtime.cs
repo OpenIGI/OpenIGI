@@ -1,5 +1,5 @@
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The slider's per-tick behaviour and its value model.

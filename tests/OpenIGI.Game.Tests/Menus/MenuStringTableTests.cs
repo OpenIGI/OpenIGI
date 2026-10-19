@@ -4,7 +4,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

@@ -1,5 +1,5 @@
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The horizontal spinner: an arrow at each end and one item's label between them.

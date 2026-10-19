@@ -3,7 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

@@ -1,6 +1,6 @@
 using OpenIGI.Engine.Tasks;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The base every menu type derives from: a rectangle, a line-up rule and the arrange pass that

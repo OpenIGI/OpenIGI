@@ -4,7 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// Loads a menu script and exposes the task tree it builds.

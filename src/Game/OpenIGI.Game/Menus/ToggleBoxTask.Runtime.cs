@@ -1,5 +1,5 @@
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The two-state switch's per-tick behaviour.

@@ -1,6 +1,6 @@
 using OpenIGI.Core.Graphics;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The pointer state a menu hit-test reads: a position in authored coordinates and three button

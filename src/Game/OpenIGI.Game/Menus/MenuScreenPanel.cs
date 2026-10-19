@@ -1,5 +1,5 @@
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The green panel a screen frames its contents with, and the way it opens as the screen appears.

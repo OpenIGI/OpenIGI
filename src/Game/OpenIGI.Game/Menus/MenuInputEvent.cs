@@ -1,5 +1,5 @@
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The abstract input codes the menu consumes, as the original numbers them.

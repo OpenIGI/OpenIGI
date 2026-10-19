@@ -4,7 +4,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The namespace a menu action expression is evaluated against: the manager's nine natives, plus

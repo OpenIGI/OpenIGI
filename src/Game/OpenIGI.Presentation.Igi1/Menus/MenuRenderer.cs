@@ -5,7 +5,7 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Rendering;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Presentation.Igi1.Menus;
 

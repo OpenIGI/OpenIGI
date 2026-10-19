@@ -1,7 +1,7 @@
 ﻿using System.Globalization;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Config;

@@ -1,6 +1,6 @@
 using OpenIGI.Engine.Tasks;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>The manager that owns the menu screen stack.</summary>
 /// <remarks>

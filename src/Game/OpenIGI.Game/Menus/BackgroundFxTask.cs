@@ -1,6 +1,6 @@
 using OpenIGI.Engine.Tasks;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The slow green vector overlay that turns behind every menu screen.

@@ -1,6 +1,6 @@
 using OpenIGI.Core.Graphics;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The presentation rules the menu types share: where an item lands on screen, and what colour it draws in.

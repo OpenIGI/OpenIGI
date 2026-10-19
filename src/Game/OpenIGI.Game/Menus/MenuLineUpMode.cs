@@ -1,5 +1,5 @@
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// How a menu window arranges its children, as the <c>LINEUPMODE_*</c> script constants number it.

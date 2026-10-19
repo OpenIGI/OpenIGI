@@ -1,7 +1,7 @@
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Igi1.Config;
 
@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.Config;
 /// and a profile name as a string, and neither would survive the integer walk.
 /// </para>
 /// </remarks>
-public sealed class ConfigNatives
+public sealed class ConfigNatives : IMenuConfiguration
 {
     private readonly GameConfig _config;
     private readonly IConfigHost _host;

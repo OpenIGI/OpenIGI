@@ -3,9 +3,8 @@ using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Expressions;
-using OpenIGI.Game.Igi1.Config;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// The manager's per-tick behaviour: input, selection, navigation and drawing.
@@ -35,7 +34,7 @@ public partial class MenuManagerTask
     private readonly HashSet<string> _unknownNatives = new(StringComparer.Ordinal);
     private ScriptExpressionEvaluator? _evaluator;
     private MenuScreenTask? _current;
-    private ConfigNatives? _configuration;
+    private IMenuConfiguration? _configuration;
     private IOpenIgiLogger _logger = NullLogger.Instance;
 
     /// <summary>Gets the screen stack and fade this manager drives.</summary>
@@ -223,7 +222,7 @@ public partial class MenuManagerTask
     /// Wired in as the script context's fallback, so a <c>Config_*</c> name the menu evaluates reaches
     /// the real settings. Without one every configuration screen reads zero.
     /// </remarks>
-    public ConfigNatives? Configuration
+    public IMenuConfiguration? Configuration
     {
         get => _configuration;
         set

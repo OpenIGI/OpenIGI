@@ -8,7 +8,7 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;

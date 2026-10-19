@@ -5,7 +5,7 @@ using OpenIGI.Formats;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Presentation.Igi1.Menus;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Lighting;

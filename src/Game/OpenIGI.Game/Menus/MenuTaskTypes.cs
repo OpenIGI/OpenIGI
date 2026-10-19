@@ -1,7 +1,7 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Runtime;
 
-namespace OpenIGI.Game.Igi1.Menus;
+namespace OpenIGI.Game.Menus;
 
 /// <summary>
 /// Registers the menu task types and the constants their scripts name.

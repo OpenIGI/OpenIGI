@@ -4,7 +4,7 @@ using OpenIGI.Engine.Audio;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Presentation.Igi1.Menus;
 
