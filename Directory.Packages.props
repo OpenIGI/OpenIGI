@@ -38,6 +38,7 @@
 
   <ItemGroup Label="Source generators">
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
   </ItemGroup>
 
   <ItemGroup Label="User interface">
