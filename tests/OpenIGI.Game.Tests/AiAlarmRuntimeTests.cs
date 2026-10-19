@@ -49,6 +49,52 @@ public sealed class AiAlarmRuntimeTests
         Assert.Equal(7, Read(variables, "AlarmControl_98.nTriggerLastTick").Integer);
     }
 
+    /// <summary>
+    /// AlarmControl is a Terminal: its update (0x4408A0) raises nothing while the terminal's isOn is off or the panel has
+    /// exploded. Missions 5 and 7 power their alarms from Generator_99.isOn, and mission 9 from !Terminal_94.isHacked.
+    /// </summary>
+    [Theory]
+    [InlineData("TRUE", false, true)]
+    [InlineData("FALSE", false, false)]
+    [InlineData("TRUE", true, false)]
+    [InlineData("", false, true)]
+    public void A_control_whose_terminal_is_off_or_exploded_raises_nothing(string onExpression, bool exploded, bool raises)
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AlarmControl"),
+                QvmExpression.Text("Trigger Expression"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Alarm Expression"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("On Expression"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(98),
+                QvmExpression.Text("AlarmControl"),
+                QvmExpression.Text("Main Alarm"),
+                QvmExpression.Text("TRUE"),
+                QvmExpression.Text("TRUE"),
+                QvmExpression.Text(onExpression))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+        GameTask control = tree.Root.Descendants().First(static task => task.Id == 98);
+        variables.BindBool(control, "isExploded", () => exploded, _ => { });
+
+        AiAlarmControlRegistry alarms = AiAlarmControlRegistry.Build(tree.Root, variables);
+        alarms.Tick(7);
+
+        Assert.Equal(raises, alarms.IsOn(98));
+        Assert.Equal(raises ? 1 : 0, Read(variables, "AlarmControl_98.isTrigger").Integer);
+    }
+
     [Fact]
     public void AlarmStatusIsIndependentOfTheSoldiersAlertLatch()
     {

@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Ai;
 
@@ -17,7 +18,9 @@ public sealed class AiAlarmControlRegistry
         DeclaredTask Task,
         AiAlarmControlState State,
         string TriggerExpression,
-        string AlarmExpression);
+        string AlarmExpression,
+        string OnExpression,
+        Func<bool> IsExploded);
 
     private readonly Dictionary<int, Entry> _controls = [];
     private readonly LevelExpressionRuntime _expressions;
@@ -72,13 +75,19 @@ public sealed class AiAlarmControlRegistry
 
     private void Tick(Entry entry, int tick)
     {
+        // AlarmControl is a Terminal (0x440710 registers it under word_53C680), and its update (0x4408A0) runs the
+        // terminal's first: isOn (+576) is the On expression -- or stays on when there is none -- and is forced off
+        // once the panel has exploded (+400). Exploded or off, the control raises nothing: Generator_99.isOn powers
+        // the alarms of missions 5 and 7, and !Terminal_94.isHacked those of mission 9.
+        bool exploded = entry.IsExploded();
+        bool on = !exploded && _expressions.EvaluateCondition(entry.OnExpression, emptyValue: true, entry.Task);
         bool? trigger = string.IsNullOrWhiteSpace(entry.TriggerExpression)
             ? null
             : _expressions.EvaluateCondition(entry.TriggerExpression, emptyValue: false, entry.Task);
         entry.State.UpdateWithAlarmExpression(
             tick,
-            disabled: false,
-            enabled: true,
+            disabled: exploded,
+            enabled: on,
             trigger,
             () => string.IsNullOrWhiteSpace(entry.AlarmExpression)
                 ? null
@@ -125,11 +134,14 @@ public sealed class AiAlarmControlRegistry
             && task.Type.Name == "AlarmControl")
         {
             AiAlarmControlState state = new();
+            string explodedSymbol = $"{declared.Name}.isExploded";
             Entry entry = new(
                 declared,
                 state,
                 ReadString(declared, "Trigger Expression"),
-                ReadString(declared, "Alarm Expression"));
+                ReadString(declared, "Alarm Expression"),
+                ReadString(declared, "On Expression"),
+                () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls[task.Id] = entry;
 
             // AlarmControl_RegisterScriptSymbolsHandler exports exactly these three names. They are
