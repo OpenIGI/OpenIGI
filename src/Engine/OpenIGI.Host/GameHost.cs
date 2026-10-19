@@ -516,11 +516,14 @@ public sealed partial class GameHost : IDisposable
     private bool _playerMode;
 
     // --- Built once and re-registered into every title's namespace ---
-    // Locals until the shell could change games. All three outlive a title: the config host and the menu
-    // host are the seams the menus act through, and the mission state is a native the level scripts call.
+    // Locals until the shell could change games. All four outlive a title: the display and the menu host
+    // are the seams the menus act through, and the mission state is a native the level scripts call.
     // A switch builds a new GameLoop, and each of them has to be registered into it -- which is why they
     // are here rather than in Run's own scope.
-    private HostConfigHost _configHost = null!;
+    private RetailMenuDisplay _menuDisplay = null!;
+
+    // The missions the retail menus list: the title's table once its scan has succeeded.
+    private IMissionCatalogue<MissionDescriptor>? _menuMissions;
     private HostFlowHost _flowHost = null!;
     private GameMissionState _missionState = null!;
 
@@ -531,7 +534,7 @@ public sealed partial class GameHost : IDisposable
 
     // --- The menus and the cinematic shell ---
     // The retail menu system's shell, while the -vanilla menus are up.
-    private IRetailMenuPresenter? _retailMenus;
+    private IRetailMenus? _retailMenus;
     private MenuShowcaseCamera? _showcaseCamera;
     private MenuCameraLibrary _menuCameras = MenuCameraLibrary.Empty;
 
@@ -769,9 +772,10 @@ public sealed partial class GameHost : IDisposable
         // exists. Nothing here ever writes into the original installation.
         _configuration = HostConfiguration.Load(_fileSystem, _logger);
         RestoreTitleInputBindings();
-        _configHost = new HostConfigHost(_device, _window)
-        {
-            ApplyResolution = (w, h) =>
+        _menuDisplay = new RetailMenuDisplay(
+            () => _device.Capabilities.Renderer,
+            () => _window.GetDisplayModes().Select(mode => (mode.Width, mode.Height)),
+            (w, h) =>
             {
                 if (_window.Mode == WindowMode.BorderlessFullscreen)
                 {
@@ -784,13 +788,9 @@ public sealed partial class GameHost : IDisposable
 
                 _window.Resize(w, h);
                 _logger.Information("Config", $"Resolution set to {w}x{h}.");
-            },
-        };
-
-        ConfigNatives configNatives = new(_configuration, _configHost);
+            });
 
         MenuStringTable strings = _menuStrings!;
-        _configHost.Strings = strings;
 
         // Held so anything outside this method can name a mission the way the player saw it named. A
         // descriptor's own Name is the table KEY -- it reads "Mission 1 Name" -- so a loading panel that
@@ -842,7 +842,7 @@ public sealed partial class GameHost : IDisposable
 
         ForgetLevel(state);
 
-        WireMainMenu(state, strings, configNatives, musicNatives);
+        WireMainMenu(state, musicNatives);
 
         ResetFrontEndState(state);
 

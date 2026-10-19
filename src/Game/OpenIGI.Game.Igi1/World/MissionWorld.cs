@@ -141,6 +141,34 @@ public sealed class MissionWorld
     /// <summary>Gets or sets the generator the guards' rounds draw their spread from.</summary>
     public Random ShotRandom { get; set; } = null!;
 
+    /// <summary>Starts the player's life afresh: full health, alive, and no wash on the screen.</summary>
+    /// <param name="difficulty">The profile difficulty the player's own hits are scaled by.</param>
+    public void ResetPlayerLife(int difficulty)
+    {
+        // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
+        // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11). The player's
+        // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
+        // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
+        PlayerDifficulty = difficulty;
+
+        // 0x489C30 supplies the universal base value first. Mission loading replaces it with argument 7
+        // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
+        // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
+        PlayerMaximumHealth = HumanHitZoneTable.MaximumHealth;
+        ElectricFenceDose = ElectricFenceContact.DefaultDamageFactor;
+        PlayerHealth = new(HumanHitZoneTable.Player, PlayerMaximumHealth)
+        {
+            DamageScale = HumanHealth.DifficultyDamageScale(PlayerDifficulty),
+        };
+        IsPlayerDead = false;
+
+        // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
+        // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
+        // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
+        DamageFlash = new();
+        FlashbangFlash = new();
+    }
+
     /// <summary>Clears the grenades, missiles and launcher rounds in flight, as <c>Game_CutsceneDelete</c> does.</summary>
     public void ClearTransientProjectiles()
     {

@@ -6,16 +6,13 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Config;
-using OpenIGI.Game.Igi1.Menus;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Services;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
@@ -171,30 +168,9 @@ public sealed partial class GameHost
         state.ReportedWorld = false;
         state.ReportedShot = false;
 
-        // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
-        // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11). The player's
-        // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
-        // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
-        _mission.PlayerDifficulty = (int)(_options.Difficulty
-            ?? (AiDifficulty)Math.Clamp(_configuration.Active?.Difficulty ?? 1, 0, 2));
-
-        // 0x489C30 supplies the universal base value first. Mission loading replaces it with argument 7
-        // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
-        // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
-        _mission.PlayerMaximumHealth = HumanHitZoneTable.MaximumHealth;
-        _mission.ElectricFenceDose = ElectricFenceContact.DefaultDamageFactor;
-        _mission.PlayerHealth = new(HumanHitZoneTable.Player, _mission.PlayerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(_mission.PlayerDifficulty),
-        };
-        _mission.IsPlayerDead = false;
+        _mission.ResetPlayerLife((int)(_options.Difficulty
+            ?? (AiDifficulty)Math.Clamp(_configuration.Active?.Difficulty ?? 1, 0, 2)));
         _flashlight.Reset();
-
-        // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
-        // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
-        // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
-        _mission.DamageFlash = new();
-        _mission.FlashbangFlash = new();
 
         // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye
         // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
@@ -388,26 +364,21 @@ public sealed partial class GameHost
         state.ShowDebug = false;
     }
 
-    /// <summary>Teaches the flow host how to bring the original's main menu up.</summary>
-    private void WireMainMenu(FrameLoopState state, MenuStringTable strings, ConfigNatives configNatives, GameMusicNatives musicNatives)
+    /// <summary>Teaches the flow host how to bring the title's own main menu up.</summary>
+    private void WireMainMenu(FrameLoopState state, GameMusicNatives musicNatives)
     {
         _flowHost.LoadMainMenu = () =>
         {
-            MenuSystem menu = MenuSystem.Load(
-                _fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"),
-                _loop,
-                _logger);
-
-            // The mission briefing images are in their own archive beside the menu's. Leaving with StartGame starts
-            // the chosen mission; leaving any other way quits.
             _retailMenus?.Dispose();
-            _retailMenus = _presentation.Presenters.Create<RetailMenuPresentationRequest, IRetailMenuPresenter>(
-                new RetailMenuPresentationRequest(
+            _retailMenus = _presentation.Presenters.Create<RetailMenusRequest, IRetailMenus>(
+                new RetailMenusRequest(
                     _device,
                     _fileSystem,
-                    menu.Manager.ResourcePath,
-                    strings,
-                    ["LOCAL:menusystem/missionsprites.res"],
+                    _loop,
+                    _configuration,
+                    _menuDisplay,
+                    () => _menuMissions,
+                    () => _menuStrings,
                     _window.Input,
                     state.Batch,
                     () => _window.Width,
@@ -416,9 +387,13 @@ public sealed partial class GameHost
                     // interface is scaled at all.
                     _options.UiScale,
                     _audioOut.Sounds,
-                    leaving =>
+                    _options.StartScreen,
+                    // Both of these are game natives rather than menu-system ones.
+                    (name, arguments) =>
+                        _missionState.TryInvokeFromMenu(name, arguments) ?? musicNatives.TryInvokeFromMenu(name, arguments),
+                    startGame =>
                     {
-                        if (leaving == MenuManagerState.StartGame)
+                        if (startGame)
                         {
                             StartMission(_missionState.PendingMissionId);
                         }
@@ -431,27 +406,7 @@ public sealed partial class GameHost
             if (_retailMenus is null)
             {
                 _logger.Warning("Menu", "This title draws no retail menus; the menu script is not started.");
-                return;
             }
-
-            // -screen is a development shortcut, not a game feature: the script decides where the menu
-            // opens, and this overwrites that one parameter before the manager reads it.
-            if (_options.StartScreen > 0)
-            {
-                menu.Manager.CurrentMenuScreen = _options.StartScreen;
-            }
-
-            menu.Manager.Configuration = configNatives;
-
-            // Game_SetMission belongs to the game, not the menu system, and a menu expression is evaluated
-            // by the menu's own evaluator rather than by the script VM — so registering it with the VM is
-            // not enough to make the Select Mission screen's OK button work.
-            // Both of these are game natives rather than menu-system ones, and a menu expression is
-            // evaluated by the menu's own evaluator rather than by the script VM -- so registering them
-            // with the VM is not enough to make the Select Mission button or the music slider work.
-            menu.Manager.ExternalNatives = (name, arguments) =>
-                _missionState.TryInvokeFromMenu(name, arguments) ?? musicNatives.TryInvokeFromMenu(name, arguments);
-            menu.Manager.Initialize(menu, _retailMenus, _logger);
         };
     }
 

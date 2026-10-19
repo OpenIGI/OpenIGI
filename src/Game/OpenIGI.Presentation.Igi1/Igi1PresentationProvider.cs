@@ -23,8 +23,8 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <summary>Initializes a new instance of the <see cref="Igi1PresentationProvider"/> class.</summary>
     public Igi1PresentationProvider() =>
         Presenters = new PresenterRegistry()
-            .Add<RetailMenuPresentationRequest, IRetailMenuPresenter>(static (in RetailMenuPresentationRequest request) =>
-                new RetailMenuHost(request))
+            .Add<RetailMenusRequest, IRetailMenus>(static (in RetailMenusRequest request) =>
+                new Igi1RetailMenus(request))
             .Add<ImpactEffectPresentationRequest, IImpactEffectPresenter>(static (in ImpactEffectPresentationRequest request) =>
                 new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem))
             .Add<MissionHudPresentationRequest, IMissionHudOverlay>(static (in MissionHudPresentationRequest request) =>

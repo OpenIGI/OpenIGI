@@ -9,8 +9,8 @@ namespace OpenIGI.Game.Igi1.Menus;
 
 /// <summary>The retail menu system's shell: its screens drawn, its pointer and keys read, its sounds played.</summary>
 /// <remarks>
-/// The title's presentation implements it over the menu renderer and registers it for a
-/// <see cref="RetailMenuPresentationRequest"/>; the menu manager is initialised with it.
+/// The title's presentation implements it over the menu renderer, built from a <see cref="RetailMenuPresentationRequest"/>;
+/// the menu manager is initialised with it.
 /// </remarks>
 public interface IRetailMenuPresenter : IMenuHost, IDisposable
 {

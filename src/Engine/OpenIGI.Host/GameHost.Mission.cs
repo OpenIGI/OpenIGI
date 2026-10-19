@@ -1711,19 +1711,6 @@ public sealed partial class GameHost
     private ViewModelPresentationRequest ViewModelRequest() =>
         new(_device, _resources, _mission.MagicObjects, _logger, _work);
 
-    private MenuManagerTask? FindMenuManager()
-    {
-        foreach (GameTask task in _loop.Tasks.Root.Descendants())
-        {
-            if (task is MenuManagerTask manager)
-            {
-                return manager;
-            }
-        }
-
-        return null;
-    }
-
     /// <summary>Parses the test-only outro forcing list: "Var=Value,Var=Value".</summary>
     private static List<(string Name, string Value)> TestOutroWrites(string? spec)
     {
@@ -1968,19 +1955,6 @@ public sealed partial class GameHost
             {
                 host._audioOut.Music.Enabled = false;
             }
-            return QvmValue.FromInt32(1);
-        }
-        if (name == "MenuManager_SetEnabled")
-        {
-            // Cutscene start/stop expressions own this native in retail.  The menu manager
-            // lives in the shared loop task tree, so update its live script context rather
-            // than returning success while leaving input enabled during cinematics.
-            MenuManagerTask? manager = host.FindMenuManager();
-            if (manager?.ScriptContext is { } context && arguments.Count >= 1)
-            {
-                context.IsEnabled = arguments.GetBoolean(0);
-            }
-
             return QvmValue.FromInt32(1);
         }
             return null;

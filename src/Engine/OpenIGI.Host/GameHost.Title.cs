@@ -266,13 +266,6 @@ public sealed partial class GameHost
 
         MenuStringTable strings = new(_resources);
         _menuStrings = strings;
-
-        // Null on the very first call, which happens before the config host exists; the boot path sets
-        // it there and every switch after finds one standing.
-        if (_configHost is not null)
-        {
-            _configHost.Strings = strings;
-        }
     }
 
     /// <summary>
@@ -341,7 +334,7 @@ public sealed partial class GameHost
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
             _title.LoadTables(_loop, _fileSystem, _resources);
-            _configHost.Missions = _missions;
+            _menuMissions = _missions;
 
             if (limitedMissions is not null)
             {

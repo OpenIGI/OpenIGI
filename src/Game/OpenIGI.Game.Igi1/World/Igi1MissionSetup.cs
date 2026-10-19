@@ -124,6 +124,20 @@ public sealed class Igi1MissionSetup(MissionWorld mission, Igi1PlayerHarm harm, 
                     return answered;
                 }
 
+                if (name == "MenuManager_SetEnabled")
+                {
+                    // Cutscene start/stop expressions own this native in retail. The menu manager
+                    // lives in the shared loop task tree, so update its live script context rather
+                    // than returning success while leaving input enabled during cinematics.
+                    if (host.Game.Tasks.Root.Descendants().OfType<MenuManagerTask>().FirstOrDefault() is { ScriptContext: { } context }
+                        && arguments.Count >= 1)
+                    {
+                        context.IsEnabled = arguments.GetBoolean(0);
+                    }
+
+                    return QvmValue.FromInt32(1);
+                }
+
                 if (name == "StatusMessageScreen_ClearMessages")
                 {
                     // 0x485AD0: clears every slot and returns true.

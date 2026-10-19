@@ -1,13 +1,10 @@
 ﻿using System.Globalization;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.World;
-using OpenIGI.Platform;
-using OpenIGI.Rendering;
-using OpenIGI.Game.Igi1.Config;
 using OpenIGI.Game.Igi1.Menus;
+using OpenIGI.Game.World;
 
-namespace OpenIGI.Host.Configuration;
+namespace OpenIGI.Game.Igi1.Config;
 
 /// <summary>
 /// Supplies the configuration functions with what only the shell knows.
@@ -17,21 +14,22 @@ namespace OpenIGI.Host.Configuration;
 /// the installed data. What is not known yet reports nothing rather than a plausible-looking
 /// invention: an empty list box is the truthful rendering of "this has not been implemented".
 /// </remarks>
-/// <param name="graphics">The graphics device, for its reported capabilities.</param>
-/// <param name="window">The window, for the size it is running at.</param>
-public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window) : IConfigHost
+/// <param name="rendererName">The name the graphics device reports for itself.</param>
+/// <param name="displayModes">The sizes the monitor reports.</param>
+/// <param name="applyResolution">What picking a resolution does.</param>
+/// <param name="missions">The mission table the Select Mission screen reads.</param>
+/// <param name="strings">The table that resolves a descriptor's name and description keys.</param>
+public sealed class MenuConfigHost(
+    Func<string> rendererName,
+    Func<IEnumerable<(int Width, int Height)>> displayModes,
+    Action<int, int> applyResolution,
+    Func<IMissionCatalogue<MissionDescriptor>?> missions,
+    Func<MenuStringTable?> strings) : IConfigHost
 {
     /// <summary>The id the mission chain starts at. <c>0x417090</c> returns this constant.</summary>
     private const int FirstMissionId = MissionRegistry.FirstMissionId;
 
     private readonly List<(int Width, int Height)> _modes = [];
-
-    /// <summary>Gets or sets what to do when the player picks a resolution.</summary>
-    /// <remarks>
-    /// The original stores the choice on the profile and applies it when the screen is committed.
-    /// Applying it is the shell's job, so the shell supplies the handler.
-    /// </remarks>
-    public Action<int, int>? ApplyResolution { get; set; }
 
     /// <inheritdoc/>
     public int DefaultDisplayMode => 0;
@@ -42,7 +40,7 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     /// job that does not exist yet, and inventing a second device would be a lie the menu could act on.
     /// </remarks>
     public IEnumerable<MenuListItem> GetRenderDevices() =>
-        [new MenuListItem(0, graphics.Capabilities.Renderer)];
+        [new MenuListItem(0, rendererName())];
 
     /// <inheritdoc/>
     /// <remarks>
@@ -54,8 +52,7 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     {
         if (_modes.Count == 0)
         {
-            _modes.AddRange(window.GetDisplayModes()
-                .Select(mode => (mode.Width, mode.Height))
+            _modes.AddRange(displayModes()
                 .Distinct()
                 .OrderBy(mode => mode.Width)
                 .ThenBy(mode => mode.Height));
@@ -71,7 +68,9 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     {
         if (mode >= 0 && mode < _modes.Count)
         {
-            ApplyResolution?.Invoke(_modes[mode].Width, _modes[mode].Height);
+            // The original stores the choice on the profile and applies it when the screen is committed.
+            // Applying it is the shell's job, so the shell supplies the handler.
+            applyResolution(_modes[mode].Width, _modes[mode].Height);
         }
     }
 
@@ -86,16 +85,6 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     public void SetGamma(float gamma)
     {
     }
-
-    /// <summary>Gets or sets the mission table the Select Mission screen reads.</summary>
-    /// <remarks>
-    /// Populated by the startup scan. Left null the screen shows nothing, which is the honest rendering
-    /// of an installation whose missions could not be read.
-    /// </remarks>
-    public IMissionCatalogue<MissionDescriptor>? Missions { get; set; }
-
-    /// <summary>Gets or sets the table that resolves a descriptor's name and description keys.</summary>
-    public MenuStringTable? Strings { get; set; }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -151,11 +140,13 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     /// <summary>Walks the mission chain from the first id, the way all three fill natives do.</summary>
     /// <remarks>
     /// The order is the chain's, not the table's — see <see cref="MissionRegistry.Chain"/>, which is where
-    /// the walk lives now that the cinematic shell's mission list needs the same order.
+    /// the walk lives now that the cinematic shell's mission list needs the same order. The table is
+    /// populated by the startup scan; left null the screen shows nothing, which is the honest rendering of
+    /// an installation whose missions could not be read.
     /// </remarks>
     private IEnumerable<MissionDescriptor> Chain() =>
-        Missions?.InProgressionOrder() ?? [];
+        missions()?.InProgressionOrder() ?? [];
 
     /// <summary>Resolves a descriptor's name or description, which are language keys rather than text.</summary>
-    private string Localise(string key) => Strings is null ? key : Strings.Get(key);
+    private string Localise(string key) => strings() is { } table ? table.Get(key) : key;
 }
