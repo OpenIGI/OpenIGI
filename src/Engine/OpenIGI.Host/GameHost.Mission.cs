@@ -1058,7 +1058,7 @@ public sealed partial class GameHost
                 // The player's rounds are offered to the soldiers, which own their own health.
                 if (_mission.SoldierPresenter is { } guards)
                 {
-                    playerSetup.ConnectSoldiers(candidate, guards, PlayRicochetSound);
+                    playerSetup.ConnectSoldiers(candidate, guards, _igi1.Sounds.PlayRicochet);
                 }
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
@@ -1757,8 +1757,6 @@ public sealed partial class GameHost
     /// <param name="host">The host.</param>
     private sealed class Igi1Host(GameHost host) : IIgi1Host
     {
-        public void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial) =>
-            host.PlayBulletImpactSound(position, struckHuman, surfaceMaterial);
 
         public void SpawnImpactBurst(in WorldRayHit worldHit)
         {
@@ -1916,11 +1914,7 @@ public sealed partial class GameHost
 
         public void FallImpact(PlayerCamera player, HumanFallImpact impact) => host.ResolvePlayerFallImpact(player, impact);
 
-        public void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits) =>
-            host.PlayHitSound(prefix, variants, positionInUnits);
-
-        public void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits) =>
-            host.PlayDeathSound(prefix, variants, positionInUnits);
+        public SoundSystem? SoundOutput => host._audioOut.Sounds;
 
         public void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing) => host.PlayLandingSound(landing);
 
@@ -1966,8 +1960,6 @@ public sealed partial class GameHost
         public Igi1SoundSinks Sounds { get; } = new(
             host.PlayDoorSound,
             host.PlayElevatorSound,
-            position => host.PlayDeathSound(HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position),
-            (prefix, variants, position) => host.PlayHitSound(prefix, variants, position),
             (name, position, attached) => host._audioOut.Sounds?.PlayDefinition(name, position, priority: 200),
             host.TickSoldierWeaponSound,
             step => host.PlayFootstep(step),
@@ -2125,8 +2117,8 @@ public sealed partial class GameHost
 
         // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
         // material table, where the round arrived rather than where it was fired.
-        PlayBulletImpactSounds();
-        PlayWeaponDropSounds();
+        _igi1.Sounds.PlayPlayerImpacts();
+        _igi1.Sounds.PlayWeaponDrops();
 
         // The same impacts, seen: sparks and dust composed from the struck material.
         // Ticked before spawning so a new burst draws its birth frame unmoved.

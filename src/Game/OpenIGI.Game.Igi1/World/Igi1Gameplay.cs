@@ -4,7 +4,7 @@ using OpenIGI.Game.Player;
 namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Everything the first game's mission asks of whatever shows and plays it.</summary>
-public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1PlayerHarmHost, IIgi1MissionSetupHost, IIgi1BlastHost
+public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1PlayerHarmHost, IIgi1MissionSetupHost, IIgi1BlastHost, IIgi1SoundHost
 {
 }
 
@@ -21,9 +21,10 @@ public sealed class Igi1Gameplay : IMissionGameplay
     public Igi1Gameplay(IIgi1Host host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
-        Harm = new Igi1PlayerHarm(World, host);
+        Sounds = new Igi1HumanSounds(World, host);
+        Harm = new Igi1PlayerHarm(World, Sounds, host);
         Blasts = new Igi1Blasts(World, Harm, host);
-        Setup = new Igi1MissionSetup(World, Harm, Blasts, host);
+        Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, host);
         Tick = new Igi1MissionTick(World, Blasts, host);
     }
 
@@ -35,6 +36,9 @@ public sealed class Igi1Gameplay : IMissionGameplay
 
     /// <summary>Gets what hurts the player and how it dies.</summary>
     public Igi1PlayerHarm Harm { get; }
+
+    /// <summary>Gets the humans' cries and the sounds of rounds landing.</summary>
+    public Igi1HumanSounds Sounds { get; }
 
     /// <summary>Gets what brings the mission's runtimes and registries up.</summary>
     public Igi1MissionSetup Setup { get; }

@@ -158,8 +158,6 @@ public sealed partial class GameHost : IDisposable
     /// <summary>The pull-in ray, kept so a frame does not allocate one; rebuilt when the level's does.</summary>
 
 
-    private int _impactSoundQuietUntil;
-    private int _ricochetSoundQuietUntil;
     private int _tracerSkipsLogged;
 
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];

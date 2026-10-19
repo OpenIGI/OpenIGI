@@ -18,18 +18,6 @@ public interface IIgi1PlayerHarmHost
     /// <summary>Gets the game's loop, whose clock the player's grunts are gated on.</summary>
     GameLoop Game { get; }
 
-    /// <summary>Plays a human's hit grunt: one of a prefix's variants.</summary>
-    /// <param name="prefix">The definitions' common prefix.</param>
-    /// <param name="variants">How many there are.</param>
-    /// <param name="positionInUnits">Where, or <see langword="null"/> for the listener's own.</param>
-    void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits);
-
-    /// <summary>Plays a human's death cry: one of a prefix's variants.</summary>
-    /// <param name="prefix">The definitions' common prefix.</param>
-    /// <param name="variants">How many there are.</param>
-    /// <param name="positionInUnits">Where, or <see langword="null"/> for the listener's own.</param>
-    void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits);
-
     /// <summary>Plays the sound of the surface the player landed on.</summary>
     /// <param name="landing">The definition and where.</param>
     void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing);
@@ -58,8 +46,9 @@ public interface IIgi1PlayerHarmHost
 /// powered fence (<c>0x412F80</c>), and the death state every lethal hit enters (state 47, <c>0x40E560</c>).
 /// </summary>
 /// <param name="mission">The mission's world, which holds the player, its health and the draws they take.</param>
+/// <param name="sounds">The cries a hit and a death make.</param>
 /// <param name="host">What plays and shows them.</param>
-public sealed class Igi1PlayerHarm(MissionWorld mission, IIgi1PlayerHarmHost host)
+public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds, IIgi1PlayerHarmHost host)
 {
     // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
     private const int PlayerBluntFrontZone = 13;
@@ -89,7 +78,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, IIgi1PlayerHarmHost hos
         }
 
         mission.PlayerHitQuietUntil = host.Game.Clock.TickCount + HumanVariantSound.HitCooldownTicks(mission.SoundRandom);
-        host.PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
+        sounds.PlayHit(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
     }
 
     /// <summary>A soldier's close-combat blow landing on the player — the blunt-hit handler <c>0x412CE0</c>.</summary>
@@ -206,7 +195,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, IIgi1PlayerHarmHost hos
         }
 
         // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
-        host.PlayDeathSound(HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
+        sounds.PlayDeath(HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
     }
 
     /// <summary>Routes a resolved body landing into the desktop-owned presentation and death state.</summary>

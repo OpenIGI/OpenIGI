@@ -63,8 +63,6 @@ public interface IIgi1MissionSetupHost : IGuardRoundHost
 /// <summary>Where the level's doors, lifts and soldiers send their sounds, and a soldier's blow on the player.</summary>
 /// <param name="Door">A door opening, closing or sliding.</param>
 /// <param name="Elevator">A lift starting, moving or stopping.</param>
-/// <param name="SoldierDeath">A soldier's death cry, where it died.</param>
-/// <param name="SoldierHit">A soldier's grunt at a hit: the definitions' prefix, how many, and where.</param>
 /// <param name="Script">A sound a soldier's script plays (<c>AIAction_PlaySound</c>): the definition, where, and whether it follows the soldier.</param>
 /// <param name="Weapon">A soldier's weapon loop: its runtime id, whether it fired, the weapon and where.</param>
 /// <param name="Footstep">A soldier's footstep.</param>
@@ -72,8 +70,6 @@ public interface IIgi1MissionSetupHost : IGuardRoundHost
 public sealed record Igi1SoundSinks(
     Action<PlacedDoor, DoorSoundEvent> Door,
     Action<PlacedElevator, ElevatorSoundEvent> Elevator,
-    Action<Vector3d> SoldierDeath,
-    Action<string, int, Vector3d> SoldierHit,
     Action<string, Vector3d, bool> Script,
     Action<int, bool, WeaponType?, Vector3d> Weapon,
     Action<Footstep> Footstep,
@@ -83,8 +79,10 @@ public sealed record Igi1SoundSinks(
 /// <param name="mission">The mission's world, which keeps them.</param>
 /// <param name="harm">What a guard's round does to the player.</param>
 /// <param name="blasts">What a guard's round does to a speaker or a destructible.</param>
+/// <param name="sounds">The soldiers' cries and the sound of a guard's round landing.</param>
 /// <param name="host">What plays and shows them.</param>
-public sealed class Igi1MissionSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, IIgi1MissionSetupHost host)
+public sealed class Igi1MissionSetup(
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1HumanSounds sounds, IIgi1MissionSetupHost host)
 {
     /// <summary>Makes the mission's text and its cutscene runtime, with the natives the level's cutscenes call.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
@@ -363,10 +361,10 @@ public sealed class Igi1MissionSetup(MissionWorld mission, Igi1PlayerHarm harm, 
             // The first genuinely world-positioned sound in the port. Its distances are the definition's
             // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
             // without anything here choosing a range.
-            soldiers.SetDeathSound(host.Sounds.SoldierDeath);
+            soldiers.SetDeathSound(position => sounds.PlayDeath(HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
             // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-            soldiers.SetHitSound(host.Sounds.SoldierHit);
+            soldiers.SetHitSound((prefix, variants, position) => sounds.PlayHit(prefix, variants, position));
             soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(mission.SoundRandom));
             soldiers.SetMeleeStrikeSink(host.Sounds.PlayerStruck);
             soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerDeltaTranslationScale);
@@ -507,7 +505,7 @@ public sealed class Igi1MissionSetup(MissionWorld mission, Igi1PlayerHarm harm, 
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
         // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
-        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, host, host.Logger);
+        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, sounds, host, host.Logger);
         soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
     }
 

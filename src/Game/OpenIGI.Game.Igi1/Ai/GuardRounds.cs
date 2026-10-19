@@ -9,15 +9,9 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
-/// <summary>What a guard's round asks of whatever plays and shows it: the sound and the burst of the hits.</summary>
+/// <summary>What a guard's round asks of whatever shows it: the burst of the hits.</summary>
 public interface IGuardRoundHost
 {
-    /// <summary>Plays a round's impact.</summary>
-    /// <param name="position">Where it struck, in world units.</param>
-    /// <param name="struckHuman">Whether it struck a body.</param>
-    /// <param name="surfaceMaterial">The surface's material, when it struck the world.</param>
-    void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial);
-
     /// <summary>Kicks the burst of a round landing on a surface.</summary>
     /// <param name="hit">Where it landed.</param>
     void SpawnImpactBurst(in WorldRayHit hit);
@@ -36,6 +30,7 @@ public sealed class GuardRounds
     private readonly MissionWorld _mission;
     private readonly Igi1PlayerHarm _harm;
     private readonly Igi1Blasts _blasts;
+    private readonly Igi1HumanSounds _sounds;
     private readonly IGuardRoundHost _host;
     private readonly IOpenIgiLogger _logger;
 
@@ -45,7 +40,8 @@ public sealed class GuardRounds
     /// <param name="mission">The mission's world: the player, its health and the shot stream.</param>
     /// <param name="harm">What a hit does to the player.</param>
     /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
-    /// <param name="host">The sound and the burst of the hits.</param>
+    /// <param name="sounds">The sound of the hits.</param>
+    /// <param name="host">The burst of the hits.</param>
     /// <param name="logger">Told about every hit on the player.</param>
     public GuardRounds(
         SoldierSimulation soldiers,
@@ -53,12 +49,14 @@ public sealed class GuardRounds
         MissionWorld mission,
         Igi1PlayerHarm harm,
         Igi1Blasts blasts,
+        Igi1HumanSounds sounds,
         IGuardRoundHost host,
         IOpenIgiLogger logger)
     {
         _mission = mission ?? throw new ArgumentNullException(nameof(mission));
         _harm = harm ?? throw new ArgumentNullException(nameof(harm));
         _blasts = blasts ?? throw new ArgumentNullException(nameof(blasts));
+        _sounds = sounds ?? throw new ArgumentNullException(nameof(sounds));
         _soldiers = soldiers ?? throw new ArgumentNullException(nameof(soldiers));
         _trace = trace ?? throw new ArgumentNullException(nameof(trace));
         _host = host ?? throw new ArgumentNullException(nameof(host));
@@ -209,7 +207,7 @@ public sealed class GuardRounds
                     placement: blocker.Placement);
             }
 
-            _host.PlayBulletImpactSound(
+            _sounds.PlayBulletImpact(
                 worldHit.Position,
                 struckHuman: false,
                 surfaceMaterial: worldHit.Material);
@@ -363,7 +361,7 @@ public sealed class GuardRounds
         bool StrikePlayer(HumanHit struck)
         {
             health.Apply(struck.Zone, weapon.DamageFactor);
-            _host.PlayBulletImpactSound(struck.Position, struckHuman: true, surfaceMaterial: 0);
+            _sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
             HitsOnPlayer++;
 
             // The retail handler transforms the round into camera space before writing the four
