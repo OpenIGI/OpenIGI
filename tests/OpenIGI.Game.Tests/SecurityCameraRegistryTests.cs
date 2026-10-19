@@ -17,6 +17,40 @@ namespace OpenIGI.Game.Tests;
 /// <summary>Retail <c>SCamera</c>/<c>SCameraLens</c> behaviour transcribed from 0x441770..0x44229B.</summary>
 public sealed class SecurityCameraRegistryTests
 {
+    /// <summary>
+    /// SCameraControl is a Terminal (0x440C20 registers it under word_53C680): it exports the terminal's isOn, and
+    /// the cameras of missions 5 to 9 are powered by exactly that. Without it every one of them stayed dark.
+    /// </summary>
+    [RequiresGameDataTheory]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    public void Cameras_powered_by_a_camera_control_terminal_switch_on(int missionId)
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        LevelLoader level = new(root, loop.TaskCommands, loop.Natives, resources);
+        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level).Load(missionId);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, loop.Variables, doors);
+        _ = WorldInteractionRegistry.Build(root, mission, doors, loop.Variables, elevators);
+        SecurityCameraRegistry cameras = SecurityCameraRegistry.Build(root, loop.Variables);
+
+        cameras.Tick(default, targetCrouching: false, targetAlive: true);
+
+        SecurityCamera[] controlled = [.. cameras.Cameras.Where(static c => c.OnExpression.Contains("SCameraControl_", StringComparison.Ordinal))];
+        Assert.NotEmpty(controlled);
+        Assert.All(controlled, static camera => Assert.True(camera.IsActive, $"{camera.Task.Name} ({camera.OnExpression}) is dark."));
+    }
+
     [RequiresGameDataFact]
     public void MissionOneCameraConfirmsAVisiblePlayerAfterExactlyNinetyTicks()
     {

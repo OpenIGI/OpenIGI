@@ -21,6 +21,9 @@ public sealed class RetailInteractionInventoryTests
     {
         "Wire", "Fence", "Ladder", "Terminal", "Cabinet", "Switch", "Door",
         "GenericTBA", "PlaceExplosiveTBA", "StationaryGun",
+
+        // A Terminal subtype (0x440C20 registers it under word_53C680): hacked and switched like any terminal.
+        "SCameraControl",
     };
 
     [RequiresGameDataTheory]

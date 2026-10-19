@@ -920,9 +920,15 @@ public sealed class WorldInteractionRegistry
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
             string closeExpression = ReadString(declared, "Close door expression", string.Empty);
             string electricExpression = ReadString(declared, "Electric Expression", string.Empty);
+
+            // Terminal's update (0x4438E0) forces isOn off once the ExplodeObject it derives from has exploded
+            // (+400), before it looks at the On expression -- a terminal blown up is a terminal switched off.
+            string explodedSymbol = $"{declared.Name}.isExploded";
+            Func<bool> exploded = () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0;
             item.SetConditions(
-                type is InteractionActivateType.Terminal or InteractionActivateType.Generic
-                    or InteractionActivateType.PlaceExplosive
+                type is InteractionActivateType.Terminal
+                    ? () => !exploded() && expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
+                    : type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
                     ? () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
                     : null,
                 type == InteractionActivateType.Door
@@ -1055,6 +1061,12 @@ public sealed class WorldInteractionRegistry
         "Door" => InteractionActivateType.Door,
         "Cabinet" => InteractionActivateType.Cabinet,
         "Terminal" => InteractionActivateType.Terminal,
+
+        // SCameraControl (0x440C20) is registered under Terminal (word_53C680): it inherits the terminal's
+        // update, its hack and its isInUse/isOn/isHacked exports, and adds only its isDetection. The cameras
+        // of missions 5 to 9 are powered by SCameraControl_N.isOn, so without the terminal there is no isOn
+        // and every one of them stayed dark.
+        "SCameraControl" => InteractionActivateType.Terminal,
         "StationaryGun" => InteractionActivateType.StationaryGun,
         "Wire" => InteractionActivateType.Wire,
         "Fence" => InteractionActivateType.Fence,

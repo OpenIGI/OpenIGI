@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Ai;
 
@@ -485,10 +486,11 @@ public sealed class SecurityCamera
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
 public sealed class SecurityCameraRegistry
 {
-    private sealed class Control(DeclaredTask task, string expression)
+    private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded)
     {
         public DeclaredTask Task { get; } = task;
         public string Expression { get; } = expression;
+        public Func<bool> IsExploded { get; } = isExploded;
         public bool IsDetection { get; set; }
     }
 
@@ -588,10 +590,12 @@ public sealed class SecurityCameraRegistry
             camera.Tick(powered, _subjects, _sight);
         }
 
+        // SCameraControl's update (0x440D70) runs the terminal's first, then holds isDetection off once the
+        // control has exploded (+400) and evaluates its Detection Expression otherwise.
         foreach (Control control in _controls)
         {
-            control.IsDetection = _expressions.EvaluateCondition(
-                control.Expression, emptyValue: false, control.Task);
+            control.IsDetection = !control.IsExploded()
+                && _expressions.EvaluateCondition(control.Expression, emptyValue: false, control.Task);
         }
     }
 
@@ -653,7 +657,11 @@ public sealed class SecurityCameraRegistry
         else if (task is DeclaredTask controlTask
             && string.Equals(task.Type.Name, "SCameraControl", StringComparison.Ordinal))
         {
-            Control control = new(controlTask, ReadString(controlTask, "Detection Expression"));
+            string explodedSymbol = $"{controlTask.Name}.isExploded";
+            Control control = new(
+                controlTask,
+                ReadString(controlTask, "Detection Expression"),
+                () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls.Add(control);
             variables.BindBool(task, "isDetection", () => control.IsDetection, value => control.IsDetection = value);
         }
