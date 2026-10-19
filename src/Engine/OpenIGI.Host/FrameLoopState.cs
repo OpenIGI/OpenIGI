@@ -33,8 +33,6 @@ internal sealed class FrameLoopState
 
     public bool ReportedWorld { get; set; }
 
-    public bool ReportedShot { get; set; }
-
     public int TemporalFrame { get; set; }
 
     public string? CutsceneCaptureDirectory { get; set; }
@@ -70,8 +68,6 @@ internal sealed class FrameLoopState
     public bool ScreenGiDumped { get; set; }
 
     public ScreenGiHistory ScreenGi { get; set; } = default!;
-
-    public int ReportedHumanHits { get; set; }
 
     public FogPresets FogPresets { get; set; } = default!;
 

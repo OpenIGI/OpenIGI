@@ -47,6 +47,12 @@ public interface IIgi1MissionHost
     /// <returns>Whether it ran, in which case the first game's player does not.</returns>
     bool TickTitlePlayer();
 
+    /// <summary>
+    /// Gets a value indicating whether the host's view leaves the player's third-person body to follow the player: walking,
+    /// and nothing of the host's -- the failure menu, the computer, the entry shot, the menu's orbit -- holding the view.
+    /// </summary>
+    bool BodyFollowAllowed { get; }
+
     /// <summary>Gives the hand a presenter, once the all-weapons cheat has put weapons in it.</summary>
     void CheatWeaponsGranted();
 
@@ -54,8 +60,6 @@ public interface IIgi1MissionHost
     /// <param name="origin">Where the mine is, in world units.</param>
     void PlayMineTrigger(Vector3d origin);
 
-    /// <summary>Reports the player's first shot and every round that lands on a guard.</summary>
-    void ReportPlayerShots();
 
     /// <summary>Plays and shows what the player's rounds struck, and lays the rockets' trails.</summary>
     void PresentPlayerImpacts();
@@ -116,6 +120,9 @@ public interface IIgi1MissionHost
 /// <param name="host">What shows and plays it.</param>
 public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IIgi1MissionHost host)
 {
+    private bool _reportedShot;
+    private int _reportedHumanHits;
+
     // Whether the player's ladder climb or world interaction has begun its body animation, and whether the
     // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
     private bool _climbActive;
@@ -163,7 +170,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.Player is not null)
         {
             ResolvePlayerTick();
-            host.ReportPlayerShots();
+            ReportPlayerShots();
         }
 
         // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
@@ -378,6 +385,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         }
 
         TickClimbsAndInteractions();
+        FollowPlayerBody();
         host.CloseTick();
     }
 
@@ -845,5 +853,106 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
 
         host.Logger.Information("Player", $"All-weapons cheat added {added} weapon(s).");
         host.CheatWeaponsGranted();
+    }
+
+    /// <summary>Logs the player's first shot and every round that lands on a guard.</summary>
+    private void ReportPlayerShots()
+    {
+        PlayerCamera player = mission.Player!;
+
+        // went somewhere.
+        if (!_reportedShot && player.FiredThisTick && player.HeldWeaponType is { } fired)
+        {
+            _reportedShot = true;
+            string where = player.Impacts.Count == 0
+                ? "nowhere"
+                : player.Impacts[0].HitSomething
+                    ? $"{player.Impacts[0].Position}"
+                    : $"nothing inside {fired.EffectiveRange} m";
+
+            host.Logger.Information(
+                "Weapon",
+                $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
+                    + $"a round at {fired.RoundsPerMinute} rpm, "
+                    + $"{player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
+        }
+
+        // Every round that lands on a guard, reported once each so the zone and the kill are
+        // visible without a per-shot log.
+        if (player.HumanHits != _reportedHumanHits)
+        {
+            _reportedHumanHits = player.HumanHits;
+            host.Logger.Information(
+                "Weapon",
+                $"Hit a guard in zone {player.LastHumanZone} "
+                    + $"({_reportedHumanHits} hit(s), {mission.Soldiers?.Killed ?? 0} killed).");
+        }
+    }
+
+    /// <summary>Walks the character the third-person view looks at with the player, on the same tick as their legs.</summary>
+    private void FollowPlayerBody()
+    {
+        // The character the third-person view looks at, walked with the player on the same tick
+        // their own legs are -- see SoldierRenderer.FollowPlayerBody for why it must be the tick
+        // and not the frame. Kept running for the whole of the move back as well as out, so the
+        // body is already in step whenever the camera is far enough away to show it.
+        //
+        // The states with a body of their own are left alone: the ladder and the world
+        // interactions place and pose the same rig on their own schedule, and the death path owns
+        // it outright once the player has fallen.
+        if (mission.SoldierPresenter is { } followedBody)
+        {
+            // The same conditions the camera itself is eligible under, and deliberately so: the
+            // follow owns the torso clip and the aim bend, and every state excluded here has an
+            // authored full-body clip or a camera of its own that must own the whole character.
+            if (host.BodyFollowAllowed
+                    && !mission.IsPlayerDead
+                    && mission.Cutscenes?.IsPlaying != true
+                    && mission.Player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
+
+                // ...and in FIRST person too, unconditionally, which it did not used to be.
+                //
+                // The follow is what POSES the body; the separate visibility latch below is what
+                // draws it. Those were both held shut in first person, so the body did not exist
+                // at all -- and geometry that does not exist cannot be struck by a reflected ray,
+                // whatever the reflection is then able to do with the hit. A window could not
+                // show the player because there was no player to show.
+                //
+                // So it is posed always and drawn as before. What that costs is one character
+                // skinned per frame; what it buys is the player's own reflection and shadow,
+                // through DrawPlayerBody's traced-only path.
+            {
+                followedBody.FollowPlayerBody(
+                    walkingBody.Body.Position,
+
+                    // MINUS the yaw. A body's heading is a GAMMA and the look is a YAW, and the
+                    // two run opposite ways: PlayerBody.FacingBasis builds the body's own basis
+                    // as RotationZ(-yaw), and every other caller in the port converts the same
+                    // way (PlayerCamera writes `_body.Yaw = -facing` on entering an interaction
+                    // and `_interactionFacing = -_body.Yaw` on leaving one). Passing the yaw
+                    // straight through mirrors the character about the world's X axis, which is
+                    // a body that faces the camera at exactly the moment it should face away.
+                    -walkingBody.Body.Yaw,
+                    walkingBody.LocomotionAnimation,
+                    walkingBody.LocomotionAnimationLoops,
+                    new PlayerBodyPose(
+                        walkingBody.UpperBodyAnimation,
+                        walkingBody.UpperBodyAnimationLoops,
+                        walkingBody.UpperBodyBlendSeconds,
+                        walkingBody.UpperBodySequence,
+                        walkingBody.AimPitch));
+            }
+            else
+            {
+                followedBody.Simulation.HidePlayerBodyFollowing();
+            }
+        }
+    }
+
+    /// <summary>Forgets the shots already reported, as the player starts afresh.</summary>
+    public void ResetReports()
+    {
+        _reportedShot = false;
+        _reportedHumanHits = 0;
     }
 }

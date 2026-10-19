@@ -1757,8 +1757,6 @@ public sealed partial class GameHost
         public void PlayMineTrigger(Vector3d origin) =>
             host._audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
 
-        public void ReportPlayerShots() => host.ReportPlayerShots(State);
-
 
 
 
@@ -1807,11 +1805,14 @@ public sealed partial class GameHost
 
         public void ResetInteractionView() => host.Viewpoint?.ResetInteractionView();
 
-        public void CloseTick()
-        {
-            host.FollowPlayerBody(State);
-            host.SettleMissionOutcome(State);
-        }
+        public bool BodyFollowAllowed =>
+            host._playerMode
+            && !host._session.FailedMenu
+            && !host._computerOpen
+            && !host._entry.IsCameraActive
+            && !host._menuFlow.OverShowcase;
+
+        public void CloseTick() => host.SettleMissionOutcome(State);
 
         public GameLoop Game => host._loop;
 
@@ -1905,40 +1906,6 @@ public sealed partial class GameHost
             host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
     }
 
-    /// <summary>Logs the player's first shot and every round that lands on a guard.</summary>
-    private void ReportPlayerShots(FrameLoopState state)
-    {
-        PlayerCamera player = _mission.Player!;
-
-        // went somewhere.
-        if (!state.ReportedShot && player.FiredThisTick && player.HeldWeaponType is { } fired)
-        {
-            state.ReportedShot = true;
-            string where = player.Impacts.Count == 0
-                ? "nowhere"
-                : player.Impacts[0].HitSomething
-                    ? $"{player.Impacts[0].Position}"
-                    : $"nothing inside {fired.EffectiveRange} m";
-
-            _logger.Information(
-                "Weapon",
-                $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
-                    + $"a round at {fired.RoundsPerMinute} rpm, "
-                    + $"{player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
-        }
-
-        // Every round that lands on a guard, reported once each so the zone and the kill are
-        // visible without a per-shot log.
-        if (player.HumanHits != state.ReportedHumanHits)
-        {
-            state.ReportedHumanHits = player.HumanHits;
-            _logger.Information(
-                "Weapon",
-                $"Hit a guard in zone {player.LastHumanZone} "
-                    + $"({state.ReportedHumanHits} hit(s), {_mission.Soldiers?.Killed ?? 0} killed).");
-        }
-    }
-
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
     private void PresentPlayerImpacts()
     {
@@ -1976,70 +1943,6 @@ public sealed partial class GameHost
     {
         _effects.Tick();
         _effects.TickRetailImpacts();
-    }
-
-    /// <summary>Walks the character the third-person view looks at with the player, on the same tick as their legs.</summary>
-    private void FollowPlayerBody(FrameLoopState state)
-    {
-        // The character the third-person view looks at, walked with the player on the same tick
-        // their own legs are -- see SoldierRenderer.FollowPlayerBody for why it must be the tick
-        // and not the frame. Kept running for the whole of the move back as well as out, so the
-        // body is already in step whenever the camera is far enough away to show it.
-        //
-        // The states with a body of their own are left alone: the ladder and the world
-        // interactions place and pose the same rig on their own schedule, and the death path owns
-        // it outright once the player has fallen.
-        if (_mission.SoldierPresenter is { } followedBody)
-        {
-            // The same conditions the camera itself is eligible under, and deliberately so: the
-            // follow owns the torso clip and the aim bend, and every state excluded here has an
-            // authored full-body clip or a camera of its own that must own the whole character.
-            if (_playerMode
-                    && !_mission.IsPlayerDead
-                    && !_session.FailedMenu
-                    && !_computerOpen
-                    && !_entry.IsCameraActive
-                    && _mission.Cutscenes?.IsPlaying != true
-                    && !_menuFlow.OverShowcase
-                    && _mission.Player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
-
-                // ...and in FIRST person too, unconditionally, which it did not used to be.
-                //
-                // The follow is what POSES the body; the separate visibility latch below is what
-                // draws it. Those were both held shut in first person, so the body did not exist
-                // at all -- and geometry that does not exist cannot be struck by a reflected ray,
-                // whatever the reflection is then able to do with the hit. A window could not
-                // show the player because there was no player to show.
-                //
-                // So it is posed always and drawn as before. What that costs is one character
-                // skinned per frame; what it buys is the player's own reflection and shadow,
-                // through DrawPlayerBody's traced-only path.
-            {
-                followedBody.FollowPlayerBody(
-                    walkingBody.Body.Position,
-
-                    // MINUS the yaw. A body's heading is a GAMMA and the look is a YAW, and the
-                    // two run opposite ways: PlayerBody.FacingBasis builds the body's own basis
-                    // as RotationZ(-yaw), and every other caller in the port converts the same
-                    // way (PlayerCamera writes `_body.Yaw = -facing` on entering an interaction
-                    // and `_interactionFacing = -_body.Yaw` on leaving one). Passing the yaw
-                    // straight through mirrors the character about the world's X axis, which is
-                    // a body that faces the camera at exactly the moment it should face away.
-                    -walkingBody.Body.Yaw,
-                    walkingBody.LocomotionAnimation,
-                    walkingBody.LocomotionAnimationLoops,
-                    new PlayerBodyPose(
-                        walkingBody.UpperBodyAnimation,
-                        walkingBody.UpperBodyAnimationLoops,
-                        walkingBody.UpperBodyBlendSeconds,
-                        walkingBody.UpperBodySequence,
-                        walkingBody.AimPitch));
-            }
-            else
-            {
-                followedBody.Simulation.HidePlayerBodyFollowing();
-            }
-        }
     }
 
     /// <summary>Holds the objectives' messages, and opens the failure menu or moves on once the mission is decided.</summary>

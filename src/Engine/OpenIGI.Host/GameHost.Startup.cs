@@ -166,7 +166,7 @@ public sealed partial class GameHost
     private void ResetPlayerAndCaptures(FrameLoopState state)
     {
         state.ReportedWorld = false;
-        state.ReportedShot = false;
+        _igi1.Tick.ResetReports();
 
         _mission.ResetPlayerLife((int)(_options.Difficulty
             ?? (AiDifficulty)Math.Clamp(_configuration.Active?.Difficulty ?? 1, 0, 2)));
@@ -239,7 +239,6 @@ public sealed partial class GameHost
         state.ScreenGi = new();
 
         _mission.ShotRandom = new(20000101);
-        state.ReportedHumanHits = 0;
         _scene = null;
         _world = null;
         _terrain = null;
