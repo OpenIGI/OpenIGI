@@ -448,7 +448,7 @@ public sealed partial class GameHost
         // The backdrop's soldiers resolve their frame state too, because the shadow pass below is
         // about to read their poses. Only one of the two is ever live: `_soldiers` belongs to a
         // played mission, `_menuBackdrop.Soldiers` to the menu's.
-        ISoldierPresenter? shadowCasters = _soldiers ?? _menuBackdrop.Soldiers;
+        ISoldierBodies? shadowCasters = _soldiers ?? _menuBackdrop.Soldiers;
         ICharacterPresenter? casterBodies = shadowCasters is null ? null : new SoldierBodies(shadowCasters);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
@@ -859,7 +859,7 @@ public sealed partial class GameHost
             showFirstPersonHud
             && Viewpoint?.IsBinocularsOpen == true
             && _soldiers is { } binocularSoldiers
-                ? binocularSoldiers.Simulation.BinocularTargets(
+                ? binocularSoldiers.BinocularTargets(
                     // Use the same presented eye that rendered the world. The detector owns
                     // authoritative slot lifetime, but its screen rectangle must be projected
                     // through the frame's smoothed camera or moving/zooming binoculars make the
@@ -2701,7 +2701,7 @@ public sealed partial class GameHost
                 ? playerEye
                 : _camera.Position;
             if (_soldiers is not null
-                && _soldiers.Simulation.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
+                && _soldiers.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
             {
                 detect = detectInfo;
             }
@@ -2886,7 +2886,7 @@ public sealed partial class GameHost
 
     /// <summary>The soldiers' bodies as the shadow passes draw characters.</summary>
     /// <param name="soldiers">The soldiers.</param>
-    private sealed class SoldierBodies(ISoldierPresenter soldiers) : ICharacterPresenter
+    private sealed class SoldierBodies(ISoldierBodies soldiers) : ICharacterPresenter
     {
         public void Draw(in Camera3D camera, in Matrix4f projection) => soldiers.Draw(camera, projection);
 

@@ -229,7 +229,7 @@ public sealed partial class GameHost : IDisposable
 
         if (_soldiers is { } soldiers)
         {
-            foreach (HumanOccupant occupant in soldiers.Simulation.LiveOccupants())
+            foreach (HumanOccupant occupant in soldiers.LiveOccupants())
             {
                 if (!occupant.IsDead)
                 {
@@ -503,7 +503,7 @@ public sealed partial class GameHost : IDisposable
     private IMissilePresenter? _missileRenderer;
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
-    private ISoldierPresenter? _soldiers;
+    private ISoldierBodies? _soldiers;
 
     // The vehicles' engine sets, gun reports and turret traverse (VehicleSoundPlayer).
     private VehicleSoundPlayer? _vehicleSounds;

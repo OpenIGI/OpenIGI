@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Game.Ai;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Ai;
@@ -141,7 +142,7 @@ public sealed partial class GameHost
         _menuBackdrop.ReleaseSoldiers();
         if (!BackdropLite)
         {
-            ISoldierPresenter? soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
+            ISoldierBodies? soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierBodies>(
                 new SoldierPresentationRequest(_device, preview.Resources, _logger, _mission.MagicObjects, _detailMaps));
             _menuBackdrop.ArmSoldiers(soldiers);
             soldiers?.Load(

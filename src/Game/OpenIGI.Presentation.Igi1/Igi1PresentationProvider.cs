@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Game.Ai;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
 using OpenIGI.Game.Igi1.Ai;
@@ -35,7 +36,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
                 new Igi1WorldView(request.Gameplay))
             .Add<MissionHudPresentationRequest, IMissionViewpoint>(static (in MissionHudPresentationRequest request) =>
                 new Igi1Viewpoint(request.Gameplay))
-            .Add<SoldierPresentationRequest, ISoldierPresenter>(static (in SoldierPresentationRequest request) =>
+            .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
                 new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)

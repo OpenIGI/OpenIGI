@@ -77,7 +77,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
     private int _skinTick = -1;
 
 
-    /// <inheritdoc cref="ISoldierPresenter.PlayerBodyFollowVisible"/>
+    /// <inheritdoc cref="ISoldierBodies.PlayerBodyFollowVisible"/>
     public bool FollowVisible { get; set; } = true;
 
     /// <inheritdoc cref="ISoldierPresenter.IsPlayerBodyActive"/>
@@ -387,7 +387,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
         }
     }
 
-    /// <inheritdoc cref="ISoldierPresenter.PlayerBodyHandAttachment"/>
+    /// <inheritdoc cref="ISoldierBodies.PlayerBodyHandAttachment"/>
     public BoneAttachment? HandAttachment()
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
@@ -692,7 +692,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
         member.HasFrameState = true;
     }
 
-    /// <inheritdoc cref="ISoldierPresenter.DrawPlayerBody"/>
+    /// <inheritdoc cref="ISoldierBodies.DrawPlayerBody"/>
     public void Draw(in Camera3D camera, in Matrix4f projection)
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);

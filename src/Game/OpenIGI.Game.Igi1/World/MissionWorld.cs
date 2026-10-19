@@ -169,6 +169,17 @@ public sealed class MissionWorld
         FlashbangFlash = new();
     }
 
+    /// <summary>Gets the soldiers' presenter, which draws the simulation it carries, or <see langword="null"/> while none is up.</summary>
+    public ISoldierPresenter? SoldierPresenter { get; private set; }
+
+    /// <summary>Takes the level's soldiers as the frame draws them, and the simulation they carry.</summary>
+    /// <param name="bodies">The soldiers, or <see langword="null"/> to drop them.</param>
+    public void AdoptSoldiers(ISoldierBodies? bodies)
+    {
+        SoldierPresenter = bodies as ISoldierPresenter;
+        Soldiers = SoldierPresenter?.Simulation;
+    }
+
     /// <summary>Clears the grenades, missiles and launcher rounds in flight, as <c>Game_CutsceneDelete</c> does.</summary>
     public void ClearTransientProjectiles()
     {
@@ -251,6 +262,7 @@ public sealed class MissionWorld
     public void ReleaseWorld()
     {
         Soldiers = null;
+        SoldierPresenter = null;
         Player = null;
         EffectWalls = null;
         Solids = null;

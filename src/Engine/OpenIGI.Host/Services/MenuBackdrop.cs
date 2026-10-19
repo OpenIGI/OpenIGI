@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Host.Menu;
@@ -40,7 +41,7 @@ internal sealed class MenuBackdrop(IGraphicsDevice device, IOpenIgiLogger logger
     /// Built behind the menu so the driver has already met a skinned vertex layout by the time Play is pressed, and
     /// handed straight over when the backdrop is promoted, so the played mission never builds them at all.
     /// </remarks>
-    public ISoldierPresenter? Soldiers { get; private set; }
+    public ISoldierBodies? Soldiers { get; private set; }
 
     /// <inheritdoc/>
     public string Name => "Menu backdrop";
@@ -62,7 +63,7 @@ internal sealed class MenuBackdrop(IGraphicsDevice device, IOpenIgiLogger logger
 
     /// <summary>Replaces the backdrop's soldiers.</summary>
     /// <param name="soldiers">The new soldiers, or <see langword="null"/> for none.</param>
-    public void ArmSoldiers(ISoldierPresenter? soldiers)
+    public void ArmSoldiers(ISoldierBodies? soldiers)
     {
         Soldiers?.Dispose();
         Soldiers = soldiers;
@@ -70,9 +71,9 @@ internal sealed class MenuBackdrop(IGraphicsDevice device, IOpenIgiLogger logger
 
     /// <summary>Hands the soldiers over to a promoted mission, which owns them from here.</summary>
     /// <returns>The soldiers, or <see langword="null"/> where none were built.</returns>
-    public ISoldierPresenter? TakeSoldiers()
+    public ISoldierBodies? TakeSoldiers()
     {
-        ISoldierPresenter? soldiers = Soldiers;
+        ISoldierBodies? soldiers = Soldiers;
         Soldiers = null;
         return soldiers;
     }

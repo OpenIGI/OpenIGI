@@ -3,7 +3,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Game.Igi1.Ai;
+namespace OpenIGI.Game.Ai;
 
 /// <summary>What the level's soldiers are drawn with.</summary>
 /// <param name="Device">The graphics device to upload through and draw with.</param>

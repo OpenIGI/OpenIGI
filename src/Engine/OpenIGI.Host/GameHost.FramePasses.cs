@@ -288,7 +288,7 @@ public sealed partial class GameHost
             // camera is close enough that its head fills the frame. Placed and re-skinned every frame
             // it is shown rather than merely switched on: the body is uploaded as a rest mesh and has
             // no pose until something puts one in it.
-            if (_soldiers is { } bodies)
+            if (_mission.SoldierPresenter is { } bodies)
             {
                 if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
                 {

@@ -474,14 +474,14 @@ public sealed partial class GameHost
         {
             _soldiers?.Dispose();
             _soldiers = armedSoldiers;
-            _mission.Soldiers = armedSoldiers.Simulation;
+            _mission.AdoptSoldiers(armedSoldiers);
         }
         else
         {
             _soldiers?.Dispose();
-            _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierPresenter>(
+            _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierBodies>(
                 new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps));
-            _mission.Soldiers = _soldiers?.Simulation;
+            _mission.AdoptSoldiers(_soldiers);
             _soldiers?.Load(
                 loaded,
                 levelRoot,
@@ -515,7 +515,7 @@ public sealed partial class GameHost
         // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
         // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
         // knife leaves: KnifeStab itself never reaches the decal message.
-        if (_soldiers is { } soldiers)
+        if (_mission.SoldierPresenter is { } soldiers)
         {
             soldiers.BloodSpray = (owner, at, direction) => _effects.SpawnBlood(owner, at, direction);
         }
@@ -738,7 +738,7 @@ public sealed partial class GameHost
             throw MissingSystem(MissionSystemNames.Scene);
         }
 
-        if (_soldiers is null)
+        if (_mission.Soldiers is null)
         {
             // A title without IGI1's soldiers has no brains to animate here.
             return;
@@ -1056,7 +1056,7 @@ public sealed partial class GameHost
                 _heldWeapon = CarryLoadout(playerSetup, candidate, loadout, loaded, weaponRoster, ammoTable);
 
                 // The player's rounds are offered to the soldiers, which own their own health.
-                if (_soldiers is { } guards)
+                if (_mission.SoldierPresenter is { } guards)
                 {
                     playerSetup.ConnectSoldiers(candidate, guards, PlayRicochetSound);
                 }
@@ -1137,7 +1137,7 @@ public sealed partial class GameHost
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
                 // player walks on. It stays invisible until the player dies. Without the spawn's model or
                 // the set there is simply no body to show, and death falls back to the frozen view.
-                if (_soldiers is { } bodies
+                if (_mission.SoldierPresenter is { } bodies
                     && playerBodySet is { } bodySet
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
@@ -1786,7 +1786,6 @@ public sealed partial class GameHost
 
         public WorldScene? Scene => host._scene;
 
-        public ISoldierPresenter? SoldierPresenter => host._soldiers;
 
         // Its spawn column follows the eye, so it is handed the position the last frame drew from -- one frame stale
         // is nothing to a column forty metres across, and the tick has no camera of its own.
@@ -2176,7 +2175,7 @@ public sealed partial class GameHost
         // The states with a body of their own are left alone: the ladder and the world
         // interactions place and pose the same rig on their own schedule, and the death path owns
         // it outright once the player has fallen.
-        if (_soldiers is { } followedBody)
+        if (_mission.SoldierPresenter is { } followedBody)
         {
             // The same conditions the camera itself is eligible under, and deliberately so: the
             // follow owns the torso clip and the aim bend, and every state excluded here has an

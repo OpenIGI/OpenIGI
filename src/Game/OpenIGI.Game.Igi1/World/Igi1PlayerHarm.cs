@@ -18,9 +18,6 @@ public interface IIgi1PlayerHarmHost
     /// <summary>Gets the game's loop, whose clock the player's grunts are gated on.</summary>
     GameLoop Game { get; }
 
-    /// <summary>Gets the soldiers as they are drawn, which pose the player's own body when it falls.</summary>
-    ISoldierPresenter? SoldierPresenter { get; }
-
     /// <summary>Plays a human's hit grunt: one of a prefix's variants.</summary>
     /// <param name="prefix">The definitions' common prefix.</param>
     /// <param name="variants">How many there are.</param>
@@ -187,7 +184,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, IIgi1PlayerHarmHost hos
             ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
             : mission.Player.Body.Yaw;
 
-        host.SoldierPresenter?.KillPlayerBody(
+        mission.SoldierPresenter?.KillPlayerBody(
             fall,
             mission.Player.Body.Position,
             throwFacing,

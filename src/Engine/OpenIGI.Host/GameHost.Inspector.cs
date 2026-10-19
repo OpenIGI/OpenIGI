@@ -31,7 +31,7 @@ public sealed partial class GameHost
 
         public IGroundHeightField? Ground => host._ground;
 
-        public ISoldierPresenter? Soldiers => host._soldiers;
+        public ISoldierPresenter? Soldiers => host._mission.SoldierPresenter;
 
         public MissionWorld Mission => host._mission;
 

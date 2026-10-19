@@ -36,9 +36,6 @@ public interface IIgi1PlayerSetupHost
     /// <summary>Gets the level's built scene, whose ladders the player climbs and whose vehicles' guns turn.</summary>
     WorldScene? Scene { get; }
 
-    /// <summary>Gets the soldiers as they are drawn, which also draw the vehicles' guns.</summary>
-    ISoldierPresenter? SoldierPresenter { get; }
-
     /// <summary>Reads, once a session, the animation sets the player's body and its first-person rig use.</summary>
     /// <returns>The body's set, or <see langword="null"/> when there is none.</returns>
     BoneAnimationSet? ReadSharedAnimations();
@@ -435,7 +432,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, IIgi1PlayerSetupHost h
             runtime.BindVehicleGunPlacements(armedScene);
         }
 
-        host.SoldierPresenter?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
+        mission.SoldierPresenter?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
 
         // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
         // about a metre over the feet standing and half that crouched -- not the eye.

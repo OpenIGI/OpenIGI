@@ -24,9 +24,6 @@ public interface IIgi1MissionHost
     /// <summary>Gets the level's built scene, whose placements the cutscenes move.</summary>
     WorldScene? Scene { get; }
 
-    /// <summary>Gets the soldiers as they are drawn, whose rigs close each tick.</summary>
-    ISoldierPresenter? SoldierPresenter { get; }
-
     /// <summary>Steps the weather, which falls whatever the player is doing.</summary>
     void StepWeather();
 
@@ -382,7 +379,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
             }
         }
 
-        ISoldierPresenter? soldiers = host.SoldierPresenter;
+        ISoldierPresenter? soldiers = mission.SoldierPresenter;
         if (mission.SoldiersInWalk)
         {
             // The soldiers updated inside the level walk; this closes their tick (corpses, skinning).
@@ -416,7 +413,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
     /// <summary>Advances the ladder and the world interactions on the fixed tick, and the camera that frames them.</summary>
     private void TickClimbsAndInteractions()
     {
-        ISoldierPresenter? soldiers = host.SoldierPresenter;
+        ISoldierPresenter? soldiers = mission.SoldierPresenter;
         // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
         // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
         // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
