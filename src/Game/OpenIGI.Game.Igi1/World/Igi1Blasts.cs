@@ -1,3 +1,4 @@
+using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -13,48 +14,6 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>What the level's blasts ask of whatever shows and plays them: their sounds, their fire and smoke, and the voices they cut.</summary>
-public interface IIgi1BlastHost
-{
-    /// <summary>Gets the log.</summary>
-    IOpenIgiLogger Logger { get; }
-
-    /// <summary>Gets the game's loop, whose variables an authored blast's expression writes.</summary>
-    GameLoop Game { get; }
-
-    /// <summary>Plays a sound definition where something happened.</summary>
-    /// <param name="name">The definition.</param>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="priority">Its priority.</param>
-    void PlayDefinition(string name, Vector3d positionInUnits, int priority);
-
-    /// <summary>Spawns the smoke a flashbang leaves.</summary>
-    /// <param name="positionInUnits">Where it went off.</param>
-    void FlashbangSmoke(Vector3d positionInUnits);
-
-    /// <summary>Spawns the fireball a grenade, rocket or launcher round makes.</summary>
-    /// <param name="positionInUnits">Where it went off.</param>
-    void Fireball(Vector3d positionInUnits);
-
-    /// <summary>Spawns an <c>Explosion0</c>'s fire and fragments.</summary>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="fullRangeUnits">Its full range.</param>
-    /// <param name="fireballs">How many fireballs.</param>
-    /// <param name="fragments">How many fragments.</param>
-    void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments);
-
-    /// <summary>Spawns a shot-out camera lens's or alarm light's explosion.</summary>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="isCameraLens">Whether it was a camera's lens rather than an alarm light.</param>
-    void SpeakerExplosion(Vector3d positionInUnits, bool isCameraLens);
-
-    /// <summary>Shatters a pane into its shards.</summary>
-    /// <param name="placement">The pane.</param>
-    /// <param name="atUnits">Where it was struck.</param>
-    void GlassShatter(WorldPlacement placement, Vector3d atUnits);
-
-}
-
 /// <summary>
 /// The level's blasts as Project I.G.I. resolves them: grenades, rockets, launcher rounds, authored and vehicle
 /// explosions, and the rounds and blasts that break panes, set off barrels and shoot out speakers -- <c>Explosion0</c>'s
@@ -66,7 +25,7 @@ public interface IIgi1BlastHost
 /// <param name="impacts">The scorch a rocket or a launcher round burns.</param>
 /// <param name="host">What shows and plays them.</param>
 public sealed class Igi1Blasts(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IIgi1BlastHost host)
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
 {
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;

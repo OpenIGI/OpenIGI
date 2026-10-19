@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Game.Hosting;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Weapons;
@@ -8,13 +9,6 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>What Project I.G.I.'s own impact effects ask of the host: whether the player wants blood.</summary>
-public interface IIgi1EffectsHost
-{
-    /// <summary>Gets a value indicating whether the player's profile wants blood.</summary>
-    bool BloodWanted { get; }
-}
-
 /// <summary>
 /// Project I.G.I.'s own impact effects as they move: <c>concrete1.spr</c> dust and the material's chips where a round lands,
 /// and the blood a wound throws, whose droplets mark what they land on.
@@ -22,7 +16,7 @@ public interface IIgi1EffectsHost
 /// <remarks>The title's impact presenter draws <see cref="Runtime"/>; this steps it and feeds it on the fixed tick.</remarks>
 /// <param name="mission">The mission, whose player's marks and walls the effects use.</param>
 /// <param name="host">Whether the player wants blood.</param>
-public sealed class Igi1ImpactEffects(MissionWorld mission, IIgi1EffectsHost host)
+public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost host)
 {
     /// <summary>The missile's scorch half-width: <c>0x476AC0</c> hands <c>Explosion0</c> 6144.</summary>
     public const float MissileScorchHalfWidthInUnits = 6144f;

@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Game.Hosting;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
@@ -1668,13 +1669,13 @@ public sealed partial class GameHost
     /// <param name="outcome">What the loop's frame did; only a tick advances anything.</param>
     private void TickMission(FrameLoopState state, FrameOutcome outcome)
     {
-        _igi1Host.State = state;
+        _missionHost.State = state;
         _igi1.Tick.Run(outcome == FrameOutcome.Tick);
     }
 
     /// <summary>The host's side of <see cref="Igi1Gameplay"/>: the picture, the sound, the files, the menus and the log of the first game's mission.</summary>
     /// <param name="host">The host.</param>
-    private sealed class Igi1Host(GameHost host) : IIgi1Host
+    private sealed class MissionHostServices(GameHost host) : IMissionHostServices
     {
 
         public void SpawnImpactBurst(in WorldRayHit worldHit)

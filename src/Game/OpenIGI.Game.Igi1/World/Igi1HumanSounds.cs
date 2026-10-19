@@ -1,3 +1,4 @@
+using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Audio;
 using OpenIGI.Core.Numerics;
@@ -8,27 +9,10 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>What Project I.G.I.'s cries and impact sounds are played through.</summary>
-public interface IIgi1SoundHost
-{
-    /// <summary>Gets the running game, whose clock the impact sounds' quiet windows are timed on.</summary>
-    GameLoop Game { get; }
-
-    /// <summary>Gets the log.</summary>
-    IOpenIgiLogger Logger { get; }
-
-    /// <summary>Gets a value indicating whether the level's weather is on, which wets every footstep.</summary>
-    bool IsRaining { get; }
-
-    /// <summary>Gets where sounds play, or <see langword="null"/> for silence.</summary>
-    /// <remarks>Silence draws nothing from the sound stream: every cry and impact returns before it picks.</remarks>
-    SoundSystem? SoundOutput { get; }
-}
-
 /// <summary>Project I.G.I.'s humans' cries and the sounds of rounds landing: which sample, and when it is allowed to play.</summary>
 /// <param name="mission">The mission, whose sound stream picks the samples and whose material table names them.</param>
 /// <param name="host">Where they play.</param>
-public sealed class Igi1HumanSounds(MissionWorld mission, IIgi1SoundHost host)
+public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host)
 {
     private int _impactQuietUntil;
     private int _ricochetQuietUntil;

@@ -1,3 +1,4 @@
+using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -9,28 +10,6 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>What the player's damage and death ask of whatever plays and shows them.</summary>
-public interface IIgi1PlayerHarmHost
-{
-    /// <summary>Gets the log.</summary>
-    IOpenIgiLogger Logger { get; }
-
-    /// <summary>Gets the game's loop, whose clock the player's grunts are gated on.</summary>
-    GameLoop Game { get; }
-
-    /// <summary>Plays a sound definition.</summary>
-    /// <param name="name">The definition.</param>
-    /// <param name="positionInUnits">Where, or <see langword="null"/> for the listener's own.</param>
-    /// <param name="priority">Its priority.</param>
-    void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0);
-
-    /// <summary>Hands the view to the camera that pulls back over the fallen body.</summary>
-    /// <param name="position">The body, in world units.</param>
-    /// <param name="facing">The way it was thrown.</param>
-    /// <param name="walls">What pulls the camera in.</param>
-    void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls);
-}
-
 /// <summary>
 /// What hurts Project I.G.I.'s player and how it dies: a soldier's blow (<c>0x412CE0</c>), a fall (<c>0x408460</c>), a
 /// powered fence (<c>0x412F80</c>), and the death state every lethal hit enters (state 47, <c>0x40E560</c>).
@@ -39,7 +18,7 @@ public interface IIgi1PlayerHarmHost
 /// <param name="sounds">The cries a hit and a death make.</param>
 /// <param name="audio">The player's held voices, which a death stops, and a landing's sound.</param>
 /// <param name="host">What plays and shows them.</param>
-public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds, Igi1MissionAudio audio, IIgi1PlayerHarmHost host)
+public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds, Igi1MissionAudio audio, IPlayerHarmHost host)
 {
     // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
     private const int PlayerBluntFrontZone = 13;

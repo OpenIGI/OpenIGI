@@ -1,3 +1,4 @@
+using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -15,46 +16,6 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>What making Project I.G.I.'s player asks of whatever shows and plays it.</summary>
-public interface IIgi1PlayerSetupHost
-{
-    /// <summary>Gets the log.</summary>
-    IOpenIgiLogger Logger { get; }
-
-    /// <summary>Gets the game's loop, whose namespace, types and tree the player's tables and scripts load into.</summary>
-    GameLoop Game { get; }
-
-    /// <summary>Gets the files the tables are read from.</summary>
-    VirtualFileSystem FileSystem { get; }
-
-    /// <summary>Gets the resources the scripts are registered as.</summary>
-    ResourceRegistry Resources { get; }
-
-    /// <summary>Gets the mission's terrain, which the grenades and the view model trace.</summary>
-    TerrainData? Terrain { get; }
-
-    /// <summary>Gets the level's built scene, whose ladders the player climbs and whose vehicles' guns turn.</summary>
-    WorldScene? Scene { get; }
-
-    /// <summary>Reads, once a session, the animation sets the player's body and its first-person rig use.</summary>
-    /// <returns>The body's set, or <see langword="null"/> when there is none.</returns>
-    BoneAnimationSet? ReadSharedAnimations();
-
-    /// <summary>Records that a stage of the load has finished, for the load's timings.</summary>
-    /// <param name="what">What finished.</param>
-    void EndStage(string what);
-
-    /// <summary>Shows a gun a soldier dropped.</summary>
-    /// <param name="loaded">The mission, whose packs hold the gun's model.</param>
-    /// <param name="pickup">The dropped gun.</param>
-    void WeaponDropped(LoadedMission loaded, GunPickup pickup);
-
-    /// <summary>Hands the effects the game material the open ground is made of.</summary>
-    /// <param name="row">The material's row, or <see langword="null"/> when the terrain declares none.</param>
-    void TerrainRowRead(int? row);
-
-}
-
 /// <summary>
 /// Makes Project I.G.I.'s player for a loaded level: the rig, what it walks into and climbs, the weapon, ammunition and
 /// material tables, the guns lying in the level, and <c>humanplayer.qvm</c>'s tuning.
@@ -63,7 +24,7 @@ public interface IIgi1PlayerSetupHost
 /// <param name="harm">What a fall and a powered fence do to the player.</param>
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IIgi1PlayerSetupHost host)
+public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IPlayerSetupHost host)
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;

@@ -183,7 +183,7 @@ public sealed partial class GameHost : IDisposable
 
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     // The first game's mission, its world, and the host's side of it.
-    private readonly Igi1Host _igi1Host;
+    private readonly MissionHostServices _missionHost;
     private readonly Igi1Gameplay _igi1;
     private readonly MissionState _mission;
 
@@ -573,8 +573,8 @@ public sealed partial class GameHost : IDisposable
         _lampMaps = new LampShadowMaps(device);
         _flashlight = new PlayerFlashlight(device);
         _inspector = new WorldInspector(new InspectedWorld(this));
-        _igi1Host = new Igi1Host(this);
-        _igi1 = new Igi1Gameplay(_igi1Host);
+        _missionHost = new MissionHostServices(this);
+        _igi1 = new Igi1Gameplay(_missionHost);
         _mission = _igi1.World;
         _contentLayers = new ContentLayerCommands(
             () => _overrides,

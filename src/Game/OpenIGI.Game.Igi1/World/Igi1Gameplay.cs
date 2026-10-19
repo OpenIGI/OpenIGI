@@ -1,12 +1,8 @@
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.World;
-
-/// <summary>Everything the first game's mission asks of whatever shows and plays it.</summary>
-public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1PlayerHarmHost, IIgi1MissionSetupHost, IIgi1BlastHost, IIgi1SoundHost, IIgi1EffectsHost
-{
-}
 
 /// <summary>
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
@@ -14,11 +10,11 @@ public interface IIgi1Host : IIgi1MissionHost, IIgi1PlayerSetupHost, IIgi1Player
 /// </summary>
 public sealed class Igi1Gameplay : IMissionGameplay
 {
-    private readonly IIgi1Host _host;
+    private readonly IMissionHostServices _host;
 
     /// <summary>Initializes a new instance of the <see cref="Igi1Gameplay"/> class.</summary>
     /// <param name="host">What shows and plays it.</param>
-    public Igi1Gameplay(IIgi1Host host)
+    public Igi1Gameplay(IMissionHostServices host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         Sounds = new Igi1HumanSounds(World, host);
