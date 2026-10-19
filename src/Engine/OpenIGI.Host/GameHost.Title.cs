@@ -21,8 +21,6 @@ using OpenIGI.UI.Screens;
 using OpenIGI.UI.Widgets;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Game.Igi1.Menus;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Host;
 

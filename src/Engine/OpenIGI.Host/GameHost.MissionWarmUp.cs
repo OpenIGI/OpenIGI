@@ -13,7 +13,6 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
-using OpenIGI.Game.Igi1.Menus;
 
 namespace OpenIGI.Host;
 

@@ -41,9 +41,6 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
-using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Host.Services;
 
 using System.Diagnostics;

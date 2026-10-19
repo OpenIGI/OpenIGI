@@ -17,10 +17,6 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using System.Diagnostics;
-using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Igi1.World;
 using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;

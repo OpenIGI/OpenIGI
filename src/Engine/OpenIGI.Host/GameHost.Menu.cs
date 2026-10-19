@@ -2,7 +2,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation.Cameras;
