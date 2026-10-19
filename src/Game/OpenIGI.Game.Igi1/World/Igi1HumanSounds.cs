@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Audio;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
@@ -12,6 +13,12 @@ public interface IIgi1SoundHost
 {
     /// <summary>Gets the running game, whose clock the impact sounds' quiet windows are timed on.</summary>
     GameLoop Game { get; }
+
+    /// <summary>Gets the log.</summary>
+    IOpenIgiLogger Logger { get; }
+
+    /// <summary>Gets a value indicating whether the level's weather is on, which wets every footstep.</summary>
+    bool IsRaining { get; }
 
     /// <summary>Gets where sounds play, or <see langword="null"/> for silence.</summary>
     /// <remarks>Silence draws nothing from the sound stream: every cry and impact returns before it picks.</remarks>

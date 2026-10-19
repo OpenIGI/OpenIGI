@@ -134,7 +134,6 @@ public sealed partial class GameHost : IDisposable
     // other, and only one of them names the mission that follows -- so the reader and the campaign order
     // are both the title's to supply.
     private IMissionCatalogue<MissionDescriptor> _missions = null!;
-    private AnimTriggerRegistry? _animationTriggers;
     private TitleSession _title = null!;
     private MaterialLibrary _materials = null!;
     private MaterialDetailPack _detailMaps = null!;
@@ -159,11 +158,6 @@ public sealed partial class GameHost : IDisposable
 
 
     private int _tracerSkipsLogged;
-
-    private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
-    private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
-    private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
-    private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
 
     // What the level says about its own light, for a title that authors that rather than a sky. Null for
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.

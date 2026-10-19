@@ -322,13 +322,7 @@ public sealed partial class GameHost
         _title = TitleSession.Start(
             _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false);
 
-        // Asked for, not required: these four are tables one game publishes and the other does not, and
-        // the previous game's must not be left standing when this one has none.
-        _mission.MagicObjects = _title.Services.TryGet(out MagicObjectRegistry? magic) ? magic : null;
-        _mission.VehiclePhysics = _title.Services.TryGet(out VehiclePhysicsRegistry? vehicles) ? vehicles : null;
-        _animationTriggers = null;
-        _title.Services.TryGet(out _animationTriggers);
-        _mission.AiConfig = _title.Services.TryGet(out OpenIGI.Game.Igi1.Ai.HumanAiConfigRegistry? ai) ? ai : null;
+        _mission.AdoptTitleServices(_title.Services);
 
         try
         {

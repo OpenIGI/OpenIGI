@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
@@ -141,6 +142,21 @@ public sealed class MissionWorld
     /// <summary>Gets or sets the generator the guards' rounds draw their spread from.</summary>
     public Random ShotRandom { get; set; } = null!;
 
+    /// <summary>Takes the tables the running title publishes.</summary>
+    /// <param name="services">The title session's services.</param>
+    /// <remarks>
+    /// Asked for, not required: these four are tables one game publishes and the other does not, and the previous game's
+    /// must not be left standing when this one has none.
+    /// </remarks>
+    public void AdoptTitleServices(IServiceCatalog services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        MagicObjects = services.TryGet(out MagicObjectRegistry? magic) ? magic : null;
+        VehiclePhysics = services.TryGet(out VehiclePhysicsRegistry? vehicles) ? vehicles : null;
+        AnimationTriggers = services.TryGet(out AnimTriggerRegistry? triggers) ? triggers : null;
+        AiConfig = services.TryGet(out HumanAiConfigRegistry? ai) ? ai : null;
+    }
+
     /// <summary>Starts the player's life afresh: full health, alive, and no wash on the screen.</summary>
     /// <param name="difficulty">The profile difficulty the player's own hits are scaled by.</param>
     public void ResetPlayerLife(int difficulty)
@@ -168,6 +184,9 @@ public sealed class MissionWorld
         DamageFlash = new();
         FlashbangFlash = new();
     }
+
+    /// <summary>Gets or sets the title's animation triggers, the sounds the first-person clips name by event, or <see langword="null"/>.</summary>
+    public AnimTriggerRegistry? AnimationTriggers { get; set; }
 
     /// <summary>Gets the soldiers' presenter, which draws the simulation it carries, or <see langword="null"/> while none is up.</summary>
     public ISoldierPresenter? SoldierPresenter { get; private set; }

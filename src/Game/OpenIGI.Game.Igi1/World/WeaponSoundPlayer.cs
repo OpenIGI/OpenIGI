@@ -3,7 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.Weapons;
 
-namespace OpenIGI.Host.Audio;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>
 /// Makes a gun sound, on the two-sample rule the weapon records are built around.
@@ -21,7 +21,7 @@ namespace OpenIGI.Host.Audio;
 /// is faster than the sample is long, so the shots would overlap into mush and burn a voice each.
 /// </para>
 /// </remarks>
-internal sealed class WeaponSoundPlayer
+public sealed class WeaponSoundPlayer
 {
     private readonly SoundSystem _sounds;
 

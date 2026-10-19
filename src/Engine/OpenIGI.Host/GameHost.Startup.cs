@@ -354,7 +354,7 @@ public sealed partial class GameHost
         _mission.WeaponTypes = null;
         _mission.AlarmSpeakers = null;
         _mission.Destructibles = null;
-        _sirenVoices.Clear();
+        _igi1.Audio.ForgetSirens();
         _playerMode = false;
 
         // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The

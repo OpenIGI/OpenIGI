@@ -49,14 +49,6 @@ public interface IIgi1PlayerSetupHost
     /// <param name="fence">The fence.</param>
     void ElectricFenceTouched(PlayerCamera player, WorldInteraction fence);
 
-    /// <summary>Plays the sound of a generic pickup being taken.</summary>
-    /// <param name="pickup">The pickup.</param>
-    void GenericPickedUp(GenericPickup pickup);
-
-    /// <summary>Plays the sound of a gun being picked up.</summary>
-    /// <param name="pickup">The pickup.</param>
-    void GunPickedUp(GunPickup pickup);
-
     /// <summary>Shows a gun a soldier dropped.</summary>
     /// <param name="loaded">The mission, whose packs hold the gun's model.</param>
     /// <param name="pickup">The dropped gun.</param>
@@ -77,8 +69,9 @@ public interface IIgi1PlayerSetupHost
 /// material tables, the guns lying in the level, and <c>humanplayer.qvm</c>'s tuning.
 /// </summary>
 /// <param name="mission">The mission's world, which keeps the tables and the player's health.</param>
+/// <param name="audio">The pickups' cues.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(MissionWorld mission, IIgi1PlayerSetupHost host)
+public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1MissionAudio audio, IIgi1PlayerSetupHost host)
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
@@ -157,7 +150,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, IIgi1PlayerSetupHost h
         if (mission.GenericPickups is { } genericPickups)
         {
             candidate.UseGenericPickups(genericPickups);
-            candidate.GenericPickedUp += host.GenericPickedUp;
+            candidate.GenericPickedUp += audio.PlayGenericPickupSound;
             host.Logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
         }
 
@@ -239,7 +232,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, IIgi1PlayerSetupHost h
             candidate.UseGunPickups(gunPickups);
             candidate.GunPickedUp += pickup =>
             {
-                host.GunPickedUp(pickup);
+                audio.PlayGunPickupSound(pickup);
                 string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
                 mission.Objectives?.ShowTransientMessage(missionText.Get(key));
             };

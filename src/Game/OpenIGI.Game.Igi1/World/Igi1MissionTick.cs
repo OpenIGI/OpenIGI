@@ -27,9 +27,6 @@ public interface IIgi1MissionHost
     /// <summary>Steps the weather, which falls whatever the player is doing.</summary>
     void StepWeather();
 
-    /// <summary>Moves the lifts' sounds to where the lifts now are.</summary>
-    void ElevatorsMoved();
-
     /// <summary>Plays the vehicles' engines and guns as the cutscene runtime now has them.</summary>
     /// <param name="cutscenes">The cutscene runtime.</param>
     void SoundVehicles(CutsceneRuntime cutscenes);
@@ -68,28 +65,8 @@ public interface IIgi1MissionHost
     /// <summary>Reports the player's first shot and every round that lands on a guard.</summary>
     void ReportPlayerShots();
 
-    /// <summary>Plays the sounds of the player's update: the binoculars' zoom and the medipack.</summary>
-    void SoundPlayerUpdate();
-
-    /// <summary>Plays the player's weapon and body this tick: the report, the launcher, the cook, the reload and the jump.</summary>
-    void SoundPlayerWeaponAndBody();
-
-    /// <summary>Plays one of the player's footsteps where the foot landed.</summary>
-    /// <param name="footstep">The step.</param>
-    void PlayFootstep(in Footstep footstep);
-
     /// <summary>Plays and shows what the player's rounds struck, and lays the rockets' trails.</summary>
     void PresentPlayerImpacts();
-
-    /// <summary>Plays the grenades' bounces.</summary>
-    void PlayGrenadeBounces();
-
-    /// <summary>Keeps the sirens and the cameras' beeps and motors following their own state.</summary>
-    void SoundAlarms();
-
-    /// <summary>Plays the level's ambience around where the ear is.</summary>
-    /// <param name="listenerInUnits">The ear, in world units.</param>
-    void TickAmbience(Vector3d listenerInUnits);
 
     /// <summary>Steps the world's effects on under the death camera.</summary>
     void StepEffectsAfterDeath();
@@ -142,8 +119,9 @@ public interface IIgi1MissionHost
 /// </summary>
 /// <param name="mission">The mission's world.</param>
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
+/// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIgi1MissionHost host)
+public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, Igi1MissionAudio audio, IIgi1MissionHost host)
 {
     // Whether the player's ladder climb or world interaction has begun its body animation, and whether the
     // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
@@ -257,7 +235,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
             // to move an empty car or one with an open door. Provider is read every tick.
             elevators.SetPlayerPositionProvider(mission.Player is { } p ? () => p.Body.Position : null);
             elevators.Tick();
-            host.ElevatorsMoved();
+            audio.UpdateElevatorSoundPositions();
             if (mission.Solids is { } elevatorSolids)
             {
                 elevators.ApplyCollision(elevatorSolids);
@@ -793,7 +771,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
         PlayerCamera player = mission.Player!;
         if (mission.PlayerTicked)
         {
-            host.SoundPlayerUpdate();
+            audio.SoundPlayerUpdate();
 
             // Hearing is emitted once per round, not once per projectile intersection. The weapon
             // row carries the exact retail radius (for example 4096 for suppressed fire and
@@ -804,13 +782,13 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
                 mission.Soldiers?.NotifyGunshot(player.Body.Eye, audibleWeapon.AiDetectionRange);
             }
 
-            host.SoundPlayerWeaponAndBody();
+            audio.SoundPlayerWeaponAndBody();
 
             // And the player's own feet. Positional like anyone else's, and placed where the
             // foot landed rather than on the listener, because the sound belongs to the ground.
             if (player.TakeFootstep() is { } step)
             {
-                host.PlayFootstep(step);
+                audio.PlayFootstep(step);
 
                 // The step is also a NOISE the AI hears: 0x463920's tail posts AIEVENT_WALK
                 // (type 10, filter 0x46) with the ground material's own radius, unless the
@@ -832,12 +810,12 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
             blasts.ResolveGenericTbaExplosions();
             blasts.ResolveMissileDetonations();
             blasts.ResolveM203Detonations();
-            host.PlayGrenadeBounces();
+            audio.PlayGrenadeBounces();
 
             // The alarm speakers, following their own level expressions -- the siren the
             // room hears when a guard reaches a switch.
             blasts.TickDestructibles();
-            host.SoundAlarms();
+            audio.SoundAlarms();
 
             // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
             // impact list carries both the instant rays and the ballistic arrivals, so either
@@ -846,7 +824,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, IIg
 
             // The level's ambience, which is keyed off where the ear is rather than where the
             // body stands: an area is a box you listen from the inside of.
-            host.TickAmbience(player.EyeUnits);
+            audio.TickAmbience(player.EyeUnits);
         }
         else if (mission.IsPlayerDead)
         {

@@ -63,13 +63,6 @@ public interface IIgi1BlastHost
     /// <param name="atUnits">Where it was struck.</param>
     void GlassShatter(WorldPlacement placement, Vector3d atUnits);
 
-    /// <summary>Cuts a shot-out speaker's siren.</summary>
-    /// <param name="speaker">The speaker.</param>
-    void SilenceSiren(AlarmSpeaker speaker);
-
-    /// <summary>Cuts a destroyed camera's beep and motor.</summary>
-    /// <param name="camera">The camera.</param>
-    void SilenceCamera(SecurityCamera camera);
 }
 
 /// <summary>
@@ -79,8 +72,9 @@ public interface IIgi1BlastHost
 /// </summary>
 /// <param name="mission">The mission's world.</param>
 /// <param name="harm">What a blast does to the player when it kills.</param>
+/// <param name="audio">The sirens and cameras a blast silences.</param>
 /// <param name="host">What shows and plays them.</param>
-public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, IIgi1BlastHost host)
+public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IIgi1BlastHost host)
 {
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;
@@ -431,7 +425,7 @@ public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, IIgi1B
     private void ShootOutSpeaker(AlarmSpeaker destroyed)
     {
         // Silenced on the spot, not on the next tick's sweep -- a shot speaker cuts mid-wail.
-        host.SilenceSiren(destroyed);
+        audio.SilenceSiren(destroyed);
 
         if (destroyed.DestructionSound.Length > 0)
         {
@@ -442,7 +436,7 @@ public sealed class Igi1Blasts(MissionWorld mission, Igi1PlayerHarm harm, IIgi1B
             && mission.SecurityCameras.TryGetCamera(destroyed.Task, out SecurityCamera? camera)
             && camera is not null)
         {
-            host.SilenceCamera(camera);
+            audio.SilenceCamera(camera);
         }
 
         // The SCameraLens branch (0x441770) and AlarmLight_Explode (0x43A5F0) each start their own

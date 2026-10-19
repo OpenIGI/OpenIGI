@@ -22,10 +22,11 @@ public sealed class Igi1Gameplay : IMissionGameplay
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         Sounds = new Igi1HumanSounds(World, host);
-        Harm = new Igi1PlayerHarm(World, Sounds, host);
-        Blasts = new Igi1Blasts(World, Harm, host);
-        Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, host);
-        Tick = new Igi1MissionTick(World, Blasts, host);
+        Audio = new Igi1MissionAudio(World, host);
+        Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
+        Blasts = new Igi1Blasts(World, Harm, Audio, host);
+        Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, host);
+        Tick = new Igi1MissionTick(World, Blasts, Audio, host);
     }
 
     /// <summary>Gets the played mission's world.</summary>
@@ -40,6 +41,9 @@ public sealed class Igi1Gameplay : IMissionGameplay
     /// <summary>Gets the humans' cries and the sounds of rounds landing.</summary>
     public Igi1HumanSounds Sounds { get; }
 
+    /// <summary>Gets the mission heard: every voice its things hold.</summary>
+    public Igi1MissionAudio Audio { get; }
+
     /// <summary>Gets what brings the mission's runtimes and registries up.</summary>
     public Igi1MissionSetup Setup { get; }
 
@@ -51,5 +55,5 @@ public sealed class Igi1Gameplay : IMissionGameplay
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>
-    public Igi1PlayerSetup NewPlayerSetup() => new(World, _host);
+    public Igi1PlayerSetup NewPlayerSetup() => new(World, Audio, _host);
 }

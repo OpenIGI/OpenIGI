@@ -44,9 +44,6 @@ public interface IIgi1MissionSetupHost : IGuardRoundHost
     /// <param name="sound">What changed.</param>
     void CutsceneSound(CutsceneSoundEvent sound);
 
-    /// <summary>Gets where the level's doors, lifts and soldiers send their sounds, and their blows on the player.</summary>
-    Igi1SoundSinks Sounds { get; }
-
     /// <summary>Records that a stage of the load has finished, for the load's timings.</summary>
     /// <param name="what">What finished.</param>
     void EndStage(string what);
@@ -60,29 +57,20 @@ public interface IIgi1MissionSetupHost : IGuardRoundHost
     bool IsKeyDown(KeyCode key);
 }
 
-/// <summary>Where the level's doors, lifts and soldiers send their sounds, and a soldier's blow on the player.</summary>
-/// <param name="Door">A door opening, closing or sliding.</param>
-/// <param name="Elevator">A lift starting, moving or stopping.</param>
-/// <param name="Script">A sound a soldier's script plays (<c>AIAction_PlaySound</c>): the definition, where, and whether it follows the soldier.</param>
-/// <param name="Weapon">A soldier's weapon loop: its runtime id, whether it fired, the weapon and where.</param>
-/// <param name="Footstep">A soldier's footstep.</param>
-/// <param name="PlayerStruck">A soldier's close-combat blow on the player: from where, and its damage.</param>
-public sealed record Igi1SoundSinks(
-    Action<PlacedDoor, DoorSoundEvent> Door,
-    Action<PlacedElevator, ElevatorSoundEvent> Elevator,
-    Action<string, Vector3d, bool> Script,
-    Action<int, bool, WeaponType?, Vector3d> Weapon,
-    Action<Footstep> Footstep,
-    Action<Vector3d, float> PlayerStruck);
-
 /// <summary>Brings up Project I.G.I.'s cutscene runtime and objective runtime for a loaded level.</summary>
 /// <param name="mission">The mission's world, which keeps them.</param>
 /// <param name="harm">What a guard's round does to the player.</param>
 /// <param name="blasts">What a guard's round does to a speaker or a destructible.</param>
 /// <param name="sounds">The soldiers' cries and the sound of a guard's round landing.</param>
+/// <param name="audio">Where the doors, lifts and soldiers send their sounds.</param>
 /// <param name="host">What plays and shows them.</param>
 public sealed class Igi1MissionSetup(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1HumanSounds sounds, IIgi1MissionSetupHost host)
+    MissionWorld mission,
+    Igi1PlayerHarm harm,
+    Igi1Blasts blasts,
+    Igi1HumanSounds sounds,
+    Igi1MissionAudio audio,
+    IIgi1MissionSetupHost host)
 {
     /// <summary>Makes the mission's text and its cutscene runtime, with the natives the level's cutscenes call.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
@@ -339,9 +327,9 @@ public sealed class Igi1MissionSetup(
         }
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
-        mission.Doors.SetSoundSink(host.Sounds.Door);
+        mission.Doors.SetSoundSink(audio.PlayDoorSound);
         mission.Doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
-        mission.Elevators.SetSoundSink(host.Sounds.Elevator);
+        mission.Elevators.SetSoundSink(audio.PlayElevatorSound);
         if (mission.Doors.Doors.Count > 0)
         {
             host.Logger.Information("World", $"{mission.Doors.Doors.Count} door(s) available to players and AI.");
@@ -366,20 +354,20 @@ public sealed class Igi1MissionSetup(
             // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
             soldiers.SetHitSound((prefix, variants, position) => sounds.PlayHit(prefix, variants, position));
             soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(mission.SoundRandom));
-            soldiers.SetMeleeStrikeSink(host.Sounds.PlayerStruck);
+            soldiers.SetMeleeStrikeSink(harm.StrikePlayer);
             soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerDeltaTranslationScale);
 
             // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
             // HumanAI's current position. Both begin at the same live position; the backend owns any voice
             // following after that point.
-            soldiers.SetScriptSound(host.Sounds.Script);
+            soldiers.SetScriptSound(audio.PlayScriptSound);
 
             // Each AI weapon owns its automatic loop and updates its world position every tick. The round
             // callback handles ballistics only; without this parallel path AI shots were completely silent.
-            soldiers.SetWeaponSound(host.Sounds.Weapon);
+            soldiers.SetWeaponSound(audio.TickSoldierWeaponSound);
 
             // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
-            soldiers.SetFootstepSound(host.Sounds.Footstep);
+            soldiers.SetFootstepSound(step => audio.PlayFootstep(step));
         }
     }
 

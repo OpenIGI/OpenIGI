@@ -502,7 +502,7 @@ public sealed partial class GameHost
         ObjectCollisionIndex solids = b.Solids!;
         IWorldPresenter world = b.World!;
 
-        _ambientVoices.Clear();
+        _igi1.Audio.ForgetAmbience();
         _igi1.Setup.BuildInteractions(loaded, levelRoot, solids);
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
@@ -529,8 +529,7 @@ public sealed partial class GameHost
         WorldScene scene = b.Scene!;
         IWorldPresenter world = b.World!;
 
-        _cameraBeepVoices.Clear();
-        _cameraMoveVoices.Clear();
+        _igi1.Audio.ForgetCameras();
         _cutsceneSounds.StopAll();
         b.WorldTrace = _igi1.Setup.BuildCameras(b.LevelRoot, scene, b.Solids!, _playerTerrain);
         world.SecurityCameras = _mission.SecurityCameras;
@@ -759,8 +758,7 @@ public sealed partial class GameHost
                     ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
                     : "from -difficulty override."));
 
-        _sirenVoices.Clear();
-        _reportedSirenFailures.Clear();
+        _igi1.Audio.ForgetSirens();
         _igi1.Setup.AnimateSoldiers(b.LevelRoot, b.Scene!, b.WorldTrace!, graphs, effectiveDifficulty);
         b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
     }
@@ -1432,8 +1430,7 @@ public sealed partial class GameHost
         _messages = null;
         _computerHighlights = null;
         _mission.ReleaseRuntimes();
-        _cameraBeepVoices.Clear();
-        _cameraMoveVoices.Clear();
+        _igi1.Audio.ForgetCameras();
         _cutsceneSounds.StopAll();
         _session.Mission = null;
 
@@ -1789,7 +1786,6 @@ public sealed partial class GameHost
         // is nothing to a column forty metres across, and the tick has no camera of its own.
         public void StepWeather() => host._storm?.Tick(host._stormEyeMetres);
 
-        public void ElevatorsMoved() => host.UpdateElevatorSoundPositions();
 
         public void SoundVehicles(CutsceneRuntime cutscenes)
         {
@@ -1825,19 +1821,13 @@ public sealed partial class GameHost
 
         public void ReportPlayerShots() => host.ReportPlayerShots(State);
 
-        public void SoundPlayerUpdate() => host.SoundPlayerUpdate();
 
-        public void SoundPlayerWeaponAndBody() => host.SoundPlayerWeaponAndBody();
 
-        public void PlayFootstep(in Footstep footstep) => host.PlayFootstep(footstep);
 
         public void PresentPlayerImpacts() => host.PresentPlayerImpacts();
 
-        public void PlayGrenadeBounces() => host.PlayGrenadeBounces();
 
-        public void SoundAlarms() => host.SoundAlarms();
 
-        public void TickAmbience(Vector3d listenerInUnits) => host.TickAmbience(listenerInUnits);
 
         public void StepEffectsAfterDeath() => host.StepEffectsAfterDeath();
 
@@ -1904,9 +1894,7 @@ public sealed partial class GameHost
         public void ElectricFenceTouched(PlayerCamera player, WorldInteraction fence) =>
             host.ResolvePlayerElectricFence(player, fence);
 
-        public void GenericPickedUp(GenericPickup pickup) => host.PlayGenericPickupSound(pickup);
 
-        public void GunPickedUp(GunPickup pickup) => host.PlayGunPickupSound(pickup);
 
         public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
 
@@ -1916,14 +1904,11 @@ public sealed partial class GameHost
 
         public SoundSystem? SoundOutput => host._audioOut.Sounds;
 
-        public void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing) => host.PlayLandingSound(landing);
 
         public void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0) =>
             host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
 
-        public void StopBinocularTransitionSound() => host.StopBinocularTransitionSound();
 
-        public void ResetWeaponSounds() => host._weaponSounds?.Reset();
 
         public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
             host.Viewpoint?.BeginDeathView(position, facing, walls);
@@ -1957,13 +1942,7 @@ public sealed partial class GameHost
 
         public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
 
-        public Igi1SoundSinks Sounds { get; } = new(
-            host.PlayDoorSound,
-            host.PlayElevatorSound,
-            (name, position, attached) => host._audioOut.Sounds?.PlayDefinition(name, position, priority: 200),
-            host.TickSoldierWeaponSound,
-            step => host.PlayFootstep(step),
-            host.StrikePlayer);
+        public bool IsRaining => host._rain?.IsWeatherEnabled == true;
 
         public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
 
@@ -1991,27 +1970,6 @@ public sealed partial class GameHost
 
         public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
             host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
-
-        public void SilenceSiren(AlarmSpeaker speaker)
-        {
-            if (host._sirenVoices.Remove(speaker, out OpenIGI.Audio.AudioVoiceHandle siren))
-            {
-                host._audioOut.Sounds?.Stop(siren);
-            }
-        }
-
-        public void SilenceCamera(SecurityCamera camera)
-        {
-            if (host._cameraBeepVoices.Remove(camera, out var beep))
-            {
-                host._audioOut.Sounds?.Stop(beep.Voice);
-            }
-
-            if (host._cameraMoveVoices.Remove(camera, out OpenIGI.Audio.AudioVoiceHandle motor))
-            {
-                host._audioOut.Sounds?.Stop(motor);
-            }
-        }
     }
 
     /// <summary>Logs the player's first shot and every round that lands on a guard.</summary>
@@ -2048,68 +2006,6 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>The sounds of the player's update: the binoculars' zoom and the medipack.</summary>
-    private void SoundPlayerUpdate()
-    {
-        PlayBinocularTransitionSound();
-        PlayMedipackSound();
-    }
-
-    /// <summary>The sounds of the player's weapon and body this tick: the report, the launcher, the cook, the reload and the jump.</summary>
-    private void SoundPlayerWeaponAndBody()
-    {
-        PlayerCamera player = _mission.Player!;
-
-        // And the sound of it. Driven every tick rather than only on the ones that fire,
-        // because an automatic's loop has to be told when the trigger was RELEASED as much
-        // as when it was pulled -- see WeaponSoundPlayer.
-        // FUN_0040FB30/0x40FB90 drives medipack animation tasks directly. A medipack is
-        // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
-        // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
-        // null also closes an automatic gun loop when the player switches to the syringe.
-        WeaponType? weaponForSound = player.HeldWeaponType?.Category == WeaponCategory.Medipack
-            ? null
-            : player.HeldWeaponType;
-        bool m203Launched = player.M203LaunchedThisTick;
-        _weaponSounds?.Tick(
-            player.FiredThisTick && !m203Launched && weaponForSound is not null,
-            weaponForSound);
-        if (m203Launched)
-        {
-            // GunM16A2's native callback (0x473510) plays this launch report itself; it is
-            // not the M16A2's primary rifle loop and must remain audible on an alternate shot.
-            // The native call attaches it to the launcher task position, not to the listener.
-            Vector3d launchPosition = player.Body.Eye;
-            if (player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
-            {
-                launchPosition = m203Shots[0].Origin;
-            }
-
-            _audioOut.Sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
-        }
-
-        // The grenade's cook tick: a looping sound held while the throw charges, stopped the
-        // moment it is released (0x40F590 starts it, 0x40F640 stops it).
-        TickGrenadeCook();
-
-        // Reloads and a few other weapon actions name their sounds through BOED animation
-        // events rather than through the weapon record. The rig advanced inside Player.Tick,
-        // so its crossed-event interval is ready to dispatch here.
-        // The native medipack callbacks dispatch their own clips and do not enter the
-        // generic firearm BOED trigger path. Suppress those generic triggers while the
-        // medipack is held, otherwise a shared animation event can sound like reload/fire.
-        if (player.HeldWeaponType?.Category != WeaponCategory.Medipack)
-        {
-            PlayPlayerAnimationSounds();
-        }
-
-        // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
-        if (player.Body.TookOffThisTick)
-        {
-            PlayJumpSound();
-        }
-    }
-
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
     private void PresentPlayerImpacts()
     {
@@ -2136,13 +2032,6 @@ public sealed partial class GameHost
         // The launcher rockets in the air lay their smoke trail, one column of puffs per
         // segment they crossed this tick.
         _effects.SpawnMissileTrails(player.Missiles, _mission.VehicleMissiles);
-    }
-
-    /// <summary>The alarm speakers' sirens and the security cameras' beeps and motors, following their own state.</summary>
-    private void SoundAlarms()
-    {
-        TickAlarmSpeakers();
-        TickSecurityCameraSounds();
     }
 
     /// <summary>The world's effects stepping on under the death camera, after the player's update has stopped.</summary>

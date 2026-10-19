@@ -18,21 +18,11 @@ public interface IIgi1PlayerHarmHost
     /// <summary>Gets the game's loop, whose clock the player's grunts are gated on.</summary>
     GameLoop Game { get; }
 
-    /// <summary>Plays the sound of the surface the player landed on.</summary>
-    /// <param name="landing">The definition and where.</param>
-    void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing);
-
     /// <summary>Plays a sound definition.</summary>
     /// <param name="name">The definition.</param>
     /// <param name="positionInUnits">Where, or <see langword="null"/> for the listener's own.</param>
     /// <param name="priority">Its priority.</param>
     void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0);
-
-    /// <summary>Stops the binoculars' zoom sound.</summary>
-    void StopBinocularTransitionSound();
-
-    /// <summary>Retires the player's weapon loops, which no further tick will quiet.</summary>
-    void ResetWeaponSounds();
 
     /// <summary>Hands the view to the camera that pulls back over the fallen body.</summary>
     /// <param name="position">The body, in world units.</param>
@@ -47,8 +37,9 @@ public interface IIgi1PlayerHarmHost
 /// </summary>
 /// <param name="mission">The mission's world, which holds the player, its health and the draws they take.</param>
 /// <param name="sounds">The cries a hit and a death make.</param>
+/// <param name="audio">The player's held voices, which a death stops, and a landing's sound.</param>
 /// <param name="host">What plays and shows them.</param>
-public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds, IIgi1PlayerHarmHost host)
+public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds, Igi1MissionAudio audio, IIgi1PlayerHarmHost host)
 {
     // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
     private const int PlayerBluntFrontZone = 13;
@@ -153,11 +144,11 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         mission.IsPlayerDead = true;
         mission.Player.ResetOptics();
         mission.Player.StopWeaponsForDeath();
-        host.StopBinocularTransitionSound();
+        audio.StopBinocularTransitionSound();
 
         // The player receives no further simulation ticks after death, so the weapon sound player
         // cannot observe a quiet tick and retire an automatic loop on its own.
-        host.ResetWeaponSounds();
+        audio.ResetWeaponSounds();
         int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, mission.ShotRandom.Next(2));
 
         // The lethal hit has already written the retail corner flash. Do not replace it with a uniform
@@ -211,7 +202,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         // below -- a hurting fall is heard twice, once as the surface and once as the player.
         if (player.TakeLandingSound() is { } landing)
         {
-            host.PlayLandingSound(landing);
+            audio.PlayLandingSound(landing);
         }
 
         // State 35 names one of these three definitions only when damage is non-zero. Like the player's
