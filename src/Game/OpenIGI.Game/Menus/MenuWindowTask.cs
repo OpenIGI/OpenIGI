@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.Menus;
 
@@ -18,8 +19,15 @@ namespace OpenIGI.Game.Menus;
 /// <c>+56</c> line-up mode, <c>+60</c> centre-horizontally, <c>+64</c> centre-vertically.
 /// </para>
 /// </remarks>
-public abstract class MenuWindowTask : ContainerTask
+public abstract class MenuWindowTask : TickedTask
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A menu window passes the engine's update on to its children, as a container does: that walk is what runs Project
+    /// I.G.I.'s menus. A game whose menus a level run drives instead has its manager take the run.
+    /// </remarks>
+    protected override void OnUpdate() => ForwardToChildren(TaskMessage.Update);
+
     /// <summary>The spacing a menu window starts with on both axes.</summary>
     /// <remarks><c>MenuWindow</c>'s constructor (<c>0x4241C0</c>) writes 4 to both; everything else it touches starts at zero.</remarks>
     public const int DefaultSpacing = 4;

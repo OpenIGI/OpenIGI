@@ -63,10 +63,13 @@ public sealed partial class Igi2MenuManagerTask : Igi2MenuWindowTask, IMenuManag
 
     /// <inheritdoc/>
     /// <remarks><c>MenuManager_RunHandler</c>: the menu's state takes its step.</remarks>
-    public override void Run(Igi2LevelRun level)
+    public override void Run(Game.Level.LevelRun level)
     {
-        _level = level;
-        Menu?.Run(level);
+        if (level is Igi2LevelRun own)
+        {
+            _level = own;
+            Menu?.Run(own);
+        }
     }
 
     /// <inheritdoc/>

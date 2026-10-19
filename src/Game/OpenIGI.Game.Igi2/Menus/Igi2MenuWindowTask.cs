@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Game.Menus;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Menus;
@@ -13,7 +14,7 @@ namespace OpenIGI.Game.Igi2.Menus;
 /// Layout, drawing, fonts and input (<c>MenuWindow_eFormatEvent</c>, the draw and run handlers) are the presentation's: the OpenIGI
 /// shell presents the in-game menu, so only the menu's data and its state are kept here.
 /// </remarks>
-public abstract class Igi2MenuWindowTask : Igi2Task
+public abstract class Igi2MenuWindowTask : MenuWindowTask
 {
     /// <summary>Takes the window's data in, as it is opened: <c>MenuWindow_InitDataHandler</c>, its children in turn.</summary>
     /// <param name="level">The level the window's scripts are evaluated in.</param>
