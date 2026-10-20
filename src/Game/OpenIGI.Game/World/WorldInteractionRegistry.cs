@@ -141,11 +141,16 @@ public sealed class WorldInteraction
     public bool IsInWorld => ConditionalContainerGate.IsTaskActive(Task);
 
     /// <summary>Whether the task still offers itself to the retail activation scan.</summary>
+    /// <remarks>
+    /// Each type's GetActivate: a terminal and a GenericTBA (<c>0x443C80</c>) ask only that it is on, so a hacked terminal is
+    /// offered again; a cabinet (<c>0x444860</c>) asks nothing of being searched; a fence (<c>0x4400C0</c>) offers nothing
+    /// while it is electrified.
+    /// </remarks>
     public bool IsAvailable => Type switch
     {
         InteractionActivateType.Terminal or InteractionActivateType.Generic
-            or InteractionActivateType.PlaceExplosive => IsOn && !IsCompleted,
-        InteractionActivateType.Cabinet => !IsSearched,
+            or InteractionActivateType.PlaceExplosive => IsOn,
+        InteractionActivateType.Fence => !IsElectrified,
         InteractionActivateType.Door => !IsLocked || IsPickable,
         // Switch::GetActivate (0x445730) offers nothing once the switch is broken.
         InteractionActivateType.Switch => !IsDestroyed,
@@ -930,8 +935,9 @@ public sealed class WorldInteractionRegistry
                 // BeginUse/CompleteUse pair uses a private player sentinel and would dismount it.
                 break;
             default:
-                item.BeginUse();
-                item.CompleteUse();
+                // 0x454DA0 / 0x459D50 press a switch and toggle a door, and otherwise only use what they hold: an AI's
+                // activate never hacks a terminal, searches a cabinet or finishes a GenericTBA.
+                item.Use();
                 break;
         }
 

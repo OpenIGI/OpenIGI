@@ -191,7 +191,7 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
-    public void LevelTwoAiGenericExplosiveChargeSurvivesResolverBeforeActivationExactlyOnce()
+    public void LevelTwoGenericExplosiveChargeIsOnlyUsedByAnAiAndExplodesOnceWhenFinished()
     {
         (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
@@ -202,7 +202,18 @@ public sealed class RetailInteractionInventoryTests
 
         interactions.Tick();
         Assert.Empty(interactions.ConsumeExplosions());
+
+        // An AI's activate (0x454DA0) only uses what it holds: the charge is in use, not finished.
         Assert.True(interactions.ActivateFromAi(charge.Task.Id));
+        Assert.True(charge.InUse.Value);
+        Assert.False(charge.IsCompleted);
+        Assert.False(charge.ExplosionTriggeredThisTick);
+        interactions.Tick();
+        Assert.Empty(interactions.ConsumeExplosions());
+
+        // The human who plants it finishes it, and the blast is emitted once.
+        charge.BeginUse();
+        charge.CompleteUse();
         Assert.True(charge.ExplosionTriggeredThisTick);
         interactions.Tick();
 
