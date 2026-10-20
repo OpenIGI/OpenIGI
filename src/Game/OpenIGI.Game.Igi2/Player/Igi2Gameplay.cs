@@ -107,7 +107,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             if (weapons is not null)
             {
                 weapons.World = new Igi2LevelGunShotWorld(world, materials, LevelAi(request.Services));
-                if (request.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? physicsTypes))
+                if (request.Services.TryGet(out OpenIGI.Game.Physics.PhysicsObjectTypes? physicsTypes))
                 {
                     Weapons.Igi2ExplosionWorld explosions = new(player.Human.Random, world, materials, player.Dynamic)
                     {

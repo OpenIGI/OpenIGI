@@ -104,7 +104,7 @@ public sealed class Igi2MissileType
     /// <summary>Reads a physics type's arguments as a missile's.</summary>
     /// <param name="type">The physics type.</param>
     /// <returns>The missile type, or <see langword="null"/> when its arguments are too few.</returns>
-    public static Igi2MissileType? Of(Igi2PhysicsObjectType type)
+    public static Igi2MissileType? Of(PhysicsObjectType type)
     {
         ArgumentNullException.ThrowIfNull(type);
         IReadOnlyList<OpenIGI.Scripting.Runtime.QvmValue> p = type.Parameters;
@@ -236,7 +236,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
     public Igi2Missile(
         in Igi2ProjectileLaunch launch,
         string model,
-        Igi2PhysicsObjectType type,
+        PhysicsObjectType type,
         Igi2MissileType missile,
         MefModel? drawn,
         Igi2PhysicsWorld world,

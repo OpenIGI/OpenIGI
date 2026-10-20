@@ -12,6 +12,7 @@ using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Expressions;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Vehicles;
 
@@ -59,7 +60,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
     private readonly Igi2CarWheel[] _wheels = new Igi2CarWheel[Igi2CarType.MaxWheels];
     private Igi2CarType? _type;
-    private Igi2PhysicsObjectType? _physicsType;
+    private PhysicsObjectType? _physicsType;
     private Igi2PhysicsObject? _body;
     private Igi2PhysicsWorld? _physicsWorld;
     private MefModel? _model;
@@ -295,7 +296,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     /// <param name="detection">The detectables it watches, or <see langword="null"/> for none.</param>
     /// <param name="random">The stream its gun's rounds draw from, or <see langword="null"/> for a fresh one.</param>
     public void Prepare(
-        Igi2PhysicsObjectTypes types,
+        PhysicsObjectTypes types,
         Func<string, MefModel?> models,
         Igi2PhysicsWorld world,
         Igi2HumanWeapons? weapons,
@@ -326,7 +327,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         };
 
         _type = null;
-        _physicsType = types.TryFind(Model, out Igi2PhysicsObjectType type) ? type : null;
+        _physicsType = types.TryFind(Model, out PhysicsObjectType type) ? type : null;
         if (_physicsType is not null)
         {
             _type = Igi2CarType.Parse(_physicsType.Parameters);

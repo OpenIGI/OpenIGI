@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -345,7 +346,7 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
 /// <param name="dynamic">The level's dynamic tasks the grenades run in.</param>
 /// <param name="logger">Where a grenade with no physics type is reported.</param>
 public sealed class Igi2Grenades(
-    Igi2PhysicsObjectTypes types,
+    PhysicsObjectTypes types,
     Func<string, MefModel?> models,
     Igi2PhysicsWorld world,
     Igi2DynamicTasks dynamic,
@@ -401,7 +402,7 @@ public sealed class Igi2Grenades(
             }
         }
 
-        if (Explosions is not { } explosions || !types.TryFind(model, out Igi2PhysicsObjectType type)
+        if (Explosions is not { } explosions || !types.TryFind(model, out PhysicsObjectType type)
             || !types.IsMovedBy(type, "Missile") || Igi2MissileType.Of(type) is not { } missile)
         {
             _logger.Warning("Missile", $"No missile physics type for {model}: the missile is not fired.");
@@ -428,7 +429,7 @@ public sealed class Igi2Grenades(
     public int? KindOf(Igi2WeaponTypeTask weapon)
     {
         ArgumentNullException.ThrowIfNull(weapon);
-        if (!types.TryFind(weapon.FixedModel, out Igi2PhysicsObjectType type))
+        if (!types.TryFind(weapon.FixedModel, out PhysicsObjectType type))
         {
             return null;
         }
@@ -460,7 +461,7 @@ public sealed class Igi2Grenades(
 
         Igi2PhysicsObject? body = null;
         int kind = KindOf(weapon) ?? Igi2GrenadeKind.Normal;
-        if (types.TryFind(weapon.FixedModel, out Igi2PhysicsObjectType type))
+        if (types.TryFind(weapon.FixedModel, out PhysicsObjectType type))
         {
             body = new Igi2PhysicsObject(type, models(model), grenade.Position, Vector3f.One, models(weapon.FixedModel));
             body.Body.Velocity = grenade.Speed;

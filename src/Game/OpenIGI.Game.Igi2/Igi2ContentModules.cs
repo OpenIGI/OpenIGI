@@ -426,7 +426,7 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
     }
 }
 
-/// <summary>The physics object types, out of the scripts under <c>LOCAL:physicsobj</c> (<see cref="Physics.Igi2PhysicsObjectTypes"/>).</summary>
+/// <summary>The physics object types, out of the scripts under <c>LOCAL:physicsobj</c> (<see cref="OpenIGI.Game.Physics.PhysicsObjectTypes"/>).</summary>
 /// <remarks>After the weapons' module, whose <c>TASKTYPE_GRENADE</c> and <c>TASKTYPE_MISSILE</c> the scripts name.</remarks>
 public sealed class Igi2PhysicsObjectContentModule : IContentModule
 {
@@ -437,7 +437,7 @@ public sealed class Igi2PhysicsObjectContentModule : IContentModule
     public void Register(ContentRegistrationContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        context.Services.GetOrProvide(() => new Physics.Igi2PhysicsObjectTypes(context.Logger)).Register(context.Natives, context.Types);
+        context.Services.GetOrProvide(() => Physics.Igi2PhysicsObjectTypes.Create(context.Logger)).Register(context.Natives, context.Types);
     }
 
     /// <inheritdoc/>
@@ -445,7 +445,7 @@ public sealed class Igi2PhysicsObjectContentModule : IContentModule
     public void LoadTables(ContentLoadContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        context.Services.Require<Physics.Igi2PhysicsObjectTypes>().Load(context.FileSystem, context.Resources, context.Natives);
+        context.Services.Require<OpenIGI.Game.Physics.PhysicsObjectTypes>().Load(context.FileSystem, context.Resources, context.Natives);
     }
 }
 

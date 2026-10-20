@@ -487,7 +487,7 @@ public sealed class RetailIgi2SoldierHarmTests
         (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
         Igi2Grenades grenades = new(
-            m.Services!.Require<Physics.Igi2PhysicsObjectTypes>(), m.Level.ModelFor, new Physics.Igi2PhysicsWorld(m.Collision!, m.Materials), new World.Igi2DynamicTasks());
+            m.Services!.Require<OpenIGI.Game.Physics.PhysicsObjectTypes>(), m.Level.ModelFor, new Physics.Igi2PhysicsWorld(m.Collision!, m.Materials), new World.Igi2DynamicTasks());
         Igi2Gameplay.SpawnSoldiers(
             m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
             Game.Ai.AiDifficulty.Normal, grenades: grenades);

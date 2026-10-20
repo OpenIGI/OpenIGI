@@ -36,10 +36,10 @@ public sealed class RetailIgi2GrenadeFlightTests
     [RequiresTitleDataFact("igi2")]
     public void The_hand_grenade_has_its_physics_type()
     {
-        Igi2PhysicsObjectTypes types = Mission1.Value.Session.Require<Igi2PhysicsObjectTypes>();
+        PhysicsObjectTypes types = Mission1.Value.Session.Require<PhysicsObjectTypes>();
         Igi2WeaponTypeTask weapon = WeaponType();
 
-        Assert.True(types.TryFind(weapon.FixedModel, out Igi2PhysicsObjectType type));
+        Assert.True(types.TryFind(weapon.FixedModel, out PhysicsObjectType type));
         Assert.True(types.IsMovedBy(type, "Grenade"));
         Assert.Equal(0.3f, type.Mass);
         Assert.Equal(new Vector3f(0.1f, 0.1f, 0.15f), type.Size);
@@ -99,7 +99,7 @@ public sealed class RetailIgi2GrenadeFlightTests
         Igi2GrenadeParameters parameters = Igi2GrenadeParameters.Of(Assert.IsType<Igi2ProjectileLauncherTask>(weapon.FireType(0)));
         Igi2PhysicsWorld world = new(m.World, m.Session.Require<Igi2GameMaterials>());
         Igi2DynamicTasks dynamic = new();
-        Igi2Grenades grenades = new(m.Session.Require<Igi2PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic);
+        Igi2Grenades grenades = new(m.Session.Require<PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic);
         Recording effects = new();
         grenades.Effects = effects;
 

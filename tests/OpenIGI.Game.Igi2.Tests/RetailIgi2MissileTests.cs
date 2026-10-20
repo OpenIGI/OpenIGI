@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -29,7 +30,7 @@ public sealed class RetailIgi2MissileTests
         Igi2DynamicTasks dynamic = new();
         Igi2ExplosionWorld explosions = new(new IgiRandom(0x1234567u), m.Collision!, m.Materials, dynamic);
         Igi2PhysicsWorld world = new(m.Collision!, m.Materials);
-        Igi2Grenades launcher = new(session.Require<Igi2PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic) { Explosions = explosions };
+        Igi2Grenades launcher = new(session.Require<PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic) { Explosions = explosions };
         Vector3d above = new(spawn.Position.X, spawn.Position.Y, spawn.Position.Z + 81920.0);
         float[] down = [1f, 0f, 0f, 0f, 0f, 1f, 0f, -1f, 0f];
         launcher.LaunchMissile(new Igi2ProjectileLaunch(weapons.FireTaskTypes.Missile, above, down, default, 30f, 0f, 0, rpg, null), fire);

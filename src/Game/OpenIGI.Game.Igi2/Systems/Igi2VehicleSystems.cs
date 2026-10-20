@@ -89,7 +89,7 @@ internal static class Igi2VehicleSystems
     public static void Cars(Igi2LevelBuild b)
     {
         Igi2TitlePlayer player = b.Player;
-        if (b.Services.TryGet(out Physics.Igi2PhysicsObjectTypes? carTypes)
+        if (b.Services.TryGet(out OpenIGI.Game.Physics.PhysicsObjectTypes? carTypes)
             && b.Services.TryGet(out Igi2GameMaterials? carMaterials))
         {
             b.Services.TryGet(out Igi2HumanWeapons? carWeapons);

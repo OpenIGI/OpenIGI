@@ -118,7 +118,7 @@ public sealed class Igi2PhysicsObject
     /// The type's own model, whose contact points' magic vertices size a type defined with no size (<c>PhysicsObjType_GetSize</c>,
     /// <c>igi2 0x5AD4D0</c>); the drawn model when omitted.
     /// </param>
-    public Igi2PhysicsObject(Igi2PhysicsObjectType type, MefModel? model, Vector3d position, Vector3f scale, MefModel? typeModel = null)
+    public Igi2PhysicsObject(PhysicsObjectType type, MefModel? model, Vector3d position, Vector3f scale, MefModel? typeModel = null)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         Position = position;
@@ -144,7 +144,7 @@ public sealed class Igi2PhysicsObject
         int count = Math.Min(type.ContactPoints.Count, MaxContactPoints);
         for (int i = 0; i < count; i++)
         {
-            Igi2PhysicsContactPointType defined = type.ContactPoints[i];
+            PhysicsContactPointType defined = type.ContactPoints[i];
             Igi2PhysicsContactPoint point = _points[i];
             point.Type = defined.Type;
             point.Material = defined.Material;
@@ -163,7 +163,7 @@ public sealed class Igi2PhysicsObject
     }
 
     /// <summary>Gets its type, <c>ptType</c>.</summary>
-    public Igi2PhysicsObjectType Type { get; }
+    public PhysicsObjectType Type { get; }
 
     /// <summary>Gets its body, <c>tPhysics</c>.</summary>
     public Igi2RigidBody Body { get; } = new();
@@ -286,11 +286,11 @@ public sealed class Igi2PhysicsObject
     /// A type's size from its model, <c>PhysicsObjType_GetSizeFromModel</c> (<c>igi2 0x5AD180</c>): the extent of its contact points'
     /// magic vertices along each axis, a point with no such vertex at the origin.
     /// </summary>
-    private static Vector3f SizeFromModel(Igi2PhysicsObjectType type, MefModel? model)
+    private static Vector3f SizeFromModel(PhysicsObjectType type, MefModel? model)
     {
         double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
         double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
-        foreach (Igi2PhysicsContactPointType point in type.ContactPoints)
+        foreach (PhysicsContactPointType point in type.ContactPoints)
         {
             Vector3f v = model is not null && model.TryGetMagicVertex(point.MagicVertex, out Vector3f vertex) ? vertex : default;
             minX = Math.Min(minX, v.X);

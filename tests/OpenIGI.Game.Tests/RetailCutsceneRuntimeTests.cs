@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Level;
@@ -99,7 +100,9 @@ public sealed class RetailCutsceneRuntimeTests
         // reducing it to the seven header fields would silently discard the data used by 0x42D1D0.
         Assert.Equal(95, truck.ArgumentCount);
         Assert.Equal(QvmValueKind.Integer, truck.ArgumentAt(0).Kind);
-        Assert.Equal(1, truck.ArgumentAt(0).Integer); // TASKTYPE_CAR
+        Assert.True(physics.Types.TryFind("622_01_1", out PhysicsObjectType truckType));
+        Assert.Equal("Car", truckType.TaskTypeName);
+        Assert.Equal(truckType.TaskType, truck.ArgumentAt(0).Integer); // TASKTYPE_CAR
         Assert.Equal("622_01_1", truck.ArgumentAt(8).Text);
         Assert.Equal(30, truck.ArgumentAt(34).Integer); // cutscene truck steering-point count
         Assert.Equal(0.001f, truck.ArgumentAt(35).ToSingle());

@@ -1,5 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Game.Physics;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
@@ -15,25 +17,41 @@ namespace OpenIGI.Game.World;
 public sealed class VehiclePhysicsRegistry
 {
     private const string LogCategory = "World";
-    private const string DefineNative = "DefinePhysicsObjType";
-    private const string RotorType = "TASKTYPE_ROTOR";
-    private const string HeliType = "TASKTYPE_HELI";
-    private const string CarType = "TASKTYPE_CAR";
-    private const string PlaneType = "TASKTYPE_PLANE";
+    private const string RotorType = "Rotor";
+    private const string HeliType = "Heli";
+    private const string CarType = "Car";
+    private const string PlaneType = "Plane";
 
-    private static readonly string[] Scripts =
+    /// <summary>The task types Project I.G.I.'s <c>physicsobj</c> scripts name, as constant and type name.</summary>
+    public static readonly IReadOnlyList<(string Constant, string Type)> TaskTypes =
     [
-        "LOCAL:physicsobj/cars/apc/car.qvm",
-        "LOCAL:physicsobj/cars/buggy/car.qvm",
-        "LOCAL:physicsobj/cars/limo/car.qvm",
-        "LOCAL:physicsobj/cars/t80/car.qvm",
-        "LOCAL:physicsobj/cars/truck/car.qvm",
-        "LOCAL:physicsobj/cars/cutscene_truck/car.qvm",
-        "LOCAL:physicsobj/helis/bell/heli.qvm",
-        "LOCAL:physicsobj/helis/mil/heli.qvm",
-        "LOCAL:physicsobj/planes/su27/plane.qvm",
-        "LOCAL:physicsobj/planes/jsf/plane.qvm",
-        "LOCAL:physicsobj/planes/cutscenemissile/plane.qvm",
+        ("TASKTYPE_GENERICPHYSICSOBJ", "GenericPhysicsObj"),
+        ("TASKTYPE_GENERICPHYSICSMAGICOBJ", "GenericPhysicsMagicObj"),
+        ("TASKTYPE_GRENADE", "Grenade"),
+        ("TASKTYPE_CAR", CarType),
+        ("TASKTYPE_WHEEL", "Wheel"),
+        ("TASKTYPE_HELI", HeliType),
+        ("TASKTYPE_ROTOR", RotorType),
+        ("TASKTYPE_MISSILE", "Missile"),
+        ("TASKTYPE_PLANE", PlaneType),
+    ];
+
+    /// <summary>
+    /// The constants the scripts' type-specific arguments name: the grenade's kinds (<c>0x476730</c>) and the missile's
+    /// smoke and guidance (<c>0x004277D3</c>, <c>0x004277EB</c>).
+    /// </summary>
+    public static readonly IReadOnlyList<(string Name, int Value)> Constants =
+    [
+        ("GRENADE_EXPLOSIONTYPE_NORMAL", (int)GrenadeExplosionType.Normal),
+        ("GRENADE_EXPLOSIONTYPE_FLASHBANG", (int)GrenadeExplosionType.Flashbang),
+        ("MISSILE_SMOKE_NONE", (int)MissileSmoke.None),
+        ("MISSILE_SMOKE_NORMAL", (int)MissileSmoke.Normal),
+        ("MISSILE_TYPE_MISSILE_DIRECT", (int)MissileType.MissileDirect),
+        ("MISSILE_TYPE_HIND_HELICOPTER", (int)MissileType.HindHelicopter),
+        ("MISSILE_TYPE_MISSILE_BALLISTIC", (int)MissileType.MissileBallistic),
+        ("MISSILE_TYPE_MISSILE_ANTITANK", (int)MissileType.MissileAntiTank),
+        ("MISSILE_TYPE_MISSILE_KEYBOARD", (int)MissileType.MissileKeyboard),
+        ("MISSILE_TYPE_BOMB", (int)MissileType.Bomb),
     ];
 
     private readonly Dictionary<string, RotorPhysicsDefinition> _rotors = new(StringComparer.OrdinalIgnoreCase);
@@ -41,15 +59,16 @@ public sealed class VehiclePhysicsRegistry
     private readonly Dictionary<string, CarPhysicsDefinition> _cars = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlanePhysicsDefinition> _planes = new(StringComparer.OrdinalIgnoreCase);
     private readonly IOpenIgiLogger _logger;
-    private int _rotorType;
-    private int _heliType;
-    private int _carType;
-    private int _planeType;
 
     /// <summary>Creates an empty registry.</summary>
     public VehiclePhysicsRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
-    /// <summary>Loads every shipped helicopter family.</summary>
+    /// <summary>Gets every physics object type the scripts define, vehicles and the rest.</summary>
+    public PhysicsObjectTypes Types { get; private set; } = new(TaskTypes, Constants);
+
+    /// <summary>Runs every script under <c>LOCAL:physicsobj</c> and keeps the vehicles' records.</summary>
+    /// <param name="resources">Where the scripts are read from, over the file system they are found on.</param>
+    /// <returns>How many helicopter, rotor and plane records were kept.</returns>
     public int Load(ResourceRegistry resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -58,65 +77,22 @@ public sealed class VehiclePhysicsRegistry
         _cars.Clear();
         _planes.Clear();
 
+        PhysicsObjectTypes types = new(TaskTypes, Constants, _logger);
         NativeRegistry natives = new();
-        natives.RegisterFunction(DefineNative, Define);
-        int nextType = 1;
-
-        foreach (string script in Scripts)
+        types.Register(natives, null);
+        try
         {
-            if (!resources.TryLoad(script, out ReadOnlyMemory<byte> bytes))
-            {
-                continue;
-            }
+            types.Load(resources.FileSystem, resources, natives);
+        }
+        catch (EngineFatalException ex)
+        {
+            throw new EngineFatalException($"Couldn't load vehicle definition script: {ex.Message}", ex);
+        }
 
-            QvmProgram program;
-            try
-            {
-                program = QvmProgram.Read(bytes);
-            }
-            catch (QvmFormatException ex)
-            {
-                throw new EngineFatalException($"Couldn't load vehicle definition script: {script}", ex);
-            }
-
-            foreach (string? symbol in program.SymbolNames)
-            {
-                if (symbol is null || !symbol.StartsWith("TASKTYPE_", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-                if (!natives.Contains(symbol))
-                {
-                    natives.RegisterConstant(symbol, nextType++);
-                }
-                if (natives.TryResolve(symbol, out QvmSymbol? registered))
-                {
-                    if (symbol == RotorType)
-                    {
-                        _rotorType = registered.Read().Integer;
-                    }
-                    if (symbol == HeliType)
-                    {
-                        _heliType = registered.Read().Integer;
-                    }
-                    if (symbol == CarType)
-                    {
-                        _carType = registered.Read().Integer;
-                    }
-                    if (symbol == PlaneType)
-                    {
-                        _planeType = registered.Read().Integer;
-                    }
-                }
-            }
-
-            QvmInterpreter interpreter = new(program, natives);
-            QvmError error = interpreter.Run();
-            if (error != QvmError.None)
-            {
-                throw new EngineFatalException(
-                    $"{script} faulted with {error}: {interpreter.ErrorMessage}");
-            }
+        Types = types;
+        foreach (PhysicsObjectType type in types.Types)
+        {
+            Define(new Row(type));
         }
 
         _logger.Information(LogCategory,
@@ -155,21 +131,21 @@ public sealed class VehiclePhysicsRegistry
     public bool TryGetPlane(string model, out PlanePhysicsDefinition definition) =>
         _planes.TryGetValue(model, out definition);
 
-    private QvmValue Define(QvmCallContext call)
+    private void Define(Row call)
     {
         if (call.ArgumentCount < 9)
         {
-            return QvmValue.Zero;
+            return;
         }
 
-        int taskType = call.GetInt32(0);
+        string taskType = call.TaskType;
         string model = call.GetString(8);
         if (model.Length == 0)
         {
-            return QvmValue.Zero;
+            return;
         }
 
-        if (taskType == _rotorType && call.ArgumentCount >= 15)
+        if (taskType == RotorType && call.ArgumentCount >= 15)
         {
             int tail = call.ArgumentCount - 6;
             _rotors.TryAdd(model, new RotorPhysicsDefinition(
@@ -180,7 +156,7 @@ public sealed class VehiclePhysicsRegistry
                 call.GetSingle(tail + 4),
                 call.GetString(tail + 5)));
         }
-        else if (taskType == _heliType && call.ArgumentCount >= 22)
+        else if (taskType == HeliType && call.ArgumentCount >= 22)
         {
             // Bell/Mil use the same Heli-specific prefix. Argument 12 is the record's first float
             // (config +0); the nine after it are the fields read at config +4..+36 by 0x431E30,
@@ -212,7 +188,7 @@ public sealed class VehiclePhysicsRegistry
                 SleepSpin = call.GetSingle(11),
             });
         }
-        else if (taskType == _carType && call.ArgumentCount >= 20)
+        else if (taskType == CarType && call.ArgumentCount >= 20)
         {
             QvmValue[] arguments = new QvmValue[call.ArgumentCount];
             for (int i = 0; i < arguments.Length; i++)
@@ -314,7 +290,7 @@ public sealed class VehiclePhysicsRegistry
                         : string.Empty,
             });
         }
-        else if (taskType == _planeType && call.ArgumentCount >= 9)
+        else if (taskType == PlaneType && call.ArgumentCount >= 9)
         {
             // SU27/JSF/CutSceneMissile share the indexed scalar tail documented above.
             // Retain every definition value untouched; the 0x433B50 motion-path field
@@ -328,8 +304,22 @@ public sealed class VehiclePhysicsRegistry
 
             _planes.TryAdd(model, new PlanePhysicsDefinition(arguments));
         }
+    }
 
-        return QvmValue.FromInt32(1);
+    // A defined type's row, read by argument as the original's task types read theirs.
+    private readonly struct Row(PhysicsObjectType type)
+    {
+        public string TaskType => type.TaskTypeName;
+
+        public int ArgumentCount => type.Arguments.Count;
+
+        public QvmValue GetValue(int index) => index < type.Arguments.Count ? type.Arguments[index] : QvmValue.Zero;
+
+        public int GetInt32(int index) => GetValue(index).ToInt32();
+
+        public float GetSingle(int index) => GetValue(index).ToSingle();
+
+        public string GetString(int index) => GetValue(index) is { Kind: QvmValueKind.String } value ? value.Text : string.Empty;
     }
 }
 

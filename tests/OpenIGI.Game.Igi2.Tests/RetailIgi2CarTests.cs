@@ -9,6 +9,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -23,8 +24,8 @@ public sealed class RetailIgi2CarTests
     public void A_car_type_reads_its_wheels_and_its_wreck()
     {
         Igi2Session session = Igi2Session.Start();
-        Igi2PhysicsObjectTypes types = session.Require<Igi2PhysicsObjectTypes>();
-        Assert.True(types.TryFind("661_01_1", out Igi2PhysicsObjectType apcType));
+        PhysicsObjectTypes types = session.Require<PhysicsObjectTypes>();
+        Assert.True(types.TryFind("661_01_1", out PhysicsObjectType apcType));
         Igi2CarType apc = Igi2CarType.Parse(apcType.Parameters);
         Assert.Equal(80000f, apc.Vehicle.MaxThrust);
         Assert.Equal(0.996f, apc.Vehicle.ThrustInertia);
@@ -45,7 +46,7 @@ public sealed class RetailIgi2CarTests
         Assert.Equal([4, 5, 6, 7, 8], apc.ExplodeVertices);
         Assert.Equal("665_06_1", apc.DestroyedModel);
 
-        Assert.True(types.TryFind("614_01_1", out Igi2PhysicsObjectType tankType));
+        Assert.True(types.TryFind("614_01_1", out PhysicsObjectType tankType));
         Igi2CarType tank = Igi2CarType.Parse(tankType.Parameters);
         Assert.True(tank.IsCrawler);
         Assert.Equal(16, tank.Wheels.Count);
@@ -204,7 +205,7 @@ public sealed class RetailIgi2CarTests
         car.Magic = m.Services!.Require<Igi2MagicObjTypes>();
         car.Bind(m.Collision!.SolidsOf(Igi2CarTask.TypeName, car.Id));
         car.Prepare(
-            m.Services!.Require<Igi2PhysicsObjectTypes>(),
+            m.Services!.Require<PhysicsObjectTypes>(),
             m.Level.ModelFor,
             new Igi2PhysicsWorld(m.Collision!, m.Materials, static owner => !Collision.Igi2ObjectCollision.PassesThrough(owner)),
             m.Services!.Require<Weapons.Igi2HumanWeapons>(),
