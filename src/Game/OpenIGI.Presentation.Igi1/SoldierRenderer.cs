@@ -349,6 +349,12 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         Dictionary<(string Model, int Skeleton, int Stand), Group> groups = [];
         foreach (HumanSoldierTask soldier in levelRoot.Descendants().OfType<HumanSoldierTask>())
         {
+            // Another game drives it: its body, brain and drawing are that game's.
+            if (soldier.Driver is not null)
+            {
+                continue;
+            }
+
             if (!mission.TryGetAnimationSet(soldier.BoneHierarchy, out BoneAnimationSet? set) || set is null)
             {
                 _logger.Warning(

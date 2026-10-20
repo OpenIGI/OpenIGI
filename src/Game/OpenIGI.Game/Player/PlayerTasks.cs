@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
@@ -28,6 +29,17 @@ public abstract class HumanTask
     /// the port's games keep the body in their own rigs, so they give their humans this, as they give them <see cref="Events"/>.
     /// </remarks>
     public IHumanBodyState? Body { get; set; }
+
+    /// <summary>
+    /// Gets or sets the game whose body stands for the human when it is not the game whose level it is in, or
+    /// <see langword="null"/> when the level's own game drives it.
+    /// </summary>
+    /// <remarks>
+    /// A human another game drives is that game's: its brain, its body, its drawing and its collision. The level's own game
+    /// leaves it alone and keeps only the task, which the level's scripts read (<c>isDead</c>, <c>eTeam</c>) and which the other
+    /// game's body keeps current.
+    /// </remarks>
+    public GameTitle? Driver { get; set; }
 
     /// <inheritdoc/>
     Vector3d IAiHuman.Position => Body?.Feet ?? Position;
