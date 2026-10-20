@@ -35,6 +35,7 @@ public interface ICollisionWorld
 public sealed class LevelCollision : ICollisionWorld
 {
     private readonly WorldRayCast? _cast;
+    private WorldRayCast? _daylight;
 
     /// <summary>Initializes a new instance of the <see cref="LevelCollision"/> class.</summary>
     /// <param name="solids">The placed objects, or <see langword="null"/> for none.</param>
@@ -94,6 +95,21 @@ public sealed class LevelCollision : ICollisionWorld
     /// <summary>Gets whether a camera between two points is blocked, and where: made once, as a camera asks it every frame.</summary>
     public DeathCameraVantage.Blocked? Walls { get; }
 
+    /// <summary>
+    /// Gets daylight's line through the level, as the lighting bakes cast it: every door shut, glass and chain-link passed, and the
+    /// terrain blocking wherever it is nearer than the first solid object.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A bake ray passes through glass and chain-link the way a line of sight does (<see cref="GameMaterial.IsSightTransparent"/>),
+    /// so daylight reaches a room through its windows instead of stopping at the pane. It steps a hair past each see-through face
+    /// and casts on until it meets something solid or leaves the level; a portal polygon (a doorway or window opening) the cast
+    /// skips anyway. The terrain blocks where its own sight test says so (<see cref="TerrainSightBlock"/>); it reports material Air.
+    /// </para>
+    /// <para><see langword="null"/> for a level with no placed objects.</para>
+    /// </remarks>
+    public WorldRayCast? DaylightCast => _daylight ??= Solids is { } solids ? Daylight(solids.CasterWithDoorsShut(), Terrain) : null;
+
     /// <summary>Gets the placed objects.</summary>
     public ObjectCollisionIndex? Solids { get; }
 
@@ -116,6 +132,62 @@ public sealed class LevelCollision : ICollisionWorld
         }
 
         return _cast(origin, target, out hit);
+    }
+
+    private static WorldRayCast Daylight(WorldRayCast shut, TerrainData? terrain)
+    {
+        WorldRayCast throughGlass = (a, b, out blockedAt) =>
+        {
+            Vector3d origin = a;
+            for (int pass = 0; pass < 8; pass++)
+            {
+                if (!shut(origin, b, out WorldRayHit hit))
+                {
+                    blockedAt = default;
+                    return false;
+                }
+
+                if (!GameMaterial.IsSightTransparent(hit.Material))
+                {
+                    blockedAt = hit;
+                    return true;
+                }
+
+                Vector3d toEnd = new(b.X - hit.Position.X, b.Y - hit.Position.Y, b.Z - hit.Position.Z);
+                double length = Math.Sqrt((toEnd.X * toEnd.X) + (toEnd.Y * toEnd.Y) + (toEnd.Z * toEnd.Z));
+                if (length <= 1e-6)
+                {
+                    blockedAt = default;
+                    return false;
+                }
+
+                // A few units past the pane (4/4096 m, about a millimetre); thicker or layered glass is cleared by the loop,
+                // one see-through face at a time.
+                double scale = 4.0 / length;
+                origin = new Vector3d(
+                    hit.Position.X + (toEnd.X * scale),
+                    hit.Position.Y + (toEnd.Y * scale),
+                    hit.Position.Z + (toEnd.Z * scale));
+            }
+
+            blockedAt = default;
+            return false;
+        };
+
+        return (a, b, out blockedAt) =>
+        {
+            bool hitObject = throughGlass(a, b, out WorldRayHit onObject);
+            if (terrain is not null
+                && TerrainSightBlock.TryBlock(terrain, a, b, out WorldRayHit onGround)
+                && (!hitObject || onGround.Distance < onObject.Distance))
+            {
+                blockedAt = onGround;
+                return true;
+            }
+
+            blockedAt = onObject;
+            return hitObject;
+        };
     }
 
     private static WorldRayCast EffectCast(WorldTraceCast trace, int? terrainRow) =>
