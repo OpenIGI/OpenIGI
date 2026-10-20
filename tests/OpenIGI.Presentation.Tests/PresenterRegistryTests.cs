@@ -50,6 +50,19 @@ public sealed class PresenterRegistryTests
         Assert.Null(registry.CreateForTask(new UnrelatedTask(), request));
     }
 
+    [Fact]
+    public void Each_level_presenter_is_made_once_in_the_order_registered_and_one_with_nothing_to_draw_is_left_out()
+    {
+        PresenterRegistry registry = new PresenterRegistry()
+            .ForLevel(static _ => new Drawn("first"))
+            .ForLevel(static _ => null)
+            .ForLevel(static _ => new Drawn("last"));
+        TaskPresenterRequest request = new(new RecordingGraphicsDevice(), new ResourceRegistry(new VirtualFileSystem()), new OwnTask(), NullLogger.Instance);
+
+        Assert.Equal(3, registry.LevelPresenterCount);
+        Assert.Equal(["first", "last"], registry.CreateForLevel(request).Select(static p => ((Drawn)p).Name));
+    }
+
     private sealed record Marker(string Name);
 
     private sealed class Drawn(string name) : ITaskPresenter

@@ -53,9 +53,13 @@ public sealed class PresenterRegistry
 {
     private readonly Dictionary<(Type Request, Type Presenter), Delegate> _factories = [];
     private readonly Dictionary<Type, Func<GameTask, TaskPresenterRequest, ITaskPresenter?>> _taskFactories = [];
+    private readonly List<Func<TaskPresenterRequest, ITaskPresenter?>> _levelFactories = [];
 
     /// <summary>Gets how many task types have a presenter of their own.</summary>
     public int TaskTypeCount => _taskFactories.Count;
+
+    /// <summary>Gets how many presenters are made once for each level.</summary>
+    public int LevelPresenterCount => _levelFactories.Count;
 
     /// <summary>Registers a presenter.</summary>
     /// <typeparam name="TRequest">What the presenter is made from.</typeparam>
@@ -119,6 +123,37 @@ public sealed class PresenterRegistry
         ArgumentNullException.ThrowIfNull(factory);
         _taskFactories[typeof(TTask)] = (task, request) => factory((TTask)task, request);
         return this;
+    }
+
+    /// <summary>Registers what draws something of the level as a whole, made once for each level, drawn with the tasks' presenters.</summary>
+    /// <param name="factory">What makes the presenter for one level, or answers <see langword="null"/> for a level it has nothing in.</param>
+    /// <returns>This registry.</returns>
+    /// <remarks>
+    /// For what no one task of the level stands for, or what is drawn best all at once: another game's bodies, skinned in one
+    /// batch. Each registration makes its own presenter, in the order registered.
+    /// </remarks>
+    public PresenterRegistry ForLevel(Func<TaskPresenterRequest, ITaskPresenter?> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _levelFactories.Add(factory);
+        return this;
+    }
+
+    /// <summary>Makes the presenters registered for the level as a whole.</summary>
+    /// <param name="request">What they are made from.</param>
+    /// <returns>Those that have something to draw, in the order registered.</returns>
+    public IReadOnlyList<ITaskPresenter> CreateForLevel(in TaskPresenterRequest request)
+    {
+        List<ITaskPresenter> made = [];
+        foreach (Func<TaskPresenterRequest, ITaskPresenter?> factory in _levelFactories)
+        {
+            if (factory(request) is { } presenter)
+            {
+                made.Add(presenter);
+            }
+        }
+
+        return made;
     }
 
     /// <summary>Makes the presenter registered for a task's type, or for the nearest of its base types that has one.</summary>

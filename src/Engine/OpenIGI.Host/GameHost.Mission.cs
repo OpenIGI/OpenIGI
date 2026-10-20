@@ -1991,7 +1991,7 @@ public sealed partial class GameHost
         }
     }
 
-    // The presenters the title registered for particular task types, one for each such task of the level.
+    // The presenters the title registered for the level as a whole, then for particular task types, one for each such task.
     private readonly List<ITaskPresenter> _taskPresenters = [];
 
     /// <summary>Makes a presenter for every task of the level whose type has one registered.</summary>
@@ -2000,12 +2000,13 @@ public sealed partial class GameHost
     {
         ReleaseTaskPresenters();
         PresenterRegistry presenters = _presentation.Presenters;
-        if (presenters.TaskTypeCount == 0)
+        if (presenters.TaskTypeCount == 0 && presenters.LevelPresenterCount == 0)
         {
             return;
         }
 
         TaskPresenterRequest request = new(_device, _resources, levelRoot, _logger);
+        _taskPresenters.AddRange(presenters.CreateForLevel(request));
         foreach (GameTask task in levelRoot.Descendants())
         {
             if (presenters.CreateForTask(task, request) is { } presenter)
