@@ -13,6 +13,7 @@ using Xunit.Abstractions;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>A missile flying as the original's physics object of its type, in the world the cars step in.</summary>
+[Collection(RetailMissionWorld.Name)]
 public sealed class RetailMissileBodyTests(ITestOutputHelper output)
 {
     [RequiresGameDataFact]

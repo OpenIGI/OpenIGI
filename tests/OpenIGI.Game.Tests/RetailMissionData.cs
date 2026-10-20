@@ -80,3 +80,11 @@ internal sealed class RetailMissionData
         return new RetailMissionData(mission, levelRoot, vehicles, magic);
     }
 }
+
+/// <summary>The tests that share a loaded mission's world, whose casts keep scratch lists of their own: run one at a time.</summary>
+[Xunit.CollectionDefinition(Name)]
+public sealed class RetailMissionWorld
+{
+    /// <summary>The collection's name.</summary>
+    public const string Name = "Retail mission world";
+}

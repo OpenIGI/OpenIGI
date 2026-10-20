@@ -17,6 +17,7 @@ namespace OpenIGI.Game.Tests;
 /// lift and yaw records from the run op after each tick (callers <c>0x42D548</c>, <c>0x42D5F8</c>), and the next
 /// tick integrates them.
 /// </remarks>
+[Collection(RetailMissionWorld.Name)]
 public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
 {
     private const string Fixture = "carstep-m7-heli353.log.gz";

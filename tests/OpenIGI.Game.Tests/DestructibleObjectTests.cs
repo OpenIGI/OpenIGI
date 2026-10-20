@@ -10,6 +10,7 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>Retail-backed checks for the exact identity of glass and explosive world objects.</summary>
+[Collection(RetailMissionWorld.Name)]
 public sealed class DestructibleObjectTests
 {
     [RequiresGameDataFact]

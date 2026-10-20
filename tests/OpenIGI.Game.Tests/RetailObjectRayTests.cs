@@ -12,6 +12,7 @@ namespace OpenIGI.Game.Tests;
 /// The model half of the ray query against the captured retail wheel rays that struck a model: mission 7's T80 357
 /// spawns inside a second T80 (car 361) and later drives along a spline road.
 /// </summary>
+[Collection(RetailMissionWorld.Name)]
 public sealed class RetailObjectRayTests(ITestOutputHelper output)
 {
     [RequiresGameDataTheory]

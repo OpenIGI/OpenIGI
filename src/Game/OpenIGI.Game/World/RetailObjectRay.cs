@@ -216,7 +216,7 @@ public static class RetailModelRay
             Point = new Vector3f(lex, ley, lez),
         };
         search.Box(start, new Vector3f(p0[0], p0[1], p0[2]));
-        Walk(mesh, mesh.Vertices, mesh.Spheres, start, d, inverse, lenf, portals: false, search, mirror: false, cullSpheres: true);
+        WalkFaces(mesh, mesh.Vertices, mesh.Spheres, start, d, inverse, lenf, portals: false, search, mirror: false, cullSpheres: true);
         if (!search.HitThisObject)
         {
             return;
@@ -295,7 +295,7 @@ public static class RetailModelRay
     /// <param name="search">The running best.</param>
     /// <param name="mirror">Whether the faces are mirrored (a reversed spline segment).</param>
     /// <param name="cullSpheres">Whether the spheres cull.</param>
-    internal static void Walk(
+    internal static void WalkFaces(
         RetailRayMesh mesh,
         float[] vertices,
         float[] spheres,

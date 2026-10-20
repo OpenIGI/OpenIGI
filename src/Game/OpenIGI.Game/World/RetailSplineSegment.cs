@@ -396,7 +396,7 @@ public sealed class RetailSplineSegment
         // The walk culls by the segment's own rebuilt tree; inv = 1 / |Le - Ls|² over register differences of floats.
         X87 lx = (X87)le[0] - ls[0], ly = (X87)le[1] - ls[1], lz = (X87)le[2] - ls[2];
         double inverse = ((X87)1.0 / (lz * lz + lx * lx + ly * ly)).Value;
-        RetailModelRay.Walk(Mesh, Vertices, Spheres, start, d, inverse, lenf, portals: true, search, mirror: Reverse, cullSpheres: true);
+        RetailModelRay.WalkFaces(Mesh, Vertices, Spheres, start, d, inverse, lenf, portals: true, search, mirror: Reverse, cullSpheres: true);
         if (!search.HitThisObject || (result.Hit && !(search.Closest < result.Distance)))
         {
             return;
