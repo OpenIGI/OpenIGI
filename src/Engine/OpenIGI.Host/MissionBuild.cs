@@ -17,8 +17,16 @@ internal sealed class MissionBuild : MissionLevelBuild
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="id">The mission id.</param>
     /// <param name="promoted">Whether the level arrived as the menu's backdrop.</param>
-    public MissionBuild(LevelUpdateWalker walker, IServiceCatalog services, LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
-        : base(walker, services, loaded, levelRoot, id, promoted)
+    /// <param name="world">The level's state, which the systems fill.</param>
+    public MissionBuild(
+        LevelUpdateWalker walker,
+        IServiceCatalog services,
+        LoadedMission loaded,
+        LevelTask levelRoot,
+        int id,
+        bool promoted,
+        MissionState world)
+        : base(walker, services, loaded, levelRoot, id, promoted, world)
     {
     }
 

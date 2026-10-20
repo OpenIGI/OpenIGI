@@ -186,7 +186,7 @@ public sealed partial class GameHost
     {
         BeginStage();
         LevelUpdateWalker walker = new(levelRoot);
-        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted);
+        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
         if (_title.Services.TryGet(out LevelSystemEdits? edits))
         {

@@ -30,16 +30,31 @@ public class MissionLevelBuild : LevelBuild
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="id">The mission id.</param>
     /// <param name="promoted">Whether the level arrived as the menu's backdrop.</param>
+    /// <param name="world">The level's state, which the systems fill.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public MissionLevelBuild(LevelUpdateWalker walker, IServiceCatalog services, LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
+    public MissionLevelBuild(
+        LevelUpdateWalker walker,
+        IServiceCatalog services,
+        LoadedMission loaded,
+        LevelTask levelRoot,
+        int id,
+        bool promoted,
+        MissionState world)
         : base(walker, services)
     {
         Walker = walker;
+        Mission = world ?? throw new ArgumentNullException(nameof(world));
         Loaded = loaded ?? throw new ArgumentNullException(nameof(loaded));
         LevelRoot = levelRoot ?? throw new ArgumentNullException(nameof(levelRoot));
         Id = id;
         Promoted = promoted;
     }
+
+    /// <summary>
+    /// Gets the level's state as the systems fill it: its player once <see cref="MissionSystemNames.Player"/> has run, the bodies
+    /// its shots meet, and the lists another game's tasks join.
+    /// </summary>
+    public MissionState Mission { get; }
 
     /// <summary>Gets the level's walk.</summary>
     public LevelUpdateWalker Walker { get; }
