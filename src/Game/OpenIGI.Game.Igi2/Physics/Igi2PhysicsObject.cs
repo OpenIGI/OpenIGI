@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Physics;
 
@@ -273,14 +274,8 @@ public sealed class Igi2PhysicsObject
     {
         bool moved = IsMovingContactPoint;
         IsMovingContactPoint = false;
-        if (ContactCount <= 0 || moved || Body.Forces.Count != 0 || !(Body.Speed < Type.RestSpeed))
-        {
-            return false;
-        }
-
-        Vector3f w = Body.AngularVelocity;
-        Fpu spin = (((Fpu)w.X * w.X) + ((Fpu)w.Y * w.Y)) + ((Fpu)w.Z * w.Z);
-        return spin.Value < Type.RestAngularVelocitySquared;
+        return RigidBodyKernels.MayRest<Fpu>(
+            ContactCount, moved, Body.Forces.Count, Body.Speed, Type.RestSpeed, Body.AngularVelocity, Type.RestAngularVelocitySquared);
     }
 
     /// <summary>
@@ -331,7 +326,7 @@ public sealed class Igi2PhysicsObject
         float fx = ((((Fpu)m[3] + m[0]) * 0f) + (weight * m[6])).F;
         float fy = ((((Fpu)m[4] + m[1]) * 0f) + (weight * m[7])).F;
         float fz = ((((Fpu)m[5] + m[2]) * 0f) + (weight * m[8])).F;
-        Body.AddForce(new Igi2PointForce(new Vector3f(fx, fy, fz), default));
+        Body.AddForce(new PointForce(new Vector3f(fx, fy, fz), default));
         Body.Update(m);
         Body.AngularMomentum = Igi2RigidBody.Scale(Body.AngularMomentum, spinResistance);
         Body.Velocity = Igi2RigidBody.Scale(Body.Velocity, airResistance);
@@ -424,7 +419,7 @@ public sealed class Igi2PhysicsObject
 
             Igi2PhysicsContactPoint point = _points[_lineOwners[j]];
             point.Distance = ((Fpu)hit.Distance).F;
-            Vector3f normal = Igi2RigidBody.Normalised(hit.Normal);
+            Vector3f normal = RigidBodyKernels.Normalise<Fpu>(hit.Normal);
             point.Normal = normal;
             Vector3f pv = Body.PointVelocity(_arms[j]);
             float relation = ((((Fpu)pv.X * normal.X) + ((Fpu)pv.Z * normal.Z)) + ((Fpu)pv.Y * normal.Y)).F;
@@ -514,7 +509,7 @@ public sealed class Igi2PhysicsObject
         Body.UpdateSpeedApproximation();
 
         // What is still going into the surface is taken away.
-        Vector3f nn = Igi2RigidBody.Normalised(n);
+        Vector3f nn = RigidBodyKernels.Normalise<Fpu>(n);
         v = Body.Velocity;
         Fpu dot = (((Fpu)nn.Z * v.Z) + ((Fpu)nn.Y * v.Y)) + ((Fpu)nn.X * v.X);
         if (dot.Value < 0.0)

@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Vehicles;
 
@@ -236,7 +237,7 @@ public sealed partial class Igi2CarTask
                         push = ((Fpu)2.0 - ((Fpu)d * 0.000244140625)) * push;
                     }
 
-                    body.Body.AddForce(new Igi2PointForce(new Vector3f(0f, 0f, push.F), point.LocalPosition));
+                    body.Body.AddForce(new PointForce(new Vector3f(0f, 0f, push.F), point.LocalPosition));
                 }
             }
 
@@ -253,7 +254,7 @@ public sealed partial class Igi2CarTask
             point.IsContact = contact;
             if (contact)
             {
-                state.ContactNormal = Igi2RigidBody.Normalised(hit.Normal);
+                state.ContactNormal = RigidBodyKernels.Normalise<Fpu>(hit.Normal);
                 Vector3f at = point.LocalPosition;
                 state.ContactPoint = new Vector3f(at.X, at.Y, ((Fpu)at.Z + ContactLift).F);
                 body.NoteContact();
@@ -309,7 +310,7 @@ public sealed partial class Igi2CarTask
                 (((lx * c) + (ly * -s)) + zero).F,
                 (((ly * c) + (lx * s)) + zero).F,
                 (((ly + lx) * 0.0) + lz).F);
-            body.Body.AddForce(new Igi2PointForce(force, state.ContactPoint));
+            body.Body.AddForce(new PointForce(force, state.ContactPoint));
         }
 
         if (state.IsContact && cp >= 0)
@@ -366,7 +367,7 @@ public sealed partial class Igi2CarTask
         Vector3f force = ((load / mass) * 4.0).Value >= speed.Value
             ? new Vector3f((((px * speed) * mass) * 0.10000000149011612).F, (((speed * py) * mass) * 0.10000000149011612).F, (((speed * pz) * mass) * 0.10000000149011612).F)
             : new Vector3f(((px * load) * 0.23999999463558197).F, ((py * load) * 0.23999999463558197).F, ((pz * load) * 0.23999999463558197).F);
-        body.Body.AddForce(new Igi2PointForce(force, point));
+        body.Body.AddForce(new PointForce(force, point));
     }
 
     /// <summary>
@@ -403,7 +404,7 @@ public sealed partial class Igi2CarTask
             return;
         }
 
-        Vector3f d = Igi2RigidBody.Normalised(local);
+        Vector3f d = RigidBodyKernels.Normalise<Fpu>(local);
         foreach (Igi2Wing wing in wings)
         {
             if (!(wing.Area > 0f))
@@ -413,7 +414,7 @@ public sealed partial class Igi2CarTask
 
             Vector3f n = wing.Normal;
             Fpu f = (((((Fpu)d.Y * n.Y) + ((Fpu)d.Z * n.Z)) + ((Fpu)d.X * n.X)) * wing.Area) * k;
-            body.Body.AddForce(new Igi2PointForce(new Vector3f(((Fpu)n.X * f).F, ((Fpu)n.Y * f).F, ((Fpu)n.Z * f).F), wing.Position));
+            body.Body.AddForce(new PointForce(new Vector3f(((Fpu)n.X * f).F, ((Fpu)n.Y * f).F, ((Fpu)n.Z * f).F), wing.Position));
         }
     }
 

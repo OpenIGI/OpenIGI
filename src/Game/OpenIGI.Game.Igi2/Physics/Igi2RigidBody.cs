@@ -1,11 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Physics;
-
-/// <summary>A force on a body and where on it it acts, <c>PointForce_s</c>: both in the body's own frame.</summary>
-/// <param name="Force">The force, <c>tForce</c>.</param>
-/// <param name="Point">Where it acts, relative to the centre of mass, <c>tPoint</c>.</param>
-public readonly record struct Igi2PointForce(Vector3f Force, Vector3f Point);
 
 /// <summary>
 /// A rigid body's mass, inertia and motion, <c>Physics_s</c>, and the integrator that moves it a tick
@@ -21,6 +17,10 @@ public readonly record struct Igi2PointForce(Vector3f Force, Vector3f Point);
 /// <para>
 /// An orientation is nine floats row by row; a body vector goes into the world as each row's dot with it.
 /// </para>
+/// <para>
+/// The steps Project I.G.I.'s build compiled alike are the engine's shared ones (<see cref="RigidBodyKernels"/>); the
+/// angular velocity, the quaternion step and the length estimate are this build's own.
+/// </para>
 /// </remarks>
 public sealed class Igi2RigidBody
 {
@@ -33,10 +33,7 @@ public sealed class Igi2RigidBody
     /// <summary>A box's moment factor, one twelfth as the float <c>0x3DAAAAAB</c>.</summary>
     private static readonly float Twelfth = BitConverter.Int32BitsToSingle(0x3DAAAAAB);
 
-    /// <summary>The axis after each, as the largest-diagonal step walks them.</summary>
-    private static readonly int[] Next = [1, 2, 0];
-
-    private readonly List<Igi2PointForce> _forces = [];
+    private readonly List<PointForce> _forces = [];
 
     /// <summary>Gets the mass, <c>vM</c>.</summary>
     public float Mass { get; private set; }
@@ -67,7 +64,7 @@ public sealed class Igi2RigidBody
     public Vector3f AngularVelocity { get; set; }
 
     /// <summary>Gets the forces waiting for the next update, <c>ptForces</c>.</summary>
-    public IReadOnlyList<Igi2PointForce> Forces => _forces;
+    public IReadOnlyList<PointForce> Forces => _forces;
 
     /// <summary>Gets how many forces the last update summed, <c>nPreviousForces</c>.</summary>
     public int PreviousForceCount { get; private set; }
@@ -108,7 +105,7 @@ public sealed class Igi2RigidBody
 
     /// <summary>Queues a force for the next update.</summary>
     /// <param name="force">The force and where it acts, in the body's frame.</param>
-    public void AddForce(in Igi2PointForce force) => _forces.Add(force);
+    public void AddForce(in PointForce force) => _forces.Add(force);
 
     /// <summary>
     /// Refreshes <see cref="Speed"/> and <see cref="VelocityDirection"/> from the velocity,
@@ -128,21 +125,13 @@ public sealed class Igi2RigidBody
             return;
         }
 
-        VelocityDirection = IsZero(v) ? v : Scale(v, InverseLength(v));
+        VelocityDirection = RigidBodyKernels.Normalise<Fpu>(v);
     }
 
     /// <summary>A point's velocity in the world, <c>Physics_GetPointVelocity</c> (<c>igi2 0x5AA730</c>): the spin about the centre plus the centre's.</summary>
     /// <param name="arm">The point, relative to the centre of mass, in the world.</param>
     /// <returns>Its velocity.</returns>
-    public Vector3f PointVelocity(Vector3f arm)
-    {
-        Vector3f w = AngularVelocity;
-        float x = (((Fpu)arm.Z * w.Y) - ((Fpu)w.Z * arm.Y)).F;
-        float y = (-(((Fpu)arm.Z * w.X) - ((Fpu)w.Z * arm.X))).F;
-        float z = (((Fpu)w.X * arm.Y) - ((Fpu)arm.X * w.Y)).F;
-        Vector3f c = Velocity;
-        return new Vector3f(((Fpu)c.X + x).F, ((Fpu)c.Y + y).F, ((Fpu)c.Z + z).F);
-    }
+    public Vector3f PointVelocity(Vector3f arm) => RigidBodyKernels.PointVelocity<Fpu>(Velocity, AngularVelocity, arm);
 
     /// <summary>Moves the body a tick, <c>Physics_Update</c> (<c>igi2 0x5A9580</c>).</summary>
     /// <param name="m">The orientation, nine floats row by row; turned by the body's spin.</param>
@@ -161,13 +150,18 @@ public sealed class Igi2RigidBody
     public bool Update(float[] m)
     {
         ArgumentNullException.ThrowIfNull(m);
-        (Fpu qx, Fpu qy, Fpu qz, Fpu qw) = ToQuaternion(m);
+        (float qx, float qy, float qz, float stored) = RigidBodyKernels.ToQuaternion<Fpu>(m);
+        Fpu qw = stored;
 
         int count = _forces.Count;
         PreviousForceCount = count;
         if (count > 0)
         {
-            SumForces(m);
+            Vector3f velocity = Velocity, momentum = AngularMomentum;
+            TotalForce = RigidBodyKernels.SumForces<Fpu>(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_forces), m, InverseMass, ref velocity, ref momentum);
+            _forces.Clear();
+            Velocity = velocity;
+            AngularMomentum = momentum;
         }
 
         Vector3f l = AngularMomentum;
@@ -189,25 +183,25 @@ public sealed class Igi2RigidBody
         AngularVelocity = new Vector3f(wx, wy, wz);
 
         Fpu hx = (Fpu)wx * 0.5f, hy = (Fpu)wy * 0.5f, hz = (Fpu)wz * 0.5f;
-        Fpu a = (hz - hy) * (qy - qz);
-        Fpu yy = (qz + qy) * -hx;
+        Fpu a = (hz - hy) * ((Fpu)qy - qz);
+        Fpu yy = ((Fpu)qz + qy) * -hx;
         Fpu xw = (hz + hy) * (qw - qx);
-        Fpu zz = (hz + hx) * (qy + qx);
+        Fpu zz = (hz + hx) * ((Fpu)qy + qx);
         Fpu xz = (qw - qz) * hy;
-        Fpu yz = (qz + qw) * -hy;
+        Fpu yz = ((Fpu)qz + qw) * -hy;
         Fpu yw = (yz + xz) + zz;
-        Fpu t = (((hz - hx) * (qx - qy)) + yw) * 0.5f;
-        Fpu dx = (((qx + qw) * hx) + t) - yw;
+        Fpu t = (((hz - hx) * ((Fpu)qx - qy)) + yw) * 0.5f;
+        Fpu dx = ((((Fpu)qx + qw) * hx) + t) - yw;
         Fpu dy = (yy + t) - yz;
         Fpu dz = (xw + t) - xz;
-        qx = new Fpu((dx + qx).F);
-        qy = new Fpu((dy + qy).F);
-        qz = new Fpu((dz + qz).F);
+        qx = (dx + qx).F;
+        qy = (dy + qy).F;
+        qz = (dz + qz).F;
         qw = ((qw + t) + a) - zz;
 
-        NormaliseQuaternion(ref qx, ref qy, ref qz, ref qw);
-        NormaliseQuaternion(ref qx, ref qy, ref qz, ref qw);
-        ToMatrix(qx, qy, qz, qw, m);
+        RigidBodyKernels.NormaliseQuaternion(ref qx, ref qy, ref qz, ref qw);
+        RigidBodyKernels.NormaliseQuaternion(ref qx, ref qy, ref qz, ref qw);
+        RigidBodyKernels.ToMatrix(qx, qy, qz, qw, m);
         UpdateSpeedApproximation();
         return true;
     }
@@ -251,112 +245,4 @@ public sealed class Igi2RigidBody
     /// <param name="v">The vector.</param>
     /// <returns><see langword="true"/> when all three are zero.</returns>
     public static bool IsZero(Vector3f v) => v.X == 0f && v.Y == 0f && v.Z == 0f;
-
-    /// <summary>The unit vector, or the vector itself when it is zero, as <c>Real32x3_Normalize</c> leaves it.</summary>
-    /// <param name="v">The vector.</param>
-    /// <returns>The normalised vector.</returns>
-    public static Vector3f Normalised(Vector3f v) => IsZero(v) ? v : Scale(v, InverseLength(v));
-
-    /// <summary>
-    /// The orientation as a quaternion, the client's matrix-to-quaternion step: from the trace when it is positive, else
-    /// from the largest diagonal element.
-    /// </summary>
-    private static (Fpu X, Fpu Y, Fpu Z, Fpu W) ToQuaternion(float[] m)
-    {
-        Fpu trace = ((Fpu)m[4] + m[0]) + m[8];
-        if (trace.Value > 0.0)
-        {
-            float s = Fpu.Sqrt(trace + 1f).F;
-            Fpu w = (Fpu)s * 0.5f;
-            Fpu r = (Fpu)0.5f / s;
-            return (
-                new Fpu((-(((Fpu)m[5] - m[7]) * r)).F),
-                new Fpu((-(((Fpu)m[6] - m[2]) * r)).F),
-                new Fpu((-(((Fpu)m[1] - m[3]) * r)).F),
-                w);
-        }
-
-        int i = m[4] > m[0] ? 1 : 0;
-        if (m[8] > m[4 * i])
-        {
-            i = 2;
-        }
-
-        int j = Next[i], k = Next[j];
-        Fpu root = Fpu.Sqrt((((Fpu)m[4 * i] - m[4 * j]) - m[4 * k]) + 1f);
-        float[] q = new float[3];
-        q[i] = ((Fpu)0.5f * root).F;
-        if (root.Value != 0.0)
-        {
-            root = (Fpu)0.5f / root;
-        }
-
-        q[j] = (((Fpu)m[(3 * j) + i] + m[(3 * i) + j]) * root).F;
-        q[k] = (((Fpu)m[(3 * k) + i] + m[(3 * i) + k]) * root).F;
-        Fpu qw = -(((Fpu)m[(3 * j) + k] - m[(3 * k) + j]) * root);
-        return (new Fpu(q[0]), new Fpu(q[1]), new Fpu(q[2]), qw);
-    }
-
-    /// <summary>A unit quaternion back into the orientation, each element from the doubled products.</summary>
-    private static void ToMatrix(Fpu x, Fpu y, Fpu z, Fpu w, float[] m)
-    {
-        Fpu xx = Twice(x * x), xy = Twice(y * x), xz = Twice(z * x), xw = Twice(x * w);
-        Fpu yy = Twice(y * y), yz = Twice(z * y), yw = Twice(y * w);
-        Fpu zz = Twice(z * z), zw = Twice(z * w);
-        m[0] = (((Fpu)1f - yy) - zz).F;
-        m[1] = (xy - zw).F;
-        m[2] = (yw + xz).F;
-        m[3] = (zw + xy).F;
-        Fpu oneLessXx = (Fpu)1f - xx;
-        m[4] = (oneLessXx - zz).F;
-        m[5] = (yz - xw).F;
-        m[6] = (xz - yw).F;
-        m[7] = (yz + xw).F;
-        m[8] = (oneLessXx - yy).F;
-
-        static Fpu Twice(Fpu v) => v + v;
-    }
-
-    /// <summary>
-    /// Divides the quaternion by its length, <c>1.0 / fsqrt(((z*z + y*y) + x*x) + w*w)</c>: x, y and z stored, w left in the
-    /// register, as the integrator inlines it.
-    /// </summary>
-    private static void NormaliseQuaternion(ref Fpu x, ref Fpu y, ref Fpu z, ref Fpu w)
-    {
-        Fpu s = (Fpu)1.0 / Fpu.Sqrt((((z * z) + (y * y)) + (x * x)) + (w * w));
-        x = new Fpu((x * s).F);
-        y = new Fpu((y * s).F);
-        z = new Fpu((z * s).F);
-        w *= s;
-    }
-
-    /// <summary>Sums the queued forces and their moments into the velocity and the angular momentum, and empties the queue.</summary>
-    private void SumForces(float[] m)
-    {
-        Fpu fx = 0f, fy = 0f, fz = 0f, tx = 0f, ty = 0f, tz = 0f;
-        foreach (Igi2PointForce force in _forces)
-        {
-            Vector3f f = force.Force, p = force.Point;
-            fx += f.X;
-            fy += f.Y;
-            fz += f.Z;
-            if (!IsZero(p) && !IsZero(f))
-            {
-                tx += ((Fpu)p.Y * f.Z) - ((Fpu)p.Z * f.Y);
-                ty += -(((Fpu)f.Z * p.X) - ((Fpu)p.Z * f.X));
-                tz += ((Fpu)f.Y * p.X) - ((Fpu)p.Y * f.X);
-            }
-        }
-
-        _forces.Clear();
-        TotalForce = new Vector3f(fx.F, fy.F, fz.F);
-        Fpu ax = fx * InverseMass, ay = (Fpu)InverseMass * fy.F, az = (Fpu)InverseMass * fz.F;
-        float rx = (((az * m[2]) + (ay * m[1])) + (ax * m[0])).F;
-        float ry = (((az * m[5]) + (ax * m[3])) + (ay * m[4])).F;
-        float rz = (((ay * m[7]) + (ax * m[6])) + (az * m[8])).F;
-        Vector3f v = Velocity;
-        Velocity = new Vector3f(((Fpu)rx + v.X).F, ((Fpu)ry + v.Y).F, ((Fpu)rz + v.Z).F);
-        Vector3f l = AngularMomentum;
-        AngularMomentum = new Vector3f((tx + l.X).F, (ty + l.Y).F, (tz + l.Z).F);
-    }
 }

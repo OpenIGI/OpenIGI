@@ -183,9 +183,9 @@ public sealed class RetailHeliBody : RetailRigidBody
             float a2 = ((X87)c2 * r[3]).F;
             X87 y = (X87)c3 * r[5];
             X87 z = x * y;
-            Push(new RetailForce(0f, ((X87)a1 * mass * -0.8f).F, 0f, 0f, 0f, 819.2f));
-            Push(new RetailForce(((X87)a2 * mass).F, 0f, 0f, 0f, 0f, 409.6f));
-            Push(new RetailForce((z * mass * 0.08f).F, 0f, 0f, 0f, 12288f, 0f));
+            Push(Force(0f, ((X87)a1 * mass * -0.8f).F, 0f, 0f, 0f, 819.2f));
+            Push(Force(((X87)a2 * mass).F, 0f, 0f, 0f, 0f, 409.6f));
+            Push(Force((z * mass * 0.08f).F, 0f, 0f, 0f, 12288f, 0f));
         }
 
         // D. The stabiliser turns the body about its X to take out the bank.
@@ -228,7 +228,7 @@ public sealed class RetailHeliBody : RetailRigidBody
                         angle = AngleBetween(m[1], m[4], 0.0f, m[2], m[5], m[8]);
                     }
 
-                    Push(new RetailForce(0f, ((X87)Math.Cos(angle) * lift).F, lift, 0f, 0f, 0f));
+                    Push(Force(0f, ((X87)Math.Cos(angle) * lift).F, lift, 0f, 0f, 0f));
                 }
             }
 
@@ -236,7 +236,7 @@ public sealed class RetailHeliBody : RetailRigidBody
             {
                 X87 yaw = (X87)mass * Collective * 2.5f;
                 float fx = rotor.Tail ? (-yaw).F : yaw.F;
-                Push(new RetailForce(fx, 0f, 0f, 0f, 8192.0f, 0f));
+                Push(Force(fx, 0f, 0f, 0f, 8192.0f, 0f));
             }
         }
     }
@@ -417,7 +417,7 @@ public sealed class RetailHeliBody : RetailRigidBody
                 fz = ((X87)comp / travel * mass * QuarterGravity).F;
             }
 
-            Push(new RetailForce(
+            Push(Force(
                 0f,
                 0f,
                 fz,

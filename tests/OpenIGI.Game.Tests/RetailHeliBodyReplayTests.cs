@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
@@ -135,17 +136,17 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
 
     private static bool IsRotor(RetailCarStepCapture.Force force) => RotorCallers.Contains(force.Caller);
 
-    private static RetailForce ToForce(RetailCarStepCapture.Force force) =>
-        new(force.Vector[0], force.Vector[1], force.Vector[2], force.Point[0], force.Point[1], force.Point[2]);
+    private static PointForce ToForce(RetailCarStepCapture.Force force) =>
+        new(new Vector3f(force.Vector[0], force.Vector[1], force.Vector[2]), new Vector3f(force.Point[0], force.Point[1], force.Point[2]));
 
     private static List<string> Step(RetailHeliBody heli, RetailCarStepCapture.Tick tick, RetailCarStepCapture.Tick next)
     {
         SkidWorld world = new(tick);
         heli.Tick(world);
-        List<RetailForce> own = [.. heli.PushedForces];
+        List<PointForce> own = [.. heli.PushedForces];
         heli.PushedForces.Clear();
         heli.RotorTick();
-        List<RetailForce> rotor = [.. heli.PushedForces];
+        List<PointForce> rotor = [.. heli.PushedForces];
         List<string> diff = [.. world.Errors];
         Compare(diff, "tick", own, [.. tick.Forces.Where(f => !IsRotor(f))]);
         Compare(diff, "rotor", rotor, [.. tick.Forces.Where(IsRotor)]);
@@ -160,7 +161,7 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
         return diff;
     }
 
-    private static void Compare(List<string> diff, string what, List<RetailForce> port, List<RetailCarStepCapture.Force> retail)
+    private static void Compare(List<string> diff, string what, List<PointForce> port, List<RetailCarStepCapture.Force> retail)
     {
         if (port.Count != retail.Count)
         {
@@ -169,8 +170,8 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
 
         for (int k = 0; k < Math.Min(port.Count, retail.Count); k++)
         {
-            RetailForce p = port[k];
-            float[] a = [p.Fx, p.Fy, p.Fz, p.Px, p.Py, p.Pz];
+            PointForce p = port[k];
+            float[] a = [p.Force.X, p.Force.Y, p.Force.Z, p.Point.X, p.Point.Y, p.Point.Z];
             float[] r = [.. retail[k].Vector, .. retail[k].Point];
             for (int c = 0; c < 6; c++)
             {

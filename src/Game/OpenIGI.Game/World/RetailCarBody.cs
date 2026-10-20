@@ -2,15 +2,6 @@ using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
 
-/// <summary>One force pushed onto a rigid body (<c>0x4ECF50</c>): force and application point, both in the body frame.</summary>
-/// <param name="Fx">The force, body X.</param>
-/// <param name="Fy">The force, body Y.</param>
-/// <param name="Fz">The force, body Z.</param>
-/// <param name="Px">The application point, body X.</param>
-/// <param name="Py">The application point, body Y.</param>
-/// <param name="Pz">The application point, body Z.</param>
-public readonly record struct RetailForce(float Fx, float Fy, float Fz, float Px, float Py, float Pz);
-
 /// <summary>What a world query (<c>0x4CC2A0</c> or <c>0x4CB9F0</c>) reports for one ray.</summary>
 public struct RetailRayResult
 {
@@ -368,7 +359,7 @@ public sealed class RetailCarBody : RetailRigidBody
                         fz = (((X87)2.0f - (X87)dist * (1.0 / 4096.0)) * fz).F;
                     }
 
-                    Push(new RetailForce(0.0f, 0.0f, fz, point.Position[0], point.Position[1], point.Position[2]));
+                    Push(Force(0.0f, 0.0f, fz, point.Position[0], point.Position[1], point.Position[2]));
                 }
             }
 
@@ -448,7 +439,7 @@ public sealed class RetailCarBody : RetailRigidBody
             float gx = ((X87)r[0] * bx + (X87)r[2] * bz + (X87)r[1] * by).F;
             float gy = ((X87)r[3] * bx + (X87)r[5] * bz + (X87)r[4] * by).F;
             float gz = ((X87)r[6] * bx + (X87)r[8] * bz + (X87)r[7] * by).F;
-            Push(new RetailForce(gx, gy, gz, wheel.Point[0], wheel.Point[1], wheel.Point[2]));
+            Push(Force(gx, gy, gz, wheel.Point[0], wheel.Point[1], wheel.Point[2]));
         }
 
         if (!wheel.Contact || b < 0)
@@ -546,7 +537,7 @@ public sealed class RetailCarBody : RetailRigidBody
             fz = ((X87)slip * gz * Mass * 0.1f).F;
         }
 
-        Push(new RetailForce(fx, fy, fz, p[0], p[1], p[2]));
+        Push(Force(fx, fy, fz, p[0], p[1], p[2]));
     }
 
 }

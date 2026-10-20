@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -295,8 +296,8 @@ internal sealed class Igi2MovementCamera
             forward = new((dx * inverse).F, (dy * inverse).F, (dz * inverse).F);
         }
 
-        Vector3f right = Igi2RigidBody.Normalised(new(forward.Y, -forward.X, 0f));
-        Vector3f up = Igi2RigidBody.Normalised(new(
+        Vector3f right = RigidBodyKernels.Normalise<Fpu>(new(forward.Y, -forward.X, 0f));
+        Vector3f up = RigidBodyKernels.Normalise<Fpu>(new(
             (((Fpu)right.Y * forward.Z) - ((Fpu)right.Z * forward.Y)).F,
             (((Fpu)right.Z * forward.X) - ((Fpu)right.X * forward.Z)).F,
             (((Fpu)right.X * forward.Y) - ((Fpu)right.Y * forward.X)).F));

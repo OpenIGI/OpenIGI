@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -290,7 +291,7 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
         Vector3d position, Vector3f direction, float maxAngle, float minSpeed, float maxSpeed,
         float intensity, float rotationDelta, float rotation, float size, int lifeTime, int fadeTime)
     {
-        Vector3f z = Igi2RigidBody.Normalised(direction);
+        Vector3f z = RigidBodyKernels.Normalise<Fpu>(direction);
 
         // A side axis from whichever of X or Y the cone's axis is further from.
         Fpu ux = 1f, uy = 0f;
@@ -304,7 +305,7 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
             (((Fpu)z.Z * uy) - ((Fpu)z.Y * 0f)).F,
             (-((ux * z.Z) - ((Fpu)z.X * 0f))).F,
             ((ux * z.Y) - (uy * z.X)).F);
-        Vector3f y = Igi2RigidBody.Normalised(side);
+        Vector3f y = RigidBodyKernels.Normalise<Fpu>(side);
         Vector3f x = new(
             (((Fpu)y.Y * z.Z) - ((Fpu)y.Z * z.Y)).F,
             (-(((Fpu)y.X * z.Z) - ((Fpu)y.Z * z.X))).F,

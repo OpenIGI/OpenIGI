@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -739,7 +740,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             request = request with { Sound = UnderwaterSound, FireballCount = 0 };
         }
 
-        Vector3f direction = Physics.Igi2RigidBody.Normalised(request.Direction);
+        Vector3f direction = OpenIGI.Game.Physics.RigidBodyKernels.Normalise<Fpu>(request.Direction);
         if (request.Ground is { HitObject: Igi2RigidObject or Igi2SplineSegment } struck)
         {
             Effects.BurnMark(struck, request.BurnRange);
@@ -918,7 +919,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             for (int i = 0; i < r.FragmentCount; i++)
             {
                 float speed = ((Draw() * ((Fpu)r.MaxSpeed - r.MinSpeed)) + r.MinSpeed).F;
-                Vector3f cone = RandomUnitVectorInCone(Physics.Igi2RigidBody.Normalised(explosion.Direction), r.MaxAlpha);
+                Vector3f cone = RandomUnitVectorInCone(OpenIGI.Game.Physics.RigidBodyKernels.Normalise<Fpu>(explosion.Direction), r.MaxAlpha);
                 Vector3f velocity = new(((Fpu)cone.X * speed).F, ((Fpu)cone.Y * speed).F, ((Fpu)cone.Z * speed).F);
                 _ = Random.NextRaw();
                 explosion.Fragments.Add(NewFragment(at, velocity, 204.8f));
@@ -1010,8 +1011,8 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
         if (length <= 0.1f)
         {
             Fpu x0 = (Fpu)d.X * 0f, y0 = (Fpu)d.Y * 0f;
-            Vector3f side = Physics.Igi2RigidBody.Normalised(new Vector3f((z0 - y0).F, (-((Fpu)d.Z - x0)).F, ((Fpu)d.Y - x0).F));
-            across = Physics.Igi2RigidBody.Normalised(new Vector3f(
+            Vector3f side = OpenIGI.Game.Physics.RigidBodyKernels.Normalise<Fpu>(new Vector3f((z0 - y0).F, (-((Fpu)d.Z - x0)).F, ((Fpu)d.Y - x0).F));
+            across = OpenIGI.Game.Physics.RigidBodyKernels.Normalise<Fpu>(new Vector3f(
                 (((Fpu)d.Y * side.Z) - ((Fpu)side.Y * d.Z)).F,
                 (-(((Fpu)d.X * side.Z) - ((Fpu)side.X * d.Z))).F,
                 (((Fpu)side.Y * d.X) - ((Fpu)side.X * d.Y)).F));
@@ -1021,7 +1022,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
         {
             Fpu inverse = (Fpu)1.0 / length;
             across = new Vector3f(((Fpu)across.X * inverse).F, ((Fpu)across.Y * inverse).F, ((Fpu)across.Z * inverse).F);
-            up = Physics.Igi2RigidBody.Normalised(new Vector3f(
+            up = OpenIGI.Game.Physics.RigidBodyKernels.Normalise<Fpu>(new Vector3f(
                 (((Fpu)across.Y * d.Z) - ((Fpu)across.Z * d.Y)).F,
                 (-(((Fpu)across.X * d.Z) - ((Fpu)across.Z * d.X))).F,
                 (((Fpu)across.X * d.Y) - ((Fpu)across.Y * d.X)).F));

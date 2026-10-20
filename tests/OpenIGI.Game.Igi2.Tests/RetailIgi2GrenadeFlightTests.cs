@@ -7,6 +7,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -65,7 +66,7 @@ public sealed class RetailIgi2GrenadeFlightTests
         Igi2RigidBody body = new();
         body.InitBox(0.3f, 409.6f, 409.6f, 614.4f);
         float[] m = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
-        body.AddForce(new Igi2PointForce(new Vector3f(0f, 0f, -(0.3f * Igi2Grenade.Gravity)), default));
+        body.AddForce(new PointForce(new Vector3f(0f, 0f, -(0.3f * Igi2Grenade.Gravity)), default));
         Assert.False(body.Update(m));
         Assert.Equal(-Igi2Grenade.Gravity, body.Velocity.Z, 3);
         Assert.Equal(Igi2Grenade.Gravity, body.Speed, 3);

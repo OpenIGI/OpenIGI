@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -495,7 +496,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         if (_realThrust != 0f && Fuel != 0f)
         {
             float push = (((Fpu)t.MaxThrust * _realThrust) * 44.600887298583984).F;
-            Body.Body.AddForce(new Igi2PointForce(new Vector3f(0f, push, 0f), default));
+            Body.Body.AddForce(new PointForce(new Vector3f(0f, push, 0f), default));
         }
 
         float fuel = ((Fpu)Fuel - t.Burn).F;
@@ -566,7 +567,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
 
             Vector3f n = wing.Normal;
             Fpu f = ((((Fpu)dir.Y * n.Y) + ((Fpu)dir.Z * n.Z) + ((Fpu)dir.X * n.X)) * wing.Area) * coefficient;
-            Body.Body.AddForce(new Igi2PointForce(new Vector3f(((Fpu)n.X * f).F, ((Fpu)n.Y * f).F, ((Fpu)n.Z * f).F), wing.Position));
+            Body.Body.AddForce(new PointForce(new Vector3f(((Fpu)n.X * f).F, ((Fpu)n.Y * f).F, ((Fpu)n.Z * f).F), wing.Position));
         }
     }
 

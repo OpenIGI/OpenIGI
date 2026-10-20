@@ -460,7 +460,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
         // F. The boost.
         if (Boost)
         {
-            Push(new RetailForce(0f, ((X87)mass * BoostScale).F, 0f, 0f, 0f, 0f));
+            Push(Force(0f, ((X87)mass * BoostScale).F, 0f, 0f, 0f, 0f));
         }
 
         // G. The thrust, 10 m ahead of the centre; airborne, the yaw control turns it.
@@ -480,7 +480,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
                 fz = nz;
             }
 
-            Push(new RetailForce(fx, fy, fz, 0f, 40960.0f, 0f));
+            Push(Force(fx, fy, fz, 0f, 40960.0f, 0f));
         }
 
         // H. The landing gear.
@@ -708,7 +708,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
                 fz = (((X87)Reach - d) * SpringRate * mass * LoadScale).F;
             }
 
-            Push(new RetailForce(0f, 0f, fz, _gearPoints[3 * k], _gearPoints[(3 * k) + 1], _gearPoints[(3 * k) + 2]));
+            Push(Force(0f, 0f, fz, _gearPoints[3 * k], _gearPoints[(3 * k) + 1], _gearPoints[(3 * k) + 2]));
             Velocity[0] = ((X87)Velocity[0] * Thrust * RollBrake).F;
             Velocity[1] = ((X87)Velocity[1] * Thrust * RollBrake).F;
             Momentum[0] = ((X87)Momentum[0] * SpinDamping).F;

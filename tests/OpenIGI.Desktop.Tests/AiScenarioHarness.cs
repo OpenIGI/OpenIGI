@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
@@ -985,9 +986,9 @@ public sealed class AiScenarioHarness : IDisposable
                 {
                     // The probe's planeflight format: each force as pushed, then the state after the step.
                     lastPlaneSteps = planeSteps;
-                    foreach (RetailForce f in plane.PushedForces)
+                    foreach (PointForce f in plane.PushedForces)
                     {
-                        log.AppendLine(CultureInfo.InvariantCulture, $"[pforce] f=({f.Fx:G9},{f.Fy:G9},{f.Fz:G9}) p=({f.Px:G9},{f.Py:G9},{f.Pz:G9})");
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[pforce] f=({f.Force.X:G9},{f.Force.Y:G9},{f.Force.Z:G9}) p=({f.Point.X:G9},{f.Point.Y:G9},{f.Point.Z:G9})");
                     }
 
                     float[] pm = plane.M;

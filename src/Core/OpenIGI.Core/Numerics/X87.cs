@@ -26,7 +26,7 @@ namespace OpenIGI.Core.Numerics;
 /// </para>
 /// </remarks>
 /// <param name="value">The register value.</param>
-public readonly struct X87(double value)
+public readonly struct X87(double value) : IX87<X87>
 {
     /// <summary>Gets the register value.</summary>
     public double Value { get; } = value;

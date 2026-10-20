@@ -27,7 +27,7 @@ namespace OpenIGI.Core.Numerics;
 /// </para>
 /// </remarks>
 /// <param name="value">The register value.</param>
-public readonly struct X87Single(double value)
+public readonly struct X87Single(double value) : IX87<X87Single>
 {
     // A double's fraction has 52 bits; a 24-bit significand keeps the top 23 of them.
     private const long DroppedFractionMask = (1L << 29) - 1;
