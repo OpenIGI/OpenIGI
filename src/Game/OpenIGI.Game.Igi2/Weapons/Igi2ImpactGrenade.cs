@@ -61,12 +61,6 @@ public readonly record struct Igi2ImpactGrenadeParameters(string Model, float Da
 /// </remarks>
 public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
 {
-    /// <summary>What its speed keeps each tick.</summary>
-    public const double Damping = 0.9950000047683716;
-
-    /// <summary>What it falls by each tick.</summary>
-    public const double Gravity = 35.68070983886719;
-
     /// <summary>A metre a second, in units a tick.</summary>
     public const double MetresPerSecond = 136.53334045410156;
 
@@ -125,12 +119,9 @@ public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
     /// <inheritdoc/>
     public bool Run()
     {
-        float sx = ((Fpu)_speed.X * Damping).F;
-        float sy = ((Fpu)_speed.Y * Damping).F;
-        float sz = (((Fpu)_speed.Z - Gravity) * Damping).F;
-        _speed = new Vector3f(sx, sy, sz);
-        Vector3d from = Position;
-        Position = new Vector3d(((Fpu)sx + from.X).Value, ((Fpu)sy + from.Y).Value, ((Fpu)sz + from.Z).Value);
+        Vector3d from = Position, to = from;
+        ImpactRoundFlight.Step<Fpu>(ref _speed, ref to);
+        Position = to;
 
         _path.Starts[0] = from;
         _path.Ends[0] = Position;
