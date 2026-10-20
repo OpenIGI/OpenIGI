@@ -507,15 +507,16 @@ public sealed class Igi1MissionSetup(
                 TerrainDiscardBinding.For(carTerrain).Regions,
                 TerrainHeightBindings.Bind(carTerrain, levelRoot));
             Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
+            mission.RetailWorld = new RetailCarWorld(
+                carRays,
+                RetailWorldObjects.Build(
+                    levelRoot,
+                    carModels,
+                    name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
+                cutscenes.RetailVehicleModels,
+                static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task));
             cutscenes.ConfigureRetailCars(
-                new RetailCarWorld(
-                    carRays,
-                    RetailWorldObjects.Build(
-                        levelRoot,
-                        carModels,
-                        name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
-                    cutscenes.RetailVehicleModels,
-                    static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
+                mission.RetailWorld,
                 carModels,
                 name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
         }

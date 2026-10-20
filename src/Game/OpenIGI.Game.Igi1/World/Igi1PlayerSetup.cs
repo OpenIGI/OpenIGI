@@ -170,6 +170,19 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
             ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
             : solids.Tracer();
 
+        // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
+        // cars do; it leaves the hand facing the way it was thrown (0x414A60).
+        candidate.Grenades.World = () => mission.RetailWorld;
+        candidate.Grenades.Bodies = (model, at, velocity) =>
+            mission.VehiclePhysics?.Types.TryFind(model, out OpenIGI.Game.Physics.PhysicsObjectType type) == true
+                ? RetailPhysicsObjectBody.Create(
+                    type,
+                    loaded.TryGetModel(model, out MefModel? grenadeModel) ? grenadeModel : null,
+                    at,
+                    GrenadePhysics.PlacementOrientation(velocity),
+                    velocity)
+                : null;
+
         // The view model's forward sweep, which wants a ray through the terrain rather than the
         // height under a point. Null for a title whose ground nothing can trace yet, and the
         // pullback then meets placed objects only.

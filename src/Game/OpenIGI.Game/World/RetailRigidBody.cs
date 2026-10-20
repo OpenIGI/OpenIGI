@@ -355,6 +355,29 @@ public abstract class RetailRigidBody
         UpdateSpeed();
     }
 
+    /// <summary>
+    /// Gives the body a solid box's mass and inertia: <c>Body_SetBox</c> (<c>0x4ECED0</c>) and <c>Body_SetMassInertia</c>
+    /// (<c>0x4EC5E0</c>).
+    /// </summary>
+    /// <param name="mass">The mass.</param>
+    /// <param name="a">The box's edge along the body's x, world units.</param>
+    /// <param name="b">Along its y.</param>
+    /// <param name="c">Along its z.</param>
+    public void SetBox(float mass, float a, float b, float c)
+    {
+        float b2 = ((X87)b * b).F;
+        float c2 = ((X87)c * c).F;
+        X87 a2 = (X87)a * a;
+        float iz = (((X87)b2 + a2) * mass * 0.0833333358f).F;
+        float iy = (((X87)c2 + a2) * mass * 0.0833333358f).F;
+        float ix = (((X87)c2 + b2) * mass * 0.0833333358f).F;
+        Mass = mass;
+        InverseInertia[0] = ((X87)1.0f / ix).F;
+        InverseInertia[1] = ((X87)1.0f / iy).F;
+        InverseInertia[2] = ((X87)1.0f / iz).F;
+        InverseMass = ((X87)1.0f / mass).F;
+    }
+
     /// <summary>A force and the body point it acts at, both in the body frame.</summary>
     /// <param name="fx">The force, body X.</param>
     /// <param name="fy">The force, body Y.</param>

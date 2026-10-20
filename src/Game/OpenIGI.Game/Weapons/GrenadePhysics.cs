@@ -113,6 +113,11 @@ public static class GrenadePhysics
     /// <remarks>Retained for existing contact-pose callers; the actual placed-mine path uses the weapon direction.</remarks>
     public static Matrix3f SurfaceOrientation(Vector3f normal) => PlacementOrientation(normal);
 
+    /// <summary>The model a thrown grenade of a kind is, which its physics type is found by.</summary>
+    /// <param name="type">The kind.</param>
+    /// <returns><c>135_01_1</c> for the frag, <c>137_01_1</c> for the flashbang.</returns>
+    public static string ModelOf(GrenadeExplosionType type) => type == GrenadeExplosionType.Flashbang ? "137_01_1" : "135_01_1";
+
     /// <summary>Returns the pose used by the grenade renderer for the current fixed-tick state.</summary>
     /// <param name="grenade">The live grenade whose captured contact pose may be drawn.</param>
     /// <param name="alpha">The frame interpolation fraction, from zero to one.</param>
@@ -124,7 +129,7 @@ public static class GrenadePhysics
     public static Matrix3f PresentationOrientation(LiveGrenade grenade, float alpha)
     {
         ArgumentNullException.ThrowIfNull(grenade);
-        return grenade.Resting || grenade.LandedPoseCaptured || grenade.SurfaceContact
+        return grenade.Body is not null || grenade.Resting || grenade.LandedPoseCaptured || grenade.SurfaceContact
             ? grenade.Orientation
             : FlightOrientation(grenade.TumbleTicks + alpha);
     }
@@ -298,6 +303,12 @@ public sealed class LiveGrenade
 
     /// <summary>Gets or sets how many ticks since the grenade last touched a surface.</summary>
     public int TicksSinceContact { get; set; }
+
+    /// <summary>Gets or sets its body, when it flies as the original's physics object does; <see langword="null"/> for one that does not.</summary>
+    public RetailPhysicsObjectBody? Body { get; set; }
+
+    /// <summary>Gets or sets the tick it last bounced, which re-arms its bounce once it has been clear of every surface for ten (<c>+1828</c>).</summary>
+    public int LastBounceTick { get; set; }
 }
 
 /// <summary>
@@ -328,6 +339,7 @@ public sealed class GrenadeSimulation
     private readonly List<Vector3d> _bounces = [];
     private readonly List<Vector3d> _thrown = [];
     private readonly List<Vector3d> _mineTriggers = [];
+    private int _tick;
 
     /// <summary>Gets the grenades in flight or at rest.</summary>
     public IReadOnlyList<LiveGrenade> Grenades => _grenades;
@@ -353,6 +365,18 @@ public sealed class GrenadeSimulation
     /// <summary>Gets mine positions whose proximity trigger fired during the last tick.</summary>
     /// <remarks>The retail mine task emits the <c>proxy_arm</c> cue on this rising edge.</remarks>
     public IReadOnlyList<Vector3d> MineTriggers => _mineTriggers;
+
+    /// <summary>
+    /// Gets or sets what the grenades' contact points are cast through, the world the cars step in; <see langword="null"/>
+    /// flies them the simple way.
+    /// </summary>
+    public Func<IRetailCarWorld?>? World { get; set; }
+
+    /// <summary>
+    /// Gets or sets what makes a thrown grenade's body from its model's physics type, at its start and speed (<c>0x477040</c>);
+    /// <see langword="null"/>, or no body, flies it the simple way.
+    /// </summary>
+    public Func<string, Vector3d, Vector3f, RetailPhysicsObjectBody?>? Bodies { get; set; }
 
     /// <summary>Clears grenade-thrown notifications after the owning game loop has delivered them.</summary>
     public void ClearThrownEvents() => _thrown.Clear();
@@ -414,7 +438,10 @@ public sealed class GrenadeSimulation
             Math.Max(0, fuseTicks),
             radiusMetres: radiusMetres,
             falloffMetres: falloffMetres,
-            damageFactor: damageFactor));
+            damageFactor: damageFactor)
+        {
+            Body = Bodies?.Invoke(GrenadePhysics.ModelOf(type), origin, velocityUnitsPerTick),
+        });
         _thrown.Add(origin);
         return true;
     }
@@ -531,9 +558,26 @@ public sealed class GrenadeSimulation
         // AI grenades can be spawned during SoldierRenderer.Tick, after this simulation tick, and must
         // survive until the next pre-AI delivery pass.
 
+        _tick++;
+        IRetailCarWorld? world = World?.Invoke();
         for (int i = _grenades.Count - 1; i >= 0; i--)
         {
             LiveGrenade grenade = _grenades[i];
+            if (grenade.Body is { } body && world is not null)
+            {
+                // 0x476AC0: with fuse left it counts down and moves (0x476D90) and bounces (0x476CC0); at none it goes off.
+                if (grenade.FuseTicks <= 0)
+                {
+                    _detonations.Add(new GrenadeDetonation(
+                        grenade.Position, grenade.Type, grenade.DamageFactor, grenade.RadiusUnits, grenade.FalloffUnits));
+                    _grenades.RemoveAt(i);
+                    continue;
+                }
+
+                grenade.FuseTicks--;
+                Fly(grenade, body, world);
+                continue;
+            }
 
             if (--grenade.FuseTicks <= 0)
             {
@@ -711,6 +755,32 @@ public sealed class GrenadeSimulation
         _bounces.Clear();
         _thrown.Clear();
         _mineTriggers.Clear();
+    }
+
+    // 0x476D90 then 0x476CC0: the body's step, then its bounce -- heard on first touching something, and heard again only
+    // once it has been clear of every surface for ten ticks since.
+    private void Fly(LiveGrenade grenade, RetailPhysicsObjectBody body, IRetailCarWorld world)
+    {
+        grenade.PreviousPosition = grenade.Position;
+        body.StepGrenade(world);
+        grenade.Position = new Vector3d(body.Position[0], body.Position[1], body.Position[2]);
+        grenade.Velocity = new Vector3f(body.Velocity[0], body.Velocity[1], body.Velocity[2]);
+        grenade.Orientation = body.Orientation();
+        grenade.SurfaceContact = body.ContactCount != 0;
+        grenade.Resting = false;
+        if (grenade.SurfaceContact)
+        {
+            if (!grenade.BounceSounded)
+            {
+                _bounces.Add(grenade.Position);
+                grenade.BounceSounded = true;
+                grenade.LastBounceTick = _tick;
+            }
+        }
+        else if (_tick - grenade.LastBounceTick > GrenadePhysics.BounceQuietTicks)
+        {
+            grenade.BounceSounded = false;
+        }
     }
 
     private bool TickMine(LiveGrenade mine, HumanProximityCast? humans)

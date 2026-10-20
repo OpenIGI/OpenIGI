@@ -32,6 +32,9 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the soldiers' simulation: their brains, bodies and rounds, or <see langword="null"/> before a level has any.</summary>
     public SoldierSimulation? Soldiers { get; set; }
 
+    /// <summary>Gets or sets the world the original's physics objects step in: the cars, and the thrown grenades.</summary>
+    public IRetailCarWorld? RetailWorld { get; set; }
+
     /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
     public PlayerCamera? Player { get; set; }
 

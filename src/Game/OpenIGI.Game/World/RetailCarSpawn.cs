@@ -105,7 +105,7 @@ public static class RetailCarSpawn
         float c = ((X87)F(5) * 4096.0f).F;
         float b = ((X87)F(4) * 4096.0f).F;
         float aa = ((X87)F(3) * 4096.0f).F;
-        SetBox(car, definition.Mass, aa, b, c);
+        car.SetBox(definition.Mass, aa, b, c);
         for (int k = 0; k < 3; k++)
         {
             car.InverseInertia[k] = ((X87)car.InverseInertia[k] * 1.00999999f).F;
@@ -246,20 +246,4 @@ public static class RetailCarSpawn
     /// <summary>The spawn orientation, <c>0x4B38E0(α, β, γ)</c>: <c>RotZ(γ)·RotY(β)·RotX(α)</c> with truncating products.</summary>
     private static void SpawnMatrix(Vector3f angles, float[] m) =>
         RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z).CopyTo(m, 0);
-
-    /// <summary><c>Body_SetBox</c> (<c>0x4ECED0</c>) and <c>Body_SetMassInertia</c> (<c>0x4EC5E0</c>).</summary>
-    private static void SetBox(RetailRigidBody car, float m, float a, float b, float c)
-    {
-        float b2 = ((X87)b * b).F;
-        float c2 = ((X87)c * c).F;
-        X87 a2 = (X87)a * a;
-        float iz = (((X87)b2 + a2) * m * 0.0833333358f).F;
-        float iy = (((X87)c2 + a2) * m * 0.0833333358f).F;
-        float ix = (((X87)c2 + b2) * m * 0.0833333358f).F;
-        car.Mass = m;
-        car.InverseInertia[0] = ((X87)1.0f / ix).F;
-        car.InverseInertia[1] = ((X87)1.0f / iy).F;
-        car.InverseInertia[2] = ((X87)1.0f / iz).F;
-        car.InverseMass = ((X87)1.0f / m).F;
-    }
 }
