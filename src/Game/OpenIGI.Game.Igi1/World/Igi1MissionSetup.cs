@@ -279,6 +279,7 @@ public sealed class Igi1MissionSetup(
         mission.Elevators = ElevatorRegistry.Build(levelRoot, host.Game.Variables);
         mission.Interactions = WorldInteractionRegistry.Build(levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators);
         mission.Interactions.Clock = () => mission.Objectives?.LevelTick;
+        mission.Interactions.Sounds = audio.PlayInteractionSound;
         mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, host.Game.Variables);
 
         solids.GenericPickups = mission.GenericPickups;

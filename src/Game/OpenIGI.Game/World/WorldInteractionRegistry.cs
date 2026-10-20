@@ -29,7 +29,15 @@ public sealed class WorldInteraction
     public const int FenceTraversalTicks = 6 * 30;
 
     private readonly object _userOccupant = new();
+    /// <summary>The definition a switch clicks with as it comes to rest on (<c>0x4450F0</c>).</summary>
+    public const string SwitchSound = "switch";
+
+    /// <summary>The definition a powered fence's sound area buzzes with (<c>0x43FC30</c>).</summary>
+    public const string FenceSound = "elfence_loop";
+
     private int _pressStamp;
+    private bool _humming;
+    private Action<InteractionSoundEvent>? _sounds;
     private int _useStamp;
     private int _completeStamp;
     private Func<bool?>? _onCondition;
@@ -131,6 +139,22 @@ public sealed class WorldInteraction
 
     /// <summary>Gets a value indicating whether a round breaks this switch, its <c>Destructable</c> flag.</summary>
     public bool IsDestructable { get; init; }
+
+    /// <summary>Gets where the task stands, its <c>Position</c>, before any lift carries it.</summary>
+    public Vector3d TaskPosition { get; init; }
+
+    /// <summary>Gets the model a switch wears: 0 on, 1 on and pressed, 2 off, 3 off and pressed, 4 destroyed (<c>0x4450F0</c>).</summary>
+    public int ModelSlot { get; private set; }
+
+    /// <summary>Gets a fence's span along its own X, its model's magic vertices 0 and 1, which its sound area covers.</summary>
+    public (float First, float Second)? FenceSpan { get; init; }
+
+    /// <summary>Gets or sets where the task's sounds go.</summary>
+    internal Action<InteractionSoundEvent>? Sounds
+    {
+        get => _sounds;
+        set => _sounds = value;
+    }
 
     /// <summary>Gets a value indicating whether a GenericTBA runs ExplodeObject's update, and its children with it: its <c>Explodable</c> flag (<c>+568</c>).</summary>
     public bool IsExplodable { get; init; }
@@ -610,6 +634,17 @@ public sealed class WorldInteraction
                     Pressed.EndPulse();
                 }
 
+                // On a change of its on, pressed or destroyed byte it wears one of its five models, and the first, on and
+                // at rest, comes with its click: the "switch" definition where it stands.
+                if (IsOn != LastOn || Pressed.Value != Pressed.Last || IsDestroyed != LastDestroyed)
+                {
+                    ModelSlot = IsDestroyed ? 4 : IsOn ? (Pressed.Value ? 1 : 0) : (Pressed.Value ? 3 : 2);
+                    if (ModelSlot == 0)
+                    {
+                        Sound(InteractionSound.Played, SwitchSound, TaskPosition + _offset);
+                    }
+                }
+
                 LastOn = IsOn;
                 LastDestroyed = IsDestroyed;
                 break;
@@ -633,6 +668,7 @@ public sealed class WorldInteraction
                 break;
             case InteractionActivateType.Fence:
                 IsElectrified = _electricCondition?.Invoke() ?? false;
+                RunFenceHum();
                 InUse.CommitTick();
                 break;
             default:
@@ -642,6 +678,33 @@ public sealed class WorldInteraction
 
         ExplosionTriggeredThisTick = false;
     }
+
+    // 0x43FC30: a powered fence makes its own AmbientArea, buzzing elfence_loop in a box two metres up its middle, the
+    // length of the span between its magic vertices 0 and 1 and a metre and a half past each end; it deletes it with the power.
+    private void RunFenceHum()
+    {
+        if (_humming && !IsElectrified)
+        {
+            _humming = false;
+            Sound(InteractionSound.AreaStopped, string.Empty, default);
+        }
+        else if (!_humming && IsElectrified && FenceSpan is (float first, float second))
+        {
+            _humming = true;
+            double middle = ((double)second + first) * 0.5;
+            Vector3f offset = Orientation.Transposed().Transform(new Vector3f((float)middle, 0f, 8192f));
+            _sounds?.Invoke(new InteractionSoundEvent(
+                Task,
+                InteractionSound.AreaStarted,
+                FenceSound,
+                TaskPosition + new Vector3d(offset.X, offset.Y, offset.Z),
+                Orientation,
+                new Vector3d((((double)second - first) * 0.00012207031) + 1.5, 1.75, 2.0)));
+        }
+    }
+
+    private void Sound(InteractionSound what, string sound, Vector3d at) =>
+        _sounds?.Invoke(new InteractionSoundEvent(Task, what, sound, at, Matrix3f.Identity, default));
 
     private void ClearUse(int now)
     {
@@ -902,6 +965,9 @@ public sealed class WorldInteractionRegistry
     /// </summary>
     public Func<int?>? Clock { get; set; }
 
+    /// <summary>Gets or sets where the tasks' sounds go: the switches' clicks, the generators' hum, the electric fences' buzz.</summary>
+    public Action<InteractionSoundEvent>? Sounds { get; set; }
+
     // The tick a press or a use made between two updates is stamped with: the level's, or the updates counted so far.
     private int Now => Clock?.Invoke() ?? _updates;
 
@@ -1127,7 +1193,15 @@ public sealed class WorldInteractionRegistry
             {
                 IsDestructable = type == InteractionActivateType.Switch && ReadBool(declared, "Destructable"),
                 IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && ReadBool(declared, "Explodable"),
+                TaskPosition = taskPosition,
+                FenceSpan = type == InteractionActivateType.Fence
+                    && models.TryGetValue(modelName, out MefModel? spanned)
+                    && spanned.TryGetMagicVertex(0, out Vector3f firstPost)
+                    && spanned.TryGetMagicVertex(1, out Vector3f secondPost)
+                        ? (firstPost.X, secondPost.X)
+                        : null,
             };
+            item.Sounds = sound => registry.Sounds?.Invoke(sound);
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
@@ -1199,6 +1273,9 @@ public sealed class WorldInteractionRegistry
             string explodedSymbol = $"{declared.Name}.isExploded";
             GeneratorPowerState state = new(
                 declared,
+                ReadString(declared, "Run sound", string.Empty),
+                ReadString(declared, "Shutdown sound", string.Empty),
+                sound => registry.Sounds?.Invoke(sound),
                 ByteSlot(expressions, onExpression, declared),
                 () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
                 ReadBool(declared, "Use backup timer"),
@@ -1227,7 +1304,10 @@ public sealed class WorldInteractionRegistry
     }
 
     private sealed class GeneratorPowerState(
-        GameTask task,
+        DeclaredTask task,
+        string runSound,
+        string shutdownSound,
+        Action<InteractionSoundEvent> sounds,
         Func<bool?>? onCondition,
         Func<bool> isExploded,
         bool useBackupTimer,
@@ -1266,7 +1346,40 @@ public sealed class WorldInteractionRegistry
             }
         }
 
+        private bool _running;
+
         private void Run(bool exploded)
+        {
+            bool wasOn = IsOn;
+            Power(exploded);
+
+            // 0x43B500: while on it holds its run sound, started once; as it goes off it lets go of it and, having been on,
+            // plays its shutdown sound once, where it stands.
+            Vector3d at = task.TryGetValue("Position", out object? placed) && placed is Vector3d position ? position : default;
+            if (IsOn)
+            {
+                if (!_running && runSound.Length > 0)
+                {
+                    _running = true;
+                    sounds(new InteractionSoundEvent(task, InteractionSound.LoopStarted, runSound, at, Matrix3f.Identity, default));
+                }
+            }
+            else
+            {
+                if (_running)
+                {
+                    _running = false;
+                    sounds(new InteractionSoundEvent(task, InteractionSound.LoopStopped, string.Empty, at, Matrix3f.Identity, default));
+                }
+
+                if (wasOn && shutdownSound.Length > 0)
+                {
+                    sounds(new InteractionSoundEvent(task, InteractionSound.Played, shutdownSound, at, Matrix3f.Identity, default));
+                }
+            }
+        }
+
+        private void Power(bool exploded)
         {
             // 0x43B500: off once exploded; else its On expression, when it has one that compiled -- a generator with none
             // keeps what it had, off from the constructor, and comes on only by its backup.

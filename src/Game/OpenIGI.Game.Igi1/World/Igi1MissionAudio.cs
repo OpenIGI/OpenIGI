@@ -1,9 +1,10 @@
-﻿using OpenIGI.Game.Hosting;
-using OpenIGI.Audio;
+﻿using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
 using OpenIGI.Engine.Audio;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -28,6 +29,8 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
 
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
+    private readonly Dictionary<GameTask, AudioVoiceHandle> _taskLoops = [];
+    private readonly Dictionary<GameTask, PlacedAmbientArea> _taskAreas = [];
 
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
@@ -475,6 +478,52 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
         }
     }
 
+    /// <summary>Plays what a level task does with a sound: a switch's click, a generator's hum, an electric fence's buzz.</summary>
+    /// <param name="sound">The task's sound.</param>
+    public void PlayInteractionSound(InteractionSoundEvent sound)
+    {
+        switch (sound.What)
+        {
+            case InteractionSound.AreaStarted when mission.Ambience is { } ambience:
+                _taskAreas[sound.Task] = ambience.Add(sound);
+                return;
+            case InteractionSound.AreaStopped:
+                if (_taskAreas.Remove(sound.Task, out PlacedAmbientArea? area))
+                {
+                    AmbientAreaRegistry.Retire(area);
+                }
+
+                return;
+        }
+
+        if (host.SoundOutput is not { } output)
+        {
+            return;
+        }
+
+        switch (sound.What)
+        {
+            case InteractionSound.Played:
+                output.PlayDefinition(sound.Sound, sound.Position, priority: 120);
+                break;
+            case InteractionSound.LoopStarted:
+                AudioVoiceHandle voice = output.PlayDefinition(sound.Sound, sound.Position, priority: 120);
+                if (voice.IsValidHandle)
+                {
+                    _taskLoops[sound.Task] = voice;
+                }
+
+                break;
+            case InteractionSound.LoopStopped:
+                if (_taskLoops.Remove(sound.Task, out AudioVoiceHandle running))
+                {
+                    output.Stop(running);
+                }
+
+                break;
+        }
+    }
+
     /// <summary>Plays a door's sounds, and owns the one voice that has to be held and stopped.</summary>
     /// <param name="door">The door that made the noise.</param>
     /// <param name="what">Which of its four moments this is.</param>
@@ -726,7 +775,12 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
     public void ResetWeaponSounds() => _weaponSounds?.Reset();
 
     /// <summary>Forgets the ambience voices, as a level's areas are rebuilt.</summary>
-    public void ForgetAmbience() => _ambientVoices.Clear();
+    public void ForgetAmbience()
+    {
+        _ambientVoices.Clear();
+        _taskAreas.Clear();
+        _taskLoops.Clear();
+    }
 
     /// <summary>Forgets the security cameras' voices, as the cameras are rebuilt or released.</summary>
     public void ForgetCameras()

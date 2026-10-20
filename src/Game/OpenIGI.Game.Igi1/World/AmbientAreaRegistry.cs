@@ -43,6 +43,9 @@ public sealed record PlacedAmbientArea(
 
     /// <summary>Gets or sets whether a voice is currently running for this area.</summary>
     public bool IsSounding { get; set; }
+
+    /// <summary>Gets whether the task that made the area has deleted it: it goes quiet, then leaves the level.</summary>
+    public bool IsRetired { get; internal set; }
 }
 
 /// <summary>
@@ -96,14 +99,40 @@ public sealed class AmbientAreaRegistry
         return registry;
     }
 
+    /// <summary>Adds an area a task made as it updated, as a powered fence makes its buzz (<c>0x43FC30</c>).</summary>
+    /// <param name="sound">What made it, and where.</param>
+    /// <returns>The area.</returns>
+    /// <remarks>The area the engine makes (<c>0x44C830</c>) has no gap before it speaks and no expression gating it.</remarks>
+    public PlacedAmbientArea Add(in InteractionSoundEvent sound)
+    {
+        PlacedAmbientArea area = new(sound.Task, sound.Position, sound.Orientation, sound.HalfExtentsMetres, 0.0, 0.0, [sound.Sound]);
+        _areas.Add(area);
+        return area;
+    }
+
+    /// <summary>The task that made an area deletes it: its voice is stopped on the next tick and the area leaves the level.</summary>
+    /// <param name="area">The area.</param>
+    public static void Retire(PlacedAmbientArea area)
+    {
+        ArgumentNullException.ThrowIfNull(area);
+        area.IsRetired = true;
+    }
+
     /// <summary>Advances every area one tick against where the listener is.</summary>
     /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
     public void Tick(Vector3d listenerInUnits)
     {
+        _areas.RemoveAll(static area => area.IsRetired && !area.IsSounding);
         foreach (PlacedAmbientArea area in _areas)
         {
             area.PendingSound = string.Empty;
             area.WantsStop = false;
+            if (area.IsRetired)
+            {
+                area.WantsStop = true;
+                continue;
+            }
+
 
             bool inside = Contains(area, listenerInUnits);
             area.Inside = inside;
