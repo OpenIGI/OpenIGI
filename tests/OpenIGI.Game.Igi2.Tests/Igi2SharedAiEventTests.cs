@@ -32,20 +32,17 @@ public sealed class Igi2SharedAiEventTests
     }
 
     [Fact]
-    public void A_human_of_the_other_game_is_tested_here_and_its_bits_cleared()
+    public void The_flags_pass_whole_for_the_source_to_answer()
     {
-        // A footstep (0x463920): in range, of a living human, from the other side.
+        // A footstep (0x463920): in range, of a living human, from the other side. The walker, any game's human, is the
+        // originator this game's admission tests ask whether it lives.
         HumanPlayerTask walker = new() { Team = 0 };
         Assert.True(Igi2AiEvent.TryFromShared(Event((int)AiEvent.Walk, 0x46, walker), out Igi2AiEvent step));
-        Assert.Equal(0x42, step.Flags);
+        Assert.Equal(0x46, step.Flags);
         Assert.Same(walker, step.Originator);
+        IAiHuman human = Assert.IsAssignableFrom<IAiHuman>(step.Originator);
+        Assert.False(human.IsDead);
         Assert.Equal(0, step.Team);
-
-        Assert.False(Igi2AiEvent.TryFromShared(Event((int)AiEvent.Walk, 0x46, null), out _));
-        walker.IsDead = true;
-        Assert.False(Igi2AiEvent.TryFromShared(Event((int)AiEvent.Walk, 0x0E, walker), out _));
-        Assert.True(Igi2AiEvent.TryFromShared(Event((int)AiEvent.Walk, 0x16, walker), out Igi2AiEvent dead));
-        Assert.Equal(0x02, dead.Flags);
     }
 
     private static HumanAiEvent Event(int type, int flags, HumanTask? human) =>

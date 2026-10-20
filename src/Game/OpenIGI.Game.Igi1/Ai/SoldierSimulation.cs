@@ -3974,11 +3974,12 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <returns>The soldier, or <see langword="null"/> when the task is not one of these soldiers.</returns>
     public SoldierView? ViewOf(HumanTask task) => _viewsByTask.TryGetValue(task, out SoldierView? view) ? view : null;
 
-    // Gives a soldier's task this simulation's handlers for its hit events.
+    // Gives a soldier's task this simulation's handlers for its hit events, and its live body for any game's AI to perceive.
     private void TakeEvents(SoldierView view)
     {
         _viewsByTask[view.Soldier] = view;
         view.Soldier.Events = this;
+        view.Soldier.Body = new Player.Igi1SoldierBody(view, () => Brains.TryGetValue(view, out AiSoldier? brain) && brain.IsCrouching);
     }
 
     /// <summary>A round or a blade on a soldier, whoever fired it: <c>HumanSoldier</c>'s <c>WeaponHit</c>, <c>0x45D3C0</c>.</summary>

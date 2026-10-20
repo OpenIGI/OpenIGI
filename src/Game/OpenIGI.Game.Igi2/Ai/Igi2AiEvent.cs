@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Ai;
 
@@ -89,12 +88,12 @@ public readonly record struct Igi2AiEvent(
     /// </summary>
     /// <param name="shared">The event.</param>
     /// <param name="aiEvent">Receives the event.</param>
-    /// <returns>Whether this game has the event and the human it concerns passes the tests only this game's humans answer.</returns>
+    /// <returns>Whether this game has the event.</returns>
     /// <remarks>
     /// <para>
-    /// The flags are the engine's own bits, which both games test alike, except those about a human: this game asks its
-    /// own humans whether they live, so a human of the other game is tested here and those bits are cleared. A near
-    /// miss is not taken: this game hears another's rounds through the level's bodies.
+    /// The flags are the engine's own bits, which both games test alike; the human ones are answered by the event's source,
+    /// whichever game's human it is (<see cref="IAiHuman"/>). A near miss is not taken: this game hears another's rounds
+    /// through the level's bodies.
     /// </para>
     /// </remarks>
     public static bool TryFromShared(in HumanAiEvent shared, out Igi2AiEvent aiEvent)
@@ -112,22 +111,7 @@ public readonly record struct Igi2AiEvent(
             return false;
         }
 
-        const int AboutAHuman = 0x04 | 0x08 | 0x10;
-        int flags = shared.Flags;
-        if ((flags & AboutAHuman) != 0)
-        {
-            HumanTask? subject = shared.Subject as HumanTask;
-            if (subject is null
-                || ((flags & 0x08) != 0 && subject.IsDead)
-                || ((flags & 0x10) != 0 && !subject.IsDead))
-            {
-                return false;
-            }
-
-            flags &= ~AboutAHuman;
-        }
-
-        aiEvent = new Igi2AiEvent(kind, shared.Team, flags, shared.Radius, shared.Position, default, shared.Source, shared.Subject);
+        aiEvent = new Igi2AiEvent(kind, shared.Team, shared.Flags, shared.Radius, shared.Position, default, shared.Source, shared.Subject);
         return true;
     }
 }

@@ -118,6 +118,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
             if (mission.PlayerTask is { } task)
             {
                 task.Events = mission.PlayerEvents;
+                task.Body = new Igi1PlayerBody(mission);
             }
         }
 
