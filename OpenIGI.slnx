@@ -25,6 +25,7 @@
     <Project Path="src/Engine/OpenIGI.Host/OpenIGI.Host.csproj" />
     <Project Path="src/Engine/OpenIGI.Modding/OpenIGI.Modding.csproj" />
     <Project Path="src/Engine/OpenIGI.Modding.Loader/OpenIGI.Modding.Loader.csproj" />
+    <Project Path="src/Engine/OpenIGI.Modding.Presentation/OpenIGI.Modding.Presentation.csproj" />
   </Folder>
   <Folder Name="/src/Game/">
     <Project Path="src/Game/OpenIGI.Frontend.Settings/OpenIGI.Frontend.Settings.csproj" />

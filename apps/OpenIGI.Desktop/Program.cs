@@ -14,6 +14,7 @@ using OpenIGI.Host;
 using OpenIGI.Host.Titles;
 using OpenIGI.Modding;
 using OpenIGI.Modding.Loader;
+using OpenIGI.Modding.Presentation;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
 using OpenIGI.Rendering.Pipeline;
@@ -81,6 +82,9 @@ if (!string.Equals(modsSetting, "off", StringComparison.OrdinalIgnoreCase))
     foreach (TitlePackage package in TitleCatalog.Titles.Packages.ToArray())
     {
         TitleCatalog.Titles.Replace(package with { Runtime = mods.Extend(package.Runtime) });
+
+        // And what the mods draw, added to the game's own presenters.
+        PresentationMods.Apply(mods, package.Title, package.Presentation.Presenters);
     }
 }
 
