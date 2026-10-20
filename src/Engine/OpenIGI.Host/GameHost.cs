@@ -165,8 +165,6 @@ public sealed partial class GameHost : IDisposable
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
 
-    private int _lampMilliseconds;
-
     // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
@@ -364,6 +362,9 @@ public sealed partial class GameHost : IDisposable
     // The level's light by the hour: its authored sun, the cycle's, the frame's, the sky fill and the night sky.
     private readonly TimeOfDayLighting _timeOfDay;
 
+    // The level's lamps as a player meets them: the wall switch, the photocells, their sound.
+    private readonly LevelLamps _lamps;
+
     // Chosen on the campaign screen beside the difficulty and held from there on, so a run started at
     // night stays at night through every mission after it. Session state, never archived -- see
     // MissionConditions.
@@ -556,6 +557,7 @@ public sealed partial class GameHost : IDisposable
         _cutsceneSounds = new CutsceneSounds(_audioOut);
         _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this));
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
+        _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);
     }
 

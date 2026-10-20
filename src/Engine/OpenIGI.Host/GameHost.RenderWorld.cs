@@ -2096,7 +2096,7 @@ public sealed partial class GameHost
             // Which of the level's lamps the crosshair is on, if any -- so the switch keys can be
             // aimed rather than guessed at, and so a press that appeared to do nothing can be told
             // apart from a press that landed on a lamp whose light is off screen.
-            if (DescribeAimedLamp() is { } aimedLamp)
+            if (_lamps.DescribeAimed() is { } aimedLamp)
             {
                 lines.Add(aimedLamp);
             }

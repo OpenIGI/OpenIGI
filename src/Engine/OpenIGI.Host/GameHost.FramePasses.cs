@@ -860,7 +860,7 @@ public sealed partial class GameHost
         // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
         // steady lamps and returns. The daylight's photocells ride on the same pass, reading the sun
         // the sweep above has just moved.
-        UpdateLamps(_loop.TimeSource.Milliseconds, audible: !_menuFlow.MenuMode && _session.Mission is not null);
+        _lamps.Update(_loop.TimeSource.Milliseconds, audible: !_menuFlow.MenuMode && _session.Mission is not null);
     }
 
     /// <summary>Steers the free camera and the sun gizmo.</summary>

@@ -91,7 +91,7 @@ public sealed partial class GameHost
 
             // Where the lamp stands with the daylight: whether its photocell decides it, whether it has a roof
             // over it and whether it counts as indoors (which keeps it lit by day), and how bright the switchboard has it now.
-            json.WriteBoolean("followsDaylight", _lampDaylight.Photocells?.Follows(i) ?? false);
+            json.WriteBoolean("followsDaylight", _lamps.Daylight.Photocells?.Follows(i) ?? false);
             json.WriteBoolean("underRoof", LampDaylightControl.IsUnderRoof(fixture, _shelterField));
             json.WriteBoolean("indoors", LampDaylightControl.IsIndoors(fixture, _shelterField, _mission.EffectWalls));
             json.WriteNumber("level", _gi.LampSwitchboard?.LevelOf(i) ?? 1f);
