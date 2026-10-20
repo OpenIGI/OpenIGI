@@ -38,6 +38,25 @@ public interface ITitleAudio
     double SampleSeconds(string bankKey) => 0.0;
 }
 
+/// <summary>
+/// Opens audio for another game's content standing in a game: its own sound table and banks, read from its own files, mixed
+/// through the same device as the game's own sounds.
+/// </summary>
+/// <remarks>
+/// A game's sounds are its definition table over its banks; the host's sound system holds the running game's. Content that
+/// brings another game's -- that game's soldiers in this one's level -- cannot take that table over, or every sound of the
+/// running game would go, so it is given a mixer of its own over the one device and listener.
+/// </remarks>
+public interface ITitleAudioMixer
+{
+    /// <summary>Opens a game's sounds over its files.</summary>
+    /// <param name="files">The game's own files, which its banks are read from.</param>
+    /// <param name="definitions">The game's definition table.</param>
+    /// <param name="bankDirectories">The directories whose sound archives and files the definitions play, in mount order.</param>
+    /// <returns>The audio, or <see langword="null"/> where nothing is heard.</returns>
+    ITitleAudio? Open(Engine.Vfs.VirtualFileSystem files, ISoundDefinitionLookup definitions, IReadOnlyList<string> bankDirectories);
+}
+
 /// <summary>A sound the host is playing for a title.</summary>
 public interface ITitleVoice
 {

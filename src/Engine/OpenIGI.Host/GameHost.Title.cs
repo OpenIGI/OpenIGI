@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
-using OpenIGI.Host.DevTools;
-using OpenIGI.Formats.Textures;
+using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Configuration;
@@ -9,19 +9,21 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.Textures;
+using OpenIGI.Frontend;
+using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Host.Content;
+using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Content;
+using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
-using OpenIGI.Core.Configuration;
-using OpenIGI.Frontend;
-using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Screens;
 using OpenIGI.UI.Widgets;
-using OpenIGI.Frontend.Saves;
-using OpenIGI.Presentation.Cameras;
 
 namespace OpenIGI.Host;
 
@@ -321,6 +323,7 @@ public sealed partial class GameHost
         // Every session can find the other games' installations, for content that reads one game's data in another.
         ServiceCatalog hostServices = new();
         hostServices.Provide<ITitleDataLocator>(new InstalledTitles(_titles));
+        hostServices.Provide<ITitleAudioMixer>(new GuestAudioMixer(_audioOut, _logger));
         _title = TitleSession.Start(
             _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false, inherited: hostServices);
 
