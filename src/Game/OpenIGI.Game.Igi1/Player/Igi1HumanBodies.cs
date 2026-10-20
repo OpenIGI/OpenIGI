@@ -32,7 +32,12 @@ public sealed class Igi1PlayerBody(MissionWorld mission) : IHumanBodyState
     public bool IsKeepingLow => mission.Player?.Body is { IsCrouched: true } body && body.EyeHeight <= PlayerBody.CrouchingEyeHeight;
 
     /// <inheritdoc/>
-    public bool IsActive => mission.Player is not null;
+    /// <remarks>
+    /// <c>Human+3318</c> is set and cleared as the task is put in the world and taken out of it (<c>0x460950</c>,
+    /// <c>0x4609A0</c>, and the player's own <c>0x410900</c>), as its conditional containers start and stop: a player whose
+    /// container holds it out of the world, as an intro's does, is nobody's target.
+    /// </remarks>
+    public bool IsActive => mission.Player is not null && ConditionalContainerGate.IsTaskActive(mission.PlayerTask);
 }
 
 /// <summary>A soldier's live body, as any game's AI perceives the soldier's task.</summary>
