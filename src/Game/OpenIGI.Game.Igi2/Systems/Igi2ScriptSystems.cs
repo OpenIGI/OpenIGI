@@ -90,13 +90,7 @@ internal static class Igi2ScriptSystems
             NoiseAt = noise,
         });
 
-        foreach (Igi2Human human in everyone)
-        {
-            if (human.Surroundings is Igi2LevelSurroundings heard)
-            {
-                heard.AiEvents = e => player.Ai?.SendEvent(e);
-            }
-        }
+        Igi2Gameplay.HearAiEvents(everyone, () => player.Ai);
 
         foreach (Vehicles.Igi2CarTask car in player.Cars)
         {

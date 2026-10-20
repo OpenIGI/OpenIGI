@@ -46,10 +46,7 @@ internal static class Igi2WorldSystems
             else if (node is Ai.Igi2HumanSoldierTask { Body: { } soldier })
             {
                 detection.Detectables.Add(soldier);
-                if (soldier.Surroundings is Igi2LevelSurroundings around)
-                {
-                    around.Detection = detection;
-                }
+                Igi2Gameplay.SeeThrough(soldier, detection);
             }
         }
 

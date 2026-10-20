@@ -536,6 +536,35 @@ public sealed class Igi2Gameplay : ITitleGameplay
         return level;
     }
 
+    /// <summary>Gives a human the detectors it is seen and sees through, as the level's detection system makes them.</summary>
+    /// <param name="human">The human, as a level's spawn made it.</param>
+    /// <param name="detection">The level's detectors.</param>
+    public static void SeeThrough(Igi2Human human, Detection.Igi2DetectionWorld detection)
+    {
+        ArgumentNullException.ThrowIfNull(human);
+        ArgumentNullException.ThrowIfNull(detection);
+        if (human.Surroundings is Igi2LevelSurroundings around)
+        {
+            around.Detection = detection;
+        }
+    }
+
+    /// <summary>Sends the AI events humans raise to a level's AI, once it is made (<c>HumanAI_SendEvent</c>).</summary>
+    /// <param name="humans">The humans, as a level's spawn made them.</param>
+    /// <param name="ai">The level's AI, read as each event is raised.</param>
+    public static void HearAiEvents(IEnumerable<Igi2Human> humans, Func<Ai.Runtime.Igi2AiWorld?> ai)
+    {
+        ArgumentNullException.ThrowIfNull(humans);
+        ArgumentNullException.ThrowIfNull(ai);
+        foreach (Igi2Human human in humans)
+        {
+            if (human.Surroundings is Igi2LevelSurroundings heard)
+            {
+                heard.AiEvents = e => ai()?.SendEvent(e);
+            }
+        }
+    }
+
     /// <summary>Reads the level's sound definitions and hands them to the host's mixer, as <c>Game_CreateHandler</c> (<c>igi2 0x4070E0</c>) does.</summary>
     /// <param name="request">The level and the session.</param>
     /// <returns>The level's sounds.</returns>
