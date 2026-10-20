@@ -14,7 +14,7 @@ namespace OpenIGI.Game.World;
 /// contact point for each the type defines, sitting on its magic vertex of the model, with the point's kind, material,
 /// bounce and frictions. It collides with the world (<c>+1752</c>) and is not held level.
 /// </remarks>
-public sealed class RetailPhysicsObjectBody : RetailRigidBody
+public class RetailPhysicsObjectBody : RetailRigidBody
 {
     /// <summary>What the grenade's speed keeps each tick in the air, the float at <c>0x534144</c>.</summary>
     public const float GrenadeAirDrag = 0.985f;
@@ -24,7 +24,9 @@ public sealed class RetailPhysicsObjectBody : RetailRigidBody
 
     private readonly PhysicsObjectType _type;
 
-    private RetailPhysicsObjectBody(PhysicsObjectType type) => _type = type;
+    /// <summary>Initializes a new instance of the <see cref="RetailPhysicsObjectBody"/> class: a body of a type, not yet placed.</summary>
+    /// <param name="type">Its type.</param>
+    protected RetailPhysicsObjectBody(PhysicsObjectType type) => _type = type ?? throw new ArgumentNullException(nameof(type));
 
     /// <summary>Gets the type it was made from.</summary>
     public PhysicsObjectType Type => _type;
@@ -39,7 +41,10 @@ public sealed class RetailPhysicsObjectBody : RetailRigidBody
     protected override float SleepSpin => _type.RestAngularVelocitySquared;
 
     /// <inheritdoc/>
-    protected override Wing[] AeroSurfaces => [];
+    protected override Wing[] AeroSurfaces => Wings;
+
+    /// <summary>Gets or sets the surfaces the air pushes on: none for a plain physics object.</summary>
+    protected Wing[] Wings { get; set; } = [];
 
     /// <summary>Makes a body of a type at a pose and speed, as a thrown grenade is made (<c>0x477040</c>).</summary>
     /// <param name="type">Its type.</param>
@@ -50,8 +55,20 @@ public sealed class RetailPhysicsObjectBody : RetailRigidBody
     /// <returns>The body.</returns>
     public static RetailPhysicsObjectBody Create(PhysicsObjectType type, MefModel? model, Vector3d position, Matrix3f orientation, Vector3f velocity)
     {
-        ArgumentNullException.ThrowIfNull(type);
         RetailPhysicsObjectBody body = new(type);
+        body.Place(model, position, orientation, velocity);
+        return body;
+    }
+
+    /// <summary>Gives a new body its box, its points and its pose: <c>0x4FB5F0</c>, <c>Body_InitFromType</c> and the placing.</summary>
+    /// <param name="model">Its model, for the contact points' magic vertices and its radius.</param>
+    /// <param name="position">Where it starts, world units.</param>
+    /// <param name="orientation">Its orientation.</param>
+    /// <param name="velocity">Its speed, units a tick.</param>
+    protected void Place(MefModel? model, Vector3d position, Matrix3f orientation, Vector3f velocity)
+    {
+        RetailPhysicsObjectBody body = this;
+        PhysicsObjectType type = _type;
         body.Dimensions[0] = body.Dimensions[1] = body.Dimensions[2] = 1.0f;
         body.ModelRadius = model?.NativeMarkerBound ?? 1.0f;
         body.RunCollide = true;
@@ -105,7 +122,6 @@ public sealed class RetailPhysicsObjectBody : RetailRigidBody
         Array.Copy(body.M, body.PreviousM, 9);
         body.PreviousMatrixCounter = body.MatrixCounter;
         body.DeltaM[0] = body.DeltaM[4] = body.DeltaM[8] = 1.0f;
-        return body;
     }
 
     /// <summary>

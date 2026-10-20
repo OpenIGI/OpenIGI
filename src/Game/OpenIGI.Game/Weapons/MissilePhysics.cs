@@ -92,6 +92,9 @@ public sealed class LiveMissile
     public int Age { get; set; }
     /// <summary>Gets whether the motor is still burning — thrusting and laying smoke.</summary>
     public bool Powered => MotorRemainingTicks > 0;
+
+    /// <summary>Gets or sets its body, when it flies as the original's missile does; <see langword="null"/> for one that does not.</summary>
+    public RetailMissileBody? Body { get; set; }
 }
 
 /// <summary>Advances launcher missiles and emits an explosion when the missile meets the world.</summary>
@@ -116,11 +119,25 @@ public sealed class MissileSimulation
     private readonly List<LiveMissile> _missiles = [];
     private readonly List<MissileDetonation> _detonations = [];
     private long _nextId;
+    private int _tick;
 
     /// <summary>Gets the missiles currently in flight.</summary>
     public IReadOnlyList<LiveMissile> Missiles => _missiles;
     /// <summary>Gets the detonations emitted during the most recent tick.</summary>
     public IReadOnlyList<MissileDetonation> Detonations => _detonations;
+
+    /// <summary>
+    /// Gets or sets what the missiles' contact points are cast through, the world the cars step in; <see langword="null"/> flies them
+    /// the simple way.
+    /// </summary>
+    public Func<IRetailCarWorld?>? World { get; set; }
+
+    /// <summary>
+    /// Gets or sets what fires a missile's body from its model's physics type (<c>0x429A30</c>): the model, where it leaves, the
+    /// launcher's frame, the launcher's speed in metres a second and where it was fired at. <see langword="null"/>, or no body, flies
+    /// it the simple way.
+    /// </summary>
+    public Func<string, Vector3d, Matrix3f, float, Vector3d, RetailMissileBody?>? Bodies { get; set; }
 
     /// <summary>Spawns one missile from an authored launcher binding.</summary>
     /// <param name="origin">The muzzle position in engine units.</param>
@@ -132,6 +149,10 @@ public sealed class MissileSimulation
     /// <param name="config">The flight parameters; the type's retail preset when omitted.</param>
     /// <param name="collisionOwner">The firing task excluded from this missile's world trace.</param>
     /// <param name="sourceWeaponId">The id of the weapon that fired it, carried to the blast.</param>
+    /// <param name="launcherMetresPerSecond">
+    /// The launcher's own speed, which the original's missile leaves at and its motor builds on; <see langword="null"/> for
+    /// <paramref name="muzzleVelocityMetresPerSecond"/>.
+    /// </param>
     /// <returns><see langword="true"/> when the missile entered the simulation.</returns>
     public bool Spawn(
         Vector3d origin,
@@ -142,11 +163,31 @@ public sealed class MissileSimulation
         string modelName = "110_02_1",
         MissileConfig? config = null,
         GameTask? collisionOwner = null,
-        int sourceWeaponId = 0)
+        int sourceWeaponId = 0,
+        float? launcherMetresPerSecond = null)
     {
         if (_missiles.Count >= MaximumLive || muzzleVelocityMetresPerSecond <= 0f)
         {
             return false;
+        }
+
+        // The original's missile: its own type's body, fired facing the launcher at the launcher's own speed.
+        Vector3f axis = launcherAxis == default ? (target - origin).ToVector3f().ReciprocalNormalizedOrSelf(float.Epsilon) : launcherAxis;
+        if (Bodies?.Invoke(modelName, origin, LauncherFrame(axis), launcherMetresPerSecond ?? muzzleVelocityMetresPerSecond, target) is { } body)
+        {
+            _missiles.Add(new LiveMissile(
+                _nextId++,
+                origin,
+                new Vector3f(body.Velocity[0], body.Velocity[1], body.Velocity[2]),
+                target,
+                config ?? MissileConfig.ForType(type),
+                modelName,
+                collisionOwner)
+            {
+                SourceWeaponId = sourceWeaponId,
+                Body = body,
+            });
+            return true;
         }
 
         config ??= MissileConfig.ForType(type);
@@ -194,11 +235,22 @@ public sealed class MissileSimulation
     {
         _detonations.Clear();
 
+        _tick++;
+        IRetailCarWorld? world = World?.Invoke();
         for (int i = _missiles.Count - 1; i >= 0; i--)
         {
             LiveMissile missile = _missiles[i];
             missile.PreviousPosition = missile.Position;
             missile.Age++;
+            if (missile.Body is { } body && world is not null)
+            {
+                if (Fly(missile, body, world, humans))
+                {
+                    _missiles.RemoveAt(i);
+                }
+
+                continue;
+            }
 
             Advance(missile);
 
@@ -247,6 +299,48 @@ public sealed class MissileSimulation
     /// drive the speed to cruise under thrust and hold it there with drag. Direct rockets keep their
     /// launch line; a bomb falls.
     /// </summary>
+    // 0x428390 after the move: struck, it goes off where it is; every thirty-two ticks one with nothing within a thousand metres
+    // below it is gone. A human its path crossed is struck too, which the cars' world, holding no humans, cannot say.
+    private bool Fly(LiveMissile missile, RetailMissileBody body, IRetailCarWorld world, HumanRayCast? humans)
+    {
+        body.Tick(world);
+        Vector3d at = new(body.Position[0], body.Position[1], body.Position[2]);
+        missile.Velocity = new Vector3f(body.Velocity[0], body.Velocity[1], body.Velocity[2]);
+        HumanHit humanHit = default;
+        bool struckHuman = humans is not null && humans(missile.Position, at, out humanHit);
+        missile.Position = at;
+        if (body.IsStruck || struckHuman)
+        {
+            _detonations.Add(new MissileDetonation(
+                struckHuman ? humanHit.Position : at,
+                MissileExplosion.DamageFactor,
+                MissileExplosion.RadiusUnits,
+                MissileExplosion.FalloffUnits,
+                (missile.Velocity * -1f).ReciprocalNormalizedOrSelf(float.Epsilon),
+                SourceWeaponId: missile.SourceWeaponId));
+            return true;
+        }
+
+        if ((_tick & 0x1F) == 0)
+        {
+            Span<RetailRayResult> below = new RetailRayResult[1];
+            world.CastRays(body, [at], [new Vector3d(at.X, at.Y, at.Z - 4096000.0)], below);
+            return !below[0].Hit;
+        }
+
+        return false;
+    }
+
+    /// <summary>The launcher's frame for a direction: its forward column the direction, its side level, as a view is built.</summary>
+    /// <param name="forward">The unit direction.</param>
+    /// <returns>The frame, <c>Z(yaw) X(pitch)</c>.</returns>
+    public static Matrix3f LauncherFrame(Vector3f forward)
+    {
+        float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
+        float yaw = MathF.Atan2(-forward.X, forward.Y);
+        return Matrix3f.FromEngineEulerAngles(pitch, 0f, yaw);
+    }
+
     private static void Advance(LiveMissile missile)
     {
         MissileConfig config = missile.Config;

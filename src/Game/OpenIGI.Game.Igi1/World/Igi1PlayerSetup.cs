@@ -125,6 +125,23 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
         return placed;
     }
 
+    // A missile is the original's physics object of its model's type, flying by its missile type (0x429A30).
+    private RetailMissileBody? FireMissile(LoadedMission loaded, string model, Vector3d at, Matrix3f frame, float speed, Vector3d target) =>
+        mission.VehiclePhysics?.Types is { } types
+        && types.TryFind(model, out OpenIGI.Game.Physics.PhysicsObjectType type)
+        && OpenIGI.Game.Physics.MissileTypeDefinition.Of<X87>(type) is { } missile
+            ? RetailMissileBody.Fire(
+                type,
+                missile,
+                loaded.TryGetModel(model, out MefModel? mef) ? mef : null,
+                at,
+                frame,
+                speed,
+                target,
+                null,
+                mission.MissileStream.Random)
+            : null;
+
     /// <summary>Makes the player's rig and reads the tables it and the soldiers use.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -173,6 +190,10 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
         // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
         // cars do; it leaves the hand facing the way it was thrown (0x414A60).
         candidate.Grenades.World = () => mission.RetailWorld;
+        candidate.Missiles.World = () => mission.RetailWorld;
+        candidate.Missiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
+        mission.VehicleMissiles.World = () => mission.RetailWorld;
+        mission.VehicleMissiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
         candidate.Grenades.Bodies = (model, at, velocity) =>
             mission.VehiclePhysics?.Types.TryFind(model, out OpenIGI.Game.Physics.PhysicsObjectType type) == true
                 ? RetailPhysicsObjectBody.Create(
