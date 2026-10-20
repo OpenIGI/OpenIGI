@@ -848,7 +848,7 @@ public sealed partial class GameHost
             float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
             _dayNightMilliseconds = dayNightNow;
             bool clockRuns = RenderCVars.DayNightCycle.Value && !_menuFlow.MenuMode && _session.Mission is not null;
-            _dayNight.Update(
+            _timeOfDay.DayNight.Update(
                 _window.Input.Keyboard,
                 dayNightElapsed,
                 clockRuns ? RenderCVars.DayLength.Value * 60f : 0f);

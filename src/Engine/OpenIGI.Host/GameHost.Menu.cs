@@ -59,7 +59,7 @@ public sealed partial class GameHost
         _scene = preview.Scene;
         _mission.Solids = preview.Solids;
         _mission.Spins = preview.Spins;
-        _sun = preview.Sun;
+        _timeOfDay.Sun = preview.Sun;
 
         _mission.Terrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
 
@@ -188,15 +188,15 @@ public sealed partial class GameHost
         // near-black colour its night missions author AND by the Dirlight's back colour, which nineteen
         // of its twenty-four levels leave at black. The ground then has no light at all reaching it, and
         // the first mission's backdrop was a black hillside under a sky that drew correctly.
-        _cycleSun = preview.Sun is { } previewSun
+        _timeOfDay.BoundSun = preview.Sun is { } previewSun
             ? DayNightBinding.Bind(previewSun, _deferredLighting)
             : null;
-        _dayNight.ResetForLevel(_cycleSun, RenderCVars.TimeOfDay.Value);
+        _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, RenderCVars.TimeOfDay.Value);
 
         // After the reset, which clears it -- the same order the mission path keeps.
         if (preview.Sun is { } nightSun && _deferredLighting is { Night: { } boundNight } authoredNight)
         {
-            _dayNight.SetNightLighting(
+            _timeOfDay.DayNight.SetNightLighting(
                 boundNight.SunIsMoon ? nightSun.Colour : null,
                 authoredNight.Ambient);
         }

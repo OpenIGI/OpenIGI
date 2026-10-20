@@ -89,7 +89,7 @@ public sealed partial class GameHost
     /// </remarks>
     private float SwitchedHour() =>
         _session.Mission is null ? -1f
-        : RenderCVars.DayNightCycle.Value ? _dayNight.TimeHours
+        : RenderCVars.DayNightCycle.Value ? _timeOfDay.DayNight.TimeHours
         : RenderCVars.TimeOfDay.Value;
 
     /// <summary>Where the view is now, or null where there is no mission to be anywhere in.</summary>
@@ -164,6 +164,6 @@ public sealed partial class GameHost
             return;
         }
 
-        _logger.Information("Renderer", FormattableString.Invariant($"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_dayNight.TimeHours:F2}."));
+        _logger.Information("Renderer", FormattableString.Invariant($"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_timeOfDay.DayNight.TimeHours:F2}."));
     }
 }

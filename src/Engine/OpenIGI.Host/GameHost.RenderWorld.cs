@@ -233,7 +233,7 @@ public sealed partial class GameHost
             // The eye's night vision, only as deep as the night: a day is untouched.
             // Only once the sun is some six degrees under (Nightfall past about 0.45): dusk keeps its
             // colour, and the eye's night vision takes over only as real night does.
-            NightShift: RenderCVars.NightShift.Value * NightVisionWeight(RenderCVars.Nightfall.Value));
+            NightShift: RenderCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(RenderCVars.Nightfall.Value));
 
         if (_gi.ExposureWarmup > 0)
         {
@@ -389,7 +389,7 @@ public sealed partial class GameHost
             // render the authored noon sun and light a different room. With this the whole line
             // pastes onto a capture command and the frame comes back as it was seen. One frame
             // stale while the sun is being scrubbed, which does not matter for standing still.
-            Vector3f loggedSun = _effectiveSun?.Direction ?? Vector3f.UnitZ;
+            Vector3f loggedSun = _timeOfDay.EffectiveSun?.Direction ?? Vector3f.UnitZ;
 
             // Warning rather than Information, which reads wrong and is not: the shell's logger
             // is built at Warning, so every Information call in the app is discarded and this
@@ -489,14 +489,14 @@ public sealed partial class GameHost
         // and the sky fill -- lights from the same swept sun rather than the raw authored one.
         // The sun -- or the moon -- this frame lights with. See CycleSun: the same answer the surface
         // cache is converged under, so the two cannot light the level differently.
-        DirectionalLightSettings light = CycleSun();
+        DirectionalLightSettings light = _timeOfDay.CycleSun();
 
         // What the night is doing to the picture, published for the exposure. The sweep is the only
         // thing that knows how far under the horizon the sun has gone, and the resolve is a long way
         // from here, so it travels as the one hidden variable rather than as another argument
         // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
         // a comparison capture wants: a pinned sun and an unmodified exposure.
-        RenderCVars.Nightfall.Value = _dayNight.Nightfall;
+        RenderCVars.Nightfall.Value = _timeOfDay.DayNight.Nightfall;
 
         // And what the LEVEL says about its own darkness, which the adaptation cannot work out
         // for itself: a scene lit dimly all over reads to it as a correctly-exposed dark subject.
@@ -523,14 +523,14 @@ public sealed partial class GameHost
         RenderCVars.AuthoredNightfall.Value =
             _deferredLighting is null || RenderCVars.Lighting.Value != LightingModel.Dynamic
                 ? 0f
-                : _dayNight.Nightfall;
+                : _timeOfDay.DayNight.Nightfall;
 
         // And how much a full night of it is worth, which is the title's to say: see
         // DeferredLighting.NightExposureDrop.
         RenderCVars.AuthoredNightDropFor.Value =
             _deferredLighting?.NightExposureDrop ?? RenderCVars.AuthoredNightDrop;
 
-        _effectiveSun = light;
+        _timeOfDay.EffectiveSun = light;
         Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
 
         // The sun gizmo, if it is up: projected against this frame's camera and dragged this frame,
@@ -545,7 +545,7 @@ public sealed partial class GameHost
             _window.Input.Mouse.X,
             _window.Input.Mouse.Y,
             _window.Input.Mouse.IsDown(Input.MouseButton.Left),
-            (axis, delta) => _dayNight.RotateAxis(axis, delta));
+            (axis, delta) => _timeOfDay.DayNight.RotateAxis(axis, delta));
 
         bool wantsShadows = RenderCVars.OffscreenScene.Value
             && RenderCVars.Deferred.Value
@@ -1100,7 +1100,7 @@ public sealed partial class GameHost
                         // both scales -- or the bounce is lit by a different key than the screen and
                         // the two disagree wherever indirect light dominates.
                         light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
-                        SkyFillColour(),
+                        _timeOfDay.SkyFillColour(),
                         liveField,
                         RenderCVars.SurfaceCacheProbe.Value,
                         amortize: !wantDump);
@@ -1158,7 +1158,7 @@ public sealed partial class GameHost
 
                 cacheCards.UpdateRadianceCache(
                     liveField,
-                    SkyFillColour(),
+                    _timeOfDay.SkyFillColour(),
                     // A short running average while the level is warming up, so the cache climbs to
                     // its converged value in a handful of frames rather than easing there over a
                     // couple of seconds -- which is what read as the scene loading bright and dimming.
@@ -1272,13 +1272,13 @@ public sealed partial class GameHost
             Vector3f atmosphereMoon = default;
             if (_options.SunDirection is null)
             {
-                atmosphereSun = _dayNight.SkySunColour * (atmosphereScale * nightFeed);
-                atmosphereSunDirection = _dayNight.SunDirection;
+                atmosphereSun = _timeOfDay.DayNight.SkySunColour * (atmosphereScale * nightFeed);
+                atmosphereSunDirection = _timeOfDay.DayNight.SunDirection;
                 // The moon above the weather, whole: the sky's cloud deck is lit by all of it and
                 // passes on its own share (see SkyView's deck transmission), while the clear air
                 // scatters only r_night_sky's. Knocked down or veiled here as well, the deck took
                 // the cloud's toll twice and a rainy night came out black.
-                atmosphereMoon = _dayNight.MoonColour * (RenderCVars.Moonlight.Value * atmosphereScale);
+                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (RenderCVars.Moonlight.Value * atmosphereScale);
             }
             else
             {
@@ -1319,7 +1319,7 @@ public sealed partial class GameHost
 
                 // What the night sky holds beyond the air: the glow that lights a moonless night,
                 // the cloud cover, the stars and the moon's disc. Nothing by day.
-                FrameNightSky(),
+                _timeOfDay.FrameNightSky(),
                 atmosphereSunDirection,
                 atmosphereMoon,
                 nightSky));
@@ -1384,7 +1384,7 @@ public sealed partial class GameHost
             // Warm the sky dome towards the horizon as the sun sinks, so a window shows a golden dusk
             // sky rather than a flat blue one and the screen-space bounce off it carries that warmth
             // into the room instead of a cool tint. Untouched with the sun high.
-            _sky?.SetSunTint(SkyWarmthTint((_effectiveSun ?? _sun)?.Direction.Z ?? 1f));
+            _sky?.SetSunTint(TimeOfDayLighting.SkyWarmthTint((_timeOfDay.EffectiveSun ?? _timeOfDay.Sun)?.Direction.Z ?? 1f));
 
             // Kept rather than replaced by the atmosphere, and divided by the exposure on the way
             // in because what it carries is a picture. Only where there IS a resolve to survive:
@@ -1659,7 +1659,7 @@ public sealed partial class GameHost
                 pixelCameraToCache,
                 sceneTarget.Width,
                 sceneTarget.Height,
-                SkyFillColour(),
+                _timeOfDay.SkyFillColour(),
                 state.ScreenGi.PixelFrame++,
                 state.ScreenGi.Pixels,
 
@@ -1825,7 +1825,7 @@ public sealed partial class GameHost
                     // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
                     // the surface cache lights its cards with, so the indirect that replaces the ambient
                     // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
-                    SkyFillColour(),
+                    _timeOfDay.SkyFillColour(),
 
                     // The camera the lit target was rendered through: the LAST frame's, which the
                     // resolve carries forward every frame -- unlike the gather's own previous camera,
@@ -2234,7 +2234,7 @@ public sealed partial class GameHost
             // several times the light the scene gets. The storm multiplies its colours by this,
             // so handing over more light than the scene has drew every drop brighter than the
             // ground behind it: a rainy night became a wall of rain with nothing visible through it.
-            DirectionalLightSettings stormSun = _effectiveSun ?? default;
+            DirectionalLightSettings stormSun = _timeOfDay.EffectiveSun ?? default;
             Vector3f stormSunLight =
                 stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
 
@@ -2248,9 +2248,9 @@ public sealed partial class GameHost
                 eye,
                 projection,
                 smoothPresentation ? tickBlend : 1f,
-                _effectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
+                _timeOfDay.EffectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
                 stormSunLight,
-                AmbientSkyLight() + (stormSunLight * 0.2f),
+                _timeOfDay.AmbientSkyLight() + (stormSunLight * 0.2f),
                 _loop.TimeSource.Milliseconds / 1000f,
                 _stormLamps.AsSpan(0, _stormLampCount),
 

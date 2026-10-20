@@ -19,9 +19,9 @@ public sealed partial class GameHost
 
         public IWorldPresenter? World => host._world;
 
-        public DirectionalLightSettings? Sun => host._sun;
+        public DirectionalLightSettings? Sun => host._timeOfDay.Sun;
 
-        public DirectionalLightSettings? EffectiveSun => host._effectiveSun;
+        public DirectionalLightSettings? EffectiveSun => host._timeOfDay.EffectiveSun;
 
         public bool HasLevel => host._session.Mission is not null || host._menuBackdrop.Preview is not null;
 
@@ -31,9 +31,9 @@ public sealed partial class GameHost
 
         public DistanceFieldCache FieldCache => host._sdfCache;
 
-        public DirectionalLightSettings CycleSun() => host.CycleSun();
+        public DirectionalLightSettings CycleSun() => host._timeOfDay.CycleSun();
 
-        public Vector3f SkyFillColour() => host.SkyFillColour();
+        public Vector3f SkyFillColour() => host._timeOfDay.SkyFillColour();
 
         public void UpdateBackdropProfile() => host.UpdateBackdropProfile();
     }

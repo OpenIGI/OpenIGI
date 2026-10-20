@@ -4,6 +4,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Lighting;
+using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;
 
@@ -217,9 +218,9 @@ public sealed partial class GameHost
             _shelterField,
             _mission.EffectWalls,
             _options.SunDirection is not null,
-            _dayNight,
-            _cycleSun ?? _sun ?? FallbackSun,
-            WeatherCloudCover());
+            _timeOfDay.DayNight,
+            _timeOfDay.BoundSun ?? _timeOfDay.Sun ?? TimeOfDayLighting.FallbackSun,
+            _timeOfDay.WeatherCloudCover());
         board.Update(elapsed);
         _lampSounds.Play(board, elapsed, audible, _audioOut.Sounds, _gi.LightFixtures);
 

@@ -160,9 +160,6 @@ public sealed partial class GameHost : IDisposable
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
     private DeferredLighting? _deferredLighting;
 
-    // The level's sun as the DAY/NIGHT CYCLE has to see it, which is not always as the level wrote it.
-    // See BindToCycle.
-    private DirectionalLightSettings? _cycleSun;
 
     // What a person has said outright about which models are lamps, which beats anything the detector
     // works out. One file for the whole game; see Assets/lamps.json.
@@ -398,20 +395,15 @@ public sealed partial class GameHost : IDisposable
             : (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
 
     private static readonly System.Diagnostics.Stopwatch HostUptime = System.Diagnostics.Stopwatch.StartNew();
-    private DirectionalLightSettings? _sun;
 
-    // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
-    // the current time of day, which everything downstream (shadows, deferred, the surface cache and its
-    // radiance cache, the sky fill) lights from in place of the raw authored one. Recomputed each rendered
-    // frame; scrubbed on real elapsed time so holding a key sweeps smoothly whatever the frame rate.
-    private readonly DayNightCycle _dayNight = new();
+    // The level's light by the hour: its authored sun, the cycle's, the frame's, the sky fill and the night sky.
+    private readonly TimeOfDayLighting _timeOfDay;
 
     // Chosen on the campaign screen beside the difficulty and held from there on, so a run started at
     // night stays at night through every mission after it. Session state, never archived -- see
     // MissionConditions.
     private MissionConditions _conditions = MissionConditions.Default;
     private readonly SunGizmo _sunGizmo = new();
-    private DirectionalLightSettings? _effectiveSun;
     private int _dayNightMilliseconds;
     private FreeCamera? _camera;
 
@@ -598,6 +590,7 @@ public sealed partial class GameHost : IDisposable
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
         _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this));
+        _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _switch = new RendererSwitchService(device, logger);
     }
 

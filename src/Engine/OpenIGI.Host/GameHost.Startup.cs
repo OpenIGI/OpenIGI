@@ -46,7 +46,7 @@ public sealed partial class GameHost
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
         RegisterLampCommands(state.Console.System);
-        RegisterTimeOfDayCommands(state.Console.System);
+        _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
@@ -321,7 +321,7 @@ public sealed partial class GameHost
     {
         // The level's own sun, read from its Dirlight task -- section 12.
         // Null until a level is loaded, and for a level that declares none.
-        _sun = null;
+        _timeOfDay.Sun = null;
         _camera = null;
 
         // The walking player. F1 swaps between it and the free camera: the camera is how a level is
@@ -592,7 +592,7 @@ public sealed partial class GameHost
                     // up by the next level they load.
                     if (_menuFlow.OverShowcase)
                     {
-                        _dayNight.ResetForLevel(_sun, RenderCVars.TimeOfDay.Value);
+                        _timeOfDay.DayNight.ResetForLevel(_timeOfDay.Sun, RenderCVars.TimeOfDay.Value);
                     }
                 },
                 resumeMission: () =>

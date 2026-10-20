@@ -546,12 +546,12 @@ public sealed partial class GameHost
 
         // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
         // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
-        // path-traced lightmap was baked with `_sun` still null -- a zero sun direction and a fallback
+        // path-traced lightmap was baked with `_timeOfDay.Sun` still null -- a zero sun direction and a fallback
         // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
         // backdrop already carried one in. The later read stays and simply re-confirms the same value.
-        if (_sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
+        if (_timeOfDay.Sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
         {
-            _sun = bakeSun;
+            _timeOfDay.Sun = bakeSun;
         }
 
         // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
@@ -574,7 +574,7 @@ public sealed partial class GameHost
         // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
         if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
         {
-            Vector3f bakeSunDirection = _sun is { } declared && !declared.IsBelowHorizon
+            Vector3f bakeSunDirection = _timeOfDay.Sun is { } declared && !declared.IsBelowHorizon
                 ? declared.Direction
                 : default;
 
@@ -600,7 +600,7 @@ public sealed partial class GameHost
             // lightmaps entirely; 1 keeps them where the bake produced nothing.
             if (_scene is { } bakeScene)
             {
-                _baked.Start(id, bakeScene, _world, _resources, _sun, bakeCast);
+                _baked.Start(id, bakeScene, _world, _resources, _timeOfDay.Sun, bakeCast);
             }
         }
 
@@ -723,19 +723,19 @@ public sealed partial class GameHost
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
-                _sun = readSun;
-                _cycleSun = DayNightBinding.Bind(readSun, _deferredLighting);
+                _timeOfDay.Sun = readSun;
+                _timeOfDay.BoundSun = DayNightBinding.Bind(readSun, _deferredLighting);
 
                 // At the hour the level's authors placed the sun for, not a fixed one: the cycle lands
                 // back on the authored direction only there.
-                _dayNight.ResetForLevel(_cycleSun, RenderCVars.TimeOfDay.Value);
+                _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, RenderCVars.TimeOfDay.Value);
 
                 // After the reset, which clears it: a level that authors its own night hands the cycle
                 // that night to cross to, instead of the faint one the cycle invents for a level that
                 // does not have one. See DayNightCycle.SetNightLighting.
                 if (_deferredLighting is { Night: { } boundNight } authoredNight)
                 {
-                    _dayNight.SetNightLighting(
+                    _timeOfDay.DayNight.SetNightLighting(
                         boundNight.SunIsMoon ? readSun.Colour : null,
                         authoredNight.Ambient);
                 }
@@ -755,8 +755,8 @@ public sealed partial class GameHost
             }
             else
             {
-                _cycleSun = null;
-                _dayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
+                _timeOfDay.BoundSun = null;
+                _timeOfDay.DayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
 
@@ -1280,14 +1280,14 @@ public sealed partial class GameHost
         // one that had been handed in, and the next mission was lit and BAKED by the one before it. The
         // backdrop the menu puts up next sets its own in AdoptPreview, so nothing that needs one is left
         // without.
-        _sun = null;
-        _effectiveSun = null;
+        _timeOfDay.Sun = null;
+        _timeOfDay.EffectiveSun = null;
 
         // And so does what the level said about its own light. Left standing, the next title's mission
         // would be lit by the last one's answer -- and for Project I.G.I. that means its sky model would
         // stay switched off after a visit to the sequel.
         _deferredLighting = null;
-        _cycleSun = null;
+        _timeOfDay.BoundSun = null;
 
         // Before a single mesh is destroyed. The backend has assembled its own copy of the level from
         // the frames it drew -- the traceable world, and the material records a hit is looked up in --
@@ -1402,8 +1402,8 @@ public sealed partial class GameHost
         _logger.Information(
             "Lightmap", $"Enumerated {targets.Count} target(s); {covered}/{total} texels covered.");
 
-        Vector3f sunColour = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
-        Vector3f skyColour = _sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
+        Vector3f sunColour = _timeOfDay.Sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+        Vector3f skyColour = _timeOfDay.Sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
         Stepping.Drain(LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, 64, _work));
 
         // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
