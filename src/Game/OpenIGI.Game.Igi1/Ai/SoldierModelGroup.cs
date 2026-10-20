@@ -24,4 +24,9 @@ public sealed class SoldierModelGroup(SoldierBodyModel body)
         ArgumentNullException.ThrowIfNull(agent);
         _agents.Add(agent);
     }
+
+    /// <summary>Takes a soldier out, as a generator deletes the dead guard it replaces.</summary>
+    /// <param name="agent">The soldier.</param>
+    /// <returns>Whether it was in the group.</returns>
+    public bool Remove(SoldierAgent agent) => _agents.Remove(agent);
 }

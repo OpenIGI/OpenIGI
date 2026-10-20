@@ -173,6 +173,19 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             member.Weapon = weapon;
             group.AddDrawn(member);
             Count++;
+
+            // The dead guard the clone replaces is deleted with it (0x487EE0 -> 0x4015F0): it is drawn no more.
+            if (group.Soldiers.Find(candidate => ReferenceEquals(candidate.Agent, dead)) is { } corpse)
+            {
+                group.Soldiers.Remove(corpse);
+                if (corpse.Mesh.IsValid)
+                {
+                    _device.DestroyMesh(corpse.Mesh);
+                }
+
+                Count--;
+            }
+
             return true;
         };
         _sim.BodyFell = fall =>

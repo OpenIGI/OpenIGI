@@ -4220,24 +4220,28 @@ public sealed class SoldierSimulation : IHumanEvents
             freshView.Position,
             freshView.Soldier.Gamma,
             brain => CombatWeaponState(brain, freshAgent));
-        // The corpse remains registered: sharing its runtime ID would advance one weapon sound
-        // twice per tick and send replies to the old guard's alerts to its replacement instead.
-        // Keep the authored Soldier.Id for mission queries, but give each live instance its own ID.
+        // Each live instance has its own runtime ID, so nothing keyed by the old guard's -- its weapon sound, the replies to its
+        // alerts -- is taken for the replacement's. Keep the authored Soldier.Id for mission queries.
         freshBrain.RuntimeId = checked(BrainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
         BindViewTracking(freshBrain, freshView);
         freshBrain.SetDefaultTarget(PlayerTarget);
         Brains[freshView] = freshBrain;
         BrainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
         TakeEvents(freshView);
-        if (Humans.Count > 0)
-        {
-            Humans.Add(freshView.Soldier);
-        }
+
+        // 0x487EE0 deletes the dead child (0x4015F0) as it clones the next: the corpse leaves the level. The task it stood for is
+        // the replacement's, so the human list keeps it.
+        group.Remove(deadAgent);
+        Brains.Remove(deadView);
+        BrainsByRuntimeId.Remove(deadBrain.RuntimeId);
+        Health.Remove(deadView);
+        Combat.Remove(deadView);
+        DetectorMarkerScaleMetres.Remove(deadView);
 
         _logger.Information(
             LogCategory,
             $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
-                + $"{freshView.Soldier.Name} cloned at its authored position; the previous body remains.");
+                + $"{freshView.Soldier.Name} cloned at its authored position; the dead guard is deleted.");
         return freshView;
     }
 
@@ -4272,9 +4276,13 @@ public sealed class SoldierSimulation : IHumanEvents
         // until its mesh and runtime subtree have actually been created. A transient upload failure
         // must leave the generator eligible to retry on the next tick.
         GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
+        // 0x487EE0 replaces a child that is dead and out of the world; its HumanAI takes a generator's dead guard out
+        // (0x44F410) once its death has played out.
         if (decision != GuardSpawnDecision.FirstSpawn
             && isOn
             && view.IsDead
+            && Brains.TryGetValue(view, out Igi1HumanAi? deadBrain)
+            && deadBrain.IsDeathSettled
             && generator.SpawnCount < generator.MaxSpawns
             && SpawnGeneratedGuard(generator, view) is { } fresh)
         {

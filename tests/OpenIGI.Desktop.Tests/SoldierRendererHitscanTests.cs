@@ -250,7 +250,7 @@ public sealed class SoldierRendererHitscanTests
     [InlineData(429)]
     [InlineData(430)]
     [InlineData(431)]
-    public void PostRescueGeneratedGuardLeavesItsBodyAndRespawnsArmed(int taskId)
+    public void PostRescueGeneratedGuardIsReplacedArmedOnceItsDeathPlaysOut(int taskId)
     {
         using RagdollScope ragdoll = new(enabled: false);
         using Scenario scenario = CreateScenario(prepareContainers: true);
@@ -300,15 +300,17 @@ public sealed class SoldierRendererHitscanTests
         List<int> soundEmitters = [];
         scenario.Renderer.Simulation.SetWeaponSound((id, _, _, _) => soundEmitters.Add(id));
 
-        // Retail GuardGenerator clones another live subtree. It does not revive and erase the corpse.
-        scenario.Renderer.Tick(enemyAlive: false);
-        AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
+        // Retail GuardGenerator clones a fresh subtree, not the dead view reset in place. It waits until the dead guard's death
+        // has played out and its HumanAI has taken it out of the world (0x44F410), then deletes it (0x4015F0) and clones the
+        // next (0x488000): the corpse leaves the level as the replacement arrives.
+        int ticksToRespawn = TicksUntilReplaced(scenario.Renderer, taskId, firstLife, soundEmitters);
+        Assert.InRange(ticksToRespawn, 2, 300);
         SoldierView[] lives = RendererSoldiers(scenario.Renderer)
             .Where(view => view.Soldier.Id == taskId)
             .ToArray();
-        Assert.Equal(2, lives.Length);
-        Assert.True(firstLife.IsDead);
-        SoldierView replacement = Assert.Single(lives, view => !view.IsDead);
+        SoldierView replacement = Assert.Single(lives);
+        Assert.False(replacement.IsDead);
+        Assert.NotSame(firstLife, replacement);
 
         object replacementMember = MemberFor(scenario.Renderer, replacement);
         Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(replacementMember, "WeaponType").ScriptId);
@@ -329,7 +331,7 @@ public sealed class SoldierRendererHitscanTests
         scenario.Renderer.Draw(
             drawCamera,
             Matrix4f.Identity);
-        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
+        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
         Assert.Contains(
             scenario.Device.MeshDraws,
             draw => draw.Mesh == replacementWeaponMesh && draw.ModelView == replacementWeaponTransform);
@@ -352,14 +354,9 @@ public sealed class SoldierRendererHitscanTests
         MeshHandle replacementCorpseMesh = Get<MeshHandle>(replacementMember, "Mesh");
 
         soundEmitters.Clear();
-        scenario.Renderer.Tick(enemyAlive: false);
-        AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
-        SoldierView[] nextGeneration = RendererSoldiers(scenario.Renderer)
-            .Where(view => view.Soldier.Id == taskId)
-            .ToArray();
-        Assert.Equal(3, nextGeneration.Length);
-        Assert.Equal(2, nextGeneration.Count(view => view.IsDead));
-        SoldierView nextLive = Assert.Single(nextGeneration, view => !view.IsDead);
+        Assert.InRange(TicksUntilReplaced(scenario.Renderer, taskId, replacement, soundEmitters), 2, 300);
+        SoldierView nextLive = Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == taskId);
+        Assert.False(nextLive.IsDead);
         object nextMember = MemberFor(scenario.Renderer, nextLive);
         Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(nextMember, "WeaponType").ScriptId);
         Assert.NotNull(nextMember.GetType().GetProperty("Weapon")!.GetValue(nextMember));
@@ -369,8 +366,29 @@ public sealed class SoldierRendererHitscanTests
         scenario.Renderer.Draw(
             new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)),
             Matrix4f.Identity);
-        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
-        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == replacementCorpseMesh);
+        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
+        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == replacementCorpseMesh);
+    }
+
+    // Ticks until the generator has replaced a dead life, checking each tick that no two lives share a runtime identity.
+    private static int TicksUntilReplaced(SoldierRenderer renderer, int taskId, SoldierView dead, List<int> soundEmitters)
+    {
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soundEmitters.Clear();
+            renderer.Tick(enemyAlive: false);
+
+            // No two lives advance one weapon sound, nor share an identity the alerts are answered by.
+            Assert.Equal(soundEmitters.Count, soundEmitters.Distinct().Count());
+            Dictionary<SoldierView, Igi1HumanAi> brains = RendererBrains(renderer);
+            Assert.Equal(brains.Count, brains.Values.Select(brain => brain.RuntimeId).Distinct().Count());
+            if (!RendererSoldiers(renderer).Any(view => ReferenceEquals(view, dead)))
+            {
+                return tick;
+            }
+        }
+
+        return -1;
     }
 
     [RequiresGameDataFact]

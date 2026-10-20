@@ -2207,6 +2207,13 @@ public sealed class Igi1HumanAi
     private bool _deathClipEnded;
 
     /// <summary>
+    /// Gets a value indicating whether the soldier is dead and its death has played out: its death clip has ended and the body is
+    /// handed to the end-of-death tick (<c>0x45C740</c> sets <c>Human+828</c>), after which its HumanAI takes a generator's guard
+    /// out of the world (<c>0x44F410</c>) and the generator may replace it.
+    /// </summary>
+    public bool IsDeathSettled => Activity == AiSoldierActivity.Dead && _deathClipEnded;
+
+    /// <summary>
     /// Steps a dead body for one tick — the death state's per-tick (<c>0x45C700</c>) joined to the soldier
     /// update's ordinary root-motion move and ground query (<c>0x45D080</c>).
     /// </summary>
