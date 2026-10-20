@@ -34,6 +34,12 @@ public interface ITaskPresenter : IDisposable
     /// <param name="projection">The frame's projection.</param>
     /// <param name="blend">How far the frame is between the last tick and the next, 0 to 1.</param>
     void Draw(in Camera3D camera, in Matrix4f projection, float blend);
+
+    /// <summary>
+    /// Gets a value indicating whether the task casts a shadow: <see cref="Draw"/> is called for the sun's cascades and the lamps'
+    /// shadow maps as well, inside each pass, as a level's own characters are.
+    /// </summary>
+    bool CastsShadow => false;
 }
 
 /// <summary>The presenters a title draws with, keyed by what each is made from and the interface it is used through.</summary>

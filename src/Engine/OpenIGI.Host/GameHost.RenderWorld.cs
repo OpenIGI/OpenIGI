@@ -447,7 +447,10 @@ public sealed partial class GameHost
         // about to read their poses. Only one of the two is ever live: `_soldiers` belongs to a
         // played mission, `_menuBackdrop.Soldiers` to the menu's.
         ISoldierBodies? shadowCasters = _soldiers ?? _menuBackdrop.Soldiers;
-        ICharacterPresenter? casterBodies = shadowCasters is null ? null : new SoldierBodies(shadowCasters);
+        ITaskPresenter[] shadowTasks = [.. _taskPresenters.Where(static presenter => presenter.CastsShadow)];
+        ICharacterPresenter? casterBodies = shadowCasters is null && shadowTasks.Length == 0
+            ? null
+            : new SoldierBodies(shadowCasters, shadowTasks, tickBlend);
         _world.BeginFrame(tickBlend, smoothPresentation);
         shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
         _gunPickupRenderer?.BeginFrame(tickBlend, smoothPresentation);
@@ -2248,12 +2251,24 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>The soldiers' bodies as the shadow passes draw characters.</summary>
-    /// <param name="soldiers">The soldiers.</param>
-    private sealed class SoldierBodies(ISoldierBodies soldiers) : ICharacterPresenter
+    /// <summary>
+    /// What the shadow passes draw as characters: the level's soldiers, and whatever a title or a mod draws for its tasks that
+    /// casts a shadow.
+    /// </summary>
+    /// <param name="soldiers">The soldiers, or <see langword="null"/> for none.</param>
+    /// <param name="tasks">The task presenters that cast a shadow.</param>
+    /// <param name="blend">How far the frame is between ticks, which the task presenters draw at.</param>
+    private sealed class SoldierBodies(ISoldierBodies? soldiers, IReadOnlyList<ITaskPresenter> tasks, float blend) : ICharacterPresenter
     {
-        public void Draw(in Camera3D camera, in Matrix4f projection) => soldiers.Draw(camera, projection);
+        public void Draw(in Camera3D camera, in Matrix4f projection)
+        {
+            soldiers?.Draw(camera, projection);
+            foreach (ITaskPresenter task in tasks)
+            {
+                task.Draw(camera, projection, blend);
+            }
+        }
 
-        public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection) => soldiers.DrawPlayerBody(camera, projection);
+        public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection) => soldiers?.DrawPlayerBody(camera, projection);
     }
 }
