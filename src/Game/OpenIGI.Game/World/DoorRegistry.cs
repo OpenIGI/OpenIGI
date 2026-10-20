@@ -48,6 +48,12 @@ public sealed record PlacedDoor(
     private float _poseSlide;
     private float _poseAngle;
 
+    /// <summary>
+    /// Gets or sets the door's expressions and lock, run by its own update between its children and its motion; <see langword="null"/>
+    /// runs no expression and only keeps the open count.
+    /// </summary>
+    public Action? Conditions { get; set; }
+
     /// <summary>Gets or sets whether the door's travelling sound is running.</summary>
     /// <remarks>
     /// The original keeps the travelling sound's task handle in the door itself, at <c>+736</c>, which
@@ -586,6 +592,16 @@ public sealed class DoorRegistry
     public void Tick(PlacedDoor door)
     {
         ArgumentNullException.ThrowIfNull(door);
+
+        // 0x446D10: its expressions and lock, as it stood after its last update, then its motion.
+        if (door.Conditions is { } conditions)
+        {
+            conditions();
+        }
+        else
+        {
+            door.State.RunConditions(null, null);
+        }
 
         // A door moved by its parent this tick was already stepped; its blend starts from where its own tick left it.
         door.KeepPrevious();

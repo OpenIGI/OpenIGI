@@ -1644,6 +1644,9 @@ public sealed class PlayerCamera : IHostedPlayer
     private void TickInteraction(InputState input, IGroundHeightField? terrain)
     {
         WorldInteraction interaction = _activeInteraction!;
+
+        // 0x460EE0: a human whose state holds a task uses it every tick it holds it.
+        interaction.Use();
         bool use = _input.IsSet(PlayerInputSlot.Activate);
         if (!use)
         {

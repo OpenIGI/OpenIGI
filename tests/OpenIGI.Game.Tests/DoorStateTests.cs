@@ -84,11 +84,14 @@ public sealed class DoorStateTests
 
         for (int tick = 0; tick < 100; tick++)
         {
+            door.RunConditions(null, null);
             door.Tick();
         }
 
+        // 0x446E38 counts as the update starts, before the door moves: the fifteenth update arrives, and the
+        // eighty-five after it each count a tick it stood open.
         Assert.True(door.IsFullyOpen);
-        Assert.Equal(86, door.TicksOpen);   // 100 ticks less the 14 the swing took, plus the arrival tick
+        Assert.Equal(85, door.TicksOpen);
     }
 
     /// <summary>A sliding door with no angle runs its slide channel and nothing else.</summary>

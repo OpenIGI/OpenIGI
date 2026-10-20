@@ -247,9 +247,13 @@ public sealed class RetailElevatorTests
                 .ToArray();
 
             // A door reports closed only once it has updated (0x446D10 writes the flag at the end of its update), so the
-            // cab's doors are given that first update; the check below then holds them still, to see that the switch
-            // alone does not toggle them.
-            doors.Tick();
+            // cab's doors are given that first update -- its motion alone, as their own Open expression (the cab is not
+            // moving) would open them; the check below then holds them still, to see that the switch alone does not
+            // toggle them.
+            foreach (PlacedDoor door in doors.Doors)
+            {
+                door.State.Tick();
+            }
 
             Assert.True(interactions.ActivateFromAi(switchTask.Id));
 

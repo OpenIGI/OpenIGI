@@ -384,6 +384,12 @@ public sealed class MissionObjectiveRuntime
     /// <summary>Gets LevelFlow's <c>isComplete</c> byte, which a failure clears on the same update.</summary>
     public bool IsComplete => _levelFlow is { Complete: not 0 };
 
+    /// <summary>
+    /// Gets the level's tick, LevelFlow's <c>nTick</c> (<c>+104</c>), which the level's tasks stamp their pulses with; <see langword="null"/>
+    /// for a level with no LevelFlow.
+    /// </summary>
+    public int? LevelTick => _levelFlow?.Tick;
+
     /// <summary>Gets LevelFlow's <c>isFailed</c> byte, the one <c>LevelFlow_LevelFailed</c> (<c>0x488E50</c>) returns.</summary>
     public bool IsFailed => _levelFlow is { Failed: not 0 };
 

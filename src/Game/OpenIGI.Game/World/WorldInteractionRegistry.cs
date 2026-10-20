@@ -28,12 +28,14 @@ public sealed class WorldInteraction
     public const int FenceTraversalTicks = 6 * 30;
 
     private readonly object _userOccupant = new();
-    private int _pressedTicks;
-    private Func<bool>? _onCondition;
-    private Func<bool>? _lockedCondition;
+    private int _pressStamp;
+    private int _useStamp;
+    private int _completeStamp;
+    private Func<bool?>? _onCondition;
+    private Func<bool?>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
-    private Func<bool>? _electricCondition;
+    private Func<bool?>? _electricCondition;
     private Action? _onPress;
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
@@ -68,6 +70,11 @@ public sealed class WorldInteraction
         Task = task;
         Type = type;
         _placedDoor = door;
+        if (door is not null)
+        {
+            door.Conditions = RunDoorConditions;
+        }
+
         _authoredMarker = markerPoint;
         _markerLocal = markerLocal;
         _authoredAnchor = anchor;
@@ -451,12 +458,35 @@ public sealed class WorldInteraction
         };
     }
 
+    /// <summary>Gets or sets the level's tick, which a press, a use and a completion are stamped with.</summary>
+    internal Func<int> Clock { get; set; } = static () => 0;
+
+    /// <summary>The switch is pressed (<c>0x444BC0</c>): <c>isPressed</c> shifts into <c>isLastPressed</c>, is set, and is stamped.</summary>
     public void Press()
     {
-        Pressed.Value = true;
-        _pressedTicks = 3;
+        Pressed.Shift(true);
+        _pressStamp = Clock();
         _onPress?.Invoke();
     }
+
+    /// <summary>
+    /// A human holding the task uses it this tick: the task's Use, which the human's activate (<c>0x460EE0</c>) calls every tick
+    /// it holds it.
+    /// </summary>
+    /// <remarks>
+    /// A terminal (<c>0x443D80</c>), a GenericTBA and a cabinet set <c>isInUse</c> and stamp it, and their update clears it once
+    /// two ticks have passed the stamp, so it lasts a use and the two ticks after; a wire (<c>0x43F6D0</c>) sets it unstamped,
+    /// and its human clears it as it leaves the wire.
+    /// </remarks>
+    public void Use()
+    {
+        InUse.Value = true;
+        _useStamp = Clock();
+    }
+
+    // The types whose isInUse their own update clears on its stamp, rather than their human as it lets go.
+    private bool UseDecays => Type is InteractionActivateType.Terminal or InteractionActivateType.Generic
+        or InteractionActivateType.PlaceExplosive or InteractionActivateType.Cabinet;
 
     /// <summary>Begins use and reports whether this interaction acquired its resource.</summary>
     /// <returns><see langword="false"/> when another occupant owns a stationary gun.</returns>
@@ -467,14 +497,17 @@ public sealed class WorldInteraction
             return false;
         }
 
-        InUse.Value = true;
+        Use();
         return true;
     }
 
     public void CancelUse()
     {
         StationaryGun?.Dismount(_userOccupant);
-        InUse.Value = false;
+        if (!UseDecays)
+        {
+            InUse.Value = false;
+        }
     }
 
     public void CompleteUse()
@@ -484,8 +517,14 @@ public sealed class WorldInteraction
             return;
         }
         StationaryGun?.Dismount(_userOccupant);
-        InUse.Value = false;
+        if (!UseDecays)
+        {
+            InUse.Value = false;
+        }
+
+        // 0x443EA0: the finish, its this-tick byte and its stamp, which the task's update clears two ticks on.
         CompletedThisTick = true;
+        _completeStamp = Clock();
         switch (Type)
         {
             case InteractionActivateType.Cabinet:
@@ -530,55 +569,103 @@ public sealed class WorldInteraction
         return true;
     }
 
-    internal void EvaluateConditions()
+    /// <summary>The task's update, where its pulses clear on their stamps and its expressions are read.</summary>
+    /// <param name="now">The level's tick.</param>
+    /// <remarks>
+    /// <para>
+    /// Each type's own update, as retail runs it: a switch (<c>0x4450F0</c>) reads its On expression, then, two ticks past its
+    /// press, shifts <c>isPressed</c> into <c>isLastPressed</c> and clears it, so <c>isLastPressed</c> holds for the one update
+    /// that clears it; a terminal (<c>0x4438E0</c>) and a GenericTBA (<c>0x4480B0</c>) read their On expression, are off while
+    /// exploded, and clear <c>isInUse</c> and the finished-this-tick byte two ticks past their stamps; a cabinet
+    /// (<c>0x444590</c>) clears <c>isInUse</c> likewise; a fence (<c>0x43FC30</c>) is electrified as its expression says, or
+    /// not at all. Every <c>isLast*</c> takes its value in the same update, after the clear.
+    /// </para>
+    /// <para>
+    /// An expression slot that is empty or did not compile leaves its byte as it was, so a script's write to it stands; a door's
+    /// expressions are its own update's (<see cref="PlacedDoor.Conditions"/>).
+    /// </para>
+    /// </remarks>
+    internal void Run(int now)
     {
         _offset = _dynamicOffset?.Invoke() ?? default;
-        IsOn = _onCondition?.Invoke() ?? IsOn;
-        IsElectrified = _electricCondition?.Invoke() ?? false;
-        IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
-        // Door_RunHandler only evaluates the open expression while fully closed and the close
-        // expression while fully open (0x446DF0 / 0x446E38). Evaluating close during the opening
-        // channel cancels button-driven gates on their first movement tick.
-        if (Door?.IsFullyClosed == true && _openCondition?.Invoke() == true)
+        switch (Type)
         {
-            Door?.CommandOpen();
+            case InteractionActivateType.Switch:
+                if (_onCondition?.Invoke() is bool switchedOn)
+                {
+                    IsOn = switchedOn;
+                }
+
+                if (now > _pressStamp + 2)
+                {
+                    Pressed.EndPulse();
+                }
+
+                LastOn = IsOn;
+                LastDestroyed = IsDestroyed;
+                break;
+            case InteractionActivateType.Terminal:
+            case InteractionActivateType.Generic:
+            case InteractionActivateType.PlaceExplosive:
+                if (_onCondition?.Invoke() is bool on)
+                {
+                    IsOn = on;
+                }
+
+                ClearUse(now);
+                if (now > _completeStamp + 2)
+                {
+                    CompletedThisTick = false;
+                }
+
+                break;
+            case InteractionActivateType.Cabinet:
+                ClearUse(now);
+                break;
+            case InteractionActivateType.Fence:
+                IsElectrified = _electricCondition?.Invoke() ?? false;
+                InUse.CommitTick();
+                break;
+            default:
+                InUse.CommitTick();
+                break;
         }
-        if (Door?.IsFullyOpen == true && _closeCondition?.Invoke() == true)
-        {
-            Door?.CommandClosed();
-        }
+
+        ExplosionTriggeredThisTick = false;
     }
 
-    internal void CommitTick()
+    private void ClearUse(int now)
     {
-        // Switch::Run (0x4450F0) leaves isLastOn and isLastDestroyed what isOn and isDestroyed were as it ran.
-        LastOn = IsOn;
-        LastDestroyed = IsDestroyed;
-        CompletedThisTick = false;
-        ExplosionTriggeredThisTick = false;
-        InUse.CommitTick();
-        if (_pressedTicks > 0)
+        if (now > _useStamp + 2)
         {
-            if (--_pressedTicks == 0)
-            {
-                // IGI1 Switch::Run leaves isLastPressed false throughout the hold, then publishes
-                // exactly one falling-edge tick when the three-tick press expires. Mission 1 uses
-                // that pulse to toggle its alarm latch; shadowing every held tick toggles it off again.
-                Pressed.EndPulse();
-            }
+            InUse.Value = false;
         }
-        else
+
+        InUse.CommitTick();
+    }
+
+    // The door's own update runs these (0x446D10), where the level walk reaches it: Open and Close, then Locked, which a
+    // picked lock overrides; with no Locked expression the lock stands as it was.
+    private void RunDoorConditions()
+    {
+        _placedDoor!.State.RunConditions(_openCondition, _closeCondition);
+        if (_lockedCondition?.Invoke() is bool locked)
         {
-            Pressed.CommitTick();
+            IsLocked = locked;
+        }
+
+        if (IsPicked)
+        {
+            IsLocked = false;
         }
     }
 
     internal void SetConditions(
-        Func<bool>? on,
-        Func<bool>? locked,
+        Func<bool?>? on,
+        Func<bool?>? locked,
         Func<bool>? open = null,
         Func<bool>? close = null,
-        Func<bool>? electric = null)
+        Func<bool?>? electric = null)
     {
         _onCondition = on;
         _lockedCondition = locked;
@@ -662,6 +749,7 @@ public sealed class WorldInteractionRegistry
 
     private readonly List<WorldInteraction> _items = [];
     private readonly List<GeneratorPowerState> _generators = [];
+    private int _updates;
 
     public IReadOnlyList<WorldInteraction> Items => _items;
 
@@ -700,6 +788,9 @@ public sealed class WorldInteractionRegistry
     /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz.</summary>
     public void Tick()
     {
+        _updates++;
+        int now = Now;
+
         // A task in a container that is not running is not in the world: the walk does not reach it, so it does not
         // update, and nothing can be activated on it.
         foreach (GeneratorPowerState generator in _generators)
@@ -717,7 +808,7 @@ public sealed class WorldInteractionRegistry
                 continue;
             }
 
-            item.EvaluateConditions();
+            item.Run(now);
 
             // An empty gun's aim sinks on its own tick (0x474190). An occupied one is ticked by
             // whoever is on it, with their look.
@@ -726,18 +817,17 @@ public sealed class WorldInteractionRegistry
                 emptyGun.TickEmpty();
             }
         }
-
-        // Expression pulses remain visible throughout the whole task update. Clearing each pulse as
-        // its owner ran made a listener depend on whether it appeared before or after that owner in
-        // the authored task tree; Terminal_552 precedes its door in mission 3.
-        foreach (WorldInteraction item in _items)
-        {
-            if (item.IsInWorld)
-            {
-                item.CommitTick();
-            }
-        }
     }
+
+    /// <summary>
+    /// Gets or sets the level's tick, LevelFlow's <c>nTick</c> (<c>+104</c> of the task <c>flt_BC2360</c> points at), which
+    /// the tasks stamp their pulses with; <see langword="null"/>, or a clock that answers <see langword="null"/>, counts this
+    /// registry's own updates instead.
+    /// </summary>
+    public Func<int?>? Clock { get; set; }
+
+    // The tick a press or a use made between two updates is stamped with: the level's, or the updates counted so far.
+    private int Now => Clock?.Invoke() ?? _updates;
 
     /// <summary>Applies the task activation produced by an AI body's activate input channel.</summary>
     /// <param name="taskId">The level task id named by <c>AIAction_Activate</c>.</param>
@@ -982,28 +1072,27 @@ public sealed class WorldInteractionRegistry
             string closeExpression = ReadString(declared, "Close door expression", string.Empty);
             string electricExpression = ReadString(declared, "Electric Expression", string.Empty);
 
-            // Terminal's update (0x4438E0) forces isOn off once the ExplodeObject it derives from has exploded
-            // (+400), before it looks at the On expression -- a terminal blown up is a terminal switched off.
+            // A terminal's update (0x4438E0) and a GenericTBA's (0x4480B0) force isOn off once the ExplodeObject they derive
+            // from has exploded (+400), before they look at the On expression -- a terminal blown up is a terminal switched
+            // off. A switch (0x4450F0) reads its On expression alone.
             string explodedSymbol = $"{declared.Name}.isExploded";
             Func<bool> exploded = () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0;
+            Func<bool?>? on = ByteSlot(expressions, onExpression, declared);
             item.SetConditions(
-                type is InteractionActivateType.Terminal
-                    ? () => !exploded() && expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
-                    : type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
-                    ? () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
+                type is InteractionActivateType.Terminal or InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
+                    ? () => exploded() ? false : on?.Invoke()
+                    : type is InteractionActivateType.Switch
+                    ? on
                     : null,
-                type == InteractionActivateType.Door
-                    ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false, declared)
-                    : null,
+                type == InteractionActivateType.Door ? ByteSlot(expressions, lockedExpression, declared) : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(openExpression)
                     ? () => expressions.EvaluateCondition(openExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(closeExpression)
                     ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false, declared)
                     : null,
-                type == InteractionActivateType.Fence && !string.IsNullOrWhiteSpace(electricExpression)
-                    ? () => expressions.EvaluateCondition(electricExpression, emptyValue: false, declared)
-                    : null);
+                type == InteractionActivateType.Fence ? ByteSlot(expressions, electricExpression, declared) : null);
+            item.Clock = () => registry.Now;
             registry._items.Add(item);
             BindVariables(item, variables);
         }
@@ -1140,6 +1229,13 @@ public sealed class WorldInteractionRegistry
         "PlaceExplosiveTBA" => InteractionActivateType.PlaceExplosive,
         _ => null,
     };
+
+    // A task's expression slot that writes a byte: nothing when the slot is empty or did not compile (sub_4F16C0), else the
+    // low byte of the value truncated, as the update stores (__int64)sub_4F16E0 -- so 0.5 and 256 are both false.
+    private static Func<bool?>? ByteSlot(LevelExpressionRuntime expressions, string source, GameTask owner) =>
+        string.IsNullOrWhiteSpace(source)
+            ? null
+            : () => expressions.TryEvaluateReal(source, owner, out double value) ? unchecked((byte)(long)value) != 0 : null;
 
     private static void BindVariables(WorldInteraction item, ScriptVarRegistry variables)
     {
