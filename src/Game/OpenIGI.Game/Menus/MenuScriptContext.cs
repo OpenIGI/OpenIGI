@@ -66,6 +66,9 @@ public sealed class MenuScriptContext : IScriptExpressionContext
         "MenuManager_SetEnabled",
     ];
 
+    /// <summary>Gets or sets what <c>MenuManager_ForceUpdateWindow</c> does with the window id it is given.</summary>
+    public Action<int>? UpdateWindow { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the manager takes input.</summary>
     /// <remarks><c>MenuManager_SetEnabled</c> writes this.</remarks>
     public bool IsEnabled { get; set; } = true;
@@ -186,9 +189,9 @@ public sealed class MenuScriptContext : IScriptExpressionContext
                 _stack.SetLanguage();
                 return true;
 
-            case "MenuManager_ForceUpdateWindow":
-                // Re-runs a screen's data expressions; harmless to treat as a no-op until the
-                // On Change Data pass exists.
+            case "MenuManager_ForceUpdateWindow" when arguments.Count >= 1:
+                // 0x417880: the window named takes its data in again.
+                UpdateWindow?.Invoke(arguments.GetInt32(0));
                 return true;
 
             default:

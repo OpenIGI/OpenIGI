@@ -85,6 +85,7 @@ public partial class MenuManagerTask
         {
             Variables = variables ?? system.Variables,
             Fallback = _configuration is null ? null : Invoke,
+            UpdateWindow = ForceUpdateWindow,
         };
         _evaluator = new ScriptExpressionEvaluator(ScriptContext);
 
@@ -383,6 +384,24 @@ public partial class MenuManagerTask
         // screen's picture and description boxes are built before the list they key off — resolves it
         // from its own update instead, so the order does not matter and nothing has to reload.
         screen.LoadData();
+    }
+
+    // MenuManager_ForceUpdateWindow (0x417880): the window the id names takes the event a screen's activation sends it
+    // (0x418790), so a screen runs its On Init Data and every window under it reads its value again. The main menu's
+    // profile and options screens send it after changing what a list or a toggle shows.
+    private void ForceUpdateWindow(int id)
+    {
+        if (Tree.FromId(id) is not MenuWindowTask window)
+        {
+            return;
+        }
+
+        if (window is MenuScreenTask screen)
+        {
+            RunAction(screen.OnInitData, screen);
+        }
+
+        window.LoadData();
     }
 
     private void HandleKeys()
