@@ -106,7 +106,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     private readonly Igi2ForestCollider[] _forests;
     private readonly List<Igi2BoneCollider> _bodies = [];
     private readonly List<World.Igi2WaterBody> _waters = [];
-    private readonly Igi2TerrainCollider? _terrain;
+    private readonly IIgi2GroundCollider? _terrain;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CollisionWorld"/> class.</summary>
     /// <param name="objects">The placed solid models.</param>
@@ -115,7 +115,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// <param name="segments">The straight spline segments, or <see langword="null"/> for none.</param>
     public Igi2CollisionWorld(
         IEnumerable<Igi2RigidObject> objects,
-        Igi2TerrainCollider? terrain,
+        IIgi2GroundCollider? terrain,
         IEnumerable<Igi2ForestCollider>? forests = null,
         IEnumerable<Igi2SplineSegment>? segments = null)
     {
@@ -170,7 +170,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     }
 
     /// <summary>Gets the ground, or <see langword="null"/> for a level with none.</summary>
-    public Igi2TerrainCollider? Terrain => _terrain;
+    public IIgi2GroundCollider? Terrain => _terrain;
 
     /// <summary>Gets or sets the ground a body stands on, the level's height grid; <see langword="null"/> for none.</summary>
     public IGroundHeightField? Ground { get; set; }

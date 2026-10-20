@@ -21,3 +21,15 @@ public interface IIgi2Collider
     /// <param name="trace">The lines and their running results.</param>
     void NextZ(Igi2LineTrace trace);
 }
+
+/// <summary>The ground as the collision sees it: what vertical lines stand on, and what any line meets.</summary>
+/// <remarks>
+/// The collision world asks the ground last, under <see cref="Igi2CollisionWorld.TerrainGroup"/>. This game's ground is its
+/// terrain's tiles (<see cref="Igi2TerrainCollider"/>); another game's ground is answered by its own collider.
+/// </remarks>
+public interface IIgi2GroundCollider : IIgi2Collider
+{
+    /// <summary>Traces lines in any direction against the ground, keeping the nearer of each line's results.</summary>
+    /// <param name="trace">The lines and their running results.</param>
+    void TraceLines(Igi2LineTrace trace);
+}

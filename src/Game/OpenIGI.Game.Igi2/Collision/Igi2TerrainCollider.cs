@@ -4,7 +4,7 @@ using OpenIGI.Game.Igi2.World;
 namespace OpenIGI.Game.Igi2.Collision;
 
 /// <summary>The level's terrain as the collision sees it: the ground's tiles, its discard boxes and its materials.</summary>
-public sealed class Igi2TerrainCollider : IIgi2Collider
+public sealed class Igi2TerrainCollider : IIgi2GroundCollider
 {
     /// <summary>The number of level material slots, <c>World_t.aptQMaterial</c>; a terrain material outside them has none.</summary>
     public const int MaterialSlots = 0x40;

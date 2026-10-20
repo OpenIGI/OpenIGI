@@ -7,6 +7,9 @@
       <Build Project="false" />
     </Project>
   </Folder>
+  <Folder Name="/mods/">
+    <Project Path="mods/OpenIGI.Mods.Igi2Soldiers/OpenIGI.Mods.Igi2Soldiers.csproj" />
+  </Folder>
   <Folder Name="/services/">
     <Project Path="services/OpenIGI.Services/OpenIGI.Services.csproj" />
   </Folder>
@@ -75,6 +78,7 @@
     <Project Path="tests/OpenIGI.Launcher.Tests/OpenIGI.Launcher.Tests.csproj" />
     <Project Path="tests/OpenIGI.Modding.SampleMod/OpenIGI.Modding.SampleMod.csproj" />
     <Project Path="tests/OpenIGI.Modding.Tests/OpenIGI.Modding.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Mods.Igi2Soldiers.Tests/OpenIGI.Mods.Igi2Soldiers.Tests.csproj" />
     <Project Path="tests/OpenIGI.Platform.Web.Tests/OpenIGI.Platform.Web.Tests.csproj" />
     <Project Path="tests/OpenIGI.Presentation.Tests/OpenIGI.Presentation.Tests.csproj" />
     <Project Path="tests/OpenIGI.Releases.Tests/OpenIGI.Releases.Tests.csproj" />
