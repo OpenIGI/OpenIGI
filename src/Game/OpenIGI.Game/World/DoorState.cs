@@ -43,6 +43,7 @@ public sealed class DoorState
     private float _angleDegrees;
     private float _slide;
     private bool _latch;
+    private int _ticksOpen;
 
     /// <summary>Initializes a new instance of the <see cref="DoorState"/> class, fully closed.</summary>
     /// <param name="maxAngleDegrees">The task's <c>Max angle</c> (<c>+320</c>) — zero for a purely sliding door.</param>
@@ -107,7 +108,7 @@ public sealed class DoorState
     /// Counted as the door's update starts, before it moves (<see cref="RunConditions"/>): the update a door ends fully open on
     /// leaves it nought, and the next counts the first tick, so a Close expression reading it sees the ticks it has stood open.
     /// </remarks>
-    public int TicksOpen { get; private set; }
+    public int TicksOpen => _ticksOpen;
 
     /// <summary>Gets the state a use reads — <c>sub_447D70</c>.</summary>
     /// <remarks>0 open, 1 closed, 2 opening, 3 closing.</remarks>
@@ -173,26 +174,8 @@ public sealed class DoorState
     /// Open is asked only while closed and Close only while open, as they stood after the last update. Asking Close as the door
     /// opens would cancel a button-driven gate on its first tick of travel.
     /// </remarks>
-    public void RunConditions(Func<bool>? open, Func<bool>? close)
-    {
-        if (IsFullyClosed && open?.Invoke() == true)
-        {
-            _latch = true;
-        }
-
-        if (IsFullyOpen)
-        {
-            TicksOpen++;
-            if (close?.Invoke() == true)
-            {
-                _latch = false;
-            }
-        }
-        else
-        {
-            TicksOpen = 0;
-        }
-    }
+    public void RunConditions(Func<bool>? open, Func<bool>? close) =>
+        DoorExpressions.Command(IsFullyClosed, IsFullyOpen, ref _latch, ref _ticksOpen, open, close);
 
     /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>, with its x87 arithmetic.</summary>
     public void Tick()

@@ -1,9 +1,9 @@
-using OpenIGI.Game.Level;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
@@ -33,7 +33,7 @@ public sealed class WorldInteraction
     private int _useStamp;
     private int _completeStamp;
     private Func<bool?>? _onCondition;
-    private Func<bool?>? _lockedCondition;
+    private Func<double>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
     private Func<bool?>? _electricCondition;
@@ -658,20 +658,14 @@ public sealed class WorldInteraction
     private void RunDoorConditions()
     {
         _placedDoor!.State.RunConditions(_openCondition, _closeCondition);
-        if (_lockedCondition?.Invoke() is bool locked)
-        {
-            IsLocked = locked;
-        }
-
-        if (IsPicked)
-        {
-            IsLocked = false;
-        }
+        byte locked = IsLocked ? (byte)1 : (byte)0;
+        DoorExpressions.Lock(ref locked, IsPicked, _lockedCondition);
+        IsLocked = locked != 0;
     }
 
     internal void SetConditions(
         Func<bool?>? on,
-        Func<bool?>? locked,
+        Func<double>? locked,
         Func<bool>? open = null,
         Func<bool>? close = null,
         Func<bool?>? electric = null)
@@ -683,7 +677,7 @@ public sealed class WorldInteraction
         _electricCondition = electric;
         IsOn = on?.Invoke() ?? true;
         IsElectrified = electric?.Invoke() ?? false;
-        IsLocked = locked?.Invoke() ?? false;
+        IsLocked = locked is not null && unchecked((byte)(long)locked()) != 0;
     }
 
     internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
@@ -1168,7 +1162,7 @@ public sealed class WorldInteractionRegistry
                     : type is InteractionActivateType.Switch
                     ? on
                     : null,
-                type == InteractionActivateType.Door ? ByteSlot(expressions, lockedExpression, declared) : null,
+                type == InteractionActivateType.Door ? RealSlot(expressions, lockedExpression, declared) : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(openExpression)
                     ? () => expressions.EvaluateCondition(openExpression, emptyValue: false, declared)
                     : null,
@@ -1335,6 +1329,12 @@ public sealed class WorldInteractionRegistry
         string.IsNullOrWhiteSpace(source)
             ? null
             : () => expressions.TryEvaluateReal(source, owner, out double value) ? unchecked((byte)(long)value) != 0 : null;
+
+    // A task's expression slot read whole: nothing when the slot is empty or did not compile (sub_4F16C0), else its value.
+    private static Func<double>? RealSlot(LevelExpressionRuntime expressions, string source, GameTask owner) =>
+        string.IsNullOrWhiteSpace(source) || LevelExpressionRuntime.Create(source, owner).IsEmpty
+            ? null
+            : () => expressions.TryEvaluateReal(source, owner, out double value) ? value : 0.0;
 
     private static void BindVariables(WorldInteraction item, ScriptVarRegistry variables)
     {

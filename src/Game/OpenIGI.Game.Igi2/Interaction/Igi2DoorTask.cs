@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
@@ -72,6 +73,9 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     private LevelExpression? _open;
     private LevelExpression? _close;
     private LevelExpression? _locked;
+    private Func<bool>? _opens;
+    private Func<bool>? _closes;
+    private Func<double>? _lockedValue;
     private Igi2Sound? _moveSound;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private bool _started;
@@ -282,35 +286,14 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         _lastOrientation = [.. _orientation];
         _isLastClosed = _isClosed;
 
-        if (wasClosed && !_open!.IsEmpty && level.Evaluate(_open) is var open && open != 0.0)
+        bool openDoor = _isOpenDoor != 0;
+        if (DoorExpressions.Command(wasClosed, _isOpen != 0, ref openDoor, ref _openTicks, _opens, _closes))
         {
-            _isOpenDoorChanged |= _isOpenDoor == 0 ? (byte)1 : (byte)0;
-            _isOpenDoor = 1;
+            _isOpenDoorChanged = 1;
         }
 
-        if (_isOpen != 0)
-        {
-            _openTicks++;
-            if (!_close!.IsEmpty && level.Evaluate(_close) is var close && close != 0.0)
-            {
-                _isOpenDoorChanged |= _isOpenDoor;
-                _isOpenDoor = 0;
-            }
-        }
-        else
-        {
-            _openTicks = 0;
-        }
-
-        if (!_locked!.IsEmpty)
-        {
-            _isLocked = (byte)LevelExpression.Truncate(level.Evaluate(_locked));
-        }
-
-        if (_isPicked != 0)
-        {
-            _isLocked = 0;
-        }
+        _isOpenDoor = openDoor ? (byte)1 : (byte)0;
+        DoorExpressions.Lock(ref _isLocked, _isPicked != 0, _lockedValue);
 
         if (_holdTimer != 0)
         {
@@ -691,6 +674,10 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         _open = Igi2LevelExpressions.Create(OpenScript, Name, level.Natives);
         _close = Igi2LevelExpressions.Create(CloseScript, Name, level.Natives);
         _locked = Igi2LevelExpressions.Create(LockedScript, Name, level.Natives);
+        LevelExpression open = _open, close = _close, locked = _locked;
+        _opens = open.IsEmpty ? null : () => level.Evaluate(open) != 0.0;
+        _closes = close.IsEmpty ? null : () => level.Evaluate(close) != 0.0;
+        _lockedValue = locked.IsEmpty ? null : () => level.Evaluate(locked);
         _started = true;
     }
 

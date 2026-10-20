@@ -1,5 +1,5 @@
-using OpenIGI.Formats.World;
 using OpenIGI.Formats;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
