@@ -547,11 +547,11 @@ public sealed class DoorRegistry
     /// door's opening, or <see langword="null"/> to disable the check.
     /// </summary>
     /// <param name="query">
-    /// Called for a closing door each tick, with the two world-space doorway endpoints; returns
+    /// Called each tick the door moves, with the two world-space doorway endpoints; returns
     /// <see langword="true"/> when a human blocks the opening.
     /// </param>
     /// <remarks>
-    /// This is the retail handler's doorway ray (0x446D10 at 0x447302): a closing door that finds a
+    /// This is the retail handler's doorway ray (0x446D10 at 0x447302): a moving door that finds a
     /// human standing in its opening is forced back open, so it never seals while somebody is in the
     /// doorway. The elevator's authored <c>Can start</c> (typically <c>Door.isClosed</c>) therefore
     /// stays false while the door is blocked, which is how the original keeps a lift from running while
@@ -626,15 +626,15 @@ public sealed class DoorRegistry
             door.Capture();
         }
 
-        // The mid-swing doorway ray: a door that is closing (state 3, moving with the latch clear)
-        // and finds a human in its opening is forced back open instead of sealing — the retail
-        // re-open at 0x447323. This keeps a blocked elevator door from ever reaching isClosed.
-        if (_doorwayBlocked is not null && door.State.UseState == 3)
+        // The doorway ray: a door that moved this tick and finds a human in its opening is sent back fully open, and is
+        // neither open nor closed for the tick -- the retail re-open at 0x447323, which keeps a blocked elevator door from
+        // ever reaching isClosed.
+        if (_doorwayBlocked is not null && (door.State.SwungThisTick || door.State.SlidThisTick))
         {
             (Vector3d a, Vector3d b) = door.DoorwaySegment;
             if (_doorwayBlocked(a, b))
             {
-                door.State.CommandOpen();
+                door.State.Reopen();
             }
         }
 

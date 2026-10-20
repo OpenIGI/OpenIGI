@@ -143,6 +143,17 @@ public sealed class DoorState
     /// <summary>Commands the door closed, however it stands.</summary>
     public void CommandClosed() => _latch = false;
 
+    /// <summary>
+    /// A door that moved this tick found something in its doorway (<c>0x446D10</c> at <c>0x447323</c>): it is sent fully open,
+    /// and is neither open nor closed for the tick.
+    /// </summary>
+    public void Reopen()
+    {
+        _latch = true;
+        IsFullyOpen = false;
+        IsFullyClosed = false;
+    }
+
     /// <summary>Gets a value indicating whether the door has updated at least once.</summary>
     /// <remarks>
     /// Its open and closed flags (<c>+409</c>/<c>+410</c>) are written only at the end of its update (<c>0x446D10</c>);
