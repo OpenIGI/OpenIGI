@@ -798,6 +798,9 @@ public sealed class SoldierSimulation : IHumanEvents
 
     internal readonly Dictionary<GuardGeneratorTask, SoldierView> GuardGenerators = [];
 
+    // The generators whose template another game drives.
+    private readonly List<GuardGeneratorTask> _drivenGenerators = [];
+
     internal LevelExpressionRuntime? GuardExpressions;
 
     internal ScriptVarRegistry? ScriptVariables;
@@ -3047,6 +3050,7 @@ public sealed class SoldierSimulation : IHumanEvents
     private void PrepareGuardGenerators(GameTask? levelRoot)
     {
         GuardGenerators.Clear();
+        _drivenGenerators.Clear();
         if (levelRoot is null)
         {
             return;
@@ -3058,6 +3062,13 @@ public sealed class SoldierSimulation : IHumanEvents
             SoldierView? view = authored is null
                 ? null
                 : Brains.Keys.FirstOrDefault(candidate => ReferenceEquals(candidate.Soldier, authored));
+            if (view is null && authored is { Driver: not null })
+            {
+                // Another game drives the template: the generator decides, that game's lives spawn.
+                _drivenGenerators.Add(generator);
+                continue;
+            }
+
             if (view is null)
             {
                 _logger.Warning(
@@ -4239,13 +4250,24 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <summary>A GuardGenerator's update (<c>0x487EE0</c>): its expression, and a replacement for a dead guard.</summary>
     internal void TickGuardGenerator(GuardGeneratorTask generator)
     {
+        bool isOn = GuardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
+            ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
+        if (generator.DrivenLives is { } lives)
+        {
+            // 0x487EE0 for another game's template: the first life when it has none, the next as the last lies dead.
+            if (generator.Advance(isOn, childIsDead: lives.IsDead) is GuardSpawnDecision.FirstSpawn or GuardSpawnDecision.Respawn)
+            {
+                lives.Spawn();
+            }
+
+            return;
+        }
+
         if (!GuardGenerators.TryGetValue(generator, out SoldierView? view))
         {
             return;
         }
 
-        bool isOn = GuardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
-            ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
         // Publish the first authored life immediately, but do not consume a bounded replacement
         // until its mesh and runtime subtree have actually been created. A transient upload failure
         // must leave the generator eligible to retry on the next tick.
@@ -4307,7 +4329,7 @@ public sealed class SoldierSimulation : IHumanEvents
             }
         }
 
-        foreach (GuardGeneratorTask generator in GuardGenerators.Keys)
+        foreach (GuardGeneratorTask generator in GuardGenerators.Keys.Concat(_drivenGenerators))
         {
             walker.Bind(generator, task =>
             {
@@ -4325,7 +4347,7 @@ public sealed class SoldierSimulation : IHumanEvents
     internal void TickStandalone(SoldierEnemy enemy)
     {
         BeginTick(() => enemy);
-        foreach (GuardGeneratorTask generator in GuardGenerators.Keys.ToArray())
+        foreach (GuardGeneratorTask generator in GuardGenerators.Keys.Concat(_drivenGenerators).ToArray())
         {
             TickGuardGenerator(generator);
         }

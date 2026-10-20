@@ -48,7 +48,8 @@ public sealed class Igi2ShootableSoldiers : IShootableBodies
     {
         foreach (Body body in _bodies)
         {
-            if (!body.Soldier.IsDead)
+            // A soldier out of the world -- its container not running, or not spawned yet -- is not there to be struck.
+            if (!body.Soldier.IsDead && body.Soldier.IsActive)
             {
                 yield return body;
             }
