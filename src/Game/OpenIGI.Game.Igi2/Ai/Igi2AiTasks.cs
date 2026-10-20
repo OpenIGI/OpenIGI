@@ -1,5 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.Soldiers;
@@ -17,7 +19,8 @@ namespace OpenIGI.Game.Igi2.Ai;
 /// soldier's state on its <see cref="Body"/>, which answers them. Before the body is made it stops no round and takes nothing.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget
+public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget,
+    IHumanAiEventTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
@@ -61,6 +64,16 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IW
 
     /// <inheritdoc/>
     public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body)?.ExplosionHit(hit);
+
+    /// <inheritdoc/>
+    /// <remarks>Another game's broadcast, read in this game's terms (<see cref="Igi2AiEvent.TryFromShared"/>) and given to the soldier's mind.</remarks>
+    public void SendEvent(in HumanAiEvent aiEvent)
+    {
+        if (Body?.Mind is Igi2HumanAi mind && Igi2AiEvent.TryFromShared(aiEvent, out Igi2AiEvent own))
+        {
+            mind.Receive(own);
+        }
+    }
 
     /// <inheritdoc/>
     /// <remarks>

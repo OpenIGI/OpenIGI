@@ -2385,7 +2385,7 @@ public sealed class SoldierSimulation : IHumanEvents
             int shooterId = except?.Soldier.Id ?? AiDetectionCandidate.PlayerId;
             return brain.HearGunshot(origin, range, fromSameSide: shooterTeam == view.Soldier.Team, shooterId);
         });
-        Broadcast(noise);
+        Broadcast(noise, AiEvent.Gunshot, except?.Soldier.Team ?? _playerTeam, HumanNoiseFilter, range, origin, (GameTask?)except?.Soldier ?? PlayerTask);
         ReportNoise("gunshot", noise.Heard, range);
     }
 
@@ -2409,7 +2409,7 @@ public sealed class SoldierSimulation : IHumanEvents
 
             return brain.ReceiveExplosion(origin, rangeUnits);
         });
-        Broadcast(noise);
+        Broadcast(noise, AiEvent.Explosion, -1, AiEventFilter.InRange, rangeUnits, origin, null);
         ReportNoise("explosion", noise.Heard, rangeUnits);
     }
 
@@ -2430,7 +2430,7 @@ public sealed class SoldierSimulation : IHumanEvents
             }
             return brain.ReceiveGroundImpact(impact, shooterPosition, radiusInUnits);
         });
-        Broadcast(noise);
+        Broadcast(noise, AiEvent.GroundImpact, _playerTeam, HumanNoiseFilter, radiusInUnits, impact, PlayerTask);
         ReportNoise("impact", noise.Heard, radiusInUnits);
     }
 
@@ -2460,7 +2460,7 @@ public sealed class SoldierSimulation : IHumanEvents
             }
             return brain.ReceiveHumanNoise(type, position, source, radiusUnits);
         });
-        Broadcast(noise);
+        Broadcast(noise, type, _playerTeam, HumanNoiseFilter, radiusUnits, position, PlayerTask);
         ReportNoise(type.ToString().ToLowerInvariant(), noise.Heard, radiusUnits);
     }
 
@@ -2476,7 +2476,7 @@ public sealed class SoldierSimulation : IHumanEvents
 
             return brain.ReceiveGrenadeThrown(origin);
         });
-        Broadcast(noise);
+        Broadcast(noise, AiEvent.GrenadeThrown, -1, AiEventFilter.InView, -1.0, origin, null);
         ReportNoise("grenade-thrown", noise.Heard, AiSoldier.GrenadeLandRadiusInUnits);
     }
 
@@ -2494,7 +2494,7 @@ public sealed class SoldierSimulation : IHumanEvents
 
             return brain.ReceiveGrenadeLand(origin, radiusUnits);
         });
-        Broadcast(noise);
+        Broadcast(noise, AiEvent.GrenadeLand, -1, AiEventFilter.InRange, radiusUnits, origin, null);
         ReportNoise("grenade-land", noise.Heard, radiusUnits);
     }
 
@@ -2512,7 +2512,7 @@ public sealed class SoldierSimulation : IHumanEvents
 
             return brain.ReceiveFlashbang(origin, radiusUnits);
         });
-        Broadcast(noise);
+        Broadcast(noise, AiEvent.Flashbang, -1, AiEventFilter.InView | AiEventFilter.InRange, radiusUnits, origin, null);
         ReportNoise("flashbang", noise.Heard, radiusUnits);
     }
 
@@ -2577,13 +2577,23 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <remarks>Made when the soldiers are animated, from the level's tree; a guard spawned since joins at the end.</remarks>
     internal List<IHumanAiEventTarget> Humans { get; } = [];
 
-    // The engine's broadcast (0x450CE0): the event to every human on the list, each taking it in its own handler.
-    private void Broadcast(Igi1Noise noise)
-    {
+    // A human's noise as its senders post it (0x463920, 0x479780): in range, of a living human, from the other side.
+    private const AiEventFilter HumanNoiseFilter = AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide;
+
+    // The engine's broadcast (0x450CE0): the event to every human on the list, each taking it in its own handler. A near
+    // miss is weighed listener by listener, so it carries no record of its own: another game's humans hear a round go by
+    // through the level's bodies instead.
+    private void Broadcast(Igi1Noise noise) =>
+        Broadcast(noise, new HumanAiEvent(Type: -1, Team: -1, Flags: 0, Radius: 0f, Position: null, Source: null, Subject: null, Context: noise));
+
+    // The broadcast of a record the way its sender posts it, which another game's humans read; this game's read the noise.
+    private void Broadcast(Igi1Noise noise, AiEvent type, int team, AiEventFilter filter, double radius, Vector3d position, GameTask? source) =>
+        Broadcast(noise, new HumanAiEvent((int)type, team, (int)filter, (float)radius, position, source, source, noise));
+
+    private void Broadcast(Igi1Noise noise, in HumanAiEvent aiEvent) =>
         HumanAiEvents.Send(
             Humans.Count > 0 ? Humans : Brains.Keys.Select(static view => (IHumanAiEventTarget)view.Soldier),
-            new HumanAiEvent(Type: -1, Team: -1, Flags: 0, Radius: 0f, Position: null, Source: null, Subject: null, Context: noise));
-    }
+            aiEvent);
 
     /// <inheritdoc/>
     void IHumanEvents.SendEvent(HumanTask human, in HumanAiEvent aiEvent)

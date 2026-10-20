@@ -92,7 +92,7 @@ public sealed class AiEventPumpTests
         int calls = 0;
         AiEventRecord record = AiEventRecord.Simple(AiEvent.EnemyDetection) with
         {
-            Filter = AiEventFilter.InView | AiEventFilter.InRange | AiEventFilter.SubjectIsEnemy,
+            Filter = AiEventFilter.InView | AiEventFilter.InRange | AiEventFilter.SubjectAlive,
             Subject = 12,
         };
 
@@ -104,7 +104,7 @@ public sealed class AiEventPumpTests
         }));
 
         Assert.Equal(1, calls);
-        Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange | AiEventFilter.SubjectIsEnemy, seen);
+        Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange | AiEventFilter.SubjectAlive, seen);
     }
 
     /// <summary>

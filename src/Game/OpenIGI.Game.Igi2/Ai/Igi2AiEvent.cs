@@ -1,4 +1,6 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Ai;
 
@@ -79,4 +81,53 @@ public readonly record struct Igi2AiEvent(
 
     /// <summary><c>AIEVENT_GRENADESHOUT</c>: a soldier's grenade is on its way to where the event is.</summary>
     public const int GrenadeShout = 37;
+
+    /// <summary>
+    /// Another game's event in this game's terms (<see cref="HumanAiEvent"/>, numbered as <see cref="AiEvent"/>): the engine's
+    /// events in the same order, Project I.G.I.'s <c>AIEVENT_COMBAT</c> (7) without a counterpart, so every later one a
+    /// number lower here.
+    /// </summary>
+    /// <param name="shared">The event.</param>
+    /// <param name="aiEvent">Receives the event.</param>
+    /// <returns>Whether this game has the event and the human it concerns passes the tests only this game's humans answer.</returns>
+    /// <remarks>
+    /// <para>
+    /// The flags are the engine's own bits, which both games test alike, except those about a human: this game asks its
+    /// own humans whether they live, so a human of the other game is tested here and those bits are cleared. A near
+    /// miss is not taken: this game hears another's rounds through the level's bodies.
+    /// </para>
+    /// </remarks>
+    public static bool TryFromShared(in HumanAiEvent shared, out Igi2AiEvent aiEvent)
+    {
+        aiEvent = default;
+        int kind = shared.Type switch
+        {
+            < 0 or (int)Game.Ai.AiEvent.Combat or (int)Game.Ai.AiEvent.GunshotMiss => -1,
+            < (int)Game.Ai.AiEvent.Combat => shared.Type,
+            <= (int)Game.Ai.AiEvent.FriendlyDetection => shared.Type - 1,
+            _ => -1,
+        };
+        if (kind < 0)
+        {
+            return false;
+        }
+
+        const int AboutAHuman = 0x04 | 0x08 | 0x10;
+        int flags = shared.Flags;
+        if ((flags & AboutAHuman) != 0)
+        {
+            HumanTask? subject = shared.Subject as HumanTask;
+            if (subject is null
+                || ((flags & 0x08) != 0 && subject.IsDead)
+                || ((flags & 0x10) != 0 && !subject.IsDead))
+            {
+                return false;
+            }
+
+            flags &= ~AboutAHuman;
+        }
+
+        aiEvent = new Igi2AiEvent(kind, shared.Team, flags, shared.Radius, shared.Position, default, shared.Source, shared.Subject);
+        return true;
+    }
 }

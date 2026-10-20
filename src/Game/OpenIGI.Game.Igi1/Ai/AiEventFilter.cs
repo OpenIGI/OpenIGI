@@ -17,6 +17,10 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// A word of zero skips every test and is admitted unconditionally — that is the short path
 /// <c>0x450D80</c> takes for the alarm and idle-animation events it posts itself.
 /// </para>
+/// <para>
+/// I.G.I. 2's <c>HumanAI_SendEvent</c> applies the same bits, and adds its own above them (<c>0x100</c> not the originator,
+/// <c>0x200</c> in view at any distance, <c>0x400</c> heard through the level's noise).
+/// </para>
 /// </remarks>
 [Flags]
 public enum AiEventFilter
@@ -33,15 +37,15 @@ public enum AiEventFilter
     /// <summary>The event's subject must exist and be of the expected task kind.</summary>
     SubjectIsHuman = 0x04,
 
-    /// <summary>With <see cref="SubjectIsHuman"/>, the subject must be an enemy of the receiver.</summary>
-    SubjectIsEnemy = 0x08,
+    /// <summary>The event's subject must be alive: <c>0x450110</c> refuses it under <c>0x0C</c> when its death latch (<c>Human+3317</c>) is set.</summary>
+    SubjectAlive = 0x08,
 
-    /// <summary>With <see cref="SubjectIsHuman"/>, the subject must be friendly to the receiver.</summary>
-    SubjectIsFriendly = 0x10,
+    /// <summary>The event's subject must be dead: refused under <c>0x14</c> while its death latch is clear.</summary>
+    SubjectDead = 0x10,
 
-    /// <summary>With <see cref="SubjectIsHuman"/>, the event's side must equal the receiver's own.</summary>
+    /// <summary>The event's side must equal the receiver's own.</summary>
     SameSide = 0x20,
 
-    /// <summary>With <see cref="SubjectIsHuman"/>, the event's side must differ from the receiver's own.</summary>
+    /// <summary>The event's side must differ from the receiver's own.</summary>
     OtherSide = 0x40,
 }

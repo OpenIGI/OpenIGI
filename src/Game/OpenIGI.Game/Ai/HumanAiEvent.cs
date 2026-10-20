@@ -7,9 +7,15 @@ namespace OpenIGI.Game.Ai;
 /// One AI event as the engine sends it to the level's humans: the <c>HumanAISendEvent</c> task event's context
 /// (Project I.G.I.'s 28-byte record, I.G.I. 2's <c>HumanAIEventContext_t</c>).
 /// </summary>
-/// <param name="Type">The event, the sending game's <c>AIEVENT_*</c> number.</param>
+/// <param name="Type">
+/// The event, as <see cref="AiEvent"/> numbers it (Project I.G.I.'s <c>AIEVENT_*</c>), or -1 for an event only its sending game
+/// reads; a game that numbers its events otherwise translates.
+/// </param>
 /// <param name="Team">The team it concerns, or -1 for every team.</param>
-/// <param name="Flags">The admission tests a brain applies to it.</param>
+/// <param name="Flags">
+/// The admission tests a brain applies to it, the engine's bits both games test alike: in view, in range, of a human, of a
+/// living or a dead one, of the receiver's side or the other.
+/// </param>
 /// <param name="Radius">How far it reaches, in world units.</param>
 /// <param name="Position">Where it happens, or <see langword="null"/> when nowhere.</param>
 /// <param name="Source">The task that caused it, or <see langword="null"/>.</param>
