@@ -28,6 +28,7 @@ public abstract class LevelRun
     public const int MillisecondsPerTick = 1000 / Frequency;
 
     private readonly Dictionary<GameTask, Action<GameTask>> _bound = [];
+    private readonly List<Action> _tickEnds = [];
 
     /// <summary>Initializes a new instance of the <see cref="LevelRun"/> class.</summary>
     /// <param name="root">The level's root task.</param>
@@ -62,6 +63,19 @@ public abstract class LevelRun
     {
         ArgumentNullException.ThrowIfNull(run);
         Bind(task, _ => run());
+    }
+
+    /// <summary>Adds work the level does once a tick, after its tree has run and the tick is counted.</summary>
+    /// <param name="work">The work, run in the order it was added.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="work"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The level counts its tick after its children (<c>Level_LevelRunHandler</c>); what is added here runs then. Another
+    /// game's level, whose tasks this level's walk runs, finishes its own tick here.
+    /// </remarks>
+    public void AddTickEnd(Action work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        _tickEnds.Add(work);
     }
 
     /// <summary>Runs one task for this tick.</summary>
@@ -122,5 +136,9 @@ public abstract class LevelRun
     {
         TimeMilliseconds += MillisecondsPerTick;
         Ticks++;
+        foreach (Action work in _tickEnds)
+        {
+            work();
+        }
     }
 }

@@ -101,6 +101,19 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
         Run(Root);
     }
 
+    /// <summary>
+    /// Finishes a tick whose level objects another game's walk ran, each where that game's tree reached the task it stands for:
+    /// what was added after them and the delayed pass (<c>Level_DynamicRunHandler</c>'s tail), then the tick counted.
+    /// </summary>
+    public void EndHostedTick()
+    {
+        Dynamic?.Run();
+        RunDelayed();
+        CountTick();
+        IsCutsceneRunning = false;
+        CutsceneView = null;
+    }
+
     /// <inheritdoc/>
     /// <remarks>
     /// The level counts the tick after its children have run (<c>Level_LevelRunHandler</c>); <c>Dynamic</c> runs the level's
