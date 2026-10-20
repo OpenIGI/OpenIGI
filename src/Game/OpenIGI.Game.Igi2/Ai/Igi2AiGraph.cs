@@ -280,17 +280,21 @@ public sealed partial class Igi2AiGraph
     /// <summary>A graph another game's level placed: the shared format's nodes where that game put them in the world, and its links.</summary>
     /// <param name="placed">The graph, read and placed by the game whose level it is.</param>
     /// <param name="criteria">Evaluates a node's criteria text.</param>
+    /// <param name="parent">
+    /// What carries the graph, when the placing game left its nodes in the carrier's frame; the nodes then ride it, as a graph
+    /// under one of the game's own movers does. <see langword="null"/> for a graph placed in the world.
+    /// </param>
     /// <returns>The graph.</returns>
     /// <remarks>
     /// Both games write their graphs in the same named stream (<see cref="GraphFile"/>); they differ in where a graph under a model
     /// stands, which the placing game has already settled. The nodes carry no light or terrain flag: Project I.G.I.'s graphs
     /// author neither. Materials need no translation, the two games' game materials sharing their rows.
     /// </remarks>
-    public static Igi2AiGraph From(GraphFile placed, Func<string, int> criteria)
+    public static Igi2AiGraph From(GraphFile placed, Func<string, int> criteria, IIgi2AttachParent? parent = null)
     {
         ArgumentNullException.ThrowIfNull(placed);
         ArgumentNullException.ThrowIfNull(criteria);
-        Igi2AiGraph graph = new(placed.MaxNodes);
+        Igi2AiGraph graph = new(placed.MaxNodes) { Parent = parent };
         foreach (GraphNode node in placed.Nodes)
         {
             graph.Add(node.Id, node.Position, node.Gamma, node.Radius, node.MaterialId, 0f, 0, node.CriteriaName, criteria);
