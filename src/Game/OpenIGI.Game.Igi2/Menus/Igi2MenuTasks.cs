@@ -218,29 +218,21 @@ public sealed partial class Igi2MenuFrameTask : MenuFrameTask, IIgi2MenuData
     public void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
 }
 
-/// <summary>A line of the menu's text, <c>MenuText</c> (menutext.c): clicked, it runs its script.</summary>
-public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
+/// <summary>
+/// A line of the menu's text, <c>MenuText</c> (menutext.c): the shared one, with what I.G.I. 2 adds -- the enabled and visible
+/// expressions Project I.G.I. kept on a separate <c>MenuTextConditional</c>, its alignment, dimming and collected text.
+/// </summary>
+/// <remarks>I.G.I. 2 declares its additions between Project I.G.I.'s colour and click script, so it is set by name.</remarks>
+public sealed partial class Igi2MenuTextTask : MenuTextTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "MenuText";
 
     private int _id;
 
-    /// <summary>Gets or sets the key its text is looked up by.</summary>
-    [ScriptParam(ScriptParamType.String32, "Text Resource")]
-    public string Text { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets its font.</summary>
-    [ScriptParam(ScriptParamType.String32, "Font Resource")]
-    public string Font { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets its colour, a <c>TEXT_*</c> value.</summary>
-    [ScriptParam(ScriptParamType.Int32, "ColourIndex")]
-    public int ColourIndex { get; set; }
-
-    /// <summary>Gets or sets how it is aligned.</summary>
+    /// <summary>Gets or sets how it is placed across its parent (<c>eHorAlignmentMode</c>); it is centred unless the level says not.</summary>
     [ScriptParam(ScriptParamType.Int32, "AlignmentMode")]
-    public int AlignmentMode { get; set; }
+    public int AlignmentMode { get; set; } = 1;
 
     /// <summary>Gets or sets the expression that says whether it can be clicked.</summary>
     [ScriptParam(ScriptParamType.VarString, "isEnabled Expression")]
@@ -249,14 +241,6 @@ public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
     /// <summary>Gets or sets the expression that says whether it shows.</summary>
     [ScriptParam(ScriptParamType.VarString, "isVisible Expression")]
     public string VisibleExpression { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script a click runs.</summary>
-    [ScriptParam(ScriptParamType.VarString, "On Click Script")]
-    public string OnClick { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the sound a click makes.</summary>
-    [ScriptParam(ScriptParamType.String32, "Click Sound Resource")]
-    public string ClickSound { get; set; } = string.Empty;
 
     /// <summary>Gets or sets a value indicating whether it is dimmed while it cannot be clicked.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Is Item Dimmed When Disabled")]
@@ -271,20 +255,20 @@ public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
 
     /// <summary>Gets whether it can be clicked: its enabled expression, or with none, always.</summary>
     /// <param name="level">The level it is evaluated in.</param>
-    /// <returns>Whether it can be clicked.</returns>
+    /// <returns>Whether it is enabled.</returns>
     public bool IsEnabled(Igi2LevelRun level)
     {
         LevelExpression? enabled = null;
-        return !TryRun(level, ref enabled, EnabledExpression, out double value) || value != 0.0;
+        return !Igi2MenuData.TryRun(level, ref enabled, EnabledExpression, this, out double value) || value != 0.0;
     }
 
     /// <summary>Gets whether it shows: its visible expression, or with none, always.</summary>
     /// <param name="level">The level it is evaluated in.</param>
-    /// <returns>Whether it shows.</returns>
+    /// <returns>Whether it is visible.</returns>
     public bool IsVisible(Igi2LevelRun level)
     {
         LevelExpression? visible = null;
-        return !TryRun(level, ref visible, VisibleExpression, out double value) || value != 0.0;
+        return !Igi2MenuData.TryRun(level, ref visible, VisibleExpression, this, out double value) || value != 0.0;
     }
 
     /// <summary>Clicks it: its click script runs, when it can be clicked.</summary>
@@ -298,9 +282,15 @@ public sealed partial class Igi2MenuTextTask : Igi2MenuWindowTask
         }
 
         LevelExpression? click = null;
-        TryRun(level, ref click, OnClick, out _);
+        Igi2MenuData.TryRun(level, ref click, OnClickScript, this, out _);
         return true;
     }
+
+    /// <inheritdoc/>
+    public void InitData(Igi2LevelRun level) => Igi2MenuData.InitChildren(this, level);
+
+    /// <inheritdoc/>
+    public void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
@@ -317,8 +307,8 @@ public sealed partial class Igi2MenuTextSelectionTask : Igi2MenuWindowTask
     public const string TypeName = "MenuTextSelection";
 }
 
-/// <summary>A slider, <c>SlideBar</c> (slidebar.c): a value between nought and one, or one of a number of options.</summary>
-public sealed partial class Igi2SlideBarTask : Igi2MenuWindowTask
+/// <summary>A slider, <c>SlideBar</c> (slidebar.c): the shared one, with the enabled expression I.G.I. 2 adds.</summary>
+public sealed partial class Igi2SlideBarTask : SlideBarTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SlideBar";
@@ -327,211 +317,141 @@ public sealed partial class Igi2SlideBarTask : Igi2MenuWindowTask
     private LevelExpression? _setData;
     private LevelExpression? _modifyData;
     private LevelExpression? _numOptions;
-    private double _value;
     private int _intValue;
     private int _options;
-
-    /// <summary>Gets or sets its sprite.</summary>
-    [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
-    public string Sprite { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets a value indicating whether it lies across.</summary>
-    [ScriptParam(ScriptParamType.Bool8, "Horizontal")]
-    public bool Horizontal { get; set; }
-
-    /// <summary>Gets or sets its length.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Size")]
-    public int Size { get; set; }
-
-    /// <summary>Gets or sets the script whose value it takes in.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Get Data Script")]
-    public string GetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that gives its value back.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Set Data Script")]
-    public string SetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that runs as its value is moved.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Modify Data Script")]
-    public string ModifyDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script whose value is how fast its caret moves.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Carret Speed")]
-    public string CaretSpeed { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script whose value is how many options it has; none for a continuous value.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Set Num Options")]
-    public string NumOptionsScript { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the expression that says whether it can be moved.</summary>
     [ScriptParam(ScriptParamType.VarString, "isEnabled Expression")]
     public string EnabledExpression { get; set; } = string.Empty;
 
-    /// <summary>Gets its value, nought to one, <c>vValue</c>.</summary>
-    public double Value => _value;
-
-    /// <summary>Gets how many options it has; nought for a continuous value.</summary>
+    /// <summary>Gets how many options it steps between; 0 for a free value.</summary>
     public int Options => _options;
 
-    /// <summary>Moves it to a value, its modify script running as a drag does.</summary>
+    /// <summary>Moves it to a value, and runs its modify script, as dragging or stepping it does.</summary>
     /// <param name="level">The level it is evaluated in.</param>
-    /// <param name="value">The value, nought to one.</param>
+    /// <param name="value">The value, clamped between nought and one.</param>
     public void Modify(Igi2LevelRun level, double value)
     {
-        _value = Math.Clamp(value, 0.0, 1.0);
-        _intValue = _options > 0 ? Math.Min((int)(_value * _options), _options - 1) : 0;
-        TryRun(level, ref _modifyData, ModifyDataScript, out _);
+        Value = Math.Clamp(value, 0.0, 1.0);
+        _intValue = _options > 0 ? Math.Min((int)(Value * _options), _options - 1) : 0;
+        Igi2MenuData.TryRun(level, ref _modifyData, ModifyDataScript, this, out _);
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <c>SlideBar_InitDataHandler</c>: its options counted; its get script read, as an option, the middle of that option's share, or as
-    /// the value itself.
+    /// <c>SlideBar_InitDataHandler</c>: the number of options first, then the get script -- an option's index stored as the
+    /// middle of its step, <c>(index + 0.5) / options</c>, or with no options the value itself.
     /// </remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        if (TryRun(level, ref _numOptions, NumOptionsScript, out double options))
+        if (Igi2MenuData.TryRun(level, ref _numOptions, SetNumOptions, this, out double options))
         {
             _options = (int)LevelExpression.Truncate(options);
         }
 
-        if (TryRun(level, ref _getData, GetDataScript, out double data))
+        if (Igi2MenuData.TryRun(level, ref _getData, GetDataScript, this, out double data))
         {
             if (_options != 0)
             {
                 _intValue = (int)LevelExpression.Truncate(data);
-                _value = (_intValue + 0.5) / _options;
+                Value = (_intValue + 0.5) / _options;
             }
             else
             {
-                _value = data;
+                Value = data;
             }
         }
 
-        base.InitData(level);
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>SlideBar_ChangeDataHandler</c>: its set script.</remarks>
-    public override void ChangeData(Igi2LevelRun level)
+    public void ChangeData(Igi2LevelRun level)
     {
-        TryRun(level, ref _setData, SetDataScript, out _);
-        base.ChangeData(level);
+        Igi2MenuData.TryRun(level, ref _setData, SetDataScript, this, out _);
+        Igi2MenuData.ChangeChildren(this, level);
     }
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        variables.BindReal(this, "vValue", () => _value, value => _value = value);
+        variables.BindReal(this, "vValue", () => Value, value => Value = value);
         variables.BindInt(this, "nValue", () => _intValue, value => _intValue = value);
     }
 }
 
-/// <summary>A list the menu picks one of, <c>ListBox</c> (listbox.c), filled by its collect script.</summary>
-public sealed partial class Igi2ListBoxTask : Igi2MenuWindowTask, IIgi2MenuItemList
+/// <summary>A list stepped through one item at a time, <c>ListBox</c> (listbox.c): the shared one, with the enabled expression I.G.I. 2 adds.</summary>
+public sealed partial class Igi2ListBoxTask : ListBoxTask, IIgi2MenuData, IIgi2MenuItemList
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ListBox";
 
-    /// <summary>The most items it holds.</summary>
+    /// <summary>The most items it holds (listbox.c: 128 of 256 characters).</summary>
     public const int Capacity = 128;
 
-    private readonly List<Igi2MenuItem> _items = [];
+    private readonly List<Igi2MenuItem> _entries = [];
     private LevelExpression? _collect;
     private LevelExpression? _getData;
     private LevelExpression? _setData;
-    private int _activeId;
 
-    /// <summary>Gets or sets its sprite.</summary>
-    [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
-    public string Sprite { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets its font.</summary>
-    [ScriptParam(ScriptParamType.String32, "Font Resource")]
-    public string Font { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets its width.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
-
-    /// <summary>Gets or sets the script that fills it.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Collect Items Script")]
-    public string CollectScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script whose value is the id it takes in.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Get Data Script")]
-    public string GetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that gives its id back.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Set Data Script")]
-    public string SetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that runs as another is picked.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Modify Data Script")]
-    public string ModifyDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the expression that says whether it can be changed.</summary>
+    /// <summary>Gets or sets the expression that says whether it can be stepped.</summary>
     [ScriptParam(ScriptParamType.VarString, "isEnabled Expression")]
     public string EnabledExpression { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the menu whose natives fill it.</summary>
+    /// <summary>Gets or sets the menu whose natives its collect script fills it through.</summary>
     public Igi2InGameMenu? Menu { get; set; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<Igi2MenuItem> Items => _items;
-
-    /// <summary>Gets the id of the item picked, <c>nActiveID</c>.</summary>
-    public int ActiveId => _activeId;
+    IReadOnlyList<Igi2MenuItem> IIgi2MenuItemList.Items => _entries;
 
     /// <inheritdoc/>
     public void Add(Igi2MenuItem item)
     {
-        if (_items.Count < Capacity && !_items.Exists(i => i.Id == item.Id))
+        if (_entries.Count < Capacity && !_entries.Exists(i => i.Id == item.Id))
         {
-            _items.Add(item);
+            _entries.Add(item);
         }
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <c>ListBox_InitDataHandler</c>: emptied, filled by its collect script while it is the active list, and set to the item its get
-    /// script names, if it holds it.
+    /// <c>ListBox_InitDataHandler</c>: emptied, filled by its collect script, then the get script names the active item --
+    /// which stays as it was when the list does not hold the id named.
     /// </remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        _items.Clear();
-        Menu?.Collect(this, () => TryRun(level, ref _collect, CollectScript, out _));
-        if (TryRun(level, ref _getData, GetDataScript, out double id))
+        _entries.Clear();
+        Menu?.Collect(this, () => Igi2MenuData.TryRun(level, ref _collect, CollectItemsScript, this, out _));
+        if (Igi2MenuData.TryRun(level, ref _getData, GetDataScript, this, out double id))
         {
             int wanted = (int)LevelExpression.Truncate(id);
-            if (_items.Exists(i => i.Id == wanted))
+            if (_entries.Exists(i => i.Id == wanted))
             {
-                _activeId = wanted;
+                ActiveId = wanted;
             }
         }
 
-        base.InitData(level);
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>ListBox_ChangeDataHandler</c>: its set script.</remarks>
-    public override void ChangeData(Igi2LevelRun level)
+    public void ChangeData(Igi2LevelRun level)
     {
-        TryRun(level, ref _setData, SetDataScript, out _);
-        base.ChangeData(level);
+        Igi2MenuData.TryRun(level, ref _setData, SetDataScript, this, out _);
+        Igi2MenuData.ChangeChildren(this, level);
     }
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "nActiveID", () => _activeId, value => _activeId = value);
+        variables.BindInt(this, "nActiveID", () => ActiveId, value => ActiveId = value);
     }
 }
 
-/// <summary>A yes-or-no box, <c>ToggleBox</c> (togglebox.c).</summary>
-public sealed partial class Igi2ToggleBoxTask : Igi2MenuWindowTask
+/// <summary>A yes-or-no choice, <c>ToggleBox</c> (togglebox.c): the shared one, with the modify script and enabled expression I.G.I. 2 adds.</summary>
+public sealed partial class Igi2ToggleBoxTask : ToggleBoxTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ToggleBox";
@@ -539,17 +459,8 @@ public sealed partial class Igi2ToggleBoxTask : Igi2MenuWindowTask
     private LevelExpression? _getData;
     private LevelExpression? _setData;
     private LevelExpression? _modifyData;
-    private int _isOn;
 
-    /// <summary>Gets or sets the script whose value it takes in.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Get Data Script")]
-    public string GetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that gives its value back.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Set Data Script")]
-    public string SetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that runs as it is flipped.</summary>
+    /// <summary>Gets or sets the script a flip runs.</summary>
     [ScriptParam(ScriptParamType.VarString, "Modify Data Script")]
     public string ModifyDataScript { get; set; } = string.Empty;
 
@@ -557,311 +468,233 @@ public sealed partial class Igi2ToggleBoxTask : Igi2MenuWindowTask
     [ScriptParam(ScriptParamType.VarString, "isEnabled Expression")]
     public string EnabledExpression { get; set; } = string.Empty;
 
-    /// <summary>Gets a value indicating whether it is on, <c>isOn</c>.</summary>
-    public bool IsOn => _isOn != 0;
-
-    /// <summary>Flips it, its modify script running as a click does.</summary>
+    /// <summary>Flips it, and runs its modify script, as a click on its other half does.</summary>
     /// <param name="level">The level it is evaluated in.</param>
     public void Toggle(Igi2LevelRun level)
     {
-        _isOn = _isOn != 0 ? 0 : 1;
-        TryRun(level, ref _modifyData, ModifyDataScript, out _);
+        IsOn = !IsOn;
+        Igi2MenuData.TryRun(level, ref _modifyData, ModifyDataScript, this, out _);
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>ToggleBox_InitDataHandler</c>: on while its get script is not nought.</remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        if (TryRun(level, ref _getData, GetDataScript, out double on))
+        if (Igi2MenuData.TryRun(level, ref _getData, GetDataScript, this, out double on))
         {
-            _isOn = on != 0.0 ? 1 : 0;
+            IsOn = on != 0.0;
         }
 
-        base.InitData(level);
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>ToggleBox_ChangeDataHandler</c>: its set script.</remarks>
-    public override void ChangeData(Igi2LevelRun level)
+    public void ChangeData(Igi2LevelRun level)
     {
-        TryRun(level, ref _setData, SetDataScript, out _);
-        base.ChangeData(level);
+        Igi2MenuData.TryRun(level, ref _setData, SetDataScript, this, out _);
+        Igi2MenuData.ChangeChildren(this, level);
     }
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "isOn", () => _isOn, value => _isOn = value);
+        variables.BindInt(this, "isOn", () => IsOn ? 1 : 0, value => IsOn = value != 0);
     }
 }
 
-/// <summary>A box text is typed into, <c>InputBox</c> (inputbox.c); its get script writes the text as the active input box.</summary>
-public sealed partial class Igi2InputBoxTask : Igi2MenuWindowTask
+/// <summary>A line the player types into, <c>InputBox</c> (inputbox.c): the shared one, with the numeric switch I.G.I. 2 adds.</summary>
+public sealed partial class Igi2InputBoxTask : InputBoxTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "InputBox";
 
     private LevelExpression? _getData;
     private LevelExpression? _setData;
-    private string _data = string.Empty;
 
-    /// <summary>Gets or sets its width.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
-
-    /// <summary>Gets or sets the most characters it takes.</summary>
-    [ScriptParam(ScriptParamType.Int32, "String Length")]
-    public int Length { get; set; }
-
-    /// <summary>Gets or sets the script that writes its text in.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Get Data Script")]
-    public string GetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that gives its text back.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Set Data Script")]
-    public string SetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that runs as its text changes.</summary>
-    [ScriptParam(ScriptParamType.VarString, "On Modify Script")]
-    public string OnModifyScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets a value indicating whether its text is hidden.</summary>
-    [ScriptParam(ScriptParamType.Bool8, "Hide Input")]
-    public bool HideInput { get; set; }
-
-    /// <summary>Gets or sets a value indicating whether it takes only digits.</summary>
+    /// <summary>Gets or sets a value indicating whether it takes only digits and a point.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Numeric Input")]
     public bool NumericInput { get; set; }
 
-    /// <summary>Gets or sets the menu whose natives write its text.</summary>
+    /// <summary>Gets or sets the menu whose natives its get script writes its text through.</summary>
     public Igi2InGameMenu? Menu { get; set; }
 
-    /// <summary>Gets or sets its text, <c>zData</c>.</summary>
-    public string Data
+    /// <summary>Sets its text, cut to its length, as <c>InputBox_SetString</c> does.</summary>
+    /// <param name="value">The text.</param>
+    public void SetText(string value)
     {
-        get => _data;
-        set => _data = value.Length > Length && Length > 0 ? value[..Length] : value;
+        ArgumentNullException.ThrowIfNull(value);
+        Data = value.Length > StringLength && StringLength > 0 ? value[..StringLength] : value;
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>InputBox_InitDataHandler</c>: its get script, while it is the active input box.</remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        Menu?.Collect(this, () => TryRun(level, ref _getData, GetDataScript, out _));
-        base.InitData(level);
+        Menu?.Collect(this, () => Igi2MenuData.TryRun(level, ref _getData, GetDataScript, this, out _));
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>InputBox_ChangeDataHandler</c>: its set script.</remarks>
-    public override void ChangeData(Igi2LevelRun level)
+    public void ChangeData(Igi2LevelRun level)
     {
-        TryRun(level, ref _setData, SetDataScript, out _);
-        base.ChangeData(level);
+        Igi2MenuData.TryRun(level, ref _setData, SetDataScript, this, out _);
+        Igi2MenuData.ChangeChildren(this, level);
     }
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        variables.BindText(this, "zData", () => _data, value => Data = value, Math.Max(Length, 1) + 1);
+        variables.BindText(this, "zData", () => Data, SetText, Math.Max(StringLength, 1) + 1);
     }
 }
 
-/// <summary>A scrolling list, <c>ScrollListBox</c> (scrolllistbox.c), filled by its collect script.</summary>
-public sealed partial class Igi2ScrollListBoxTask : Igi2MenuWindowTask, IIgi2MenuItemList
+/// <summary>A scrolling list, <c>ScrollListBox</c> (scrolllistbox.c): the shared one, with the focus script I.G.I. 2 adds.</summary>
+public sealed partial class Igi2ScrollListBoxTask : ScrollListBoxTask, IIgi2MenuData, IIgi2MenuItemList
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ScrollListBox";
 
-    private readonly List<Igi2MenuItem> _items = [];
+    private readonly List<Igi2MenuItem> _entries = [];
     private LevelExpression? _collect;
     private LevelExpression? _getData;
     private LevelExpression? _setData;
     private LevelExpression? _onSelect;
-    private int _activeId = -1;
     private int _activeEntry = -1;
     private int _isUpdate;
 
-    /// <summary>Gets or sets its font.</summary>
-    [ScriptParam(ScriptParamType.String32, "Font Resource")]
-    public string Font { get; set; } = string.Empty;
+    /// <summary>Initializes a new instance of the <see cref="Igi2ScrollListBoxTask"/> class, with no item active.</summary>
+    public Igi2ScrollListBoxTask() => ActiveId = -1;
 
-    /// <summary>Gets or sets the script that fills it.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Collect Items Script")]
-    public string CollectScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script whose value is the id it takes in.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Get Data Script")]
-    public string GetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that gives its id back.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Set Data Script")]
-    public string SetDataScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets its width.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
-
-    /// <summary>Gets or sets its height.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
-
-    /// <summary>Gets or sets the script picking an item runs.</summary>
-    [ScriptParam(ScriptParamType.VarString, "On Select Item")]
-    public string OnSelectItem { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script moving onto an item runs.</summary>
+    /// <summary>Gets or sets the script that runs as the selected row changes.</summary>
     [ScriptParam(ScriptParamType.VarString, "On Focus Item")]
     public string OnFocusItem { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the menu whose natives fill it.</summary>
+    /// <summary>Gets or sets the menu whose natives its collect script fills it through.</summary>
     public Igi2InGameMenu? Menu { get; set; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<Igi2MenuItem> Items => _items;
+    IReadOnlyList<Igi2MenuItem> IIgi2MenuItemList.Items => _entries;
 
-    /// <summary>Gets the id of the item picked, <c>nActiveID</c>.</summary>
-    public int ActiveId => _activeId;
+    /// <summary>Gets the items, in the order added.</summary>
+    public IReadOnlyList<Igi2MenuItem> Entries => _entries;
 
     /// <inheritdoc/>
     public void Add(Igi2MenuItem item)
     {
-        if (!_items.Exists(i => i.Id == item.Id))
+        if (!_entries.Exists(i => i.Id == item.Id))
         {
-            _items.Add(item);
+            _entries.Add(item);
         }
     }
 
-    /// <summary>Picks an item, its select script running as a double click does.</summary>
+    /// <summary>Selects an item by its id and runs its select script, as a double click on its row does.</summary>
     /// <param name="level">The level it is evaluated in.</param>
     /// <param name="id">The item's id.</param>
     public void Select(Igi2LevelRun level, int id)
     {
-        int at = _items.FindIndex(i => i.Id == id);
+        int at = _entries.FindIndex(i => i.Id == id);
         if (at < 0)
         {
             return;
         }
 
-        (_activeEntry, _activeId) = (at, id);
-        TryRun(level, ref _onSelect, OnSelectItem, out _);
+        (_activeEntry, ActiveId) = (at, id);
+        Igi2MenuData.TryRun(level, ref _onSelect, OnSelectItem, this, out _);
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <c>ScrollListBox_InitDataHandler</c>: emptied, filled by its collect script while it is the active list, and set to the item its
-    /// get script names, if it holds it.
-    /// </remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        _items.Clear();
-        Menu?.Collect(this, () => TryRun(level, ref _collect, CollectScript, out _));
-        if (TryRun(level, ref _getData, GetDataScript, out double id))
+        _entries.Clear();
+        Menu?.Collect(this, () => Igi2MenuData.TryRun(level, ref _collect, CollectItemsScript, this, out _));
+        if (Igi2MenuData.TryRun(level, ref _getData, GetDataScript, this, out double id))
         {
             int wanted = (int)LevelExpression.Truncate(id);
-            int at = _items.FindIndex(i => i.Id == wanted);
+            int at = _entries.FindIndex(i => i.Id == wanted);
             if (at >= 0)
             {
-                (_activeEntry, _activeId) = (at, wanted);
+                (_activeEntry, ActiveId) = (at, wanted);
             }
         }
 
-        base.InitData(level);
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
-    /// <remarks><c>ScrollListBox_ChangeDataHandler</c>: its set script.</remarks>
-    public override void ChangeData(Igi2LevelRun level)
+    public void ChangeData(Igi2LevelRun level)
     {
-        TryRun(level, ref _setData, SetDataScript, out _);
-        base.ChangeData(level);
+        Igi2MenuData.TryRun(level, ref _setData, SetDataScript, this, out _);
+        Igi2MenuData.ChangeChildren(this, level);
     }
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "nActiveID", () => _activeId, value => _activeId = value);
+        variables.BindInt(this, "nActiveID", () => ActiveId, value => ActiveId = value);
         variables.BindInt(this, "isUpdate", () => _isUpdate, value => _isUpdate = value);
         variables.BindInt(this, "nActiveEntry", () => _activeEntry, value => _activeEntry = value);
     }
 }
 
-/// <summary>A row of pictures, one active, <c>PictureBox</c> (picturebox.c): the crosshair chooser.</summary>
-public sealed partial class Igi2PictureBoxTask : Igi2MenuWindowTask, IIgi2MenuItemList
+/// <summary>A picture chosen from a set, <c>PictureBox</c> (picturebox.c): the shared one, with the tint and click I.G.I. 2 adds.</summary>
+public sealed partial class Igi2PictureBoxTask : PictureBoxTask, IIgi2MenuData, IIgi2MenuItemList
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "PictureBox";
 
-    private readonly List<Igi2MenuItem> _items = [];
+    private readonly List<Igi2MenuItem> _entries = [];
     private LevelExpression? _collect;
     private LevelExpression? _active;
     private LevelExpression? _rgba;
 
-    /// <summary>Gets or sets its width.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
-
-    /// <summary>Gets or sets its height.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
-
-    /// <summary>Gets or sets the script that fills it.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Collect Items")]
-    public string CollectScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script whose value is the picture shown.</summary>
-    [ScriptParam(ScriptParamType.VarString, "Get Active Picture")]
-    public string ActivePictureScript { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the script that colours it.</summary>
+    /// <summary>Gets or sets the expression that tints it, through <c>PictureBox_SetRGBA</c>, every tick.</summary>
     [ScriptParam(ScriptParamType.VarString, "Get RGBA")]
     public string RgbaScript { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the script a click runs.</summary>
+    /// <summary>Gets or sets the script a click runs; with one it can be selected.</summary>
     [ScriptParam(ScriptParamType.VarString, "On Click Script")]
-    public string OnClick { get; set; } = string.Empty;
+    public string OnClickScript { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the sound a click makes.</summary>
     [ScriptParam(ScriptParamType.String32, "Click Sound Resource")]
-    public string ClickSound { get; set; } = string.Empty;
+    public string ClickSoundResource { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the menu whose natives fill it.</summary>
+    /// <summary>Gets or sets the menu whose natives its collect script fills it through.</summary>
     public Igi2InGameMenu? Menu { get; set; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<Igi2MenuItem> Items => _items;
+    IReadOnlyList<Igi2MenuItem> IIgi2MenuItemList.Items => _entries;
 
-    /// <summary>Gets the picture shown.</summary>
+    /// <summary>Gets the id of the picture it shows.</summary>
     public int ActivePicture { get; private set; }
 
-    /// <summary>Gets or sets the colour it is drawn in, <c>vR</c>, <c>vG</c>, <c>vB</c>, <c>vA</c>.</summary>
+    /// <summary>Gets or sets its tint, as <c>PictureBox_SetRGBA</c> leaves it.</summary>
     public (float R, float G, float B, float A) Colour { get; set; } = (1f, 1f, 1f, 1f);
 
     /// <inheritdoc/>
-    public void Add(Igi2MenuItem item) => _items.Add(item);
+    public void Add(Igi2MenuItem item) => _entries.Add(item);
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <c>PictureBox_InitDataHandler</c> and its run handler: emptied and filled by its collect script while it is the active picture
-    /// box; its active picture and its colour read.
-    /// </remarks>
-    public override void InitData(Igi2LevelRun level)
+    /// <remarks><c>PictureBox_InitDataHandler</c>: emptied, filled by its collect script; its active picture and its colour read.</remarks>
+    public void InitData(Igi2LevelRun level)
     {
-        _items.Clear();
+        _entries.Clear();
         Menu?.Collect(this, () =>
         {
-            TryRun(level, ref _collect, CollectScript, out _);
-            if (TryRun(level, ref _active, ActivePictureScript, out double active))
+            Igi2MenuData.TryRun(level, ref _collect, CollectItems, this, out _);
+            if (Igi2MenuData.TryRun(level, ref _active, GetActivePicture, this, out double active))
             {
                 ActivePicture = (int)LevelExpression.Truncate(active);
             }
 
-            TryRun(level, ref _rgba, RgbaScript, out _);
+            Igi2MenuData.TryRun(level, ref _rgba, RgbaScript, this, out _);
         });
-        base.InitData(level);
+        Igi2MenuData.InitChildren(this, level);
     }
+
+    /// <inheritdoc/>
+    public void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
 }
 
 /// <summary>A popup's window, <c>DialogWindow</c> (dialogwindow.c): the shared one, its keys swapped unless the level says not.</summary>
@@ -1011,42 +844,21 @@ public sealed partial class Igi2ColumnViewColumnTask : Igi2MenuWindowTask
     public int DataType { get; set; }
 }
 
-/// <summary>
-/// The key bindings page, <c>ControlsMenu</c> (controlsmenu.c), which the engine owns and the script spawns with no parameters: its
-/// offset is how far its rows are scrolled, which its scroll bar shows a forty-third at a time.
-/// </summary>
-/// <remarks>
-/// The bindings themselves are the OpenIGI shell's, which presents the controls; the page keeps only its scroll and reset state, which
-/// the menu's scripts read and write.
-/// </remarks>
-public sealed partial class Igi2ControlsMenuTask : Igi2MenuWindowTask
+/// <summary>The controls screen's list of bindings, <c>ControlsMenu</c> (controlsmenu.c): the shared one, put back to the top as it takes its data in.</summary>
+public sealed partial class Igi2ControlsMenuTask : ControlsMenuTask, IIgi2MenuData
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "ControlsMenu";
 
-    private int _offset;
-    private byte _isReset;
-
-    /// <summary>Gets how far its rows are scrolled, <c>nOffset</c>.</summary>
-    public int Offset => _offset;
-
-    /// <summary>Gets a value indicating whether its bindings are to be reset, <c>isReset</c>.</summary>
-    public bool IsReset => _isReset != 0;
-
     /// <inheritdoc/>
     /// <remarks><c>ControlsMenu_InitData</c>: back to the top, nothing to reset.</remarks>
-    public override void InitData(Igi2LevelRun level)
+    public void InitData(Igi2LevelRun level)
     {
-        _offset = 0;
-        _isReset = 0;
-        base.InitData(level);
+        Offset = 0;
+        IsReset = false;
+        Igi2MenuData.InitChildren(this, level);
     }
 
     /// <inheritdoc/>
-    protected override void OnExportVars(ScriptVarRegistry variables)
-    {
-        ArgumentNullException.ThrowIfNull(variables);
-        variables.BindInt(this, "nOffset", () => _offset, value => _offset = value);
-        variables.BindInt(this, "isReset", () => _isReset, value => _isReset = (byte)value, sizeof(byte));
-    }
+    public void ChangeData(Igi2LevelRun level) => Igi2MenuData.ChangeChildren(this, level);
 }

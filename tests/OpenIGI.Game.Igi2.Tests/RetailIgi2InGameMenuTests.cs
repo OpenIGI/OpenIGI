@@ -1,3 +1,4 @@
+using OpenIGI.Game.Menus;
 using OpenIGI.Game.Igi2.Config;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Menus;
@@ -27,7 +28,7 @@ public sealed class RetailIgi2InGameMenuTests
         Assert.Equal(901, menu.CurrentScreen?.Id);
         Assert.Equal(Igi2MenuStatus.Running, menu.Status);
 
-        Igi2MenuTextTask sound = Texts(menu.CurrentScreen!).Single(t => t.Text == "Sound");
+        Igi2MenuTextTask sound = Texts(menu.CurrentScreen!).Single(t => t.TextResource == "Sound");
         Assert.True(sound.Click(level));
         Settle(menu, level);
         Assert.Equal(902, menu.CurrentScreen?.Id);
@@ -36,7 +37,7 @@ public sealed class RetailIgi2InGameMenuTests
         Igi2SlideBarTask music = Windows<Igi2SlideBarTask>(menu.CurrentScreen!).First();
         Assert.Equal(config.Active!.Music.Volume, (float)music.Value, 3);
         music.Modify(level, 0.25);
-        Igi2MenuTextTask ok = Texts(menu.CurrentScreen!).First(t => t.Text == "OK");
+        Igi2MenuTextTask ok = Texts(menu.CurrentScreen!).First(t => t.TextResource == "OK");
         Assert.True(ok.Click(level));
         Settle(menu, level);
         Assert.Equal(0.25f, config.Active!.Music.Volume, 3);
@@ -59,11 +60,11 @@ public sealed class RetailIgi2InGameMenuTests
         (Igi2InGameMenu menu, Igi2LevelRun level, _) = Load();
         menu.Open(level);
         Settle(menu, level);
-        Assert.True(Texts(menu.CurrentScreen!).Single(t => t.Text == "Restart Game").Click(level));
+        Assert.True(Texts(menu.CurrentScreen!).Single(t => t.TextResource == "Restart Game").Click(level));
         Settle(menu, level);
         Assert.Equal(932, menu.PopupScreen?.Id);
 
-        Igi2MenuTextTask yes = Texts(menu.PopupScreen!).First(t => t.OnClick.Contains("MENUMANAGER_RESTARTLEVEL", StringComparison.Ordinal));
+        Igi2MenuTextTask yes = Texts(menu.PopupScreen!).First(t => t.OnClickScript.Contains("MENUMANAGER_RESTARTLEVEL", StringComparison.Ordinal));
         Assert.True(yes.Click(level));
         Settle(menu, level);
         Assert.Equal(Igi2MenuRequest.RestartLevel, menu.TakeRequest());
@@ -88,7 +89,7 @@ public sealed class RetailIgi2InGameMenuTests
         (Igi2InGameMenu menu, _, _) = Load();
         int checkedWindows = 0;
         foreach (Engine.Tasks.GameTask window in RetailIgi2Mission1.All(menu.Manager!)
-            .Where(static t => t is Igi2MenuScreenTask or Igi2MenuFrameTask or Igi2DialogWindowTask))
+            .Where(static t => t is MenuWindowTask and not Igi2MenuManagerTask))
         {
             foreach (Engine.Tasks.TaskParameter parameter in window.Type.Parameters)
             {
