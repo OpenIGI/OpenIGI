@@ -329,7 +329,7 @@ public sealed partial class GameHost
         try
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
-            _title.LoadTables(_loop, _fileSystem, _resources);
+            _title.LoadTables(_loop, _fileSystem, _resources, _logger);
             _menuMissions = _missions;
 
             if (limitedMissions is not null)
