@@ -490,6 +490,13 @@ public sealed class Igi1Blasts(
         {
             ShootOutSpeaker(speaker);
         }
+
+        if (mission.Interactions?.WeaponHit(owner) == true)
+        {
+            host.Logger.Information("World", $"{owner!.Name} was shot and broken.");
+        }
+
+        mission.RotatingObjects?.WeaponHit(owner, placement);
     }
 
     /// <summary>Silences a destroyed alarm speaker or camera and plays its destruction.</summary>

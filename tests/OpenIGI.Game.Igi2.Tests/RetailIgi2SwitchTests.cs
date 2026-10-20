@@ -11,6 +11,7 @@ using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -90,6 +91,29 @@ public sealed class RetailIgi2SwitchTests
 
         Assert.Equal(4, ticks);
         Assert.Equal((true, 0, "337_13_1"), (power.IsOn, power.ModelSlot, power.Model));
+    }
+
+    /// <summary>
+    /// A round breaks a Destructable switch (<c>Switch_WeaponHitHandler</c>), whichever game fired it, and nothing finds it
+    /// again. Its run copies <c>isDestroyed</c> to <c>isLastDestroyed</c> before <c>Switch_SetModel</c> compares them, so the
+    /// break alone changes no model. One that is not Destructable takes the round and carries on.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_round_breaks_a_destructable_switch()
+    {
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        Igi2SwitchTask power = m.Switch(PowerOn);
+        Igi2SwitchTask lift = m.Switch(ElevatorUp);
+        m.Run.Tick();
+
+        WeaponHit round = new(power.Position, Vector3f.UnitZ, 1f, Vector3f.UnitX, null, null);
+        lift.WeaponHit(round);
+        power.Destructable = true;
+        power.WeaponHit(round);
+        m.Run.Tick();
+
+        Assert.Equal((true, 2), (power.IsDestroyed, power.ModelSlot));
+        Assert.False(lift.IsDestroyed);
     }
 
     /// <summary>The generator in the shed starts up the tick its power button is pressed, and loops the tick after.</summary>

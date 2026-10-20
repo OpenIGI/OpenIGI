@@ -95,12 +95,17 @@ internal static class Igi2InteractionSystems
         }
     }
 
-    /// <summary>Switches, pressed by the player.</summary>
+    /// <summary>Switches, pressed by the player; its own solid answers the rounds that strike it.</summary>
     public static void Switches(Igi2LevelBuild b)
     {
         foreach (Igi2SwitchTask button in b.Root.Descendants().OfType<Igi2SwitchTask>())
         {
             b.Activatables.Add(button);
+            IReadOnlyList<Igi2RigidObject> solids = b.Player.CollisionWorld.SolidsOf(Igi2SwitchTask.TypeName, button.Id);
+            if (solids.Count > 0 && solids[0].Owner is Igi2CollisionOwner { Depth: 0 })
+            {
+                solids[0].Handler = button;
+            }
         }
     }
 

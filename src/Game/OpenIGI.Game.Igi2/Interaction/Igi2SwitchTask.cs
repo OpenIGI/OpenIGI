@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
@@ -24,9 +25,15 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// front of it — along its Y axis — and within 3072 units of its centre line across, measured from its model's first magic
 /// vertex.
 /// </para>
+/// <para>
+/// A round that strikes it (<c>Switch_WeaponHitHandler</c>, Project I.G.I.'s <c>0x445840</c> the same) destroys it when it is
+/// <c>Destructable</c>, whichever game's round it is: the handler reads nothing of the hit. Nothing finds it after that, but
+/// its run copies <c>isDestroyed</c> to <c>isLastDestroyed</c> before it sets its model, so it wears the destroyed one only
+/// once its on or pressed state next changes. Project I.G.I.'s run (<c>0x4450F0</c>) copies after, and swaps at once.
+/// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2PlacedTask
+public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2PlacedTask, IWeaponHitTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Switch";
@@ -188,6 +195,15 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
         _isPressed = 1;
         _lastPressedTick = _flow?.Tick ?? 0;
         _clientId = clientId;
+    }
+
+    /// <inheritdoc/>
+    public void WeaponHit(in WeaponHit hit)
+    {
+        if (Destructable)
+        {
+            _isDestroyed = 1;
+        }
     }
 
     /// <inheritdoc/>

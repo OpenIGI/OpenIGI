@@ -154,6 +154,51 @@ public sealed class RetailRotatingObjectTests
     }
 
     [RequiresGameDataFact]
+    public void AShotRadarDishRunsDownAndStaysStill()
+    {
+        // RadarDish's WeaponHit (0x449260) zeroes the speed it wants; its update (0x448E30) then takes its acceleration off
+        // a thirtieth at a time. Level 5's tower dish turns at 90 degrees a second and slows by 15.
+        RotatingObjectRegistry registry = LoadRegistry(5);
+        PlacedRotatingObject dish = Assert.Single(
+            registry.Objects,
+            obj => obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+
+        registry.WeaponHit(dish.Owner, dish.Placement);
+        registry.Tick();
+
+        Assert.Equal(0f, dish.TargetSpeedZ);
+        Assert.InRange(dish.CurrentSpeedZ, 89.49f, 89.51f);
+
+        for (int tick = 0; tick < 180; tick++)
+        {
+            registry.Tick();
+        }
+
+        float angle = dish.AngleZ;
+        registry.Tick();
+        Assert.Equal(0f, dish.CurrentSpeedZ);
+        Assert.Equal(angle, dish.AngleZ);
+    }
+
+    [RequiresGameDataFact]
+    public void ARoundLeavesARotorThatIsNotDestructableTurning()
+    {
+        // RotatingObject's WeaponHit (0x439750) breaks it only when it is Destructable, which no shipped one is.
+        RotatingObjectRegistry registry = LoadRegistry(3);
+        PlacedRotatingObject rotor = Assert.Single(
+            registry.Objects,
+            obj => !obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+
+        registry.WeaponHit(rotor.Owner, rotor.Placement);
+        rotor.TickRotatingObject(switchedOff: false);
+
+        Assert.False(rotor.IsDestructable);
+        Assert.False(rotor.IsBroken);
+        Assert.Equal(90f, rotor.TargetSpeedZ);
+        Assert.True(rotor.IsActive);
+    }
+
+    [RequiresGameDataFact]
     public void ARotorsAngleWrapsOnlyFromAbove()
     {
         RotatingObjectRegistry registry = LoadRegistry(3);

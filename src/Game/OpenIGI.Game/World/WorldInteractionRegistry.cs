@@ -113,7 +113,16 @@ public sealed class WorldInteraction
     public bool IsSearched { get; internal set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
-    public bool IsDestroyed { get; private set; }
+    public bool IsDestroyed { get; internal set; }
+
+    /// <summary>Gets or sets what <see cref="IsOn"/> was the last tick the task ran, its <c>isLastOn</c>.</summary>
+    internal bool LastOn { get; set; } = true;
+
+    /// <summary>Gets or sets what <see cref="IsDestroyed"/> was the last tick the task ran, its <c>isLastDestroyed</c>.</summary>
+    internal bool LastDestroyed { get; set; }
+
+    /// <summary>Gets a value indicating whether a round breaks this switch, its <c>Destructable</c> flag.</summary>
+    public bool IsDestructable { get; init; }
     public bool ExplosionTriggeredThisTick { get; private set; }
     public GenericTbaExplosionParameters? Explosion { get; }
 
@@ -127,8 +136,31 @@ public sealed class WorldInteraction
             or InteractionActivateType.PlaceExplosive => IsOn && !IsCompleted,
         InteractionActivateType.Cabinet => !IsSearched,
         InteractionActivateType.Door => !IsLocked || IsPickable,
+        // Switch::GetActivate (0x445730) offers nothing once the switch is broken.
+        InteractionActivateType.Switch => !IsDestroyed,
         _ => true,
     };
+
+    /// <summary>A round strikes the task: its <c>WeaponHit</c> handler.</summary>
+    /// <returns>Whether the round broke it.</returns>
+    /// <remarks>
+    /// <para>
+    /// A switch's handler (<c>0x445840</c>, I.G.I. 2's <c>Switch_WeaponHitHandler</c> the same) breaks it when it is
+    /// <c>Destructable</c>; nothing ever mends it. Its update then wears its fifth model, and it is never offered again.
+    /// Mission 8's three breakable switches name one model for every state, so they look the same broken.
+    /// </para>
+    /// <para>A cabinet's handler is the engine's empty one: the round stops on it and nothing happens.</para>
+    /// </remarks>
+    public bool WeaponHit()
+    {
+        if (Type != InteractionActivateType.Switch || !IsDestructable || IsDestroyed)
+        {
+            return false;
+        }
+
+        IsDestroyed = true;
+        return true;
+    }
 
     /// <summary>Where a marker for this task belongs, in world units.</summary>
     /// <param name="from">The human's view position, for the tasks whose answer depends on it.</param>
@@ -519,6 +551,9 @@ public sealed class WorldInteraction
 
     internal void CommitTick()
     {
+        // Switch::Run (0x4450F0) leaves isLastOn and isLastDestroyed what isOn and isDestroyed were as it ran.
+        LastOn = IsOn;
+        LastDestroyed = IsDestroyed;
         CompletedThisTick = false;
         ExplosionTriggeredThisTick = false;
         InUse.CommitTick();
@@ -748,6 +783,12 @@ public sealed class WorldInteractionRegistry
         return interaction is not null;
     }
 
+    /// <summary>Hands a round's <c>WeaponHit</c> to the interaction a task is, if it is one.</summary>
+    /// <param name="task">The task the round struck.</param>
+    /// <returns>Whether the round broke it.</returns>
+    public bool WeaponHit(GameTask? task) =>
+        task is not null && TryGet(task, out WorldInteraction? item) && item!.WeaponHit();
+
     /// <summary>Consumes each authored GenericTBA explosion edge at most once.</summary>
     public IEnumerable<(WorldInteraction Interaction, GenericTbaExplosionParameters Parameters)> ConsumeExplosions()
     {
@@ -915,7 +956,10 @@ public sealed class WorldInteractionRegistry
                 ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
                 markerPoint, markerLocal,
-                type == InteractionActivateType.Generic ? ExplosionOf(declared) : null);
+                type == InteractionActivateType.Generic ? ExplosionOf(declared) : null)
+            {
+                IsDestructable = type == InteractionActivateType.Switch && ReadBool(declared, "Destructable"),
+            };
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
@@ -1102,8 +1146,12 @@ public sealed class WorldInteractionRegistry
         switch (item.Type)
         {
             case InteractionActivateType.Switch:
-                variables.BindFlag(item.Task, "isPressed", item.Pressed);
+                // Switch's exports (0x445860): the six bytes, each writable.
                 variables.BindBool(item.Task, "isOn", () => item.IsOn, value => item.IsOn = value);
+                variables.BindBool(item.Task, "isLastOn", () => item.LastOn, value => item.LastOn = value);
+                variables.BindFlag(item.Task, "isPressed", item.Pressed);
+                variables.BindBool(item.Task, "isDestroyed", () => item.IsDestroyed, value => item.IsDestroyed = value);
+                variables.BindBool(item.Task, "isLastDestroyed", () => item.LastDestroyed, value => item.LastDestroyed = value);
                 break;
             case InteractionActivateType.Cabinet:
                 variables.BindFlag(item.Task, "isInUse", item.InUse);

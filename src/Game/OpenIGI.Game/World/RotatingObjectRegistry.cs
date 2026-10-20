@@ -129,6 +129,30 @@ public sealed class PlacedRotatingObject
     /// <summary>Gets whether this is a level <c>RotatingObject</c> task, which updates by <c>0x439090</c>, rather than a radar dish.</summary>
     public bool IsRotatingObjectTask { get; init; }
 
+    /// <summary>Gets a value indicating whether a round breaks this <c>RotatingObject</c>, its <c>Destructable</c> flag.</summary>
+    public bool IsDestructable { get; init; }
+
+    /// <summary>Gets a value indicating whether a round has broken it (<c>+424</c>), which switches it off for good.</summary>
+    public bool IsBroken { get; private set; }
+
+    /// <summary>A round strikes it: its <c>WeaponHit</c> handler.</summary>
+    /// <remarks>
+    /// A radar dish's (<c>0x449260</c>, I.G.I. 2's <c>RadarDish_WeaponHitHandler</c> the same) wants no more speed, so it runs
+    /// down at its acceleration and stays still. A <c>RotatingObject</c>'s (<c>0x439750</c>) breaks it when it is
+    /// <c>Destructable</c>, and its update (<c>0x439090</c>) reads a broken object as switched off.
+    /// </remarks>
+    public void WeaponHit()
+    {
+        if (!IsRotatingObjectTask)
+        {
+            TargetSpeedZ = 0f;
+        }
+        else if (IsDestructable)
+        {
+            IsBroken = true;
+        }
+    }
+
     /// <summary>Advances one 30 Hz tick as a <c>RotatingObject</c>'s update (<c>0x439090</c>), with its x87 arithmetic.</summary>
     /// <param name="switchedOff">Whether the object has an On expression and it is false this tick.</param>
     /// <remarks>
@@ -149,7 +173,7 @@ public sealed class PlacedRotatingObject
         PreviousAngleY = AngleY;
         PreviousAngleZ = AngleZ;
 
-        if (switchedOff)
+        if (switchedOff || IsBroken)
         {
             TargetSpeedX = 0f;
             TargetSpeedY = 0f;
@@ -388,6 +412,7 @@ public sealed class RotatingObjectRegistry
                     sound: sound)
                 {
                     IsRotatingObjectTask = true,
+                    IsDestructable = declared.TryGetValue("Destructable", out object? destructable) && destructable is true,
                 });
                 continue;
             }
@@ -457,6 +482,21 @@ public sealed class RotatingObjectRegistry
         _byPlacement[obj.Placement] = obj;
         _byOwnerAndModel[(obj.Owner, obj.Placement.Instance.Name)] = obj;
         _byTask.TryAdd(obj.Owner, obj);
+    }
+
+    /// <summary>Hands a round's <c>WeaponHit</c> to the rotating object it struck, if it struck one.</summary>
+    /// <param name="owner">The task the round struck.</param>
+    /// <param name="placement">The placement it struck: a radar dish is an attachment of its tower's task.</param>
+    public void WeaponHit(GameTask? owner, WorldPlacement? placement)
+    {
+        if (placement is not null && _byPlacement.TryGetValue(placement, out PlacedRotatingObject? struck))
+        {
+            struck.WeaponHit();
+        }
+        else if (owner is not null && _byTask.TryGetValue(owner, out PlacedRotatingObject? task) && task.IsRotatingObjectTask)
+        {
+            task.WeaponHit();
+        }
     }
 
     /// <summary>Puts every level <c>RotatingObject</c> into the level walk, updating where the walk reaches it.</summary>
