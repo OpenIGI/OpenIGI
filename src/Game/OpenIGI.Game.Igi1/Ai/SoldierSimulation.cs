@@ -3935,19 +3935,26 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <inheritdoc/>
     void IHumanEvents.WeaponHit(HumanTask soldier, in WeaponHit hit)
     {
-        if (hit.Context is Igi1WeaponHit round && _viewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (!_viewsByTask.TryGetValue(soldier, out SoldierView? view))
         {
-            TakeRound(view, round);
+            return;
         }
+
+        // Another game's round: where it meets the soldier's body is this game's to find.
+        Matrix3f m = view.Orientation;
+        TakeRound(view, hit.Context as Igi1WeaponHit
+            ?? Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, view.Position, new Vector3f(m.M12, m.M22, m.M32))));
     }
 
     /// <inheritdoc/>
     void IHumanEvents.ExplosionHit(HumanTask soldier, in ExplosionHit hit)
     {
-        if (hit.Context is not Igi1ExplosionHit blast || !_viewsByTask.TryGetValue(soldier, out SoldierView? view))
+        if (!_viewsByTask.TryGetValue(soldier, out SoldierView? view))
         {
             return;
         }
+
+        Igi1ExplosionHit blast = hit.Context as Igi1ExplosionHit ?? Igi1ExplosionHit.FromShared(hit);
 
         TakeExplosion(view, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
     }

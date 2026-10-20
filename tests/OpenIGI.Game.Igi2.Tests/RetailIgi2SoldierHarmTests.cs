@@ -305,6 +305,42 @@ public sealed class RetailIgi2SoldierHarmTests
     }
 
     /// <summary>
+    /// Another game's round and blast reach the soldier through the engine's shared events: the round lands on the zone of the
+    /// bone it names at that zone's multiplier, a knife's blow unmultiplied, and the blast lands on the chest with no world to
+    /// shield it.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Another_games_round_and_blast_hurt_the_soldier()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2Intersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
+        object foreign = new();
+        Vector3f shot = new(-40960f, 0f, 0f);
+
+        ((IWeaponHitTarget)body).WeaponHit(new WeaponHit(hit.Position, hit.Normal, 0.01f, shot, null, foreign, WeaponCategory.Gun, hit.Sector));
+        Igi2DamagePart part = body.DamagePartOf(Hit(body, hit, 0.01f));
+        float expected = ((Fpu)0.01f * body.Damage.Multiplier(part)).F;
+        Assert.Equal(part, body.Damage.LastPart);
+        Assert.Equal(expected, body.Damage.PartDamage(part));
+
+        ((IWeaponHitTarget)body).WeaponHit(new WeaponHit(hit.Position, hit.Normal, 0.01f, shot, null, foreign, WeaponCategory.Knife, hit.Sector));
+        Assert.Equal(((Fpu)expected + 0.01f).F, body.Damage.PartDamage(part));
+
+        float before = body.Damage.PartDamage(Igi2DamagePart.Chest);
+        Vector3d near = new(body.Position.X + 4096.0, body.Position.Y, body.Position.Z + 4096.0);
+        ((IExplosionHitTarget)body).ExplosionHit(new ExplosionHit(near, -1, 0.01f, 2048f, 8192f, null, foreign));
+        Assert.Equal(Igi2DamagePart.Chest, body.Damage.LastPart);
+        Assert.True(body.Damage.PartDamage(Igi2DamagePart.Chest) > before);
+        Assert.False(body.IsDead);
+
+        ((IWeaponHitTarget)body).WeaponHit(new WeaponHit(hit.Position, hit.Normal, 1000f, shot, null, foreign, WeaponCategory.Pistol, hit.Sector));
+        Assert.True(body.IsDead);
+        Assert.Equal(3, body.DeathByType);
+    }
+
+    /// <summary>
     /// A blow from in front lands on the chest and one from behind on the back (<c>HumanSoldier_CloseCombatDamageHandler</c>,
     /// <c>igi2 0x4EBCD0</c>), each at its zone's multiplier; enough of them kill, how it died 4.
     /// </summary>

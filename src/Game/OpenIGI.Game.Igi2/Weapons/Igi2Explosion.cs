@@ -63,7 +63,10 @@ public sealed record Igi2ExplosionRequest(
     Igi2ExplosionFalloff Falloff);
 
 /// <summary>What an explosion tells each of its targets, <c>ExplosionHitContext_t</c>.</summary>
-/// <param name="World">The explosion world, which resolves what the blast does through what lies between.</param>
+/// <param name="World">
+/// The explosion world, which resolves what the blast does through what lies between; <see langword="null"/> for another
+/// game's blast, which its own game has already weighed.
+/// </param>
 /// <param name="Position">Where it went off.</param>
 /// <param name="Team">The team of the human who set it off, or -1.</param>
 /// <param name="Damage">The damage at its heart.</param>
@@ -74,7 +77,7 @@ public sealed record Igi2ExplosionRequest(
 /// <param name="Owner">Who set it off, or <see langword="null"/>.</param>
 /// <param name="Falloff">How its damage falls away.</param>
 public readonly record struct Igi2ExplosionHit(
-    Igi2ExplosionWorld World,
+    Igi2ExplosionWorld? World,
     Vector3d Position,
     int Team,
     float Damage,
@@ -89,22 +92,41 @@ public readonly record struct Igi2ExplosionHit(
     /// <returns>The shared explosion.</returns>
     public ExplosionHit ToShared() => new(Position, Team, Damage, FullRange, FalloffRange, Owner, this);
 
+    /// <summary>Another game's blast in this game's terms, as its targets read it.</summary>
+    /// <param name="hit">The blast.</param>
+    /// <returns>The blast: no world to shield it, no weapon this game names, the engine's 90 ticks of shake and a straight falloff.</returns>
+    public static Igi2ExplosionHit FromShared(in ExplosionHit hit) => new(
+        null,
+        hit.Position,
+        hit.Team,
+        hit.Damage,
+        hit.FullRange,
+        hit.FalloffRange,
+        90,
+        null,
+        hit.Owner as IIgi2WeaponOwner,
+        Igi2ExplosionFalloff.Linear);
+
     /// <summary>The damage it does a target, <c>GameFunctions_ResolveExplosionHit</c> (<c>igi2 0x48D1F0</c>).</summary>
     /// <param name="target">Where the target is, <c>tPos</c>.</param>
     /// <param name="radius">How big the target is.</param>
     /// <returns>The damage.</returns>
-    public Fpu Resolve(Vector3d target, float radius) => World.Resolve(this, target, radius, null);
+    public Fpu Resolve(Vector3d target, float radius) => Resolve(target, radius, null);
 
     /// <summary>The damage it does a target, as <see cref="Resolve(Vector3d, float)"/>, the target named so the line through walls passes it.</summary>
     /// <param name="target">Where the target is.</param>
     /// <param name="radius">The target's size.</param>
     /// <param name="self">The target, <c>ptQTask</c>.</param>
     /// <returns>The damage.</returns>
-    public Fpu Resolve(Vector3d target, float radius, object? self) => World.Resolve(this, target, radius, self);
+    public Fpu Resolve(Vector3d target, float radius, object? self) =>
+        World is { } world ? world.Resolve(this, target, radius, self) : Igi2ExplosionWorld.Reach(this, target, radius);
 }
 
 /// <summary>Something an explosion can hurt: a member of <c>GameFunctions_ptExplosionQTaskList</c>.</summary>
-/// <remarks>The engine's <see cref="IExplosionHitTarget"/>, read in this game's terms: an explosion this game set off is taken whole.</remarks>
+/// <remarks>
+/// The engine's <see cref="IExplosionHitTarget"/>, read in this game's terms: an explosion this game set off is taken whole, and
+/// another game's as <see cref="Igi2ExplosionHit.FromShared"/> reads it.
+/// </remarks>
 public interface IIgi2ExplosionTarget : IExplosionHitTarget
 {
     /// <summary>An explosion reaches it, its <c>ExplosionHit</c> handler.</summary>
@@ -114,10 +136,7 @@ public interface IIgi2ExplosionTarget : IExplosionHitTarget
     /// <inheritdoc/>
     void IExplosionHitTarget.ExplosionHit(in ExplosionHit hit)
     {
-        if (hit.Context is Igi2ExplosionHit own)
-        {
-            ExplosionHit(own);
-        }
+        ExplosionHit(hit.Context is Igi2ExplosionHit own ? own : Igi2ExplosionHit.FromShared(hit));
     }
 }
 
@@ -760,6 +779,17 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// </remarks>
     public Fpu Resolve(in Igi2ExplosionHit hit, Vector3d target, float radius, object? self = null)
     {
+        Fpu damage = Reach(hit, target, radius);
+        return damage.Value == 0.0 ? damage : Shield(hit, hit.Position, target, damage, self);
+    }
+
+    /// <summary>The head of <see cref="Resolve"/>: the damage by the target's distance alone, before what lies between.</summary>
+    /// <param name="hit">The blast.</param>
+    /// <param name="target">Where the target is.</param>
+    /// <param name="radius">How big the target is.</param>
+    /// <returns>The damage.</returns>
+    public static Fpu Reach(in Igi2ExplosionHit hit, Vector3d target, float radius)
+    {
         Vector3d e = hit.Position;
         Fpu dx = (Fpu)e.X - target.X, dy = (Fpu)e.Y - target.Y;
         float dz = ((Fpu)e.Z - target.Z).F;
@@ -786,11 +816,12 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             damage = share * hit.Damage;
         }
 
-        if (damage.Value == 0.0)
-        {
-            return damage;
-        }
+        return damage;
+    }
 
+    // The tail of Resolve: the line between, which each face it crosses takes penetration from.
+    private Fpu Shield(in Igi2ExplosionHit hit, Vector3d e, Vector3d target, Fpu damage, object? self)
+    {
         float initial = ((Fpu)hit.FullRange * 0.00024414062f).F;
         float penetration = initial;
         Vector3d start = new(e.X, e.Y, ((Fpu)e.Z + BlastLift).Value);

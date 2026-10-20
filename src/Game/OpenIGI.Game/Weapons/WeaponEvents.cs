@@ -36,13 +36,20 @@ public interface IWeaponCollisionTarget
 /// vector, the shooter, the weapon and the ammunition), in their own types. A target of the same game reads it; one of
 /// another game reads the fields above.
 /// </param>
+/// <param name="Category">
+/// The kind of weapon that fired, which both engines number alike (a weapon type's <c>Weapon Type</c>): a knife's blow is
+/// not multiplied by the zone it lands on, and a death is told by it.
+/// </param>
+/// <param name="Bone">The struck human's bone, the intersection's sector, or -1 for none: the zone the hit lands on.</param>
 public readonly record struct WeaponHit(
     Vector3d Position,
     Vector3f Normal,
     float Damage,
     Vector3f ShotVector,
     object? Shooter,
-    object? Context);
+    object? Context,
+    WeaponCategory Category = WeaponCategory.Gun,
+    int Bone = -1);
 
 /// <summary>An object that answers a bullet striking it: a type with a <c>WeaponHit</c> handler.</summary>
 public interface IWeaponHitTarget

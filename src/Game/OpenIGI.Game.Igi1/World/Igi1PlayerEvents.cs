@@ -28,15 +28,18 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
         {
             TakeRound(round);
         }
+        else if (mission.Player is { } player)
+        {
+            // Another game's round: where it meets the player's body is this game's to find.
+            TakeRound(Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, player.Body.Position, new Vector3f(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f))));
+        }
     }
 
     /// <inheritdoc/>
     public void ExplosionHit(HumanTask human, in ExplosionHit hit)
     {
-        if (hit.Context is Igi1ExplosionHit blast)
-        {
-            blasts.BlastPlayer(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
-        }
+        Igi1ExplosionHit blast = hit.Context as Igi1ExplosionHit ?? Igi1ExplosionHit.FromShared(hit);
+        blasts.BlastPlayer(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
     }
 
     /// <summary>One call of the player's hit handler (<c>0x412440</c>): the damage, the grunt, the shake, the flash and the shove.</summary>
