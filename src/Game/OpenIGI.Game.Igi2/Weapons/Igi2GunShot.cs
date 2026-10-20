@@ -315,8 +315,6 @@ public sealed class Igi2GunShot
     /// <returns>How many were found.</returns>
     public int FindHearableIntersections(Vector3d target, Span<Vector3d> into)
     {
-        const double Near = 8192.0;
-        const double Scale = 0.000244140625;
         int found = 0;
         foreach (Igi2GunShotInstant bullet in _instants)
         {
@@ -325,44 +323,59 @@ public sealed class Igi2GunShot
                 break;
             }
 
-            Vector3d p0 = bullet.Position;
             Fpu vx = (Fpu)bullet.Range * bullet.Direction.X;
             Fpu vy = (Fpu)bullet.Range * bullet.Direction.Y;
             Fpu vz = (Fpu)bullet.Range * bullet.Direction.Z;
-            if (!(Igi2AiMath.DistanceInRegister(p0, target).Value >= Near))
+            if (Hear(bullet.Position, vx, vy, vz, target, out Vector3d point))
             {
-                into[found++] = p0;
-                continue;
-            }
-
-            Vector3d p1 = new((vx + p0.X).Value, (vy + p0.Y).Value, (vz + p0.Z).Value);
-            if (Igi2AiMath.DistanceInRegister(p1, target).Value < Near)
-            {
-                into[found++] = p1;
-                continue;
-            }
-
-            Fpu length = ((vz * vz) * Scale) + ((vy * vy) * Scale) + ((vx * vx) * Scale);
-            if (!(length.Value > 0.0))
-            {
-                continue;
-            }
-
-            Fpu along = (((((Fpu)target.Y - p0.Y) * vy) * Scale) + ((((Fpu)target.Z - p0.Z) * vz) * Scale)
-                + ((((Fpu)target.X - p0.X) * vx) * Scale)) / length;
-            if (!(along.Value >= 0.0) || !(along.Value <= 1.0))
-            {
-                continue;
-            }
-
-            Vector3d nearest = new(((vx * along) + p0.X).Value, ((vy * along) + p0.Y).Value, ((vz * along) + p0.Z).Value);
-            if (Igi2AiMath.DistanceInRegister(nearest, target).Value < Near)
-            {
-                into[found++] = nearest;
+                into[found++] = point;
             }
         }
 
         return found;
+    }
+
+    /// <summary>Where a line passes a point within two metres, as <see cref="FindHearableIntersections"/> hears one bullet.</summary>
+    /// <param name="origin">Where the line starts.</param>
+    /// <param name="end">Where it ends.</param>
+    /// <param name="target">The point listened from.</param>
+    /// <param name="point">Receives where it is heard.</param>
+    /// <returns>Whether it is heard.</returns>
+    public static bool Hears(Vector3d origin, Vector3d end, Vector3d target, out Vector3d point) =>
+        Hear(origin, (Fpu)end.X - origin.X, (Fpu)end.Y - origin.Y, (Fpu)end.Z - origin.Z, target, out point);
+
+    // One bullet of GunShot_FindHearableIntersections: its muzzle, its end, or the nearest point of its line.
+    private static bool Hear(Vector3d p0, Fpu vx, Fpu vy, Fpu vz, Vector3d target, out Vector3d point)
+    {
+        const double Near = 8192.0;
+        const double Scale = 0.000244140625;
+        point = p0;
+        if (!(Igi2AiMath.DistanceInRegister(p0, target).Value >= Near))
+        {
+            return true;
+        }
+
+        point = new((vx + p0.X).Value, (vy + p0.Y).Value, (vz + p0.Z).Value);
+        if (Igi2AiMath.DistanceInRegister(point, target).Value < Near)
+        {
+            return true;
+        }
+
+        Fpu length = ((vz * vz) * Scale) + ((vy * vy) * Scale) + ((vx * vx) * Scale);
+        if (!(length.Value > 0.0))
+        {
+            return false;
+        }
+
+        Fpu along = (((((Fpu)target.Y - p0.Y) * vy) * Scale) + ((((Fpu)target.Z - p0.Z) * vz) * Scale)
+            + ((((Fpu)target.X - p0.X) * vx) * Scale)) / length;
+        if (!(along.Value >= 0.0) || !(along.Value <= 1.0))
+        {
+            return false;
+        }
+
+        point = new(((vx * along) + p0.X).Value, ((vy * along) + p0.Y).Value, ((vz * along) + p0.Z).Value);
+        return Igi2AiMath.DistanceInRegister(point, target).Value < Near;
     }
 
 

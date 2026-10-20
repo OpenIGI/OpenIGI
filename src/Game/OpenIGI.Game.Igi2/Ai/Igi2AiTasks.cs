@@ -4,13 +4,20 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Ai;
 
 /// <summary>An enemy soldier's body as level data places it, I.G.I. 2's <c>HumanSoldier</c>.</summary>
-/// <remarks>Its parameters are the <c>Human</c> ones it inherits; its <c>HumanAI</c> is a child.</remarks>
-public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask
+/// <remarks>
+/// <para>Its parameters are the <c>Human</c> ones it inherits; its <c>HumanAI</c> is a child.</para>
+/// <para>
+/// It is the task the engine's weapon and explosion events are sent to, as retail's <c>HumanSoldier</c> is: the port keeps the
+/// soldier's state on its <see cref="Body"/>, which answers them. Before the body is made it stops no round and takes nothing.
+/// </para>
+/// </remarks>
+public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "HumanSoldier";
@@ -45,6 +52,15 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask
 
     /// <summary>Gets or sets the soldier's body, or <see langword="null"/> before the level's gameplay made one.</summary>
     public Igi2HumanSoldier? Body { get; set; }
+
+    /// <inheritdoc/>
+    public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Body?.EvaluateWeaponCollision(query) ?? false;
+
+    /// <inheritdoc/>
+    public void WeaponHit(in WeaponHit hit) => ((IWeaponHitTarget?)Body)?.WeaponHit(hit);
+
+    /// <inheritdoc/>
+    public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body)?.ExplosionHit(hit);
 
     /// <inheritdoc/>
     /// <remarks>

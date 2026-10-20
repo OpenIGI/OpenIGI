@@ -341,6 +341,38 @@ public sealed class RetailIgi2SoldierHarmTests
     }
 
     /// <summary>
+    /// Another game's shot finds the soldiers among the level's bodies: the line meets a soldier's own bone collider on the bone
+    /// this game's world finds, its task takes the hit, and the dead stop no more rounds.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Another_games_shot_finds_the_soldier_among_the_levels_bodies()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2Intersection expected = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
+        Igi2ShootableSoldiers soldiers = new(m.Tree.OfType<Ai.Igi2HumanSoldierTask>());
+        LevelBodies bodies = new();
+        bodies.Add(soldiers);
+
+        Vector3d p = body.Position;
+        Vector3d from = new(p.X + 20480.0, p.Y, p.Z + 4096.0);
+        Vector3d to = new(p.X - 20480.0, p.Y, p.Z + 4096.0);
+        static WeaponHit Round(Game.Player.HumanHit met) =>
+            new(met.Position, default, 0.01f, new Vector3f(-40960f, 0f, 0f), null, new object(), WeaponCategory.Gun, met.Bone);
+
+        Assert.True(bodies.Shoot(from, to, null, Round, out Game.Player.HumanHit hit));
+        Assert.Equal(expected.Sector, hit.Bone);
+        Assert.Equal(expected.Position.X, hit.Position.X, 1.0);
+        Assert.Equal(body.DamagePartOf(Hit(body, expected, 0.01f)), body.Damage.LastPart);
+        Assert.True(body.Damage.Damage > 0f);
+
+        Assert.True(bodies.Shoot(from, to, null, met => Round(met) with { Damage = 1000f }, out _));
+        Assert.True(body.IsDead);
+        Assert.DoesNotContain(soldiers.Bodies(), b => b.Task is Ai.Igi2HumanSoldierTask { Body: var held } && ReferenceEquals(held, body));
+    }
+
+    /// <summary>
     /// A blow from in front lands on the chest and one from behind on the back (<c>HumanSoldier_CloseCombatDamageHandler</c>,
     /// <c>igi2 0x4EBCD0</c>), each at its zone's multiplier; enough of them kill, how it died 4.
     /// </summary>
