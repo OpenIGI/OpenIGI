@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -99,7 +100,7 @@ public sealed partial class Igi2HumanAi
                 continue;
             }
 
-            if (item.Target is Igi2Human { IsDead: true })
+            if (item.Target is IAiHuman { IsDead: true })
             {
                 continue;
             }
@@ -174,7 +175,7 @@ public sealed partial class Igi2HumanAi
                 item.TicksToFullUpdate = 52;
             }
 
-            if (shooter is Igi2Human human)
+            if (shooter is IAiHuman human)
             {
                 item.LastVisiblePosition = human.OriginalViewPosition;
                 record.Position = item.LastVisiblePosition;
@@ -305,7 +306,7 @@ public sealed partial class Igi2HumanAi
         foreach (Igi2DetectionItem item in Detection.Enemies.ToArray())
         {
             Igi2DetectionInfo info = item.Target.DetectionInfo();
-            Igi2Human? human = item.Target as Igi2Human;
+            IAiHuman? human = item.Target as IAiHuman;
             bool onVehicle = Squad?.SquadType == 2;
             if (onVehicle && !item.IsFullVisible)
             {
@@ -380,10 +381,7 @@ public sealed partial class Igi2HumanAi
             }
             else
             {
-                if (item.Target is Igi2HumanPlayer player
-                    && ((player.Pose == Igi2HumanPose.Crouching && player.Locomotion.CurrentState == Igi2PlayerState.Crouch)
-                        || (player.Pose == Igi2HumanPose.LyingFlat && player.Locomotion.CurrentState is Igi2PlayerState.Flat or Igi2PlayerState.FlatCrawl))
-                    && distance > 10240f)
+                if (item.Target is IAiPlayer { IsKeepingLow: true } && distance > 10240f)
                 {
                     suppressed = true;
                 }
@@ -400,7 +398,7 @@ public sealed partial class Igi2HumanAi
                 }
             }
 
-            if (onVehicle && item.Target is Igi2HumanPlayer)
+            if (onVehicle && item.Target is IAiPlayer)
             {
                 item.IsKeepInListAfterLostSight = true;
             }
@@ -417,7 +415,7 @@ public sealed partial class Igi2HumanAi
     private int IdentificationDelay(float distance, IIgi2Detectable target)
     {
         int delay = Fpu.ToInt32((((Fpu)distance * 2.441406286379788e-05) * Tweaks[Igi2AiTweakIndex.DetectionTimeDistanceFactor]) * 30.0);
-        if (target is Igi2Human && target.VisibilityFactor is float visible)
+        if (target is IAiHuman && target.VisibilityFactor is float visible)
         {
             delay += Fpu.ToInt32(((Fpu)1.0 - visible) * 30.0);
             delay = World.Difficulty switch
@@ -460,7 +458,7 @@ public sealed partial class Igi2HumanAi
     {
         foreach (Igi2DetectionItem item in Detection.Friends.ToArray())
         {
-            if (item.IsFullVisible && item.Target is Igi2Human { IsDead: true } dead)
+            if (item.IsFullVisible && item.Target is IAiHuman { IsDead: true } dead)
             {
                 Receive(new Igi2AiEvent(22, dead.Team, 0x100, 0f, dead.Position, default, dead, dead));
             }
@@ -472,7 +470,7 @@ public sealed partial class Igi2HumanAi
     {
         if (GetTarget(visibleOnly: true) is { } target)
         {
-            if (target is Igi2Human)
+            if (target is IAiHuman)
             {
                 if (Detection.Find(target) is { } item)
                 {

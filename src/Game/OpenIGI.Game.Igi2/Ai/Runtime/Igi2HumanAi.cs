@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Soldiers;
@@ -501,7 +502,7 @@ public sealed partial class Igi2HumanAi : IIgi2SoldierMind
             return false;
         }
 
-        Igi2Human? originator = aiEvent.Originator as Igi2Human;
+        IAiHuman? originator = aiEvent.Originator as IAiHuman;
         if ((flags & 4) != 0 && originator is null)
         {
             return false;

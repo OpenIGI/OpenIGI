@@ -650,7 +650,7 @@ public sealed class Igi2AiSquadLeapfrog : Igi2AiSquadAction
         _node = words.Int();
         _movingTeam = words.Int();
         _timer = words.Int();
-        _target = words.Int() == 1 ? squad.World.Player : null;
+        _target = words.Int() == 1 ? squad.World.Player as Detection.IIgi2Detectable : null;
         _spread.LoadState(words);
     }
 

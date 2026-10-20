@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -106,7 +107,7 @@ public sealed partial class Igi2HumanAi
         int count = 0;
         foreach (Igi2DetectionItem item in Detection.Enemies)
         {
-            if (item.IsFullVisible && item.Target is not Igi2Human { IsDead: true })
+            if (item.IsFullVisible && item.Target is not IAiHuman { IsDead: true })
             {
                 count++;
             }
@@ -124,7 +125,7 @@ public sealed partial class Igi2HumanAi
         float bestDistance = 0f;
         foreach (Igi2DetectionItem item in Detection.Enemies)
         {
-            if (item.Target is Igi2Human { IsDead: true })
+            if (item.Target is IAiHuman { IsDead: true })
             {
                 continue;
             }
@@ -412,7 +413,7 @@ public sealed partial class Igi2HumanAi
             }
 
             IIgi2Detectable? enemy = GetTarget(visibleOnly: true) ?? NearestLiveEnemyListed();
-            if (enemy is Igi2Human human)
+            if (enemy is IAiHuman human)
             {
                 Vector3d e = human.Position, n = node.Position;
                 float ex = (float)(e.X - n.X), ey = (float)(e.Y - n.Y);

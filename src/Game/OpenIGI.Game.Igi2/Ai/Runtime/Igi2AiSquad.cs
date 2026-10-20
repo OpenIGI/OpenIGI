@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -373,7 +374,7 @@ public sealed partial class Igi2AiSquad
         if (_targets.Count == 0)
         {
             PopMembersActionStacks();
-            if (enemy is Igi2HumanPlayer player && !World.IsTargetSeenByOtherSquads(this, player) && (Flags & 4) == 0)
+            if (enemy is IAiPlayer player && !World.IsTargetSeenByOtherSquads(this, enemy) && (Flags & 4) == 0)
             {
                 Flags |= 4;
                 player.NoteDetected();

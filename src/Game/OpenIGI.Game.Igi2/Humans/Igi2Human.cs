@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// the derived class.
 /// </para>
 /// </remarks>
-public abstract partial class Igi2Human
+public abstract partial class Igi2Human : Game.Ai.IAiHuman
 {
     /// <summary>The animation controller's ticks per game frame, <c>AnimController_nTicksPerFrame</c> (<c>igi2 0x63681C</c>).</summary>
     public const int AnimationTicksPerFrame = 160;

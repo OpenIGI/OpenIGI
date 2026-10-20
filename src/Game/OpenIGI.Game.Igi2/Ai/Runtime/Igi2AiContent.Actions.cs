@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -651,7 +652,7 @@ public static partial class Igi2AiContent
         }
 
         Vector3d at = seen.Target.DetectablePosition;
-        if (seen.Target is Igi2Human)
+        if (seen.Target is IAiHuman)
         {
             at = new Vector3d(at.X, at.Y, at.Z + 2048.0);
         }

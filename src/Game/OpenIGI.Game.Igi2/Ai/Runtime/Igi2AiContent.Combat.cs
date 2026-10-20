@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -116,7 +117,7 @@ public static partial class Igi2AiContent
         }
 
         IIgi2Detectable? target = ai.GetTarget(visibleOnly: true) ?? ai.NearestLiveEnemyListed();
-        if (target is Igi2Human human)
+        if (target is IAiHuman human)
         {
             Vector3d a = human.Position, b = soldier.Position;
             double dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
@@ -595,7 +596,7 @@ public static partial class Igi2AiContent
                 Done(ai, item);
                 return;
             case Igi2PatrolCommand.WaitForPerson:
-                if (ai.World.TaskById(parameter) is not Igi2Human person || person.IsDead)
+                if (ai.World.TaskById(parameter) is not IAiHuman person || person.IsDead)
                 {
                     advance = true;
                     break;

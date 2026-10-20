@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -168,7 +169,7 @@ public static class Igi2LevelAi
     /// <summary>Where a task is: a human's position, or the position a placed task was given.</summary>
     private static Vector3d? PositionOf(object? thing) => thing switch
     {
-        Igi2Human human => human.Position,
+        IAiHuman human => human.Position,
         IIgi2PlacedTask placed when placed.TryGetValue("Position", out object? value) && value is Vector3d position => position,
         _ => null,
     };

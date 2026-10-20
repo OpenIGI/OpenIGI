@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
@@ -493,7 +494,7 @@ public sealed class Igi2HumanAiNatives
             Priority = _world.HandlerPriority,
             Position = record.Position,
             Direction = record.Direction,
-            Reference = record.Originator ?? (record.Reference as Igi2Human),
+            Reference = record.Originator ?? (record.Reference as IAiHuman),
             SpecificInt = record.Specific is int specific ? specific : 0,
         };
         passed.Receivers.Add(ai);
@@ -650,7 +651,7 @@ public sealed class Igi2HumanAiNatives
             return Done;
         }
 
-        if (_world.CurrentEvent?.Originator is Igi2Human raiser && Igi2AiMath.Distance(raiser.Position, ai.Soldier.Position) < 122880.0)
+        if (_world.CurrentEvent?.Originator is IAiHuman raiser && Igi2AiMath.Distance(raiser.Position, ai.Soldier.Position) < 122880.0)
         {
             return Done;
         }

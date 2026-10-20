@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine;
@@ -87,7 +88,7 @@ public sealed class Igi2AiWorld
     public Weapons.Igi2FireTaskTypes FireTaskTypes { get; set; }
 
     /// <summary>Gets or sets the player, whom a soldier at a jammed door listens for.</summary>
-    public Player.Igi2HumanPlayer? Player { get; set; }
+    public IAiPlayer? Player { get; set; }
 
     /// <summary>Gets or sets the level's task with an id, <c>Level_GetQTaskFromLevelQTaskID</c>.</summary>
     public Func<int, object?> TaskById { get; set; } = static _ => null;
@@ -260,7 +261,7 @@ public sealed class Igi2AiWorld
     {
         ArgumentNullException.ThrowIfNull(shot);
         const int CreatorTeam = 1;
-        Igi2Human? ignored = shot.Ignore as Igi2Human;
+        IAiHuman? ignored = shot.Ignore as IAiHuman;
         Span<Vector3d> heard = stackalloc Vector3d[32];
         foreach (Igi2Human listener in Humans)
         {
