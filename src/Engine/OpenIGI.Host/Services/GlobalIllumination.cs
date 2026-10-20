@@ -55,6 +55,9 @@ internal interface IGlobalIlluminationHost
     /// <param name="eye">The eye.</param>
     /// <returns>The binding.</returns>
     DistanceFieldBinding DescribeDistanceField(Vector3d eye);
+
+    /// <summary>Gets the level's baked probe field, which the surface cache's radiance is gathered against, or null before it lands.</summary>
+    IrradianceVolume? ProbeField { get; }
 }
 
 /// <summary>
@@ -92,6 +95,32 @@ internal sealed class GlobalIllumination(
     // A cinematic zoom moves it a ten-thousandth a frame and is reprojected through; a scope snaps it by far
     // more than this in one, and its history is the unzoomed view's.
     private const float GiCutZoom = 0.1f;
+
+    // Stand-down state for the surface-cache retrace. The world-space relight and the amortised bounce
+    // re-derive the answer the cache already holds whenever nothing has moved -- and "moved" for a
+    // VIEW-INDEPENDENT cache means the distance field scrolled new coverage in (a real walk of metres) or
+    // the sun was scrubbed, NOT the camera turning or drifting a few centimetres. Once the cache has settled
+    // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
+    // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
+    private int _giStaticFrames;
+
+    /// <summary>How many frames a card's estimate averages over while following a moving sun.</summary>
+    /// <remarks>
+    /// Short enough to keep up with a scrub, long enough that a card's single noisy bounce does not show:
+    /// at one, every relight replaced the last outright and the walls clouded over while the key was held.
+    /// </remarks>
+    private const int GiSunFollowTemporalFrames = 4;
+    private bool _giSunValid;
+    private Vector3f _lastGiSunDirection;
+    private Vector3f _lastGiSunColour;
+
+    /// <summary>How many frames the near relight is spread over while following a moving sun.</summary>
+    private const int GiSunFollowSpread = 4;
+
+    // The shortest the retrace keeps running after the last change before it idles. The real window is
+    // worked out per frame from the amortisation spread and the temporal frames -- see where retraceGi is
+    // decided -- so the cache has converged before it stops.
+    private const int GiSettleFrames = 64;
 
     public const int GiSunFollowFrames = 24;
 
@@ -1452,5 +1481,239 @@ internal sealed class GlobalIllumination(
             state.ScreenGi.HasHistory = false;
             state.ScreenGi.ResolveHasHistory = false;
         }
+    }
+
+    /// <summary>Hands the device this frame's indirect light: the probe field, the sky's fill, the surface cache and the distance field.</summary>
+    public void PrepareSceneLighting(FrameLoopState state, Camera3D eye, DirectionalLightSettings light)
+    {
+        // The bake stored how much sky reaches each probe, never what colour it was, so the
+        // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
+        // on its ambient exactly as the fog does.
+        // The clipmaps follow the camera. Each level is rebuilt only when the camera has left it,
+        // which for the outer levels is almost never -- I.G.I.'s geometry is static, so a clipmap
+        // only becomes wrong by being walked out of.
+        if (DistanceField is { } liveField)
+        {
+            // The real-time GI's compute runs here, before the G-buffer, so this is where it is
+            // timed. Without this bracket the bounce below -- the frame's single most expensive pass
+            // when real-time GI is on -- was measured by nothing, and the overlay's total was a frame
+            // that did not exist.
+            _device.BeginStageTiming(RenderStage.GlobalIllumination);
+
+            // Scrolls the clipmaps to follow the camera, rebuilding whichever level it walked out
+            // of. How many rebuilt is the retrace's "did the cache's coverage actually change"
+            // signal: nought means the camera only turned or drifted within a cell, and a
+            // view-independent cache needs no retrace for that -- which is what lets it idle at rest.
+            int giRebuilt = liveField.Update(eye.Position);
+
+            // Once, after the first build, and only when asked. A wrong distance field produces a
+            // picture that is merely subtly wrong several stages later, so the only way to know it
+            // is right is to compare it against the exact answer at the same points.
+            if (!FieldValidated && RenderCVars.DistanceFieldValidate.Value && DistanceFieldScene is { } exact)
+            {
+                FieldValidated = true;
+                // Every level, not just the innermost. A trace falls through to the outer
+                // clipmaps as soon as it leaves the fine one, so an unbuilt level 2 is invisible to
+                // a check that only ever looked at level 0 -- and it shadows everything.
+                for (int level = 0; level < liveField.Settings.Levels; level++)
+                {
+                    DistanceFieldValidation.Compare(_device, liveField, exact, level, _logger);
+                }
+            }
+
+            // Re-lit whenever a clipmap level moved, and only then. The clipmaps follow the camera
+            // and reach a few hundred metres, so a page on the far side of the level has no field
+            // to trace against -- re-lighting as they move is what brings each page's shadow in as
+            // the player approaches it. Doing it every frame regardless would be tens of thousands
+            // of work groups spent re-deriving an answer that had not changed.
+            // The second clause is what makes a dump deterministic. Re-lighting is otherwise driven
+            // by a clipmap having moved, which is a race against the field bake landing on its
+            // worker: the same command produced two dumps on one run and one on the next, and when
+            // it produced one the file held the UNSHADOWED load-time pass while looking exactly
+            // like the shadowed one. That is how a probe came back reporting nothing at all.
+            bool wantDump = !state.CardLightingDumped
+                && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 }
+
+                // Not the first qualifying frame. On a backend that records a frame's compute and
+                // submits it at the end, a readback taken on the same frame as the dispatches sees
+                // the atlas as it was before them -- which reads exactly like a bounce that
+                // produced nothing, and cost a long detour to tell apart from one.
+                && CardBounceFrame >= 8;
+
+            // Whether the surface cache's inputs actually changed this frame: a level scrolled new
+            // coverage in, the sun was scrubbed, or a dump was asked for. Turning or nudging the
+            // camera changes nothing a view-independent cache holds, so it does not count -- which is
+            // what lets the retrace idle while the player stands roughly still. The sun is fixed
+            // unless [ or ] is held, so a plain per-frame compare catches a scrub and nothing else.
+            bool giSunMoved = !_giSunValid
+                || MathF.Abs(light.Direction.X - _lastGiSunDirection.X) > 1e-4f
+                || MathF.Abs(light.Direction.Y - _lastGiSunDirection.Y) > 1e-4f
+                || MathF.Abs(light.Direction.Z - _lastGiSunDirection.Z) > 1e-4f
+                || MathF.Abs(light.Colour.X - _lastGiSunColour.X) > 1e-4f
+                || MathF.Abs(light.Colour.Y - _lastGiSunColour.Y) > 1e-4f
+                || MathF.Abs(light.Colour.Z - _lastGiSunColour.Z) > 1e-4f;
+            _lastGiSunDirection = light.Direction;
+            _lastGiSunColour = light.Colour;
+            _giSunValid = true;
+
+            // Reset the settle counter on any real change; otherwise let it climb. The retrace runs
+            // while something is moving and for a settling window after, then idles -- the cache
+            // keeps its converged atlas with none of the ray tracing, so a still scene stops paying
+            // the periodic covering-slice spike that halved its frame rate.
+            bool giChanged = wantDump || giRebuilt > 0 || giSunMoved;
+            // Long enough for the cache to actually converge before it stops: a tile is traced once
+            // per amortisation spread and moves 1/(1+temporal frames) of the way each time, so its
+            // time constant is spread x (1 + frames) -- some eight hundred frames at every modern
+            // preset. A fixed 64 froze it a few traces in, with most of the error still there.
+            int giSettle = Math.Max(
+                GiSettleFrames,
+                2 * Math.Max(RenderCVars.GiAmortize.Value, 1) * (1 + Math.Max(RenderCVars.GiTemporalFrames.Value, 1)));
+            _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, giSettle + 1);
+
+            // A scrub of the clock, and the moments after it: the cache follows the sun at once instead
+            // of over the long blend tuned for a sun that does not move. Held to that long blend, a scrub
+            // into the night left every surface lit by the day's bounce for twenty seconds -- the world
+            // stayed bright under a black sky. The screen gather's own history is left alone: it is ten
+            // frames already, and throwing it away every frame of a scrub showed its raw single-frame
+            // noise as clouds on every wall.
+            SunMovedFrames = giSunMoved ? 0 : Math.Min(SunMovedFrames + 1, GiSunFollowFrames + 1);
+            bool followingSun = SunMovedFrames <= GiSunFollowFrames;
+            bool retraceGi = _giStaticFrames <= giSettle;
+
+            if (CardLighting is { } litCards)
+            {
+                // How many frames the relight and the bounce spread their tiles across, from the cvar
+                // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
+                litCards.BounceFrameSpread = followingSun
+                    ? Math.Min(RenderCVars.GiAmortize.Value, GiSunFollowSpread)
+                    : RenderCVars.GiAmortize.Value;
+                litCards.MinSliceTiles = RenderCVars.GiMinSlice.Value;
+
+                // How many frames a tile's estimate accumulates over, the pair to the spread above:
+                // the two together set how much of one retrace is admitted and how often, which is
+                // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
+                litCards.TemporalFrames = followingSun
+                    ? Math.Min(RenderCVars.GiTemporalFrames.Value, GiSunFollowTemporalFrames)
+                    : RenderCVars.GiTemporalFrames.Value;
+
+                // Where the steady-state refresh is centred and how far it reaches. The cache spans
+                // the whole level and the cursor used to walk all of it every round, so a fixed
+                // share of every frame went on cards in parts of a map the player is nowhere near --
+                // and past the distance field's own reach, where the relight cannot even arrive at a
+                // different answer. Relative to the cache's origin, as everything in its space is,
+                // and differenced in double precision before the cast: the level sits kilometres out.
+                litCards.ActiveCentre = new Vector3f(
+                    (float)(eye.Position.X - litCards.Origin.X),
+                    (float)(eye.Position.Y - litCards.Origin.Y),
+                    (float)(eye.Position.Z - litCards.Origin.Z));
+                litCards.ActiveRadius = RenderCVars.GiCacheRadius.Value;
+
+                // The direct relight: the whole cache at once for a deterministic dump, otherwise a
+                // slice a frame. The sun is fixed, so the only thing the direct term has to track is
+                // the clipmap scrolling new coverage under a card as the camera moves -- and doing
+                // that over the whole cache on the scroll frame was a seventy-millisecond stall that
+                // read as the game lurching every few steps. Sliced, the new shadows arrive over a
+                // handful of frames with no spike, and the bounce keeps its long-running history
+                // instead of being re-seeded from scratch on every scroll.
+                // Skipped once the cache has settled and nothing is scrolling or scrubbing: the sun
+                // is fixed and no new coverage is arriving, so the slice would re-trace the direct
+                // term it already holds. That idle is the whole fix for the at-rest spike.
+                if (retraceGi)
+                {
+                    litCards.Light(
+                        light is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
+
+                        // The SAME effective sun the deferred lighting shades with -- colour times
+                        // both scales -- or the bounce is lit by a different key than the screen and
+                        // the two disagree wherever indirect light dominates.
+                        light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+                        _host.SkyFillColour(),
+                        liveField,
+                        RenderCVars.SurfaceCacheProbe.Value,
+                        amortize: !wantDump);
+                }
+            }
+
+            // The bounce accumulates EVERY frame -- an amortised radiosity. Each frame
+            // reads last frame's final and folds ONE more bounce in, so a still scene keeps filling
+            // with light toward its multi-bounce equilibrium (the "lighting up" over the first
+            // second) instead of holding at the two bounces the load pass seeded. This was gated on
+            // a clipmap rebuild, so a stationary interior never got past its first couple of bounces
+            // -- which is most of why a sunless room read dark: bounces three, four and five are
+            // what fill a room the sun never reaches. The feedback is clamped below one in the
+            // shader, so it converges rather than running away, and the 1/(1+frames) blend gives the
+            // ramp for free. Only when no diagnostic probe owns the direct atlas.
+            // Same stand-down as the relight: once settled with nothing scrolling or scrubbing, the
+            // scene has reached its multi-bounce equilibrium and folding another bounce in re-derives
+            // the same final -- so the bounce, the frame's single most expensive pass, idles too. The
+            // frame counter holds where it was, so the accumulation resumes rather than restarts when
+            // motion or a scrub brings the retrace back.
+            if (CardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
+            {
+                bounceCards.Bounce(
+                    liveField,
+                    boost: RenderCVars.GlobalIlluminationBoost.Value,
+                    temporalIndex: wantDump ? 0 : CardBounceFrame);
+                CardBounceFrame++;
+
+                // Dumped after the SHADOWED bounce rather than the load-time one, which runs before
+                // there is any field to trace against and would show the unshadowed answer.
+                if (wantDump && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
+                {
+                    state.CardLightingDumped = true;
+                    SurfaceCacheDebugDumps.CardLighting(
+                        _device, bounceCards, shadowInto, _logger, RenderCVars.SurfaceCacheProbe.Value);
+                }
+            }
+
+            // The world-space radiance cache: a grid of probes tracing the just-lit surface cache
+            // into the same L1-SH field the deferred pass samples, but held in world cells rather
+            // than on the moving screen -- so it stays stable under motion where the screen gather
+            // shimmers. Configured to the baked field's own layout so the two are interchangeable at
+            // the sampler, updated a slab a frame off the freshly bounced cache, and bound in place
+            // of the baked field for the deferred fill. Needs the baked field only for its grid.
+            if (RenderCVars.RadianceCache.Value != 0
+                && CardLighting is { } cacheCards
+                && _host.ProbeField is { } cacheGrid)
+            {
+                cacheCards.ConfigureRadianceCache(
+                    new Vector3d(cacheGrid.Origin.X, cacheGrid.Origin.Y, cacheGrid.Origin.Z),
+                    cacheGrid.Spacing,
+                    cacheGrid.CountX,
+                    cacheGrid.CountY,
+                    cacheGrid.CountZ);
+
+                cacheCards.UpdateRadianceCache(
+                    liveField,
+                    _host.SkyFillColour(),
+                    // A short running average while the level is warming up, so the cache climbs to
+                    // its converged value in a handful of frames rather than easing there over a
+                    // couple of seconds -- which is what read as the scene loading bright and dimming.
+                    // A long one after, where a slow average is what keeps the steady field from
+                    // shimmering under the per-sweep ray jitter.
+                    maxFrames: ExposureWarmup > 0 ? 6 : 32,
+                    scale: RenderCVars.RadianceCacheScale.Value,
+                    skyReject: RenderCVars.GlobalIlluminationLeakReject.Value);
+
+                _device.SetRealtimeProbeVolume(
+                    cacheCards.RadianceCacheRed,
+                    cacheCards.RadianceCacheGreen,
+                    cacheCards.RadianceCacheBlue,
+                    cacheCards.RadianceCacheDistance,
+                    cacheGrid.Origin,
+                    cacheGrid.Spacing,
+                    cacheGrid.CountX,
+                    cacheGrid.CountY,
+                    cacheGrid.CountZ);
+            }
+            else
+            {
+                _device.ClearRealtimeProbeVolume();
+            }
+
+            _device.EndStageTiming();
+        }
+
+        _device.SetDebugView(RenderCVars.Debug.Value);
     }
 }

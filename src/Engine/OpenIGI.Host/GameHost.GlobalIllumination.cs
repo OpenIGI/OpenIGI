@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Services;
@@ -41,5 +42,7 @@ public sealed partial class GameHost
         public void UpdateTerrainRaster() => host.UpdateTerrainRaster();
 
         public DistanceFieldBinding DescribeDistanceField(Vector3d eye) => host.DescribeDistanceField(eye);
+
+        public IrradianceVolume? ProbeField => host._baked.ProbeField;
     }
 }

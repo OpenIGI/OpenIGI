@@ -226,32 +226,6 @@ public sealed partial class GameHost : IDisposable
     }
     private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
 
-    // Stand-down state for the surface-cache retrace. The world-space relight and the amortised bounce
-    // re-derive the answer the cache already holds whenever nothing has moved -- and "moved" for a
-    // VIEW-INDEPENDENT cache means the distance field scrolled new coverage in (a real walk of metres) or
-    // the sun was scrubbed, NOT the camera turning or drifting a few centimetres. Once the cache has settled
-    // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
-    // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
-    private int _giStaticFrames;
-
-    /// <summary>How many frames the near relight is spread over while following a moving sun.</summary>
-    private const int GiSunFollowSpread = 4;
-
-    /// <summary>How many frames a card's estimate averages over while following a moving sun.</summary>
-    /// <remarks>
-    /// Short enough to keep up with a scrub, long enough that a card's single noisy bounce does not show:
-    /// at one, every relight replaced the last outright and the walls clouded over while the key was held.
-    /// </remarks>
-    private const int GiSunFollowTemporalFrames = 4;
-    private bool _giSunValid;
-    private Vector3f _lastGiSunDirection;
-    private Vector3f _lastGiSunColour;
-
-    // The shortest the retrace keeps running after the last change before it idles. The real window is
-    // worked out per frame from the amortisation spread and the temporal frames -- see where retraceGi is
-    // decided -- so the cache has converged before it stops.
-    private const int GiSettleFrames = 64;
-
     // The distance field's per-level sizes and ranges, reused frame to frame for LampFieldFor.
     private readonly float[] _lampFieldVoxels = new float[4];
     private readonly float[] _lampFieldRanges = new float[4];
