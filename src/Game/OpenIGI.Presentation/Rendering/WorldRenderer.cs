@@ -86,6 +86,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
     /// <summary>The destroyed-variant models, for placements whose head has been shot out.</summary>
     private readonly Dictionary<WorldPlacement, ResolvedModel?> _resolvedDestroyed = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<WorldPlacement, ResolvedModel?[]> _resolvedVariants = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>One frame's per-placement state, shared by every pass drawn from it.</summary>
     /// <remarks>
@@ -186,6 +187,9 @@ public sealed class WorldRenderer : IWorldPresenter
 
     /// <inheritdoc/>
     public IPlacementDestruction? Destruction { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementVariant? Variants { get; set; }
 
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
@@ -702,6 +706,7 @@ public sealed class WorldRenderer : IWorldPresenter
             DestroyResolvedQueries();
             _resolved.Clear();
             _resolvedDestroyed.Clear();
+            _resolvedVariants.Clear();
             _occlusionSettle.Forget();
         }
 
@@ -730,19 +735,42 @@ public sealed class WorldRenderer : IWorldPresenter
             entry.IsRotor = authored.IsRotor;
 
             bool destroyed = UsesDestroyedReplacement(authored);
-            Dictionary<WorldPlacement, ResolvedModel?> cache = destroyed ? _resolvedDestroyed : _resolved;
-            if (!cache.TryGetValue(authored, out ResolvedModel? model))
+            int variant = VariantOf(authored);
+            ResolvedModel? model;
+            if (variant >= 0)
             {
-                WorldPlacement displayed = DisplayedPlacement(authored);
-                model = ResolveModel(displayed);
-                entry.Displayed = displayed;
-                cache[authored] = model;
+                // A placement wearing one of its variants: each resolved once, the displayed one refreshed as it changes.
+                if (!_resolvedVariants.TryGetValue(authored, out ResolvedModel?[]? resolvedVariants))
+                {
+                    resolvedVariants = new ResolvedModel?[authored.Variants!.Count];
+                    _resolvedVariants[authored] = resolvedVariants;
+                }
+
+                model = resolvedVariants[variant];
+                if (model is null || entry.Displayed is null || variant != entry.Variant || destroyed != entry.WasDestroyed)
+                {
+                    WorldPlacement displayed = DisplayedPlacement(authored);
+                    model ??= resolvedVariants[variant] = ResolveModel(displayed);
+                    entry.Displayed = displayed;
+                }
             }
-            else if (entry.Displayed is null || destroyed != entry.WasDestroyed)
+            else
             {
-                entry.Displayed = DisplayedPlacement(authored);
+                Dictionary<WorldPlacement, ResolvedModel?> cache = destroyed ? _resolvedDestroyed : _resolved;
+                if (!cache.TryGetValue(authored, out model))
+                {
+                    WorldPlacement displayed = DisplayedPlacement(authored);
+                    model = ResolveModel(displayed);
+                    entry.Displayed = displayed;
+                    cache[authored] = model;
+                }
+                else if (entry.Displayed is null || destroyed != entry.WasDestroyed || entry.Variant >= 0)
+                {
+                    entry.Displayed = DisplayedPlacement(authored);
+                }
             }
 
+            entry.Variant = variant;
             entry.WasDestroyed = destroyed;
             entry.Model = model;
             if (model is null)
@@ -818,6 +846,18 @@ public sealed class WorldRenderer : IWorldPresenter
             {
                 _device.DestroyOcclusionQuery(model.Query);
                 model.Query = OcclusionQueryHandle.None;
+            }
+        }
+
+        foreach (ResolvedModel?[] variants in _resolvedVariants.Values)
+        {
+            foreach (ResolvedModel? model in variants)
+            {
+                if (model is { Query.IsValid: true })
+                {
+                    _device.DestroyOcclusionQuery(model.Query);
+                    model.Query = OcclusionQueryHandle.None;
+                }
             }
         }
     }
@@ -1092,6 +1132,7 @@ public sealed class WorldRenderer : IWorldPresenter
     {
         public bool Skip;
         public bool WasDestroyed;
+        public int Variant;
         public bool HasRotor;
         public bool IsRotor;
 
@@ -1184,9 +1225,24 @@ public sealed class WorldRenderer : IWorldPresenter
         return false;
     }
 
+    // Which of its variants a placement wears, or -1 for the model the walk placed: an index the title gives, whose binding resolved.
+    private int VariantOf(WorldPlacement placement) =>
+        placement.Variants is { } variants
+        && Variants?.VariantOf(placement) is int variant
+        && variant >= 0
+        && variant < variants.Count
+        && variants[variant] is not null
+            ? variant
+            : -1;
+
     private WorldPlacement DisplayedPlacement(WorldPlacement placement)
     {
         WorldPlacement displayed = placement;
+        if (VariantOf(placement) is >= 0 and int worn && placement.Variants![worn] is { } variantBinding)
+        {
+            displayed = placement with { Instance = variantBinding.Instance, Pack = variantBinding.Pack, Model = variantBinding.Model };
+        }
+
         if (placement.DestroyedReplacement is { } replacement && UsesDestroyedReplacement(placement))
         {
             displayed = placement with
@@ -1277,6 +1333,7 @@ public sealed class WorldRenderer : IWorldPresenter
         _geometry.Clear();
         _resolved.Clear();
         _resolvedDestroyed.Clear();
+        _resolvedVariants.Clear();
     }
 
     /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>
@@ -1350,6 +1407,7 @@ public sealed class WorldRenderer : IWorldPresenter
         DestroyResolvedQueries();
         _resolved.Clear();
         _resolvedDestroyed.Clear();
+        _resolvedVariants.Clear();
 
         _logger.Information(
             LogCategory,
@@ -1751,6 +1809,17 @@ public sealed class WorldRenderer : IWorldPresenter
             if (model is not null)
             {
                 model.Subsets = null;
+            }
+        }
+
+        foreach (ResolvedModel?[] variants in _resolvedVariants.Values)
+        {
+            foreach (ResolvedModel? model in variants)
+            {
+                if (model is not null)
+                {
+                    model.Subsets = null;
+                }
             }
         }
     }

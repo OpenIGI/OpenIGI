@@ -508,6 +508,7 @@ public sealed partial class GameHost
         // transforms dead: a gun's stand did not turn with the gun it holds.
         world.GenericPickups = _mission.GenericPickups;
         world.Interactions = _mission.Interactions;
+        world.Variants = _mission.Interactions;
         world.Doors = _mission.Doors;
         world.Elevators = _mission.Elevators;
 

@@ -808,7 +808,7 @@ public sealed class WorldInteraction
 /// <summary>
 /// All direct retail world interactions, with the original two-metre, most-head-on resolver.
 /// </summary>
-public sealed class WorldInteractionRegistry
+public sealed class WorldInteractionRegistry : IPlacementVariant
 {
     /// <summary><c>Human_UpdateActivate</c>'s regular query radius: two metres.</summary>
     public const double ActivateRadius = 8192.0;
@@ -816,6 +816,7 @@ public sealed class WorldInteractionRegistry
     private readonly List<WorldInteraction> _items = [];
     private readonly List<GeneratorPowerState> _generators = [];
     private int _updates;
+    private Dictionary<GameTask, WorldInteraction>? _byTask;
     private bool _inWalk;
 
     public IReadOnlyList<WorldInteraction> Items => _items;
@@ -1012,8 +1013,30 @@ public sealed class WorldInteractionRegistry
     public bool TryGet(GameTask task, out WorldInteraction? interaction)
     {
         ArgumentNullException.ThrowIfNull(task);
-        interaction = _items.FirstOrDefault(item => ReferenceEquals(item.Task, task));
-        return interaction is not null;
+        if (_byTask is null)
+        {
+            // The first item a task owns, as a search of the list in its order would find.
+            _byTask = new Dictionary<GameTask, WorldInteraction>(ReferenceEqualityComparer.Instance);
+            foreach (WorldInteraction item in _items)
+            {
+                _byTask.TryAdd(item.Task, item);
+            }
+        }
+
+        return _byTask.TryGetValue(task, out interaction);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A switch wears the model its update last picked (<see cref="WorldInteraction.ModelSlot"/>).</remarks>
+    public int VariantOf(WorldPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return placement.Variants is not null
+            && placement.Owner is { } owner
+            && TryGet(owner, out WorldInteraction? item)
+            && item!.Type == InteractionActivateType.Switch
+                ? item.ModelSlot
+                : -1;
     }
 
     /// <summary>Hands a round's <c>WeaponHit</c> to the interaction a task is, if it is one.</summary>

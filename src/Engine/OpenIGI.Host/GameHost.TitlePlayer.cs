@@ -98,6 +98,10 @@ public sealed partial class GameHost
         _mission.ForgetPlayer();
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
+        if (player.Variants is { } variants)
+        {
+            _world?.Variants = variants;
+        }
 
         // What the title's player holds in front of its eyes, drawn from the title's own packs.
         if (_titleFeatures.FirstPerson is not null)

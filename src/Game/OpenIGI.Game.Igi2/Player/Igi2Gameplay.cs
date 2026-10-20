@@ -833,6 +833,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public IPlacementDestruction? Destruction { get; set; }
 
+    /// <inheritdoc/>
+    public IPlacementVariant? Variants { get; set; }
+
     /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
     public Igi2LevelRun? Level { get; set; }
 

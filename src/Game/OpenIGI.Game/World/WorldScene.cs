@@ -96,6 +96,9 @@ public sealed class WorldScene
     /// <summary>The parameter naming the model a switch rests on — the one its level data assigns, e.g. <c>234_01_1</c>.</summary>
     public const string SwitchModelParameter = "On model";
 
+    /// <summary>A switch's five models, in the order its update picks them (<c>0x4450F0</c>, <c>+368 + 16 * slot</c>).</summary>
+    public static readonly string[] SwitchModelParameters = ["On model", "On pressed model", "Off model", "Off pressed model", "Destroyed model"];
+
     /// <summary>The retail task that owns a visible, destructible alarm speaker.</summary>
     public const string SirenType = "Siren";
 
@@ -670,6 +673,30 @@ public sealed class WorldScene
                     {
                         DestroyedReplacement = destroyed,
                     };
+                }
+
+                // A switch wears one of five models by its state (0x4450F0): on, on and pressed, off, off and pressed, and
+                // destroyed, each its own parameter.
+                if (string.Equals(declared.Type.Name, SwitchType, StringComparison.Ordinal))
+                {
+                    WorldModelBinding?[] variants = new WorldModelBinding?[SwitchModelParameters.Length];
+                    bool any = false;
+                    for (int worn = 0; worn < variants.Length; worn++)
+                    {
+                        if (declared.TryGetValue(SwitchModelParameters[worn], out object? rawVariant)
+                            && rawVariant is string variantName
+                            && variantName.Length > 0
+                            && TryResolveDestroyedBinding(variantName, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? variant))
+                        {
+                            variants[worn] = variant;
+                            any = true;
+                        }
+                    }
+
+                    if (any)
+                    {
+                        placement = placement with { Variants = variants };
+                    }
                 }
 
                 // ExplodeObject carries the same authored replacement convention as the camera head,

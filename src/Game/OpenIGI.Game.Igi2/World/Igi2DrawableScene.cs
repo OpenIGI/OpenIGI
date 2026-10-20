@@ -84,6 +84,7 @@ public static class Igi2DrawableScene
         int placementGroup = WorldPlacement.DefaultRenderGroup;
         string placementDestroyed = string.Empty;
         string placementMountedOn = string.Empty;
+        IReadOnlyList<string>? placementWears = null;
 
         int attached = 0;
         int attachmentsUnresolved = 0;
@@ -180,6 +181,12 @@ public static class Igi2DrawableScene
                 // What the object is drawn as once it is destroyed. Only the object's own model is swapped; its parts
                 // hang on as they were.
                 DestroyedReplacement = depth == 0 ? Replacement(placementDestroyed) : null,
+
+                // The models a switch wears by its state; only the object's own model changes.
+                Variants = depth == 0 && placementWears is { } wears && wears.Select(Replacement).ToArray() is var bound
+                    && Array.Exists(bound, static binding => binding is not null)
+                        ? bound
+                        : null,
             });
 
             // A model that attaches something whose model attaches it back would recurse forever. The
@@ -281,6 +288,7 @@ public static class Igi2DrawableScene
             placementGroup = placement.RenderGroup;
             placementDestroyed = placement.DestroyedModel;
             placementMountedOn = placement.MountedOn;
+            placementWears = placement.Wears;
 
             int index = 0;
             if (!Emit(

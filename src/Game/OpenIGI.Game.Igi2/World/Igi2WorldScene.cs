@@ -56,6 +56,10 @@ namespace OpenIGI.Game.Igi2.World;
 /// The magic task type of the attach point <paramref name="MountedModel"/> hangs on, or empty when it hangs on this model; see
 /// <see cref="Igi2PlacementBinding.MountedOn"/>.
 /// </param>
+/// <param name="Wears">
+/// The models the object may wear by its state, a switch's five (<see cref="WorldScene.SwitchModelParameters"/>), or
+/// <see langword="null"/> for an object with one.
+/// </param>
 public readonly record struct Igi2Placement(
     int LevelId,
     string TypeName,
@@ -69,7 +73,8 @@ public readonly record struct Igi2Placement(
     Matrix3f? Frame = null,
     IIgi2PlacementGeometry? Geometry = null,
     string DestroyedModel = "",
-    string MountedOn = "");
+    string MountedOn = "",
+    IReadOnlyList<string>? Wears = null);
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -528,7 +533,11 @@ public sealed class Igi2WorldScene
             frame,
             geometry,
             destroyed,
-            binding.MountedOn);
+            binding.MountedOn,
+            string.Equals(task.Type.Name, WorldScene.SwitchType, StringComparison.Ordinal)
+                ? [.. WorldScene.SwitchModelParameters.Select(name =>
+                    TryGetParameter(task, name, out object? raw) && raw is string worn ? worn : string.Empty)]
+                : null);
         return true;
     }
 }

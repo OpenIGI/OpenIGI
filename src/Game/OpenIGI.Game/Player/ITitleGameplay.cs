@@ -147,6 +147,9 @@ public interface ITitlePlayer
     /// <summary>Gets which of the title's own placements are destroyed, or <see langword="null"/> when nothing it placed can be.</summary>
     IPlacementDestruction? Destruction => null;
 
+    /// <summary>Gets which of their models the title's own placements wear, or <see langword="null"/> when none changes model.</summary>
+    IPlacementVariant? Variants => null;
+
     /// <summary>Gets the title's own save games for the running mission, or <see langword="null"/> when it keeps none.</summary>
     ITitleSaveGames? SaveGames => null;
 

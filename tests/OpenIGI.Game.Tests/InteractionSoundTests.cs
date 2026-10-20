@@ -72,6 +72,24 @@ public sealed class InteractionSoundTests
     }
 
     [RequiresGameDataFact]
+    public void A_switch_is_drawn_in_the_model_its_update_picked()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(1);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, DoorRegistry.Build(root), variables);
+        WorldScene scene = WorldScene.Build(mission, root);
+        WorldPlacement placed = scene.Placements.First(placement => placement.Variants is not null
+            && interactions.TryGet(placement.Owner!, out WorldInteraction? item) && item!.IsOn);
+        Assert.Equal(WorldScene.SwitchModelParameters.Length, placed.Variants!.Count);
+        Assert.True(interactions.TryGet(placed.Owner!, out WorldInteraction? button));
+
+        interactions.Tick();
+        Assert.Equal(0, interactions.VariantOf(placed));
+        button!.Press();
+        interactions.Tick();
+        Assert.Equal(1, interactions.VariantOf(placed));
+    }
+
+    [RequiresGameDataFact]
     public void A_powered_fence_buzzes_in_a_box_along_its_span_until_the_power_goes()
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(6);

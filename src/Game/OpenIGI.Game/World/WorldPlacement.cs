@@ -76,6 +76,12 @@ public sealed record WorldPlacement(
     /// </remarks>
     public WorldModelBinding? DestroyedReplacement { get; init; }
 
+    /// <summary>
+    /// Gets the models the placement may wear by its object's state, which <see cref="IPlacementVariant"/> picks among; an entry
+    /// that did not resolve is null, and draws the placed model. Null for a placement with one model.
+    /// </summary>
+    public IReadOnlyList<WorldModelBinding?>? Variants { get; init; }
+
     /// <summary>Gets whether the live task has no authored replacement and should no longer draw.</summary>
     public bool IsSuppressed { get; init; }
 
