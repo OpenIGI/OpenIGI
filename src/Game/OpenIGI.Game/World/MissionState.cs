@@ -98,6 +98,13 @@ public class MissionState : IInspectableMission
     /// <summary>Gets the explosion targets and humans another game made for the level, which join its lists after its own.</summary>
     public LevelJoiners Joined { get; } = new();
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the level lets the menus open: its scripts' <c>MenuManager_SetEnabled</c>, which
+    /// puts the manager in its do-nothing state (<c>0x4179B0</c> sets 16; <c>0x418080</c> runs nothing there) until it is enabled
+    /// again and goes idle (17). Project I.G.I.'s levels disable it for their cinematics.
+    /// </summary>
+    public bool MenusEnabled { get; set; } = true;
+
     /// <summary>Gets or sets the level's task tree, in the order its tasks were made.</summary>
     public LevelTask? LevelRoot { get; set; }
 
@@ -250,6 +257,7 @@ public class MissionState : IInspectableMission
     {
         Bodies.Clear();
         Joined.Clear();
+        MenusEnabled = true;
         TerrainMaterialRow = null;
         Solids = null;
         LevelRoot = null;

@@ -78,10 +78,13 @@ public sealed class Igi1MissionSetup(
                     // Cutscene start/stop expressions own this native in retail. The menu manager
                     // lives in the shared loop task tree, so update its live script context rather
                     // than returning success while leaving input enabled during cinematics.
-                    if (host.Game.Tasks.Root.Descendants().OfType<MenuManagerTask>().FirstOrDefault() is { ScriptContext: { } context }
-                        && arguments.Count >= 1)
+                    if (arguments.Count >= 1)
                     {
-                        context.IsEnabled = arguments.GetBoolean(0);
+                        mission.MenusEnabled = arguments.GetBoolean(0);
+                        if (host.Game.Tasks.Root.Descendants().OfType<MenuManagerTask>().FirstOrDefault() is { ScriptContext: { } context })
+                        {
+                            context.IsEnabled = mission.MenusEnabled;
+                        }
                     }
 
                     return QvmValue.FromInt32(1);

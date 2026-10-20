@@ -401,6 +401,7 @@ public sealed partial class GameHost
             && !_session.FailedMenu
             && _mission.Cutscenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }
+            && _mission.MenusEnabled
             && state.Shell is not null
             && _session.Mission is not null
             && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
