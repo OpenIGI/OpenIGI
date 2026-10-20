@@ -458,13 +458,16 @@ public sealed class ElevatorRegistry
         {
             int? splineId = ReadInt(declared, "SplineObj taskid");
             GameTask? spline = splineId is int id ? FindById(root, id) : null;
-            List<ElevatorFloor> floors = spline?.Children
+            List<DeclaredTask> waypoints = spline?.Children
                 .OfType<DeclaredTask>()
                 .Where(static child => string.Equals(child.Type.Name, "SplineObjWaypoint", StringComparison.Ordinal))
-                .Select(child => new ElevatorFloor(
-                    child.Id,
-                    ReadPosition(child, "Position", default)))
                 .ToList() ?? [];
+            List<ElevatorFloor> floors = [.. waypoints.Select((child, i) => new ElevatorFloor(
+                child.Id,
+                ReadPosition(child, "Position", default))
+            {
+                SegmentLength = i > 0 && spline is DeclaredTask splineObj ? SegmentLength(splineObj, waypoints[i - 1], child) : null,
+            })];
 
             if (floors.Count > 0)
             {
@@ -744,6 +747,38 @@ public sealed class ElevatorRegistry
 
         return null;
     }
+
+    // The length the waypoint's segment from the one before adds to the spline (0x500EF0 builds it by 0x4E4530): straight
+    // where the spline's Linear Segments or the waypoint's Align (+418) says, else the cubic sampled N = min(the waypoint's
+    // NumAreas, the spline's matrices a segment, 20) times. Automatic Orientation frames the waypoints by their neighbours,
+    // which no lift that bends uses, so such a segment keeps its straight run.
+    private static double? SegmentLength(DeclaredTask spline, DeclaredTask previous, DeclaredTask waypoint)
+    {
+        bool linear = ReadBool(spline, "Linear Segments") || ReadBool(waypoint, "Align");
+        if (!linear && (ReadBool(spline, "Automatic Orientation") || ReadBool(waypoint, "Automatic Orientation")))
+        {
+            return null;
+        }
+
+        int count = Math.Min(Math.Min(ReadInt(waypoint, "NumAreas") ?? 20, ReadInt(spline, "Number of Matrices / Segment") ?? 20), 20);
+        if (!linear && count < 1)
+        {
+            return null;
+        }
+
+        Vector3f a0 = previous.TryGetValue("Orientation", out object? r0) && r0 is Vector3f o0 ? o0 : default;
+        Vector3f a1 = waypoint.TryGetValue("Orientation", out object? r1) && r1 is Vector3f o1 ? o1 : default;
+        return RetailSplineSegment.Length(
+            ReadPosition(previous, "Position", default),
+            ReadPosition(waypoint, "Position", default),
+            RetailSplineSegment.AnglesToMatrix(a0.X, a0.Y, a0.Z),
+            RetailSplineSegment.AnglesToMatrix(a1.X, a1.Y, a1.Z),
+            count,
+            linear);
+    }
+
+    private static bool ReadBool(DeclaredTask task, string name) =>
+        task.TryGetValue(name, out object? value) && value is true;
 
     private static Vector3d ReadPosition(DeclaredTask task, string name, Vector3d fallback) =>
         task.TryGetValue(name, out object? value) && value is Vector3d position ? position : fallback;

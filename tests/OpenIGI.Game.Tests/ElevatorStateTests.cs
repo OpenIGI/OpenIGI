@@ -38,6 +38,42 @@ public sealed class ElevatorStateTests
     }
 
     [Fact]
+    public void ALongerSplineSegmentTakesTheCarLongerOverTheSameRun()
+    {
+        // The original moves its parameter along the segment's spline length (0x43D6E0), not along the straight run, and
+        // places the car by its share of it: a run whose cubic is twice as long cruises twice as long. The brake is measured in
+        // the same length, so the last of the run takes the same time either way.
+        static int Ride(double? length)
+        {
+            ElevatorState elevator = new(
+                startPosition: default,
+                floors:
+                [
+                    new ElevatorFloor(10, default),
+                    new ElevatorFloor(20, new Vector3d(0, 0, 100000)) { SegmentLength = length },
+                ],
+                maxSpeedUnitsPerSecond: 20000,
+                speedInertiaUnitsPerSecondSquared: 1000000);
+            elevator.RequestFloor(1);
+            int ticks = 0;
+            do
+            {
+                elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+                ticks++;
+                Assert.InRange(elevator.Position.Z, 0.0, 100000.0);
+            }
+            while (elevator.IsMoving && ticks < 10000);
+
+            Assert.Equal(new Vector3d(0, 0, 100000), elevator.Position);
+            return ticks;
+        }
+
+        int straight = Ride(null);
+        int bent = Ride(200000);
+        Assert.InRange(bent, (straight * 3) / 2, straight * 2);
+    }
+
+    [Fact]
     public void DownPulseIsRememberedUntilCanStartBecomesTrue()
     {
         ElevatorState elevator = new(

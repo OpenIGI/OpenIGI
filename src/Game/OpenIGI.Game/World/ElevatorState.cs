@@ -5,7 +5,14 @@ using OpenIGI.Core.Numerics;
 namespace OpenIGI.Game.World;
 
 /// <summary>A floor destination authored by an elevator spline waypoint.</summary>
-public sealed record ElevatorFloor(int TaskId, Vector3d Position);
+public sealed record ElevatorFloor(int TaskId, Vector3d Position)
+{
+    /// <summary>
+    /// Gets the spline length of the segment that arrives at this floor from the one before (<c>+248</c>, summed by
+    /// <c>0x4E4530</c>), or <see langword="null"/> for the straight distance between them.
+    /// </summary>
+    public double? SegmentLength { get; init; }
+}
 
 /// <summary>
 /// The deterministic movement state for one retail <c>Elevator</c> task.
@@ -15,6 +22,13 @@ public sealed record ElevatorFloor(int TaskId, Vector3d Position);
 /// <c>Elevator_UpdatePosition</c> and <c>Elevator_UpdateChildPosition</c>. The port keeps the same
 /// single position source and exposes the previous sample for render interpolation and collision.
 /// Floor expressions are commands: a held expression does not skip through every floor.
+/// <para>
+/// The original moves a spline parameter (<c>+388</c>) along the spline's segment lengths, its speed and brake in those
+/// units (<c>0x43D6E0</c>), and places the car on the straight line between the knots (<c>Linear</c>, <c>0x43D960</c>). The
+/// port keeps the car's position, and measures each step and the brake in the segment's own length: a bent segment's length
+/// is its sampled cubic's, longer than the straight run, so the car covers the run more slowly. Every shipped lift that is
+/// not <c>Linear</c> has straight segments, which the car follows knot to knot either way.
+/// </para>
 /// </remarks>
 public sealed class ElevatorState
 {
@@ -63,6 +77,9 @@ public sealed class ElevatorState
     public Vector3d PreviousPosition { get; private set; }
     public int CurrentFloorIndex { get; private set; }
     public int FloorCount => _floors.Count;
+
+    /// <summary>Gets the floors, in the spline's order.</summary>
+    public IReadOnlyList<ElevatorFloor> Floors => _floors;
     public int? TargetFloorIndex { get; private set; }
     public bool IsMoving => TargetFloorIndex is not null;
 
@@ -115,8 +132,8 @@ public sealed class ElevatorState
     /// <remarks>
     /// Retail's update (<c>0x43D280</c>, at <c>0x43D4B1</c>) recomputes it every tick from the spline parameter <c>+388</c>
     /// against each floor's knot parameter: the first floor past the car, less how far short of it the car is as a share of
-    /// the span. This measures the share by distance between the floors' positions instead, which is the same on a lift
-    /// whose spline is a straight run between its floors.
+    /// the span. Within a segment the car's share of the straight run is its share of the segment's length, so the share
+    /// by distance here is the same.
     /// </remarks>
     public double FloorPosition
     {
@@ -316,9 +333,11 @@ public sealed class ElevatorState
             Vector3d destination = _floors[nextIndex].Position;
             Vector3d delta = destination - Position;
             double distance = delta.Length;
-            if (distance == 0.0 || stepUnits >= distance)
+            double scale = SegmentScale(CurrentFloorIndex, nextIndex);
+            double along = distance * scale;
+            if (distance == 0.0 || stepUnits >= along)
             {
-                stepUnits = distance == 0.0 ? stepUnits : stepUnits - distance;
+                stepUnits = distance == 0.0 ? stepUnits : stepUnits - along;
                 Position = destination;
                 CurrentFloorIndex = nextIndex;
                 if (nextIndex == dest)
@@ -331,7 +350,7 @@ public sealed class ElevatorState
                 continue;
             }
 
-            Position += (delta / distance) * stepUnits;
+            Position += (delta / distance) * (stepUnits / scale);
             return;
         }
     }
@@ -344,13 +363,26 @@ public sealed class ElevatorState
         }
 
         int step = toIndex > fromIndex ? 1 : -1;
-        double total = Vector3d.Distance(Position, _floors[fromIndex + step].Position);
+        double total = Vector3d.Distance(Position, _floors[fromIndex + step].Position) * SegmentScale(fromIndex, fromIndex + step);
         for (int index = fromIndex + step; index != toIndex; index += step)
         {
-            total += Vector3d.Distance(_floors[index].Position, _floors[index + step].Position);
+            total += Vector3d.Distance(_floors[index].Position, _floors[index + step].Position) * SegmentScale(index, index + step);
         }
 
         return total;
+    }
+
+    // The spline length of the segment between two neighbouring floors for each unit of the straight run between them.
+    private double SegmentScale(int a, int b)
+    {
+        int arriving = Math.Max(a, b);
+        if (a == b || _floors[arriving].SegmentLength is not double length)
+        {
+            return 1.0;
+        }
+
+        double chord = Vector3d.Distance(_floors[a].Position, _floors[b].Position);
+        return chord > 0.0 && length > 0.0 ? length / chord : 1.0;
     }
 
     private int FindStartFloor(Vector3d startPosition, int? startFloorTaskId)

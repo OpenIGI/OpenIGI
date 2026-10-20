@@ -99,6 +99,27 @@ public sealed class RetailElevatorTests
     }
 
     [RequiresGameDataFact]
+    public void A_lift_runs_along_its_spline_segments_lengths()
+    {
+        // Mission 3's Elevator_698 rides a spline whose segments are not Linear: its one segment is the cubic leaving each
+        // waypoint level, sampled 20 times (0x4E4530), longer than the shaft it climbs.
+        (LevelTask root, ScriptVarRegistry variables, _) = Load(3);
+        PlacedElevator bent = Assert.Single(ElevatorRegistry.Build(root, variables).Elevators, item => item.Task.Id == 698);
+        ElevatorFloor top = bent.State.Floors[1];
+        double rise = Vector3d.Distance(bent.State.Floors[0].Position, top.Position);
+        Assert.InRange(top.SegmentLength!.Value / rise, 1.13, 1.15);
+
+        // Mission 14's Elevator_1701 rides Linear Segments: each is its straight run.
+        (root, variables, _) = Load(14);
+        PlacedElevator straight = Assert.Single(ElevatorRegistry.Build(root, variables).Elevators, item => item.Task.Id == 1701);
+        for (int i = 1; i < straight.State.FloorCount; i++)
+        {
+            double run = Vector3d.Distance(straight.State.Floors[i - 1].Position, straight.State.Floors[i].Position);
+            Assert.Equal((float)run, straight.State.Floors[i].SegmentLength!.Value, 0.5);
+        }
+    }
+
+    [RequiresGameDataFact]
     public void ElevatorSwitchesOfferFromTheirOrientedFront()
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
