@@ -55,6 +55,13 @@ public abstract class LevelRun
         _bound[task] = run;
     }
 
+    /// <summary>Gets the work bound to run a task, for a binding that extends it as a derived type extends its parent's update.</summary>
+    /// <param name="task">The task.</param>
+    /// <param name="run">Receives the work, or <see langword="null"/>.</param>
+    /// <returns>Whether the task has bound work.</returns>
+    public bool TryGetBound(GameTask task, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Action<GameTask>? run) =>
+        _bound.TryGetValue(task, out run);
+
     /// <summary>Binds the work that runs a task in place of its own.</summary>
     /// <param name="task">The task.</param>
     /// <param name="run">What runs it.</param>

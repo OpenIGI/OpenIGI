@@ -1,3 +1,4 @@
+using OpenIGI.Game.Level;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
@@ -130,6 +131,9 @@ public sealed class WorldInteraction
 
     /// <summary>Gets a value indicating whether a round breaks this switch, its <c>Destructable</c> flag.</summary>
     public bool IsDestructable { get; init; }
+
+    /// <summary>Gets a value indicating whether a GenericTBA runs ExplodeObject's update, and its children with it: its <c>Explodable</c> flag (<c>+568</c>).</summary>
+    public bool IsExplodable { get; init; }
     public bool ExplosionTriggeredThisTick { get; private set; }
     public GenericTbaExplosionParameters? Explosion { get; }
 
@@ -750,6 +754,7 @@ public sealed class WorldInteractionRegistry
     private readonly List<WorldInteraction> _items = [];
     private readonly List<GeneratorPowerState> _generators = [];
     private int _updates;
+    private bool _inWalk;
 
     public IReadOnlyList<WorldInteraction> Items => _items;
 
@@ -785,9 +790,81 @@ public sealed class WorldInteractionRegistry
         }
     }
 
-    /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz.</summary>
+    /// <summary>
+    /// Puts every task into the level's update walk, each where the tree places it and in its own update's order: a switch,
+    /// terminal, cabinet and generator run their children first (an ExplodeObject's update is its children, then its blast);
+    /// a GenericTBA runs them only when it is Explodable, as only then does it run ExplodeObject's update (<c>0x4480B0</c>); a
+    /// fence (<c>0x43FC30</c>) and a stationary gun (<c>0x474190</c>) run them last; a wire (<c>0x43F340</c>) not at all. A
+    /// door is its own registry's.
+    /// </summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>Once attached, <see cref="Tick"/> does nothing: the walk is the update.</remarks>
+    public void AttachTo(LevelRun walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            walker.Bind(generator.Task, task =>
+            {
+                walker.RunChildren(task);
+                generator.Tick();
+            });
+        }
+
+        foreach (WorldInteraction item in _items)
+        {
+            switch (item.Type)
+            {
+                case InteractionActivateType.Door:
+                    break;
+                case InteractionActivateType.Fence:
+                    walker.Bind(item.Task, task =>
+                    {
+                        item.Run(Now);
+                        walker.RunChildren(task);
+                    });
+                    break;
+                case InteractionActivateType.StationaryGun:
+                    walker.Bind(item.Task, task =>
+                    {
+                        item.Run(Now);
+                        if (item.StationaryGun is { IsOccupied: false } emptyGun)
+                        {
+                            emptyGun.TickEmpty();
+                        }
+
+                        walker.RunChildren(task);
+                    });
+                    break;
+                case InteractionActivateType.Wire:
+                    walker.Bind(item.Task, () => item.Run(Now));
+                    break;
+                case InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive when !item.IsExplodable:
+                    walker.Bind(item.Task, () => item.Run(Now));
+                    break;
+                default:
+                    walker.Bind(item.Task, task =>
+                    {
+                        walker.RunChildren(task);
+                        item.Run(Now);
+                    });
+                    break;
+            }
+        }
+
+        // The level counts its tick once its tree has run; a registry without the level's clock counts with it.
+        walker.AddTickEnd(() => _updates++);
+        _inWalk = true;
+    }
+
+    /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz, for a level whose walk does not run them.</summary>
     public void Tick()
     {
+        if (_inWalk)
+        {
+            return;
+        }
+
         _updates++;
         int now = Now;
 
@@ -1049,6 +1126,7 @@ public sealed class WorldInteractionRegistry
                 type == InteractionActivateType.Generic ? ExplosionOf(declared) : null)
             {
                 IsDestructable = type == InteractionActivateType.Switch && ReadBool(declared, "Destructable"),
+                IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && ReadBool(declared, "Explodable"),
             };
             if (elevators is not null)
             {
@@ -1120,10 +1198,11 @@ public sealed class WorldInteractionRegistry
             // (+400), before it ever looks at the On expression.
             string explodedSymbol = $"{declared.Name}.isExploded";
             GeneratorPowerState state = new(
-                () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared),
+                declared,
+                ByteSlot(expressions, onExpression, declared),
                 () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
                 ReadBool(declared, "Use backup timer"),
-                Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)),
+                ReadReal(declared, "Seconds until power backup", 10f),
                 () => ConditionalContainerGate.IsTaskActive(declared));
             registry._generators.Add(state);
             variables.BindBool(declared, "isOn", () => state.IsOn, value => state.IsOn = value);
@@ -1148,12 +1227,15 @@ public sealed class WorldInteractionRegistry
     }
 
     private sealed class GeneratorPowerState(
-        Func<bool> onCondition,
+        GameTask task,
+        Func<bool?>? onCondition,
         Func<bool> isExploded,
         bool useBackupTimer,
-        int backupDelayTicks,
+        float backupSeconds,
         Func<bool> isInWorld)
     {
+        public GameTask Task { get; } = task;
+
         public Func<bool> IsInWorld { get; } = isInWorld;
 
         private bool _explodedWhenTicked;
@@ -1161,7 +1243,7 @@ public sealed class WorldInteractionRegistry
         public bool IsOn { get; set; }
         public int BackupTimer { get; set; } = -1;
 
-        public void Initialize() => IsOn = onCondition();
+        public void Initialize() => IsOn = onCondition?.Invoke() ?? IsOn;
 
         public void Tick()
         {
@@ -1186,17 +1268,28 @@ public sealed class WorldInteractionRegistry
 
         private void Run(bool exploded)
         {
-            IsOn = !exploded && onCondition();
+            // 0x43B500: off once exploded; else its On expression, when it has one that compiled -- a generator with none
+            // keeps what it had, off from the constructor, and comes on only by its backup.
+            if (exploded)
+            {
+                IsOn = false;
+            }
+            else if (onCondition?.Invoke() is bool on)
+            {
+                IsOn = on;
+            }
+
             if (!useBackupTimer)
             {
                 return;
             }
 
             // Generator::Run (0x43B500) starts the backup only after primary power is lost, then
-            // publishes power again when the authored 30 Hz countdown reaches zero.
+            // publishes power again when the authored 30 Hz countdown reaches zero; the countdown is
+            // (__int64)(seconds * 30.0), taken as it starts.
             if (!IsOn && BackupTimer == -1)
             {
-                BackupTimer = backupDelayTicks;
+                BackupTimer = (int)(backupSeconds * 30.0);
             }
 
             if (BackupTimer <= 0)

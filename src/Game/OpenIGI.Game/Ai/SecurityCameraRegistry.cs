@@ -591,11 +591,22 @@ public sealed class SecurityCameraRegistry
             });
         }
 
+        // SCameraControl's update (0x440D70) is Terminal's, then its isDetection: a terminal already bound in the walk runs
+        // first, its children with it.
         foreach (Control control in _controls)
         {
+            Action<GameTask>? terminal = walker.TryGetBound(control.Task, out Action<GameTask>? bound) ? bound : null;
             walker.Bind(control.Task, task =>
             {
-                walker.RunChildren(task);
+                if (terminal is not null)
+                {
+                    terminal(task);
+                }
+                else
+                {
+                    walker.RunChildren(task);
+                }
+
                 UpdateDetection(control);
             });
         }

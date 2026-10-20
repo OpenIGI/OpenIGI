@@ -650,6 +650,13 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
             mission.ElevatorsInWalk = true;
         }
 
+        // The switches, terminals, cabinets, fences, wires, GenericTBAs, stationary guns and generators update where the
+        // walk reaches them, each in its own update's order -- before the cameras bind, whose controls extend a terminal's.
+        if (mission.Interactions is { } interactions)
+        {
+            interactions.AttachTo(walker);
+        }
+
         // A camera updates where the walk reaches it (SCamera's UPDATE, 0x442610): its lens sweeps and scans the
         // humans as they stand at that moment, then the holder takes its power for the next tick. Its controls
         // (0x440D70) read the isDetection of the cameras ahead of them this tick.
