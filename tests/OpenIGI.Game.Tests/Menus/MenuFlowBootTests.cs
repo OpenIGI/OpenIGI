@@ -84,7 +84,7 @@ public sealed class MenuFlowBootTests
     {
         Harness harness = Boot();
 
-        harness.Menu.Manager.Navigator.Leave(MenuManagerState.Quit);
+        harness.Menu.Manager.Navigator.Leave(0, MenuManagerState.Quit);
 
         // Leaving fades out first and enters the leave state at the bottom of the fade, which is what
         // the original's "state 6, with the requested state parked beside it" does (0x417790).

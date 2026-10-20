@@ -125,34 +125,42 @@ public sealed class Igi2InGameMenu
     /// <summary>The most screens the stack holds.</summary>
     public const int StackDepth = 64;
 
-    private readonly Stack<int> _stack = new();
     private object? _active;
-    private int _fade;
     private int _failedTicks;
+
+    /// <summary>Initializes a new instance of the <see cref="Igi2InGameMenu"/> class, idle.</summary>
+    public Igi2InGameMenu()
+    {
+        Navigator.Reset(-1, MenuManagerState.Idle);
+        Navigator.SaveRequested += (_, _) => ReadDataFromActiveWindow();
+    }
+
+    /// <summary>Gets the manager's state machine, the one Project I.G.I.'s menus run, as I.G.I. 2 numbers and extends it.</summary>
+    public MenuNavigator Navigator { get; } = new(MenuManagerDialect.Igi2);
 
     /// <summary>Gets the manager the script made, once loaded.</summary>
     public Igi2MenuManagerTask? Manager { get; private set; }
 
     /// <summary>Gets the screen asked for, <c>nActiveMenuScreenID</c>.</summary>
-    public int CurrentScreenId { get; private set; } = -1;
+    public int CurrentScreenId => Navigator.CurrentScreen;
 
     /// <summary>Gets the screen open, <c>ptActiveMenuScreen</c>.</summary>
     public Igi2MenuScreenTask? CurrentScreen { get; private set; }
 
     /// <summary>Gets the popup asked for, <c>nActivePopupScreenID</c>.</summary>
-    public int PopupScreenId { get; private set; } = -1;
+    public int PopupScreenId => Navigator.PopupActive ? Navigator.PopupScreen : -1;
 
     /// <summary>Gets the popup open, <c>ptActivePopupScreen</c>: a dialog window.</summary>
     public MenuWindowTask? PopupScreen { get; private set; }
 
-    /// <summary>Gets the status, <c>eStatus</c>.</summary>
-    public Igi2MenuStatus Status { get; private set; } = Igi2MenuStatus.Idle;
+    /// <summary>Gets the status, <c>eStatus</c>, as I.G.I. 2 numbers it.</summary>
+    public Igi2MenuStatus Status => (Igi2MenuStatus)MenuManagerDialect.Igi2.ValueOf(Navigator.State);
 
-    /// <summary>Gets the status a fade out leads to, <c>eNextStatus</c>.</summary>
-    public Igi2MenuStatus NextStatus { get; private set; } = Igi2MenuStatus.Idle;
+    /// <summary>Gets the status a fade out leads to, <c>eNextStatus</c>, as I.G.I. 2 numbers it.</summary>
+    public Igi2MenuStatus NextStatus => (Igi2MenuStatus)MenuManagerDialect.Igi2.ValueOf(Navigator.ReturnState);
 
     /// <summary>Gets the screens pushed, the most recent first.</summary>
-    public IReadOnlyCollection<int> Stack => _stack;
+    public IReadOnlyCollection<int> Stack => [.. Navigator.SavedScreens.Reverse()];
 
     /// <summary>Gets the language the script last set, <c>MenuManager_SetLanguage</c>.</summary>
     public int Language { get; private set; }
@@ -184,22 +192,27 @@ public sealed class Igi2InGameMenu
         void Fn(string name, Scripting.Igi2ScriptFunction function, int arguments, QvmValueKind kind = QvmValueKind.None) =>
             Scripting.Igi2ScriptCall.Register(natives, functions, name, function, arguments);
 
-        Fn("MenuManager_RequestScreen", c => Do(() => RequestScreen(c.GetInt32(0), c.GetInt32(1) != 0)), 2);
-        Fn("MenuManager_LeaveMenus", c => Do(() => LeaveMenus(c.GetInt32(0), (Igi2MenuStatus)c.GetInt32(1), c.GetInt32(2) != 0)), 3);
-        Fn("MenuManager_ClearStack", _ => Do(_stack.Clear), 1);
-        Fn("MenuManager_SetLanguage", c => Do(() => SetLanguage(c.GetInt32(0))), 1);
-        Fn("MenuManager_PushScreen", c => Do(() => PushScreen(c.GetInt32(0))), 1);
-        Fn("MenuManager_PopScreen", c => Do(() => PopScreen(c.GetInt32(0) != 0)), 1);
+        Fn("MenuManager_RequestScreen", c => Do(() => Navigator.Request(c.GetInt32(0), c.GetInt32(1) != 0)), 2);
+        Fn("MenuManager_LeaveMenus", c => Do(() => Navigator.Leave(
+            c.GetInt32(0), MenuManagerDialect.Igi2.StateOf(c.GetInt32(1)), c.GetInt32(2) != 0, LevelFailed())), 3);
+        Fn("MenuManager_ClearStack", _ => Do(Navigator.ClearStack), 1);
+        Fn("MenuManager_SetLanguage", c => Do(() =>
+        {
+            Language = c.GetInt32(0);
+            Navigator.SetLanguage();
+        }), 1);
+        Fn("MenuManager_PushScreen", c => Do(() => Navigator.Push(c.GetInt32(0))), 1);
+        Fn("MenuManager_PopScreen", c => Do(() => Navigator.Pop(c.GetInt32(0) != 0)), 1);
         Fn("MenuManager_ForceUpdateWindow", c => Do(() => ForceUpdateWindow(c.GetInt32(0))), 1);
         // MenuManager_SetEnabled is the flow's (Igi2FlowState), which the shell reads.
-        Fn("MenuManager_ActivatePopupScreen", c => Do(() => ActivatePopupScreen(c.GetInt32(0))), 1);
-        Fn("MenuManager_DeactivatePopuScreen", _ => Do(DeactivatePopupScreen), 0);
-        natives.RegisterConstant("MENUMANAGER_IDLE", (int)Igi2MenuStatus.Idle);
-        natives.RegisterConstant("MENUMANAGER_QUIT", (int)Igi2MenuStatus.Quit);
-        natives.RegisterConstant("MENUMANAGER_QUITTOMAINMENU", (int)Igi2MenuStatus.QuitToMainMenu);
-        natives.RegisterConstant("MENUMANAGER_RESTARTLEVEL", (int)Igi2MenuStatus.RestartLevel);
-        natives.RegisterConstant("MENUMANAGER_STARTGAME", (int)Igi2MenuStatus.StartGame);
-        natives.RegisterConstant("MENUMANAGER_JOINGAME", (int)Igi2MenuStatus.JoinGame);
+        Fn("MenuManager_ActivatePopupScreen", c => Do(() => Navigator.ActivatePopup(c.GetInt32(0))), 1);
+        Fn("MenuManager_DeactivatePopuScreen", _ => Do(Navigator.DeactivatePopup), 0);
+        natives.RegisterConstant("MENUMANAGER_IDLE", MenuManagerDialect.Igi2.ValueOf(MenuManagerState.Idle));
+        natives.RegisterConstant("MENUMANAGER_QUIT", MenuManagerDialect.Igi2.ValueOf(MenuManagerState.Quit));
+        natives.RegisterConstant("MENUMANAGER_QUITTOMAINMENU", MenuManagerDialect.Igi2.ValueOf(MenuManagerState.QuitToMainMenu));
+        natives.RegisterConstant("MENUMANAGER_RESTARTLEVEL", MenuManagerDialect.Igi2.ValueOf(MenuManagerState.RestartLevel));
+        natives.RegisterConstant("MENUMANAGER_STARTGAME", MenuManagerDialect.Igi2.ValueOf(MenuManagerState.StartGame));
+        natives.RegisterConstant("MENUMANAGER_JOINGAME", MenuManagerDialect.Igi2.ValueOf(MenuManagerState.JoinGame));
 
         // LevelFlow_LevelFailedCB.
         Fn("LevelFlow_LevelFailed", _ => QvmValue.FromInt32(LevelFailed() ? 1 : 0), 0);
@@ -273,10 +286,8 @@ public sealed class Igi2InGameMenu
             }
         }
 
-        _stack.Clear();
-        (Status, NextStatus, Request, PopupScreenId, PopupScreen) = (Igi2MenuStatus.Idle, Igi2MenuStatus.Idle, Igi2MenuRequest.None, -1, null);
-        CurrentScreenId = Manager?.CurrentScreen ?? -1;
-        CurrentScreen = null;
+        Navigator.Reset(Manager?.CurrentScreen ?? -1, MenuManagerState.Idle);
+        (Request, PopupScreen, CurrentScreen) = (Igi2MenuRequest.None, null, null);
         return Manager is not null;
     }
 
@@ -303,8 +314,7 @@ public sealed class Igi2InGameMenu
         }
 
         CurrentScreen = null;
-        CurrentScreenId = Manager.DefaultScreen(level);
-        Status = Igi2MenuStatus.Activate;
+        Navigator.Open(Manager.DefaultScreen(level));
         SetPaused?.Invoke(true);
     }
 
@@ -375,169 +385,68 @@ public sealed class Igi2InGameMenu
     public void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        if (Status != Igi2MenuStatus.Idle)
+        Level = level;
+        if (Navigator.State != MenuManagerState.Idle)
         {
             _failedTicks = 0;
         }
-
-        switch (Status)
+        else if (LevelFailed() && !PlayerDead() && ++_failedTicks > FailedOpenTicks)
         {
-            case Igi2MenuStatus.Activate or Igi2MenuStatus.ActivateNoData:
-                ActivateScreen(level, Status == Igi2MenuStatus.Activate);
-                (Status, _fade) = (Igi2MenuStatus.FadeIn, 0);
-                break;
-            case Igi2MenuStatus.ActivateShown:
-                ActivateScreen(level, true);
-                (Status, _fade) = (Igi2MenuStatus.FadeIn, FadeSteps);
-                break;
-            case Igi2MenuStatus.FadeIn or Igi2MenuStatus.PopupFadeIn:
-                _fade = Math.Min(_fade + 2, FadeSteps);
-                if (_fade == FadeSteps)
-                {
-                    Status = Igi2MenuStatus.Running;
-                }
-
-                break;
-            case Igi2MenuStatus.FadeOut or Igi2MenuStatus.PopupFadeOut:
-                _fade = Math.Max(_fade - 2, 0);
-                if (_fade == 0)
-                {
-                    Status = NextStatus;
-                    DeactivatePopup();
-                    if (Status == Igi2MenuStatus.Idle)
-                    {
-                        CurrentScreen = null;
-                        SetPaused?.Invoke(false);
-                    }
-                }
-
-                break;
-            case Igi2MenuStatus.ChangeLanguage:
-                (Status, _fade) = (Igi2MenuStatus.FadeIn, 0);
-                break;
-            case Igi2MenuStatus.Idle:
-                // A failed level whose player still lives opens the menu by itself after five seconds.
-                if (LevelFailed() && !PlayerDead())
-                {
-                    if (++_failedTicks > FailedOpenTicks)
-                    {
-                        _failedTicks = 0;
-                        Open(level);
-                    }
-                }
-
-                break;
-            case Igi2MenuStatus.Quit:
-                Request = Igi2MenuRequest.Quit;
-                break;
-            case Igi2MenuStatus.QuitToMainMenu:
-                Request = Igi2MenuRequest.QuitToMainMenu;
-                Status = Igi2MenuStatus.Idle;
-                break;
-            case Igi2MenuStatus.RestartLevel:
-                Request = Igi2MenuRequest.RestartLevel;
-                Status = Igi2MenuStatus.Idle;
-                break;
-            case Igi2MenuStatus.StartGame:
-                Request = Igi2MenuRequest.StartGame;
-                break;
-            case Igi2MenuStatus.JoinGame:
-                Request = Igi2MenuRequest.JoinGame;
-                break;
-            case Igi2MenuStatus.ActivatePopup:
-                PopupScreen = Window(PopupScreenId);
-                (PopupScreen as IIgi2MenuData)?.InitData(level);
-                (Status, _fade) = (Igi2MenuStatus.PopupFadeIn, 0);
-                break;
-            case Igi2MenuStatus.PopupGone:
-                (Status, _fade) = (Igi2MenuStatus.Running, FadeSteps);
-                break;
-            case Igi2MenuStatus.Enabled:
-                Status = Igi2MenuStatus.Idle;
-                break;
+            // A failed level whose player still lives opens the menu by itself after five seconds.
+            _failedTicks = 0;
+            Open(level);
+            return;
         }
 
-        Level = level;
+        MenuStep step = Navigator.Tick();
+        switch (step)
+        {
+            case MenuStep.ActivateScreen or MenuStep.ReturnToScreen:
+                // MenuManager_ActivateScreen: the screen asked for, its data taken in when asked.
+                CurrentScreen = Screen(Navigator.CurrentScreen);
+                if (step == MenuStep.ActivateScreen)
+                {
+                    CurrentScreen?.InitData(level);
+                }
+
+                break;
+            case MenuStep.ActivatePopup:
+                PopupScreen = Window(Navigator.PopupScreen);
+                (PopupScreen as IIgi2MenuData)?.InitData(level);
+                break;
+            case MenuStep.FadedOut:
+                // MenuManager_DeactivatePopupScreen goes with the fade; a fade into idle closes the menu and lets the game play.
+                PopupScreen = null;
+                if (Navigator.State == MenuManagerState.Idle)
+                {
+                    CurrentScreen = null;
+                    SetPaused?.Invoke(false);
+                }
+
+                break;
+            case MenuStep.Leave:
+                Request = Navigator.Left switch
+                {
+                    MenuManagerState.Quit => Igi2MenuRequest.Quit,
+                    MenuManagerState.QuitToMainMenu => Igi2MenuRequest.QuitToMainMenu,
+                    MenuManagerState.RestartLevel => Igi2MenuRequest.RestartLevel,
+                    MenuManagerState.StartGame => Igi2MenuRequest.StartGame,
+                    _ => Igi2MenuRequest.JoinGame,
+                };
+                break;
+        }
     }
 
     /// <summary>Gets the level the menu last ran in, which the natives' data exchanges are evaluated in.</summary>
     private Igi2LevelRun? Level { get; set; }
 
-    // MenuManager_ActivateScreen: the screen asked for, its data taken in when asked.
-    private void ActivateScreen(Igi2LevelRun level, bool isDataExchange)
+    // MenuManager_ReadDataFromActiveWindow: the open screen gives its data back.
+    private void ReadDataFromActiveWindow()
     {
-        CurrentScreen = Screen(CurrentScreenId);
-        if (isDataExchange)
-        {
-            CurrentScreen?.InitData(level);
-        }
-    }
-
-    // MenuManager_RequestScreenCB: the open screen's data given back when asked, then another screen opened in its place.
-    private void RequestScreen(int id, bool isDataExchange)
-    {
-        if (isDataExchange && Level is { } level)
+        if (Level is { } level)
         {
             CurrentScreen?.ChangeData(level);
         }
-
-        CurrentScreenId = id;
-        (Status, NextStatus) = (Igi2MenuStatus.FadeOut, Igi2MenuStatus.Activate);
-    }
-
-    // MenuManager_PushScreenCB: the open screen kept on the stack, another opened.
-    private void PushScreen(int id)
-    {
-        if (_stack.Count < StackDepth)
-        {
-            _stack.Push(CurrentScreenId);
-        }
-
-        CurrentScreenId = id;
-        (Status, NextStatus) = (Igi2MenuStatus.FadeOut, Igi2MenuStatus.Activate);
-    }
-
-    // MenuManager_PopScreenCB: the open screen's data given back when asked, and the one beneath reopened without taking its own.
-    private void PopScreen(bool isDataExchange)
-    {
-        if (isDataExchange && Level is { } level)
-        {
-            CurrentScreen?.ChangeData(level);
-        }
-
-        CurrentScreenId = _stack.Count > 0 ? _stack.Pop() : CurrentScreenId;
-        (Status, NextStatus) = (Igi2MenuStatus.FadeOut, Igi2MenuStatus.ActivateNoData);
-    }
-
-    // MenuManager_LeaveMenues: with screens stacked, back one; otherwise, unless the level has failed and the menu would close on it,
-    // out to the status asked for.
-    private void LeaveMenus(int id, Igi2MenuStatus next, bool isDataExchange)
-    {
-        if (isDataExchange && Level is { } level)
-        {
-            CurrentScreen?.ChangeData(level);
-        }
-
-        if (_stack.Count > 0)
-        {
-            CurrentScreenId = _stack.Pop();
-            (Status, NextStatus) = (Igi2MenuStatus.FadeOut, Igi2MenuStatus.ActivateNoData);
-            return;
-        }
-
-        if (LevelFailed() && next == Igi2MenuStatus.Idle)
-        {
-            return;
-        }
-
-        CurrentScreenId = id;
-        (Status, NextStatus) = (Igi2MenuStatus.FadeOut, next);
-    }
-
-    private void SetLanguage(int language)
-    {
-        Language = language;
-        (Status, NextStatus) = (Igi2MenuStatus.FadeOut, Igi2MenuStatus.ChangeLanguage);
     }
 
     // MenuManager_ForceUpdateWindowCB: the window takes its data in again.
@@ -548,21 +457,6 @@ public sealed class Igi2InGameMenu
         {
             window.InitData(level);
         }
-    }
-
-    private void ActivatePopupScreen(int id)
-    {
-        PopupScreenId = id;
-        Status = Igi2MenuStatus.ActivatePopup;
-    }
-
-    private void DeactivatePopupScreen() => (Status, NextStatus) = (Igi2MenuStatus.PopupFadeOut, Igi2MenuStatus.PopupGone);
-
-    // MenuManager_DeactivatePopupScreen.
-    private void DeactivatePopup()
-    {
-        PopupScreen = null;
-        PopupScreenId = -1;
     }
 
     private QvmValue Sort(Scripting.Igi2ScriptCall call)

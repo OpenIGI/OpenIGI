@@ -116,19 +116,36 @@ public partial class MenuManagerTask
         }
 
         // Advance the fade first: the screen changes at the bottom of it.
-        if (Navigator.Tick())
+        switch (Navigator.Tick())
         {
-            EnterScreen(_system.FindScreen(Navigator.CurrentScreen));
-        }
+            case MenuStep.ActivateScreen:
+                EnterScreen(_system.FindScreen(Navigator.CurrentScreen), takeData: true);
+                break;
+            case MenuStep.ReturnToScreen:
+                EnterScreen(_system.FindScreen(Navigator.CurrentScreen), takeData: false);
+                break;
+            case MenuStep.ChangeLanguage when _current is not null:
+                // 0x417590: the screen takes the language event, then is prepared and lined up again.
+                _current.PrepareSubtree();
+                _host.PrepareScreen(_current);
+                _current.Arrange();
+                break;
+            case MenuStep.ActivatePopup:
+                // 0x4188B0: the popup takes its data in, then is prepared.
+                if (_system.FindPopup(Navigator.PopupScreen) is { } popup)
+                {
+                    popup.LoadData();
+                    popup.PrepareSubtree();
+                }
 
-        if (Navigator.IsLeaving)
-        {
-            // Clear it before the host runs: leaving is a one-shot request, and the handler for
-            // StartGame loads a whole mission. Leaving the state set re-ran that load every tick.
-            MenuManagerState leaving = Navigator.State;
-            Navigator.CompleteLeave();
-            _host.LeaveMenus(leaving);
-            return;
+                break;
+            case MenuStep.Leave:
+                // Clear it before the host runs: leaving is a one-shot request, and the handler for
+                // StartGame loads a whole mission. Leaving the state set re-ran that load every tick.
+                MenuManagerState leaving = Navigator.Left;
+                Navigator.CompleteLeave();
+                _host.LeaveMenus(leaving);
+                return;
         }
 
         if (_current is null)
@@ -337,9 +354,11 @@ public partial class MenuManagerTask
         };
     }
 
-    private void EnterScreen(MenuScreenTask? screen)
+    // 0x418710: the screen asked for, prepared and lined up, its data taken in only when it is entered afresh: a pop returns to a
+    // screen as its controls left it.
+    private void EnterScreen(MenuScreenTask? screen, bool takeData = true)
     {
-        if (screen is null || ReferenceEquals(screen, _current))
+        if (screen is null)
         {
             return;
         }
@@ -351,6 +370,10 @@ public partial class MenuManagerTask
         _host?.PrepareScreen(screen);
         screen.Arrange();
         Selection.Rebuild(screen);
+        if (!takeData)
+        {
+            return;
+        }
 
         RunAction(screen.OnInitData, screen);
 
