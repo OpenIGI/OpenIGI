@@ -26,7 +26,7 @@ public sealed class LevelFourWindowDetectionTests
     private static readonly Vector3d OutsideWindow = new(
         GunnerFeet.X,
         GunnerFeet.Y + (8.0 * Metre),
-        175462208.0 + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+        175462208.0 + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
 
     /// <summary>
     /// Soldier 432 looks from the upper floor of Building 459 toward the approaching player. The authored
@@ -87,13 +87,13 @@ public sealed class LevelFourWindowDetectionTests
     private sealed class Fixture(
         SoldierRenderer renderer,
         ObjectCollisionIndex solids,
-        AiSoldier gunner) : IDisposable
+        Igi1HumanAi gunner) : IDisposable
     {
         public SoldierRenderer Renderer { get; } = renderer;
 
         public ObjectCollisionIndex Solids { get; } = solids;
 
-        public AiSoldier Gunner { get; } = gunner;
+        public Igi1HumanAi Gunner { get; } = gunner;
 
         public static Fixture Load(AiDifficulty difficulty)
         {
@@ -150,7 +150,7 @@ public sealed class LevelFourWindowDetectionTests
                 difficulty: difficulty,
                 variables: loop.Variables) > 0);
 
-            AiSoldier gunner = Assert.Single(renderer.Simulation.BrainsForTesting, brain =>
+            Igi1HumanAi gunner = Assert.Single(renderer.Simulation.BrainsForTesting, brain =>
                 Math.Abs(brain.Position.X - GunnerFeet.X) < Metre
                 && Math.Abs(brain.Position.Y - GunnerFeet.Y) < Metre);
             return new Fixture(renderer, solids, gunner);

@@ -25,7 +25,7 @@ public sealed class AiScriptHostNativeTests
     [RequiresGameDataFact]
     public void AFreshSoldierHasTheConstructorsDefaults()
     {
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
 
         Assert.False(soldier.IsInvulnerable);          // +15036 = 0
         Assert.False(soldier.IsInstantDeathDisabled);  // +15037 = 0 -> head shot IS lethal by default
@@ -44,7 +44,7 @@ public sealed class AiScriptHostNativeTests
     public void SetInstantDeathStoresTheInversePolarity()
     {
         (AiScriptHost host, _) = Host();
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
 
         Run(host, soldier, "AIFunction_SetInstantDeath", 0);   // FALSE
         Assert.True(soldier.IsInstantDeathDisabled);
@@ -58,7 +58,7 @@ public sealed class AiScriptHostNativeTests
     public void SetInvulnerabilityStoresItsArgumentDirectly()
     {
         (AiScriptHost host, _) = Host();
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
 
         Run(host, soldier, "AIFunction_SetInvulnerability", 1);
         Assert.True(soldier.IsInvulnerable);
@@ -72,7 +72,7 @@ public sealed class AiScriptHostNativeTests
     public void TheAlarmAndGunnerSettersStoreTheirIds()
     {
         (AiScriptHost host, _) = Host();
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
 
         Run(host, soldier, "AIFunction_SetAlarmTriggerID", 42);
         Run(host, soldier, "AIFunction_SetAlarmControlID", 7);
@@ -90,7 +90,7 @@ public sealed class AiScriptHostNativeTests
     [RequiresGameDataFact]
     public void GetGunnerStatusReadsTheResolvedStationaryGunOccupiedFlag()
     {
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         soldier.GunnerId = 17;
         soldier.SetGunnerStatusResolver(id => id == 17);
         Assert.True(soldier.GetGunnerStatus());
@@ -107,7 +107,7 @@ public sealed class AiScriptHostNativeTests
     public void SetEventPriorityOrdersTheQueueInCallOrder()
     {
         (AiScriptHost host, _) = Host();
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         soldier.SetScript(host, CallNative("AIAction_LookAtEvent", LookAtEventArgs));
 
         Run(host, soldier, "AIFunction_SetEventPriority", (int)AiEvent.Combat);
@@ -125,7 +125,7 @@ public sealed class AiScriptHostNativeTests
     [RequiresGameDataFact]
     public void IsEnemyBehindTestsTheFacingPlane()
     {
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         Assert.False(soldier.IsEnemyBehind()); // no enemy known yet
 
         // Facing 0 points +Y. Put the enemy far behind (-Y) and far enough not to be detected in a tick.
@@ -148,7 +148,7 @@ public sealed class AiScriptHostNativeTests
         foreach (string archetype in new[] { "guard", "patrol" })
         {
             (AiScriptHost host, MemorySink log) = Host();
-            AiSoldier soldier = Soldier();
+            Igi1HumanAi soldier = Soldier();
             QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath(archetype)));
 
             foreach (AiEvent type in Enum.GetValues<AiEvent>())
@@ -174,7 +174,7 @@ public sealed class AiScriptHostNativeTests
     public void AGuardTurnsTowardAGunshotItHeard()
     {
         (AiScriptHost host, _) = Host();
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
 
         // Only the gunshot branch acts: an action produced on CREATE would carry priority -1 (0x44FC90's
         // creation dispatch) and cap the pump shut for as long as it ran.
@@ -216,7 +216,7 @@ public sealed class AiScriptHostNativeTests
     public void RetailArchetypeReactsToAQueuedGunshot(string archetype)
     {
         (AiScriptHost host, _) = Host();
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath(archetype)));
         soldier.SetScript(host, script);
 
@@ -261,7 +261,7 @@ public sealed class AiScriptHostNativeTests
         // The next mission's host registers against the SAME registry, as the transition does.
         AiScriptHost nextMission = new(shared, NullLogger.Instance);
 
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath("guard")));
         soldier.SetScript(nextMission, script);
 
@@ -297,13 +297,13 @@ public sealed class AiScriptHostNativeTests
         return (new AiScriptHost(natives, log), log);
     }
 
-    private static AiSoldier Soldier()
+    private static Igi1HumanAi Soldier()
     {
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(GraphPath()));
-        return new AiSoldier(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 1);
+        return new Igi1HumanAi(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 1);
     }
 
-    private static void Run(AiScriptHost host, AiSoldier soldier, string native, params int[] args) =>
+    private static void Run(AiScriptHost host, Igi1HumanAi soldier, string native, params int[] args) =>
         host.Run(CallNative(native, args), soldier, AiEvent.Create, slot: 0);
 
     // A minimal program that calls one native with integer immediates and halts. The argument blocks are

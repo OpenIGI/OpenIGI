@@ -139,7 +139,7 @@ public sealed class AiAlarmRuntimeTests
     [Fact]
     public void AlarmStatusIsIndependentOfTheSoldiersAlertLatch()
     {
-        AiSoldier soldier = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1)
+        Igi1HumanAi soldier = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1)
         {
             AlarmControlId = 98,
         };
@@ -366,8 +366,8 @@ public sealed class AiAlarmRuntimeTests
     [Fact]
     public void ScriptScratchSlotsBelongToEachSoldier()
     {
-        AiSoldier first = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1);
-        AiSoldier second = new(graph: null, position: default, facing: 0f, phase: 1, seed: 2);
+        Igi1HumanAi first = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi second = new(graph: null, position: default, facing: 0f, phase: 1, seed: 2);
 
         first.SetScriptInteger(3, 17);
         first.SetScriptReal(4, 2.5f);

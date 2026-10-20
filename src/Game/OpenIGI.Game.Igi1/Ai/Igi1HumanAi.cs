@@ -60,7 +60,7 @@ public enum AiSoldierActivity
 /// same facade so they consume the same HumanAI state rather than a second coarse activity model.
 /// </para>
 /// </remarks>
-public sealed class AiSoldier
+public sealed class Igi1HumanAi
 {
     private readonly GraphFile? _graph;
     private readonly AiDetectionSchedule _schedule;
@@ -260,7 +260,7 @@ public sealed class AiSoldier
     /// <summary>Gets the actions the archetype script last asked for.</summary>
     public IReadOnlyList<AiProducedAction> LastActions { get; private set; } = [];
 
-    /// <summary>Initializes a new instance of the <see cref="AiSoldier"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="Igi1HumanAi"/> class.</summary>
     /// <param name="graph">The nav graph this soldier walks.</param>
     /// <param name="position">Where it starts, in engine units.</param>
     /// <param name="facing">Its starting heading, in radians about Z.</param>
@@ -273,7 +273,7 @@ public sealed class AiSoldier
     /// its <c>HumanAI</c> still detects and fights — nothing in the stand-and-fight arm needs a node.
     /// Only patrolling and the combat repositioning searches are graph work, and they no-op without one.
     /// </remarks>
-    public AiSoldier(
+    public Igi1HumanAi(
         GraphFile? graph,
         Vector3d position,
         float facing,
@@ -2151,18 +2151,18 @@ public sealed class AiSoldier
     /// <returns>A new brain with the same level wiring and reset AI execution state.</returns>
     /// <remarks>
     /// IGI1's <c>0x488000</c>/<c>0x488040</c> path constructs the whole stored child subtree again. A new
-    /// <see cref="AiSoldier"/> is the managed equivalent: CREATE will run again on its first tick, while
+    /// <see cref="Igi1HumanAi"/> is the managed equivalent: CREATE will run again on its first tick, while
     /// immutable level services (graph, scripts, collision queries and combat row) are reattached here.
     /// The caller must assign a unique <see cref="RuntimeId"/> before registering the new brain alongside
     /// retained corpses, and rebind view-tracking callbacks to its new rendered body.
     /// </remarks>
-    public AiSoldier Respawned(
+    public Igi1HumanAi Respawned(
         Vector3d position,
         float facing,
-        Func<AiSoldier, AiCombatWeaponState>? weapon = null)
+        Func<Igi1HumanAi, AiCombatWeaponState>? weapon = null)
     {
         int seed = Math.Max(0, RuntimeId - 1);
-        AiSoldier fresh = new(_graph, position, facing, seed & 3, seed, _random, SoldierClass)
+        Igi1HumanAi fresh = new(_graph, position, facing, seed & 3, seed, _random, SoldierClass)
         {
             PlayerIsEnemy = PlayerIsEnemy,
             RuntimeId = RuntimeId,

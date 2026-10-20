@@ -613,7 +613,7 @@ public sealed class Igi1Blasts(
         Vector3d position = blast.PositionUnits;
         host.PlayDefinition(VehicleBlast.Sound, position, 90);
         host.Explosion(position, blast.FullRangeUnits, blast.Fireballs, blast.Fragments);
-        mission.Soldiers?.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
+        mission.Soldiers?.NotifyExplosion(position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
         Explode(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade, blast.Source);
 
         host.Logger.Information("World", $"{blast.Source.Owner.Name} blast at {position}: radius={blast.RadiusUnits}.");
@@ -637,7 +637,7 @@ public sealed class Igi1Blasts(
         // ExplodeMagicObj (0x43C0B0) and ExplodeObject (0x481A60) hand Explosion0 their authored full
         // range, fragment count and FireBall count; the look follows from those alone.
         host.Explosion(item.PositionUnits, radius, (int)item.ExplosionFireballs, item.ExplosionFragments);
-        mission.Soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
+        mission.Soldiers?.NotifyExplosion(item.PositionUnits, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
 
         // Explosion0 (0x47F200) hands its message -- the damage, the shove and the shake -- to every human
         // only when its damage is not 0. A wooden window authors 0: it splinters, and nobody is hurt.

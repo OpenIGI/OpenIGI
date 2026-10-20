@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Physics;
 /// <param name="groundZ">Receives the ground height when one is found.</param>
 /// <returns><see langword="true"/> when a surface was found.</returns>
 /// <remarks>
-/// The same shape as <c>AiSoldier.GroundQuery</c>, declared again here so the solver depends on nothing
+/// The same shape as <c>Igi1HumanAi.GroundQuery</c>, declared again here so the solver depends on nothing
 /// in the AI. The desktop shell's <c>MakeGroundQuery</c> satisfies both.
 /// </remarks>
 public delegate bool RagdollGround(double x, double y, double z, out double groundZ);

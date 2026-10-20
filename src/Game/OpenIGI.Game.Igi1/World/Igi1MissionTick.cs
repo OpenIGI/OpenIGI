@@ -527,7 +527,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
             return;
         }
 
-        Vector3d origin = mission.Player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
+        Vector3d origin = mission.Player.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.HumanOriginStandingInUnits);
         if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
         {
             return;
@@ -591,18 +591,18 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
                 soldiers.NotifyExplosion(
                     blast.Position,
                     blast.IsProximityMine
-                        ? AiSoldier.LargeExplosionEventRadiusInUnits
-                        : AiSoldier.GrenadeExplosionEventRadiusInUnits);
+                        ? Igi1HumanAi.LargeExplosionEventRadiusInUnits
+                        : Igi1HumanAi.GrenadeExplosionEventRadiusInUnits);
             }
         }
 
         foreach (MissileDetonation blast in mission.Player.Missiles.Detonations)
         {
-            soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
+            soldiers.NotifyExplosion(blast.Position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
         }
         foreach (MissileDetonation blast in mission.VehicleMissiles.Detonations)
         {
-            soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
+            soldiers.NotifyExplosion(blast.Position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
         }
 
         foreach (M203Detonation blast in mission.Player.M203.Detonations)

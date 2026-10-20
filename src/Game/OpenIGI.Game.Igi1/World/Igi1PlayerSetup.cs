@@ -514,16 +514,16 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
             ? player.Body.Position + new Vector3d(
                 0d,
                 0d,
-                player.Body.IsCrouched ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits)
+                player.Body.IsCrouched ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
             : null;
         // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
         // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
         runtime.VehicleSightTarget = () => !mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(0d, 0d, AiSoldier.DetectionMarkAboveFeet(player.Body.IsCrouched))
+            ? player.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(player.Body.IsCrouched))
             : null;
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             mission.Trace is null
-            || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, AiSoldier.SightObstructionTolerance, owner);
+            || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.SightObstructionTolerance, owner);
         runtime.VehicleCombatShotFired = shot =>
         {
             if (shot.IsHitscan)

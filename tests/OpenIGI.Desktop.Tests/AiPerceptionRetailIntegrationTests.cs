@@ -29,7 +29,7 @@ public sealed class AiPerceptionRetailIntegrationTests
         for (int level = 1; level <= 14; level++)
         {
             using Fixture fixture = Fixture.Load(level);
-            AiSoldier? soldier = fixture.Renderer.Simulation.BrainsForTesting.FirstOrDefault(brain => brain.PlayerIsEnemy);
+            Igi1HumanAi? soldier = fixture.Renderer.Simulation.BrainsForTesting.FirstOrDefault(brain => brain.PlayerIsEnemy);
             if (soldier is null)
             {
                 failures.Add($"Level {level} has no hostile live brain");
@@ -45,7 +45,7 @@ public sealed class AiPerceptionRetailIntegrationTests
             Vector3d mark = new(
                 soldier.Position.X + forward.X,
                 soldier.Position.Y + forward.Y,
-                soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+                soldier.Position.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
             (double distance, bool inCone, _, _, _) = soldier.ProbeDetection(mark);
             if (!inCone)
             {
@@ -80,7 +80,7 @@ public sealed class AiPerceptionRetailIntegrationTests
     public void AnUndrawnGuardLooksAlongTheRestPoseNotItsBody()
     {
         using Fixture fixture = Fixture.Load(1);
-        AiSoldier soldier = fixture.Renderer.Simulation.BrainsForTesting.First(brain =>
+        Igi1HumanAi soldier = fixture.Renderer.Simulation.BrainsForTesting.First(brain =>
             brain.PlayerIsEnemy && Math.Abs(Math.Sin(brain.Facing)) > 0.9);
 
         // Five metres along the body's own forward: to the side of the rest-pose eye, so out of its cone.
@@ -88,14 +88,14 @@ public sealed class AiPerceptionRetailIntegrationTests
         Vector3d bodyAhead = new(
             soldier.Position.X + forward.X,
             soldier.Position.Y + forward.Y,
-            soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+            soldier.Position.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
         Assert.False(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye followed its body");
 
         // Five metres along world +Y: where the rest-pose eye looks.
         Vector3d northAhead = new(
             soldier.Position.X,
             soldier.Position.Y + (5.0 * Metre),
-            soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+            soldier.Position.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
         Assert.True(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye missed its rest direction");
 
         // Once drawn close up, the eye follows the body.

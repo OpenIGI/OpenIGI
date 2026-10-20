@@ -66,7 +66,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
     private bool _active;
 
     private float _facing;
-    private AiSoldier.GroundQuery? _ground;
+    private Igi1HumanAi.GroundQuery? _ground;
 
     // The player body's own tick-state pair and frame bookkeeping -- the same smoothing a soldier's
     // Member carries, kept as fields because there is only ever one of it.
@@ -237,7 +237,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
         // through sub_4D2FB0 and moves the human by it, until 0x40E620 sees the body grounded and stops it).
         // Advancing the clip WITHOUT moving the body left it crumpling on the spot instead of being thrown,
         // which is the missing "knocked to the ground" feel. This is the corpse move a soldier already gets
-        // (AiSoldier.TickDeadBody): the horizontal root motion, rotated by the facing, plus a ground snap.
+        // (Igi1HumanAi.TickDeadBody): the horizontal root motion, rotated by the facing, plus a ground snap.
         Vector3f rootMotion = _sim.PlayerBodyView.RootMotion();
         Vector3d world = SoldierDeathFall.RotateAboutZ(
             new Vector3d(rootMotion.X, rootMotion.Y, rootMotion.Z), _facing);

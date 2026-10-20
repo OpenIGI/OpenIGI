@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Tests;
 /// <summary>
 /// A friendly soldier must never engage the player. Retail guards only fight humans on the other side:
 /// the enemy the AI targets is the player, and every brain is told up front whether that player is hostile
-/// via <see cref="AiSoldier.PlayerIsEnemy"/>. When the player shares the soldier's team, vision detection
+/// via <see cref="Igi1HumanAi.PlayerIsEnemy"/>. When the player shares the soldier's team, vision detection
 /// and every player-origin noise event (gunshot, near-miss, impact, footstep) are refused, so the friendly
 /// patrol stands down instead of aiming at and firing on us.
 /// </summary>
@@ -18,13 +18,13 @@ public sealed class AiTeamGatingTests
 {
     private const double Metre = 4096.0;
 
-    private static AiSoldier Soldier(out Vector3d position, bool playerIsEnemy)
+    private static Igi1HumanAi Soldier(out Vector3d position, bool playerIsEnemy)
     {
         string path = Path.Combine(
             GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(path));
         position = graph.Nodes[0].Position;
-        return new AiSoldier(graph, position, facing: 0f, phase: 0, seed: 1)
+        return new Igi1HumanAi(graph, position, facing: 0f, phase: 0, seed: 1)
         {
             PlayerIsEnemy = playerIsEnemy,
         };
@@ -39,7 +39,7 @@ public sealed class AiTeamGatingTests
     [RequiresGameDataFact]
     public void ASameTeamSoldierIgnoresThePlayersGunshot()
     {
-        AiSoldier friendly = Soldier(out Vector3d position, playerIsEnemy: false);
+        Igi1HumanAi friendly = Soldier(out Vector3d position, playerIsEnemy: false);
 
         Assert.False(friendly.HearGunshot(Away(position, 5 * Metre), silenced: false));
         Assert.Equal(0, friendly.Events.PendingCount(AiEvent.Gunshot));
@@ -53,7 +53,7 @@ public sealed class AiTeamGatingTests
     [RequiresGameDataFact]
     public void AnEnemySoldierStillHearsThePlayersGunshot()
     {
-        AiSoldier enemy = Soldier(out Vector3d position, playerIsEnemy: true);
+        Igi1HumanAi enemy = Soldier(out Vector3d position, playerIsEnemy: true);
 
         Assert.True(enemy.HearGunshot(Away(position, 5 * Metre), silenced: false));
         Assert.True(enemy.Events.PendingCount(AiEvent.Gunshot) > 0);
@@ -67,7 +67,7 @@ public sealed class AiTeamGatingTests
     [RequiresGameDataFact]
     public void ASameTeamSoldierHearsHostileAiGunfire()
     {
-        AiSoldier friendly = Soldier(out Vector3d position, playerIsEnemy: false);
+        Igi1HumanAi friendly = Soldier(out Vector3d position, playerIsEnemy: false);
 
         Assert.True(friendly.HearGunshot(Away(position, 5 * Metre), AiScriptApi.GunshotRange, fromSameSide: false));
         Assert.True(friendly.Events.PendingCount(AiEvent.Gunshot) > 0);
@@ -80,7 +80,7 @@ public sealed class AiTeamGatingTests
     [RequiresGameDataFact]
     public void ASoldierDoesNotHearItsOwnSideFiring()
     {
-        AiSoldier guard = Soldier(out Vector3d position, playerIsEnemy: true);
+        Igi1HumanAi guard = Soldier(out Vector3d position, playerIsEnemy: true);
 
         Assert.False(guard.HearGunshot(Away(position, 5 * Metre), AiScriptApi.GunshotRange, fromSameSide: true));
         Assert.Equal(0, guard.Events.PendingCount(AiEvent.Gunshot));
@@ -94,7 +94,7 @@ public sealed class AiTeamGatingTests
     [RequiresGameDataFact]
     public void ASameTeamSoldierIgnoresEveryPlayersNoiseEvent()
     {
-        AiSoldier friendly = Soldier(out Vector3d position, playerIsEnemy: false);
+        Igi1HumanAi friendly = Soldier(out Vector3d position, playerIsEnemy: false);
         Vector3d nearby = Away(position, 3 * Metre);
 
         Assert.False(friendly.ReceiveGunshotMiss(nearby, nearby, shooterPosition: position));
@@ -112,8 +112,8 @@ public sealed class AiTeamGatingTests
     [RequiresGameDataFact]
     public void ASameTeamSoldierNeverDetectsThePlayer()
     {
-        AiSoldier friendly = Soldier(out Vector3d position, playerIsEnemy: false);
-        AiSoldier enemy = Soldier(out Vector3d position2, playerIsEnemy: true);
+        Igi1HumanAi friendly = Soldier(out Vector3d position, playerIsEnemy: false);
+        Igi1HumanAi enemy = Soldier(out Vector3d position2, playerIsEnemy: true);
 
         // A player stood five metres in front, well inside the cone and line of sight.
         Vector3d target = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));

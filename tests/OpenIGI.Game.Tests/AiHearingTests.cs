@@ -20,7 +20,7 @@ public sealed class AiHearingTests
     [RequiresGameDataFact]
     public void ASoldierHearsAShotWithinThirtyMetres()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         Assert.True(soldier.HearGunshot(Away(position, 10 * Metre), silenced: false));
         Assert.True(soldier.Events.PendingCount(AiEvent.Gunshot) > 0);
@@ -31,7 +31,7 @@ public sealed class AiHearingTests
     [RequiresGameDataFact]
     public void ASoldierDoesNotHearAShotBeyondThirtyMetres()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         Assert.False(soldier.HearGunshot(Away(position, 40 * Metre), silenced: false));
         Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Gunshot));
@@ -60,10 +60,10 @@ public sealed class AiHearingTests
     [Fact]
     public void AZeroDistanceShotIsHeardAndANegativeRangeIsClampedToZero()
     {
-        AiSoldier atSource = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi atSource = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Assert.True(atSource.HearGunshot(default, 0.0));
 
-        AiSoldier negativeRange = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi negativeRange = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Assert.True(negativeRange.HearGunshot(default, -1.0));
         Assert.Equal(1, negativeRange.Events.PendingCount(AiEvent.Gunshot));
     }
@@ -71,7 +71,7 @@ public sealed class AiHearingTests
     [Fact]
     public void DisabledGunshotAndAlertEventsAreNotReportedOrLatched()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.Events.SetEnabled(AiEvent.Gunshot, false);
         Assert.False(soldier.HearGunshot(default, 1.0));
         Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Gunshot));
@@ -91,7 +91,7 @@ public sealed class AiHearingTests
     [Fact]
     public void AHeardGunshotQueuesTheEventWithoutLatchingTheAlert()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.HearGunshot(new Vector3d(2 * Metre, 0, 0), 4 * Metre));
         soldier.Tick(0, default, rootMotionThisTick: 0.0);
@@ -102,7 +102,7 @@ public sealed class AiHearingTests
     [Fact]
     public void ASquadAlertQueuesTheEventWithoutLatchingTheAlert()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.ReceiveAlert(new Vector3d(2 * Metre, 0, 0), source: 7));
         Assert.Equal(1, soldier.Events.PendingCount(AiEvent.Alert));
@@ -114,7 +114,7 @@ public sealed class AiHearingTests
     [Fact]
     public void DamageQueuesTakingDamageWithoutLatchingTheAlert()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d attacker = new(3 * Metre, 0, 0);
 
         Assert.True(soldier.ReceiveDamage(attacker));
@@ -128,7 +128,7 @@ public sealed class AiHearingTests
     [Fact]
     public void RejectedDamageDoesNotLatchPerceptionOrPropagateAnAlert()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.Events.SetEnabled(AiEvent.TakingDamage, false);
         Vector3d attacker = new(3 * Metre, 0, 0);
 
@@ -144,7 +144,7 @@ public sealed class AiHearingTests
     [Fact]
     public void ARejectedLethalBulletDamageDoesNotQueueDamageOrSquadAlert()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.Events.SetEnabled(AiEvent.TakingDamage, false);
 
         Assert.False(soldier.ReceiveDamage(new Vector3d(4 * Metre, 0, 0)));
@@ -157,7 +157,7 @@ public sealed class AiHearingTests
     [Fact]
     public void AnAcceptedLethalExplosionDamageQueuesDamageBeforeDeath()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.ReceiveDamage(new Vector3d(2 * Metre, 0, 0)));
         Assert.Equal(1, soldier.Events.PendingCount(AiEvent.TakingDamage));
@@ -170,7 +170,7 @@ public sealed class AiHearingTests
     [Fact]
     public void ADeadSoldierDoesNotReceiveDamageOrSquadAlerts()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.Kill();
 
         Assert.False(soldier.ReceiveDamage(default));
@@ -187,19 +187,19 @@ public sealed class AiHearingTests
     [Fact]
     public void SquadAlertsHonorRangeAndDeathOnly()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.ReceiveAlert(new Vector3d(Metre, 0, 0), source: 3));
         Assert.True(soldier.ReceiveAlert(new Vector3d(Metre, 0, 0), source: 4));
         Assert.Equal(2, soldier.Events.PendingCount(AiEvent.Alert));
 
-        AiSoldier boundary = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
-        Assert.True(boundary.ReceiveAlert(new Vector3d(AiSoldier.AlertPingRadiusInUnits, 0, 0)));
+        Igi1HumanAi boundary = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.True(boundary.ReceiveAlert(new Vector3d(Igi1HumanAi.AlertPingRadiusInUnits, 0, 0)));
 
-        AiSoldier outOfRange = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
-        Assert.False(outOfRange.ReceiveAlert(new Vector3d(AiSoldier.AlertPingRadiusInUnits + 1, 0, 0)));
+        Igi1HumanAi outOfRange = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outOfRange.ReceiveAlert(new Vector3d(Igi1HumanAi.AlertPingRadiusInUnits + 1, 0, 0)));
 
-        AiSoldier dead = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi dead = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         dead.Kill();
         Assert.False(dead.ReceiveAlert(default));
     }
@@ -208,7 +208,7 @@ public sealed class AiHearingTests
     [RequiresGameDataFact]
     public void ADeadSoldierHearsNothing()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
         soldier.Kill();
 
         Assert.False(soldier.HearGunshot(Away(position, 1 * Metre), silenced: false));
@@ -218,7 +218,7 @@ public sealed class AiHearingTests
     public void ExplosionUsesTheNativeTypeTwentyOneAndAuthoredEnvelope()
     {
         Vector3d position = new(10_000, 20_000, 30_000);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         double range = 5 * Metre;
         Vector3d centre = Away(position, range);
 
@@ -238,8 +238,8 @@ public sealed class AiHearingTests
     {
         Vector3d position = new(10_000, 20_000, 30_000);
         double range = 5 * Metre;
-        AiSoldier outside = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
-        AiSoldier dead = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi outside = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi dead = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         dead.Kill();
 
         Assert.False(outside.ReceiveExplosion(Away(position, range + 1), range));
@@ -252,7 +252,7 @@ public sealed class AiHearingTests
     public void ABulletPassingInsideTwoMetresPostsGunshotMissAtItsClosestPoint()
     {
         Vector3d feet = new(10_000, 20_000, 30_000);
-        AiSoldier soldier = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
         Vector3d eye = soldier.EyePosition();
         Vector3d start = new(eye.X - Metre, eye.Y + Metre, eye.Z);
         Vector3d end = new(eye.X + Metre, eye.Y + Metre, eye.Z);
@@ -270,14 +270,14 @@ public sealed class AiHearingTests
     [Fact]
     public void GunshotMissUsesTheOriginalStrictTwoMetreBoundary()
     {
-        AiSoldier inside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi inside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d insideEye = inside.EyePosition();
         Assert.True(inside.ReceiveGunshotMiss(
             Away(insideEye, (2 * Metre) - 1),
             Away(insideEye, (2 * Metre) - 1),
             default));
 
-        AiSoldier boundary = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi boundary = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d boundaryEye = boundary.EyePosition();
         Assert.False(boundary.ReceiveGunshotMiss(
             Away(boundaryEye, 2 * Metre),
@@ -291,7 +291,7 @@ public sealed class AiHearingTests
     {
         Vector3d feet = new(10_000, 20_000, 30_000);
         Vector3d shooter = new(-1, -2, -3);
-        AiSoldier inside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi inside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
         Vector3d impact = Away(feet, 5 * Metre);
 
         Assert.True(inside.ReceiveGroundImpact(impact, shooter));
@@ -304,7 +304,7 @@ public sealed class AiHearingTests
         Assert.Equal(-1, queued.Value.Source);
         Assert.Equal(-1, queued.Value.Subject);
 
-        AiSoldier outside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi outside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
         Assert.False(outside.ReceiveGroundImpact(Away(feet, (5 * Metre) + 1), shooter));
         Assert.Equal(0, outside.Events.PendingCount(AiEvent.GroundImpact));
     }
@@ -312,7 +312,7 @@ public sealed class AiHearingTests
     [Fact]
     public void ADeadSoldierIgnoresGroundImpact()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.Kill();
 
         Assert.False(soldier.ReceiveGroundImpact(default, default));
@@ -322,7 +322,7 @@ public sealed class AiHearingTests
     [Fact]
     public void GrenadeThrownUsesTheRetailInViewEvent()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d eye = soldier.EyePosition();
         Vector3d visible = new(0, 4 * Metre, eye.Z);
 
@@ -336,7 +336,7 @@ public sealed class AiHearingTests
         Assert.Equal(0, queued.Value.Source);
         Assert.Equal(0, queued.Value.Subject);
 
-        AiSoldier behind = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi behind = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Assert.False(behind.ReceiveGrenadeThrown(new Vector3d(0, -Metre, behind.EyePosition().Z)));
         Assert.Equal(0, behind.Events.PendingCount(AiEvent.GrenadeThrown));
     }
@@ -344,7 +344,7 @@ public sealed class AiHearingTests
     [Fact]
     public void GrenadeLandUsesTheNativeFiveMetreInRangeEvent()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d contact = new(5 * Metre, 0, 0);
 
         Assert.True(soldier.ReceiveGrenadeLand(contact));
@@ -353,11 +353,11 @@ public sealed class AiHearingTests
         Assert.NotNull(queued);
         Assert.Equal(contact, queued.Value.Position);
         Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
-        Assert.Equal(AiSoldier.GrenadeLandRadiusInUnits, queued.Value.Radius);
+        Assert.Equal(Igi1HumanAi.GrenadeLandRadiusInUnits, queued.Value.Radius);
         Assert.Equal(0, queued.Value.Source);
         Assert.Equal(0, queued.Value.Subject);
 
-        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Assert.False(outside.ReceiveGrenadeLand(new Vector3d((5 * Metre) + 1, 0, 0)));
         Assert.Equal(0, outside.Events.PendingCount(AiEvent.GrenadeLand));
     }
@@ -365,7 +365,7 @@ public sealed class AiHearingTests
     [Fact]
     public void FlashbangUsesTheNativeTenMetreViewAndRangeEvent()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d flash = new(0, 9 * Metre, soldier.EyePosition().Z);
 
         Assert.True(soldier.ReceiveFlashbang(flash));
@@ -374,9 +374,9 @@ public sealed class AiHearingTests
         Assert.NotNull(queued);
         Assert.Equal(flash, queued.Value.Position);
         Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange, queued.Value.Filter);
-        Assert.Equal(AiSoldier.FlashbangEventRadiusInUnits, queued.Value.Radius);
+        Assert.Equal(Igi1HumanAi.FlashbangEventRadiusInUnits, queued.Value.Radius);
 
-        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Assert.False(outside.ReceiveFlashbang(new Vector3d(0, 11 * Metre, outside.EyePosition().Z)));
         Assert.Equal(0, outside.Events.PendingCount(AiEvent.Flashbang));
     }
@@ -384,7 +384,7 @@ public sealed class AiHearingTests
     [Fact]
     public void ExplosionUsesTheNativeFiveMetreEnvelope()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d explosion = new(5 * Metre, 0, 0);
 
         Assert.True(soldier.ReceiveExplosion(explosion));
@@ -392,9 +392,9 @@ public sealed class AiHearingTests
         AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Explosion);
         Assert.NotNull(queued);
         Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
-        Assert.Equal(AiSoldier.GrenadeLandRadiusInUnits, queued.Value.Radius);
+        Assert.Equal(Igi1HumanAi.GrenadeLandRadiusInUnits, queued.Value.Radius);
 
-        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Assert.False(outside.ReceiveExplosion(new Vector3d((5 * Metre) + 1, 0, 0)));
         Assert.Equal(0, outside.Events.PendingCount(AiEvent.Explosion));
     }
@@ -404,7 +404,7 @@ public sealed class AiHearingTests
     {
         Vector3d feet = new(10_000, 20_000, 30_000);
         Vector3d impact = Away(feet, HumanFallDamage.DamagingImpactHearingRadiusUnits);
-        AiSoldier soldier = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.ReceiveGroundImpact(
             impact,
@@ -415,7 +415,7 @@ public sealed class AiHearingTests
         Assert.NotNull(queued);
         Assert.Equal(HumanFallDamage.DamagingImpactHearingRadiusUnits, queued.Value.Radius);
 
-        AiSoldier outside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi outside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
         Assert.False(outside.ReceiveGroundImpact(
             Away(feet, HumanFallDamage.DamagingImpactHearingRadiusUnits + 1),
             shooterPosition: impact,
@@ -424,12 +424,12 @@ public sealed class AiHearingTests
 
     private static Vector3d Away(Vector3d from, double units) => new(from.X + units, from.Y, from.Z);
 
-    private static AiSoldier Soldier(out Vector3d position)
+    private static Igi1HumanAi Soldier(out Vector3d position)
     {
         string path = Path.Combine(
             GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(path));
         position = graph.Nodes[0].Position;
-        return new AiSoldier(graph, position, facing: 0f, phase: 0, seed: 1);
+        return new Igi1HumanAi(graph, position, facing: 0f, phase: 0, seed: 1);
     }
 }

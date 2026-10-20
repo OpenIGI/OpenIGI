@@ -49,24 +49,24 @@ public sealed class AiVisionTests
     {
         // IGI.EXE 0x489B20 reads the float at 0x534230 after the ray query. Both Ghidra and
         // radare2 identify a real five-block function here and the retail dword is 0.790000021.
-        Assert.Equal(0.79000002, AiSoldier.SightObstructionTolerance, 8);
+        Assert.Equal(0.79000002, Igi1HumanAi.SightObstructionTolerance, 8);
 
         // The recovered value belongs to a richer native query. This port's sight cast excludes
         // Humans, so every finite early hit is world geometry and must remain opaque.
-        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, double.PositiveInfinity));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 0.0));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 50.0));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 78.9));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 79.1));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 90.0));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 99.9));
+        Assert.True(Igi1HumanAi.WorldBlockerAllowsSight(100.0, double.PositiveInfinity));
+        Assert.False(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 0.0));
+        Assert.False(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 50.0));
+        Assert.False(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 78.9));
+        Assert.False(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 79.1));
+        Assert.False(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 90.0));
+        Assert.False(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 99.9));
 
         // A collision exactly at the mark is the detection point itself, not an intervening wall.
-        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, 100.0));
+        Assert.True(Igi1HumanAi.WorldBlockerAllowsSight(100.0, 100.0));
 
         // Degenerate targets have no ray to occlude. Keep the renderer's zero-distance behavior stable.
-        Assert.True(AiSoldier.WorldBlockerAllowsSight(0.0, 0.0));
-        Assert.True(AiSoldier.WorldBlockerAllowsSight(0.0, 25.0));
+        Assert.True(Igi1HumanAi.WorldBlockerAllowsSight(0.0, 0.0));
+        Assert.True(Igi1HumanAi.WorldBlockerAllowsSight(0.0, 25.0));
     }
 
     /// <summary>A point straight ahead and in range is seen; one behind is refused before any trigonometry.</summary>

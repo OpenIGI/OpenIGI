@@ -68,7 +68,7 @@ public sealed class AiScriptHost
     // Faults already reported, so a per-tick failure is logged once rather than for ever.
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
     private readonly List<AiProducedAction> _produced = [];
-    private AiSoldier? _current;
+    private Igi1HumanAi? _current;
     private AiEvent _currentEvent;
     private int _slot;
     private QvmProgram? _archetypeScript;
@@ -110,7 +110,7 @@ public sealed class AiScriptHost
     /// is what stops a lower-priority event getting a turn this tick.
     /// </returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public bool Run(QvmProgram script, AiSoldier soldier, AiEvent handling, int slot, QvmProgram? archetype = null)
+    public bool Run(QvmProgram script, Igi1HumanAi soldier, AiEvent handling, int slot, QvmProgram? archetype = null)
     {
         ArgumentNullException.ThrowIfNull(script);
         ArgumentNullException.ThrowIfNull(soldier);
@@ -148,7 +148,7 @@ public sealed class AiScriptHost
         return _produced.Count > 0;
     }
 
-    private void Bind(AiSoldier soldier, AiEvent handling, int slot)
+    private void Bind(Igi1HumanAi soldier, AiEvent handling, int slot)
     {
         _current = soldier;
         _currentEvent = handling;
@@ -216,7 +216,7 @@ public sealed class AiScriptHost
             return QvmValue.Zero;
         }
 
-        AiSoldier? ai = _current;
+        Igi1HumanAi? ai = _current;
         switch (native.Name)
         {
             case "AIFunction_GetCurrentEventType":

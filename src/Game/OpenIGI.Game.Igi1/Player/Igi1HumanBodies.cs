@@ -24,7 +24,7 @@ public sealed class Igi1PlayerBody(MissionWorld mission) : IHumanBodyState
         {
             Vector3d feet = Feet;
             bool crouched = mission.Player?.Body.IsCrouched == true;
-            return new Vector3d(feet.X, feet.Y, feet.Z + AiSoldier.DetectionMarkAboveFeet(crouched));
+            return new Vector3d(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouched));
         }
     }
 
@@ -55,7 +55,7 @@ public sealed class Igi1SoldierBody(SoldierView view, Func<bool> crouching) : IH
         get
         {
             Vector3d feet = view.Position;
-            return new Vector3d(feet.X, feet.Y, feet.Z + AiSoldier.DetectionMarkAboveFeet(crouching()));
+            return new Vector3d(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching()));
         }
     }
 

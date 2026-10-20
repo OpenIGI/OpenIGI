@@ -108,8 +108,8 @@ public sealed class AiHearingTests
     {
         private PublisherFixture(
             SoldierRenderer renderer,
-            AiSoldier struckBrain,
-            AiSoldier recipientBrain,
+            Igi1HumanAi struckBrain,
+            Igi1HumanAi recipientBrain,
             Vector3d struckPosition)
         {
             Renderer = renderer;
@@ -121,9 +121,9 @@ public sealed class AiHearingTests
 
         public SoldierRenderer Renderer { get; }
 
-        public AiSoldier StruckBrain { get; }
+        public Igi1HumanAi StruckBrain { get; }
 
-        public AiSoldier RecipientBrain { get; }
+        public Igi1HumanAi RecipientBrain { get; }
 
         public Vector3d BulletOrigin { get; }
 
@@ -180,7 +180,7 @@ public sealed class AiHearingTests
                 new Dictionary<int, GraphFile>(),
                 levelRoot: playerOnTheSoldiersSide ? testTree.Root : null));
 
-            AiSoldier[] brains = [.. renderer.Simulation.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
+            Igi1HumanAi[] brains = [.. renderer.Simulation.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
             return new PublisherFixture(renderer, brains[0], brains[1], struck.Position);
         }
 

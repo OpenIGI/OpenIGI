@@ -59,7 +59,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// Gets or sets what is told once a soldier's mount is settled for the tick -- on a stationary gun or off it -- which is
     /// when its drawn weapon follows.
     /// </summary>
-    internal Action<SoldierView, AiSoldier>? MountSettled { get; set; }
+    internal Action<SoldierView, Igi1HumanAi>? MountSettled { get; set; }
 
     /// <summary>Gets or sets what is told as a soldier falls dead: where its body lies and how, for the corpse that is drawn.</summary>
     internal Action<SoldierFall>? BodyFell { get; set; }
@@ -88,7 +88,7 @@ public sealed class SoldierSimulation : IHumanEvents
         Vector3f forward = new(orientation.M12, orientation.M22, orientation.M32);
 
         HumanSoldierClass soldierClass = view.Soldier.Class;
-        Brains.TryGetValue(view, out AiSoldier? brain);
+        Brains.TryGetValue(view, out Igi1HumanAi? brain);
         int scriptOverride = brain?.DeathAnimationOverride ?? -1;
         Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         float facing = GammaOf(view);
@@ -137,7 +137,7 @@ public sealed class SoldierSimulation : IHumanEvents
             brain.Kill(fall, facing);
         }
 
-        // And the death cry, from here rather than from AiSoldier.Kill: the per-tick loop calls Kill on
+        // And the death cry, from here rather than from Igi1HumanAi.Kill: the per-tick loop calls Kill on
         // every corpse it steps, so a hook there would restart the sound thirty times a second. This is
         // the alive-to-dead edge, and it happens once.
         DeathSound?.Invoke(view.Position);
@@ -181,7 +181,7 @@ public sealed class SoldierSimulation : IHumanEvents
     }
 
     /// <summary>One soldier's update: its rig, then its AI and movement.</summary>
-    internal void TickSoldier(SoldierView view, AiSoldier brain)
+    internal void TickSoldier(SoldierView view, Igi1HumanAi brain)
     {
         if (!ConditionalContainerGate.IsTaskActive(view.Soldier) || !Ticked.Add(view))
         {
@@ -201,7 +201,7 @@ public sealed class SoldierSimulation : IHumanEvents
             : new Vector3d(
                 feet.X,
                 feet.Y,
-                feet.Z + AiSoldier.DetectionMarkAboveFeet(enemyCrouching));
+                feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(enemyCrouching));
 
         // Every soldier's own rig advances (a group's shared mesh is only the model).
         view.Tick();
@@ -499,7 +499,7 @@ public sealed class SoldierSimulation : IHumanEvents
         // fight wakes the room even before anybody fires.
         if (brain.AlertPingDueThisTick)
         {
-            foreach ((SoldierView neighbourView, AiSoldier neighbour) in Brains)
+            foreach ((SoldierView neighbourView, Igi1HumanAi neighbour) in Brains)
             {
                 if (!ReferenceEquals(neighbour, brain)
                     && neighbourView.Soldier.Team == view.Soldier.Team
@@ -537,7 +537,7 @@ public sealed class SoldierSimulation : IHumanEvents
             // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
             // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
             // = anim 48 at ~4.4 m/s), and the run clip's own root motion is what carries it at that speed
-            // (AiSoldier.AdvanceInCombat reads it). Fall back to the walk if the set has no run clip.
+            // (Igi1HumanAi.AdvanceInCombat reads it). Fall back to the walk if the set has no run clip.
             //
             // This test MUST come before the combat-state branch: an engaged hunter otherwise plays
             // the fire pose, whose zero root motion feeds AdvanceInCombat a zero step -- the exact
@@ -633,7 +633,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// the same place, so they are not told apart here.
     /// </para>
     /// </remarks>
-    private bool FireIfAsked(SoldierView view, AiSoldier brain, Vector3d enemyFeet, bool enemyCrouching)
+    private bool FireIfAsked(SoldierView view, Igi1HumanAi brain, Vector3d enemyFeet, bool enemyCrouching)
     {
         SoldierAgent? member = FindAgent(view);
         AiStationaryGun? mounted = brain.MountedGun;
@@ -792,9 +792,9 @@ public sealed class SoldierSimulation : IHumanEvents
     // A dead soldier cannot stay in a shared group: the group is skinned from ONE representative's pose, so
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
-    internal readonly Dictionary<SoldierView, AiSoldier> Brains = [];
+    internal readonly Dictionary<SoldierView, Igi1HumanAi> Brains = [];
 
-    internal readonly Dictionary<int, AiSoldier> BrainsByRuntimeId = [];
+    internal readonly Dictionary<int, Igi1HumanAi> BrainsByRuntimeId = [];
 
     internal readonly Dictionary<GuardGeneratorTask, SoldierView> GuardGenerators = [];
 
@@ -852,7 +852,7 @@ public sealed class SoldierSimulation : IHumanEvents
     private readonly Dictionary<SoldierView, AiCombatTarget> _npcTargets = [];
 
     // Remembers which opposing NPC each brain was fighting. A dead NPC disappears from the next
-    // nearest-target sweep; keeping this identity for one handoff lets the renderer tell AiSoldier
+    // nearest-target sweep; keeping this identity for one handoff lets the renderer tell Igi1HumanAi
     // that its current target died instead of accidentally reporting the still-alive player.
     internal WorldInteractionRegistry? Interactions;
 
@@ -1224,7 +1224,7 @@ public sealed class SoldierSimulation : IHumanEvents
             camera.Position.Y * WorldScene.UnitsPerMetre,
             camera.Position.Z * WorldScene.UnitsPerMetre);
 
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             if (view.IsDead || !ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
@@ -1456,7 +1456,7 @@ public sealed class SoldierSimulation : IHumanEvents
     public IReadOnlyList<Vector3d> MapContacts()
     {
         List<Vector3d> contacts = [];
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             if (ConditionalContainerGate.IsTaskActive(view.Soldier)
                 && !view.IsDead
@@ -1481,7 +1481,7 @@ public sealed class SoldierSimulation : IHumanEvents
     public IReadOnlyList<SecurityCameraSubject> CameraSubjects()
     {
         List<SecurityCameraSubject> subjects = [];
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
@@ -1497,7 +1497,7 @@ public sealed class SoldierSimulation : IHumanEvents
                 || (Health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
             subjects.Add(new SecurityCameraSubject(
                 view,
-                new Vector3d(feet.X, feet.Y, feet.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false)),
+                new Vector3d(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false)),
                 CamerasSide: view.Soldier.Team == 1,
                 Alive: !dead,
                 view.Soldier));
@@ -1507,9 +1507,9 @@ public sealed class SoldierSimulation : IHumanEvents
     }
 
     /// <summary>Gets the live AI brains for focused renderer-path tests.</summary>
-    internal IReadOnlyList<AiSoldier> BrainsForTesting => [.. Brains.Values];
+    internal IReadOnlyList<Igi1HumanAi> BrainsForTesting => [.. Brains.Values];
 
-    internal IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> BrainPairsForTesting => [.. Brains];
+    internal IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> BrainPairsForTesting => [.. Brains];
 
     /// <summary>Marks every soldier drawn close up, as a frame looking at all of them would.</summary>
     internal void ObserveAllForTesting()
@@ -1528,7 +1528,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <summary>Whether an AI sight ray from one point to another is clear, for scenario runs.</summary>
     internal bool ClearSightForTesting(Vector3d from, Vector3d to) =>
         _sightTraceForTesting is { } trace
-        && HasLineOfSight(trace, from, to, AiSoldier.SightObstructionTolerance);
+        && HasLineOfSight(trace, from, to, Igi1HumanAi.SightObstructionTolerance);
 
     /// <summary>A soldier's accumulated damage, for scenario runs.</summary>
     internal float DamageForTesting(SoldierView soldier) =>
@@ -1542,7 +1542,7 @@ public sealed class SoldierSimulation : IHumanEvents
             return "no trace";
         }
 
-        bool clear = HasLineOfSight(trace, from, to, AiSoldier.SightObstructionTolerance);
+        bool clear = HasLineOfSight(trace, from, to, Igi1HumanAi.SightObstructionTolerance);
         WorldTraceRequest request = new(from, to, WorldTraceMask.World) { TracePortals = false };
         Vector3d along = to - from;
         return trace(in request, out WorldTraceHit hit)
@@ -1571,7 +1571,7 @@ public sealed class SoldierSimulation : IHumanEvents
                     {
                         // Grounded on its graph, as TickPlacementOf draws it.
                         if (!member.HasCutsceneGameplayMovement
-                            && Brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
+                            && Brains.TryGetValue(member.View, out Igi1HumanAi? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
                             && !stagedBrain.GraphInParentFrame && stagedBrain.StoodOnGraph)
                         {
                             return new CutsceneTargetPose(
@@ -1648,11 +1648,11 @@ public sealed class SoldierSimulation : IHumanEvents
         }
 
         Vector3d dir = new(direction.X / length, direction.Y / length, direction.Z / length);
-        AiSoldier? nearest = null;
+        Igi1HumanAi? nearest = null;
         SoldierView? nearestView = null;
         double nearestT = double.MaxValue;
 
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
@@ -1951,7 +1951,7 @@ public sealed class SoldierSimulation : IHumanEvents
                     }
                 }
 
-                AiSoldier brain = new(graph, initialPosition, GammaOf(view), index & 3, index, AiRandom, view.Soldier.Class);
+                Igi1HumanAi brain = new(graph, initialPosition, GammaOf(view), index & 3, index, AiRandom, view.Soldier.Class);
                 // A soldier on the player's own team must not engage the player. The brain's noise and
                 // vision gates read this: detection and every player-origin gunshot/impact/walk event are
                 // refused for a same-team player, so the friendly patrol stands down instead of shooting us.
@@ -1960,7 +1960,7 @@ public sealed class SoldierSimulation : IHumanEvents
                 brain.RuntimeId = index + 1;
                 brain.SetResponseRouter(source =>
                 {
-                    if (BrainsByRuntimeId.TryGetValue(source, out AiSoldier? recipient))
+                    if (BrainsByRuntimeId.TryGetValue(source, out Igi1HumanAi? recipient))
                     {
                         recipient.ReceiveAlertResponse();
                     }
@@ -2010,7 +2010,7 @@ public sealed class SoldierSimulation : IHumanEvents
                     // blind to a player immediately outside, even though the remainder of the ray was clear.
                     // Step past retail Glass/Water/Fence/Ladder faces, while an ordinary wall or physical
                     // closed-door leaf remains cover.
-                    brain.SetLineOfSight((from, to) => HasLineOfSight(sight, from, to, AiSoldier.SightObstructionTolerance));
+                    brain.SetLineOfSight((from, to) => HasLineOfSight(sight, from, to, Igi1HumanAi.SightObstructionTolerance));
                 }
 
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
@@ -2097,7 +2097,7 @@ public sealed class SoldierSimulation : IHumanEvents
         int withRoute = 0;
         int moving = 0;
 
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             string key = brain.Activity.ToString();
             activities[key] = activities.GetValueOrDefault(key) + 1;
@@ -2151,7 +2151,7 @@ public sealed class SoldierSimulation : IHumanEvents
         int seeing = 0;
         int engaging = 0;
         int chasing = 0;
-        foreach (AiSoldier brain in Brains.Values)
+        foreach (Igi1HumanAi brain in Brains.Values)
         {
             if (brain.SeesEnemy)
             {
@@ -2179,7 +2179,7 @@ public sealed class SoldierSimulation : IHumanEvents
         if (engaging > 0 && TickCount - _lastCombatDetailTick >= 60)
         {
             _lastCombatDetailTick = TickCount;
-            foreach (AiSoldier brain in Brains.Values)
+            foreach (Igi1HumanAi brain in Brains.Values)
             {
                 if (brain.Activity == AiSoldierActivity.Engaging)
                 {
@@ -2209,7 +2209,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// through the port's transcription of <c>off_54151C</c>; if it disagrees with the probe's, the
     /// transcription is wrong.
     /// </remarks>
-    internal void ReportChannels(AiSoldier brain)
+    internal void ReportChannels(Igi1HumanAi brain)
     {
         foreach (AiChannelWrite write in brain.ChannelWrites)
         {
@@ -2223,7 +2223,7 @@ public sealed class SoldierSimulation : IHumanEvents
         }
     }
 
-    internal static AiCombatWeaponState CombatWeaponState(AiSoldier brain, SoldierAgent held)
+    internal static AiCombatWeaponState CombatWeaponState(Igi1HumanAi brain, SoldierAgent held)
     {
         if (brain.MountedGun is { Weapon: { } mounted } gun)
         {
@@ -2264,7 +2264,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// </para>
     /// </remarks>
     internal Vector3d SpreadRound(
-        AiSoldier brain,
+        Igi1HumanAi brain,
         AiStationaryGun? mounted,
         WeaponType weapon,
         SoldierAgent? member,
@@ -2331,9 +2331,9 @@ public sealed class SoldierSimulation : IHumanEvents
     /// points. The port's facing has no pitch, so the ray borrows the aim point's height and keeps the
     /// facing's horizontal error — which is the part that decides the spray's geometric misses.
     /// </remarks>
-    internal static Vector3d SprayTarget(AiSoldier brain, Vector3d enemyFeet, bool enemyCrouching)
+    internal static Vector3d SprayTarget(Igi1HumanAi brain, Vector3d enemyFeet, bool enemyCrouching)
     {
-        Vector3d aimPoint = AiSoldier.AimPointOf(enemyFeet, enemyCrouching);
+        Vector3d aimPoint = Igi1HumanAi.AimPointOf(enemyFeet, enemyCrouching);
         Vector3d eye = brain.EyePosition();
         double dx = aimPoint.X - eye.X;
         double dy = aimPoint.Y - eye.Y;
@@ -2355,7 +2355,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <param name="except">A soldier not to notify — the shooter, which does not hear its own shot as news.</param>
     /// <remarks>
     /// The range gate (30 m, or 1 m silenced) is applied per soldier in
-    /// <see cref="AiSoldier.HearGunshot(Vector3d, bool)"/>.
+    /// <see cref="Igi1HumanAi.HearGunshot(Vector3d, bool)"/>.
     /// The event is queued and pumped on the soldier's next tick; what it does about it is its archetype
     /// script's business.
     /// </remarks>
@@ -2374,7 +2374,7 @@ public sealed class SoldierSimulation : IHumanEvents
             {
                 return false;
             }
-            if (except is not null && Brains.TryGetValue(except, out AiSoldier? shooter) && ReferenceEquals(shooter, brain))
+            if (except is not null && Brains.TryGetValue(except, out Igi1HumanAi? shooter) && ReferenceEquals(shooter, brain))
             {
                 return false;
             }
@@ -2398,7 +2398,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// </remarks>
     public void NotifyExplosion(
         Vector3d origin,
-        double rangeUnits = AiSoldier.FlashbangEventRadiusInUnits)
+        double rangeUnits = Igi1HumanAi.FlashbangEventRadiusInUnits)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -2420,7 +2420,7 @@ public sealed class SoldierSimulation : IHumanEvents
     public void NotifyGroundImpact(
         Vector3d impact,
         Vector3d shooterPosition,
-        double radiusInUnits = AiSoldier.GroundImpactRadiusInUnits)
+        double radiusInUnits = Igi1HumanAi.GroundImpactRadiusInUnits)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -2441,7 +2441,7 @@ public sealed class SoldierSimulation : IHumanEvents
     public void NotifyWalk(Vector3d step, Vector3d walkerPosition, double radiusUnits) =>
         NotifyHumanNoise(AiEvent.Walk, step, walkerPosition, radiusUnits);
 
-    /// <summary>Delivers a noise the player makes to every guard it reaches — see <see cref="AiSoldier.ReceiveHumanNoise"/>.</summary>
+    /// <summary>Delivers a noise the player makes to every guard it reaches — see <see cref="Igi1HumanAi.ReceiveHumanNoise"/>.</summary>
     /// <param name="type">The event: a walk, a door, a fence climb or a ladder step.</param>
     /// <param name="position">Where the noise is.</param>
     /// <param name="source">The player's live position.</param>
@@ -2450,7 +2450,7 @@ public sealed class SoldierSimulation : IHumanEvents
         AiEvent type,
         Vector3d position,
         Vector3d source,
-        double radiusUnits = AiSoldier.HumanNoiseRadiusInUnits)
+        double radiusUnits = Igi1HumanAi.HumanNoiseRadiusInUnits)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -2477,13 +2477,13 @@ public sealed class SoldierSimulation : IHumanEvents
             return brain.ReceiveGrenadeThrown(origin);
         });
         Broadcast(noise, AiEvent.GrenadeThrown, -1, AiEventFilter.InView, -1.0, origin, null);
-        ReportNoise("grenade-thrown", noise.Heard, AiSoldier.GrenadeLandRadiusInUnits);
+        ReportNoise("grenade-thrown", noise.Heard, Igi1HumanAi.GrenadeLandRadiusInUnits);
     }
 
     /// <summary>Delivers IGI1's five-metre grenade-land event (type 18).</summary>
     public void NotifyGrenadeLand(
         Vector3d origin,
-        double radiusUnits = AiSoldier.GrenadeLandRadiusInUnits)
+        double radiusUnits = Igi1HumanAi.GrenadeLandRadiusInUnits)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -2501,7 +2501,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <summary>Delivers IGI1's ten-metre in-view flashbang event (type 19).</summary>
     public void NotifyFlashbang(
         Vector3d origin,
-        double radiusUnits = AiSoldier.FlashbangEventRadiusInUnits)
+        double radiusUnits = Igi1HumanAi.FlashbangEventRadiusInUnits)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -2541,7 +2541,7 @@ public sealed class SoldierSimulation : IHumanEvents
             return brain.ReceiveGunshotMiss(origin, liveEnd, shooter.Position, otherSide, source);
         });
         Broadcast(noise);
-        ReportNoise("near-miss", noise.Heard, AiSoldier.GunshotMissRadiusInUnits);
+        ReportNoise("near-miss", noise.Heard, Igi1HumanAi.GunshotMissRadiusInUnits);
     }
 
     /// <summary>
@@ -2569,7 +2569,7 @@ public sealed class SoldierSimulation : IHumanEvents
             return brain.ReceiveGunshotMiss(origin, end, shooterPosition);
         });
         Broadcast(noise);
-        ReportNoise("near-miss", noise.Heard, AiSoldier.GunshotMissRadiusInUnits);
+        ReportNoise("near-miss", noise.Heard, Igi1HumanAi.GunshotMissRadiusInUnits);
     }
 
     /// <summary>One rate-limited delivery line per noise kind — the receipt half of the [aiflow] diff.</summary>
@@ -2602,7 +2602,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <inheritdoc/>
     void IHumanEvents.SendEvent(HumanTask human, in HumanAiEvent aiEvent)
     {
-        if (!_viewsByTask.TryGetValue(human, out SoldierView? view) || !Brains.TryGetValue(view, out AiSoldier? brain))
+        if (!_viewsByTask.TryGetValue(human, out SoldierView? view) || !Brains.TryGetValue(view, out Igi1HumanAi? brain))
         {
             return;
         }
@@ -2623,7 +2623,7 @@ public sealed class SoldierSimulation : IHumanEvents
     // Another game's event, read by its fields: the admission tests its sender set, then the receiver this game's own senders
     // hand the same event to. The engine's flag bits are both games'; the human ones are answered by the source, whichever
     // game's human it is.
-    private static void HearOtherGame(SoldierView view, AiSoldier brain, in HumanAiEvent aiEvent)
+    private static void HearOtherGame(SoldierView view, Igi1HumanAi brain, in HumanAiEvent aiEvent)
     {
         if (!ConditionalContainerGate.IsTaskActive(view.Soldier) || aiEvent.Position is not { } at)
         {
@@ -2667,11 +2667,11 @@ public sealed class SoldierSimulation : IHumanEvents
     }
 
     // Project I.G.I.'s own context for an AI event: the listening brain's test for it, and how many heard.
-    private sealed class Igi1Noise(Func<SoldierView, AiSoldier, bool> hear)
+    private sealed class Igi1Noise(Func<SoldierView, Igi1HumanAi, bool> hear)
     {
         public int Heard { get; set; }
 
-        public bool Hear(SoldierView view, AiSoldier brain) => hear(view, brain);
+        public bool Hear(SoldierView view, Igi1HumanAi brain) => hear(view, brain);
     }
 
     private void ReportNoise(string kind, int heard, double radiusUnits)
@@ -2704,7 +2704,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// </remarks>
     internal List<AiDetectionCandidate> CandidatesFor(
         SoldierView self,
-        AiSoldier brain,
+        Igi1HumanAi brain,
         Vector3d playerFeet,
         Vector3d playerMark,
         bool playerAlive,
@@ -2715,7 +2715,7 @@ public sealed class SoldierSimulation : IHumanEvents
             new(AiDetectionCandidate.PlayerId, brain.PlayerIsEnemy, playerAlive, playerMark, playerFeet,
                 playerCrouching, PlayerTarget),
         ];
-        foreach ((SoldierView view, AiSoldier other) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi other) in Brains)
         {
             if (ReferenceEquals(view, self) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
@@ -2727,7 +2727,7 @@ public sealed class SoldierSimulation : IHumanEvents
                 view.Position.Y,
                 SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
             Vector3d soldierMark = new(
-                soldierFeet.X, soldierFeet.Y, soldierFeet.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+                soldierFeet.X, soldierFeet.Y, soldierFeet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
             AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
                 ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
             humans.Add(new AiDetectionCandidate(
@@ -2813,7 +2813,7 @@ public sealed class SoldierSimulation : IHumanEvents
                 (int count, AiCombatParameters _) = accuracyByType.GetValueOrDefault(type);
                 accuracyByType[type] = (count + 1, row);
 
-                if (Brains.TryGetValue(member.View, out AiSoldier? brain))
+                if (Brains.TryGetValue(member.View, out Igi1HumanAi? brain))
                 {
                     SoldierAgent held = member;
                     brain.SetCombat(type, row, () => CombatWeaponState(brain, held));
@@ -2959,7 +2959,7 @@ public sealed class SoldierSimulation : IHumanEvents
             return world;
         }
 
-        AiSoldier.GroundQuery? ground = MakeGroundQuery();
+        Igi1HumanAi.GroundQuery? ground = MakeGroundQuery();
         RagdollWorld = new RagdollWorld(
             Cast,
             ground is null ? null : (double x, double y, double z, out double groundZ) => ground(x, y, z, out groundZ))
@@ -2970,7 +2970,7 @@ public sealed class SoldierSimulation : IHumanEvents
         return RagdollWorld;
     }
 
-    internal AiSoldier.GroundQuery? MakeGroundQuery()
+    internal Igi1HumanAi.GroundQuery? MakeGroundQuery()
     {
         IGroundHeightField? terrain = Terrain;
         WorldRayCast? cast = Cast;
@@ -3077,7 +3077,7 @@ public sealed class SoldierSimulation : IHumanEvents
         }
     }
 
-    internal void BindViewTracking(AiSoldier brain, SoldierView view)
+    internal void BindViewTracking(Igi1HumanAi brain, SoldierView view)
     {
         brain.SetScriptSound((name, attached) => ScriptSound?.Invoke(name, view.Position, attached));
         brain.SetEyeTransform(
@@ -3089,7 +3089,7 @@ public sealed class SoldierSimulation : IHumanEvents
                     return new Vector3d(
                         view.Position.X,
                         view.Position.Y,
-                        view.Position.Z + AiSoldier.HumanSeparationEyeHeight);
+                        view.Position.Z + Igi1HumanAi.HumanSeparationEyeHeight);
                 }
 
                 // The bone offset is from the model's origin, which is drawn above the feet by the model's
@@ -3177,7 +3177,7 @@ public sealed class SoldierSimulation : IHumanEvents
         {
             int onPatrol = Brains.Values.Count(b => b.Route is not null);
             Dictionary<string, int> activity = [];
-            foreach (AiSoldier brain in Brains.Values)
+            foreach (Igi1HumanAi brain in Brains.Values)
             {
                 string key = brain.Activity.ToString();
                 activity[key] = activity.GetValueOrDefault(key) + 1;
@@ -3194,7 +3194,7 @@ public sealed class SoldierSimulation : IHumanEvents
             if (_logger.IsEnabled(LogLevel.Debug, TraceLogCategory))
             {
                 bool traceAll = _logger.IsEnabled(LogLevel.Trace, TraceLogCategory);
-                foreach (KeyValuePair<SoldierView, AiSoldier> pair in Brains)
+                foreach (KeyValuePair<SoldierView, Igi1HumanAi> pair in Brains)
                 {
                     HumanSoldierTask soldier = pair.Key.Soldier;
                     HumanAiTask? mind = soldier.Children.OfType<HumanAiTask>().FirstOrDefault();
@@ -3209,7 +3209,7 @@ public sealed class SoldierSimulation : IHumanEvents
                         continue;
                     }
 
-                    AiSoldier brain = pair.Value;
+                    Igi1HumanAi brain = pair.Value;
                     string traceTag = friendly ? "friendly" : "guard";
                     string route = brain.Route is null ? "-" : $"path {brain.Route.Path.Id} cmd={brain.Route.Current?.Kind}";
                     string last = brain.LastActions.Count == 0
@@ -3232,7 +3232,7 @@ public sealed class SoldierSimulation : IHumanEvents
                         $"moved={(brain.LastMovedTo is { } mv ? $"({mv.X / 4096.0:0.0},{mv.Y / 4096.0:0.0})" : "-")} facing={brain.LastFacingDeg:0.0} " +
                         $"wp={(brain.DebugWaypoint is { } wpp ? $"{wpp.X / 4096.0:0.000},{wpp.Y / 4096.0:0.000}" : "-")}");
 
-                    foreach ((SoldierView otherView, AiSoldier other) in Brains)
+                    foreach ((SoldierView otherView, Igi1HumanAi other) in Brains)
                     {
                         if (ReferenceEquals(other, brain))
                         {
@@ -3403,7 +3403,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <summary>A body's heading out of its world 3×3 — the inverse of <c>Z(facing)</c>.</summary>
     /// <remarks>
     /// The second column is the body's forward, and a soldier's forward is
-    /// <c>(-sin f, cos f)</c> (see <see cref="AiSoldier"/>), so the angle reads straight back out.
+    /// <c>(-sin f, cos f)</c> (see <see cref="Igi1HumanAi"/>), so the angle reads straight back out.
     /// Orientations are pure Z rotations for every body this renderer draws.
     /// </remarks>
     internal static float FacingOf(in Matrix3f orientation) => MathF.Atan2(-orientation.M12, orientation.M22);
@@ -3510,7 +3510,7 @@ public sealed class SoldierSimulation : IHumanEvents
     // settings' explode time. The velocity is the closed-form ballistic answer for the port's
     // per-tick integrator: v = d/T + g(T+1)/2 upward, which lands EXACTLY on the target after T
     // ticks of `v.z -= g; p += v`.
-    internal void ThrowAiGrenade(AiSoldier brain, Vector3d target, GrenadeSimulation grenades)
+    internal void ThrowAiGrenade(Igi1HumanAi brain, Vector3d target, GrenadeSimulation grenades)
     {
         AiCombatParameters? parameters = brain.CombatParameters;
         if (parameters is null)
@@ -3578,7 +3578,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// Every hit handler plays the grunt on the non-lethal branch, and an explosion only when it made the
     /// soldier react (<c>0x45A3D0</c>). The flinch is the bit the handlers raise for the body machine.
     /// </remarks>
-    internal void ReactToHit(SoldierView soldier, AiSoldier? brain, int zone, float dealt, bool explosion)
+    internal void ReactToHit(SoldierView soldier, Igi1HumanAi? brain, int zone, float dealt, bool explosion)
     {
         if (!_recoil.TryGetValue(soldier, out HumanRecoil? recoil))
         {
@@ -4038,7 +4038,7 @@ public sealed class SoldierSimulation : IHumanEvents
     {
         _viewsByTask[view.Soldier] = view;
         view.Soldier.Events = this;
-        view.Soldier.Body = new Player.Igi1SoldierBody(view, () => Brains.TryGetValue(view, out AiSoldier? brain) && brain.IsCrouching);
+        view.Soldier.Body = new Player.Igi1SoldierBody(view, () => Brains.TryGetValue(view, out Igi1HumanAi? brain) && brain.IsCrouching);
     }
 
     /// <summary>A round or a blade on a soldier, whoever fired it: <c>HumanSoldier</c>'s <c>WeaponHit</c>, <c>0x45D3C0</c>.</summary>
@@ -4057,7 +4057,7 @@ public sealed class SoldierSimulation : IHumanEvents
     {
         HumanHealth health = HealthOf(struckView);
         HumanHit hit = round.Hit;
-        AiSoldier? brain = Brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
+        Igi1HumanAi? brain = Brains.TryGetValue(struckView, out Igi1HumanAi? b) ? b : null;
         bool invulnerable = brain?.IsInvulnerable ?? false;
         if (!invulnerable)
         {
@@ -4130,7 +4130,7 @@ public sealed class SoldierSimulation : IHumanEvents
             return;
         }
 
-        AiSoldier? brain = Brains.TryGetValue(soldier, out AiSoldier? b) ? b : null;
+        Igi1HumanAi? brain = Brains.TryGetValue(soldier, out Igi1HumanAi? b) ? b : null;
         if (brain?.IsInvulnerable ?? false)
         {
             return;
@@ -4162,7 +4162,7 @@ public sealed class SoldierSimulation : IHumanEvents
     private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView)
     {
         SoldierAgent? deadAgent = FindAgent(deadView);
-        if (deadAgent is null || !Brains.TryGetValue(deadView, out AiSoldier? deadBrain))
+        if (deadAgent is null || !Brains.TryGetValue(deadView, out Igi1HumanAi? deadBrain))
         {
             _logger.Warning(LogCategory, $"{generator.Name} could not clone its missing rendered Human subtree.");
             return null;
@@ -4205,7 +4205,7 @@ public sealed class SoldierSimulation : IHumanEvents
         }
         Health[freshView] = NewHealth(freshView);
 
-        AiSoldier freshBrain = deadBrain.Respawned(
+        Igi1HumanAi freshBrain = deadBrain.Respawned(
             freshView.Position,
             freshView.Soldier.Gamma,
             brain => CombatWeaponState(brain, freshAgent));
@@ -4264,7 +4264,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <summary>Updates every body a soldier task owns -- a generator's dead guard and its replacement share one.</summary>
     private void TickSoldierTask(GameTask task)
     {
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             if (ReferenceEquals(view.Soldier, task))
             {
@@ -4345,7 +4345,7 @@ public sealed class SoldierSimulation : IHumanEvents
             AlarmControlTicked();
         }
 
-        foreach ((SoldierView view, AiSoldier brain) in Brains)
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
         {
             TickSoldier(view, brain);
         }
@@ -4360,7 +4360,7 @@ public sealed class SoldierSimulation : IHumanEvents
         {
             // A registered, live soldier the walk never reached sits under a task the port does not walk the way
             // the original does; tick it so it cannot freeze, and say so once.
-            foreach ((SoldierView view, AiSoldier brain) in Brains)
+            foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
             {
                 if (Ticked.Contains(view) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
                 {

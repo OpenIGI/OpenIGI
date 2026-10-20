@@ -834,7 +834,7 @@ public sealed class RetailCutsceneRuntimeTests
         // The renderer probes from the actor's current drawn base, attaches only to a
         // moving-platform contact (retail task+0x64), and never supplies an expected owner.
         // Reproduce that order here so the test observes the selection instead of assuming it.
-        // The jump ballistics themselves (clip 242 root motion steered by AiSoldier through
+        // The jump ballistics themselves (clip 242 root motion steered by Igi1HumanAi through
         // SoldierView, a Desktop-side sampler) cannot run in this harness: once the authored
         // landing tick arrives, the probe is placed over the passing wagon exactly where the
         // jump delivers Jones, and from there the ride is fully simulated.

@@ -25,7 +25,7 @@ public sealed class AiScriptedActionTests
         Vector3d position = new(1000, 2000, 3000);
         Vector3d target = new(position.X, position.Y + 4096, position.Z);
         int clip = 30;
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetActivateSupport(
             new AiActivationClaims(),
             (int id, out Vector3d found) =>
@@ -72,7 +72,7 @@ public sealed class AiScriptedActionTests
     {
         Vector3d position = new(1000, 2000, 3000);
         Vector3d target = new(position.X, position.Y + 4096, position.Z);
-        AiSoldier soldier = SoldierWithEmptyWeapon(position, target);
+        Igi1HumanAi soldier = SoldierWithEmptyWeapon(position, target);
 
         soldier.ApplyActions([
             new AiProducedAction("AIAction_FireAtTask", [20, 1, 0, 1, 0], 0),
@@ -96,7 +96,7 @@ public sealed class AiScriptedActionTests
     public void FallFlatHoldsProneForItsDuration()
     {
         Vector3d position = new(1000, 2000, 3000);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.ApplyActions([new AiProducedAction("AIAction_FallFlat", [1, 0], GunshotMissPosition, [1f, 0f])]);
 
         Vector3d enemy = new(position.X, position.Y - 100_000, position.Z);
@@ -120,7 +120,7 @@ public sealed class AiScriptedActionTests
         // the next pump installs the fight. 0x450F10 gives every action the flag word of the LAST one named
         // -- SetCombat's pushable -- so the fall is not ended but suspended beneath the fight.
         Vector3d position = new(1000, 2000, 3000);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
@@ -146,7 +146,7 @@ public sealed class AiScriptedActionTests
     {
         Vector3d position = new(1000, 2000, 3000);
         Vector3d attacker = new(4000, 5000, 6000);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1)
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1)
         {
             RuntimeId = 12,
         };
@@ -162,7 +162,7 @@ public sealed class AiScriptedActionTests
     [Fact]
     public void PlaySoundPreservesTheTextOperandAndAttachFlag()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         (string Name, bool Attached)? played = null;
         soldier.SetScriptSound((name, attached) => played = (name, attached));
 
@@ -182,7 +182,7 @@ public sealed class AiScriptedActionTests
     public void StunnedHoldsAnimationThirtyEightForTheRequestedDuration()
     {
         Vector3d position = new(1000, 2000, 3000);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.ApplyActions([
             new AiProducedAction("AIAction_Stunned", [1, 0], 0, [1f, 0f]),
         ]);
@@ -206,7 +206,7 @@ public sealed class AiScriptedActionTests
     [Fact]
     public void AReactionEndsANonPushableCombatAction()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
@@ -226,7 +226,7 @@ public sealed class AiScriptedActionTests
     [Fact]
     public void AReactionSuspendsAPushableCombatActionWhichResumesAfterIt()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
@@ -261,7 +261,7 @@ public sealed class AiScriptedActionTests
     {
         string guardPath = Path.Combine(GameData.RequireRoot(), "common", "ai", "guard.qvm");
         QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(guardPath));
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
@@ -294,7 +294,7 @@ public sealed class AiScriptedActionTests
     {
         string guardPath = Path.Combine(GameData.RequireRoot(), "common", "ai", "guard.qvm");
         QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(guardPath));
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
@@ -359,7 +359,7 @@ public sealed class AiScriptedActionTests
         // successful attempt to have gone through the real event queue and combat-visible tick.
         for (uint seed = 1; seed <= 128 && !sawPanic; seed++)
         {
-            AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: (int)seed);
+            Igi1HumanAi soldier = new(graph, start, facing: 0f, phase: 0, seed: (int)seed);
             soldier.SetCombat(
                 AiType.GuardAk,
                 new AiCombatParameters(new HumanAiConfigItemTask()),
@@ -403,7 +403,7 @@ public sealed class AiScriptedActionTests
         Vector3d start = graph.Nodes[0].Position;
         Vector3d panel = graph.Nodes[1].Position;
         AiActivationClaims claims = new();
-        AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
+        Igi1HumanAi soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
         {
             AlarmTriggerId = 20,
             AlarmControlId = 30,
@@ -457,9 +457,9 @@ public sealed class AiScriptedActionTests
         return natives;
     }
 
-    private static AiSoldier SoldierWithEmptyWeapon(Vector3d position, Vector3d target)
+    private static Igi1HumanAi SoldierWithEmptyWeapon(Vector3d position, Vector3d target)
     {
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetActivateSupport(
             new AiActivationClaims(),
             (int id, out Vector3d found) =>

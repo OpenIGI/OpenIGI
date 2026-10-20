@@ -201,7 +201,7 @@ public sealed class AiPatrolCombat
     /// past choosing it is the open question: <c>0x48DBB0</c> only raises the animation trigger and
     /// channel 9 (confirmed in the r2 disassembly — no damage call), and the Ghidra half of the
     /// validation loop is unavailable in this environment, so the strike-tick timing below (at the
-    /// trigger tick, in <c>AiSoldier</c>) is a documented approximation, not an attested site.
+    /// trigger tick, in <c>Igi1HumanAi</c>) is a documented approximation, not an attested site.
     /// </para>
     /// <para>
     /// The damage is a plain factor like a round's: the accumulator math (zone multiplier,

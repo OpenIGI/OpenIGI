@@ -48,7 +48,7 @@ public sealed class LevelFourRescueTests
         QvmProgram perTask = QvmProgram.Read(File.ReadAllBytes(MissionAiPath(500)));
         QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(GuardPath()));
 
-        AiSoldier harrison = new(graph, node42.Position, facing: 0f, phase: 0, seed: 7);
+        Igi1HumanAi harrison = new(graph, node42.Position, facing: 0f, phase: 0, seed: 7);
         harrison.SetPatrolPaths(paths);
         harrison.SetScript(host, perTask, guard);
         Assert.Equal(42, harrison.CurrentNode);
@@ -123,7 +123,7 @@ public sealed class LevelFourRescueTests
         QvmProgram civilian = QvmProgram.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "common", "ai", "civilian.qvm")));
 
-        AiSoldier brain = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 3);
+        Igi1HumanAi brain = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 3);
         brain.SetScript(host, josipScript, civilian);
         Vector3d far = new(
             brain.Position.X,

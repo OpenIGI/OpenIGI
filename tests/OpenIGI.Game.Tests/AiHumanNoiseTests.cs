@@ -18,11 +18,11 @@ public sealed class AiHumanNoiseTests
     [InlineData(AiEvent.Ladder)]
     public void ANoiseCarriesFiveMetresAndNoFurther(AiEvent type)
     {
-        AiSoldier near = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
-        AiSoldier far = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi near = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi far = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
-        Assert.True(near.ReceiveHumanNoise(type, new Vector3d(4.9 * Metre, 0, 0), default, AiSoldier.HumanNoiseRadiusInUnits));
-        Assert.False(far.ReceiveHumanNoise(type, new Vector3d(5.1 * Metre, 0, 0), default, AiSoldier.HumanNoiseRadiusInUnits));
+        Assert.True(near.ReceiveHumanNoise(type, new Vector3d(4.9 * Metre, 0, 0), default, Igi1HumanAi.HumanNoiseRadiusInUnits));
+        Assert.False(far.ReceiveHumanNoise(type, new Vector3d(5.1 * Metre, 0, 0), default, Igi1HumanAi.HumanNoiseRadiusInUnits));
         Assert.Equal(1, near.Events.PendingCount(type));
         Assert.Equal(0, far.Events.PendingCount(type));
     }
@@ -31,27 +31,27 @@ public sealed class AiHumanNoiseTests
     public void TheRangeTestPassesAtExactlyTheRadius()
     {
         // 0x450110 rejects only radius < distance.
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.ReceiveHumanNoise(
-            AiEvent.Door, new Vector3d(AiSoldier.HumanNoiseRadiusInUnits, 0, 0), default, AiSoldier.HumanNoiseRadiusInUnits));
+            AiEvent.Door, new Vector3d(Igi1HumanAi.HumanNoiseRadiusInUnits, 0, 0), default, Igi1HumanAi.HumanNoiseRadiusInUnits));
     }
 
     [Fact]
     public void AFriendlyDoesNotHearItsOwnSide()
     {
         // Filter 0x46 carries OtherSide: a soldier on the player's team hears none of the player's noises.
-        AiSoldier friendly = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
+        Igi1HumanAi friendly = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
 
-        Assert.False(friendly.ReceiveHumanNoise(AiEvent.Door, default, default, AiSoldier.HumanNoiseRadiusInUnits));
+        Assert.False(friendly.ReceiveHumanNoise(AiEvent.Door, default, default, Igi1HumanAi.HumanNoiseRadiusInUnits));
     }
 
     [Fact]
     public void ASoldiersRoundGoingPastIsHeardByTheOtherSideOnly()
     {
         // 0x4606F0 asks only whose side fired: a friendly hears a guard's round go by, not its own side's.
-        AiSoldier otherSide = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
-        AiSoldier sameSide = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
+        Igi1HumanAi otherSide = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
+        Igi1HumanAi sameSide = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
         Vector3d start = new(-10 * Metre, 1 * Metre, otherSide.EyePosition().Z);
         Vector3d end = new(10 * Metre, 1 * Metre, otherSide.EyePosition().Z);
 

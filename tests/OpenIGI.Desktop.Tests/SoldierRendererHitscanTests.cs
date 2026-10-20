@@ -411,7 +411,7 @@ public sealed class SoldierRendererHitscanTests
         WriteInt(scenario, "AnimTask_850.nTick", (66 * 30) + 1);
         WriteInt(scenario, "EditVariable_752.nValue", 2);
 
-        Dictionary<SoldierView, AiSoldier> brains = RendererBrains(scenario.Renderer);
+        Dictionary<SoldierView, Igi1HumanAi> brains = RendererBrains(scenario.Renderer);
         SoldierView distantGuard = Assert.Single(brains.Keys, view => view.Soldier.Id == 420);
         Vector3d distantPosition = new(playerOutside.X, playerOutside.Y, playerOutside.Z);
         brains[distantGuard].SeparateTo(distantPosition);
@@ -436,9 +436,9 @@ public sealed class SoldierRendererHitscanTests
         SoldierView deadTarget = Assert.Single(brains.Keys, view => view.Soldier.Id == 417);
         foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })
         {
-            typeof(AiSoldier).GetMethod("EnterCombat", BindingFlags.Instance | BindingFlags.NonPublic)!
+            typeof(Igi1HumanAi).GetMethod("EnterCombat", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(brains[friendly], null);
-            typeof(AiSoldier).GetField("_targetId", BindingFlags.Instance | BindingFlags.NonPublic)!
+            typeof(Igi1HumanAi).GetField("_targetId", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(brains[friendly], deadTarget.Soldier.Id);
         }
         scenario.Renderer.Tick(enemyAlive: false);
@@ -1200,19 +1200,19 @@ public sealed class SoldierRendererHitscanTests
     {
         Assert.NotEmpty(soundEmitters);
         Assert.Equal(soundEmitters.Count, soundEmitters.Distinct().Count());
-        Dictionary<SoldierView, AiSoldier> brains = RendererBrains(renderer);
+        Dictionary<SoldierView, Igi1HumanAi> brains = RendererBrains(renderer);
         Assert.Equal(brains.Count, brains.Values.Select(brain => brain.RuntimeId).Distinct().Count());
-        Dictionary<int, AiSoldier> recipients = renderer.Simulation.BrainsByRuntimeId;
-        foreach (AiSoldier brain in brains.Values)
+        Dictionary<int, Igi1HumanAi> recipients = renderer.Simulation.BrainsByRuntimeId;
+        foreach (Igi1HumanAi brain in brains.Values)
         {
             Assert.Same(brain, recipients[brain.RuntimeId]);
         }
     }
 
-    private static Dictionary<SoldierView, AiSoldier>.KeyCollection RendererSoldiers(SoldierRenderer renderer) =>
+    private static Dictionary<SoldierView, Igi1HumanAi>.KeyCollection RendererSoldiers(SoldierRenderer renderer) =>
         RendererBrains(renderer).Keys;
 
-    private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) => renderer.Simulation.Brains;
+    private static Dictionary<SoldierView, Igi1HumanAi> RendererBrains(SoldierRenderer renderer) => renderer.Simulation.Brains;
 
     private static string DescribeAncestry(GameTask task)
     {
@@ -1350,6 +1350,6 @@ public sealed class SoldierRendererHitscanTests
         public void Dispose() => GameplayCVars.Ragdoll.Value = _previous;
     }
 
-    private static bool HeadingForOrOn(AiSoldier brain, int node) =>
+    private static bool HeadingForOrOn(Igi1HumanAi brain, int node) =>
         brain.DestinationNode == node || (brain.DestinationNode == -1 && brain.CurrentNode == node);
 }

@@ -637,7 +637,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                 bool hasGrenade = carried.Any(item =>
                     roster.TryGetByScriptId(item.WeaponId, out WeaponType candidate)
                     && candidate.Category == WeaponCategory.Grenade);
-                if (_sim.Brains.TryGetValue(member.Agent.View, out AiSoldier? brain))
+                if (_sim.Brains.TryGetValue(member.Agent.View, out Igi1HumanAi? brain))
                 {
                     brain.SetGrenadeAvailable(hasGrenade);
                 }
@@ -710,7 +710,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
-    private void UpdateMountedWeapon(Member member, AiSoldier brain)
+    private void UpdateMountedWeapon(Member member, Igi1HumanAi brain)
     {
         if (brain.MountedGun is { } mounted
             && mounted.Weapon is not null
@@ -980,7 +980,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             // model origin, which for a set-dressed actor already sits a root height above the floor -- mission
             // 4's Anya at 1.98 m -- and adding the root height again stood her a whole hip-height up.
             if (!member.Agent.HasCutsceneGameplayMovement
-                && _sim.Brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
+                && _sim.Brains.TryGetValue(soldier, out Igi1HumanAi? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
                 && !stagedBrain.GraphInParentFrame && stagedBrain.StoodOnGraph)
             {
                 // The graph branch takes its height from the graph, which the brain has already applied.
@@ -1014,7 +1014,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         // feet a metre below it, and the root track's Z is what bridges the two. Only the Z is taken:
         // the horizontal part of the root track is what MOVES the body — the mover consumes the same
         // track's per-tick delta — so adding it again would run the model a stride ahead of its feet.
-        if (_sim.Brains.TryGetValue(soldier, out AiSoldier? brain) && brain.HasGroundQuery)
+        if (_sim.Brains.TryGetValue(soldier, out Igi1HumanAi? brain) && brain.HasGroundQuery)
         {
             // Snap the feet to whatever the collision puts under them, exactly as the static-soldier
             // SoldierSimulation.Stand() does. A level often authors a soldier a little below its floor; the query only

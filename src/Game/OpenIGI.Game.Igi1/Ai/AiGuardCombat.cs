@@ -190,7 +190,7 @@ public sealed class AiGuardCombat
     /// <remarks>
     /// Flashbang, grenade and explosion handlers replace the combat action in the retail pending-action
     /// list. Marking only the child as ended leaves the soldier's outer <c>Engaging</c> activity alive, so
-    /// <c>AiSoldier.Tick</c> reaches <c>Fight</c> before the scripted animation or panic runner and
+    /// <c>Igi1HumanAi.Tick</c> reaches <c>Fight</c> before the scripted animation or panic runner and
     /// the guard keeps firing through the reaction. Re-entry is deliberate: <see cref="Begin"/> arms a
     /// fresh engagement after the interrupt action finishes.
     /// </remarks>

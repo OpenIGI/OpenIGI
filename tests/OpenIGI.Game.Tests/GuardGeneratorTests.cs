@@ -65,7 +65,7 @@ public sealed class GuardGeneratorTests
     public void RespawnedBrainKeepsLevelWiringButDropsDeathState()
     {
         AiCombatParameters parameters = new(new HumanAiConfigItemTask());
-        AiSoldier dead = new(graph: null, new Vector3d(1, 2, 3), facing: 0.25f, phase: 2, seed: 2)
+        Igi1HumanAi dead = new(graph: null, new Vector3d(1, 2, 3), facing: 0.25f, phase: 2, seed: 2)
         {
             RuntimeId = 3,
             PlayerIsEnemy = false,
@@ -77,7 +77,7 @@ public sealed class GuardGeneratorTests
         dead.Kill();
 
         Vector3d authored = new(10, 20, 30);
-        AiSoldier fresh = dead.Respawned(
+        Igi1HumanAi fresh = dead.Respawned(
             authored,
             0.5f,
             _ => new AiCombatWeaponState(30, 30, 3, WeaponCategory.Gun));
