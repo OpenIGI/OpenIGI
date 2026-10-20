@@ -58,6 +58,45 @@ public static class NavGraphs
         return graphs;
     }
 
+    /// <summary>
+    /// Gets the task whose frame a graph's nodes are left in by <see cref="Read"/>: a model the level does not place where it
+    /// stands, a train set on its railroad, which carries the graph as it moves. <see langword="null"/> for a graph placed in
+    /// the world.
+    /// </summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="graphId">The graph's task id.</param>
+    /// <returns>The carrier, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// The original adds the carrier's frame as it stands every time a node is read (<c>0x4F9770</c>), so a graph on a train
+    /// rides it; one under a model with a place of its own is placed once, as a building's.
+    /// </remarks>
+    public static GameTask? CarrierOf(LevelTask levelRoot, int graphId)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        return levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask parent
+            && parent.TryGetValue(WorldScene.ModelParameter, out object? model)
+            && model is string { Length: > 0 }
+            && !TryGetPlace(parent, out _, out _)
+                ? parent
+                : null;
+    }
+
+    // A model's own place in the level: its position and its orientation angles.
+    private static bool TryGetPlace(DeclaredTask model, out Vector3d position, out Vector3f angles)
+    {
+        if (model.TryGetValue("Position", out object? place) && place is Vector3d at
+            && model.TryGetValue("Orientation", out object? turn) && turn is Vector3f by)
+        {
+            position = at;
+            angles = by;
+            return true;
+        }
+
+        position = default;
+        angles = default;
+        return false;
+    }
+
     // The file stores node positions in the graph's own frame; the world position is node + graphTask.Position, what
     // 0x4F9770 adds every time.
     private static void Place(GraphFile graph, int graphId, LevelTask levelRoot)
@@ -66,13 +105,11 @@ public static class NavGraphs
 
         // A graph under a placed model is in that model's frame (0x4F9770's other branch). Mission 9's intro office is a
         // Building whose graphs sit at a few metres: added to nothing, they put Anya's feet 42 km under the level.
+        // A graph on a model with no place of its own (CarrierOf) is left in the carrier's frame.
         if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask graphParent
             && graphParent.TryGetValue(WorldScene.ModelParameter, out object? parentModel)
             && parentModel is string { Length: > 0 }
-            && graphParent.TryGetValue("Position", out object? parentPlace)
-            && parentPlace is Vector3d parentPosition
-            && graphParent.TryGetValue("Orientation", out object? parentTurn)
-            && parentTurn is Vector3f parentAngles)
+            && TryGetPlace(graphParent, out Vector3d parentPosition, out Vector3f parentAngles))
         {
             graph.ApplyWorldOffset(
                 graphPos,
