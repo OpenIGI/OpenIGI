@@ -277,6 +277,33 @@ public sealed partial class Igi2AiGraph
         return graph;
     }
 
+    /// <summary>A graph another game's level placed: the shared format's nodes where that game put them in the world, and its links.</summary>
+    /// <param name="placed">The graph, read and placed by the game whose level it is.</param>
+    /// <param name="criteria">Evaluates a node's criteria text.</param>
+    /// <returns>The graph.</returns>
+    /// <remarks>
+    /// Both games write their graphs in the same named stream (<see cref="GraphFile"/>); they differ in where a graph under a model
+    /// stands, which the placing game has already settled. The nodes carry no light or terrain flag: Project I.G.I.'s graphs
+    /// author neither. Materials need no translation, the two games' game materials sharing their rows.
+    /// </remarks>
+    public static Igi2AiGraph From(GraphFile placed, Func<string, int> criteria)
+    {
+        ArgumentNullException.ThrowIfNull(placed);
+        ArgumentNullException.ThrowIfNull(criteria);
+        Igi2AiGraph graph = new(placed.MaxNodes);
+        foreach (GraphNode node in placed.Nodes)
+        {
+            graph.Add(node.Id, node.Position, node.Gamma, node.Radius, node.MaterialId, 0f, 0, node.CriteriaName, criteria);
+        }
+
+        foreach (GraphLink link in placed.Links)
+        {
+            graph.Link(link.NodeA, link.NodeB, link.LinkType);
+        }
+
+        return graph;
+    }
+
     private void Add(int id, Vector3d position, float gamma, float radius, int material, float light, int terrain, string text, Func<string, int> criteria)
     {
         // A node past the limit is dropped; a negative id would be written outside the list, and is dropped here too.
@@ -442,6 +469,15 @@ public sealed class Igi2AiGraphs
     private readonly Dictionary<int, Igi2AiGraph> _graphs;
 
     private Igi2AiGraphs(Dictionary<int, Igi2AiGraph> graphs) => _graphs = graphs;
+
+    /// <summary>Gathers graphs already built, each under the id it was given.</summary>
+    /// <param name="graphs">The graphs.</param>
+    /// <returns>The graphs, by their ids.</returns>
+    public static Igi2AiGraphs Of(IEnumerable<Igi2AiGraph> graphs)
+    {
+        ArgumentNullException.ThrowIfNull(graphs);
+        return new Igi2AiGraphs(graphs.ToDictionary(static g => g.Id));
+    }
 
     /// <summary>Gets the graphs, by their task id.</summary>
     public IReadOnlyDictionary<int, Igi2AiGraph> Graphs => _graphs;

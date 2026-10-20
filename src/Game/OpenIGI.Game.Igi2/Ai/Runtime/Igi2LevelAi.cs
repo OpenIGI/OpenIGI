@@ -53,6 +53,12 @@ public sealed record Igi2LevelAiSetup(
 
     /// <summary>Gets the ambient noise at a point, which muffles what soldiers hear, or <see langword="null"/> for none.</summary>
     public Func<Vector3d, float>? NoiseAt { get; init; }
+
+    /// <summary>
+    /// Gets the graphs the soldiers walk when another game's level has placed them, or <see langword="null"/> to read every
+    /// <c>AIGraph</c> the level's tree places.
+    /// </summary>
+    public Igi2AiGraphs? Graphs { get; init; }
 }
 
 /// <summary>
@@ -95,7 +101,7 @@ public static class Igi2LevelAi
         world.Difficulty = setup.Difficulty;
         world.Detection = setup.Detection;
         world.Player = setup.Player;
-        world.Graphs = Igi2AiGraphs.Build(setup.Root, setup.Resources, setup.Natives, setup.Functions, setup.Logger);
+        world.Graphs = setup.Graphs ?? Igi2AiGraphs.Build(setup.Root, setup.Resources, setup.Natives, setup.Functions, setup.Logger);
         world.TaskById = id => byId.GetValueOrDefault(id);
         world.TaskPosition = id => PositionOf(byId.GetValueOrDefault(id));
         world.PatrolPath = id => byId.GetValueOrDefault(id) as Igi2PatrolPathTask;
