@@ -343,8 +343,6 @@ public sealed partial class GameHost
         _mission.SoldiersInWalk = false;
         _mission.PlayerInWalk = false;
         _mission.Terrain = null;
-        _mission.EffectWalls = null;
-        _effectTerrainRow = null;
         _mission.Ground = null;
 
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
@@ -360,7 +358,6 @@ public sealed partial class GameHost
         // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The
         // collision index is kept here so the overlay can name the object under the crosshair.
         _mission.Solids = null;
-        _mission.Trace = null;
         state.ShowDebug = false;
     }
 

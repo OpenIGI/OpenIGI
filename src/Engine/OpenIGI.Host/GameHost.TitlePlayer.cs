@@ -75,7 +75,7 @@ public sealed partial class GameHost
 
         ITitlePlayer? player = _gameplay.CreatePlayer(new TitlePlayerRequest(
             new WorldBuildRequest(loaded, levelRoot, _resources, _mission.MagicObjects, _logger, Services: _title.Services),
-            new WorldBuildResult(scene, 0, 0, _mission.Ground, _mission.Spins),
+            new WorldBuildResult(scene, 0, 0, _mission.Ground, _mission.Spins, _mission.Solids),
             _title.Services,
             (AiDifficulty)Math.Clamp(_mission.PlayerDifficulty, 0, 2),
             _audioOut.Sounds is { } sounds && _audioOut.Bank is { } bank ? new TitleAudio(sounds, bank) : null,

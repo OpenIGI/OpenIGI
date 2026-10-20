@@ -1,3 +1,4 @@
+using OpenIGI.Game.Player;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
@@ -27,7 +28,10 @@ public interface ICollisionWorld
     bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit);
 }
 
-/// <summary>A Project I.G.I. level's collision: its placed objects and its terrain, the nearer of the two answering.</summary>
+/// <summary>
+/// A level's collision built from placed objects and a terrain: the nearer of the two answering, as the rays, the bodies, the
+/// impact effects and the cameras ask of it.
+/// </summary>
 public sealed class LevelCollision : ICollisionWorld
 {
     private readonly WorldRayCast? _cast;
@@ -36,11 +40,16 @@ public sealed class LevelCollision : ICollisionWorld
     /// <param name="solids">The placed objects, or <see langword="null"/> for none.</param>
     /// <param name="terrain">The terrain, or <see langword="null"/> for a level with none to trace.</param>
     /// <param name="ground">The ground a body stands on, or <see langword="null"/> for none yet.</param>
-    public LevelCollision(ObjectCollisionIndex? solids, TerrainData? terrain, IGroundHeightField? ground)
+    /// <param name="terrainMaterialRow">
+    /// The game-material row the level's terrain is made of, which an impact on open ground marks as; <see langword="null"/>
+    /// when it is not known.
+    /// </param>
+    public LevelCollision(ObjectCollisionIndex? solids, TerrainData? terrain, IGroundHeightField? ground, int? terrainMaterialRow = null)
     {
         Solids = solids;
         Terrain = terrain;
         Ground = ground;
+        TerrainMaterialRow = terrainMaterialRow;
         _cast = (solids, terrain) switch
         {
             ({ } placed, { } land) => WorldTrace.AsRayCast(WorldTrace.Nearest(placed.Tracer(), TerrainRayTrace.Caster(land))),
@@ -48,10 +57,42 @@ public sealed class LevelCollision : ICollisionWorld
             (null, { } land) => WorldTrace.AsRayCast(TerrainRayTrace.Caster(land)),
             _ => null,
         };
+        Trace = solids is { } traced
+            ? terrain is { } ground2 ? WorldTrace.Nearest(traced.Tracer(), TerrainRayTrace.Caster(ground2)) : traced.Tracer()
+            : null;
+        EffectWalls = Trace is { } effectTrace ? EffectCast(effectTrace, terrainMaterialRow) : null;
+        Walls = _cast is { } walls
+            ? (Vector3d from, Vector3d to, out Vector3d hit) =>
+            {
+                bool blocked = walls(from, to, out WorldRayHit wall);
+                hit = blocked ? wall.Position : default;
+                return blocked;
+            }
+            : null;
     }
 
     /// <summary>Gets a collision with nothing in it.</summary>
     public static LevelCollision Empty { get; } = new(null, null, null);
+
+    /// <summary>Gets the game-material row the level's terrain is made of, when it is known.</summary>
+    public int? TerrainMaterialRow { get; }
+
+    /// <summary>Gets the trace of the placed objects and the terrain together, who and what was struck included.</summary>
+    public WorldTraceCast? Trace { get; }
+
+    /// <summary>
+    /// Gets what blood, debris and lamps' shadows are traced against: <see cref="Trace"/> as a ray, a hit on open ground marked
+    /// as the level's terrain row.
+    /// </summary>
+    /// <remarks>
+    /// The terrain leaf reports no material row, so a hit on open ground would come back as Air and mark nothing -- leaving the
+    /// ground clean of both bullet holes and blood, where retail's Ground row names <c>hole_concrete1.tex</c>. The level's own
+    /// terrain row is substituted, the same row the footsteps and the player's material lookup read.
+    /// </remarks>
+    public WorldRayCast? EffectWalls { get; }
+
+    /// <summary>Gets whether a camera between two points is blocked, and where: made once, as a camera asks it every frame.</summary>
+    public DeathCameraVantage.Blocked? Walls { get; }
 
     /// <summary>Gets the placed objects.</summary>
     public ObjectCollisionIndex? Solids { get; }
@@ -76,4 +117,22 @@ public sealed class LevelCollision : ICollisionWorld
 
         return _cast(origin, target, out hit);
     }
+
+    private static WorldRayCast EffectCast(WorldTraceCast trace, int? terrainRow) =>
+        (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            if (!trace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out WorldTraceHit rich))
+            {
+                hit = default;
+                return false;
+            }
+
+            hit = rich.RayHit;
+            if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && terrainRow is int ground)
+            {
+                hit = hit with { Material = ground };
+            }
+
+            return true;
+        };
 }

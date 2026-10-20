@@ -116,20 +116,24 @@ public class MissionState : IInspectableMission
         {
             if (!ReferenceEquals(_collision.Solids, Solids)
                 || !ReferenceEquals(_collision.Terrain, Terrain)
-                || !ReferenceEquals(_collision.Ground, Ground))
+                || !ReferenceEquals(_collision.Ground, Ground)
+                || _collision.TerrainMaterialRow != TerrainMaterialRow)
             {
-                _collision = new LevelCollision(Solids, Terrain, Ground);
+                _collision = new LevelCollision(Solids, Terrain, Ground, TerrainMaterialRow);
             }
 
             return _collision;
         }
     }
 
-    /// <summary>Gets or sets the trace of the objects and the terrain together.</summary>
-    public WorldTraceCast? Trace { get; set; }
+    /// <summary>Gets or sets the game-material row the level's terrain is made of, which an impact on open ground marks as.</summary>
+    public int? TerrainMaterialRow { get; set; }
 
-    /// <summary>Gets or sets what blood and debris are traced against: the placed objects and the terrain.</summary>
-    public WorldRayCast? EffectWalls { get; set; }
+    /// <summary>Gets the trace of the objects and the terrain together (<see cref="LevelCollision.Trace"/>).</summary>
+    public WorldTraceCast? Trace => Collision.Trace;
+
+    /// <summary>Gets what blood and debris are traced against (<see cref="LevelCollision.EffectWalls"/>).</summary>
+    public WorldRayCast? EffectWalls => Collision.EffectWalls;
 
     /// <summary>Gets the missiles the vehicles have fired.</summary>
     public MissileSimulation VehicleMissiles { get; } = new();
@@ -246,7 +250,7 @@ public class MissionState : IInspectableMission
     {
         Bodies.Clear();
         Joined.Clear();
-        EffectWalls = null;
+        TerrainMaterialRow = null;
         Solids = null;
         LevelRoot = null;
         Destructibles = null;

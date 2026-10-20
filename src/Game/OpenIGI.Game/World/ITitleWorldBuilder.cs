@@ -41,6 +41,10 @@ public readonly record struct WorldBuildRequest(
 /// The placements this title turns on the spot, or <see langword="null"/> for a title that turns none.
 /// Project I.G.I. has no such thing; I.G.I. 2's <c>RotateAttachment</c> is one.
 /// </param>
+/// <param name="Solids">
+/// The placements' collision, read in the title's own mesh layout, which the rays and the bodies collide with; <see langword="null"/>
+/// for a title whose walk builds none.
+/// </param>
 /// <remarks>
 /// The two counts are diagnostics rather than data: a scene walk that silently placed nothing would
 /// produce an empty world and no complaint, and these are what let the host say how much of the level it
@@ -51,7 +55,8 @@ public readonly record struct WorldBuildResult(
     int UnresolvedCount,
     int LightmappedCount,
     IGroundHeightField? Ground = null,
-    IPlacementSpin? Spins = null);
+    IPlacementSpin? Spins = null,
+    ObjectCollisionIndex? Solids = null);
 
 /// <summary>Turns a title's loaded level into the shared scene everything downstream consumes.</summary>
 /// <remarks>

@@ -428,8 +428,6 @@ public sealed partial class GameHost : IDisposable
     private IMissionViewpoint? _viewpoint;
 
     // The over-the-shoulder camera's and the flashlight's wall cast, cached against the collision it is built from.
-    private DeathCameraVantage.Blocked? _thirdPersonWalls;
-    private LevelCollision? _thirdPersonWallsCollision;
     private DebugOverlayRenderer? _debugOverlay;
     private IMapComputerPresenter? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
@@ -484,7 +482,6 @@ public sealed partial class GameHost : IDisposable
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
     // and the player's own material lookup already use.
-    private int? _effectTerrainRow;
 
     private ICameraStatusLightPresenter? _cameraStatusLights;
     private IGrenadePresenter? _grenadeRenderer;
@@ -1329,35 +1326,10 @@ public sealed partial class GameHost : IDisposable
     /// a hillside.
     /// </para>
     /// <para>
-    /// Cached against the two references it is built from rather than rebuilt per frame: it is called
-    /// once a frame and would otherwise allocate a closure every one of them.
+    /// The level's collision makes it once (<see cref="LevelCollision.Walls"/>), as it is asked every frame.
     /// </para>
     /// </remarks>
-    private DeathCameraVantage.Blocked? ThirdPersonWalls()
-    {
-        LevelCollision collision = _mission.Collision;
-        if (collision.IsEmpty)
-        {
-            _thirdPersonWalls = null;
-            _thirdPersonWallsCollision = null;
-            return null;
-        }
-
-        if (_thirdPersonWalls is not null && ReferenceEquals(_thirdPersonWallsCollision, collision))
-        {
-            return _thirdPersonWalls;
-        }
-
-        _thirdPersonWallsCollision = collision;
-        _thirdPersonWalls = (Vector3d from, Vector3d to, out Vector3d hit) =>
-        {
-            bool blocked = collision.Cast(from, to, out WorldRayHit wall);
-            hit = blocked ? wall.Position : default;
-            return blocked;
-        };
-
-        return _thirdPersonWalls;
-    }
+    private DeathCameraVantage.Blocked? ThirdPersonWalls() => _mission.Collision.Walls;
 
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
         2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));

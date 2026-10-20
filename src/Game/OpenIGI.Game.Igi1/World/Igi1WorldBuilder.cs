@@ -1,3 +1,5 @@
+using OpenIGI.Formats.World;
+using OpenIGI.Formats;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.World;
@@ -27,7 +29,15 @@ public sealed class Igi1WorldBuilder : ITitleWorldBuilder
         Igi1Quirks quirks = request.Services?.TryGet(out Igi1Quirks? published) == true ? published : new Igi1Quirks();
         WorldScene scene = WorldScene.Build(
             request.Mission, request.LevelRoot, request.Magic, request.Logger, request.VehiclePhysics, quirks.DestroyedModelArchiveName);
-        return new WorldBuildResult(scene, 0, 0);
+        LoadedMission mission = request.Mission;
+        return new WorldBuildResult(
+            scene,
+            0,
+            0,
+            Solids: ObjectCollisionIndex.Build(
+                scene.Placements,
+                AssetFormatProfile.Igi1.Collision,
+                name => mission.TryGetModel(name, out MefModel? model) ? model : null));
     }
 
     /// <inheritdoc/>

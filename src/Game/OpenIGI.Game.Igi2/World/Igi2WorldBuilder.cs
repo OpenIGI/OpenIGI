@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Formats.Ilff;
+using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 
@@ -73,12 +74,17 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
         Igi2TerrainSurface surface = Igi2TerrainSurface.Build(request.LevelRoot, request.Resources);
         Igi2Ground ground = new(surface);
 
+        LoadedMission mission = request.Mission;
         return new WorldBuildResult(
             result.Scene,
             result.UnresolvedCount,
             result.LightmappedCount,
             ground.IsEmpty ? null : ground,
-            Igi2RotateAttachments.Build(request.LevelRoot, result.Attachments));
+            Igi2RotateAttachments.Build(request.LevelRoot, result.Attachments),
+            ObjectCollisionIndex.Build(
+                result.Scene.Placements,
+                AssetFormatProfile.Igi2.Collision,
+                name => mission.TryGetModel(name, out MefModel? model) ? model : null));
     }
 
     /// <inheritdoc/>

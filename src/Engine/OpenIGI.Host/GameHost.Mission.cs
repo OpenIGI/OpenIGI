@@ -417,10 +417,7 @@ public sealed partial class GameHost
             // arrives with its own already walked.
             world.Spins = _mission.Spins;
             _world = world;
-            solids = ObjectCollisionIndex.Build(
-                scene.Placements,
-                _titleRuntime.Formats.Collision,
-                name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
+            solids = built.Solids ?? ObjectCollisionIndex.Build([]);
             _mission.Solids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
@@ -885,41 +882,6 @@ public sealed partial class GameHost
         // The walk has already spoken for a title that keeps its ground in the level; for the one that
         // keeps it in the mission, the terrain IS the ground.
         _mission.Ground ??= _mission.Terrain;
-        _mission.Trace = _mission.Solids is { } liveSolids
-            ? _mission.Terrain is { } liveTerrain
-                ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
-                : liveSolids.Tracer()
-            : null;
-
-        // What the impact effects trace against, built here rather than beside the security cameras
-        // because the terrain is only known now: a blood droplet lands on the ground at least as often
-        // as it hits a wall, and the splash behind a body needs whatever is three metres past it. The
-        // player's movement cast will not do: it is a coarser collision whose rows name no mark, so every
-        // splash traced against it was refused.
-        //
-        // The terrain leaf reports no material row, so a hit on open ground comes back as Air and marks
-        // nothing -- which would leave the ground clean of both bullet holes and blood, where retail's
-        // Ground row names hole_concrete1.tex. The level's own terrain row is substituted, which is the
-        // same row the footsteps and the player's material lookup read.
-        _mission.EffectWalls = _mission.Trace is { } effectTrace
-            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-            {
-                if (!effectTrace(
-                        new WorldTraceRequest(origin, end, WorldTraceMask.World), out WorldTraceHit rich))
-                {
-                    hit = default;
-                    return false;
-                }
-
-                hit = rich.RayHit;
-                if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
-                {
-                    hit = hit with { Material = ground };
-                }
-
-                return true;
-            }
-            : null;
         _mission.ForgetPlayer();
         _titleFeatures = null;
         _titleHud?.Dispose();
@@ -1779,7 +1741,7 @@ public sealed partial class GameHost
 
         public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
 
-        public void TerrainRowRead(int? row) => host._effectTerrainRow = row;
+        public void TerrainRowRead(int? row) => host._mission.TerrainMaterialRow = row;
 
         public SoundSystem? SoundOutput => host._audioOut.Sounds;
 
