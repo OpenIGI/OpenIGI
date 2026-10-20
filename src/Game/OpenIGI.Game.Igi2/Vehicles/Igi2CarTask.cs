@@ -58,8 +58,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     /// <summary>An explosion's sound.</summary>
     public const string ExplosionSound = "explo_03_l";
 
-    private readonly Igi2CarWheel[] _wheels = new Igi2CarWheel[Igi2CarType.MaxWheels];
-    private Igi2CarType? _type;
+    private readonly Igi2CarWheel[] _wheels = new Igi2CarWheel[CarTypeDefinition.MaxWheels];
+    private CarTypeDefinition? _type;
     private PhysicsObjectType? _physicsType;
     private Igi2PhysicsObject? _body;
     private Igi2PhysicsWorld? _physicsWorld;
@@ -193,7 +193,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     public string WeaponId { get; set; } = "WEAPON_ID_M2HB";
 
     /// <summary>Gets its physics type's car part, once prepared.</summary>
-    public Igi2CarType? CarType => _type;
+    public CarTypeDefinition? CarType => _type;
 
     /// <summary>Gets its physics object, once prepared.</summary>
     public Igi2PhysicsObject? Body => _body;
@@ -330,7 +330,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         _physicsType = types.TryFind(Model, out PhysicsObjectType type) ? type : null;
         if (_physicsType is not null)
         {
-            _type = Igi2CarType.Parse(_physicsType.Parameters);
+            _type = CarTypeDefinition.Parse<Fpu>(_physicsType.Parameters);
             _engineWheels = _type.Wheels.Count(static w => w.IsEngine);
         }
 

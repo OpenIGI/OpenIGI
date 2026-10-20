@@ -10,6 +10,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Physics;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -26,7 +27,7 @@ public sealed class RetailIgi2CarTests
         Igi2Session session = Igi2Session.Start();
         PhysicsObjectTypes types = session.Require<PhysicsObjectTypes>();
         Assert.True(types.TryFind("661_01_1", out PhysicsObjectType apcType));
-        Igi2CarType apc = Igi2CarType.Parse(apcType.Parameters);
+        CarTypeDefinition apc = CarTypeDefinition.Parse<Fpu>(apcType.Parameters);
         Assert.Equal(80000f, apc.Vehicle.MaxThrust);
         Assert.Equal(0.996f, apc.Vehicle.ThrustInertia);
         Assert.Equal(0.92f, apc.Vehicle.DeltaGammaInertia);
@@ -47,7 +48,7 @@ public sealed class RetailIgi2CarTests
         Assert.Equal("665_06_1", apc.DestroyedModel);
 
         Assert.True(types.TryFind("614_01_1", out PhysicsObjectType tankType));
-        Igi2CarType tank = Igi2CarType.Parse(tankType.Parameters);
+        CarTypeDefinition tank = CarTypeDefinition.Parse<Fpu>(tankType.Parameters);
         Assert.True(tank.IsCrawler);
         Assert.Equal(16, tank.Wheels.Count);
         Assert.Equal(12, tank.Wheels.Count(static w => w.ContactPoint < 0));

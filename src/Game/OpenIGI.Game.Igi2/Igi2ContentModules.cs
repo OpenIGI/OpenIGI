@@ -414,7 +414,7 @@ public sealed class Igi2AnimTriggerContentModule : IContentModule
         context.Services.GetOrProvide(static () => new Soldiers.Igi2DeathAnimCycle());
 
         // Missile_tRandomState (igi2 0x52F5B0) likewise.
-        context.Services.GetOrProvide(static () => new Weapons.Igi2MissileRandom());
+        context.Services.GetOrProvide(static () => new OpenIGI.Game.Weapons.MissileRandom());
     }
 
     /// <inheritdoc/>

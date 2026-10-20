@@ -43,13 +43,10 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(0.027f, helicopter.HighCollectiveStep);
         Assert.Equal(0.003f, helicopter.LowCollectiveStep);
         Assert.Equal(200f, helicopter.MaximumSpeed);
-        Assert.Equal(3, helicopter.Aerodynamics.Count);
-        Assert.Equal(new AerodynamicSurfaceDefinition(20f, Vector3f.UnitX, Vector3f.Zero),
-            helicopter.Aerodynamics[0]);
-        Assert.Equal(new AerodynamicSurfaceDefinition(3f, Vector3f.UnitY, Vector3f.Zero),
-            helicopter.Aerodynamics[1]);
-        Assert.Equal(new AerodynamicSurfaceDefinition(50f, Vector3f.UnitZ, Vector3f.Zero),
-            helicopter.Aerodynamics[2]);
+        Assert.Equal(3, helicopter.Wings.Count);
+        Assert.Equal(new Wing(20f, Vector3f.Zero, Vector3f.UnitX), helicopter.Wings[0]);
+        Assert.Equal(new Wing(3f, Vector3f.Zero, Vector3f.UnitY), helicopter.Wings[1]);
+        Assert.Equal(new Wing(50f, Vector3f.Zero, Vector3f.UnitZ), helicopter.Wings[2]);
 
         Assert.True(physics.TryGetRotor("711_02_1", out RotorPhysicsDefinition mainBlade));
         Assert.False(mainBlade.ProducesLift);
@@ -65,8 +62,8 @@ public sealed class RetailCutsceneRuntimeTests
         // The TYPE record declares four wheel bodies (argument 9) as 24-byte entries from argument 10.
         Assert.Equal(4, truck.BodyCount);
         Assert.Equal(4, truck.Bodies.Count);
-        Assert.Equal(new CarBodyDefinition(0, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[0]);
-        Assert.Equal(new CarBodyDefinition(1, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[1]);
+        Assert.Equal(new PhysicsContactPointType(0, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[0]);
+        Assert.Equal(new PhysicsContactPointType(1, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[1]);
 
         // Retention is record +24/+32 and the engine force +28 -- arguments 42, 44 and 43, which sit
         // in the tail after the wheel bodies, not in the header. Cars carry no aerodynamics.
@@ -80,20 +77,20 @@ public sealed class RetailCutsceneRuntimeTests
         // no collision body and only draw.
         Assert.Equal(6, truck.Wheels.Count);
         Assert.Equal(
-            new CarWheelDefinition(true, true, 45f, 1, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            new CarWheelTypeDefinition(true, true, 45f, 1, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
             truck.Wheels[0]);
         Assert.Equal(
-            new CarWheelDefinition(false, false, 0f, 0, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            new CarWheelTypeDefinition(false, false, 0f, 0, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
             truck.Wheels[1]);
-        Assert.Equal(-10, truck.Wheels[2].BodyIndex);
-        Assert.False(truck.Wheels[2].HasBody);
+        Assert.Equal(-10, truck.Wheels[2].ContactPoint);
+        Assert.False(truck.Wheels[2].HasContactPoint);
         Assert.Equal(
-            new CarWheelDefinition(true, true, 45f, 2, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            new CarWheelTypeDefinition(true, true, 45f, 2, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
             truck.Wheels[3]);
-        Assert.Equal(-13, truck.Wheels[4].BodyIndex);
-        Assert.Equal(3, truck.Wheels[5].BodyIndex);
+        Assert.Equal(-13, truck.Wheels[4].ContactPoint);
+        Assert.Equal(3, truck.Wheels[5].ContactPoint);
         Assert.Equal(2, truck.DrivenWheelCount);
-        Assert.Equal(45f * (MathF.PI / 180f), truck.Wheels[0].MaximumSteerRadians, precision: 5);
+        Assert.Equal(45f * (MathF.PI / 180f), truck.Wheels[0].MaxAngleRadians, precision: 5);
 
         // The native Car parser receives the complete 95-value cutscene-truck record.  Keep the
         // unassigned tail available by index while its wheel/contact layout is being translated;

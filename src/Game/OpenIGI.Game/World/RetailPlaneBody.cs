@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.World;
 
@@ -25,7 +26,7 @@ public sealed class RetailPlaneDefinition
     /// Gets or sets the record's surfaces (<c>R + 44</c>), as <c>0x433580</c> leaves them: surfaces 3 and 4 are the
     /// elevons it derives from surface 2 and writes back.
     /// </summary>
-    public RetailAeroSurface[] Surfaces { get; set; } = [];
+    public Wing[] Surfaces { get; set; } = [];
 }
 
 /// <summary>One landing gear leg: a <c>Gear</c> attachment (<c>0x435460</c>), 320 bytes.</summary>
@@ -211,7 +212,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
     public RetailPlaneDefinition Definition { get; }
 
     /// <summary>Gets the plane's own surfaces (<c>+1864</c>), rewritten every tick by the flaps and the elevons.</summary>
-    public RetailAeroSurface[] Surfaces { get; }
+    public Wing[] Surfaces { get; }
 
     /// <summary>Gets or sets the thrust, live (<c>+1824</c>).</summary>
     public float Thrust { get; set; }
@@ -268,7 +269,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
     protected override float SleepSpin => Definition.SleepSpin;
 
     /// <inheritdoc/>
-    protected override RetailAeroSurface[] AeroSurfaces => Surfaces;
+    protected override Wing[] AeroSurfaces => Surfaces;
 
     /// <summary>Latches an AnimTask packet's channels (<c>0x4337E0</c>, every packet).</summary>
     /// <param name="channels">The programme's ten channels.</param>
@@ -359,7 +360,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
         ArgumentNullException.ThrowIfNull(world);
         PushedForces.Clear();
         float[] r = Definition.Record;
-        RetailAeroSurface[] recordSurfaces = Definition.Surfaces;
+        Wing[] recordSurfaces = Definition.Surfaces;
         float mass = TypeMass;
 
         // A. The speed fraction, 0..1, and the control decay it sets.
@@ -425,36 +426,38 @@ public sealed class RetailPlaneBody : RetailRigidBody
             Span<float> m2 = stackalloc float[9];
             RotX(m1, angle1);
             RotX(m2, angle2);
-            RetailAeroSurface s3 = recordSurfaces[3];
-            RetailAeroSurface s4 = recordSurfaces[4];
+            Vector3f s3 = recordSurfaces[3].Normal;
+            Vector3f s4 = recordSurfaces[4].Normal;
             Surfaces[3] = Surfaces[3] with
             {
-                Nx = ((X87)m1[0] * s3.Nx + (X87)m1[2] * s3.Nz + (X87)m1[1] * s3.Ny).F,
-                Ny = ((X87)m1[5] * s3.Nz + (X87)m1[4] * s3.Ny + (X87)m1[3] * s3.Nx).F,
-                Nz = ((X87)m1[8] * s3.Nz + (X87)m1[7] * s3.Ny + (X87)m1[6] * s3.Nx).F,
+                Normal = new Vector3f(
+                    ((X87)m1[0] * s3.X + (X87)m1[2] * s3.Z + (X87)m1[1] * s3.Y).F,
+                    ((X87)m1[5] * s3.Z + (X87)m1[4] * s3.Y + (X87)m1[3] * s3.X).F,
+                    ((X87)m1[8] * s3.Z + (X87)m1[7] * s3.Y + (X87)m1[6] * s3.X).F),
             };
             Surfaces[4] = Surfaces[4] with
             {
-                Nx = ((X87)m2[0] * s4.Nx + (X87)m2[2] * s4.Nz + (X87)m2[1] * s4.Ny).F,
-                Ny = ((X87)m2[3] * s4.Nx + (X87)m2[5] * s4.Nz + (X87)m2[4] * s4.Ny).F,
-                Nz = ((X87)m2[6] * s4.Nx + (X87)m2[8] * s4.Nz + (X87)m2[7] * s4.Ny).F,
+                Normal = new Vector3f(
+                    ((X87)m2[0] * s4.X + (X87)m2[2] * s4.Z + (X87)m2[1] * s4.Y).F,
+                    ((X87)m2[3] * s4.X + (X87)m2[5] * s4.Z + (X87)m2[4] * s4.Y).F,
+                    ((X87)m2[6] * s4.X + (X87)m2[8] * s4.Z + (X87)m2[7] * s4.Y).F),
             };
         }
 
         // E. The flaps.
         if (Flaps)
         {
-            Surfaces[1] = Surfaces[1] with { Coefficient = ((X87)recordSurfaces[1].Coefficient * 3.0f).F };
-            Surfaces[3] = Surfaces[3] with { Coefficient = ((X87)recordSurfaces[2].Coefficient * 0.375f).F };
-            Surfaces[4] = Surfaces[4] with { Coefficient = ((X87)recordSurfaces[2].Coefficient * 0.375f).F };
-            Surfaces[2] = Surfaces[2] with { Coefficient = ((X87)recordSurfaces[2].Coefficient * 0.75f).F };
+            Surfaces[1] = Surfaces[1] with { Area = ((X87)recordSurfaces[1].Area * 3.0f).F };
+            Surfaces[3] = Surfaces[3] with { Area = ((X87)recordSurfaces[2].Area * 0.375f).F };
+            Surfaces[4] = Surfaces[4] with { Area = ((X87)recordSurfaces[2].Area * 0.375f).F };
+            Surfaces[2] = Surfaces[2] with { Area = ((X87)recordSurfaces[2].Area * 0.75f).F };
         }
         else
         {
-            Surfaces[1] = Surfaces[1] with { Coefficient = recordSurfaces[1].Coefficient };
-            Surfaces[3] = Surfaces[3] with { Coefficient = recordSurfaces[3].Coefficient };
-            Surfaces[4] = Surfaces[4] with { Coefficient = recordSurfaces[4].Coefficient };
-            Surfaces[2] = Surfaces[2] with { Coefficient = recordSurfaces[2].Coefficient };
+            Surfaces[1] = Surfaces[1] with { Area = recordSurfaces[1].Area };
+            Surfaces[3] = Surfaces[3] with { Area = recordSurfaces[3].Area };
+            Surfaces[4] = Surfaces[4] with { Area = recordSurfaces[4].Area };
+            Surfaces[2] = Surfaces[2] with { Area = recordSurfaces[2].Area };
         }
 
         // F. The boost.

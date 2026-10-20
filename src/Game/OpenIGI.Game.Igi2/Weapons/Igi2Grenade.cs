@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -379,7 +380,7 @@ public sealed class Igi2Grenades(
     public const string DefaultMissileModel = "110_02_1";
 
     /// <summary>Gets or sets the missiles' own stream.</summary>
-    public IgiRandom MissileStream { get; set; } = new Igi2MissileRandom().Random;
+    public IgiRandom MissileStream { get; set; } = new MissileRandom().Random;
 
     /// <summary>Gets or sets the level's tick, which times a missile's look for ground.</summary>
     public Func<int> LevelTick { get; set; } = static () => 0;
@@ -403,7 +404,7 @@ public sealed class Igi2Grenades(
         }
 
         if (Explosions is not { } explosions || !types.TryFind(model, out PhysicsObjectType type)
-            || !types.IsMovedBy(type, "Missile") || Igi2MissileType.Of(type) is not { } missile)
+            || !types.IsMovedBy(type, "Missile") || MissileTypeDefinition.Of<Fpu>(type) is not { } missile)
         {
             _logger.Warning("Missile", $"No missile physics type for {model}: the missile is not fired.");
             return;

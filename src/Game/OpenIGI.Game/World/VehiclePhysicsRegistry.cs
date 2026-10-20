@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Physics;
@@ -158,136 +159,47 @@ public sealed class VehiclePhysicsRegistry
         }
         else if (taskType == HeliType && call.ArgumentCount >= 22)
         {
-            // Bell/Mil use the same Heli-specific prefix. Argument 12 is the record's first float
-            // (config +0); the nine after it are the fields read at config +4..+36 by 0x431E30,
-            // after the common physics-object header. The tail is exact: 0x5031F0 reads ten floats
-            // (args 12..21), the surface count (22) and its seven-value samples, so the record's
-            // +0 can only be argument 12.
-            int surfaceCount = Math.Min(call.GetInt32(22), (call.ArgumentCount - 23) / 7);
-            AerodynamicSurfaceDefinition[] surfaces = new AerodynamicSurfaceDefinition[surfaceCount];
-            for (int i = 0; i < surfaceCount; i++)
-            {
-                int field = 23 + (i * 7);
-                surfaces[i] = new AerodynamicSurfaceDefinition(
-                    call.GetSingle(field),
-                    new(call.GetSingle(field + 4), call.GetSingle(field + 5), call.GetSingle(field + 6)),
-                    new(call.GetSingle(field + 1), call.GetSingle(field + 2), call.GetSingle(field + 3)));
-            }
+            // The Heli record (0x5031F0) is a vehicle's (VehicleType_DefineVehicleType): its handling from the first of the type's
+            // own arguments, then its wings, made ready as 0x4EC4D0 makes them.
+            int next = 0;
+            VehicleTypeDefinition vehicle = VehicleTypeDefinition.Parse<X87>(call.Type.Parameters, ref next);
             _helicopters.TryAdd(model, new HelicopterPhysicsDefinition(
-                call.GetSingle(2),
-                new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
-                new(call.GetSingle(13), call.GetSingle(15), call.GetSingle(17)),
-                new(call.GetSingle(14), call.GetSingle(16), call.GetSingle(18)),
-                call.GetSingle(20),
-                call.GetSingle(21),
-                call.GetSingle(12),
-                surfaces)
+                call.Type.Mass,
+                call.Type.Size,
+                new(vehicle.MaxDeltaAlpha, vehicle.MaxDeltaBeta, vehicle.MaxDeltaGamma),
+                new(vehicle.DeltaAlphaInertia, vehicle.DeltaBetaInertia, vehicle.DeltaGammaInertia),
+                vehicle.ThrustInertia,
+                vehicle.ThrustStartStopInertia,
+                vehicle.MaxSpeed,
+                vehicle.Wings)
             {
-                // With no body points (arg 9 = 0 on both shipped airframes) the sleep thresholds are args 10 and 11.
-                SleepSpeed = call.GetSingle(10),
-                SleepSpin = call.GetSingle(11),
+                MaximumThrust = vehicle.MaxThrust,
+                SleepSpeed = call.Type.RestSpeed,
+                SleepSpin = call.Type.RestAngularVelocitySquared,
             });
         }
         else if (taskType == CarType && call.ArgumentCount >= 20)
         {
-            QvmValue[] arguments = new QvmValue[call.ArgumentCount];
-            for (int i = 0; i < arguments.Length; i++)
-            {
-                arguments[i] = call.GetValue(i);
-            }
-
-            // DefinePhysicsObjType (0x4EDD20) fills a 728-byte TYPE record: mass at +8, dimensions at
-            // +12..+20, the wheel-BODY count at +328 (argument 9) and that many 24-byte body records
-            // at +332 (three integers then three floats), then two trailing values. Everything after
-            // those is the task-specific tail, and TYPE+724 points at the record the physics reads.
-            int bodyCount = call.GetInt32(9);
-            int parsedBodies = Math.Clamp(bodyCount, 0, Math.Max(0, (call.ArgumentCount - 10) / 6));
-            CarBodyDefinition[] bodies = new CarBodyDefinition[parsedBodies];
-            for (int body = 0; body < parsedBodies; body++)
-            {
-                int field = 10 + (body * 6);
-                bodies[body] = new CarBodyDefinition(
-                    call.GetInt32(field),
-                    call.GetInt32(field + 1),
-                    call.GetInt32(field + 2),
-                    call.GetSingle(field + 3),
-                    call.GetSingle(field + 4),
-                    call.GetSingle(field + 5));
-            }
-
-            // The tail starts after the body records and their two trailing values. The base
-            // physics-object handler consumes fourteen 4-byte fields from there -- the same
-            // sequential fill the Heli record uses, read back by Heli::Tick (0x431E30) -- which puts
-            // steering retention at record +24, the engine force at +28 and throttle retention at +32
-            // (Car::Tick 0x42ECA0 and the wheel drive 0x430D10 read exactly those), and the
-            // aerodynamic-surface count at +40. Every shipped car publishes nought there.
-            int tail = 10 + (6 * parsedBodies) + 2;
-            const int BaseRecordFields = 14;
-            float steeringRetention = Single(arguments, tail + 6, 0.95f);
-            float engineForce = Single(arguments, tail + 7, 0f);
-            float throttleRetention = Single(arguments, tail + 8, 0.95f);
-            int aerodynamicSurfaces = Integer(arguments, tail + 10, 0);
-
-            // The CAR tail (0x42DB00) is a wheel count at record +280 followed by that many 20-byte
-            // entries at +284. Each entry is read as SIX values in the order
-            // int, int, float, int, float, float -- steerable, driven, maximum steer in DEGREES, the
-            // wheel-body index, the suspension length (scaled by 4096 into world units) and the
-            // spring stiffness. A negative body index has no collision body: the suspension sweep
-            // (0x42EF00) and the friction call (0x430D10) both skip it, though it still draws.
-            int wheelCountIndex = tail + BaseRecordFields;
-            int declaredWheels = Integer(arguments, wheelCountIndex, 0);
-            int parsedWheels = Math.Clamp(
-                declaredWheels,
-                0,
-                Math.Max(0, (call.ArgumentCount - wheelCountIndex - 1) / 6));
-            CarWheelDefinition[] wheels = new CarWheelDefinition[parsedWheels];
-            for (int wheel = 0; wheel < parsedWheels; wheel++)
-            {
-                int field = wheelCountIndex + 1 + (wheel * 6);
-                wheels[wheel] = new CarWheelDefinition(
-                    Integer(arguments, field, 0) != 0,
-                    Integer(arguments, field + 1, 0) != 0,
-                    Single(arguments, field + 2, 0f),
-                    Integer(arguments, field + 3, -1),
-                    Single(arguments, field + 4, 0f) * (float)WorldScene.UnitsPerMetre,
-                    Single(arguments, field + 5, 0f));
-            }
-
-            // After the wheels 0x42DB00 reads one float (+604, scaled by 4096), two bytes (+608,
-            // +609), the engine sound set (+610), then the destruction block: an explosion-point
-            // count (+684) and that many magic-vertex indices (+644, ten slots), and last the wreck
-            // model (+688). The dying car (0x42E5A0) sets one Explosion0 off at each of those
-            // magic vertices -- the Mission 1 truck at 6 and 7, the APC and T80 at 4 to 8.
-            int explosionCountIndex = wheelCountIndex + 1 + (parsedWheels * 6) + 4;
-            int explosionCount = Math.Clamp(
-                Integer(arguments, explosionCountIndex, 0),
-                0,
-                Math.Min(CarPhysicsDefinition.MaximumExplosionPoints, Math.Max(0, call.ArgumentCount - explosionCountIndex - 2)));
-            int[] explosionPoints = new int[explosionCount];
-            for (int point = 0; point < explosionCount; point++)
-            {
-                explosionPoints[point] = Integer(arguments, explosionCountIndex + 1 + point, 0);
-            }
-
+            // CarType's parse (0x42DB00) from the type's own arguments: the vehicle's handling (steering retention +24, engine
+            // +28, throttle retention +32, wing count +40), the wheels (+280, +284), the wheel drop (+604), the attach and
+            // crawler bytes (+608, +609), the engine's sound set (+610), the explosion points (+684, +644) and the wreck (+688).
+            CarTypeDefinition car = CarTypeDefinition.Parse<X87>(call.Type.Parameters);
             _cars.TryAdd(model, new CarPhysicsDefinition(
-                call.GetSingle(2),
-                new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
-                bodyCount,
-                bodies,
-                steeringRetention,
-                engineForce,
-                throttleRetention,
-                aerodynamicSurfaces,
-                wheels,
-                call.GetString(call.ArgumentCount - 1),
-                arguments)
+                call.Type.Mass,
+                call.Type.Size,
+                call.Type.ContactPoints.Count,
+                call.Type.ContactPoints,
+                car.Vehicle.DeltaGammaInertia,
+                car.Vehicle.MaxThrust,
+                car.Vehicle.ThrustInertia,
+                car.Vehicle.Wings.Count,
+                car.Wheels,
+                car.DestroyedModel,
+                call.Type.Arguments)
             {
-                ExplosionPoints = explosionPoints,
-                SkidSteer = Integer(arguments, wheelCountIndex + 1 + (parsedWheels * 6) + 2, 0) != 0,
-                EngineSoundSet = wheelCountIndex + 1 + (parsedWheels * 6) + 3 < arguments.Length
-                    && arguments[wheelCountIndex + 1 + (parsedWheels * 6) + 3].Kind == QvmValueKind.String
-                        ? arguments[wheelCountIndex + 1 + (parsedWheels * 6) + 3].Text
-                        : string.Empty,
+                ExplosionPoints = car.ExplodeVertices,
+                SkidSteer = car.IsCrawler,
+                EngineSoundSet = car.EngineSound,
             });
         }
         else if (taskType == PlaneType && call.ArgumentCount >= 9)
@@ -320,6 +232,8 @@ public sealed class VehiclePhysicsRegistry
         public float GetSingle(int index) => GetValue(index).ToSingle();
 
         public string GetString(int index) => GetValue(index) is { Kind: QvmValueKind.String } value ? value.Text : string.Empty;
+
+        public PhysicsObjectType Type => type;
     }
 }
 
@@ -335,7 +249,7 @@ public sealed class VehiclePhysicsRegistry
 /// <c>RotorPrimitive::Draw</c> (<c>0x42C630</c>) measures the airframe's axial speed against
 /// <c>MaximumSpeed * 0.4</c> when it flaps the blade.
 /// </param>
-/// <param name="Aerodynamics">The authored quadratic-drag samples.</param>
+/// <param name="Wings">The surfaces the air pushes on, as <c>0x4EC4D0</c> readies them: the point times 4096, the normal made unit.</param>
 public readonly record struct HelicopterPhysicsDefinition(
     float Mass,
     OpenIGI.Core.Numerics.Vector3f Dimensions,
@@ -344,8 +258,11 @@ public readonly record struct HelicopterPhysicsDefinition(
     float HighCollectiveStep,
     float LowCollectiveStep,
     float MaximumSpeed,
-    IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics)
+    IReadOnlyList<Wing> Wings)
 {
+    /// <summary>Gets the record's most thrust (config <c>+28</c>), the vehicle part's <c>vMaxThrust</c>.</summary>
+    public float MaximumThrust { get; init; }
+
     /// <summary>Gets the sleep speed threshold (<c>TYPE + 716</c>).</summary>
     public float SleepSpeed { get; init; }
 
@@ -378,12 +295,12 @@ public readonly record struct CarPhysicsDefinition(
     float Mass,
     OpenIGI.Core.Numerics.Vector3f Dimensions,
     int BodyCount,
-    IReadOnlyList<CarBodyDefinition> Bodies,
+    IReadOnlyList<PhysicsContactPointType> Bodies,
     float SteeringRetention,
     float EngineForce,
     float ThrottleRetention,
     int AerodynamicSurfaceCount,
-    IReadOnlyList<CarWheelDefinition> Wheels,
+    IReadOnlyList<CarWheelTypeDefinition> Wheels,
     string DestroyedModel,
     IReadOnlyList<QvmValue> Arguments)
 {
@@ -430,7 +347,7 @@ public readonly record struct CarPhysicsDefinition(
             int driven = 0;
             for (int i = 0; i < Wheels.Count; i++)
             {
-                if (Wheels[i].Driven && Wheels[i].HasBody)
+                if (Wheels[i].IsEngine && Wheels[i].HasContactPoint)
                 {
                     driven++;
                 }
@@ -440,61 +357,6 @@ public readonly record struct CarPhysicsDefinition(
         }
     }
 }
-
-/// <summary>
-/// One 20-byte wheel entry from the CAR record (<c>0x42DB00</c> fills it; <c>0x42EF00</c> and
-/// <c>0x430D10</c> read it).
-/// </summary>
-/// <param name="Steerable">Record <c>+284</c>: whether the wheel turns with the steering input.</param>
-/// <param name="Driven">Record <c>+285</c>: whether the engine force is applied at this wheel.</param>
-/// <param name="MaximumSteerDegrees">
-/// Record <c>+288</c>. The wheel's angle is <c>MaximumSteerDegrees * pi/180 * steering</c>.
-/// </param>
-/// <param name="BodyIndex">
-/// Record <c>+292</c>. Negative means the wheel has no collision body: retail skips it in the
-/// suspension sweep and the friction call, but it is still drawn.
-/// </param>
-/// <param name="SuspensionLengthUnits">Record <c>+296</c>, the authored length scaled by 4096.</param>
-/// <param name="SpringStiffness">Record <c>+300</c>.</param>
-public readonly record struct CarWheelDefinition(
-    bool Steerable,
-    bool Driven,
-    float MaximumSteerDegrees,
-    int BodyIndex,
-    float SuspensionLengthUnits,
-    float SpringStiffness)
-{
-    /// <summary>Gets whether this wheel has a collision body and takes part in the physics.</summary>
-    public bool HasBody => BodyIndex >= 0;
-
-    /// <summary>Gets the maximum steering deflection in radians.</summary>
-    public float MaximumSteerRadians => MaximumSteerDegrees * (MathF.PI / 180f);
-}
-
-/// <summary>
-/// One 24-byte wheel body from the TYPE record. The two trailing floats are the pair the tyre model
-/// (<c>0x430960</c>) scales its wheel-space slip by; the handbrake raises the longitudinal one to the
-/// lateral value, which is how the two are told apart.
-/// </summary>
-/// <param name="Index">The body index the CAR wheel entries refer to.</param>
-/// <param name="Slot1">Second integer slot.</param>
-/// <param name="Slot2">Third integer slot.</param>
-/// <param name="Slot3">First float slot.</param>
-/// <param name="LateralFriction">Body <c>+472</c>: the across-the-wheel grip (0.95 on every car).</param>
-/// <param name="LongitudinalFriction">Body <c>+476</c>: the rolling resistance (0.05).</param>
-public readonly record struct CarBodyDefinition(
-    int Index,
-    int Slot1,
-    int Slot2,
-    float Slot3,
-    float LateralFriction,
-    float LongitudinalFriction);
-
-/// <summary>One local quadratic-drag sample from the Heli physics-object record.</summary>
-public readonly record struct AerodynamicSurfaceDefinition(
-    float Coefficient,
-    OpenIGI.Core.Numerics.Vector3f Direction,
-    OpenIGI.Core.Numerics.Vector3f Point);
 
 /// <summary>The retained PLANE physics record published by <c>DefinePhysicsObjType</c>.</summary>
 /// <remarks>

@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.World;
 
@@ -18,7 +19,7 @@ public sealed class RetailHeliDefinition
     public float[] Record { get; set; } = new float[10];
 
     /// <summary>Gets or sets the aerodynamic surfaces (<c>R + 40</c>, <c>R + 44</c>): point × 4096, normal normalised.</summary>
-    public RetailAeroSurface[] Aero { get; set; } = [];
+    public Wing[] Aero { get; set; } = [];
 }
 
 /// <summary>One skid: a <c>HeliWheel</c> attachment (<c>0x426D90</c>).</summary>
@@ -114,7 +115,7 @@ public sealed class RetailHeliBody : RetailRigidBody
     protected override float SleepSpin => Definition.SleepSpin;
 
     /// <inheritdoc/>
-    protected override RetailAeroSurface[] AeroSurfaces => Definition.Aero;
+    protected override Wing[] AeroSurfaces => Definition.Aero;
 
     /// <summary>Latches an AnimTask packet's channels (<c>0x431B70</c>, every packet).</summary>
     /// <param name="channels">The programme's channels 0-3: pitch, roll, yaw targets, the collective (−1 holds).</param>

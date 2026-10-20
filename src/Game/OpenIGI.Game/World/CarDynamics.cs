@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
@@ -15,7 +16,7 @@ namespace OpenIGI.Game.World;
 /// record; here it comes from the wheel model's own size, and falls back to the suspension travel.
 /// </param>
 public readonly record struct CarWheel(
-    CarWheelDefinition Definition,
+    CarWheelTypeDefinition Definition,
     Vector3d OffsetUnits,
     float LateralFriction,
     float LongitudinalFriction,
@@ -145,13 +146,13 @@ public static class CarDynamics
         int driven = 0;
         for (int i = 0; i < wheels.Count; i++)
         {
-            if (!wheels[i].Definition.HasBody)
+            if (!wheels[i].Definition.HasContactPoint)
             {
                 continue;
             }
 
             contacts++;
-            if (wheels[i].Definition.Driven)
+            if (wheels[i].Definition.IsEngine)
             {
                 driven++;
             }
@@ -175,19 +176,19 @@ public static class CarDynamics
         for (int i = 0; i < wheels.Count; i++)
         {
             CarWheel wheel = wheels[i];
-            if (!wheel.Definition.HasBody)
+            if (!wheel.Definition.HasContactPoint)
             {
                 continue;
             }
 
-            double steer = wheel.Definition.Steerable
-                ? wheel.Definition.MaximumSteerRadians * steering
+            double steer = wheel.Definition.IsSteering
+                ? wheel.Definition.MaxAngleRadians * steering
                 : 0d;
             double cos = Math.Cos(steer);
             double sin = Math.Sin(steer);
             Vector3d offset = (lateral * wheel.OffsetUnits.X) + (forward * wheel.OffsetUnits.Y);
 
-            if (wheel.Definition.Driven && thrust != 0f && driven > 0)
+            if (wheel.Definition.IsEngine && thrust != 0f && driven > 0)
             {
                 double engine = (double)physics.EngineForce * thrust * GravityUnitsPerTickSquared / driven;
                 if (physics.SkidSteer)
@@ -334,8 +335,8 @@ public static class CarDynamics
         for (int i = 0; i < wheels.Count; i++)
         {
             CarWheel wheel = wheels[i];
-            double travel = wheel.Definition.SuspensionLengthUnits;
-            if (!wheel.Definition.HasBody || travel <= 0d)
+            double travel = wheel.Definition.MaxSpringDistance;
+            if (!wheel.Definition.HasContactPoint || travel <= 0d)
             {
                 continue;
             }
@@ -423,9 +424,9 @@ public static class CarDynamics
         double most = 0d;
         for (int i = 0; i < wheels.Count; i++)
         {
-            if (wheels[i].Definition.Steerable)
+            if (wheels[i].Definition.IsSteering)
             {
-                most = Math.Max(most, wheels[i].Definition.MaximumSteerRadians);
+                most = Math.Max(most, wheels[i].Definition.MaxAngleRadians);
             }
         }
 
@@ -457,9 +458,9 @@ public static class CarDynamics
 
         for (int i = 0; i < physics.Wheels.Count; i++)
         {
-            if (physics.Wheels[i].SuspensionLengthUnits > 0f)
+            if (physics.Wheels[i].MaxSpringDistance > 0f)
             {
-                return physics.Wheels[i].SuspensionLengthUnits;
+                return physics.Wheels[i].MaxSpringDistance;
             }
         }
 

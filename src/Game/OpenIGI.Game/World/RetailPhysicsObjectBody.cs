@@ -39,7 +39,7 @@ public sealed class RetailPhysicsObjectBody : RetailRigidBody
     protected override float SleepSpin => _type.RestAngularVelocitySquared;
 
     /// <inheritdoc/>
-    protected override RetailAeroSurface[] AeroSurfaces => [];
+    protected override Wing[] AeroSurfaces => [];
 
     /// <summary>Makes a body of a type at a pose and speed, as a thrown grenade is made (<c>0x477040</c>).</summary>
     /// <param name="type">Its type.</param>

@@ -34,8 +34,8 @@ public sealed partial class Igi2CarTask
     /// <summary>How far above its contact point a wheel touches the ground: 0.4 m.</summary>
     public const float ContactLift = 1638.4000244140625f;
 
-    private readonly Igi2LineTrace _suspension = new(Igi2CarType.MaxWheels);
-    private readonly int[] _suspensionWheels = new int[Igi2CarType.MaxWheels];
+    private readonly Igi2LineTrace _suspension = new(CarTypeDefinition.MaxWheels);
+    private readonly int[] _suspensionWheels = new int[CarTypeDefinition.MaxWheels];
 
     /// <summary>
     /// Sets it back where the level put it, at tick nought of its driving (<c>Car_UpdateAnimDataHandler</c>): a fresh physics object of
@@ -90,7 +90,7 @@ public sealed partial class Igi2CarTask
             return;
         }
 
-        foreach (Igi2CarWheelType wheel in type.Wheels)
+        foreach (CarWheelTypeDefinition wheel in type.Wheels)
         {
             if (wheel.ContactPoint >= 0)
             {
@@ -109,7 +109,7 @@ public sealed partial class Igi2CarTask
             return;
         }
 
-        Igi2VehicleType vehicle = type.Vehicle;
+        VehicleTypeDefinition vehicle = type.Vehicle;
         RealThrust = ((((Fpu)1.0 - vehicle.ThrustInertia) * IdealThrust) + ((Fpu)vehicle.ThrustInertia * RealThrust)).F;
         RealDeltaGamma = ((((Fpu)1.0 - vehicle.DeltaGammaInertia) * IdealDeltaGamma) + ((Fpu)RealDeltaGamma * vehicle.DeltaGammaInertia)).F;
         if (IdealThrust == 0f && Math.Abs(RealThrust) < 0.009999999776482582)
@@ -150,7 +150,7 @@ public sealed partial class Igi2CarTask
     /// out by the most any wheel is in. Either way the wheel touches, where its contact point is lifted 0.4 m, and drives and rubs.
     /// A wheel that is not there leaves its point to meet the world.
     /// </summary>
-    private void AddSpringForces(Igi2PhysicsObject body, Igi2CarType type, Igi2PhysicsWorld world)
+    private void AddSpringForces(Igi2PhysicsObject body, CarTypeDefinition type, Igi2PhysicsWorld world)
     {
         float[] m = body.Orientation;
         Vector3d origin = body.Position;
@@ -159,7 +159,7 @@ public sealed partial class Igi2CarTask
         double maxHard = -double.MaxValue;
         for (int w = 0; w < type.Wheels.Count; w++)
         {
-            Igi2CarWheelType wheel = type.Wheels[w];
+            CarWheelTypeDefinition wheel = type.Wheels[w];
             int cp = wheel.ContactPoint;
             if (cp < 0)
             {
@@ -198,7 +198,7 @@ public sealed partial class Igi2CarTask
         for (int i = 0; i < lines; i++)
         {
             int w = _suspensionWheels[i];
-            Igi2CarWheelType wheel = type.Wheels[w];
+            CarWheelTypeDefinition wheel = type.Wheels[w];
             Igi2PhysicsContactPoint point = body.ContactPoints[wheel.ContactPoint];
             Igi2Intersection hit = _suspension.Intersections[i];
             float compression = 0f;
@@ -276,9 +276,9 @@ public sealed partial class Igi2CarTask
     /// rubs (<see cref="AddFriction"/>), across by its point's first friction and along by its second, or by its first both ways while
     /// the car brakes, which also takes a twentieth of its thrust.
     /// </summary>
-    private void AddWheelForces(Igi2PhysicsObject body, Igi2CarType type, int w, int cp)
+    private void AddWheelForces(Igi2PhysicsObject body, CarTypeDefinition type, int w, int cp)
     {
-        Igi2CarWheelType wheel = type.Wheels[w];
+        CarWheelTypeDefinition wheel = type.Wheels[w];
         Igi2CarWheel state = _wheels[w];
         float[] m = body.Orientation;
         float gamma = (((Fpu)wheel.MaxAngle * 0.01745329238474369) * RealDeltaGamma).F;
@@ -390,7 +390,7 @@ public sealed partial class Igi2CarTask
     /// The wings, <c>Wing_ApplyAirResistance</c>: the wind taken into the car's frame, its length squared by the coefficient; each wing
     /// with area is pushed along its normal by how squarely the wind meets it, its area, and that.
     /// </summary>
-    private static void ApplyAirResistance(Igi2PhysicsObject body, IReadOnlyList<Igi2Wing> wings, Vector3f wind)
+    private static void ApplyAirResistance(Igi2PhysicsObject body, IReadOnlyList<Wing> wings, Vector3f wind)
     {
         float[] m = body.Orientation;
         Vector3f local = new(
@@ -405,7 +405,7 @@ public sealed partial class Igi2CarTask
         }
 
         Vector3f d = RigidBodyKernels.Normalise<Fpu>(local);
-        foreach (Igi2Wing wing in wings)
+        foreach (Wing wing in wings)
         {
             if (!(wing.Area > 0f))
             {

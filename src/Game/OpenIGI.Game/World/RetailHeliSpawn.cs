@@ -19,29 +19,6 @@ public static class RetailHeliSpawn
     /// <returns>The definition.</returns>
     public static RetailHeliDefinition Definition(in HelicopterPhysicsDefinition physics)
     {
-        RetailAeroSurface[] aero = new RetailAeroSurface[physics.Aerodynamics.Count];
-        for (int j = 0; j < aero.Length; j++)
-        {
-            // 0x4EC4D0: the point × 4096, the normal normalised.
-            AerodynamicSurfaceDefinition surface = physics.Aerodynamics[j];
-            float nx = surface.Direction.X, ny = surface.Direction.Y, nz = surface.Direction.Z;
-            if (!(nx == 0f && ny == 0f && nz == 0f))
-            {
-                X87 inverse = (X87)1.0 / X87.Sqrt((X87)nx * nx + (X87)ny * ny + (X87)nz * nz);
-                nx = ((X87)nx * inverse).F;
-                ny = ((X87)ny * inverse).F;
-                nz = ((X87)nz * inverse).F;
-            }
-
-            aero[j] = new RetailAeroSurface(
-                surface.Coefficient,
-                nx,
-                ny,
-                nz,
-                ((X87)surface.Point.X * 4096.0f).F,
-                ((X87)surface.Point.Y * 4096.0f).F,
-                ((X87)surface.Point.Z * 4096.0f).F);
-        }
 
         return new RetailHeliDefinition
         {
@@ -57,11 +34,11 @@ public static class RetailHeliSpawn
                 physics.Smoothing.Y,
                 physics.Torque.Z,
                 physics.Smoothing.Z,
-                physics.Mass,
+                physics.MaximumThrust,
                 physics.HighCollectiveStep,
                 physics.LowCollectiveStep,
             ],
-            Aero = aero,
+            Aero = [.. physics.Wings],
         };
     }
 

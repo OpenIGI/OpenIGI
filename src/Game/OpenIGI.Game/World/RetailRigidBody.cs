@@ -35,7 +35,7 @@ public abstract class RetailRigidBody
     protected abstract float SleepSpin { get; }
 
     /// <summary>Gets the aerodynamic surfaces (<c>R + 44</c>).</summary>
-    protected abstract RetailAeroSurface[] AeroSurfaces { get; }
+    protected abstract Wing[] AeroSurfaces { get; }
 
     /// <summary>The number of body points.</summary>
     public const int PointCount = 22;
@@ -180,21 +180,16 @@ public abstract class RetailRigidBody
 
         float[] dir = [l[0], l[1], l[2]];
         Normalise(dir);
-        foreach (RetailAeroSurface surface in AeroSurfaces)
+        foreach (Wing surface in AeroSurfaces)
         {
-            if (surface.Coefficient <= 0.0f)
+            if (surface.Area <= 0.0f)
             {
                 continue;
             }
 
-            X87 f = ((X87)dir[1] * surface.Ny + (X87)dir[2] * surface.Nz + (X87)dir[0] * surface.Nx) * surface.Coefficient * q;
-            Push(Force(
-                ((X87)surface.Nx * f).F,
-                ((X87)surface.Ny * f).F,
-                ((X87)surface.Nz * f).F,
-                surface.Px,
-                surface.Py,
-                surface.Pz));
+            Vector3f n = surface.Normal;
+            X87 f = ((X87)dir[1] * n.Y + (X87)dir[2] * n.Z + (X87)dir[0] * n.X) * surface.Area * q;
+            Push(new PointForce(new Vector3f(((X87)n.X * f).F, ((X87)n.Y * f).F, ((X87)n.Z * f).F), surface.Position));
         }
     }
 

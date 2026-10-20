@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -1739,7 +1740,7 @@ public sealed class CutsceneRuntime
         5_000f,
         0.95f,
         0,
-        [new CarWheelDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
+        [new CarWheelTypeDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
         string.Empty,
         []);
 
@@ -1810,8 +1811,8 @@ public sealed class CutsceneRuntime
             Dictionary<int, Vector3d> bodyOffsets = [];
             for (int i = 0; i < placements.Count && i < physics.Wheels.Count; i++)
             {
-                CarWheelDefinition entry = physics.Wheels[i];
-                int slot = entry.BodyIndex >= 0 ? entry.BodyIndex : -10 - entry.BodyIndex;
+                CarWheelTypeDefinition entry = physics.Wheels[i];
+                int slot = entry.ContactPoint >= 0 ? entry.ContactPoint : -10 - entry.ContactPoint;
                 Vector3d candidate = new(
                     Math.Sign(drawn[i].X) * acrossMagnitude,
                     drawn[i].Y,
@@ -1826,7 +1827,7 @@ public sealed class CutsceneRuntime
             int contacts = 0;
             for (int i = 0; i < physics.Wheels.Count; i++)
             {
-                if (physics.Wheels[i].HasBody)
+                if (physics.Wheels[i].HasContactPoint)
                 {
                     contacts++;
                 }
@@ -1835,10 +1836,10 @@ public sealed class CutsceneRuntime
             CarWheel[] wheels = new CarWheel[placements.Count];
             for (int i = 0; i < placements.Count; i++)
             {
-                CarWheelDefinition definition = i < physics.Wheels.Count
+                CarWheelTypeDefinition definition = i < physics.Wheels.Count
                     ? physics.Wheels[i]
-                    : new CarWheelDefinition(false, false, 0f, -1, 0f, 0f);
-                int slot = definition.BodyIndex >= 0 ? definition.BodyIndex : -10 - definition.BodyIndex;
+                    : new CarWheelTypeDefinition(false, false, 0f, -1, 0f, 0f);
+                int slot = definition.ContactPoint >= 0 ? definition.ContactPoint : -10 - definition.ContactPoint;
                 Vector3d offset = bodyOffsets.TryGetValue(slot, out Vector3d bodyOffset)
                     ? bodyOffset
                     : drawn[i];
@@ -1850,16 +1851,16 @@ public sealed class CutsceneRuntime
                 // contact patch. Measuring the running game: its Mission 2 truck rests 0.037 m over
                 // the terrain, which puts the bottom of a 0.464 m wheel 0.023 m clear -- touching.
                 double radius = Math.Max(0d, modelRadius?.Invoke(placements[i].Instance.Name) ?? 0d);
-                double travel = definition.SuspensionLengthUnits;
+                double travel = definition.MaxSpringDistance;
                 double stiffness = definition.SpringStiffness;
                 double settled = contacts > 0 && stiffness > 0d
                     ? Math.Min(travel, travel / (contacts * stiffness))
                     : 0d;
                 offset = new Vector3d(offset.X, offset.Y, drawn[i].Z - radius - settled);
-                CarBodyDefinition? body = null;
+                PhysicsContactPointType? body = null;
                 for (int b = 0; b < physics.Bodies.Count; b++)
                 {
-                    if (physics.Bodies[b].Index == slot)
+                    if (physics.Bodies[b].MagicVertex == slot)
                     {
                         body = physics.Bodies[b];
                         break;
@@ -1869,8 +1870,8 @@ public sealed class CutsceneRuntime
                 wheels[i] = new CarWheel(
                     definition,
                     offset,
-                    body?.LateralFriction ?? 0.95f,
-                    body?.LongitudinalFriction ?? 0.05f,
+                    body?.FrictionX ?? 0.95f,
+                    body?.FrictionY ?? 0.05f,
                     (float)radius);
             }
 
@@ -1909,14 +1910,14 @@ public sealed class CutsceneRuntime
         double halfWidth = physics.Dimensions.X * 0.5d * WorldScene.UnitsPerMetre;
         for (int i = 0; i < fallback.Length; i++)
         {
-            CarWheelDefinition definition = i < physics.Wheels.Count
+            CarWheelTypeDefinition definition = i < physics.Wheels.Count
                 ? physics.Wheels[i]
-                : new CarWheelDefinition(false, true, 0f, 0, 0f, 0f);
+                : new CarWheelTypeDefinition(false, true, 0f, 0, 0f, 0f);
             fallback[i] = new CarWheel(
                 definition,
                 new Vector3d(
                     (i % 2) == 0 ? halfWidth : -halfWidth,
-                    definition.Steerable ? halfLength : -halfLength,
+                    definition.IsSteering ? halfLength : -halfLength,
                     0d),
                 0.95f,
                 0.05f);
@@ -2226,7 +2227,7 @@ public sealed class CutsceneRuntime
 
         bool steerable = _carWheelIndices.TryGetValue(placement, out int index)
             && index < wheels.Length
-            && wheels[index].Definition.Steerable;
+            && wheels[index].Definition.IsSteering;
         // Retail's accumulator counts DOWN as the car goes forward (Wheel::Tick subtracts the spin
         // rate), and it is applied against the wheel's own axle axis, which points the opposite way
         // from the placement frame's X here. Rolling by the raw accumulator spins the tyres
@@ -3435,10 +3436,10 @@ public sealed class CutsceneRuntime
                     0.003f,
                     200f,
                     [
-                        new(20f, Vector3f.UnitX, Vector3f.Zero),
-                        new(3f, Vector3f.UnitY, Vector3f.Zero),
-                        new(50f, Vector3f.UnitZ, Vector3f.Zero),
-                    ]);
+                        new(20f, Vector3f.Zero, Vector3f.UnitX),
+                        new(3f, Vector3f.Zero, Vector3f.UnitY),
+                        new(50f, Vector3f.Zero, Vector3f.UnitZ),
+                    ]) { MaximumThrust = 3_000f };
             if (_retailCarWorld is { } retailWorld
                 && target is DeclaredTask retailHeliTask
                 && transform.HelicopterPhysics is { } retailHeliPhysics
@@ -4516,12 +4517,12 @@ public sealed class CutsceneRuntime
         {
             Vector3f airDirection = localAir / MathF.Sqrt(localSpeedSquared);
             float dynamicPressure = localSpeedSquared * 0.00032699999f;
-            foreach (AerodynamicSurfaceDefinition surface in physics.Aerodynamics)
+            foreach (Wing surface in physics.Wings)
             {
-                float magnitude = Vector3f.Dot(airDirection, surface.Direction)
-                    * surface.Coefficient
+                float magnitude = Vector3f.Dot(airDirection, surface.Normal)
+                    * surface.Area
                     * dynamicPressure;
-                AddForce(surface.Direction * magnitude, surface.Point);
+                AddForce(surface.Normal * magnitude, surface.Position);
             }
         }
 

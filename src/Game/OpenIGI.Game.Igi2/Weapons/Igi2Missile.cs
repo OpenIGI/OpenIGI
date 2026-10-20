@@ -8,154 +8,6 @@ using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
-/// <summary>A lifting or steadying surface on a vehicle, <c>Wing_t</c>: its area, its normal and where it acts, in the vehicle's frame.</summary>
-/// <param name="Area">Its area, <c>vArea</c>; nought for a wing that does nothing.</param>
-/// <param name="Normal">Its unit normal, <c>tNormal</c>.</param>
-/// <param name="Position">Where its force acts, <c>tPos</c>.</param>
-public readonly record struct Igi2Wing(float Area, Vector3f Normal, Vector3f Position)
-{
-    /// <summary>Makes a wing, <c>Wing_Init</c> (<c>igi2 0x5A4A10</c>): the normal made unit unless it is nought.</summary>
-    /// <param name="area">Its area.</param>
-    /// <param name="position">Where it acts.</param>
-    /// <param name="normal">Its normal, any length.</param>
-    /// <returns>The wing.</returns>
-    public static Igi2Wing Create(float area, Vector3f position, Vector3f normal)
-    {
-        if (normal.X != 0f || normal.Y != 0f || normal.Z != 0f)
-        {
-            Fpu inverse = (Fpu)1.0 / Fpu.Sqrt(((Fpu)normal.X * normal.X) + ((Fpu)normal.Y * normal.Y) + ((Fpu)normal.Z * normal.Z));
-            normal = new Vector3f(((Fpu)normal.X * inverse).F, ((Fpu)normal.Y * inverse).F, ((Fpu)normal.Z * inverse).F);
-        }
-
-        return new Igi2Wing(area, normal, position);
-    }
-}
-
-/// <summary>
-/// What a missile's physics type says of it: the vehicle's handling (<c>VehicleType_DefineVehicleType</c>, <c>igi2 0x5A51E0</c>)
-/// then the missile's own (<c>Missile_ParsePhysicsObjTypeHandler</c>, <c>0x52EE70</c>), read from the type's own arguments in order.
-/// </summary>
-public sealed class Igi2MissileType
-{
-    private Igi2MissileType()
-    {
-    }
-
-    /// <summary>Gets how far it may pitch a tick at full deflection, degrees, <c>vMaxDeltaAlpha</c>.</summary>
-    public float MaxDeltaAlpha { get; private init; }
-
-    /// <summary>Gets how much of its last pitch rate it keeps, <c>vDeltaAlphaInertia</c>.</summary>
-    public float DeltaAlphaInertia { get; private init; }
-
-    /// <summary>Gets how much of its last roll rate it keeps, <c>vDeltaBetaInertia</c>.</summary>
-    public float DeltaBetaInertia { get; private init; }
-
-    /// <summary>Gets how far it may turn a tick at full deflection, degrees, <c>vMaxDeltaGamma</c>.</summary>
-    public float MaxDeltaGamma { get; private init; }
-
-    /// <summary>Gets how much of its last turn rate it keeps, <c>vDeltaGammaInertia</c>.</summary>
-    public float DeltaGammaInertia { get; private init; }
-
-    /// <summary>Gets its motor's full thrust, <c>vMaxThrust</c>.</summary>
-    public float MaxThrust { get; private init; }
-
-    /// <summary>Gets how fast its thrust changes near full, <c>vThrustInertia</c>.</summary>
-    public float ThrustInertia { get; private init; }
-
-    /// <summary>Gets how fast its thrust changes starting or stopping, <c>vThrustStartStopInertia</c>.</summary>
-    public float ThrustStartStopInertia { get; private init; }
-
-    /// <summary>Gets how many of its wings the air acts on, <c>nWing</c>.</summary>
-    public int WingCount { get; private init; }
-
-    /// <summary>Gets its wings as defined.</summary>
-    public IReadOnlyList<Igi2Wing> Wings { get; private init; } = [];
-
-    /// <summary>Gets whether it smokes, <c>MISSILE_SMOKE_*</c>.</summary>
-    public int Smoke { get; private init; }
-
-    /// <summary>Gets how it steers, <c>MISSILE_TYPE_*</c>.</summary>
-    public int Guidance { get; private init; }
-
-    /// <summary>Gets its fuel when fired.</summary>
-    public float Fuel { get; private init; }
-
-    /// <summary>Gets the fuel it burns a tick: its rate a second over thirty.</summary>
-    public float Burn { get; private init; }
-
-    /// <summary>Gets its smoke's size when made, units.</summary>
-    public float SmokeSize { get; private init; }
-
-    /// <summary>Gets its smoke's size when gone, units.</summary>
-    public float SmokeEndSize { get; private init; }
-
-    /// <summary>Gets the ticks between its puffs of smoke.</summary>
-    public float SmokeDensity { get; private init; }
-
-    /// <summary>Gets a puff's life, seconds.</summary>
-    public float SmokeLifeTime { get; private init; }
-
-    /// <summary>Gets its smoke's sprite.</summary>
-    public string SmokeSprite { get; private init; } = string.Empty;
-
-    /// <summary>Gets the sound it flies with.</summary>
-    public string Sound { get; private init; } = string.Empty;
-
-    /// <summary>Reads a physics type's arguments as a missile's.</summary>
-    /// <param name="type">The physics type.</param>
-    /// <returns>The missile type, or <see langword="null"/> when its arguments are too few.</returns>
-    public static Igi2MissileType? Of(PhysicsObjectType type)
-    {
-        ArgumentNullException.ThrowIfNull(type);
-        IReadOnlyList<OpenIGI.Scripting.Runtime.QvmValue> p = type.Parameters;
-        if (p.Count < 11)
-        {
-            return null;
-        }
-
-        int wings = p[10].ToInt32();
-        int at = 11 + (7 * Math.Max(0, wings)) + 3;
-        if (p.Count < at + 11)
-        {
-            return null;
-        }
-
-        Igi2Wing[] defined = new Igi2Wing[Math.Max(0, wings)];
-        for (int i = 0; i < defined.Length; i++)
-        {
-            int w = 11 + (7 * i);
-            defined[i] = Igi2Wing.Create(
-                p[w].ToSingle(),
-                new Vector3f(((Fpu)p[w + 1].ToSingle() * 4096.0).F, ((Fpu)p[w + 2].ToSingle() * 4096.0).F, ((Fpu)p[w + 3].ToSingle() * 4096.0).F),
-                new Vector3f(p[w + 4].ToSingle(), p[w + 5].ToSingle(), p[w + 6].ToSingle()));
-        }
-
-        return new Igi2MissileType
-        {
-            MaxDeltaAlpha = p[1].ToSingle(),
-            DeltaAlphaInertia = p[2].ToSingle(),
-            DeltaBetaInertia = p[4].ToSingle(),
-            MaxDeltaGamma = p[5].ToSingle(),
-            DeltaGammaInertia = p[6].ToSingle(),
-            MaxThrust = p[7].ToSingle(),
-            ThrustInertia = p[8].ToSingle(),
-            ThrustStartStopInertia = p[9].ToSingle(),
-            WingCount = wings,
-            Wings = defined,
-            Smoke = p[at].ToInt32(),
-            Guidance = p[at + 1].ToInt32(),
-            Fuel = p[at + 2].ToSingle(),
-            Burn = ((Fpu)p[at + 3].ToSingle() * 0.03333333507180214).F,
-            SmokeSize = ((Fpu)p[at + 5].ToSingle() * 4096.0).F,
-            SmokeEndSize = ((Fpu)p[at + 6].ToSingle() * 4096.0).F,
-            SmokeDensity = p[at + 7].ToSingle(),
-            SmokeLifeTime = p[at + 8].ToSingle(),
-            SmokeSprite = p[at + 9].ToText(),
-            Sound = p[at + 10].ToText(),
-        };
-    }
-}
-
 /// <summary>
 /// A missile in flight, <c>Missile_s</c>: a physics object pushed by its motor, steadied by its fins, steering as its type says,
 /// and set off by the first thing it touches.
@@ -204,7 +56,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
 
     private const double AirResistanceCoefficient = 0.00032699998700991273;
 
-    private readonly Igi2Wing[] _wings = new Igi2Wing[8];
+    private readonly Wing[] _wings = new Wing[VehicleTypeDefinition.MaxWings];
     private readonly Igi2LineTrace _below = new(1);
     private readonly Igi2ExplosionWorld _explosions;
     private readonly Igi2PhysicsWorld _world;
@@ -237,7 +89,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         in Igi2ProjectileLaunch launch,
         string model,
         PhysicsObjectType type,
-        Igi2MissileType missile,
+        MissileTypeDefinition missile,
         MefModel? drawn,
         Igi2PhysicsWorld world,
         Igi2ExplosionWorld explosions,
@@ -268,9 +120,9 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         Body.ResetLast();
 
         // Missile_InitWings: the type's wings, the first two mirrored across the missile as the third and fourth.
-        for (int i = 0; i < missile.Wings.Count && i < _wings.Length; i++)
+        for (int i = 0; i < missile.Vehicle.Wings.Count && i < _wings.Length; i++)
         {
-            _wings[i] = missile.Wings[i];
+            _wings[i] = missile.Vehicle.Wings[i];
         }
 
         _wings[2] = _wings[0] with { Position = new Vector3f(_wings[0].Position.X, -_wings[0].Position.Y, _wings[0].Position.Z) };
@@ -304,7 +156,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
     public string Model { get; }
 
     /// <summary>Gets its type.</summary>
-    public Igi2MissileType Type { get; }
+    public MissileTypeDefinition Type { get; }
 
     /// <summary>Gets its physics object.</summary>
     public Igi2PhysicsObject Body { get; }
@@ -434,8 +286,8 @@ public sealed class Igi2Missile : IIgi2DynamicTask
     // Missile_Move.
     private void Move()
     {
-        Igi2MissileType t = Type;
-        float inertia = _realThrust >= 0.699999988079071f ? t.ThrustInertia : t.ThrustStartStopInertia;
+        MissileTypeDefinition t = Type;
+        float inertia = _realThrust >= 0.699999988079071f ? t.Vehicle.ThrustInertia : t.Vehicle.ThrustStartStopInertia;
         Fpu thrust = _realThrust;
         const float ideal = 1f;
         if (thrust.Value < ideal)
@@ -461,14 +313,14 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         }
 
         _realThrust = thrust.F;
-        _realDeltaAlpha = (((Fpu)_idealDeltaAlpha * (1.0 - t.DeltaAlphaInertia)) + ((Fpu)t.DeltaAlphaInertia * _realDeltaAlpha)).F;
-        _realDeltaBeta = (((Fpu)0f * (1.0 - t.DeltaBetaInertia)) + ((Fpu)t.DeltaBetaInertia * _realDeltaBeta)).F;
-        _realDeltaGamma = (((Fpu)_idealDeltaGamma * (1.0 - t.DeltaGammaInertia)) + ((Fpu)t.DeltaGammaInertia * _realDeltaGamma)).F;
+        _realDeltaAlpha = (((Fpu)_idealDeltaAlpha * (1.0 - t.Vehicle.DeltaAlphaInertia)) + ((Fpu)t.Vehicle.DeltaAlphaInertia * _realDeltaAlpha)).F;
+        _realDeltaBeta = (((Fpu)0f * (1.0 - t.Vehicle.DeltaBetaInertia)) + ((Fpu)t.Vehicle.DeltaBetaInertia * _realDeltaBeta)).F;
+        _realDeltaGamma = (((Fpu)_idealDeltaGamma * (1.0 - t.Vehicle.DeltaGammaInertia)) + ((Fpu)t.Vehicle.DeltaGammaInertia * _realDeltaGamma)).F;
         float[] m = Body.Orientation;
         if (_realDeltaAlpha != 0f || _realDeltaBeta != 0f || _realDeltaGamma != 0f)
         {
-            Fpu a = ((Fpu)_realDeltaAlpha * t.MaxDeltaAlpha) * 0.01745329238474369;
-            Fpu g = ((Fpu)_realDeltaGamma * t.MaxDeltaGamma) * 0.01745329238474369;
+            Fpu a = ((Fpu)_realDeltaAlpha * t.Vehicle.MaxDeltaAlpha) * 0.01745329238474369;
+            Fpu g = ((Fpu)_realDeltaGamma * t.Vehicle.MaxDeltaGamma) * 0.01745329238474369;
             Fpu s = Fpu.Sin(a), c = Fpu.Cos(a);
             for (int row = 0; row < 9; row += 3)
             {
@@ -495,7 +347,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
 
         if (_realThrust != 0f && Fuel != 0f)
         {
-            float push = (((Fpu)t.MaxThrust * _realThrust) * 44.600887298583984).F;
+            float push = (((Fpu)t.Vehicle.MaxThrust * _realThrust) * 44.600887298583984).F;
             Body.Body.AddForce(new PointForce(new Vector3f(0f, push, 0f), default));
         }
 
@@ -503,7 +355,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         Fuel = fuel < 0f ? 0f : fuel;
         if (!Body.IsIdle())
         {
-            if (t.WingCount != 0)
+            if (t.Vehicle.Wings.Count != 0)
             {
                 AirOnWings(m);
             }
@@ -557,9 +409,9 @@ public sealed class Igi2Missile : IIgi2DynamicTask
             dir = new Vector3f(((Fpu)local.X * inverse).F, ((Fpu)local.Y * inverse).F, ((Fpu)local.Z * inverse).F);
         }
 
-        for (int i = 0; i < Type.WingCount && i < _wings.Length; i++)
+        for (int i = 0; i < Type.Vehicle.Wings.Count && i < _wings.Length; i++)
         {
-            Igi2Wing wing = _wings[i];
+            Wing wing = _wings[i];
             if (!(wing.Area > 0f))
             {
                 continue;

@@ -236,12 +236,12 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
     {
         byte[] t = capture.TypeMemory, r = capture.RecordMemory;
         int aero = BitConverter.ToInt32(r, 40);
-        RetailAeroSurface[] surfaces = new RetailAeroSurface[aero];
+        Wing[] surfaces = new Wing[aero];
         for (int j = 0; j < aero; j++)
         {
             int s = 44 + (28 * j);
             float F(int o) => BitConverter.ToSingle(r, s + o);
-            surfaces[j] = new RetailAeroSurface(F(0), F(4), F(8), F(12), F(16), F(20), F(24));
+            surfaces[j] = new Wing(F(0), new Vector3f(F(16), F(20), F(24)), new Vector3f(F(4), F(8), F(12)));
         }
 
         return new RetailHeliDefinition
