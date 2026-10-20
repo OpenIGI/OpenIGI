@@ -382,45 +382,42 @@ public sealed class RetailSplineSegment
             best = X87.Sqrt(ddx * ddx + ddy * ddy + ddz * ddz).Value;
         }
 
-        float[] lo = new float[3], hi = new float[3];
-        RetailModelRay.Box(ls, le, lo, hi);
-        float[] d = [((X87)e.X - s.X).F, ((X87)e.Y - s.Y).F, ((X87)e.Z - s.Z).F];
-        RetailModelRay.Search search = new()
+        Vector3f d = new(((X87)e.X - s.X).F, ((X87)e.Y - s.Y).F, ((X87)e.Z - s.Z).F);
+        Vector3f start = new(ls[0], ls[1], ls[2]);
+        MeshRaySearch<X87> search = new(MeshRayDialect.Igi1)
         {
-            Best = best,
-            HadHit = hadHit,
-            PrevFront = result.Hit && result.HasFrontMaterial,
-            Point = le,
-            Lo = lo,
-            Hi = hi,
+            Closest = best,
+            IsHit = hadHit,
+            PreviousFront = result.Hit && result.HasFrontMaterial,
+            Point = new Vector3f(le[0], le[1], le[2]),
         };
+        search.Box(start, search.Point);
 
         // The walk culls by the segment's own rebuilt tree; inv = 1 / |Le - Ls|² over register differences of floats.
         X87 lx = (X87)le[0] - ls[0], ly = (X87)le[1] - ls[1], lz = (X87)le[2] - ls[2];
         double inverse = ((X87)1.0 / (lz * lz + lx * lx + ly * ly)).Value;
-        RetailModelRay.WalkSphereTree(Mesh, ls, d, inverse, lenf, portals: true, search, mirror: Reverse, Vertices, cullSpheres: true, Spheres);
-        if (!search.Found || (result.Hit && !(search.Best < result.Distance)))
+        RetailModelRay.Walk(Mesh, Vertices, Spheres, start, d, inverse, lenf, portals: true, search, mirror: Reverse, cullSpheres: true);
+        if (!search.HitThisObject || (result.Hit && !(search.Closest < result.Distance)))
         {
             return;
         }
 
         RetailModelRay.FaceNormal(Mesh, search.Face, Reverse, out float nx, out float ny, out float nz, Vertices);
-        float[] point = search.Point;
+        float[] point = [search.Point.X, search.Point.Y, search.Point.Z];
         result.Struck = Owner;
         result.Point = new Vector3d(((X87)point[0] + px).Value, ((X87)point[1] + py).Value, ((X87)point[2] + pz).Value);
         result.NormalX = nx;
         result.NormalY = ny;
         result.NormalZ = nz;
-        result.HasFrontMaterial = search.PrevFront;
-        result.HasSurface = !search.PrevFront;
+        result.HasFrontMaterial = search.PreviousFront;
+        result.HasSurface = !search.PreviousFront;
         result.SurfaceForce = 0f;
-        result.Distance = search.Best;
+        result.Distance = search.Closest;
         result.Hit = true;
         result.Material = Mesh.GlobalMaterial[Mesh.Faces[(4 * search.Face) + 3]];
     }
 
-    private static bool Straddles(X87 lo, X87 hi, double s, double e) =>
-        (lo.Value <= s || lo.Value <= e) && (hi.Value >= s || hi.Value >= e);
+    private static bool Straddles(X87 lo, X87 hi, double s, double e) => MeshRay.Straddles(MeshRayDialect.Igi1, lo.Value, hi.Value, s, e);
 
     /// <summary><c>0x4B32B0</c>: <c>sqrt(((dz·dz) + (dy·dy)) + (dx·dx))</c>, <c>d = a − b</c>.</summary>
     private static double Dist(Vector3d a, Vector3d b)

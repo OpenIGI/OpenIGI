@@ -121,7 +121,7 @@ public sealed class Igi2BoneCollider(IIgi2BonedBody body, object owner) : IIgi2C
 /// (<c>BoneDynCubeObj_SphereIntersectionCheck</c>, <c>0x565180</c>) is passed over. When the first line reaches it, every vertex
 /// is placed once by its bone and then turned by the object's orientation rows. Each line is taken relative to the object's
 /// position, unturned; a box padded by a centimetre around it culls the faces, which are all tested in order, the sphere tree
-/// unused, with the shared plane and barycentric test and tie window (<see cref="Igi2MeshSearch"/>).
+/// unused, with the shared plane and barycentric test and tie window (<see cref="MeshRaySearch{TFpu}"/>).
 /// </para>
 /// <para>
 /// A hit records the struck point, the face's normal (normalised; the vertices were turned, so it is the world's), its
@@ -259,7 +259,7 @@ public static class Igi2BoneTrace
         Fpu lx = (Fpu)e.X - s.X, ly = (Fpu)e.Y - s.Y, lz = (Fpu)e.Z - s.Z;
         float length = Fpu.Sqrt(((lx * lx) + (ly * ly)) + (lz * lz)).F;
 
-        Igi2MeshSearch search = new()
+        MeshRaySearch<Fpu> search = new(MeshRayDialect.Igi2)
         {
             IsHit = hit.IsHit,
             PreviousFront = hit.IsHit && hit.EnterMaterial is not null,
@@ -278,7 +278,7 @@ public static class Igi2BoneTrace
         for (int f = 0; f < mesh.Arrays.FaceCount; f++)
         {
             int i0 = 3 * faces[4 * f], i1 = 3 * faces[(4 * f) + 1], i2 = 3 * faces[(4 * f) + 2];
-            if (!search.Cross(v, i0, i1, i2, s, d, flip: false, Igi2PlaneSum.YXZ, out Igi2FaceCrossing crossing))
+            if (!search.Cross(v, i0, i1, i2, s, d, flip: false, MeshPlaneSum.YXZ, out MeshFaceCrossing<Fpu> crossing))
             {
                 continue;
             }
@@ -299,7 +299,7 @@ public static class Igi2BoneTrace
         Record(collider, mesh, v, search, hit);
     }
 
-    private static void Record(Igi2BoneCollider collider, Igi2BoneMesh mesh, float[] v, Igi2MeshSearch search, Igi2Intersection hit)
+    private static void Record(Igi2BoneCollider collider, Igi2BoneMesh mesh, float[] v, MeshRaySearch<Fpu> search, Igi2Intersection hit)
     {
         IIgi2BonedBody body = collider.Body;
         Matrix3f o = body.Orientation;

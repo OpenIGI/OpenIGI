@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
@@ -46,9 +47,9 @@ public static class Igi2RigidLineOfSight
         float largest = sy > sz ? sy : sz;
         float smax = largest < sx ? sx : largest;
         float r = ((Fpu)model.Radius * smax).F;
-        if (!Igi2MeshSearch.Straddles(((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
+        if (!MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
         {
             return;
         }
@@ -67,7 +68,7 @@ public static class Igi2RigidLineOfSight
         float lz = ((ez * m[8]) + (ex * m[2]) + (ey * m[5])).F;
         Vector3f end = new(((Fpu)isx * lx).F, ((Fpu)isy * ly).F, ((Fpu)isz * lz).F);
 
-        Igi2MeshSearch search = new();
+        MeshRaySearch<Fpu> search = new(MeshRayDialect.Igi2);
         search.TightBox(start, end);
         float ddz = ((Fpu)end.Z - start.Z).F, ddy = ((Fpu)end.Y - start.Y).F, ddx = ((Fpu)end.X - start.X).F;
         Fpu inverse = (Fpu)1.0 / ((((Fpu)ddx * ddx) + ((Fpu)ddy * ddy)) + ((Fpu)ddz * ddz));
@@ -78,12 +79,12 @@ public static class Igi2RigidLineOfSight
 
         Vector3f d = new(ddx, ddy, ddz);
         Faces faces = new(mesh, sight, start, d, search);
-        search.Walk(mesh.Arrays, start, d, inverse, uniformSums: true, ref faces);
+        search.Walk(mesh.Arrays.Links, mesh.Arrays.Spheres, start, d, inverse, MeshSphereSums.XyzAlways, cull: true, ref faces);
     }
 
     /// <summary>One face against the line: the shared crossing on a face that is no portal, then what the face lets through.</summary>
-    private readonly struct Faces(Igi2CollisionMesh mesh, Igi2LineOfSight sight, Vector3f s, Vector3f d, Igi2MeshSearch search)
-        : IIgi2FaceVisitor
+    private readonly struct Faces(Igi2CollisionMesh mesh, Igi2LineOfSight sight, Vector3f s, Vector3f d, MeshRaySearch<Fpu> search)
+        : IMeshFaceVisitor
     {
         public void Visit(int face)
         {
@@ -96,7 +97,7 @@ public static class Igi2RigidLineOfSight
             }
 
             int i0 = 3 * faces[4 * face], i1 = 3 * faces[(4 * face) + 1], i2 = 3 * faces[(4 * face) + 2];
-            if (!search.Cross(mesh.Arrays.Vertices, i0, i1, i2, s, d, flip: false, Igi2PlaneSum.XZY, out Igi2FaceCrossing crossing))
+            if (!search.Cross(mesh.Arrays.Vertices, i0, i1, i2, s, d, flip: false, MeshPlaneSum.XZY, out MeshFaceCrossing<Fpu> crossing))
             {
                 return;
             }

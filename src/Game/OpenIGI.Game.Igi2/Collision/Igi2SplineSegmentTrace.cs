@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// <para>
 /// The handler answers both the line and the ground events. Each line is taken into the segment model's own frame
 /// by the inverse of the stretch matrix and walked through the model's own sphere tree and faces, the walk and face
-/// test the solid models use (<see cref="Igi2MeshSearch"/>) with this handler's sums: every sphere sums its squared
+/// test the solid models use (<see cref="MeshRaySearch{TFpu}"/>) with this handler's sums: every sphere sums its squared
 /// distance x, y, z, and the plane distance sums z, y, x. Portal faces and the ignored material are not consulted.
 /// </para>
 /// <para>
@@ -72,9 +72,9 @@ public static class Igi2SplineSegmentTrace
     {
         Vector3d p = o.Position;
         float r = o.Radius;
-        if (!Igi2MeshSearch.Straddles(((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
+        if (!MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
         {
             return false;
         }
@@ -82,7 +82,7 @@ public static class Igi2SplineSegmentTrace
         Vector3f start = new(((Fpu)s.X - p.X).F, ((Fpu)s.Y - p.Y).F, ((Fpu)s.Z - p.Z).F);
         Vector3f end = new(((Fpu)e.X - p.X).F, ((Fpu)e.Y - p.Y).F, ((Fpu)e.Z - p.Z).F);
         float lineLength = Igi2Real64x3.Distance(s, e).F;
-        Igi2MeshSearch search = new()
+        MeshRaySearch<Fpu> search = new(MeshRayDialect.Igi2)
         {
             IsHit = hit.IsHit,
             PreviousFront = hit.IsHit && hit.EnterMaterial is not null,
@@ -107,7 +107,7 @@ public static class Igi2SplineSegmentTrace
         }
 
         BentFaces faces = new(mesh.Arrays, start, d, lineLength, search, o.IsFlipped);
-        search.Walk(mesh.Arrays, start, d, inverse, uniformSums: true, ref faces);
+        search.Walk(mesh.Arrays.Links, mesh.Arrays.Spheres, start, d, inverse, MeshSphereSums.XyzAlways, cull: true, ref faces);
         if (search.HitThisObject && (!wasHit || search.Closest < hit.Distance))
         {
             RecordBent(o, mesh, trace, search, hit);
@@ -117,7 +117,7 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>The bent segment's hit: the crossing at the segment's position, the bent face's normal, reversed when flipped.</summary>
-    private static void RecordBent(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Igi2MeshSearch search, Igi2Intersection hit)
+    private static void RecordBent(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, MeshRaySearch<Fpu> search, Igi2Intersection hit)
     {
         int[] faces = mesh.Arrays.Faces;
         float[] v = mesh.Arrays.Vertices;
@@ -157,9 +157,9 @@ public static class Igi2SplineSegmentTrace
     {
         Vector3d p = o.Position;
         float r = o.Radius;
-        if (!Igi2MeshSearch.Straddles(((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
+        if (!MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
         {
             return false;
         }
@@ -181,7 +181,7 @@ public static class Igi2SplineSegmentTrace
         Vector3f end = new(((Fpu)middle + tx).F, ty, tz);
 
         float lineLength = Igi2Real64x3.Distance(s, e).F;
-        Igi2MeshSearch search = new()
+        MeshRaySearch<Fpu> search = new(MeshRayDialect.Igi2)
         {
             IsHit = hit.IsHit,
             PreviousFront = hit.IsHit && hit.EnterMaterial is not null,
@@ -213,7 +213,7 @@ public static class Igi2SplineSegmentTrace
         }
 
         Faces faces = new(mesh.Arrays, start, d, lineLength, search);
-        search.Walk(mesh.Arrays, start, d, inverse, uniformSums: true, ref faces);
+        search.Walk(mesh.Arrays.Links, mesh.Arrays.Spheres, start, d, inverse, MeshSphereSums.XyzAlways, cull: true, ref faces);
         if (search.HitThisObject)
         {
             Record(o, mesh, trace, s, wasHit, search, hit);
@@ -223,7 +223,7 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>Writes the segment's hit into the line's result, if it is nearer than what was there before the segment.</summary>
-    private static void Record(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, bool wasHit, Igi2MeshSearch search, Igi2Intersection hit)
+    private static void Record(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, bool wasHit, MeshRaySearch<Fpu> search, Igi2Intersection hit)
     {
         // The crossing back into the world: from the middle, stretched, and added to the position at 24 bits.
         IReadOnlyList<float> m = o.Orientation;
@@ -282,14 +282,14 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>One bent face against the line: the shared crossing, its normal reversed on a flipped segment, and the tie rules.</summary>
-    private readonly struct BentFaces(RetailRayMesh mesh, Vector3f s, Vector3f d, float lineLength, Igi2MeshSearch search, bool flip)
-        : IIgi2FaceVisitor
+    private readonly struct BentFaces(RetailRayMesh mesh, Vector3f s, Vector3f d, float lineLength, MeshRaySearch<Fpu> search, bool flip)
+        : IMeshFaceVisitor
     {
         public void Visit(int face)
         {
             int[] faces = mesh.Faces;
             int i0 = 3 * faces[4 * face], i1 = 3 * faces[(4 * face) + 1], i2 = 3 * faces[(4 * face) + 2];
-            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip, Igi2PlaneSum.ZYX, out Igi2FaceCrossing crossing))
+            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip, MeshPlaneSum.ZYX, out MeshFaceCrossing<Fpu> crossing))
             {
                 return;
             }
@@ -304,14 +304,14 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>One face against the line: the shared crossing and the tie rules, nothing skipped.</summary>
-    private readonly struct Faces(RetailRayMesh mesh, Vector3f s, Vector3f d, float lineLength, Igi2MeshSearch search)
-        : IIgi2FaceVisitor
+    private readonly struct Faces(RetailRayMesh mesh, Vector3f s, Vector3f d, float lineLength, MeshRaySearch<Fpu> search)
+        : IMeshFaceVisitor
     {
         public void Visit(int face)
         {
             int[] faces = mesh.Faces;
             int i0 = 3 * faces[4 * face], i1 = 3 * faces[(4 * face) + 1], i2 = 3 * faces[(4 * face) + 2];
-            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip: false, Igi2PlaneSum.ZYX, out Igi2FaceCrossing crossing))
+            if (!search.Cross(mesh.Vertices, i0, i1, i2, s, d, flip: false, MeshPlaneSum.ZYX, out MeshFaceCrossing<Fpu> crossing))
             {
                 return;
             }

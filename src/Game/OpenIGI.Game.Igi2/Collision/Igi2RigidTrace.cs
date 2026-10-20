@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// row can be ignored; a hit reports its barycentric position and how lit the surface is; and every operation
 /// rounds to 24 bits, toward zero. The order of each sum and where each value is stored as a float are the
 /// disassembly's. The walk and the face test are shared with the spline segments' handler
-/// (<see cref="Igi2MeshSearch"/>).
+/// (<see cref="MeshRaySearch{TFpu}"/>).
 /// </para>
 /// </remarks>
 public static class Igi2RigidTrace
@@ -60,9 +60,9 @@ public static class Igi2RigidTrace
         float largest = sy > sz ? sy : sz;
         float smax = largest < sx ? sx : largest;
         float r = ((Fpu)o.Radius * smax).F;
-        if (!Igi2MeshSearch.Straddles(((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
-            || !Igi2MeshSearch.Straddles(((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
+        if (!MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.X - r).Value, ((Fpu)r + p.X).Value, s.X, e.X)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Y - r).Value, ((Fpu)r + p.Y).Value, s.Y, e.Y)
+            || !MeshRay.Straddles(MeshRayDialect.Igi2, ((Fpu)p.Z - r).Value, ((Fpu)r + p.Z).Value, s.Z, e.Z))
         {
             return;
         }
@@ -82,7 +82,7 @@ public static class Igi2RigidTrace
         Fpu length2 = (ddz * ddz) + (ddx * ddx) + (ddy * ddy);
         float lineLength = Fpu.Sqrt(length2).F;
 
-        Igi2MeshSearch search = new()
+        MeshRaySearch<Fpu> search = new(MeshRayDialect.Igi2)
         {
             IsHit = hit.IsHit,
             PreviousFront = hit.IsHit && hit.EnterMaterial is not null,
@@ -108,7 +108,7 @@ public static class Igi2RigidTrace
         }
 
         Faces faces = new(mesh, trace, start, d, lineLength, search);
-        search.Walk(mesh.Arrays, start, d, inverse, uniformSums: false, ref faces);
+        search.Walk(mesh.Arrays.Links, mesh.Arrays.Spheres, start, d, inverse, MeshSphereSums.ZxyChildXyzSibling, cull: true, ref faces);
         if (!search.HitThisObject)
         {
             return;
@@ -128,7 +128,7 @@ public static class Igi2RigidTrace
     }
 
     /// <summary>Writes this model's hit into the line's result, if it is nearer than what is there.</summary>
-    private static void Record(Igi2RigidObject o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3f start, Igi2MeshSearch search, Igi2Intersection hit)
+    private static void Record(Igi2RigidObject o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3f start, MeshRaySearch<Fpu> search, Igi2Intersection hit)
     {
         float[] m = o.Orientation;
         float sx = o.Scale.X, sy = o.Scale.Y, sz = o.Scale.Z;
@@ -199,8 +199,8 @@ public static class Igi2RigidTrace
     }
 
     /// <summary>One face against the line: the shared crossing, then this handler's portal, tie and ignored-material rules.</summary>
-    private readonly struct Faces(Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3f s, Vector3f d, float lineLength, Igi2MeshSearch search)
-        : IIgi2FaceVisitor
+    private readonly struct Faces(Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3f s, Vector3f d, float lineLength, MeshRaySearch<Fpu> search)
+        : IMeshFaceVisitor
     {
         public void Visit(int face)
         {
@@ -213,7 +213,7 @@ public static class Igi2RigidTrace
             }
 
             int i0 = 3 * faces[4 * face], i1 = 3 * faces[(4 * face) + 1], i2 = 3 * faces[(4 * face) + 2];
-            if (!search.Cross(mesh.Arrays.Vertices, i0, i1, i2, s, d, flip: false, Igi2PlaneSum.YXZ, out Igi2FaceCrossing crossing))
+            if (!search.Cross(mesh.Arrays.Vertices, i0, i1, i2, s, d, flip: false, MeshPlaneSum.YXZ, out MeshFaceCrossing<Fpu> crossing))
             {
                 return;
             }
