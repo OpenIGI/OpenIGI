@@ -148,6 +148,7 @@ public sealed class MissionWorld : MissionState
 
         SoldierPresenter = bodies as ISoldierPresenter;
         Soldiers = SoldierPresenter?.Simulation;
+        Soldiers?.Joined = Joined;
         if (SoldierPresenter is not null)
         {
             Bodies.Add(SoldierPresenter);

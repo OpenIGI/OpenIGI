@@ -95,6 +95,9 @@ public class MissionState : IInspectableMission
     /// <summary>Gets the humans the level's shots may meet, from every source: the game's own soldiers, and any a mod brings.</summary>
     public LevelBodies Bodies { get; } = new();
 
+    /// <summary>Gets the explosion targets and humans another game made for the level, which join its lists after its own.</summary>
+    public LevelJoiners Joined { get; } = new();
+
     /// <summary>Gets or sets the level's task tree, in the order its tasks were made.</summary>
     public LevelTask? LevelRoot { get; set; }
 
@@ -242,6 +245,7 @@ public class MissionState : IInspectableMission
     public virtual void ReleaseWorld()
     {
         Bodies.Clear();
+        Joined.Clear();
         EffectWalls = null;
         Solids = null;
         LevelRoot = null;

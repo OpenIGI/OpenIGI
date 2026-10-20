@@ -2577,6 +2577,9 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <remarks>Made when the soldiers are animated, from the level's tree; a guard spawned since joins at the end.</remarks>
     internal List<IHumanAiEventTarget> Humans { get; } = [];
 
+    /// <summary>Gets or sets the humans another game made for the level, which hear its AI events after its own.</summary>
+    public LevelJoiners? Joined { get; set; }
+
     // A human's noise as its senders post it (0x463920, 0x479780): in range, of a living human, from the other side.
     private const AiEventFilter HumanNoiseFilter = AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide;
 
@@ -2592,7 +2595,8 @@ public sealed class SoldierSimulation : IHumanEvents
 
     private void Broadcast(Igi1Noise noise, in HumanAiEvent aiEvent) =>
         HumanAiEvents.Send(
-            Humans.Count > 0 ? Humans : Brains.Keys.Select(static view => (IHumanAiEventTarget)view.Soldier),
+            (Humans.Count > 0 ? Humans : Brains.Keys.Select(static view => (IHumanAiEventTarget)view.Soldier))
+                .Concat(Joined?.Humans ?? []),
             aiEvent);
 
     /// <inheritdoc/>

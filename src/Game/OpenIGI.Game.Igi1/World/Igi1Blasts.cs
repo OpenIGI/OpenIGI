@@ -214,6 +214,13 @@ public sealed class Igi1Blasts(
             }
         }
 
+        // Another game's targets joined the list after every task the level made, in the order they joined.
+        foreach (IExplosionHitTarget joined in mission.Joined.ExplosionTargets)
+        {
+            IExplosionHitTarget member = joined;
+            members.Add((long.MaxValue - 1, members.Count, () => member.ExplosionHit(shared)));
+        }
+
         if (mission.PlayerTask is null && mission.Player is not null)
         {
             // A level that declares no HumanPlayer still has the player the opening camera stood.
