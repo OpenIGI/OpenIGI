@@ -3,6 +3,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 
@@ -36,5 +37,9 @@ public sealed partial class GameHost
         public Vector3f SkyFillColour() => host._timeOfDay.SkyFillColour();
 
         public void UpdateBackdropProfile() => host.UpdateBackdropProfile();
+
+        public void UpdateTerrainRaster() => host.UpdateTerrainRaster();
+
+        public DistanceFieldBinding DescribeDistanceField(Vector3d eye) => host.DescribeDistanceField(eye);
     }
 }

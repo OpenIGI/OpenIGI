@@ -290,15 +290,6 @@ public sealed partial class GameHost : IDisposable
             _lampFieldRanges);
     }
 
-    // How far the eye may move between two frames and still count as the same shot for the screen GI's
-    // histories. Metres; a sprint covers a fraction of this in a frame, a cut or a teleport covers more.
-    private const double GiCutDistance = 2.0;
-
-    // How far the projection's scale may change between two frames and still count as the same shot: a tenth.
-    // A cinematic zoom moves it a ten-thousandth a frame and is reprojected through; a scope snaps it by far
-    // more than this in one, and its history is the unzoomed view's.
-    private const float GiCutZoom = 0.1f;
-
     // The exposure adaptation rate during the warm-up and in steady play. Fast while the GI converges so the
     // exposure follows it and the picture holds its brightness; slow after, for an unobtrusive eye-adaptation.
     private const float GiExposureWarmupRate = 0.35f;
