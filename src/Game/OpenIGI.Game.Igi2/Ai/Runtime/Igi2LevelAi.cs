@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi2.Ai.Runtime;
 /// <param name="Resources">Where its scripts and graphs are read from.</param>
 /// <param name="Natives">The session's script namespace.</param>
 /// <param name="Functions">The natives line scripts may call.</param>
-/// <param name="Player">The player.</param>
+/// <param name="Player">The player, whichever game's: this game's own, or another's whose level this game's soldiers stand in.</param>
 /// <param name="Humans">Every human, in <c>Human_ptQTaskList</c>'s order.</param>
 /// <param name="Random">The session's run stream.</param>
 /// <param name="LevelTick">The level's tick.</param>
@@ -25,7 +25,7 @@ public sealed record Igi2LevelAiSetup(
     ResourceRegistry Resources,
     NativeRegistry Natives,
     Igi2ScriptFunctions Functions,
-    Player.Igi2HumanPlayer Player,
+    IAiPlayer Player,
     IReadOnlyList<Igi2Human> Humans,
     IgiRandom Random,
     Func<int> LevelTick)
@@ -144,7 +144,7 @@ public static class Igi2LevelAi
     /// The level's tasks by id, as <c>Level_atLevelQTaskID</c> holds them: a soldier's task stands for its body, the player's for
     /// the player.
     /// </summary>
-    private static Dictionary<int, object> TasksById(GameTask root, Player.Igi2HumanPlayer player)
+    private static Dictionary<int, object> TasksById(GameTask root, IAiPlayer player)
     {
         Dictionary<int, object> byId = [];
         foreach (GameTask task in root.Descendants())
