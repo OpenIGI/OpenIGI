@@ -86,8 +86,19 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         ArgumentNullException.ThrowIfNull(mission);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        return Load(mission.PacksInLoadOrder);
+    }
+
+    /// <summary>Reads the models it draws from packs, in the order a match is looked for.</summary>
+    /// <param name="packs">The packs, the first holding a name shadowing the rest.</param>
+    /// <returns><see langword="false"/> when there are none.</returns>
+    /// <remarks>For models of the game's own drawn in another game's level, whose packs are not that level's.</remarks>
+    public bool Load(IReadOnlyList<LoadedPack> packs)
+    {
+        ArgumentNullException.ThrowIfNull(packs);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         Release();
-        IReadOnlyList<LoadedPack> packs = mission.PacksInLoadOrder;
         if (packs.Count == 0)
         {
             return false;
