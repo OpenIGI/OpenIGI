@@ -114,4 +114,33 @@ public readonly record struct Igi2AiEvent(
         aiEvent = new Igi2AiEvent(kind, shared.Team, shared.Flags, shared.Radius, shared.Position, default, shared.Source, shared.Subject);
         return true;
     }
+
+    /// <summary>
+    /// This event in the engine's shared terms (<see cref="HumanAiEvent"/>), for another game's humans: the inverse of
+    /// <see cref="TryFromShared"/>, every event from <c>AIEVENT_ALARMON</c> on a number higher there.
+    /// </summary>
+    /// <param name="shared">Receives the event, this one whole as its context.</param>
+    /// <returns>Whether the other game has the event.</returns>
+    /// <remarks>
+    /// A near miss is not given: another game hears this one's rounds go by through the level's bodies, as this one hears
+    /// theirs.
+    /// </remarks>
+    public bool TryToShared(out HumanAiEvent shared)
+    {
+        shared = default;
+        int type = Event switch
+        {
+            < 0 => -1,
+            < (int)Game.Ai.AiEvent.Combat => Event,
+            < (int)Game.Ai.AiEvent.FriendlyDetection => Event + 1,
+            _ => -1,
+        };
+        if (type < 0 || type == (int)Game.Ai.AiEvent.GunshotMiss)
+        {
+            return false;
+        }
+
+        shared = new HumanAiEvent(type, Team, Flags, Radius, Position, Originator as Engine.Tasks.GameTask, Reference as Engine.Tasks.GameTask, this);
+        return true;
+    }
 }

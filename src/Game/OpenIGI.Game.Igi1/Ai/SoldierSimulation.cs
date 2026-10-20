@@ -2602,12 +2602,67 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <inheritdoc/>
     void IHumanEvents.SendEvent(HumanTask human, in HumanAiEvent aiEvent)
     {
-        if (aiEvent.Context is Igi1Noise noise
-            && _viewsByTask.TryGetValue(human, out SoldierView? view)
-            && Brains.TryGetValue(view, out AiSoldier? brain)
-            && noise.Hear(view, brain))
+        if (!_viewsByTask.TryGetValue(human, out SoldierView? view) || !Brains.TryGetValue(view, out AiSoldier? brain))
         {
-            noise.Heard++;
+            return;
+        }
+
+        if (aiEvent.Context is Igi1Noise noise)
+        {
+            if (noise.Hear(view, brain))
+            {
+                noise.Heard++;
+            }
+        }
+        else
+        {
+            HearOtherGame(view, brain, aiEvent);
+        }
+    }
+
+    // Another game's event, read by its fields: the admission tests its sender set, then the receiver this game's own senders
+    // hand the same event to. The engine's flag bits are both games'; the human ones are answered by the source, whichever
+    // game's human it is.
+    private static void HearOtherGame(SoldierView view, AiSoldier brain, in HumanAiEvent aiEvent)
+    {
+        if (!ConditionalContainerGate.IsTaskActive(view.Soldier) || aiEvent.Position is not { } at)
+        {
+            return;
+        }
+
+        AiEventFilter filter = (AiEventFilter)aiEvent.Flags;
+        int team = view.Soldier.Team;
+        IAiHuman? subject = aiEvent.Subject as IAiHuman;
+        if ((filter.HasFlag(AiEventFilter.OtherSide) && aiEvent.Team == team)
+            || (filter.HasFlag(AiEventFilter.SameSide) && aiEvent.Team != team)
+            || (filter.HasFlag(AiEventFilter.SubjectIsHuman) && subject is null)
+            || (filter.HasFlag(AiEventFilter.SubjectAlive) && subject is { IsDead: true })
+            || (filter.HasFlag(AiEventFilter.SubjectDead) && subject is { IsDead: false }))
+        {
+            return;
+        }
+
+        Vector3d source = (aiEvent.Source as IAiHuman)?.Position ?? at;
+        switch ((AiEvent)aiEvent.Type)
+        {
+            case AiEvent.Gunshot:
+                brain.HearGunshot(at, aiEvent.Radius, fromSameSide: aiEvent.Team == team, aiEvent.Source?.Id ?? -1);
+                break;
+            case AiEvent.Explosion:
+                brain.ReceiveExplosion(at, aiEvent.Radius);
+                break;
+            case AiEvent.GrenadeThrown:
+                brain.ReceiveGrenadeThrown(at);
+                break;
+            case AiEvent.GrenadeLand:
+                brain.ReceiveGrenadeLand(at, aiEvent.Radius);
+                break;
+            case AiEvent.Flashbang:
+                brain.ReceiveFlashbang(at, aiEvent.Radius);
+                break;
+            case AiEvent.Walk or AiEvent.GroundImpact or AiEvent.Door or AiEvent.Fence or AiEvent.Ladder:
+                brain.ReceiveHumanNoise((AiEvent)aiEvent.Type, at, source, aiEvent.Radius);
+                break;
         }
     }
 

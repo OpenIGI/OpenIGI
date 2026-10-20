@@ -229,6 +229,10 @@ public sealed class Igi2AiWorld
     /// (<see cref="Igi2HumanAi.Receive"/>); other humans ignore it.
     /// </summary>
     /// <param name="aiEvent">The event.</param>
+    /// <remarks>
+    /// Another game's humans standing in the level (<see cref="OtherHumans"/>) take it after this game's own, in that game's
+    /// terms (<see cref="Igi2AiEvent.TryToShared"/>), as the other game's broadcast reaches this one's soldiers after its own.
+    /// </remarks>
     public void SendEvent(in Igi2AiEvent aiEvent)
     {
         foreach (Igi2Human human in Humans)
@@ -238,7 +242,18 @@ public sealed class Igi2AiWorld
                 ai.Receive(aiEvent);
             }
         }
+
+        if (OtherHumans is { Count: > 0 } others && aiEvent.TryToShared(out HumanAiEvent shared))
+        {
+            HumanAiEvents.Send(others, shared);
+        }
     }
+
+    /// <summary>
+    /// Gets or sets another game's humans standing in the level, in its list's order, which hear this world's events after its
+    /// own humans; <see langword="null"/> in a level of this game alone.
+    /// </summary>
+    public IReadOnlyList<IHumanAiEventTarget>? OtherHumans { get; set; }
 
     /// <summary>
     /// Every human weighs a shot's bullets before they fly, <c>human.c Human_EvaluateGunShotHandler</c>: a soldier with a mind hears
