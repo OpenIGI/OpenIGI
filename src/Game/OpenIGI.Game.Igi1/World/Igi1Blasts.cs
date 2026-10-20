@@ -215,10 +215,13 @@ public sealed class Igi1Blasts(
         }
 
         // Another game's targets joined the list after every task the level made, in the order they joined.
+        ExplosionHit joinedShare = mission.Joined.ExplosionDamageScale == 1f
+            ? shared
+            : shared with { Damage = shared.Damage * mission.Joined.ExplosionDamageScale };
         foreach (IExplosionHitTarget joined in mission.Joined.ExplosionTargets)
         {
             IExplosionHitTarget member = joined;
-            members.Add((long.MaxValue - 1, members.Count, () => member.ExplosionHit(shared)));
+            members.Add((long.MaxValue - 1, members.Count, () => member.ExplosionHit(joinedShare)));
         }
 
         if (mission.PlayerTask is null && mission.Player is not null)

@@ -47,13 +47,33 @@ public sealed class LevelBodiesTests
         Assert.Null(only.PassedStruck);
     }
 
+    [Fact]
+    public void A_round_strikes_another_game_s_body_at_its_source_s_damage_scale()
+    {
+        Target near = new(refuses: false), far = new(refuses: false);
+        LevelBodies bodies = new();
+        bodies.Add(new Source([new Body(far, 30.0)]));
+        bodies.Add(new Source([new Body(near, 10.0)]) { DamageScale = 0.5f });
+
+        Assert.True(bodies.Shoot(
+            Vector3d.Zero, new Vector3d(100, 0, 0), null, hit => new WeaponHit(hit.Position, default, 0.3f, default, null, null), out _));
+        Assert.Equal(0.15f, near.LastDamage, 6);
+        Assert.Equal(0, far.Hits);
+    }
+
     private sealed class Target(bool refuses) : GameTask, IWeaponCollisionTarget, IWeaponHitTarget
     {
         public int Hits { get; private set; }
 
+        public float LastDamage { get; private set; }
+
         public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => !refuses;
 
-        public void WeaponHit(in WeaponHit hit) => Hits++;
+        public void WeaponHit(in WeaponHit hit)
+        {
+            Hits++;
+            LastDamage = hit.Damage;
+        }
     }
 
     private sealed class Body(GameTask task, double distance) : IShootableBody
@@ -72,6 +92,8 @@ public sealed class LevelBodiesTests
         public bool Passed { get; private set; }
 
         public GameTask? PassedStruck { get; private set; }
+
+        public float DamageScale { get; init; } = 1f;
 
         public IEnumerable<IShootableBody> Bodies() => bodies;
 

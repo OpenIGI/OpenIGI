@@ -35,6 +35,12 @@ public interface IShootableBodies
     /// <param name="target">Where it was cast to.</param>
     /// <param name="struck">The task it struck, or <see langword="null"/> for none.</param>
     void RoundPassed(Vector3d origin, Vector3d target, GameTask? struck);
+
+    /// <summary>
+    /// Gets what a round's damage is multiplied by as it strikes one of these bodies: one for the game's own humans; content that
+    /// brings another game's humans may tune how the two games' damage meets.
+    /// </summary>
+    float DamageScale => 1f;
 }
 
 /// <summary>Every source of bodies a level's shots may meet, asked as one: the game's own humans, and any a mod brings.</summary>
@@ -93,6 +99,7 @@ public sealed class LevelBodies
         ArgumentNullException.ThrowIfNull(hitFor);
         hit = default;
         IShootableBody? struck = null;
+        float scale = 1f;
         WeaponCollisionQuery query = new(shooter, null, 1f);
         foreach (IShootableBodies source in sources)
         {
@@ -107,6 +114,7 @@ public sealed class LevelBodies
                 {
                     hit = candidate;
                     struck = body;
+                    scale = source.DamageScale;
                 }
             }
         }
@@ -123,7 +131,8 @@ public sealed class LevelBodies
 
         if (struck.Task is IWeaponHitTarget taker)
         {
-            taker.WeaponHit(hitFor(hit));
+            WeaponHit sent = hitFor(hit);
+            taker.WeaponHit(scale == 1f ? sent : sent with { Damage = sent.Damage * scale });
         }
 
         return true;

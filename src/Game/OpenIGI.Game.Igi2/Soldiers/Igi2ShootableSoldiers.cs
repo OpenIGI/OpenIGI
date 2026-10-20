@@ -41,6 +41,9 @@ public sealed class Igi2ShootableSoldiers : IShootableBodies
     }
 
     /// <inheritdoc/>
+    public float DamageScale { get; init; } = 1f;
+
+    /// <inheritdoc/>
     public IEnumerable<IShootableBody> Bodies()
     {
         foreach (Body body in _bodies)

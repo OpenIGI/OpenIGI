@@ -24,6 +24,12 @@ public sealed class LevelJoiners
     /// <summary>Gets the explosion targets that joined, in the order they joined.</summary>
     public IReadOnlyList<IExplosionHitTarget> ExplosionTargets => _explosionTargets;
 
+    /// <summary>
+    /// Gets or sets what a blast's damage is multiplied by as it reaches a joined target: one by default; content that brings
+    /// another game's humans may tune how the two games' damage meets.
+    /// </summary>
+    public float ExplosionDamageScale { get; set; } = 1f;
+
     /// <summary>Gets the humans that joined, in the order they joined.</summary>
     public IReadOnlyList<IHumanAiEventTarget> Humans => _humans;
 
@@ -46,6 +52,7 @@ public sealed class LevelJoiners
     /// <summary>Empties both lists, as a level is left.</summary>
     public void Clear()
     {
+        ExplosionDamageScale = 1f;
         _explosionTargets.Clear();
         _humans.Clear();
     }
