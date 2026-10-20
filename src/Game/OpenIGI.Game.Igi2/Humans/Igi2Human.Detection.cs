@@ -1,10 +1,11 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
 /// <content>A human as detectors see it, <c>Human_AIDetectionGetInfoHandler</c> for the player and soldiers alike.</content>
-public abstract partial class Igi2Human : IIgi2Detectable
+public abstract partial class Igi2Human : IAiDetectable
 {
     /// <summary>How far above the feet a detector looks for them, <c>409.6</c> (0.1 m).</summary>
     public const double DetectionFeetLift = 409.6000061035156;
@@ -17,7 +18,7 @@ public abstract partial class Igi2Human : IIgi2Detectable
     public float DetectableRadius => ModelRadius;
 
     /// <inheritdoc/>
-    float? IIgi2Detectable.VisibilityFactor => DetectionVisibility;
+    float? IAiDetectable.VisibilityFactor => DetectionVisibility;
 
     /// <summary>Gets or sets how well detectors see the human, <c>Human_s.vVisibilityFactor</c>, its kind's own measure.</summary>
     public float VisibilityFactor { get; set; } = 1f;
@@ -55,7 +56,7 @@ public abstract partial class Igi2Human : IIgi2Detectable
     /// <c>Human_AIDetectionGetInfoHandler</c> (<c>igi2 0x4FFBA0</c>): a human of its side, alive unless dead, active as the script
     /// left it; its points its eyes, a tenth of a metre above its feet, and halfway between.
     /// </remarks>
-    public Igi2DetectionInfo DetectionInfo()
+    public AiDetectionInfo DetectionInfo()
     {
         Vector3d head = OriginalViewPosition;
         Vector3d p = Position;
@@ -64,6 +65,6 @@ public abstract partial class Igi2Human : IIgi2Detectable
             (((Fpu)head.X + feet.X) * 0.5).Value,
             (((Fpu)head.Y + feet.Y) * 0.5).Value,
             (((Fpu)head.Z + feet.Z) * 0.5).Value);
-        return new Igi2DetectionInfo(Igi2DetectableKind.Human, head, middle, feet, Team, !IsDead, IsDetectionActive);
+        return new AiDetectionInfo(AiDetectableKind.Human, head, middle, feet, Team, !IsDead, IsDetectionActive);
     }
 }

@@ -169,7 +169,7 @@ public sealed class RetailIgi2StationaryGunTests
     }
 
     // Something seen, standing still.
-    private sealed class Target(Vector3d at) : Detection.IIgi2Detectable
+    private sealed class Target(Vector3d at) : IAiDetectable
     {
         public Vector3d DetectablePosition => at;
 
@@ -179,8 +179,8 @@ public sealed class RetailIgi2StationaryGunTests
 
         public bool IsGone => false;
 
-        public Detection.Igi2DetectionInfo DetectionInfo() =>
-            new(Detection.Igi2DetectableKind.Human, at, at, at, 0, IsAlive: true, IsActive: true);
+        public AiDetectionInfo DetectionInfo() =>
+            new(AiDetectableKind.Human, at, at, at, 0, IsAlive: true, IsActive: true);
     }
 
     private static (Igi2Level Level, Igi2Session Session, Igi2StationaryGunTask Gun) Gun()

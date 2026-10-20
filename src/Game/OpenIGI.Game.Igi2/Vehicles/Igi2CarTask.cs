@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
@@ -509,7 +510,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
     // AIDetection_InitDetection(.., 1, 4, Human_bAIDetectionQTaskMask, 4, 8).
     private static Igi2AiDetection NewDetection(Igi2DetectionWorld world) =>
-        new(world, 1, Igi2AiDetection.LiveEnemies, Igi2DetectableKind.Human, 4, 8);
+        new(world, 1, Igi2AiDetection.LiveEnemies, AiDetectableKind.Human, 4, 8);
 
     private static Matrix3f Rows(IReadOnlyList<float> m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 

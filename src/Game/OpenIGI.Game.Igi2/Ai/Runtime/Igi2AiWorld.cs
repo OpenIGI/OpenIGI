@@ -158,7 +158,7 @@ public sealed class Igi2AiWorld
     /// <param name="squad">The squad left out.</param>
     /// <param name="enemy">The enemy.</param>
     /// <returns><see langword="true"/> when another does.</returns>
-    public bool IsTargetSeenByOtherSquads(Igi2AiSquad squad, Detection.IIgi2Detectable enemy) =>
+    public bool IsTargetSeenByOtherSquads(Igi2AiSquad squad, IAiDetectable enemy) =>
         Squads.Exists(other => !ReferenceEquals(other, squad) && other.IsTargetSeen(enemy));
 
     /// <summary>Gets the oldest event of the kind the running script handles, or <see langword="null"/>.</summary>

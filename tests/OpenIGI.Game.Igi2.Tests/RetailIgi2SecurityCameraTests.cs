@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Detection;
@@ -184,7 +185,7 @@ public sealed class RetailIgi2SecurityCameraTests
     }
 
     // The level's cameras readied as gameplay readies them, seeing one another and, where given, the player.
-    internal static Igi2SecurityCameraTask[] Arm(RetailIgi2Mission1 m, IIgi2Detectable? player)
+    internal static Igi2SecurityCameraTask[] Arm(RetailIgi2Mission1 m, IAiDetectable? player)
     {
         Igi2DetectionWorld world = new(m.Collision, m.Materials)
         {

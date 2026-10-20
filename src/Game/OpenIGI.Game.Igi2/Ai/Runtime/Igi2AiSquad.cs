@@ -304,7 +304,7 @@ public sealed partial class Igi2AiSquad
             return;
         }
 
-        if (kind == 21 && squadEvent.Reference is IIgi2Detectable enemy)
+        if (kind == 21 && squadEvent.Reference is IAiDetectable enemy)
         {
             NoteTarget(enemy, squadEvent.Position);
         }
@@ -354,7 +354,7 @@ public sealed partial class Igi2AiSquad
     /// <param name="position">Where.</param>
     public void ReceiveEvent(int kind, Vector3d position) => ReceiveEvent(new Igi2AiSquadEvent { Kind = kind, Position = position });
 
-    private void NoteTarget(IIgi2Detectable enemy, Vector3d position)
+    private void NoteTarget(IAiDetectable enemy, Vector3d position)
     {
         foreach (Igi2AiSquadTarget target in _targets)
         {
@@ -387,7 +387,7 @@ public sealed partial class Igi2AiSquad
     /// <summary>Whether its members share an enemy, <c>AISquad_TargetSeenBySquad</c>.</summary>
     /// <param name="enemy">The enemy.</param>
     /// <returns><see langword="true"/> when it does.</returns>
-    public bool IsTargetSeen(IIgi2Detectable enemy) => _targets.Exists(t => ReferenceEquals(t.Enemy, enemy));
+    public bool IsTargetSeen(IAiDetectable enemy) => _targets.Exists(t => ReferenceEquals(t.Enemy, enemy));
 
     /// <summary>
     /// A sign of trouble (called by the mind for footsteps, shots and the like): unless one was taken in the last three seconds,

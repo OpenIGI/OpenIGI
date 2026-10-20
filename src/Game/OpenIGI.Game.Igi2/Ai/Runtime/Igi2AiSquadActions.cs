@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -66,7 +67,7 @@ public sealed class Igi2AiSquadChange
     public Igi2HumanAi? Receiver { get; set; }
 
     /// <summary>Gets or sets the enemy a leapfrog advances on.</summary>
-    public IIgi2Detectable? Target { get; set; }
+    public IAiDetectable? Target { get; set; }
 
     /// <summary>Gets or sets the patrol to walk.</summary>
     public int PatrolPathId { get; set; }
@@ -127,7 +128,7 @@ public abstract class Igi2AiSquadAction
                     break;
                 case Igi2AiSquadActionKind.Leapfrog:
                     change.Position = current.Position;
-                    change.Target = current.Reference as IIgi2Detectable;
+                    change.Target = current.Reference as IAiDetectable;
                     break;
                 case Igi2AiSquadActionKind.MoveSearchInDirection or Igi2AiSquadActionKind.LookSearchInDirection or Igi2AiSquadActionKind.Danger:
                     change.Position = current.Position;
@@ -624,7 +625,7 @@ public sealed class Igi2AiSquadLeapfrog : Igi2AiSquadAction
     private int _node;
     private int _movingTeam;
     private int _timer;
-    private IIgi2Detectable? _target;
+    private IAiDetectable? _target;
     private readonly Igi2AiSpreadOut _spread = new();
 
     /// <inheritdoc/>
@@ -650,7 +651,7 @@ public sealed class Igi2AiSquadLeapfrog : Igi2AiSquadAction
         _node = words.Int();
         _movingTeam = words.Int();
         _timer = words.Int();
-        _target = words.Int() == 1 ? squad.World.Player as Detection.IIgi2Detectable : null;
+        _target = words.Int() == 1 ? squad.World.Player as IAiDetectable : null;
         _spread.LoadState(words);
     }
 

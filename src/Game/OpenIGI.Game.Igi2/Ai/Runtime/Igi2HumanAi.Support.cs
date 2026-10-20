@@ -118,10 +118,10 @@ public sealed partial class Igi2HumanAi
 
     /// <summary>The nearest enemy it lists that lives, by the soldier's position.</summary>
     /// <returns>The enemy, or <see langword="null"/>.</returns>
-    public IIgi2Detectable? NearestLiveEnemyListed()
+    public IAiDetectable? NearestLiveEnemyListed()
     {
         Vector3d at = Soldier.Position;
-        IIgi2Detectable? best = null;
+        IAiDetectable? best = null;
         float bestDistance = 0f;
         foreach (Igi2DetectionItem item in Detection.Enemies)
         {
@@ -259,7 +259,7 @@ public sealed partial class Igi2HumanAi
     /// <returns><see langword="true"/> once a cover is found.</returns>
     public bool HandleCoverSearch(Vector3d? danger)
     {
-        IIgi2Detectable? target = GetTarget(visibleOnly: true);
+        IAiDetectable? target = GetTarget(visibleOnly: true);
         Igi2AiCoverSearch search = CoverSearch;
         if (search.State == Igi2AiCoverSearchState.Idle)
         {
@@ -309,7 +309,7 @@ public sealed partial class Igi2HumanAi
             }
             else if (target is not null && toCover < 81920f && Math.Abs(cz) < 8192.0)
             {
-                Igi2DetectionInfo info = target.DetectionInfo();
+                AiDetectionInfo info = target.DetectionInfo();
                 Vector3d t = target.DetectablePosition;
                 float tx = (float)(t.X - at.X), ty = (float)(t.Y - at.Y);
                 float toTarget = (float)Math.Sqrt((tx * (double)tx) + (ty * (double)ty) + ((t.Z - at.Z) * (t.Z - at.Z)));
@@ -412,7 +412,7 @@ public sealed partial class Igi2HumanAi
                 return false;
             }
 
-            IIgi2Detectable? enemy = GetTarget(visibleOnly: true) ?? NearestLiveEnemyListed();
+            IAiDetectable? enemy = GetTarget(visibleOnly: true) ?? NearestLiveEnemyListed();
             if (enemy is IAiHuman human)
             {
                 Vector3d e = human.Position, n = node.Position;

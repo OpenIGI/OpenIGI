@@ -25,7 +25,7 @@ public sealed partial class Igi2HumanAi
     {
         if (World.Detection is { } world)
         {
-            _detection = new Igi2AiDetection(world, Soldier.Team, Igi2AiDetection.DeadFriends | Igi2AiDetection.LiveEnemies, Igi2DetectableKind.Human, 4, 8);
+            _detection = new Igi2AiDetection(world, Soldier.Team, Igi2AiDetection.DeadFriends | Igi2AiDetection.LiveEnemies, AiDetectableKind.Human, 4, 8);
         }
     }
 
@@ -79,7 +79,7 @@ public sealed partial class Igi2HumanAi
     /// </summary>
     /// <param name="visibleOnly">Whether only an enemy it sees counts.</param>
     /// <returns>The target, or <see langword="null"/>.</returns>
-    public IIgi2Detectable? GetTarget(bool visibleOnly)
+    public IAiDetectable? GetTarget(bool visibleOnly)
     {
         if (_detection is not { } detection)
         {
@@ -91,7 +91,7 @@ public sealed partial class Igi2HumanAi
             return seen;
         }
 
-        IIgi2Detectable? best = null;
+        IAiDetectable? best = null;
         float bestDistance = 0f;
         foreach (Igi2DetectionItem item in detection.Enemies)
         {
@@ -125,7 +125,7 @@ public sealed partial class Igi2HumanAi
     /// </summary>
     /// <param name="target">Receives the target, or <see langword="null"/>.</param>
     /// <returns>The position.</returns>
-    public Vector3d GetTargetPosition(out IIgi2Detectable? target)
+    public Vector3d GetTargetPosition(out IAiDetectable? target)
     {
         target = GetTarget(visibleOnly: true) ?? GetTarget(visibleOnly: false);
         return target is not null ? TargetPosition : LastTargetPosition;
@@ -138,7 +138,7 @@ public sealed partial class Igi2HumanAi
         DetectionView.IsSecondaryViewUsed = true;
         foreach (Igi2DetectionItem item in Detection.Enemies)
         {
-            Igi2DetectionInfo info = item.Target.DetectionInfo();
+            AiDetectionInfo info = item.Target.DetectionInfo();
             for (int i = 0; i < 3; i++)
             {
                 if (DetectionView.IsInside(info.Point(i)) && item.FullVisible[i])
@@ -157,7 +157,7 @@ public sealed partial class Igi2HumanAi
     /// </summary>
     private void OnVisualGunshot(in Igi2AiEvent aiEvent, Igi2AiEventRecord record)
     {
-        if (aiEvent.Originator is IIgi2Detectable shooter && World.Detection is { } world && world.Detectables.Contains(shooter))
+        if (aiEvent.Originator is IAiDetectable shooter && World.Detection is { } world && world.Detectables.Contains(shooter))
         {
             bool fresh = Detection.Find(shooter) is null;
             Igi2DetectionItem item = Detection.Track(shooter);
@@ -305,7 +305,7 @@ public sealed partial class Igi2HumanAi
     {
         foreach (Igi2DetectionItem item in Detection.Enemies.ToArray())
         {
-            Igi2DetectionInfo info = item.Target.DetectionInfo();
+            AiDetectionInfo info = item.Target.DetectionInfo();
             IAiHuman? human = item.Target as IAiHuman;
             bool onVehicle = Squad?.SquadType == 2;
             if (onVehicle && !item.IsFullVisible)
@@ -412,7 +412,7 @@ public sealed partial class Igi2HumanAi
     /// The ticks an enemy takes to identify (the C's local delay): distance over ten metres times the distance factor, in ticks; a
     /// human's gloom adds a second's share; easy adds 30 percent and medium 15, each truncated; never more than two seconds.
     /// </summary>
-    private int IdentificationDelay(float distance, IIgi2Detectable target)
+    private int IdentificationDelay(float distance, IAiDetectable target)
     {
         int delay = Fpu.ToInt32((((Fpu)distance * 2.441406286379788e-05) * Tweaks[Igi2AiTweakIndex.DetectionTimeDistanceFactor]) * 30.0);
         if (target is IAiHuman && target.VisibilityFactor is float visible)
@@ -429,7 +429,7 @@ public sealed partial class Igi2HumanAi
         return delay >= 60 ? 60 : delay;
     }
 
-    private static Vector3d? FirstFullVisiblePoint(Igi2DetectionItem item, Igi2DetectionInfo info)
+    private static Vector3d? FirstFullVisiblePoint(Igi2DetectionItem item, AiDetectionInfo info)
     {
         for (int i = 0; i < 3; i++)
         {

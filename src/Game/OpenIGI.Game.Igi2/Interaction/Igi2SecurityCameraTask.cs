@@ -37,7 +37,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// <para>The visible lens follows the collision frame; its indicator uses the lens model's first magic vertex.</para>
 /// </remarks>
 public sealed partial class Igi2SecurityCameraTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2Detectable, IIgi2WeaponHitTarget, IIgi2ExplosionTarget, IIgi2PartMover
+    : Igi2Task, IIgi2PlacedTask, IAiDetectable, IIgi2WeaponHitTarget, IIgi2ExplosionTarget, IIgi2PartMover
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "SCamera";
@@ -170,7 +170,7 @@ public sealed partial class Igi2SecurityCameraTask
     public bool IsDeadFriend => _isDeadFriend;
 
     /// <summary>Gets what the lens is following, <c>ptTargetRef</c>, or <see langword="null"/>.</summary>
-    public IIgi2Detectable? Target => _lens.Target;
+    public IAiDetectable? Target => _lens.Target;
 
     /// <summary>Gets or sets where its AI events go, <c>HumanAI_SendEvent</c>, or <see langword="null"/> when no one hears them.</summary>
     public Action<Ai.Igi2AiEvent>? AiEvents { get; set; }
@@ -277,7 +277,7 @@ public sealed partial class Igi2SecurityCameraTask
             world,
             CameraTeam,
             Igi2AiDetection.DeadFriends | Igi2AiDetection.LiveEnemies,
-            Igi2DetectableKind.Human | Igi2DetectableKind.SecurityCamera,
+            AiDetectableKind.Human | AiDetectableKind.SecurityCamera,
             coneInterval: 4,
             visualInterval: 8)
         {
@@ -356,8 +356,8 @@ public sealed partial class Igi2SecurityCameraTask
     /// <c>SCamera_AIDetectionGetInfoHandler</c> (<c>igi2 0x490030</c>): a camera on side one, alive until destroyed, its three points
     /// all its place.
     /// </remarks>
-    public Igi2DetectionInfo DetectionInfo() =>
-        new(Igi2DetectableKind.SecurityCamera, _position, _position, _position, CameraTeam, _isDestroyed == 0, IsActive: true);
+    public AiDetectionInfo DetectionInfo() =>
+        new(AiDetectableKind.SecurityCamera, _position, _position, _position, CameraTeam, _isDestroyed == 0, IsActive: true);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -444,7 +444,7 @@ public sealed partial class Igi2SecurityCameraTask
 
     // The event's position is the target task's tOrientation (ModelObj+124) read as three doubles: retail points ptPosition at
     // &ptTargetQTask[3].ptPrev, which is the frame, not tPos. Its first six floats, two to a double, are what the AI is told.
-    private static Vector3d OrientationAsPosition(IIgi2Detectable target)
+    private static Vector3d OrientationAsPosition(IAiDetectable target)
     {
         if (target is not Humans.Igi2Human human)
         {
@@ -580,7 +580,7 @@ public sealed partial class Igi2SecurityCameraTask
         float oldGamma = lens.Gamma;
         _isDetection = 0;
         _isDeadFriend = false;
-        IIgi2Detectable? target = null;
+        IAiDetectable? target = null;
 
         // A dead friend in plain sight. A soldier's body only the first time a camera sees it, or while this one is already
         // counting down to a detection; once seen it is marked (HumanSoldier +0xBDD) and passed over after.
@@ -668,7 +668,7 @@ public sealed partial class Igi2SecurityCameraTask
     }
 
     // Where a target is followed to: a human's eyes as its stance puts them, a camera's place.
-    private static Vector3d TargetPoint(IIgi2Detectable target) => target.DetectionInfo().Head;
+    private static Vector3d TargetPoint(IAiDetectable target) => target.DetectionInfo().Head;
 
     // Turns to a point outside the dead band, a clamped step at a time, within the limits.
     private void Follow(Vector3d point)
@@ -801,7 +801,7 @@ public sealed partial class Igi2SecurityCameraTask
 
         public int TrackTimeout { get; set; }
 
-        public IIgi2Detectable? Target { get; set; }
+        public IAiDetectable? Target { get; set; }
 
         public Igi2DetectionView View { get; } = new();
 

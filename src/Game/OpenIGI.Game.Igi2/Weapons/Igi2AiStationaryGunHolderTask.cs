@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
@@ -224,5 +225,5 @@ public sealed partial class Igi2AiStationaryGunHolderTask : Igi2Task, IIgi2Place
     // AIDetection_InitDetection(.., 1, 4, Human_bAIDetectionQTaskMask, 4, 8): its own side one, enemies alive, humans, a cone every
     // fourth tick and a look every eighth.
     private static Igi2AiDetection NewDetection(Igi2DetectionWorld world) =>
-        new(world, 1, Igi2AiDetection.LiveEnemies, Igi2DetectableKind.Human, 4, 8);
+        new(world, 1, Igi2AiDetection.LiveEnemies, AiDetectableKind.Human, 4, 8);
 }

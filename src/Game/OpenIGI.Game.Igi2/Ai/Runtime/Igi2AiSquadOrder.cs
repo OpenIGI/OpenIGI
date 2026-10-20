@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 
@@ -101,14 +102,14 @@ public sealed class Igi2AiSquadTarget
     /// <summary>Initializes a new instance of the <see cref="Igi2AiSquadTarget"/> class.</summary>
     /// <param name="enemy">The enemy.</param>
     /// <param name="position">Where it was reported.</param>
-    public Igi2AiSquadTarget(IIgi2Detectable enemy, Vector3d position)
+    public Igi2AiSquadTarget(IAiDetectable enemy, Vector3d position)
     {
         Enemy = enemy;
         LastPosition = position;
     }
 
     /// <summary>Gets the enemy.</summary>
-    public IIgi2Detectable Enemy { get; }
+    public IAiDetectable Enemy { get; }
 
     /// <summary>Gets or sets where it was last reported.</summary>
     public Vector3d LastPosition { get; set; }

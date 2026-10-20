@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Collision;
@@ -5,66 +6,10 @@ using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Detection;
 
-/// <summary>The kinds of thing a detector looks for, each its type's bit (<c>AIDetection_AllocateQTaskMask</c>, <c>igi2 0x474820</c>).</summary>
-[Flags]
-public enum Igi2DetectableKind
-{
-    /// <summary>Nothing.</summary>
-    None = 0,
-
-    /// <summary>A human, <c>Human_bAIDetectionQTaskMask</c>.</summary>
-    Human = 1 << 0,
-
-    /// <summary>A security camera, <c>SCamera_bAIDetectionQTaskMask</c>.</summary>
-    SecurityCamera = 1 << 1,
-}
-
-/// <summary>What a detectable says of itself, <c>AIDetectionGetDetectionInfoContext_s</c>.</summary>
-/// <param name="Kind">Its kind, <c>bQTaskMask</c>.</param>
-/// <param name="Head">Its first point, a human's eyes.</param>
-/// <param name="Middle">Its second, halfway between.</param>
-/// <param name="Feet">Its third, just above a human's feet.</param>
-/// <param name="Team">Its side, <c>eTeam</c>.</param>
-/// <param name="IsAlive">Whether it lives, <c>isAlive</c>; a camera lives until destroyed.</param>
-/// <param name="IsActive">Whether it takes part at all, <c>isActive</c>.</param>
-public readonly record struct Igi2DetectionInfo(
-    Igi2DetectableKind Kind, Vector3d Head, Vector3d Middle, Vector3d Feet, int Team, bool IsAlive, bool IsActive)
-{
-    /// <summary>Gets one of its three points.</summary>
-    /// <param name="index">Nought, one or two.</param>
-    /// <returns>The point.</returns>
-    public Vector3d Point(int index) => index switch
-    {
-        0 => Head,
-        1 => Middle,
-        _ => Feet,
-    };
-}
-
-/// <summary>Something detectors may see, a task of <c>AIDetection_ptDetectionQTaskList</c>.</summary>
-public interface IIgi2Detectable
-{
-    /// <summary>Gets where it is, its object's position (<c>QObj + 0x28</c>).</summary>
-    Vector3d DetectablePosition { get; }
-
-    /// <summary>Gets its radius, <c>QObj + 0x4C</c>.</summary>
-    float DetectableRadius { get; }
-
-    /// <summary>Gets how far off a human may be seen, a share of a cone's length (<c>Human + 0x7C8</c>), or <see langword="null"/> for a thing that is not a human.</summary>
-    float? VisibilityFactor { get; }
-
-    /// <summary>Gets a value indicating whether it no longer exists, so a detector lets go of it.</summary>
-    bool IsGone { get; }
-
-    /// <summary>Says what it is and where, <c>AIDetection_eGetDetectionInfoQTaskEvent</c>.</summary>
-    /// <returns>Its kind, points, side and state.</returns>
-    Igi2DetectionInfo DetectionInfo();
-}
-
 /// <summary>One thing a detector is watching, <c>AIDetectionListItem_s</c>.</summary>
 public sealed class Igi2DetectionItem
 {
-    internal Igi2DetectionItem(IIgi2Detectable target, int tick)
+    internal Igi2DetectionItem(IAiDetectable target, int tick)
     {
         Target = target;
         DetectionTick = tick;
@@ -72,7 +17,7 @@ public sealed class Igi2DetectionItem
     }
 
     /// <summary>Gets what it watches, <c>ptQTaskRef</c>.</summary>
-    public IIgi2Detectable Target { get; }
+    public IAiDetectable Target { get; }
 
     /// <summary>Gets the ticks until its cone is checked again, <c>nTicksToConeUpdate</c>.</summary>
     public int TicksToConeUpdate { get; internal set; }
@@ -197,11 +142,11 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     private int _nextDisplace;
 
     /// <summary>Gets the detectables, in the order they were listed.</summary>
-    public List<IIgi2Detectable> Detectables { get; } = [];
+    public List<IAiDetectable> Detectables { get; } = [];
 
     /// <summary>Lists a detectable at the end, unless it is listed already (<c>QTaskList_IsQTaskRegistered</c>, <c>QTaskList_Register</c>).</summary>
     /// <param name="detectable">The detectable.</param>
-    public void Register(IIgi2Detectable detectable)
+    public void Register(IAiDetectable detectable)
     {
         if (!Detectables.Contains(detectable))
         {
@@ -214,7 +159,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     /// changes the order the detectors look over the rest in.
     /// </summary>
     /// <param name="detectable">The detectable.</param>
-    public void Remove(IIgi2Detectable detectable)
+    public void Remove(IAiDetectable detectable)
     {
         int index = Detectables.IndexOf(detectable);
         if (index < 0)
@@ -379,7 +324,7 @@ public sealed class Igi2AiDetection
     /// <param name="kinds">Which kinds it looks for.</param>
     /// <param name="coneInterval">The ticks between cone checks.</param>
     /// <param name="visualInterval">The ticks between looks.</param>
-    public Igi2AiDetection(Igi2DetectionWorld world, int team, int teamMask, Igi2DetectableKind kinds, int coneInterval, int visualInterval)
+    public Igi2AiDetection(Igi2DetectionWorld world, int team, int teamMask, AiDetectableKind kinds, int coneInterval, int visualInterval)
     {
         World = world ?? throw new ArgumentNullException(nameof(world));
         Team = team;
@@ -412,7 +357,7 @@ public sealed class Igi2AiDetection
     public int TeamMask { get; }
 
     /// <summary>Gets which kinds it looks for, <c>bQTaskCheckMask</c>.</summary>
-    public Igi2DetectableKind Kinds { get; }
+    public AiDetectableKind Kinds { get; }
 
     /// <summary>Gets the enemies it is watching, <c>tEnemyList</c>, oldest first.</summary>
     public List<Igi2DetectionItem> Enemies { get; } = [];
@@ -428,7 +373,7 @@ public sealed class Igi2AiDetection
     /// <param name="view">Where it looks from.</param>
     /// <param name="source">The detectable it looks for, which it never sees.</param>
     /// <param name="sourceTeam">The source's side.</param>
-    public void Run(Igi2DetectionView view, IIgi2Detectable? source, int sourceTeam)
+    public void Run(Igi2DetectionView view, IAiDetectable? source, int sourceTeam)
     {
         ArgumentNullException.ThrowIfNull(view);
         RemoveGone();
@@ -437,7 +382,7 @@ public sealed class Igi2AiDetection
             return;
         }
 
-        foreach (IIgi2Detectable target in World.Detectables)
+        foreach (IAiDetectable target in World.Detectables)
         {
             if (ReferenceEquals(target, source))
             {
@@ -452,7 +397,7 @@ public sealed class Igi2AiDetection
                 continue;
             }
 
-            Igi2DetectionInfo info = target.DetectionInfo();
+            AiDetectionInfo info = target.DetectionInfo();
             List<Igi2DetectionItem>? list = ListFor(info, sourceTeam);
             if (list is not null && (Flags & NoVisibilityRange) == 0 && target.VisibilityFactor is { } factor)
             {
@@ -476,13 +421,13 @@ public sealed class Igi2AiDetection
     /// <summary>The listed item of a target, an enemy first, <c>AIDetection_GetListItemFromQTask</c> (<c>igi2 0x474610</c>).</summary>
     /// <param name="target">The target.</param>
     /// <returns>Its item, or <see langword="null"/> when it is not listed.</returns>
-    public Igi2DetectionItem? Find(IIgi2Detectable target) =>
+    public Igi2DetectionItem? Find(IAiDetectable target) =>
         FindItem(Enemies, target) ?? FindItem(Friends, target);
 
     /// <summary>Lists a target among the enemies, or finds it there, <c>AIDetection_NewListItem</c>.</summary>
     /// <param name="target">The target.</param>
     /// <returns>Its item.</returns>
-    public Igi2DetectionItem Track(IIgi2Detectable target) => Find(target) ?? Item(Enemies, target);
+    public Igi2DetectionItem Track(IAiDetectable target) => Find(target) ?? Item(Enemies, target);
 
     /// <summary>Lets go of everything, <c>AIDetection_ClearDetection</c> (<c>igi2 0x474DF0</c>).</summary>
     public void Clear()
@@ -491,7 +436,7 @@ public sealed class Igi2AiDetection
         Friends.Clear();
     }
 
-    private List<Igi2DetectionItem>? ListFor(Igi2DetectionInfo info, int sourceTeam)
+    private List<Igi2DetectionItem>? ListFor(AiDetectionInfo info, int sourceTeam)
     {
         if (!info.IsActive || (info.Kind & Kinds) == 0)
         {
@@ -507,7 +452,7 @@ public sealed class Igi2AiDetection
     }
 
     // AIDetection_NewListItem (igi2 0x474660): the listed item of a target, or a new one at the list's end.
-    private Igi2DetectionItem Item(List<Igi2DetectionItem> list, IIgi2Detectable target)
+    private Igi2DetectionItem Item(List<Igi2DetectionItem> list, IAiDetectable target)
     {
         if (FindItem(list, target) is { } listed)
         {
@@ -525,7 +470,7 @@ public sealed class Igi2AiDetection
     }
 
     // The target is not to be seen: unseen if listed, and let go unless kept (AIDetection_DeleteListItemFromQTask, 0x474580).
-    private void Forget(IIgi2Detectable target)
+    private void Forget(IAiDetectable target)
     {
         if (Find(target) is { } item)
         {
@@ -542,7 +487,7 @@ public sealed class Igi2AiDetection
     }
 
     // aidetection.c AIDetection_GetListItemFromQTask: direct searches avoid per-target capturing predicates.
-    private static Igi2DetectionItem? FindItem(List<Igi2DetectionItem> list, IIgi2Detectable target)
+    private static Igi2DetectionItem? FindItem(List<Igi2DetectionItem> list, IAiDetectable target)
     {
         for (int i = 0; i < list.Count; i++)
         {
@@ -551,7 +496,7 @@ public sealed class Igi2AiDetection
         return null;
     }
 
-    private static void RemoveTarget(List<Igi2DetectionItem> list, IIgi2Detectable target)
+    private static void RemoveTarget(List<Igi2DetectionItem> list, IAiDetectable target)
     {
         for (int i = list.Count - 1; i >= 0; i--)
         {
@@ -568,7 +513,7 @@ public sealed class Igi2AiDetection
 
     // AIDetection_RunDetectionCheck (igi2 0x474950): the cone checked at its interval, and while any point is inside it, one
     // point looked at in turn at its interval; either every tick when continuous.
-    private void Check(Igi2DetectionItem item, Igi2DetectionInfo info, Igi2DetectionView view, IIgi2Detectable? source)
+    private void Check(Igi2DetectionItem item, AiDetectionInfo info, Igi2DetectionView view, IAiDetectable? source)
     {
         bool wasSeen = item.HasBeenFullVisible;
         bool continuous = (Flags & Continuous) != 0;

@@ -786,7 +786,7 @@ public sealed class Igi2HumanAiNatives
             return Done;
         }
 
-        IIgi2Detectable target = first.Target;
+        IAiDetectable target = first.Target;
         float radius = ((Fpu)call.GetSingle(0) * 4096.0).F;
         _world.SendEvent(new Igi2AiEvent(25, ai.Soldier.Team, 38, radius, target.DetectablePosition, default, ai.Soldier, target));
         return Done;

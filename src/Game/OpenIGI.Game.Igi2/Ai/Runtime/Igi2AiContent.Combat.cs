@@ -116,7 +116,7 @@ public static partial class Igi2AiContent
             squad?.SetMemberFlags(0x10);
         }
 
-        IIgi2Detectable? target = ai.GetTarget(visibleOnly: true) ?? ai.NearestLiveEnemyListed();
+        IAiDetectable? target = ai.GetTarget(visibleOnly: true) ?? ai.NearestLiveEnemyListed();
         if (target is IAiHuman human)
         {
             Vector3d a = human.Position, b = soldier.Position;
@@ -202,7 +202,7 @@ public static partial class Igi2AiContent
     private static void HandleCombatIdleStance(Igi2HumanAi ai, Igi2AiActionItem item)
     {
         CombatIdleContext context = item.ContextAs<CombatIdleContext>();
-        IIgi2Detectable? target = ai.GetTarget(visibleOnly: true);
+        IAiDetectable? target = ai.GetTarget(visibleOnly: true);
         if (ai.Graph?.NodeAt(ai.CurrentNode) is { } doorNode && (doorNode.Criteria & Igi2AiGraph.DoorCriteria) != 0)
         {
             return;
@@ -1084,7 +1084,7 @@ public static partial class Igi2AiContent
 
         if (context.Node == -1)
         {
-            IIgi2Detectable? enemy = ai.GetTarget(visibleOnly: true) ?? ai.NearestLiveEnemyListed();
+            IAiDetectable? enemy = ai.GetTarget(visibleOnly: true) ?? ai.NearestLiveEnemyListed();
             if (enemy is not null && ai.Graph?.Nearest(enemy.DetectablePosition, false) is { } node)
             {
                 context.Node = node.Id;

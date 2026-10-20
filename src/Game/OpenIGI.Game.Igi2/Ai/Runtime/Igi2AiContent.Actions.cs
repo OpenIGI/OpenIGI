@@ -180,7 +180,7 @@ public static partial class Igi2AiContent
     public static void LookAtEventRun(Igi2HumanAi ai, Igi2AiActionItem item)
     {
         LookContext context = item.ContextAs<LookContext>();
-        IIgi2Detectable? confirmed = null;
+        IAiDetectable? confirmed = null;
         ai.SetChannel(5, 1f);
         if (ai.GetTarget(visibleOnly: true) is { } target)
         {
@@ -540,7 +540,7 @@ public static partial class Igi2AiContent
             return;
         }
 
-        IIgi2Detectable? confirmed = null;
+        IAiDetectable? confirmed = null;
         if (ai.GetTarget(visibleOnly: true) is { } target)
         {
             context.Position = target.DetectablePosition;
