@@ -105,6 +105,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
     private readonly List<Igi2BoneCollider> _bodies = [];
+    private readonly List<IIgi2LineCollider> _others = [];
     private readonly List<World.Igi2WaterBody> _waters = [];
     private readonly IIgi2GroundCollider? _terrain;
 
@@ -157,6 +158,17 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         ArgumentNullException.ThrowIfNull(body);
         _bodies.Add(body);
     }
+
+    /// <summary>Puts something in the world that answers lines and sight itself, after the world's own kinds.</summary>
+    /// <param name="collider">It.</param>
+    public void AddCollider(IIgi2LineCollider collider)
+    {
+        ArgumentNullException.ThrowIfNull(collider);
+        _others.Add(collider);
+    }
+
+    /// <summary>Gets what answers lines and sight beside the world's own kinds.</summary>
+    public IReadOnlyList<IIgi2LineCollider> OtherColliders => _others;
 
     /// <summary>Gets the bodies of water in the world: only line traces meet their surfaces.</summary>
     public IReadOnlyList<World.Igi2WaterBody> Waters => _waters;
@@ -643,6 +655,14 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
                     Igi2BoneLineOfSight.Meet(body, sight);
                 }
             }
+
+            foreach (IIgi2LineCollider other in _others)
+            {
+                if ((objectGroups & (other.Group | EveryTypeGroup)) != 0 && (sight.Includes is not { } passes || passes(other.Owner)))
+                {
+                    other.LineOfSight(sight);
+                }
+            }
         }
 
         if (sight.Transparency != 0f && (groups & TerrainGroup) != 0 && _terrain is not null)
@@ -773,6 +793,14 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
                 if ((groups & (body.Group | EveryTypeGroup)) != 0)
                 {
                     body.TraceLines(trace);
+                }
+            }
+
+            foreach (IIgi2LineCollider other in _others)
+            {
+                if ((groups & (other.Group | EveryTypeGroup)) != 0 && (trace.Includes is not { } includes || includes(other.Owner)))
+                {
+                    other.TraceLines(trace);
                 }
             }
         }
