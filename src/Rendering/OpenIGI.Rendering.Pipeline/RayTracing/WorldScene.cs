@@ -35,31 +35,17 @@ internal sealed class WorldScene : IDisposable
     // megabyte of instance descriptors.
     private const int MaxInstances = 16384;
 
-    // One per geometry of every live structure. A run a rebuild or an eviction leaves behind goes back
-    // to be reused once no frame in flight can still read it; see ReleaseRecords.
-    private const int MaxRecords = 16384;
-
-    // How many frames a released run of records is held before it is handed out again: past the frames
-    // in flight and the scene's own retirement slack, so no trace still running can read a record that
-    // has since been rewritten for another mesh.
-    private const int RecordRetireFrames = 8;
-
-    // Two shader handles (vertices, indices), a first index, a mask layer, an albedo layer and the flags.
-    private const int RecordSize = 32;
-
-    private readonly IRhiDevice _device;
-    private readonly IOpenIgiLogger _logger;
     private readonly RayTracingScene _scene;
-    private readonly Dictionary<uint, Geometry> _geometries = [];
+    private readonly Dictionary<uint, WorldSceneGeometry> _geometries = [];
 
     // Every static placement, with the frame it was last offered on. A placement the renderer stops
     // offering -- an object that has moved, or one the level no longer shows -- is dropped a frame later.
-    private readonly Dictionary<Placement, int> _placed = [];
+    private readonly Dictionary<WorldScenePlacement, int> _placed = [];
     private readonly List<RhiAccelerationInstance> _instances = [];
 
     // The placement behind each STATIC instance, parallel to the head of the list above, so a placement
     // that has stopped being offered can be found and dropped.
-    private readonly List<Placement> _instancePlacements = [];
+    private readonly List<WorldScenePlacement> _instancePlacements = [];
 
     // How many placements the pass being recorded has offered, and how many the last one did. A pass that
     // offered none drew no world (a menu over it, a frame skipped), and expires nothing.
@@ -98,7 +84,7 @@ internal sealed class WorldScene : IDisposable
     // those draws arrives here; a static placement is deduplicated by _placed, but a mover used to be
     // added once per draw -- a soldier stood in the structure nine to fourteen times over, every copy the
     // whole body, and every ray that passed near one tested all of them. Emptied with the moving tail.
-    private readonly HashSet<Placement> _movedThisFrame = [];
+    private readonly HashSet<WorldScenePlacement> _movedThisFrame = [];
 
     // Rigid movers, found by what they do rather than by a guess. A mesh that, in the same scene build,
     // gains a new static placement AND loses one it was no longer offered at has moved: a static prop
@@ -138,22 +124,9 @@ internal sealed class WorldScene : IDisposable
     // Meshes whose range set has grown since their structure was built, and so need building again.
     private readonly HashSet<uint> _stale = [];
 
-    // The material records, one per geometry of every built structure, in the layout the ray shader
-    // reads them through the buffer's shader handle. Append-only: a structure rebuilt over a larger range set is
-    // given a fresh run of records rather than overwriting the run a frame in flight may still be
-    // reading, which is the whole of the synchronisation this needs.
-    private readonly IRhiBuffer _records;
-    private int _recordCount;
-    private bool _recordOverflow;
-
-    // Runs of records free to hand out again, in address order with neighbours merged, and the runs
-    // released but not yet old enough to reuse, each with the frame it may be reused from. Without these
-    // the records were append-only: every terrain page streamed in took one for good, so flying across a
-    // large level ran them out, and every structure built after that was pointed at record nought -- some
-    // other mesh's vertices, indices and cut-out mask. Its rays read the wrong mask (a tree's whole card
-    // cast a shadow) and indexed past the end of the wrong index buffer (a device fault).
-    private readonly List<(int Start, int Count)> _freeRecords = [];
-    private readonly List<(int Frame, int Start, int Count)> _releasedRecords = [];
+    // The material records a hit is looked up in, and which runs of them are whose: one per geometry of
+    // every built structure, a run given back held until no frame in flight can read it. See HitRecordAllocator.
+    private readonly HitRecordAllocator _records;
 
     private int _newThisFrame;
 
@@ -177,17 +150,9 @@ internal sealed class WorldScene : IDisposable
         ArgumentNullException.ThrowIfNull(structures);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _device = device;
-        _logger = logger;
         _scene = new RayTracingScene(device, structures, Math.Min(MaxInstances, structures.MaxInstances));
 
-        // Host visible and written directly. The records are tiny, they change only when a structure is
-        // built, and the alternative -- staging into device-local memory -- would need a transfer
-        // recorded and fenced for what amounts to thirty-two bytes.
-        _records = device.CreateBuffer(new RhiBufferDescriptor(
-            (ulong)(MaxRecords * RecordSize),
-            RhiBufferUsage.RayTracingInput | RhiBufferUsage.MapWrite,
-            "traced world hit records"));
+        _records = new HitRecordAllocator(device, logger);
     }
 
     /// <summary>Gets the scene structure, or <see langword="null"/> before anything has been built.</summary>
@@ -242,7 +207,7 @@ internal sealed class WorldScene : IDisposable
     public int CasterGeometryCount => _casterVersions.Count;
 
     /// <summary>Gets the handle of the material records a ray shader looks a hit up in.</summary>
-    public ulong RecordHandle => _records.ShaderHandle;
+    public ulong RecordHandle => _records.Handle;
 
     /// <summary>Records a mesh being drawn somewhere, adding it to the traceable world if it is new.</summary>
     /// <param name="meshId">The mesh's identifier.</param>
@@ -311,7 +276,7 @@ internal sealed class WorldScene : IDisposable
         // marked stale -- and until this retried it, nothing ever
         // read the mark, so the missing part stayed out of the traced world for good, a hole every ray
         // passed through.
-        if (_geometries.TryGetValue(meshId, out Geometry built)
+        if (_geometries.TryGetValue(meshId, out WorldSceneGeometry built)
             && (grew || _stale.Contains(meshId))
             && (UnlimitedAdmission || _newThisFrame < MaxNewGeometriesPerFrame))
         {
@@ -319,7 +284,7 @@ internal sealed class WorldScene : IDisposable
             {
                 _geometries[meshId] = rebuilt;
                 _scene.RetireStructure(built.Structure);
-                ReleaseRecords(built.RecordBase, built.RecordCount);
+                _records.Release(built.RecordBase, built.RecordCount, _frame);
                 _stale.Remove(meshId);
             }
             else
@@ -350,8 +315,8 @@ internal sealed class WorldScene : IDisposable
         }
 
         bool moving = _movers.Contains(meshId);
-        Placement placement = default;
-        if (moving && !_movedThisFrame.Add(Placement.From(meshId, worldTransform)))
+        WorldScenePlacement placement = default;
+        if (moving && !_movedThisFrame.Add(WorldScenePlacement.From(meshId, worldTransform)))
         {
             // This mover's other subsets: the structure already holds every run, so one instance is the
             // whole body.
@@ -360,7 +325,7 @@ internal sealed class WorldScene : IDisposable
 
         if (!moving)
         {
-            placement = Placement.From(meshId, worldTransform);
+            placement = WorldScenePlacement.From(meshId, worldTransform);
             if (KnownPlacement(placement) is { } known)
             {
                 // A place this mesh already stands at, offered again: kept for another frame, at the
@@ -376,7 +341,7 @@ internal sealed class WorldScene : IDisposable
             return;
         }
 
-        if (!_geometries.TryGetValue(meshId, out Geometry geometry))
+        if (!_geometries.TryGetValue(meshId, out WorldSceneGeometry geometry))
         {
             if (!UnlimitedAdmission && _newThisFrame >= MaxNewGeometriesPerFrame)
             {
@@ -460,7 +425,7 @@ internal sealed class WorldScene : IDisposable
     /// the view shook, with the camera standing still. A key a cell either side of an existing one is that
     /// placement; nothing else of the same mesh stands within two centimetres at the same rotation.
     /// </remarks>
-    private Placement? KnownPlacement(Placement placement)
+    private WorldScenePlacement? KnownPlacement(WorldScenePlacement placement)
     {
         if (_placed.ContainsKey(placement))
         {
@@ -478,7 +443,7 @@ internal sealed class WorldScene : IDisposable
                         continue;
                     }
 
-                    Placement beside = placement with
+                    WorldScenePlacement beside = placement with
                     {
                         X = placement.X + dx,
                         Y = placement.Y + dy,
@@ -506,7 +471,7 @@ internal sealed class WorldScene : IDisposable
     /// working on one array. The shift it costs is over the moving tail alone, which is a handful of
     /// entries, and statics are discovered only over a level's first seconds.
     /// </remarks>
-    private void AddInstance(bool moving, uint meshId, in Placement placement, in RhiAccelerationInstance instance)
+    private void AddInstance(bool moving, uint meshId, in WorldScenePlacement placement, in RhiAccelerationInstance instance)
     {
         if (moving)
         {
@@ -559,10 +524,9 @@ internal sealed class WorldScene : IDisposable
             if (surfaces[i] with { Emissive = entry.Emissive } == entry)
             {
                 surfaces[i] = entry;
-                if (_geometries.TryGetValue(meshId, out Geometry built) && i < built.RecordCount)
+                if (_geometries.TryGetValue(meshId, out WorldSceneGeometry built) && i < built.RecordCount)
                 {
-                    ReadOnlySpan<uint> flag = [entry.FlagWord];
-                    _device.WriteBuffer(_records, (ulong)(((built.RecordBase + i) * RecordSize) + (7 * sizeof(uint))), flag);
+                    _records.RewriteFlag(built.RecordBase + i, entry.FlagWord);
                 }
 
                 grew = false;
@@ -610,7 +574,7 @@ internal sealed class WorldScene : IDisposable
         }
 
         RayTracedSurface surface = new(0, indexCount, Opaque: true, MaskLayer: -1);
-        bool built = _geometries.TryGetValue(meshId, out Geometry geometry);
+        bool built = _geometries.TryGetValue(meshId, out WorldSceneGeometry geometry);
         bool current = built
             && _casterVersions.TryGetValue(meshId, out int version)
             && version == mesh.ContentVersion
@@ -624,7 +588,7 @@ internal sealed class WorldScene : IDisposable
         {
             if (!_casterRecords.TryGetValue(meshId, out int recordBase))
             {
-                recordBase = WriteRecords(mesh, [surface]);
+                recordBase = _records.Write(mesh, [surface]);
                 if (recordBase < 0)
                 {
                     // None to give it; whatever this page had stays until a later frame has one.
@@ -653,7 +617,7 @@ internal sealed class WorldScene : IDisposable
 
             // The record is the page's own, held in _casterRecords across rebuilds, so the geometry
             // claims none of it: it goes back when the page is forgotten, not when it is rebuilt.
-            geometry = new Geometry(_scene.AddGeometry(triangles), indexCount, recordBase, RecordCount: 0);
+            geometry = new WorldSceneGeometry(_scene.AddGeometry(triangles), indexCount, recordBase, RecordCount: 0);
             _geometries[meshId] = geometry;
             _casterVersions[meshId] = mesh.ContentVersion;
             _surfaces[meshId] = [surface];
@@ -685,7 +649,7 @@ internal sealed class WorldScene : IDisposable
     public void Record(IRhiCommandEncoder encoder, SubmissionClock clock, RhiTimestampWrites? timestamps = null)
     {
         _frame++;
-        ReclaimRecords();
+        _records.Reclaim(_frame);
         _newThisFrame = 0;
         _quietFrames = _grewThisFrame ? 0 : _quietFrames + 1;
         _grewThisFrame = false;
@@ -786,7 +750,7 @@ internal sealed class WorldScene : IDisposable
 
         for (int i = 0; i < _instances.Count; i++)
         {
-            if (!_geometries.TryGetValue(_instanceMeshIds[i], out Geometry geometry))
+            if (!_geometries.TryGetValue(_instanceMeshIds[i], out WorldSceneGeometry geometry))
             {
                 continue;
             }
@@ -893,15 +857,15 @@ internal sealed class WorldScene : IDisposable
         // into, and freeing its geometry on the spot is exactly the read of freed memory the next trace
         // faults on -- the device loss a streamed-out terrain chunk produced, reported by the fault
         // extension as an invalid read. Retired, it lives until the frames that traced it have finished.
-        if (_geometries.Remove(meshId, out Geometry geometry))
+        if (_geometries.Remove(meshId, out WorldSceneGeometry geometry))
         {
             _scene.RetireStructure(geometry.Structure);
-            ReleaseRecords(geometry.RecordBase, geometry.RecordCount);
+            _records.Release(geometry.RecordBase, geometry.RecordCount, _frame);
         }
 
         if (_casterRecords.TryGetValue(meshId, out int casterRecord))
         {
-            ReleaseRecords(casterRecord, 1);
+            _records.Release(casterRecord, 1, _frame);
         }
 
         // This mesh's placements have to stop naming its structure before the next scene is built, or
@@ -932,10 +896,7 @@ internal sealed class WorldScene : IDisposable
         _geometries.Clear();
         _surfaces.Clear();
         _stale.Clear();
-        _recordCount = 0;
-        _recordOverflow = false;
-        _freeRecords.Clear();
-        _releasedRecords.Clear();
+        _records.Reset();
         _placed.Clear();
         _instances.Clear();
         _instanceMeshIds.Clear();
@@ -963,7 +924,7 @@ internal sealed class WorldScene : IDisposable
         }
 
         _disposed = true;
-        foreach (Geometry geometry in _geometries.Values)
+        foreach (WorldSceneGeometry geometry in _geometries.Values)
         {
             geometry.Structure.Dispose();
         }
@@ -986,10 +947,10 @@ internal sealed class WorldScene : IDisposable
     /// touching them again is a few bytes per rebuild against having to fence a host write behind the
     /// frames that might read it.
     /// </remarks>
-    private Geometry? BuildGeometry(IRayTracedMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
+    private WorldSceneGeometry? BuildGeometry(IRayTracedMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
     {
         // The records first: a structure with none of its own would read another mesh's.
-        int recordBase = WriteRecords(mesh, surfaces);
+        int recordBase = _records.Write(mesh, surfaces);
         if (recordBase < 0)
         {
             return null;
@@ -1009,191 +970,7 @@ internal sealed class WorldScene : IDisposable
                 Opaque: s.Opaque);
         }
 
-        return new Geometry(
+        return new WorldSceneGeometry(
             _scene.AddGeometry(triangles, allowUpdate), mesh.DrawableIndexCount, recordBase, surfaces.Count);
     }
-
-    /// <summary>Appends one material record per range and returns where the run starts.</summary>
-    /// <param name="mesh">The mesh the ranges belong to.</param>
-    /// <param name="surfaces">The ranges, in geometry order.</param>
-    /// <returns>The index of the first record, which is what the instance carries as its custom index.</returns>
-    private int WriteRecords(IRayTracedMesh mesh, List<RayTracedSurface> surfaces)
-    {
-        int start = AllocateRecords(surfaces.Count);
-        if (start < 0)
-        {
-            // Out of records. The caller leaves the mesh out of the traced world: built against records
-            // that are not its own, its rays would read another mesh's buffers. Said once, because a
-            // missing shadow would otherwise look like a different bug.
-            if (!_recordOverflow)
-            {
-                _recordOverflow = true;
-                _logger.Warning(
-                    "RayTracing",
-                    $"Material records exhausted at {MaxRecords}; meshes admitted after this point are left out of the traced world.");
-            }
-
-            return -1;
-        }
-
-        Span<uint> record = stackalloc uint[RecordSize / sizeof(uint)];
-
-        for (int i = 0; i < surfaces.Count; i++)
-        {
-            RayTracedSurface s = surfaces[i];
-            ulong vertices = mesh.Vertices.ShaderHandle;
-            ulong indices = mesh.Indices.ShaderHandle;
-
-            record[0] = (uint)vertices;
-            record[1] = (uint)(vertices >> 32);
-            record[2] = (uint)indices;
-            record[3] = (uint)(indices >> 32);
-            record[4] = (uint)s.IndexOffset;
-            record[5] = unchecked((uint)s.MaskLayer);
-            record[6] = unchecked((uint)s.AlbedoLayer);
-            record[7] = s.FlagWord;
-
-            _device.WriteBuffer(_records, (ulong)((start + i) * RecordSize), (ReadOnlySpan<uint>)record);
-        }
-
-        return start;
-    }
-
-    /// <summary>Takes a run of records: the first free run long enough, else fresh ones at the end.</summary>
-    /// <returns>Where the run starts, or -1 where there is no room.</returns>
-    private int AllocateRecords(int count)
-    {
-        for (int i = 0; i < _freeRecords.Count; i++)
-        {
-            (int start, int length) = _freeRecords[i];
-            if (length < count)
-            {
-                continue;
-            }
-
-            if (length == count)
-            {
-                _freeRecords.RemoveAt(i);
-            }
-            else
-            {
-                _freeRecords[i] = (start + count, length - count);
-            }
-
-            return start;
-        }
-
-        if (_recordCount + count > MaxRecords)
-        {
-            return -1;
-        }
-
-        int fresh = _recordCount;
-        _recordCount += count;
-        return fresh;
-    }
-
-    /// <summary>Gives a run of records back, to be handed out again once no frame in flight can read it.</summary>
-    private void ReleaseRecords(int start, int count)
-    {
-        if (count > 0)
-        {
-            _releasedRecords.Add((_frame + RecordRetireFrames, start, count));
-        }
-    }
-
-    /// <summary>Moves the released runs old enough to reuse onto the free list, merging neighbours.</summary>
-    private void ReclaimRecords()
-    {
-        for (int i = _releasedRecords.Count - 1; i >= 0; i--)
-        {
-            (int frame, int start, int count) = _releasedRecords[i];
-            if (frame > _frame)
-            {
-                continue;
-            }
-
-            _releasedRecords.RemoveAt(i);
-
-            int at = 0;
-            while (at < _freeRecords.Count && _freeRecords[at].Start < start)
-            {
-                at++;
-            }
-
-            _freeRecords.Insert(at, (start, count));
-
-            if (at + 1 < _freeRecords.Count && start + count == _freeRecords[at + 1].Start)
-            {
-                _freeRecords[at] = (start, count + _freeRecords[at + 1].Count);
-                _freeRecords.RemoveAt(at + 1);
-            }
-
-            if (at > 0 && _freeRecords[at - 1].Start + _freeRecords[at - 1].Count == start)
-            {
-                _freeRecords[at - 1] = (_freeRecords[at - 1].Start, _freeRecords[at - 1].Count + _freeRecords[at].Count);
-                _freeRecords.RemoveAt(at);
-            }
-        }
-
-        // A free run that ends where the used span does goes back to the span, so fresh allocations at
-        // the end stay as cheap as they were before anything was released.
-        if (_freeRecords.Count > 0 && _freeRecords[^1].Start + _freeRecords[^1].Count == _recordCount)
-        {
-            _recordCount = _freeRecords[^1].Start;
-            _freeRecords.RemoveAt(_freeRecords.Count - 1);
-        }
-    }
-
-    /// <summary>One mesh's traceable form, and how much of it was built.</summary>
-    /// <param name="Structure">The structure over its triangles.</param>
-    /// <param name="IndexCount">How many indices it covered when it was built.</param>
-    /// <param name="RecordBase">
-    /// Where this structure's run of material records starts. An instance carries it as its custom index,
-    /// so a hit reaches its own record by adding the geometry index traversal reports.
-    /// </param>
-    /// <param name="RecordCount">
-    /// How many of those records the structure owns and gives back when it goes; nought for a terrain
-    /// page, whose one record outlives its rebuilds.
-    /// </param>
-    private readonly record struct Geometry(
-        BottomLevelStructure Structure, int IndexCount, int RecordBase, int RecordCount);
-
-    /// <summary>A mesh at a place, quantised so that the same placement is recognised as the same one.</summary>
-    /// <remarks>
-    /// <para>
-    /// NOT bit-identical frame to frame, which is what this once assumed: the transform is recovered from a
-    /// camera-relative model-view through the frame's own rotation, in single precision, so its translation
-    /// wanders by about half a millimetre as the camera turns. See <see cref="KnownPlacement"/>, which
-    /// matches a key a cell either side of an existing one for exactly that reason.
-    /// </para>
-    /// <para>
-    /// The rotation is rounded to a twentieth: its own noise is around a ten-millionth, and the values
-    /// placements actually take -- nought, a half, one, and the arbitrary angles between -- sit nowhere near
-    /// a boundary that fine noise could cross. The position is rounded to two centimetres, coarse enough
-    /// that the neighbour search covers any wander and fine enough that two copies of one mesh never share.
-    /// </para>
-    /// </remarks>
-    private readonly record struct Placement(uint MeshId, long Rotation, long X, long Y, long Z)
-    {
-        private const float RotationSteps = 20f;
-        private const float CellsPerMetre = 50f;
-
-        public static Placement From(uint meshId, in Matrix4f m)
-        {
-            static long Step(float value) => (long)MathF.Round(value * RotationSteps);
-
-            long rotation = (Step(m.M11) * 73856093) ^ (Step(m.M12) * 19349663) ^ (Step(m.M13) * 83492791)
-                ^ (Step(m.M21) * 32452843) ^ (Step(m.M22) * 49979687) ^ (Step(m.M23) * 86028121)
-                ^ (Step(m.M31) * 15485863) ^ (Step(m.M32) * 32452867) ^ (Step(m.M33) * 67867967);
-
-            return new Placement(
-                meshId,
-                rotation,
-                (long)MathF.Floor(m.M14 * CellsPerMetre),
-                (long)MathF.Floor(m.M24 * CellsPerMetre),
-                (long)MathF.Floor(m.M34 * CellsPerMetre));
-        }
-    }
-
 }

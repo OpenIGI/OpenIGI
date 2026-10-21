@@ -4,16 +4,6 @@ using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Player;
 
-/// <summary>One carried weapon: its record, its gun, and the ammunition type it draws from.</summary>
-/// <param name="Weapon">The roster record.</param>
-/// <param name="Gun">The magazine and the clock.</param>
-public readonly record struct CarriedWeapon(WeaponType Weapon, HeldGun Gun);
-
-/// <summary>What acquiring a world weapon changed in the player's inventory.</summary>
-/// <param name="AddedWeapon">Whether the pickup created a new carried gun.</param>
-/// <param name="AddedReserveRounds">The rounds added to an already-owned weapon's reserve.</param>
-public readonly record struct WeaponPickupResult(bool AddedWeapon, int AddedReserveRounds);
-
 /// <summary>
 /// The player's weapons: the state machine at <c>Human+3320</c>, the gun it talks to, and the cycle it
 /// switches through.
@@ -86,38 +76,13 @@ public sealed class PlayerWeapons
     private readonly List<GunProjectile> _shots = [];
     private readonly List<M203Projectile> _m203Shots = [];
     private readonly IgiRandom _random;
-    private readonly List<int> _cycle = [];
-    private readonly List<HumanPlayerWeaponCategory> _categories = [];
-    private int _categoryIndex = -1;
-    private int _memberIndex;
+    private readonly PlayerWeaponSelector _selector;
+    private readonly PlayerWeaponStateMachine _machine;
 
-    private int _cycleIndex = NoCycleIndex;
-    private int _pendingWeaponId = -1;
-    private int _heldIndex = -1;
-    private bool _wantFire;
-    private bool _wantAlternateFire;
     private AmmoType? _m203Ammunition;
     private bool _firedThisTick;
-    private int _throwChargeTicks;
-    private bool _throwReleased;
-    private bool _placingFirePending;
     private int _shotSequence;
-    private bool _actionComplete;
-    private bool _medipackUsed;
-    private bool _medipackAdvanced;
-    private bool _medipackAwaitingRelease;
-    private bool _medipackInjectionLoopStarted;
-    private bool _medipackClosing;
-    private bool _medipackCloseAdvanced;
-    private bool _medipackTerminalClipMissing;
-    private int _medipackCooldownTicks;
-    private WeaponAction _locomotionAction = WeaponAction.Stand;
-    private int _categoryPick = -1;
-    private bool _swapped;
     private PlayerCheatOptions _cheats = PlayerCheatOptions.Retail;
-    private int _lastNonBinocularWeaponId = -1;
-    private bool _binocularTogglePending;
-    private bool _binocularOpenPending;
 
     /// <summary>Initializes a new instance of the <see cref="PlayerWeapons"/> class.</summary>
     /// <param name="weaponCycle">
@@ -129,8 +94,9 @@ public sealed class PlayerWeapons
     public PlayerWeapons(IReadOnlyList<int> weaponCycle, IgiRandom? random = null)
     {
         ArgumentNullException.ThrowIfNull(weaponCycle);
-        _cycle.AddRange(weaponCycle);
+        _selector = new PlayerWeaponSelector(_carried, weaponCycle);
         _random = random ?? new IgiRandom();
+        _machine = new PlayerWeaponStateMachine(this, _selector);
     }
 
     /// <summary>Gives the machine the nine weapon categories the number keys select.</summary>
@@ -143,18 +109,17 @@ public sealed class PlayerWeapons
     public void UseCategories(IReadOnlyList<HumanPlayerWeaponCategory> categories)
     {
         ArgumentNullException.ThrowIfNull(categories);
-        _categories.Clear();
-        _categories.AddRange(categories);
+        _selector.UseCategories(categories);
     }
 
     /// <summary>Gets the state the machine is in.</summary>
-    public HumanWeaponState State { get; private set; } = HumanWeaponGraph.InitialState;
+    public HumanWeaponState State => _machine.State;
 
     /// <summary>Gets the state the machine was in before the current one.</summary>
-    public HumanWeaponState PreviousState { get; private set; } = HumanWeaponGraph.InitialState;
+    public HumanWeaponState PreviousState => _machine.PreviousState;
 
     /// <summary>Gets the flag word the prologue last built.</summary>
-    public HumanWeaponFlagWord Flags { get; private set; }
+    public HumanWeaponFlagWord Flags => _machine.Flags;
 
     /// <summary>Gets the two angles the rig is turned by while a weapon is being put away.</summary>
     /// <remarks>
@@ -177,22 +142,11 @@ public sealed class PlayerWeapons
     /// Consumes a binocular toggle after the requested weapon has reached the hand. The request is
     /// retained across the equip transition, matching the original's one-tick action hand-off.
     /// </summary>
-    public bool ConsumeBinocularToggle()
-    {
-        if ((!_binocularTogglePending && !_binocularOpenPending)
-            || InHand?.Weapon.Category != WeaponCategory.Binocular)
-        {
-            return false;
-        }
-
-        _binocularTogglePending = false;
-        _binocularOpenPending = false;
-        return true;
-    }
+    public bool ConsumeBinocularToggle() => _selector.ConsumeBinocularToggle();
 
     /// <summary>Gets the weapon in hand, or <see langword="null"/> before one has been selected.</summary>
     /// <remarks>Slot 0 of the original's three-pointer array at <c>Human+1220</c>.</remarks>
-    public CarriedWeapon? InHand => _heldIndex < 0 ? null : _carried[_heldIndex];
+    public CarriedWeapon? InHand => _selector.InHand;
 
     /// <summary>
     /// Gets the fire-variant counter — the original's <c>Human+1256</c>.
@@ -201,7 +155,7 @@ public sealed class PlayerWeapons
     /// Counts <b>rounds that went off</b>, not ticks. <see cref="HumanWeaponState.Striking"/> zeroes it
     /// on entry and stops asking for rounds once it reaches <see cref="FireVariantCount"/>.
     /// </remarks>
-    public int FireVariant { get; private set; }
+    public int FireVariant => _machine.FireVariant;
 
     /// <summary>Gets the accumulated view kick in pitch, in radians — <c>HumanView+296</c>.</summary>
     public float RecoilPitch { get; private set; }
@@ -237,7 +191,7 @@ public sealed class PlayerWeapons
     public IReadOnlyList<M203Projectile> M203Shots => _m203Shots;
 
     /// <summary>Gets whether a medipack was consumed during the most recent weapon tick.</summary>
-    public bool MedipackUsedThisTick { get; private set; }
+    public bool MedipackUsedThisTick => _machine.MedipackUsedThisTick;
 
     /// <summary>Gets whether the medipack animation was started during the most recent weapon tick.</summary>
     /// <remarks>
@@ -245,14 +199,14 @@ public sealed class PlayerWeapons
     /// first and only consumes the medipack once that action has advanced; otherwise the health bar,
     /// reserve count and sound lead the visible left-arm injection by one animation.
     /// </remarks>
-    public bool MedipackStartedThisTick { get; private set; }
+    public bool MedipackStartedThisTick => _machine.MedipackStartedThisTick;
 
     /// <summary>Gets the weapon action the rig should be playing, or <see langword="null"/>.</summary>
     /// <remarks>
     /// The original writes this to <c>Human+3416</c> inside <c>0x4137E0</c> and the animation follows;
     /// here the caller drives the rig from it, so it is exposed rather than applied.
     /// </remarks>
-    public WeaponAction? RequestedAction { get; private set; }
+    public WeaponAction? RequestedAction => _machine.RequestedAction;
 
     /// <summary>Gets whether the retail first-person weapon is hidden for the current reload action.</summary>
     /// <remarks>
@@ -275,14 +229,14 @@ public sealed class PlayerWeapons
     /// is 1 by the time anything else looks at it. Reading the counter after the increment plays the
     /// second clip for the first swing, which is what this exists to stop.
     /// </remarks>
-    public int RequestedFireVariant { get; private set; }
+    public int RequestedFireVariant => _machine.RequestedFireVariant;
 
     /// <summary>Gets the action the rig is currently playing — the original's <c>Human+3416</c>.</summary>
     /// <remarks>
     /// <c>0x4137E0</c> writes it unconditionally at the top of the dispatch, and the Ready state
     /// compares it against what the locomotion side has asked for.
     /// </remarks>
-    public WeaponAction CurrentAction { get; private set; } = WeaponAction.None;
+    public WeaponAction CurrentAction => _machine.CurrentAction;
 
     /// <summary>Adds a weapon to what the player carries.</summary>
     /// <param name="weapon">The roster record.</param>
@@ -306,7 +260,7 @@ public sealed class PlayerWeapons
     /// <summary>Gets whether a weapon is carried.</summary>
     /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
     /// <returns><see langword="true"/> when it is carried.</returns>
-    public bool HasWeapon(int weaponId) => IndexOf(weaponId) >= 0;
+    public bool HasWeapon(int weaponId) => _selector.IndexOf(weaponId) >= 0;
 
     /// <summary>Appends a weapon to the switch cycle unless it is already in it.</summary>
     /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
@@ -314,13 +268,7 @@ public sealed class PlayerWeapons
     /// For weapons the level's <c>DefineHumanPlayerWeaponCycle</c> does not list -- the all-weapons
     /// cheat's -- which would otherwise be carried and never reachable with the cycle keys.
     /// </remarks>
-    public void EnsureCycleContains(int weaponId)
-    {
-        if (!_cycle.Contains(weaponId))
-        {
-            _cycle.Add(weaponId);
-        }
-    }
+    public void EnsureCycleContains(int weaponId) => _selector.EnsureCycleContains(weaponId);
 
     /// <summary>Puts a set of cheats in force on everything carried, and on anything carried later.</summary>
     /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
@@ -442,39 +390,11 @@ public sealed class PlayerWeapons
             InHand?.Gun.Reload(Ammunition);
         }
 
-        SelectBinoculars(input);
-        SelectCategory(input);
-        CycleWeapons(input);
+        _selector.SelectBinoculars(input);
+        _selector.SelectCategory(input);
+        _selector.CycleWeapons(input);
 
-        HumanWeaponFlagWord flags = HumanWeaponFlagBuilder.Build(Flags, input.Current, clipEnded, blending: false);
-        if (onGround)
-        {
-            flags |= HumanWeaponFlagWord.OnGround;
-        }
-        else
-        {
-            flags &= ~HumanWeaponFlagWord.OnGround;
-        }
-
-        Flags = flags;
-        RequestedAction = null;
-        RequestedFireVariant = 0;
-        _wantFire = false;
-        _wantAlternateFire = false;
-        _actionComplete = false;
-        // FUN_0040FBE0 is called once per sustained-handler tick. This latch prevents duplicate
-        // calls within one tick (PlayerCamera is the production caller) but must not survive into
-        // the next tick, or a held fifty-charge medipack stops after its first dose.
-        _medipackUsed = false;
-        MedipackUsedThisTick = false;
-        MedipackStartedThisTick = false;
-        if (!input.IsSet(PlayerInputSlot.Fire))
-        {
-            _medipackAwaitingRelease = false;
-        }
-        _locomotionAction = locomotionAction;
-
-        Step(input);
+        _machine.Tick(input, clipEnded, onGround, locomotionAction);
     }
 
     /// <summary>Executes one cooldown-eligible medipack dose while the syringe loop is held.</summary>
@@ -484,96 +404,7 @@ public sealed class PlayerWeapons
     public bool TryUseMedipack(HumanHealth health, float animationProgress = 1f)
     {
         ArgumentNullException.ThrowIfNull(health);
-        if (State != HumanWeaponState.Medipack || _medipackUsed || InHand is not { } held
-            || held.Weapon.Category != (WeaponCategory)MedipackCategory
-            || MedipackStartedThisTick
-            || !_medipackInjectionLoopStarted
-            || _medipackClosing)
-        {
-            return false;
-        }
-
-        // FUN_0040FBE0 is the sustained part of the state: it runs after the one-shot entry clip and
-        // owns every finish decision from here on. Releasing Fire (Human+456 == 0) only *schedules*
-        // the terminal clip -- the handler still falls through and applies one final dose on the same
-        // tick. Gating the dose on Fire being held (as an earlier port did) is why a quick tap played
-        // the syringe animation, put it away, and never healed: the entry clip out-lasts the tap, so
-        // by the time the loop begins Fire is already up and the only dose was skipped.
-        bool fireReleased = !Flags.HasFlag(HumanWeaponFlagWord.Fire) || _medipackAwaitingRelease;
-
-        // FUN_0040FBE0 tests this before looking up the ammo or touching the damage accumulator.
-        // A non-zero countdown spends the whole handler update merely decrementing Human+0xD6C;
-        // the visible syringe loop continues, but it neither heals nor consumes a charge. When Fire
-        // is already up, the scheduled terminal is all that is left to do.
-        if (_medipackCooldownTicks != 0)
-        {
-            _medipackCooldownTicks--;
-            if (fireReleased)
-            {
-                BeginMedipackFinish();
-            }
-
-            return false;
-        }
-
-        int ammoId = held.Gun.Ammo?.AmmoId ?? MedipackAmmoId;
-        // The native handler resolves AMMO_ID_MEDIPACK and consumes [ammoRecord+4]. A medipack
-        // pickup is therefore never a one-round loaded clip; using RoundsInClip here caused the
-        // first dose to be detached from the reserve HUD count and made later doses disappear.
-        // No charges, no heal fraction, or already at full health are FUN_0040FBE0's else-branch
-        // terminal conditions: run FireAnimation3 and dispatch the parent state instead of dosing.
-        if (Ammunition.Count(ammoId) <= 0
-            || held.Weapon.Weapon.Values.Count == 0
-            || health.RemainingFraction >= 1f)
-        {
-            BeginMedipackFinish();
-            return false;
-        }
-
-        // FUN_0040FBE0 consumes one AMMO_ID_MEDIPACK charge, applies the clamped task fraction,
-        // and starts a fresh native cooldown while the *same looping animation* continues.
-        Ammunition.Take(ammoId, 1);
-
-        _medipackUsed = true;
-        MedipackUsedThisTick = true;
-        health.HealFraction(held.Weapon.Weapon.Values[0]);
-        _medipackCooldownTicks = GunTiming.TicksPerRound(held.Weapon.RoundsPerMinute);
-
-        // The dose ran; now honour the terminal the top of the handler scheduled when Fire came up,
-        // and the two else-branch stops that a dose can newly satisfy.
-        if (fireReleased || health.RemainingFraction >= 1f || Ammunition.Count(ammoId) <= 0)
-        {
-            BeginMedipackFinish();
-        }
-
-        return true;
-    }
-
-    private void BeginMedipackFinish()
-    {
-        if (_medipackClosing)
-        {
-            return;
-        }
-
-        // 0x40FBE0 does not jump straight to Ready when Fire is released, health is full, or stock
-        // is empty. It starts Weapon+0x68C (FireAnimation3), then 0x40FD70 waits for that one-shot
-        // clip to end before dispatching the parent state. Keeping that terminal clip separate from
-        // the sustained loop prevents the medipack from looking or sounding like a firearm reload.
-        _medipackUsed = true;
-        _medipackAwaitingRelease = true;
-        _medipackClosing = true;
-        _medipackCloseAdvanced = false;
-        // The retail medipack record currently shipped with IGI.EXE has no FireAnimation3 (-1).
-        // 0x40FBE0 still dispatches that id, but the native animation dispatcher leaves the view
-        // untouched and the callback returns to Ready. Do the same; requesting an unavailable clip
-        // would leave the managed loop waiting forever for a ClipEnded flag that can never arrive.
-        _medipackTerminalClipMissing = InHand is not { } held
-            || WeaponAnimationTable.Select(held.Weapon, WeaponAction.Fire, fireVariant: 2).FullBody < 0;
-        if (!_medipackTerminalClipMissing)
-        {
-            Request(WeaponAction.Fire, fireVariant: 2);
-        }
+        return _machine.TryUseMedipack(health);
     }
 
     /// <summary>
@@ -581,27 +412,7 @@ public sealed class PlayerWeapons
     /// is performed by <c>HumanPlayer</c>; this mirrors its state-11 half so no fire/reload state survives
     /// behind the computer.
     /// </summary>
-    public void SetMapComputerOpen(bool open)
-    {
-        if (open)
-        {
-            if (State == HumanWeaponState.Ready)
-            {
-                PreviousState = State;
-                State = HumanWeaponState.MapComputer;
-                Enter(State);
-            }
-
-            return;
-        }
-
-        if (State == HumanWeaponState.MapComputer)
-        {
-            PreviousState = State;
-            State = HumanWeaponState.Ready;
-            Enter(State);
-        }
-    }
+    public void SetMapComputerOpen(bool open) => _machine.SetMapComputerOpen(open);
 
     /// <summary>Immediately stops weapon activity because the owning player has died.</summary>
     /// <remarks>
@@ -611,19 +422,10 @@ public sealed class PlayerWeapons
     /// </remarks>
     public void StopForDeath()
     {
-        PreviousState = State;
-        State = HumanWeaponState.Suspended;
-        Flags = (Flags & ~(HumanWeaponFlagWord.Fire | HumanWeaponFlagWord.AlternateFire | HumanWeaponFlagWord.Reload))
-            | HumanWeaponFlagWord.Dead
-            | HumanWeaponFlagWord.Dying;
-        _wantFire = false;
-        _wantAlternateFire = false;
+        _machine.StopForDeath();
         _firedThisTick = false;
         _shots.Clear();
         _m203Shots.Clear();
-        _throwReleased = false;
-        _actionComplete = false;
-        Request(WeaponAction.None);
     }
 
     /// <summary>Refunds a projectile whose simulation could not accept the round.</summary>
@@ -721,7 +523,7 @@ public sealed class PlayerWeapons
         // Native 0x40F4A0 raises Human+0x4D2 and 0x473510 consumes that marker in GunM16A2's
         // alternate callback. It never calls the ordinary magazine path, so an M203 launch must not
         // consume a 5.56 round or sample the rifle's bullet spread/recoil.
-        if (_wantAlternateFire && IsM16A2(held.Weapon))
+        if (_machine.WantAlternateFire && IsM16A2(held.Weapon))
         {
             if (_m203Ammunition is not { } m203 || !HasM203Round())
             {
@@ -774,17 +576,17 @@ public sealed class PlayerWeapons
             return true;
         }
 
-        held.Gun.Tick(_wantFire);
+        held.Gun.Tick(_machine.WantFire);
 
-        float? speedOverride = held.Weapon.Category == WeaponCategory.Grenade && _throwReleased
-            ? ChargedThrowSpeed(held.Weapon.MuzzleVelocity, _throwChargeTicks)
+        float? speedOverride = held.Weapon.Category == WeaponCategory.Grenade && _machine.ThrowReleased
+            ? ChargedThrowSpeed(held.Weapon.MuzzleVelocity, _machine.ThrowChargeTicks)
             : null;
-        GunFireResult result = held.Gun.Fire(_wantFire, eye, forward, right, up, _random, speedOverride);
+        GunFireResult result = held.Gun.Fire(_machine.WantFire, eye, forward, right, up, _random, speedOverride);
         _firedThisTick = result.Fired;
 
         if (result.Fired && held.Weapon.Category == (WeaponCategory)PlacedCategory)
         {
-            _placingFirePending = false;
+            _machine.ClearPlacingFirePending();
         }
 
         if (result.Fired)
@@ -810,417 +612,12 @@ public sealed class PlayerWeapons
         return result.Fired;
     }
 
-    // 0x411000, the number keys. It runs immediately before the cycler in HumanPlayer_Update and
-    // hands its answer over through input frame slot 13 -- a one-tick scratch register that carries no
-    // binding of its own. The port passes it directly instead of
-    // writing into the frame, which is the one thing here that is not literal.
-    private void SelectCategory(PlayerInputState input)
-    {
-        _categoryPick = -1;
-
-        if (_categories.Count == 0)
-        {
-            return;
-        }
-
-        // The original tests all nine in order and takes the LAST that fired, not the first.
-        int wanted = -1;
-        for (int i = 0; i < HumanPlayerWeaponCategory.CategoryCount; i++)
-        {
-            PlayerInputSlot slot = PlayerInputSlot.WeaponCategory1 + i;
-            if (input.IsRisingEdge(slot))
-            {
-                wanted = i;
-            }
-        }
-
-        if (wanted < 0 || wanted >= _categories.Count)
-        {
-            return;
-        }
-
-        // A different category restarts at its first member; the same one steps on, which is what makes
-        // pressing 2 twice walk from the Glock to the Colt.
-        if (wanted != _categoryIndex)
-        {
-            _memberIndex = 0;
-        }
-
-        HumanPlayerWeaponCategory category = _categories[wanted];
-        if (category.Count == 0)
-        {
-            _categoryIndex = wanted;
-            return;
-        }
-
-        for (int tried = 0; tried < category.Count; tried++)
-        {
-            int id = category.WeaponIds[_memberIndex];
-            _memberIndex++;
-            if (_memberIndex >= category.Count)
-            {
-                _memberIndex = 0;
-            }
-
-            if (IndexOf(id) >= 0)
-            {
-                _categoryPick = id;
-                // Number-key selection and the weapon wheel are two views over the same retail
-                // cycle. Keep the wheel cursor on the member selected here; otherwise the next/prev
-                // edge starts from the cursor's old position and can return the weapon just selected
-                // (or jump to the wrong category) instead of advancing from it.
-                int cycleIndex = _cycle.IndexOf(id);
-                if (cycleIndex >= 0)
-                {
-                    _cycleIndex = cycleIndex;
-                }
-
-                break;
-            }
-        }
-
-        _categoryIndex = wanted;
-    }
-
-    private void SelectBinoculars(PlayerInputState input)
-    {
-        if (!input.IsRisingEdge(PlayerInputSlot.Binoculars))
-        {
-            return;
-        }
-
-        int binocularIndex = _carried.FindIndex(
-            carried => carried.Weapon.Category == WeaponCategory.Binocular);
-        if (binocularIndex < 0)
-        {
-            return;
-        }
-
-        if (_heldIndex == binocularIndex)
-        {
-            _binocularTogglePending = true;
-            _binocularOpenPending = false;
-            _pendingWeaponId = IndexOf(_lastNonBinocularWeaponId);
-            if (_pendingWeaponId < 0)
-            {
-                _pendingWeaponId = _carried.FindIndex(
-                    carried => carried.Weapon.Category != WeaponCategory.Binocular);
-            }
-
-            if (_pendingWeaponId >= 0)
-            {
-                _pendingWeaponId = _carried[_pendingWeaponId].Weapon.WeaponId;
-            }
-        }
-        else
-        {
-            _binocularTogglePending = false;
-            _binocularOpenPending = true;
-            _pendingWeaponId = _carried[binocularIndex].Weapon.WeaponId;
-        }
-    }
-
-    // 0x40F760, reduced to the edges that reach it in practice.
-    private void CycleWeapons(PlayerInputState input)
-    {
-        int step = 0;
-        if (_cycleIndex == NoCycleIndex || input.IsRisingEdge(PlayerInputSlot.NextWeapon))
-        {
-            step = 1;
-        }
-
-        if (input.IsRisingEdge(PlayerInputSlot.PreviousWeapon))
-        {
-            step = -1;
-        }
-
-        int heldId = InHand is { } held ? held.Weapon.WeaponId : -1;
-
-        // The cycler falls through to the category's answer when neither edge fired -- the original
-        // reads it out of the scratch slot at exactly this point.
-        if (step == 0 || _cycle.Count == 0)
-        {
-            if (_categoryPick != -1 && _categoryPick != heldId && IndexOf(_categoryPick) >= 0)
-            {
-                _pendingWeaponId = _categoryPick;
-            }
-
-            return;
-        }
-
-        for (int n = _cycle.Count; n > 0; n--)
-        {
-            _cycleIndex += step;
-            if (_cycleIndex >= _cycle.Count)
-            {
-                _cycleIndex = 0;
-            }
-            else if (_cycleIndex < 0)
-            {
-                _cycleIndex = _cycle.Count - 1;
-            }
-
-            int candidate = _cycle[_cycleIndex];
-
-            // 0x408720: carried, and selectable -- which in retail every carried weapon is, because
-            // the runtime loader always stores 1 in the record's +1756.
-            if (IndexOf(candidate) >= 0)
-            {
-                if (candidate != heldId)
-                {
-                    _pendingWeaponId = candidate;
-                    SetBinocularOpenPending(candidate);
-                }
-
-                return;
-            }
-        }
-    }
-
-    /// <summary>Whether the grenade in hand has nothing left to throw — clip and reserve both empty.</summary>
-    private bool OutOfThrowables() =>
-        InHand is not { } held || (held.Gun.RoundsInClip <= 0 && held.Gun.Reserve(Ammunition) <= 0);
-
-    /// <summary>Steps the cycle to the next carried weapon, for the auto-switch off a spent grenade.</summary>
-    /// <returns><see langword="true"/> when a different carried weapon was selected.</returns>
-    /// <remarks>The <c>a2 = 1</c> path of <c>0x40F760</c>, reduced to stepping to the next carried entry.</remarks>
-    private bool SelectNextCarried()
-    {
-        if (_cycle.Count == 0)
-        {
-            return false;
-        }
-
-        int heldId = InHand is { } held ? held.Weapon.WeaponId : -1;
-        for (int n = _cycle.Count; n > 0; n--)
-        {
-            _cycleIndex++;
-            if (_cycleIndex >= _cycle.Count)
-            {
-                _cycleIndex = 0;
-            }
-
-            int candidate = _cycle[_cycleIndex];
-            if (IndexOf(candidate) >= 0 && candidate != heldId)
-            {
-                _pendingWeaponId = candidate;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private void Step(PlayerInputState input)
-    {
-        // A transition runs its target's entry immediately, so the loop is bounded rather than
-        // recursive; the graph is a star and cannot cycle more than a couple of hops in one tick.
-        for (int guard = 0; guard <= HumanWeaponGraph.StateCount; guard++)
-        {
-            HumanWeaponState next = Advance(input);
-            if (next == State)
-            {
-                return;
-            }
-
-            PreviousState = State;
-            State = next;
-            Enter(next);
-        }
-    }
-
-    private HumanWeaponState Advance(PlayerInputState input) => State switch
-    {
-        HumanWeaponState.Suspended => HumanWeaponState.Ready,
-        HumanWeaponState.Ready => Ready(input),
-        HumanWeaponState.Firing => Firing(input),
-        HumanWeaponState.Striking => Striking(input),
-        HumanWeaponState.DryFire => DryFire(input),
-        HumanWeaponState.Reloading => Reloading(),
-        HumanWeaponState.ChangingWeapon => ChangingWeapon(),
-        HumanWeaponState.Peeking => Peeking(input),
-        HumanWeaponState.Throwing => Throwing(input),
-        HumanWeaponState.Placing => Placing(input),
-        HumanWeaponState.Medipack => Medipack(),
-        HumanWeaponState.AlternateFire => AlternateFireState(),
-        _ => Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : State,
-    };
-
-    // 0x40E9C0. The order of these tests is the specification.
-    private HumanWeaponState Ready(PlayerInputState input)
-    {
-        // The first thing 0x40E9C0 does, before anything else: put back whatever the LOCOMOTION side
-        // asked for. Without it a weapon holds the last frame of its firing clip for ever, because
-        // nothing else ever returns it to its stand pose.
-        if (CurrentAction != _locomotionAction)
-        {
-            Request(_locomotionAction);
-        }
-
-        if (InHand is { } held)
-        {
-            int clip = held.Gun.RoundsInClip;
-            int reserve = held.Gun.Reserve(Ammunition);
-
-            if (Flags.HasFlag(HumanWeaponFlagWord.AlternateFire)
-                && input.IsRisingEdge(PlayerInputSlot.AlternateFire)
-                && IsM16A2(held.Weapon)
-                && HasM203Round())
-            {
-                return HumanWeaponState.AlternateFire;
-            }
-
-            // Level-triggered, deliberately: there is no edge test here in the original, which is what
-            // lets an automatic weapon keep firing while the button is down.
-            if (Flags.HasFlag(HumanWeaponFlagWord.Fire))
-            {
-                switch (held.Weapon.Category)
-                {
-                    case (WeaponCategory)StrikingCategory:
-                        return HumanWeaponState.Striking;
-
-                    case (WeaponCategory)ThrownCategory when clip != 0:
-                        return HumanWeaponState.Throwing;
-
-                    case (WeaponCategory)PlacedCategory when clip != 0:
-                        return HumanWeaponState.Placing;
-
-                    case (WeaponCategory)MedipackCategory:
-                        if (_medipackAwaitingRelease)
-                        {
-                            break;
-                        }
-
-                        return HumanWeaponState.Medipack;
-
-                    case WeaponCategory.Binocular:
-                        // Binoculars have no firearm action. Fire, reload and peek are ignored while
-                        // the overlay is held; otherwise the generic default would request a gun
-                        // animation behind the device frame and could emit a phantom shot.
-                        break;
-
-                    case (WeaponCategory)ThrownCategory:
-                    case (WeaponCategory)PlacedCategory:
-                        break;
-
-                    default:
-                        return clip != 0 ? HumanWeaponState.Firing : HumanWeaponState.DryFire;
-                }
-            }
-
-            // The manual reload and the automatic one are the same branch -- the `clip == 0` disjunct
-            // is why an empty magazine tops itself up without being asked.
-            // The medipack's one-slot count is a use charge, not a firearm magazine. It
-            // has an authored injection action and must never enter the generic reload
-            // animation or transfer a charge from the reserve pool.
-            bool reloadable = held.Weapon.Category is not WeaponCategory.Binocular
-                and not (WeaponCategory)MedipackCategory;
-            bool asked = Flags.HasFlag(HumanWeaponFlagWord.Reload) || clip == 0;
-            if (reloadable && asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)
-            {
-                return HumanWeaponState.Reloading;
-            }
-
-            if (held.Weapon.Category != WeaponCategory.Binocular
-                && Flags.HasFlag(HumanWeaponFlagWord.Peek)
-                && Flags.HasFlag(HumanWeaponFlagWord.OnGround))
-            {
-                return HumanWeaponState.Peeking;
-            }
-        }
-
-        if (_pendingWeaponId != -1)
-        {
-            SetBinocularOpenPending(_pendingWeaponId);
-            return HumanWeaponState.ChangingWeapon;
-        }
-
-        if (input.IsRisingEdge(PlayerInputSlot.MapComputer) && Flags.HasFlag(HumanWeaponFlagWord.OnGround))
-        {
-            return HumanWeaponState.MapComputer;
-        }
-
-        return HumanWeaponState.Ready;
-    }
-
-    /// <summary>Raises one M203 callback request and returns to the ready hub.</summary>
-    private HumanWeaponState AlternateFireState()
-    {
-        _wantAlternateFire = true;
-        // IGI1's 0x40F4A0 callback calls the animation dispatcher with the M16A2's
-        // FireAnimation2 field (0x4137E0 action 8, variant 1). That is clip 39 in
-        // WEAPONS/M16A2/WEAPON.QVM; variant 0 is the ordinary rifle shot (clip 4).
-        Request(WeaponAction.Fire, fireVariant: 1);
-        return HumanWeaponState.Ready;
-    }
-
-    // 0x40EF70. It does not fire; it asks, on every tick the trigger is down.
-    private HumanWeaponState Firing(PlayerInputState input)
-    {
-        CarriedWeapon held = InHand!.Value;
-        int clip = held.Gun.RoundsInClip;
-        int reserve = held.Gun.Reserve(Ammunition);
-        bool triggerDown = input.IsSet(PlayerInputSlot.Fire);
-        bool ended = Flags.HasFlag(HumanWeaponFlagWord.ClipEnded);
-
-        if (!triggerDown)
-        {
-            bool reloadable = InHand?.Weapon.Category is not WeaponCategory.Binocular
-                and not (WeaponCategory)MedipackCategory;
-            bool asked = input.IsSet(PlayerInputSlot.Reload) || clip == 0;
-            if (reloadable && asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)
-            {
-                return HumanWeaponState.Reloading;
-            }
-        }
-        else if (clip == 0 && ended)
-        {
-            return HumanWeaponState.DryFire;
-        }
-        else
-        {
-            _wantFire = true;
-        }
-
-        // The animation is played for the round that went off LAST tick, which is what keeps a shot's
-        // report and its animation on the same frame as each other rather than one ahead.
-        if (_firedThisTick)
-        {
-            Request(WeaponAction.FireTimed);
-        }
-
-        return ended && !triggerDown ? HumanWeaponState.Ready : HumanWeaponState.Firing;
-    }
-
-    // 0x40FA80, the knife. The counter advances on rounds, not on ticks.
-    private HumanWeaponState Striking(PlayerInputState input)
-    {
-        if (input.IsSet(PlayerInputSlot.Fire) && FireVariant < FireVariantCount)
-        {
-            _wantFire = true;
-        }
-
-        if (_firedThisTick)
-        {
-            // Dispatch first, THEN increment: the original reads Human+1256 inside 0x4137E0 and
-            // advances it afterwards, so the first strike of a press is FireAnimation1.
-            Request(WeaponAction.Fire, FireVariant);
-            FireVariant++;
-        }
-
-        return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : HumanWeaponState.Striking;
-    }
-
-    // 0x40F100.
-    private static HumanWeaponState DryFire(PlayerInputState input) =>
-        input.IsSet(PlayerInputSlot.Fire) ? HumanWeaponState.DryFire : HumanWeaponState.Ready;
-
     /// <summary>Gets how long the current or last throw was charged, in ticks.</summary>
     /// <remarks>
     /// The original's <c>Human+1248</c>: the ticks the fire button was held in the throw state,
     /// which <c>0x462E50</c> clamps to 3–60 and feeds the power-law strength curve.
     /// </remarks>
-    public int ThrowChargeTicks => _throwChargeTicks;
+    public int ThrowChargeTicks => _machine.ThrowChargeTicks;
 
     /// <summary>Gets whether a grenade throw is being charged — the hand cooking it.</summary>
     /// <remarks>
@@ -1228,7 +625,7 @@ public sealed class PlayerWeapons
     /// (<c>0x40F590</c>) and stops it on release (<c>0x40F640</c>). This is that window: in the throw
     /// state with the fire button still held.
     /// </remarks>
-    public bool IsChargingThrow => State == HumanWeaponState.Throwing && !_throwReleased;
+    public bool IsChargingThrow => State == HumanWeaponState.Throwing && !_machine.ThrowReleased;
 
     /// <summary>Turns a throw's charge into its release speed, in metres a second.</summary>
     /// <param name="muzzleVelocity">The weapon's own muzzle velocity — fifteen for both grenades.</param>
@@ -1270,330 +667,11 @@ public sealed class PlayerWeapons
     /// </remarks>
     public const float MaximumThrowShare = 1.8f;
 
-    // 0x40F590 into 0x40F640, the grenade's charge-and-release. Holding fire charges (Human+1248
-    // counts the ticks); letting go releases -- the trigger byte is raised for exactly one tick,
-    // the gun lets the round out, and the throw animation plays over the round that went off. The
-    // state runs home once that clip ends.
-    private HumanWeaponState Throwing(PlayerInputState input)
-    {
-        if (!_throwReleased)
-        {
-            if (input.IsSet(PlayerInputSlot.Fire))
-            {
-                _throwChargeTicks++;
-                return HumanWeaponState.Throwing;
-            }
-
-            _throwReleased = true;
-            _wantFire = true;
-            return HumanWeaponState.Throwing;
-        }
-
-        if (_firedThisTick)
-        {
-            // The throw itself is the SECOND fire animation where the record carries one -- the
-            // first is the wind-up the entry already played and holding it again would read as the
-            // hand pocketing the grenade rather than releasing it.
-            Request(WeaponAction.Fire, InHand?.Weapon.FireAnimation2 >= 0 ? 1 : 0);
-
-            // 0x40F640 snaps the rig out of the frame the instant the round leaves the hand -- the
-            // throw's own follow-through, the same lowering a weapon change and a peek use.
-            Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
-
-            // Out of grenades, 0x40F640's else branch (sub_40F760) selects the next carried weapon rather
-            // than staying on the spent one; the rig is already lowered for the change. With more in the
-            // pouch it stays and eases the rig back up, ready to throw again.
-            if (OutOfThrowables() && SelectNextCarried())
-            {
-                BeginChange();
-                return HumanWeaponState.ChangingWeapon;
-            }
-
-            Sway.Raise();
-        }
-
-        return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded)
-            ? HumanWeaponState.Ready
-            : HumanWeaponState.Throwing;
-    }
-
-    // 0x40F930/0x40F950. A mine is a one-shot placed task: entering the state lowers the rig and
-    // requests one gun round, then the state returns as soon as that round has been accepted. The
-    // old port entered Placing but never set the fire request, which made every mine a silent no-op.
-    private HumanWeaponState Placing(PlayerInputState input)
-    {
-        if (_placingFirePending)
-        {
-            _wantFire = true;
-            return HumanWeaponState.Placing;
-        }
-
-        // A held trigger must not place a mine again when the state returns through Ready. Wait for
-        // the release edge, just as the grenade throw waits for its release before accepting another
-        // round.
-        if (input.IsSet(PlayerInputSlot.Fire))
-        {
-            return HumanWeaponState.Placing;
-        }
-
-        return OutOfThrowables() && SelectNextCarried()
-            ? HumanWeaponState.ChangingWeapon
-            : HumanWeaponState.Ready;
-    }
-
-    // 0x479990, the gun's own reload handler, which 0x40F180 drives. It is a two-phase machine: play
-    // the reload animation, and move the rounds only when that animation has finished. So the reload's
-    // DURATION is the clip's length -- the roster's `Reload Time` (+1596) is not read on this path at
-    // all, which is a good example of a field that exists for the HUD.
-    private HumanWeaponState Reloading()
-    {
-        if (!Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
-        {
-            return HumanWeaponState.Reloading;
-        }
-
-        InHand?.Gun.Reload(Ammunition);
-        _actionComplete = true;
-        return HumanWeaponState.Ready;
-    }
-
-    private HumanWeaponState Medipack()
-    {
-        // ClipEnded belongs to the outgoing animation on the tick that enters this state. Let the
-        // medipack advance once before accepting that flag, otherwise a completed outgoing clip
-        // prevents the newly requested healing animation from being used.
-        if (!_medipackAdvanced)
-        {
-            _medipackAdvanced = true;
-            return HumanWeaponState.Medipack;
-        }
-
-        // 0x40FB90 waits for the entry clip to end, then starts FireAnimation2 with the native loop
-        // flag. The loop is kept in this state; a clip wrap must not create another medipack action.
-        if (!_medipackInjectionLoopStarted)
-        {
-            if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
-            {
-                _medipackInjectionLoopStarted = true;
-                Request(WeaponAction.MedipackLoop);
-            }
-
-            return HumanWeaponState.Medipack;
-        }
-
-        if (_medipackClosing)
-        {
-            if (_medipackTerminalClipMissing)
-            {
-                return HumanWeaponState.Ready;
-            }
-
-            // The current ClipEnded flag belongs to the outgoing syringe loop on the tick that
-            // starts FireAnimation3. Do not let it complete the newly requested terminal clip.
-            if (!_medipackCloseAdvanced)
-            {
-                _medipackCloseAdvanced = true;
-                return HumanWeaponState.Medipack;
-            }
-
-            return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded)
-                ? HumanWeaponState.Ready
-                : HumanWeaponState.Medipack;
-        }
-
-        if (!Flags.HasFlag(HumanWeaponFlagWord.Fire) || _medipackAwaitingRelease)
-        {
-            BeginMedipackFinish();
-        }
-
-        return HumanWeaponState.Medipack;
-    }
-
-    private void SetBinocularOpenPending(int weaponId)
-    {
-        if (IndexOf(weaponId) >= 0 && _carried[IndexOf(weaponId)].Weapon.Category == WeaponCategory.Binocular)
-        {
-            _binocularOpenPending = true;
-        }
-        else
-        {
-            _binocularOpenPending = false;
-        }
-    }
-
-    // 0x40F280 into 0x40F300, and it is two phases rather than one.
-    //
-    // Phase one waits for the rig to finish tipping out of the frame -- the entry sent it there -- and
-    // only THEN exchanges the model, which is what hides the swap. Phase two sends the rig back up.
-    private HumanWeaponState ChangingWeapon()
-    {
-        if (!_swapped)
-        {
-            // 0x40F280.
-            if (!Sway.Settled)
-            {
-                return HumanWeaponState.ChangingWeapon;
-            }
-
-            int index = IndexOf(_pendingWeaponId);
-            if (index >= 0)
-            {
-                if (InHand is { Weapon.Category: not WeaponCategory.Binocular } previous)
-                {
-                    _lastNonBinocularWeaponId = previous.Weapon.WeaponId;
-                }
-
-                _heldIndex = index;
-            }
-
-            _pendingWeaponId = -1;
-            _swapped = true;
-
-            // Action 10 is the stand pose again, snapped rather than eased -- the model in your hands
-            // has just changed, so there is nothing to ease from.
-            Request(WeaponAction.StandImmediate);
-            Sway.Raise();
-            return HumanWeaponState.ChangingWeapon;
-        }
-
-        // 0x40F300, and it tests the pending id BEFORE it tests the rig: asking for another weapon
-        // while the last one is still coming up abandons the raise and starts over, which is what lets
-        // NextWeapon be held down and stepped through.
-        if (_pendingWeaponId != -1)
-        {
-            BeginChange();
-            return HumanWeaponState.ChangingWeapon;
-        }
-
-        if (!Sway.Settled)
-        {
-            return HumanWeaponState.ChangingWeapon;
-        }
-
-        _actionComplete = true;
-        return HumanWeaponState.Ready;
-    }
-
-    // 0x40F3F0: hold the lean until Peek is let go, then raise the rig and go back.
-    private HumanWeaponState Peeking(PlayerInputState input)
-    {
-        if (input.IsSet(PlayerInputSlot.Peek))
-        {
-            return HumanWeaponState.Peeking;
-        }
-
-        Sway.Raise();
-        return HumanWeaponState.Ready;
-    }
-
-    // 0x40F230, the change state's entry -- reached both from Ready and from its own per-tick.
-    private void BeginChange()
-    {
-        _swapped = false;
-        Request(WeaponAction.StandAlternate);
-        Sway.Lower();
-    }
-
-    private void Enter(HumanWeaponState state)
-    {
-        switch (state)
-        {
-            case HumanWeaponState.Suspended:
-                Request(WeaponAction.None);
-                break;
-
-            // 0x40F370 lowers the rig too, on exactly the same rates -- leaning out of cover puts the
-            // weapon away the same way changing it does.
-            case HumanWeaponState.Peeking:
-                Request(WeaponAction.Stand);
-                Sway.Lower();
-                break;
-
-            // 0x40FA60 zeroes the variant counter, which is what makes each press start at
-            // FireAnimation1 rather than continuing the previous swing's cycle.
-            case HumanWeaponState.Striking:
-                FireVariant = 0;
-                break;
-
-            // 0x40F4F0. Zeroed here: a transition runs its target's step in the same tick, and that
-            // step counts this first held tick to one. The entry also plays the weapon's first fire
-            // animation -- the pin-and-wind-up the hand holds while the throw charges -- exactly as
-            // the retail entry plays record +1668.
-            case HumanWeaponState.Throwing:
-                _throwChargeTicks = 0;
-                _throwReleased = false;
-                Request(WeaponAction.Fire);
-                break;
-
-            case HumanWeaponState.Placing:
-                _placingFirePending = true;
-                Request(WeaponAction.Fire);
-                Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
-                break;
-
-            case HumanWeaponState.AlternateFire:
-                // Native 0x40F4A0 lowers/raises the weapon through the alternate-fire animation and
-                // sets the callback marker. The actual M203 object is created after the view has been
-                // committed, in ResolveFire, exactly like the 0x462E50 bridge.
-                _wantAlternateFire = true;
-                Request(WeaponAction.Fire);
-                break;
-
-            case HumanWeaponState.Medipack:
-                _medipackUsed = false;
-                _medipackAdvanced = false;
-                _medipackInjectionLoopStarted = false;
-                _medipackClosing = false;
-                _medipackCloseAdvanced = false;
-                _medipackTerminalClipMissing = false;
-                // 0x40FB6D explicitly clears Human+0xD6C on entry. The first dose therefore occurs
-                // when the entry clip hands off to the loop; only later doses wait for the cadence.
-                _medipackCooldownTicks = 0;
-                MedipackStartedThisTick = true;
-                Request(WeaponAction.Fire);
-                break;
-
-            case HumanWeaponState.Reloading:
-                Request(WeaponAction.Reload);
-                break;
-
-            // Play the stand pose and start tipping the rig out of the frame. Nothing is exchanged
-            // yet -- the per-tick does that once the rig has arrived.
-            case HumanWeaponState.ChangingWeapon:
-                BeginChange();
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    // 0x4137E0's two inputs, kept together so nothing can raise an action and read a variant that has
-    // already moved on.
-    private void Request(WeaponAction action, int fireVariant = 0)
-    {
-        CurrentAction = action;
-        RequestedAction = action;
-        RequestedFireVariant = fireVariant;
-    }
-
-    private int IndexOf(int weaponId)
-    {
-        for (int i = 0; i < _carried.Count; i++)
-        {
-            if (_carried[i].Weapon.WeaponId == weaponId)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
     /// <summary>Gets whether a one-shot action finished on the last tick — the original's <c>Human+1232</c>.</summary>
-    public bool ActionCompleted => _actionComplete;
+    public bool ActionCompleted => _machine.ActionComplete;
 
-    private bool HasM203Round() =>
+    /// <summary>Gets whether an M203 round is available — declared, and in the pouch or under infinite ammunition.</summary>
+    internal bool HasM203Round() =>
         _m203Ammunition is not null
         && (_cheats.InfiniteAmmo || Ammunition.Count(_m203Ammunition.AmmoId) > 0);
 
@@ -1608,6 +686,7 @@ public sealed class PlayerWeapons
         }
     }
 
-    private static bool IsM16A2(WeaponType weapon) =>
+    /// <summary>Gets whether a weapon is the retail M16A2, whose alternate fire launches an M203 round.</summary>
+    internal static bool IsM16A2(WeaponType weapon) =>
         string.Equals(weapon.ScriptId, M16A2WeaponScriptId, StringComparison.Ordinal);
 }

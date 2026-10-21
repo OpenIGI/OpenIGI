@@ -519,100 +519,35 @@ public sealed class DiagMission4Plane
         }
     }
 
-    /// <summary>Dumps the runtime's private animation and transform state for heli 356.</summary>
+    /// <summary>Dumps the runtime's animation and transform state for heli 356.</summary>
     private static void ProbeRuntime(ITestOutputHelper output, CutsceneRuntime runtime, GameTask root, int tick)
     {
         try
         {
-            System.Type runtimeType = runtime.GetType();
-            System.Reflection.FieldInfo? animationsField = runtimeType.GetField(
-                "_animations", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            System.Reflection.FieldInfo? taskTransformsField = runtimeType.GetField(
-                "_taskTransforms", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (animationsField is null || taskTransformsField is null)
+            foreach (CutsceneAnimationState animation in runtime.AnimationsForTesting)
             {
-                output.WriteLine(
-                    $"  PROBE356 tick={tick} WARNING: reflection could not find _animations or _taskTransforms"
-                    + $" (animations={animationsField is not null}, transforms={taskTransformsField is not null})");
-                return;
-            }
-
-            System.Collections.IEnumerable animations = (System.Collections.IEnumerable)animationsField.GetValue(runtime)!;
-            System.Type animationType = animationsField.FieldType.GetGenericArguments()[0];
-            System.Reflection.PropertyInfo? targetIdProp = animationType.GetProperty("TargetId");
-            System.Reflection.PropertyInfo? programProp = animationType.GetProperty("Program");
-            System.Reflection.PropertyInfo? runProp = animationType.GetProperty("Run");
-            System.Reflection.PropertyInfo? initialRunProp = animationType.GetProperty("InitialRun");
-            if (targetIdProp is null || programProp is null || runProp is null || initialRunProp is null)
-            {
-                return;
-            }
-
-            foreach (object? animation in animations)
-            {
-                if (animation is null)
+                if (animation.TargetId != 356)
                 {
                     continue;
                 }
 
-                int targetId = (int)targetIdProp.GetValue(animation)!;
-                if (targetId != 356)
-                {
-                    continue;
-                }
-
-                object? program = programProp.GetValue(animation);
-                System.Reflection.PropertyInfo? tickProp = program?.GetType().GetProperty("Tick");
-                System.Reflection.PropertyInfo? pcProp = program?.GetType().GetProperty("ProgramCounter");
-                int programTick = tickProp is null || program is null ? -99 : (int)tickProp.GetValue(program)!;
-                int pc = pcProp is null || program is null ? -99 : (int)pcProp.GetValue(program)!;
-                string run = (string)runProp.GetValue(animation)!;
-                bool initialRun = (bool)initialRunProp.GetValue(animation)!;
-                float[]? channels = null;
-                if (program is AnimDataProgram animProgram)
-                {
-                    channels = animProgram.Channels.ToArray();
-                }
-
+                AnimDataProgram program = animation.Program;
+                float[] channels = program.Channels.ToArray();
                 System.Text.StringBuilder sb = new();
-                sb.Append(CultureInfo.InvariantCulture, $"  PROBE356 tick={tick} animTick={programTick} pc={pc} runExpr={run ?? "<null>"} initialRun={initialRun}");
+                sb.Append(CultureInfo.InvariantCulture, $"  PROBE356 tick={tick} animTick={program.Tick} pc={program.ProgramCounter} runExpr={animation.Run} initialRun={animation.InitialRun}");
                 if (channels is { Length: >= 5 })
                 {
                     sb.Append(CultureInfo.InvariantCulture, $" ch0={channels[0]:R} ch1={channels[1]:R} ch2={channels[2]:R} ch3={channels[3]:R} ch4={channels[4]:R}");
                 }
 
-                System.Collections.IDictionary taskTransforms = (System.Collections.IDictionary)taskTransformsField.GetValue(runtime)!;
-                foreach (System.Collections.DictionaryEntry entry in taskTransforms)
+                foreach ((GameTask task, CutsceneTransformState state) in runtime.TaskTransformsForTesting)
                 {
-                    if (entry.Key is not GameTask task || task.Id != 356)
+                    if (task.Id != 356)
                     {
                         continue;
                     }
 
-                    object? state = entry.Value;
-                    if (state is null)
-                    {
-                        continue;
-                    }
-
-                    System.Type stateType = state.GetType();
-                    System.Reflection.PropertyInfo? posProp = stateType.GetProperty("Position");
-                    System.Reflection.PropertyInfo? velProp = stateType.GetProperty("Velocity");
-                    System.Reflection.PropertyInfo? thrustProp = stateType.GetProperty("Thrust");
-                    System.Reflection.PropertyInfo? targetThrustProp = stateType.GetProperty("TargetThrust");
-                    System.Reflection.PropertyInfo? originalThrustProp = stateType.GetProperty("OriginalThrust");
-                    System.Reflection.PropertyInfo? controlProp = stateType.GetProperty("Control");
-                    System.Reflection.PropertyInfo? ticksProp = stateType.GetProperty("PhysicsTicks");
-                    System.Reflection.PropertyInfo? orientProp = stateType.GetProperty("Orientation");
-                    object? pos = posProp?.GetValue(state);
-                    object? vel = velProp?.GetValue(state);
-                    object? thrust = thrustProp?.GetValue(state);
-                    object? targetThrust = targetThrustProp?.GetValue(state);
-                    object? originalThrust = originalThrustProp?.GetValue(state);
-                    object? control = controlProp?.GetValue(state);
-                    object? physicsTicks = ticksProp?.GetValue(state);
-                    object? orientation = orientProp?.GetValue(state);
-                    sb.Append(CultureInfo.InvariantCulture, $" pos={pos} vel={vel} thrust={thrust} targetThrust={targetThrust} originalThrust={originalThrust} control={control} physicsTicks={physicsTicks} orient={orientation}");
+                    sb.Append(CultureInfo.InvariantCulture, $" pos={state.Position} vel={state.Velocity} thrust={state.Thrust} targetThrust={state.TargetThrust} originalThrust={state.OriginalThrust} control={state.Control} physicsTicks={state.PhysicsTicks} orient={state.Orientation}");
                 }
 
                 output.WriteLine(sb.ToString());

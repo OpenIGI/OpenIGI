@@ -140,7 +140,7 @@ public sealed partial class GraphicsDevice
             new RhiFrameGenerationOptions(
                 enabled,
                 framesToGenerate,
-                RenderCVars.FrameGenerationUiRecomposition.Value,
+                ReconstructionCVars.FrameGenerationUiRecomposition.Value,
                 scene?.Width ?? 0,
                 scene?.Height ?? 0));
         _frameGenerationEnabled = enabled;

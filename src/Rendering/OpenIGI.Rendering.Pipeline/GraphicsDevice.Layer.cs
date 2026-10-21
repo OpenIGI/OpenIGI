@@ -50,7 +50,7 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Gets a value indicating whether this frame should resolve into the picture of its own.</summary>
     private bool WantsLayer =>
-        RenderCVars.InterfaceLayer.Value || FrameGenerationWantsLayer;
+        ReconstructionCVars.InterfaceLayer.Value || FrameGenerationWantsLayer;
 
     /// <summary>Gets the picture without the interface, where this frame drew one: what frame generation interpolates.</summary>
     internal IRhiTexture? HudlessColour => _layered ? _display : null;

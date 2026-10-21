@@ -18,7 +18,7 @@ public sealed partial class GameHost
     // mission did before this existed.
     private void ApplyColourLookup(int mission)
     {
-        string named = RenderCVars.ColourLookupTable.Value.Trim();
+        string named = PostCVars.ColourLookupTable.Value.Trim();
         string name = named.Length > 0
             ? named
             : FormattableString.Invariant($"mission{mission}");

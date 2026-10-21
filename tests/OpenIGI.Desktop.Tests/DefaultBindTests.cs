@@ -32,7 +32,7 @@ public sealed class DefaultBindTests
     public void NoDefaultBindTogglesASavedSetting()
     {
         // Forces the render variables to register, so the registry can be asked about them.
-        _ = RenderCVars.Lighting;
+        _ = LightingCVars.Lighting;
 
         // And the gameplay ones, which live in another assembly and another static constructor: the
         // third-person view is bound by default, so the rule below has to be able to see it.

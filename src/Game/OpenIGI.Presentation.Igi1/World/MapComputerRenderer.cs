@@ -38,8 +38,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
     private readonly Func<string, string> _resolveText;
-    private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, BitmapTextRenderer?> _fonts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly RetailUiResources _uiResources;
     private IresArchive? _archive;
     private Page _page;
     // Retail opens on its useful mission-overview scale; the widest level is reached with minus.
@@ -59,6 +58,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         _resources = resources;
         _logger = logger;
         _resolveText = resolveText;
+        _uiResources = new RetailUiResources(device, new RetailUiResourceOptions { LogCategory = "Computer" }, logger);
     }
 
     public bool IsReady => _archive is not null;
@@ -83,6 +83,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
             }
 
             _archive = IresArchive.Read(fileSystem.ReadAllBytes(name));
+            _uiResources.SetArchives(_archive);
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -179,7 +180,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         }
 
         Viewport viewport = ScreenViewport(screenWidth, screenHeight);
-        Vector3d centreMetres = ToMetres(_centreUnits);
+        Vector3d centreMetres = WorldScene.ToMetres(_centreUnits);
         // The map owns a genuine second 3D view in retail. Looking straight down keeps terrain,
         // buildings and moving units live instead of replacing them with a fabricated grid.
         Camera3D camera = new(
@@ -492,35 +493,9 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
 
     private float FontLineHeight(string name) => Font(name)?.LineHeight ?? 12f;
 
-    private BitmapTextRenderer? Font(string name)
-    {
-        if (_fonts.TryGetValue(name, out BitmapTextRenderer? cached))
-        {
-            return cached;
-        }
-        BitmapTextRenderer? result = Sprite(name) is { IsFont: true } font ? new BitmapTextRenderer(font) : null;
-        _fonts[name] = result;
-        return result;
-    }
+    private BitmapTextRenderer? Font(string name) => _uiResources.Font(name);
 
-    private SpriteResource? Sprite(string name)
-    {
-        if (_sprites.TryGetValue(name, out SpriteResource? cached))
-        {
-            return cached;
-        }
-        SpriteResource? result = null;
-        IresEntry? entry = _archive?.Entries.FirstOrDefault(e => e.Kind == IresEntryKind.Body
-            && Path.GetFileName(e.Name).Equals(name, StringComparison.OrdinalIgnoreCase));
-        if (entry is not null)
-        {
-            try { result = SpriteResource.Upload(_device, SpriteLoader.Load(entry.Data, name)); }
-            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
-            { _logger.Warning("Computer", $"Could not read '{name}': {ex.Message}"); }
-        }
-        _sprites[name] = result;
-        return result;
-    }
+    private SpriteResource? Sprite(string name) => _uiResources.Sprite(name);
 
     private bool HitTextLink(float x, float y, float width, float height) => Hit(x, y, width, height);
     private bool Hit(float x, float y, float width, float height) =>
@@ -562,8 +537,6 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
 
     private static float ObjectivesLinkY(Viewport device) => device.Y + device.Height * 0.795f;
 
-    private static Vector3d ToMetres(Vector3d units) => new(units.X / 4096.0, units.Y / 4096.0, units.Z / 4096.0);
-
     public void Dispose()
     {
         if (_disposed)
@@ -571,12 +544,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
             return;
         }
         _disposed = true;
-        foreach (SpriteResource? sprite in _sprites.Values)
-        {
-            sprite?.Dispose();
-        }
-        _sprites.Clear();
-        _fonts.Clear();
+        _uiResources.Dispose();
         _archive = null;
     }
 

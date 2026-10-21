@@ -1,8 +1,11 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Lighting;
 
 namespace OpenIGI.Host;
@@ -36,8 +39,8 @@ public sealed partial class GameHost
     /// <param name="path">The file to write.</param>
     private void WriteLightingDump(string path)
     {
-        float localLightScale = RenderCVars.LocalLightScale.Value;
-        float localLightRange = RenderCVars.LocalLightRange.Value;
+        float localLightScale = LocalLightCVars.LocalLightScale.Value;
+        float localLightRange = LocalLightCVars.LocalLightRange.Value;
 
         using FileStream stream = File.Create(path);
         using Utf8JsonWriter json = new(stream, new JsonWriterOptions { Indented = true });
@@ -60,12 +63,12 @@ public sealed partial class GameHost
         json.WriteNumber("moonRadiance", night.MoonRadiance);
         json.WriteEndObject();
 
-        json.WriteNumber("timeOfDay", RenderCVars.TimeOfDay.Value);
-        json.WriteBoolean("autoExposure", RenderCVars.AutoExposure.Value);
-        json.WriteNumber("exposure", RenderCVars.Exposure.Value);
+        json.WriteNumber("timeOfDay", ExposureCVars.TimeOfDay.Value);
+        json.WriteBoolean("autoExposure", ExposureCVars.AutoExposure.Value);
+        json.WriteNumber("exposure", ExposureCVars.Exposure.Value);
         json.WriteNumber("localLightScale", localLightScale);
         json.WriteNumber("localLightRange", localLightRange);
-        json.WriteNumber("localLightSource", RenderCVars.LocalLightSource.Value);
+        json.WriteNumber("localLightSource", LocalLightCVars.LocalLightSource.Value);
 
         json.WriteStartArray("lamps");
         for (int i = 0; i < _gi.LightFixtures.Count; i++)
@@ -112,5 +115,110 @@ public sealed partial class GameHost
         json.WriteNumberValue(value.Y);
         json.WriteNumberValue(value.Z);
         json.WriteEndArray();
+    }
+
+    // The path-traced lightmapper's phase 1-2 verification: enumerate the lightmapped texels, bake the
+    // direct sun + sky, report coverage, and dump the largest few pages as normal and radiance images. A
+    // correct normal page reads as a UV unwrap of the object; a correct radiance page shows the sun and its
+    // shadows. Dev-only, driven by IGI_BAKELM_DIR, so it never runs in a normal load.
+    private void DumpLightmapVerification(
+        WorldScene scene, WorldRayCast cast, Vector3f sunDirection, string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+
+        IReadOnlyList<LightmapTarget> targets = LightmapBaker.EnumerateTargets(scene);
+
+        long covered = 0;
+        long total = 0;
+        foreach (LightmapTarget target in targets)
+        {
+            total += target.Texels.Length;
+            foreach (LightmapTexel texel in target.Texels)
+            {
+                if (texel.IsCovered)
+                {
+                    covered++;
+                }
+            }
+        }
+
+        _logger.Information(
+            "Lightmap", $"Enumerated {targets.Count} target(s); {covered}/{total} texels covered.");
+
+        Vector3f sunColour = _timeOfDay.Sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+        Vector3f skyColour = _timeOfDay.Sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
+        Stepping.Drain(LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, 64, _work));
+
+        // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
+        // then gather several bounces reading the last pass's light. Grey albedo for now (colour is 3b),
+        // so this verifies the bounce fills and brightens rather than the colour it carries.
+        LightmapTriangle[] triangles = LightmapBaker.BuildTriangles(scene, targets, _resources);
+        int coloured = triangles.Count(t => MathF.Abs(t.Albedo.X - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Y - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Z - 0.5f) > 0.02f);
+        _logger.Information(
+            "Lightmap",
+            FormattableString.Invariant(
+                $"Albedo: {coloured}/{triangles.Length} triangles got a resolved colour; samples ({triangles[0].Albedo.X:F2},{triangles[0].Albedo.Y:F2},{triangles[0].Albedo.Z:F2}) ({triangles[triangles.Length / 2].Albedo.X:F2},{triangles[triangles.Length / 2].Albedo.Y:F2},{triangles[triangles.Length / 2].Albedo.Z:F2})."));
+        LightmapBvh bvh = LightmapBvh.Build(triangles);
+        _logger.Information("Lightmap", $"Built a BVH over {triangles.Length} triangle(s); gathering bounces.");
+        Stepping.Drain(LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, 4, 64, _work));
+
+        // A numerical spot-check on the largest page: how many texels it covered, and a few of them with
+        // their world position (should sit near the placement) and baked radiance (sunlit near the sun
+        // colour, shadowed/skylit near the ambient). This settles what an image cannot show clearly.
+        if (targets.OrderByDescending(t => t.Texels.Length).FirstOrDefault() is { } sample)
+        {
+            int sampleCovered = 0;
+            foreach (LightmapTexel t in sample.Texels)
+            {
+                if (t.IsCovered)
+                {
+                    sampleCovered++;
+                }
+            }
+
+            Vector3d origin = scene.Placements[sample.PlacementIndex].Position;
+            _logger.Information(
+                "Lightmap",
+                FormattableString.Invariant(
+                    $"Largest page p{sample.PlacementIndex} {sample.Width}x{sample.Height}: {sampleCovered} covered, placement at ({origin.X:F1},{origin.Y:F1},{origin.Z:F1})."));
+
+            int shown = 0;
+            for (int i = 0; i < sample.Texels.Length && shown < 4; i++)
+            {
+                if (!sample.Texels[i].IsCovered)
+                {
+                    continue;
+                }
+
+                LightmapTexel t = sample.Texels[i];
+                Vector3f rad = sample.Radiance[i];
+                _logger.Information(
+                    "Lightmap",
+                    FormattableString.Invariant(
+                        $"  texel {i}: pos ({t.WorldPosition.X:F1},{t.WorldPosition.Y:F1},{t.WorldPosition.Z:F1}) n ({t.Normal.X:F2},{t.Normal.Y:F2},{t.Normal.Z:F2}) rad ({rad.X:F2},{rad.Y:F2},{rad.Z:F2})"));
+                shown++;
+            }
+        }
+
+        int dumped = 0;
+        foreach (LightmapTarget target in targets.OrderByDescending(t => t.Texels.Length).Take(6))
+        {
+            string stem = FormattableString.Invariant(
+                $"lm_p{target.PlacementIndex}_r{target.RecordIndex}_{target.Width}x{target.Height}");
+
+            Bgra32[] normals = new Bgra32[target.Texels.Length];
+            LightmapBaker.DumpTargetNormals(target, normals);
+            BitmapWriter.Write(
+                Path.Combine(outputDirectory, stem + "_normal.bmp"), target.Width, target.Height, normals);
+
+            Bgra32[] radiance = new Bgra32[target.Texels.Length];
+            LightmapBaker.DumpTargetRadiance(target, radiance, exposure: 1f);
+            BitmapWriter.Write(
+                Path.Combine(outputDirectory, stem + "_radiance.bmp"), target.Width, target.Height, radiance);
+
+            dumped++;
+        }
+
+        _logger.Information("Lightmap", $"Dumped {dumped} page(s) to {outputDirectory}.");
     }
 }

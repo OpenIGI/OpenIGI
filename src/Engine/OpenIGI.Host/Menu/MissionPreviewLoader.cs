@@ -317,7 +317,7 @@ public sealed class MissionPreviewLoader(
         // not merely unused work: on the affected machine the eighteen ground tiles held this worker for
         // 211-284 seconds and saturated enough CPU to make the live game appear frozen. Cold mission loads
         // share the same policy through MaterialDetailPack.AttachDerived.
-        Task<Bgra32[][]> groundDetail = ShouldDeriveGroundDetail(RenderCVars.MaterialDetail.Value)
+        Task<Bgra32[][]> groundDetail = ShouldDeriveGroundDetail(MaterialCVars.MaterialDetail.Value)
             ? DeriveGroundDetailAsync(loaded.Terrain)
             : Task.FromResult<Bgra32[][]>([]);
 
@@ -351,15 +351,15 @@ public sealed class MissionPreviewLoader(
         // mission with no bake previews unbounced rather than tracing one: the trace is seconds of CPU for
         // a backdrop, and its result could not be cached from this context anyway.
         Vector3f bakeSun = sun is { IsBelowHorizon: false } lit ? lit.Direction : default;
-        IrradianceVolume? probeField = RenderCVars.GlobalIllumination.Value
-            ? probeFields.TryLoad(missionId, RenderCVars.GlobalIlluminationSpacing.Value, bakeSun)
+        IrradianceVolume? probeField = GlobalIlluminationCVars.GlobalIllumination.Value
+            ? probeFields.TryLoad(missionId, GlobalIlluminationCVars.GlobalIlluminationSpacing.Value, bakeSun)
             : null;
 
         // The level's lamps, surveyed here for two reasons that happen to coincide. It is the single
         // largest cost promotion used to pay on the render thread -- decoding every emitter texture ran
         // to about 140 ms -- and it is half of what makes a backdrop look like the mission: a lamplit
         // interior previewed with its lamps out is simply a different, darker picture.
-        EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
+        EmissiveLightProposer.Proposal lamps = LocalLightCVars.GlobalIlluminationLamps.Value != 0
             ? EmissiveLightProposer.Propose(
                 scene, resources, context.Lamps, missionId, context.TitleId, logger)
             : EmissiveLightProposer.Proposal.None;
@@ -371,10 +371,10 @@ public sealed class MissionPreviewLoader(
         // takes one core and leaves the frame alone. The same gate the render loop applies -- and none of
         // it for a lite backdrop, which draws without a field: the read is skipped and a missing field is
         // baked when Play is pressed instead of for every mission the player scrolls past.
-        int fieldResolution = RenderCVars.DistanceFieldResolution.Value;
+        int fieldResolution = RayTracingCVars.DistanceFieldResolution.Value;
         SceneDistanceField? distanceField = null;
         DistanceFieldBake? pendingField = null;
-        if (RenderCVars.DistanceFields.Value && context.ComputeSupported && !RenderCVars.MenuBackdropLite.Value)
+        if (RayTracingCVars.DistanceFields.Value && context.ComputeSupported && !FrameCVars.MenuBackdropLite.Value)
         {
             distanceField = context.DistanceFields.TryLoad(missionId, fieldResolution);
             if (distanceField is null)

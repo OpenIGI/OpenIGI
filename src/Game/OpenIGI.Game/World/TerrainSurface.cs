@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -117,9 +118,9 @@ public sealed class TerrainSurface
 
             if (TerrainTileLayer.TryCreate(
                     position,
-                    GetInt32(declared, "Level"),
-                    GetInt32(declared, "Material Index"),
-                    GetInt32(declared, "Bitmap ID"),
+                    IntStrict(declared, "Level", -1),
+                    IntStrict(declared, "Material Index", -1),
+                    IntStrict(declared, "Bitmap ID", -1),
                     terrain.Visibility,
                     out TerrainTileLayer? layer)
                 && layer is not null)
@@ -223,8 +224,5 @@ public sealed class TerrainSurface
             && worldX < layer.OriginX + extent
             && worldY < layer.OriginY + extent;
     }
-
-    private static int GetInt32(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
 
 }

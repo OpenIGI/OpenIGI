@@ -145,7 +145,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
     // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
     // when the arms and the HUD are gone but the last thing the screen showed is still red.
-    float flashStrength = Math.Clamp(RenderCVars.DamageFlash.Value, 0f, 1f);
+    float flashStrength = Math.Clamp(HudCVars.DamageFlash.Value, 0f, 1f);
     if (mission.DamageFlash.IsActive && flashStrength > 0f)
     {
         float flashWidth = frame.Width;

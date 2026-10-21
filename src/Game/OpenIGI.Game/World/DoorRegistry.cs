@@ -531,7 +531,7 @@ public sealed class DoorRegistry
     /// declarations use — and they hold a <b>definition</b> name, not a bank key.
     /// </remarks>
     private static string ReadSound(DeclaredTask declared, string parameter) =>
-        declared.TryGetValue(parameter, out object? value) && value is string name ? name : string.Empty;
+        DeclaredTaskValues.TextOrEmpty(declared, parameter);
 
     /// <summary>Sets where a door's sounds are reported, or <see langword="null"/> to make them silent.</summary>
     /// <param name="sink">Called during <see cref="Tick(PlacedDoor)"/> for each moment a door makes a noise.</param>

@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -120,9 +121,9 @@ public sealed class TerrainHeightBindings
                 if (TryCreate(
                         terrain.Heightmap,
                         position,
-                        GetInt32(declared, "Level"),
-                        GetInt32(declared, "Size"),
-                        GetInt32(declared, "Bitmap ID"),
+                        IntStrict(declared, "Level", -1),
+                        IntStrict(declared, "Size", -1),
+                        IntStrict(declared, "Bitmap ID", -1),
                         out Entry? entry)
                     && entry is not null)
                 {
@@ -224,9 +225,6 @@ public sealed class TerrainHeightBindings
             new TerrainHeightBinding(grid, originX, originY, 1.0 / (1L << scaleExponent)));
         return true;
     }
-
-    private static int GetInt32(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
 
     /// <summary>One published binding: a grid over one octree node.</summary>
     /// <param name="Level">The node's depth, which is the task's <c>Level</c>.</param>

@@ -110,7 +110,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
 
     /// <summary>How close two flame strengths must be before the mesh is not rebuilt.</summary>
     /// <remarks>
-    /// The strength (<c>RenderCVars.MuzzleFlash</c>) is baked into the flame's vertex colours, which
+    /// The strength (<c>CombatEffectCVars.MuzzleFlash</c>) is baked into the flame's vertex colours, which
     /// only resolve to 255 steps anyway — rebuilding for a smaller change than one step would churn
     /// the mesh while a settings slider drags.
     /// </remarks>
@@ -291,7 +291,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
                 * _gunFlameRotation;
         }
 
-        float flameStrength = RenderCVars.MuzzleFlash.Value;
+        float flameStrength = CombatEffectCVars.MuzzleFlash.Value;
 
         foreach (Part part in _parts)
         {

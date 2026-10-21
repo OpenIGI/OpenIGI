@@ -1,5 +1,6 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Input;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -109,6 +110,44 @@ public sealed class CommandPaletteBody : UiElement
 
     /// <summary>Gets or sets the generated sprites used for rounded rows.</summary>
     public UiSurfaces? Surfaces { get; set; }
+
+    /// <summary>Applies a frame's keys while the palette is open.</summary>
+    /// <param name="keyboard">The frame's keyboard.</param>
+    /// <param name="elapsed">Real seconds since the last call.</param>
+    /// <param name="control">Whether a control key is held.</param>
+    /// <param name="editor">The typing shared by every panel.</param>
+    /// <param name="close">Closes the palette without choosing.</param>
+    /// <param name="run">Acts on the selected entry and closes the palette.</param>
+    internal void HandleKeys(KeyboardState keyboard, float elapsed, bool control, PromptEditor editor, Action close, Action run)
+    {
+        if (keyboard.WasPressed(KeyCode.Escape))
+        {
+            close();
+            return;
+        }
+
+        if (keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter))
+        {
+            run();
+            return;
+        }
+
+        if (editor.Up.Poll(keyboard, KeyCode.Up, elapsed))
+        {
+            SelectedIndex--;
+        }
+
+        if (editor.Down.Poll(keyboard, KeyCode.Down, elapsed))
+        {
+            SelectedIndex++;
+        }
+
+        if (editor.EditText(Query, keyboard, elapsed, control, shift: false))
+        {
+            Refresh();
+            SelectedIndex = 0;
+        }
+    }
 
     private float RowHeight => _theme.RowHeight;
 

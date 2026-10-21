@@ -61,9 +61,9 @@ public sealed class LightmapBake
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public static LightmapBake Start(
         WorldScene scene,
-        IReadOnlyList<LightmapBaker.LightmapTarget> targets,
-        LightmapBaker.LightmapTriangle[] triangles,
-        LightmapBaker.LightmapBvh bvh,
+        IReadOnlyList<LightmapTarget> targets,
+        LightmapTriangle[] triangles,
+        LightmapBvh bvh,
         WorldRayCast cast,
         Vector3f sunDirection,
         Vector3f sunColour,
@@ -93,9 +93,9 @@ public sealed class LightmapBake
     /// <summary>The bake's phases, a slice at a time.</summary>
     private static IEnumerable<bool> Bake(
         WorldScene scene,
-        IReadOnlyList<LightmapBaker.LightmapTarget> targets,
-        LightmapBaker.LightmapTriangle[] triangles,
-        LightmapBaker.LightmapBvh bvh,
+        IReadOnlyList<LightmapTarget> targets,
+        LightmapTriangle[] triangles,
+        LightmapBvh bvh,
         WorldRayCast cast,
         Vector3f sunDirection,
         Vector3f sunColour,

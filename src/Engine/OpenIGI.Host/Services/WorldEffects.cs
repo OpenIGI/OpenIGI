@@ -135,7 +135,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         Particles?.Draw(eye, projection, blend);
 
         // And the original's own: concrete1.spr dust, the chips it knocked loose, and blood.
-        if (RenderCVars.ImpactEffects.Value)
+        if (CombatEffectCVars.ImpactEffects.Value)
         {
             _retailImpacts?.Draw(eye, projection, blend);
         }
@@ -231,7 +231,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
     public void SpawnMissileTrails(params ReadOnlySpan<MissileSimulation> simulations)
     {
         bool haveSprite = _smoke is not null && _smoke.IsAvailable;
-        float intensity = Math.Max(1f, RenderCVars.ImpactParticles.Value);
+        float intensity = Math.Max(1f, CombatEffectCVars.ImpactParticles.Value);
         foreach (MissileSimulation simulation in simulations)
         {
             SpawnMissileTrail(simulation, haveSprite, intensity);

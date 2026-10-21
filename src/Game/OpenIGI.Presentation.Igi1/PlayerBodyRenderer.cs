@@ -23,8 +23,8 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Physics;
-using Group = OpenIGI.Presentation.Igi1.SoldierRenderer.Group;
-using Member = OpenIGI.Presentation.Igi1.SoldierRenderer.Member;
+using Group = OpenIGI.Presentation.Igi1.SoldierGroup;
+using Member = OpenIGI.Presentation.Igi1.SoldierMember;
 
 namespace OpenIGI.Presentation.Igi1;
 

@@ -4,6 +4,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -129,9 +130,9 @@ public sealed class TerrainLightBindings
                     || !TryCreate(
                         pages,
                         new Vector3d(metres.X * WorldScene.UnitsPerMetre, metres.Y * WorldScene.UnitsPerMetre, 0d),
-                        GetInt32(declared, "Level"),
-                        GetInt32(declared, "Size"),
-                        GetInt32(declared, "TextureIndex"),
+                        IntStrict(declared, "Level", -1),
+                        IntStrict(declared, "Size", -1),
+                        IntStrict(declared, "TextureIndex", -1),
                         out Entry? entry)
                     || entry is null)
                 {
@@ -273,9 +274,6 @@ public sealed class TerrainLightBindings
             new TerrainLightBinding(page, minX, minY, 1.0 / span, 0.5 / size));
         return true;
     }
-
-    private static int GetInt32(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
 
     /// <summary>One published binding: a page over one octree cell.</summary>
     /// <param name="Level">The cell's depth, which is the task's <c>Level</c>.</param>

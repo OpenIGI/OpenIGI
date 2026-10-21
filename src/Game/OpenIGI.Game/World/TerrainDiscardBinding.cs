@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -66,7 +67,7 @@ public sealed class TerrainDiscardBinding
 
             if (TerrainDiscardRegion.TryCreate(
                     position,
-                    GetInt32(declared, "Level"),
+                    IntStrict(declared, "Level", -1),
                     out TerrainDiscardRegion? region)
                 && region is not null)
             {
@@ -121,8 +122,5 @@ public sealed class TerrainDiscardBinding
 
         return false;
     }
-
-    private static int GetInt32(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
 
 }

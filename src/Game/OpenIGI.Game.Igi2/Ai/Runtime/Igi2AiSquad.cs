@@ -7,51 +7,6 @@ using OpenIGI.Scripting.Qvm;
 
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
-/// <summary>One of a squad's two teams, <c>AISquadTeam_s</c>: up to eight minds, the first its leader.</summary>
-public sealed class Igi2AiSquadTeam
-{
-    /// <summary>The most minds a team holds.</summary>
-    public const int Capacity = 8;
-
-    /// <summary>Gets its minds, the leader first.</summary>
-    public List<Igi2HumanAi> Members { get; } = [];
-
-    /// <summary>Gets or sets how it fires, <c>eFiringMode</c>: one fires on the squad's order.</summary>
-    public int FiringMode { get; set; } = 1;
-
-    /// <summary>Gets its leader, or <see langword="null"/>.</summary>
-    public Igi2HumanAi? Leader => Members.Count > 0 ? Members[0] : null;
-
-    /// <summary>Makes the member at an index the leader, the old leader taking its place (<c>AISquad_MakeTeamLeader</c>).</summary>
-    /// <param name="index">The index.</param>
-    public void MakeLeader(int index) => (Members[0], Members[index]) = (Members[index], Members[0]);
-}
-
-/// <summary>An event a squad was told of, <c>AISquadEventContext_s</c>: who heard it, about what, where and from which way.</summary>
-public sealed class Igi2AiSquadEvent
-{
-    /// <summary>Gets or sets its kind, an <c>AIEVENT_*</c>.</summary>
-    public int Kind { get; set; }
-
-    /// <summary>Gets or sets its rank; a higher one is held nearer the front.</summary>
-    public int Priority { get; set; }
-
-    /// <summary>Gets the members who heard it, up to eight.</summary>
-    public List<Igi2HumanAi> Receivers { get; } = [];
-
-    /// <summary>Gets or sets what it is about, or <see langword="null"/>.</summary>
-    public object? Reference { get; set; }
-
-    /// <summary>Gets or sets where it happened.</summary>
-    public Vector3d Position { get; set; }
-
-    /// <summary>Gets or sets the way it came from.</summary>
-    public Vector3f Direction { get; set; }
-
-    /// <summary>Gets or sets its kind-specific integer, <c>uSpecificData</c>.</summary>
-    public int SpecificInt { get; set; }
-}
-
 /// <summary>
 /// A squad's mind, I.G.I. 2's <c>AISquad_s</c> at run time: its soldiers' minds in up to two teams, the events its members report
 /// (which its script handles), the enemies they share, a stack of up to four squad actions, and the timers that keep it tense.
@@ -974,35 +929,4 @@ public sealed partial class Igi2AiSquad
 
         top.Run(this);
     }
-}
-
-/// <summary>The squad voice lines, <c>AISquad_aazVoiceTable</c> as <c>AISquad_InitVoiceTable</c> fills it: four takes of each of twenty lines.</summary>
-public static class Igi2AiSquadVoices
-{
-    private static readonly string[] Table =
-    [
-        "GV_01", "GV_02", "GV_01", "GV_02", "GV_05", "GV_06", "GV_07", "GV_05", "GV_11", "GV_11", "GV_11", "GV_11",
-        "GV_13", "GV_13", "GV_13", "GV_13", "GV_15", "GV_16", "GV_17", "GV_15", "GV_19", "GV_19", "GV_19", "GV_19",
-        "GV_26", "GV_27", "GV_26", "GV_27", "GV_30", "GV_31", "GV_30", "GV_31", "GV_34", "GV_35", "GV_36", "GV_34",
-        "GV_40", "GV_41", "GV_40", "GV_41", "GV_47", "GV_48", "GV_47", "GV_48", "GV_62", "GV_63", "GV_64", "GV_66",
-        "GV_75", "GV_76", "GV_75", "GV_76", "GV_80", "GV_81", "GV_82", "GV_80", "GV_84", "GV_84", "GV_84", "GV_84",
-        "GV_49", "GV_49", "GV_49", "GV_49", "GV_87", "GV_88", "GV_89", "GV_90", "GV_91", "GV_92", "GV_93", "GV_94",
-        "GV_60", "GV_60", "GV_60", "GV_60", string.Empty, string.Empty, string.Empty, string.Empty,
-    ];
-
-    private static readonly bool[] Lone =
-    [
-        true, true, true, true, false, true, false, false, false, false, false, true, true, false, true, false, false, false, false, false,
-    ];
-
-    /// <summary>A take of a line.</summary>
-    /// <param name="sample">The line.</param>
-    /// <param name="take">The take, nought to three.</param>
-    /// <returns>The sound's name, without its voice.</returns>
-    public static string Take(int sample, int take) => Table[(4 * sample) + take];
-
-    /// <summary>Whether a lone soldier keeps a line to himself, <c>AISquad_aisVoiceDontPlayForSingleAI</c>.</summary>
-    /// <param name="sample">The line.</param>
-    /// <returns><see langword="true"/> when he does.</returns>
-    public static bool NotForLoneSoldier(int sample) => Lone[sample];
 }

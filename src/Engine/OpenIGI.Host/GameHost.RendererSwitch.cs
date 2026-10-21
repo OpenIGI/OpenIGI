@@ -124,8 +124,8 @@ public sealed partial class GameHost
     /// </remarks>
     private float SwitchedHour() =>
         _session.Mission is null ? -1f
-        : RenderCVars.DayNightCycle.Value ? _timeOfDay.DayNight.TimeHours
-        : RenderCVars.TimeOfDay.Value;
+        : ExposureCVars.DayNightCycle.Value ? _timeOfDay.DayNight.TimeHours
+        : ExposureCVars.TimeOfDay.Value;
 
     /// <summary>Where the view is now, or null where there is no mission to be anywhere in.</summary>
     private RendererSwitchPose? CurrentPose()
@@ -162,7 +162,7 @@ public sealed partial class GameHost
 
         // The hour the sun was at, which the loader lights the level for; the campaign's choice only where
         // there was no lit level to read one from.
-        RenderCVars.TimeOfDay.Value = resume.TimeHours >= 0f ? resume.TimeHours : resume.Conditions.StartHour;
+        ExposureCVars.TimeOfDay.Value = resume.TimeHours >= 0f ? resume.TimeHours : resume.Conditions.StartHour;
 
         // The picture the other renderer last showed, up on this one before anything else is, so the
         // switch reads as that picture holding still rather than as a load.

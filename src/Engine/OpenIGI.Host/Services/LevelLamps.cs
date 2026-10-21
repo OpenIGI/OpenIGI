@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
@@ -264,6 +264,91 @@ internal sealed class LevelLamps(IGraphicsDevice device, ILevelLampsHost host) :
             // second after one switched.
             device.NoteLampLevelsChanged();
         }
+    }
+
+    // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
+    // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
+    private readonly int[] _nearestOrder = new int[DeferredLocalLight.Maximum];
+    private readonly float[] _nearestRank = new float[DeferredLocalLight.Maximum];
+
+    /// <summary>Gets the fixtures the last <see cref="SelectNearest"/> chose, nearest first.</summary>
+    public ReadOnlySpan<int> NearestOrder => _nearestOrder;
+
+    /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
+    /// <param name="eye">Where the camera stands, in world metres.</param>
+    /// <param name="range">Unused by the ranking; see the remarks on why it must not scale it.</param>
+    /// <returns>How many entries of <see cref="NearestOrder"/> are valid.</returns>
+    /// <remarks>
+    /// <para>
+    /// A level's lamps outnumber the shader's array several times over, so this is a choice and not a
+    /// truncation. Each fixture is ranked by how far OUTSIDE its own reach the camera stands: a lamp the
+    /// camera is inside ranks negative and always makes the cut, and beyond that a long fluorescent
+    /// batten twenty metres off beats a desk lamp fifteen metres off, which is the right way round
+    /// because reach is what decides whether a lamp can light anything the player can see.
+    /// </para>
+    /// <para>
+    /// The camera's own position rather than the frustum: a lamp behind the player still lights the wall
+    /// in front of them, and culling to what is on screen would switch that light off as they turned.
+    /// </para>
+    /// <para>
+    /// A running insertion into an array of thirty-two rather than a sort of the whole list. The list is
+    /// a few hundred long and this runs every frame; an insertion sort over a fixed, tiny destination is
+    /// linear in the input and allocates nothing, where sorting the input is neither.
+    /// </para>
+    /// </remarks>
+    public int SelectNearest(Vector3d eye, float range)
+    {
+        int kept = 0;
+
+        for (int i = 0; i < host.Gi.LightFixtures.Count; i++)
+        {
+            LightFixture fixture = host.Gi.LightFixtures[i];
+
+            // A lamp that has finished going out is not a dim light, it is not a light: passed over here
+            // rather than submitted at zero, because the shader's array is a budget and a dark fixture
+            // holding a slot switches a real one at the end of the corridor off instead.
+            if (host.Gi.LampSwitchboard is { } board && board.LevelOf(i) <= 0f)
+            {
+                continue;
+            }
+
+            double dx = fixture.Position.X - eye.X;
+            double dy = fixture.Position.Y - eye.Y;
+            double dz = fixture.Position.Z - eye.Z;
+            // The fixture's OWN size, not its size times the reach multiplier. Scaling this by the
+            // multiplier meant raising r_local_light_range -- which people raise to make lamps carry
+            // further -- also multiplied how much a fixture's size counted for a slot, so the big
+            // battens took the budget and the small near fittings went dark EARLIER than before. Reach
+            // decides how far a lamp lights; this decides which lamps are worth submitting, and the two
+            // should not move together.
+            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - fixture.Radius;
+
+            // Nothing to insert: this fixture is further out than every one already held, and the array
+            // is full. The common case by far once the level is more than thirty-two lamps deep.
+            if (kept == _nearestOrder.Length && rank >= _nearestRank[kept - 1])
+            {
+                continue;
+            }
+
+            int at = Math.Min(kept, _nearestOrder.Length - 1);
+
+            while (at > 0 && _nearestRank[at - 1] > rank)
+            {
+                _nearestRank[at] = _nearestRank[at - 1];
+                _nearestOrder[at] = _nearestOrder[at - 1];
+                at--;
+            }
+
+            _nearestRank[at] = rank;
+            _nearestOrder[at] = i;
+
+            if (kept < _nearestOrder.Length)
+            {
+                kept++;
+            }
+        }
+
+        return kept;
     }
 
     /// <summary>Gets which lamps the daylight switches, for the lighting dump.</summary>

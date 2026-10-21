@@ -116,7 +116,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         else if (device.AccelerationStructures is { } structures)
         {
             _ownedTracedWorld = new RayTracing.TracedWorld(
-                device, structures, RenderCVars.ReflectionTexture.Value, logger ?? NullLogger.Instance);
+                device, structures, ReflectionCVars.ReflectionTexture.Value, logger ?? NullLogger.Instance);
             _tracedWorld = _ownedTracedWorld;
         }
 
