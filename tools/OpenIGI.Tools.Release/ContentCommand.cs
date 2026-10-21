@@ -13,8 +13,12 @@ internal static class ContentCommand
 
     private const string Store = "[--ssh <host> [--remote <cmd>] [--service <url>] | --to-dir <dir> | --upload-file <tar.gz>]";
 
+    // What a mod's mod.json says of it, which the command line may not say otherwise.
+    private static readonly string[] ModManifestOptions = ["--pack", "--version", "--title", "--summary", "--game", "--min-game", "--platform"];
+
     internal const string Usage =
         "usage: content publish <pack folder> --pack <id> --version <v> --title <name> --summary <text> (--game <id> | --kind runtime --platform <rid>[,<rid>...]) [--min-game <v>] [--cache <dir>] [--dry-run] " + Store + "\n"
+        + "       content publish <mod folder> --kind mod [--source <repository> --commit <sha>] [--cache <dir>] [--dry-run] " + Store + "\n"
         + "       content list " + Store + "\n"
         + "       content edit <id> [--title <name>] [--summary <text>] [--thumbnail <png|jpg|webp> | --no-thumbnail] " + Store + "\n"
         + "       content delete <id> [--version <v>] --yes " + Store;
@@ -84,24 +88,39 @@ internal static class ContentCommand
         {
             null or "overlay" => ContentKind.Overlay,
             "runtime" => ContentKind.Runtime,
-            { } other => throw new ArgumentException($"'{other}' is not a pack kind: overlay or runtime."),
+            "mod" => ContentKind.Mod,
+            { } other => throw new ArgumentException($"'{other}' is not a pack kind: overlay, runtime or mod."),
         };
 
-        // A runtime pack is the engine's, not a game's: published for the one id no game has, so that no
-        // launcher from before kinds ever offers it.
-        string game = kind == ContentKind.Runtime
-            ? options.GetValueOrDefault("--game") ?? RuntimePacks.Game
-            : Require(options, "--game");
+        ContentPublish.Details details;
+        if (kind == ContentKind.Mod)
+        {
+            // A mod says what it is in its mod.json; nothing on the command line may say otherwise.
+            if (ModManifestOptions.FirstOrDefault(options.ContainsKey) is { } given)
+            {
+                throw new ArgumentException($"{given} is the mod's mod.json's to say, not the command line's.");
+            }
 
-        ContentPublish.Details details = new(
-            Require(options, "--pack"),
-            Require(options, "--version"),
-            Require(options, "--title"),
-            Require(options, "--summary"),
-            game,
-            options.GetValueOrDefault("--min-game"),
-            kind,
-            options.GetValueOrDefault("--platform")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            details = ContentPublish.ForMod(folder, options.GetValueOrDefault("--source"), options.GetValueOrDefault("--commit"));
+        }
+        else
+        {
+            // A runtime pack is the engine's, not a game's: published for the one id no game has, so that no
+            // launcher from before kinds ever offers it.
+            string game = kind == ContentKind.Runtime
+                ? options.GetValueOrDefault("--game") ?? RuntimePacks.Game
+                : Require(options, "--game");
+
+            details = new(
+                Require(options, "--pack"),
+                Require(options, "--version"),
+                Require(options, "--title"),
+                Require(options, "--summary"),
+                game,
+                options.GetValueOrDefault("--min-game"),
+                kind,
+                options.GetValueOrDefault("--platform")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
 
         // The cache keeps every chunk's compressed object between runs, so publishing the next version of a
         // pack compresses only the chunks that changed.

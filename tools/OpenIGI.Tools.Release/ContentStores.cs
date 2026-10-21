@@ -220,8 +220,20 @@ internal sealed class SshStore(string target, string remote, Uri service) : ICon
     public IReadOnlyList<ContentPack> List()
     {
         using HttpClient http = new();
-        string json = http.GetStringAsync(new Uri(service, "v1/content")).GetAwaiter().GetResult();
-        return ReleaseJson.ReadContentIndex(json).Packs;
+        List<ContentPack> packs = [.. ReleaseJson.ReadContentIndex(
+            http.GetStringAsync(new Uri(service, "v1/content")).GetAwaiter().GetResult()).Packs];
+
+        // A service from before mods has no mods index, and so no mods.
+        try
+        {
+            packs.AddRange(ReleaseJson.ReadContentIndex(
+                http.GetStringAsync(new Uri(service, ModPacks.IndexPath)).GetAwaiter().GetResult()).Packs);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+        }
+
+        return packs;
     }
 
     /// <inheritdoc/>
