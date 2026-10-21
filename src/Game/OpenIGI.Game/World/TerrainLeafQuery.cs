@@ -39,7 +39,7 @@ public readonly record struct TerrainLeaf(
 /// the same three 6-bit fields biased by 24 that <see cref="TerrainPackedVertex"/> already decodes, at
 /// the same <c>extent / 24</c> scale, and applies the orientation to X and Y only — never Z — exactly
 /// as <see cref="TerrainOrientation.Transform"/> does. Together with the shared octree
-/// (<c>collision.md</c> §2) that means a collision query and a drawn triangle read one set of numbers.
+/// that means a collision query and a drawn triangle read one set of numbers.
 /// </para>
 /// </remarks>
 public static class TerrainLeafQuery

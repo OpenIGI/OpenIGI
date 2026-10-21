@@ -11,8 +11,8 @@ namespace OpenIGI.Game.Igi1.Player;
 /// Every human skeleton the game ships (<c>000</c>, <c>001</c>, <c>002</c>, <c>003</c>, <c>006</c>) has
 /// the same 33-bone hierarchy, and it groups as: bones 0–3 the pelvis and spine, 4–7 the neck and head
 /// off the spine top, 8–13 and 14–19 the two arms off the spine top, <b>20–22 the weapon chain off spine
-/// bone 1</b>, and 23–27 and 28–32 the two legs off the root (the original,
-/// measured over 535 skinned bodies).
+/// bone 1</b>, and 23–27 and 28–32 the two legs off the root (measured over 535
+/// skinned bodies).
 /// </para>
 /// <para>
 /// That shape is why the split is on <see cref="Bone"/> and could not be anywhere else. Bone 1's subtree

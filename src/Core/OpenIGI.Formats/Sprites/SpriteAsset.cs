@@ -10,7 +10,7 @@ namespace OpenIGI.Formats.Sprites;
 /// <remarks>
 /// The original has one loader for sprites and fonts alike (<c>Sprite_Load</c>, <c>0x4B6720</c>) and
 /// one object shape for both, so this type covers both too. A font is a sprite whose frames are glyphs
-/// and which carries a <see cref="CharacterMap"/>; see the original.
+/// and which carries a <see cref="CharacterMap"/>.
 /// </remarks>
 public sealed class SpriteAsset
 {

@@ -6,7 +6,7 @@ namespace OpenIGI.Game.World;
 /// <summary>One collision mesh level, unpacked into the arrays the original's ray handlers walk.</summary>
 /// <remarks>
 /// The <c>HSMC</c> level header's faces (<c>ECFC</c>), vertices (<c>XTVC</c>), materials (<c>TAMC</c>) and sphere
-/// tree (<c>HPSC</c>), as the original lays them out.
+/// tree (<c>HPSC</c>), laid out as the original reads them.
 /// </remarks>
 public sealed class RetailRayMesh
 {
@@ -160,7 +160,7 @@ public static class RetailModelRay
         bool prevFront = result.Hit && result.HasFrontMaterial;
         bool hadHit = result.Hit;
 
-        // §5.2: the broad test, x against the unrounded radius.
+        // The broad test, x against the unrounded radius.
         float m12 = s2 < s1 ? s1 : s2;
         float smax = s0 <= m12 ? m12 : s0;
         X87 r = (X87)o.ModelRadius * smax;
@@ -172,7 +172,7 @@ public static class RetailModelRay
             return;
         }
 
-        // §5.3: the local ray.
+        // The local ray.
         Local(o, s, fromStart: true, out float lsx0, out float lsy0, out float lsz0);
         float lsx = ((X87)lsx0 / s0).F, lsy = ((X87)lsy0 / s0).F, lsz = ((X87)lsz0 / s0).F;
         Local(o, e, fromStart: false, out float lex0, out float ley0, out float lez0);
@@ -238,7 +238,7 @@ public static class RetailModelRay
             return;
         }
 
-        // §5.8: the recomputed, unnormalised normal, carried into the world.
+        // The recomputed, unnormalised normal, carried into the world.
         FaceNormal(mesh, search.Face, mirror: false, out float nx, out float ny, out float nz);
         float wx = ((X87)m[2] * nz + (X87)m[1] * ny + (X87)m[0] * nx).F;
         float wy = ((X87)nx * m[3] + (X87)m[5] * nz + (X87)m[4] * ny).F;
@@ -281,7 +281,7 @@ public static class RetailModelRay
     }
 
     /// <summary>
-    /// §5.4–§5.7: the sphere-tree walk with its quirk and the face test of every node it reaches, on the engine's shared search with
+    /// The sphere-tree walk with its quirk and the face test of every node it reaches, on the engine's shared search with
     /// this build's pad, tie and comparisons (<see cref="MeshRayDialect.Igi1"/>), summing the plane z, y, x and the spheres z, x, y.
     /// </summary>
     /// <param name="mesh">The mesh's faces and materials.</param>
@@ -346,7 +346,7 @@ public static class RetailModelRay
         }
     }
 
-    /// <summary>§5.8's normal: the face's cross product with the register differences, not unit length.</summary>
+    /// <summary>The normal: the face's cross product with the register differences, not unit length.</summary>
     internal static void FaceNormal(RetailRayMesh mesh, int f, bool mirror, out float nx, out float ny, out float nz, float[]? vertices = null)
     {
         float[] v = vertices ?? mesh.Vertices;

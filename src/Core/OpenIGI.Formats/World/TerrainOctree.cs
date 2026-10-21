@@ -10,8 +10,7 @@ namespace OpenIGI.Formats.World;
 /// <para>
 /// The tree covers a cube of <c>±<see cref="RootExtent"/></c> engine units about the world origin. It is
 /// not a coordinate table: a node's position is <em>accumulated during the descent</em>, halving the
-/// octant offset at each step, which is why nothing in the file looks like a position. See
-/// the original.
+/// octant offset at each step, which is why nothing in the file looks like a position.
 /// </para>
 /// <para>
 /// The root is record <b>1</b>, not record 0 — <c>sub_4D14E0</c> starts at <c>ctr + 32</c>. Record 0 is

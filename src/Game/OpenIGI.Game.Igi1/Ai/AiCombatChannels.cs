@@ -49,10 +49,10 @@ public enum AiCombatChannel
 
     /// <summary>Close combat — <c>"Stand - CloseCombat Trigger"</c>.</summary>
     /// <remarks>
-    /// <b>Correction to §11.2</b>, which recorded this as "unread — reached only from a dead branch",
+    /// <b>Correction</b> — an earlier reading recorded this as "unread — reached only from a dead branch",
     /// because the only caller then known was the <c>ai+15836 == 5</c> branch of the guard per-tick that
-    /// nothing can enter (§10.5). It <i>is</i> reached: <c>0x48DBB0</c> raises it for <b>every patrol
-    /// type</b> whenever the target comes inside <c>HumanAI+15792</c>, 1.5 m. See §13.7.
+    /// nothing can enter. It <i>is</i> reached: <c>0x48DBB0</c> raises it for <b>every patrol
+    /// type</b> whenever the target comes inside <c>HumanAI+15792</c>, 1.5 m.
     /// </remarks>
     CloseCombat = 9,
 }

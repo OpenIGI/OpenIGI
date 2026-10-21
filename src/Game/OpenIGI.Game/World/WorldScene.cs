@@ -383,8 +383,7 @@ public sealed class WorldScene
     /// <summary>Gets the ladders the level places, for the player and AI to climb.</summary>
     /// <remarks>
     /// Collected from the <c>TASKTYPE_LADDER</c> magic objects a building attaches, with their foot and
-    /// head taken from the ladder model's magic vertices 2 and 3. See
-    /// the original.
+    /// head taken from the ladder model's magic vertices 2 and 3.
     /// </remarks>
     public IReadOnlyList<LadderPlacement> Ladders { get; }
 
@@ -1413,7 +1412,7 @@ public sealed class WorldScene
 
     /// <summary>Places a model-space magic vertex in the world, in engine units.</summary>
     /// <remarks>
-    /// <b>Verified against the running game</b> (a probe: the ladder mount computed to the byte from
+    /// <b>Verified against the running game</b> (the ladder mount computed to the byte from
     /// this): the magic vertex is rotated as <c>v · M</c> (<see cref="Matrix3f.Transform(Vector3f)"/>), NOT
     /// the transpose. Using the transpose negated the vertex's X and Y (Z survives on an axis-aligned
     /// ladder), which stood the climbing body ~6 cm off the rungs. Unlike an attachment offset, a magic

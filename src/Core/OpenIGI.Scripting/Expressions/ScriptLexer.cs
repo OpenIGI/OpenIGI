@@ -8,8 +8,7 @@ namespace OpenIGI.Scripting.Expressions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Transcribed from <c>Expr_NextToken</c> (<c>0x4BFC70</c>). See
-/// the original for the token classes and operator ids.
+/// Transcribed from <c>Expr_NextToken</c> (<c>0x4BFC70</c>).
 /// </para>
 /// <para>
 /// Two behaviours are worth naming because they are easy to get wrong:

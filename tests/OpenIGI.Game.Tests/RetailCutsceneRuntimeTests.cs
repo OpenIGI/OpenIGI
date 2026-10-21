@@ -775,8 +775,8 @@ public sealed class RetailCutsceneRuntimeTests
 
         // The retail sample is taken when CutScene_1202's update begins with clock 121 -- after the trains ahead
         // of it in the tree (ConditionalContainer_4005) have already moved that frame. The same state here is
-        // the end of the tick that brings the scene to 122 (the original; the walk runs the
-        // containers before their scenes, so the train's first step comes a tick after the scene starts).
+        // the end of the tick that brings the scene to 122 (the walk runs the containers before their scenes,
+        // so the train's first step comes a tick after the scene starts).
         while (runtime.ActiveScene?.Ticks < 122)
         {
             runtime.Tick();

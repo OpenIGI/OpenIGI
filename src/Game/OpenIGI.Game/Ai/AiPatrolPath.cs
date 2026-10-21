@@ -37,7 +37,7 @@ public sealed class AiPatrolPath
     /// <summary>Gets the index of the <see cref="AiPatrolCommandKind.End"/> marker, or <c>-1</c>.</summary>
     /// <remarks>
     /// Everything before it runs once; everything after it is the looping body. A path with none never
-    /// wraps at all — the cursor's fallback then aims at the first command instead (§7.3).
+    /// wraps at all — the cursor's fallback then aims at the first command instead.
     /// </remarks>
     public int EndIndex
     {
@@ -58,7 +58,7 @@ public sealed class AiPatrolPath
     /// <summary>Gets a value indicating whether every command is one a human patrol can execute.</summary>
     /// <remarks>
     /// False means the path contains a <see cref="AiPatrolCommandKind.SetSpeed"/>, which would wedge a
-    /// human walker on that step forever (§7.5). Vehicles are unaffected.
+    /// human walker on that step forever. Vehicles are unaffected.
     /// </remarks>
     public bool IsWalkableByAHuman =>
         Array.TrueForAll(_commands, c => c.Kind == AiPatrolCommandKind.End || c.Kind.IsExecutableByAHuman());

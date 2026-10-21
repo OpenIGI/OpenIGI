@@ -16,7 +16,7 @@ namespace OpenIGI.Engine.Tests.Tasks;
 /// <remarks>
 /// <para>
 /// A measurement, not an assertion. The port has never read the directional-light tasks, <b>no
-/// re-note records their parameter names</b>, and the one unit claim available — that a script
+/// record of their parameter names exists</b>, and the one unit claim available — that a script
 /// <c>Angle</c> is radians — exists in a doc comment rather than in anything derived from the binary.
 /// Interpreting nine numbers per keyframe on that basis would be guessing.
 /// </para>

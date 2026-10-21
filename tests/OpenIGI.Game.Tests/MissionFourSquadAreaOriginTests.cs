@@ -20,9 +20,9 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// An area counts a human at its origin, <c>Human+32</c>: the criteria callbacks <c>0x460A10</c> and
-/// <c>0x460A70</c> pass <c>+32</c> to the box test <c>0x5042B0</c>. The position here is the one a probe's
-/// <c>patrolwatch</c> hook read off Harrison on retail's level tick 3819, the first tick he is inside; the
-/// container opened on the same tick. The box's floor sits 3308 units under that origin and above his feet,
+/// <c>0x460A70</c> pass <c>+32</c> to the box test <c>0x5042B0</c>. The position here is the one read off
+/// Harrison in the running original on retail's level tick 3819, the first tick he is inside; the container
+/// opened on the same tick. The box's floor sits 3308 units under that origin and above his feet,
 /// so a runtime fed the feet never counts him (issue #200).
 /// </remarks>
 public sealed class MissionFourSquadAreaOriginTests

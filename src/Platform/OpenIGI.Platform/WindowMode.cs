@@ -5,8 +5,8 @@ namespace OpenIGI.Platform;
 /// </summary>
 /// <remarks>
 /// The original only knows two of these: <c>WinMain</c> creates a <c>WS_POPUP</c> window covering the
-/// screen unless <c>-window</c> was passed, and the Direct3D device is then created in exclusive mode
-///. <see cref="BorderlessFullscreen"/> is an addition —
+/// screen unless <c>-window</c> was passed, and the Direct3D device is then created in exclusive mode.
+/// <see cref="BorderlessFullscreen"/> is an addition —
 /// the same screen-covering picture without taking the display away from the desktop compositor, which
 /// is what alt-tabbing out of a modern build is expected to feel like.
 /// </remarks>

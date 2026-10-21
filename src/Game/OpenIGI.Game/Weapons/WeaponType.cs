@@ -11,8 +11,7 @@ namespace OpenIGI.Game.Weapons;
 /// loader happened to read first.
 /// </para>
 /// <para>
-/// Property order is argument order, which is what a reader has to get right. See
-/// the original.
+/// Property order is argument order, which is what a reader has to get right.
 /// </para>
 /// </remarks>
 public sealed class WeaponType

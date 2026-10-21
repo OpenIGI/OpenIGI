@@ -10,8 +10,7 @@ namespace OpenIGI.Formats.Textures;
 /// <para>
 /// This is a transcription of the original's <c>DownloadTexture</c> (<c>0x50AD90</c>) and the four
 /// converters it dispatches to — <c>0x517FD0</c> (paletted), <c>0x517C90</c> (<c>A1R5G5B5</c>),
-/// <c>0x517F00</c> (32-bit copy) and <c>0x517DD0</c> (<c>R5G6B5</c>). See
-/// the original.
+/// <c>0x517F00</c> (32-bit copy) and <c>0x517DD0</c> (<c>R5G6B5</c>).
 /// </para>
 /// <para>
 /// The channel order is the point of this class. Every converter writes blue to byte 0 and red to

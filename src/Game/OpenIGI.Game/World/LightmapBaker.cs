@@ -17,7 +17,7 @@ namespace OpenIGI.Game.World;
 /// The successor to <see cref="IrradianceProbeBaker"/>. That volume bake has a hard quality ceiling --
 /// it traces the colourless collision mesh and stores a low-frequency grey L1-SH field at metre spacing,
 /// so its bounce is monochrome, flat and coarse. This bakes into the meshes' own <b>lightmap UV channel</b>
-/// (the second UV set format-1 and format-3 meshes carry, <c>world-loading.md §4.3</c>), so every texel is
+/// (the second UV set format-1 and format-3 meshes carry), so every texel is
 /// a real surface point that can be path traced to a coloured, high-resolution, multi-bounce answer. It
 /// is the right trade for I.G.I.: the geometry is static and the sun is fixed per mission, so the whole
 /// thing bakes once and is cached.
@@ -27,9 +27,8 @@ namespace OpenIGI.Game.World;
 /// rasterises the draw record's triangles into its lightmap page's UV space and records, per covered
 /// texel, the world position and normal it belongs to -- the map every later phase traces from. The
 /// tracing (direct sun and sky, then the multi-bounce colour bleed), the BVH it traces against, seam
-/// dilation and the runtime swap are the following phases; see
-/// the original. A <see cref="DumpTargetNormals"/> is here so the
-/// texel map can be verified on its own -- a correct one reads as a UV-space unwrap of the object with
+/// dilation and the runtime swap are the following phases. A <see cref="DumpTargetNormals"/> is here so
+/// the texel map can be verified on its own -- a correct one reads as a UV-space unwrap of the object with
 /// its world normals -- before any light is traced.
 /// </para>
 /// </remarks>
@@ -44,7 +43,7 @@ public static class LightmapBaker
     /// <summary>One page of lightmap texels for one draw record of one placed object.</summary>
     /// <remarks>
     /// A record, not the model: a model's draw records can name different lightmap pages, and a page is
-    /// what an <c>.olm</c> image is (<c>world-loading.md §4.5</c>). The grid is row-major, width fastest.
+    /// what an <c>.olm</c> image is. The grid is row-major, width fastest.
     /// </remarks>
     public sealed class LightmapTarget
     {
@@ -521,8 +520,8 @@ public static class LightmapBaker
         }
     }
 
-    // A record's indices are relative to its BaseVertex on the lightmapped format and absolute otherwise
-    // (world-loading.md §4.4); ResolveVertex hides that so the caller always gets the right vertex.
+    // A record's indices are relative to its BaseVertex on the lightmapped format and absolute otherwise;
+    // ResolveVertex hides that so the caller always gets the right vertex.
     private static MefVertex ResolveVertex(ReadOnlySpan<MefVertex> vertices, MefDrawRecord record, ushort index)
     {
         int vertexIndex = record.IndicesAreRelative ? record.BaseVertex + index : index;

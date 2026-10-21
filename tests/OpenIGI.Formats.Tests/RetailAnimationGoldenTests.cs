@@ -335,7 +335,7 @@ public sealed class RetailAnimationGoldenTests
     public void TheCyclicFlagIsTheOnlyBitEverSet()
     {
         // 0x4D5295 tests bit 31 and nothing else reads the word. If another bit ever appears, the
-        // flag is carrying more than the cyclic marker and §5.5 needs revisiting.
+        // flag is carrying more than the cyclic marker and the flag's reading needs revisiting.
         int cyclic = 0;
         int total = 0;
 

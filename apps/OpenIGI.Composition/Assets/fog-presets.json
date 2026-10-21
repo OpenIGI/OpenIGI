@@ -72,7 +72,7 @@
     },
     "8": {
       "$comment": [
-        "This level's authored sun is 55 degrees BELOW the horizon -- see rendering.md section 12.",
+        "This level's authored sun is 55 degrees BELOW the horizon.",
         "Nothing is lit by it, so the fog leans on ambient instead of pretending otherwise."
       ],
       "density": 0.016,

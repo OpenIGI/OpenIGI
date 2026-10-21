@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Player;
 /// <para>
 /// This is what replaces a walking-speed constant. A locomotion state names an animation
 /// (<see cref="HumanLocomotionStates"/>), the animation carries a <b>root-motion</b> translation track
-/// (<c>animation.md</c> §4 — its last key sits one frame step past the duration precisely so a looping
+/// (its last key sits one frame step past the duration precisely so a looping
 /// cycle yields the whole cycle's travel), and the difference between two samples of that track is how
 /// far the body moved.
 /// </para>

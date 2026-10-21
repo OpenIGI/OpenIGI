@@ -10,7 +10,6 @@ namespace OpenIGI.Game.Tests;
 /// <summary>
 /// A player standing, walking, crouching, jumping and falling on real terrain.
 /// </summary>
-/// <remarks>See the original and the original.</remarks>
 public sealed class PlayerBodyTests
 {
     private const double UnitsPerMetre = 4096.0;

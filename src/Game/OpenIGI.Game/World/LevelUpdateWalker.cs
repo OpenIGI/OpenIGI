@@ -9,8 +9,7 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// the original. The original has no grouped passes: <c>Flow_Update</c> walks the
-/// root's children, and a type that wants its subtree to tick walks its own children from inside its update
+/// The original has no grouped passes: <c>Flow_Update</c> walks the root's children, and a type that wants its subtree to tick walks its own children from inside its update
 /// (<c>Task_UpdateChildren</c>, <c>0x488700</c>), before, after or in the middle of its own work. So a task
 /// reads this tick's state from everything before it in the tree and last tick's from everything after.
 /// </para>

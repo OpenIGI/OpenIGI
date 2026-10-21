@@ -12,8 +12,8 @@ namespace OpenIGI.Game.Igi2;
 /// <para>
 /// The original declares each type with a parent (<c>QTask_NewQTaskType(name, size, parent)</c>) and copies the parent's
 /// handler table into it, so a type that links no handler of its own for an event answers it with its parent's. The
-/// title's classes follow the same tree, and an event handler is a virtual
-/// member here: a class overrides the handlers its retail type links and inherits the rest.
+/// title's classes follow the same tree, and an event handler is a virtual member here: a class overrides the handlers
+/// its retail type links and inherits the rest.
 /// </para>
 /// <para>
 /// A parameter list is inherited only where the original derives one (<c>ParameterList_Derive</c>); such a class carries

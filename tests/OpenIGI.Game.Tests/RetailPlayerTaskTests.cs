@@ -48,7 +48,7 @@ public sealed class RetailPlayerTaskTests
     [RequiresGameDataFact]
     public void TheSoldierCarriesASkeletonAndThePlayerDoesNot()
     {
-        // This is the level-data half of animation.md's finding that a model does not name its own
+        // This is the level-data half of the finding that a model does not name its own
         // skeleton. The soldier declares "Bone Heirachy" - misspelling and all - and a starting
         // animation; the player declares neither, because its constructor hard-codes skeleton 0.
         TaskTypeRegistry types = Load(1, out _);

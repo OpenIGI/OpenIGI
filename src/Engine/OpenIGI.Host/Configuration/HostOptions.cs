@@ -980,7 +980,7 @@ public readonly record struct HostOptions(
         options:
           -title <id>      The game to run: igi1 or igi2. Defaults to OPENIGI_TITLE, and
                            failing that to whichever is installed where the port can see
-                           it. I.G.I. 2's levels load and render; it has no gameplay yet.
+                           it. I.G.I. 2 is still in development.
           -game <dir>      Installation to read data from. Defaults to the chosen title's
                            own variable -- IGI_GAME_PATH for igi1, IGI2_GAME_PATH for
                            igi2 -- and failing that to an installation found beside the

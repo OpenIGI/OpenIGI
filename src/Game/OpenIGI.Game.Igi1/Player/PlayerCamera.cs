@@ -540,7 +540,7 @@ public sealed class PlayerCamera : IHostedPlayer
         }
 
         // Action 6 alone skips the clip forward by a random fraction, which is why two shots do not
-        // look identical. It sets the clip's CLOCK, not its rate -- see weapons.md section 20.
+        // look identical. It sets the clip's CLOCK, not its rate.
         if (action == WeaponAction.FireTimed)
         {
             _view.SkipTo(WeaponAnimationTable.TimedFireStart(_random.NextSingle()));

@@ -10,7 +10,7 @@ namespace OpenIGI.Formats.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// These assert the invariants that the M6 reverse-engineering pass established over the whole corpus —
+/// These assert the invariants that the reverse-engineering pass established over the whole corpus —
 /// 15 packs and 6795 models — rather than over a sample. Every one of them caught something: the
 /// byte-exact <c>INST</c> walk, the vertex stride derived from the D3D vertex format, the draw-record walk
 /// filling its chunk exactly, and above all the material slot bound to the <em>instance</em> rather than
@@ -54,7 +54,7 @@ public sealed class RetailWorldGoldenTests
                     Assert.InRange(material.Texture.Index, 0, pack.TextureNames.Count - 1);
 
                     // Every GTT entry in every retail pack says "no palette"; nothing shipped draws a
-                    // palettised surface. If this ever fails, re-read world-loading.md §3.3 first.
+                    // palettised surface. If this ever fails, re-check the palette reading first.
                     Assert.True(material.Palette.IsNone, $"{Path.GetFileName(path)} has a non-null palette id");
                 }
 

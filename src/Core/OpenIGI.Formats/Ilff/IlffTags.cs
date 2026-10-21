@@ -4,8 +4,7 @@ namespace OpenIGI.Formats.Ilff;
 
 /// <summary>The four-character tags used by ILFF containers.</summary>
 /// <remarks>
-/// Values are in file order. See <c>docs/formats/ilff.md</c> for the container layout and
-/// the original for the original parser anchors.
+/// Values are in file order. See <c>docs/formats/ilff.md</c> for the container layout.
 /// </remarks>
 public static class IlffTags
 {

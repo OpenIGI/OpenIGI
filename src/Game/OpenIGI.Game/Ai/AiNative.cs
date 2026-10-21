@@ -5,7 +5,7 @@ namespace OpenIGI.Game.Ai;
 /// The registrar picks one of three wrappers, each passing a different tag to the common
 /// <c>Script_RegisterNative</c> (<c>0x4BAAC0</c>): <c>0x4B8890</c> passes 0, <c>0x4B88C0</c> passes 1 and
 /// <c>0x4B88F0</c> passes 2. <b>The VM reads tags 0 and 1 identically</b> — its rule is "3 is a string, 2 is a
-/// float, anything else is an integer" (see <c>script-vm.md</c>) — so the split between
+/// float, anything else is an integer" — so the split between
 /// <see cref="Void"/> and <see cref="Int"/> is the engine author documenting intent, not a type the
 /// interpreter enforces. It is kept because it separates the eighteen actions from the getters exactly.
 /// </remarks>
@@ -27,7 +27,7 @@ public enum AiNativeReturn
 /// <param name="Return">What it hands back.</param>
 /// <param name="Address">The handler's address in the original, for the RE trail.</param>
 /// <remarks>
-/// An argument count is a <b>declaration</b>, and M2 established that the VM's arity check is not a
+/// An argument count is a <b>declaration</b>, and the VM's arity check is not a
 /// hard gate — a script that disagrees is a wire-arity error, not a value-count one. It is recorded here
 /// because it is how the eighteen actions are told apart from one another at a call site.
 /// </remarks>

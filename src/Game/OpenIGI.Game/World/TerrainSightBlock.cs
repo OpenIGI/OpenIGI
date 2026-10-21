@@ -9,7 +9,7 @@ namespace OpenIGI.Game.World;
 /// <remarks>
 /// <para>
 /// The original's ray cast (<c>0x4CDB20</c>) tests the terrain octree whenever the category mask's
-/// sign bit is set, and <b>both of the sight ray's passes send −1</b> (player.md §7.6) — so in retail a
+/// sign bit is set, and <b>both of the sight ray's passes send −1</b> — so in retail a
 /// hill hides you and takes the rounds fired at you. The port's collision index covers placed objects
 /// only, which let guards see and shoot straight through terrain.
 /// </para>

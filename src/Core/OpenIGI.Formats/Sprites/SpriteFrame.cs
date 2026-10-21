@@ -18,7 +18,7 @@ namespace OpenIGI.Formats.Sprites;
 /// <remarks>
 /// This is the original's 36-byte frame record, minus the texture pointer that a managed
 /// <see cref="SpriteAsset"/> replaces with an index. Field order and meanings come from
-/// <c>Sprite_SetFrame</c> (<c>0x4B6540</c>); see the original and §6.1.
+/// <c>Sprite_SetFrame</c> (<c>0x4B6540</c>).
 /// </remarks>
 public readonly record struct SpriteFrame(
     int TextureIndex,

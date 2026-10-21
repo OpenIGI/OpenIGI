@@ -40,7 +40,7 @@ public sealed class AiPatrolRoute
 
     /// <summary>Gets the index of the <see cref="AiPatrolCommandKind.End"/> once one has been passed — <c>+8</c>.</summary>
     /// <remarks>
-    /// This field does double duty and that is what makes §7.3's behaviour what it is: it is both the
+    /// This field does double duty and that is what makes the cursor's wrap behave as it does: it is both the
     /// target the peek falls back to when the command list runs out, <b>and</b> the marker that says the
     /// loop has already been entered once.
     /// </remarks>
@@ -168,7 +168,7 @@ public sealed class AiPatrolRoute
     /// the second time the list runs out, the peek returns the recorded
     /// <see cref="AiPatrolCommandKind.End"/>, the guard matches, and the cursor stops where it is. A patrol
     /// therefore runs its prologue, runs its loop body once more, and then repeats its final command. This
-    /// is read behaviour, not an interpretation: see §7.3.
+    /// is read behaviour, not an interpretation.
     /// </para>
     /// </remarks>
     public bool Advance()

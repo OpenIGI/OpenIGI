@@ -41,9 +41,9 @@ public enum AiSoldierActivity
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the integration of what the original settled: the nav graph and its precomputed route
-/// table (§1), the event pump's arbitration (§3), the two view cones (§4), the detection cascade's three gates
-/// (§5) and the patrol step machine and waypoint steering (§7). Every rule and constant here is read; what is
+/// This is the integration of what is settled about the original's AI: the nav graph and its precomputed route
+/// table, the event pump's arbitration, the two view cones, the detection cascade's three gates and the patrol
+/// step machine and waypoint steering. Every rule and constant here is read; what is
 /// <b>not</b> yet read is the QVM behaviour script that decides <em>which</em> action to take, so the choice
 /// between patrolling and engaging is made here directly rather than by running <c>guard.qsc</c>.
 /// </para>
@@ -779,7 +779,7 @@ public sealed class Igi1HumanAi
     /// it is heard a thirtieth as far. The event carries the shot's position, so a script can ask
     /// <c>AIFunction_GetEventDistance</c>, and it is pumped on the soldier's next tick like any other event —
     /// so a guard already busy with a higher-priority event this tick never learns of the shot, which is the
-    /// original's discard-not-defer rule (<c>ai.md</c> §3.5).
+    /// original's discard-not-defer rule.
     /// </para>
     /// <para>
     /// <b>Recorded as a delivery, not a reaction.</b> What a guard <em>does</em> about a heard shot is its
@@ -1554,7 +1554,7 @@ public sealed class Igi1HumanAi
     /// before combat was read.
     /// </para>
     /// <para>
-    /// <c>AIAction_Combat</c> dispatches by type (§11.1) and this now follows it: a <c>GUARD_*</c> type,
+    /// <c>AIAction_Combat</c> dispatches by type and this now follows it: a <c>GUARD_*</c> type,
     /// the sniper and Priboi stand and fight, and every <c>PATROL_*</c> type — <b>most soldiers in the
     /// game</b> — gets the move-and-fight arm instead.
     /// </para>
@@ -1575,7 +1575,7 @@ public sealed class Igi1HumanAi
 
         // The patrol arm's own fire and reload sub-actions ARE the guard arm's - the original installs
         // 0x48D8B0 and 0x48DB10 from both - so the shared machinery is kept and only the DECISION
-        // differs, which is the split ai.md 13.10 asks for.
+        // differs, which is how the original splits them.
         _combat = Arm == AiCombatArm.None
             ? null
             : new AiGuardCombat(parameters, _random.NextDouble)
@@ -1968,7 +1968,7 @@ public sealed class Igi1HumanAi
         {
             case ActionPatrol:
                 // The first argument is a patrol PATH id: a PatrolPath task whose child tasks are the
-                // commands (ai.md 7.1). Resolving it is the whole point of the registry.
+                // commands. Resolving it is the whole point of the registry.
                 BeginPatrol(action.Argument(0));
                 break;
 
@@ -2589,7 +2589,7 @@ public sealed class Igi1HumanAi
         }
 
         // An AI's FIRST event is always its creation: before initialisation only type 0 passes admission, and
-        // the mask is not consulted at all (ai.md 3.3). Never posting it left every archetype script's
+        // the mask is not consulted at all. Never posting it left every archetype script's
         // CREATE branch unrun -- which is where guard.qsc sets its view length, alarm length, alpha and
         // gamma. Guards were therefore seeing through the ENGINE DEFAULTS from 0x44F060 (+/-57.3 degrees
         // vertical, +/-59.5 horizontal, 26 m) instead of the archetype's own 40 m / 50 m / 50 / 45.
@@ -3050,7 +3050,7 @@ public sealed class Igi1HumanAi
     /// because both outlive the command that set them, and only then does the switch run. A command that
     /// reports itself finished advances the cursor and clears the deadline; a kind the walker has no arm
     /// for returns <em>without</em> advancing, which is how a
-    /// <see cref="AiPatrolCommandKind.SetSpeed"/> wedges a human patrol (§7.5) — reproduced rather than
+    /// <see cref="AiPatrolCommandKind.SetSpeed"/> wedges a human patrol — reproduced rather than
     /// smoothed over.
     /// </para>
     /// </remarks>
@@ -3761,7 +3761,7 @@ public sealed class Igi1HumanAi
     private void Drain()
     {
         // One event type dispatches per tick and every queue is then emptied, so an event nothing acted on is
-        // discarded rather than deferred (ai.md 3.5).
+        // discarded rather than deferred.
         Events.Pump(AiEventQueues.UnboundedPriorityCap, (_, _) => true);
     }
 
@@ -4049,8 +4049,7 @@ public sealed class Igi1HumanAi
     /// </para>
     /// <para>
     /// Nothing here fires a round. The command carries the trigger and the host turns it into a shot
-    /// through the body's own weapon path, which is what the original does — see
-    /// the original.
+    /// through the body's own weapon path, which is what the original does.
     /// </para>
     /// </remarks>
     private void Fight(int tick, Vector3d lastSeenFeet)
@@ -4719,7 +4718,7 @@ public sealed class Igi1HumanAi
     /// <remarks>
     /// <b>A patrol fires while it is running at you</b>, with no burst set up and no aim solve — one
     /// round per tick straight into the trigger slot, whenever the target is inside a <b>16.3°</b> cone
-    /// about its forward axis (<c>dot &gt; 0.96</c>). §13.7.
+    /// about its forward axis (<c>dot &gt; 0.96</c>).
     /// </remarks>
     private void FollowTarget(Vector3d enemy)
     {
@@ -5149,9 +5148,9 @@ public sealed class Igi1HumanAi
     /// <param name="crouching">Whether the target is crouching, which halves the raise.</param>
     /// <remarks>
     /// <c>sub_451380</c> copies the target task's own position (<c>Human+32</c>, its origin) out of the shared
-    /// record and adds <b>2048 units (0.5 m) standing, 1024 (0.25 m) crouching</b> to Z — verified in the
-    /// decompile: <c>a1[2] += crouch ? 1024.0 : 2048.0</c>. The port's position is the feet, so the origin's
-    /// height goes in first: chest height, where adding the raise to the feet aimed at the shins.
+    /// record and adds <b>2048 units (0.5 m) standing, 1024 (0.25 m) crouching</b> to Z, picking
+    /// 1024 when the target is crouched and 2048 otherwise. The port's position is the feet, so the origin's height
+    /// goes in first: chest height, where adding the raise to the feet aimed at the shins.
     /// </remarks>
     public static Vector3d AimPointOf(Vector3d target, bool crouching = false) =>
         new(target.X, target.Y, target.Z + (crouching

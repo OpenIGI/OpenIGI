@@ -13,8 +13,7 @@ namespace OpenIGI.Formats.World;
 /// The fourth field: a row of this mesh's own <c>TAMC</c> table.
 /// <b>Correction</b> — an earlier reading recorded this as "zero throughout the sampled models". It is
 /// not: across level 1's models the selectors span <c>0</c> to <c>Materials − 1</c>, so it is a real
-/// per-face index. What a <c>TAMC</c> row then says about the <i>game</i> material is still unread; see
-/// the original.
+/// per-face index. What a <c>TAMC</c> row then says about the <i>game</i> material is still unread.
 /// </param>
 /// <param name="Lightmap">
 /// The face's lightmap index, <c>MultiMesh_Face_t.iLightmap</c>: present only where a face is twelve bytes
@@ -315,8 +314,8 @@ public sealed class MefCollisionMesh
         // original walks through it, so a portal material is non-solid. 0xFFFF means "not a portal".
         bool[] materialIsPortal = new bool[materialCount];
         // The TAMC row's u16 at offset 8 is the global game-material row this face is made of (0 = Air,
-        // 14 = Glass, 18 = Fence, …); 0xFFFF names none. This is the face->material link 
-        // recorded as "still missing"; it is what lets the sight test tell glass from a solid wall.
+        // 14 = Glass, 18 = Fence, …); 0xFFFF names none. This is the face->material link an earlier
+        // reading recorded as "still missing"; it is what lets the sight test tell glass from a solid wall.
         int[] materialGlobal = new int[materialCount];
         int[] materialPortal = new int[materialCount];
         for (int i = 0; i < materialCount; i++)

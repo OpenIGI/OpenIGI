@@ -13,7 +13,7 @@ namespace OpenIGI.Engine.Flow;
 /// <para>
 /// What it observably skips is the tail of the frame after the flow switch — publishing the tick count
 /// and advancing the time base. Nothing else, because every tree walk has already returned by then.
-/// That skipping is behaviour, not a bug to fix: see the original.
+/// That skipping is behaviour, not a bug to fix.
 /// </para>
 /// <para>
 /// Caught at the frame boundary by <see cref="GameLoop.RunFrame"/>. It is not an error, so it does not

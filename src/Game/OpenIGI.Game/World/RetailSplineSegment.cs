@@ -5,8 +5,7 @@ namespace OpenIGI.Game.World;
 /// <summary>
 /// One bent spline segment -- a piece of road, rail or bridge -- as the original builds it and casts rays against
 /// it: <c>Segment_Build</c> (<c>0x4E4530</c>), <c>Segment_BendVertices</c> (<c>0x49A050</c>) and
-/// <c>SplineObjSegment</c>'s ray handler, path A (<c>0x4E16E0</c>), all exact
-///.
+/// <c>SplineObjSegment</c>'s ray handler, path A (<c>0x4E16E0</c>), all exact.
 /// </summary>
 /// <remarks>
 /// The segment model is authored along its local X; the original samples a Hermite cubic between the two

@@ -26,8 +26,7 @@ public readonly record struct TaskStateStep(bool RequireSet, byte Tolerance, uin
 /// <remarks>
 /// <para>
 /// The driver (<c>0x4EC1E0</c>) advances every trigger once per tick. A trigger that reaches the end of
-/// its steps reports itself as the tick's fired trigger and resets. See
-/// the original.
+/// its steps reports itself as the tick's fired trigger and resets.
 /// </para>
 /// </remarks>
 public sealed class TaskStateTrigger

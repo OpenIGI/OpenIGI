@@ -13,8 +13,7 @@ namespace OpenIGI.Host;
 /// The original calls <c>Render_Flush</c> and then <c>Render_Reset(0, 0)</c> at the head of a
 /// <em>tick</em> — not around a render — and that is where the present lands. It matches the
 /// present-then-begin shape of <c>DisplaySwapBuffers</c>: the buffer drawn last frame is shown, and
-/// the new one is cleared to the colour <c>Render_Reset</c> is given. See
-/// the original and the original.
+/// the new one is cleared to the colour <c>Render_Reset</c> is given.
 /// </para>
 /// <para>
 /// Putting it here rather than in the loop body is the point of the seam: the arbiter decides

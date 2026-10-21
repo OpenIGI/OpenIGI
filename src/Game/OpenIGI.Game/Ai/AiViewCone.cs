@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Ai;
 /// <remarks>
 /// <para>
 /// <b><see cref="Alpha"/> is the vertical angle and <see cref="Gamma"/> the horizontal</b>, which is the
-/// opposite of what the names suggest and of what <c>gameplay-systems.md</c> §5 recorded. Three independent
+/// opposite of what the names suggest and of what an earlier reading recorded. Three independent
 /// arguments agree on it:
 /// </para>
 /// <list type="number">
@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Ai;
 /// zeroed, and <see cref="Gamma"/> against one with <b>Z</b> zeroed.
 /// </item>
 /// <item>
-/// The eye orientation is built by <c>0x4B38E0</c> — the <c>Real32x9</c> Euler composer M6 pinned as
+/// The eye orientation is built by <c>0x4B38E0</c> — the <c>Real32x9</c> Euler composer pinned as
 /// <c>Rz(γ)·Ry(β)·Rx(α)</c> — and <c>0x464BD0</c> passes <b>zero for the middle angle</b>. So the frame is
 /// yaw about world Z over pitch about X, whose columns work out to X = right (always horizontal), Y = forward
 /// (which the <c>local.y &lt; 0</c> early-out independently confirms) and Z = up. Zeroing X therefore leaves
@@ -33,8 +33,8 @@ namespace OpenIGI.Game.Ai;
 /// </list>
 /// <para>
 /// <c>AIFunction_SetViewLength</c> takes <b>metres</b> and stores <c>× 4096</c>; the angle setters take
-/// <b>degrees</b> and store <c>× 0.017453292</c>, the same single-precision constant M9 found the weapon zoom
-/// using. Both length setters also <b>raise the alarm length to match</b> if the normal length is set above
+/// <b>degrees</b> and store <c>× 0.017453292</c>, the same single-precision constant the weapon zoom is
+/// built on. Both length setters also <b>raise the alarm length to match</b> if the normal length is set above
 /// it, so an alarmed AI can never see less far than a calm one.
 /// </para>
 /// </remarks>

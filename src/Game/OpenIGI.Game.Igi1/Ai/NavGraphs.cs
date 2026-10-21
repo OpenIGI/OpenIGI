@@ -9,8 +9,8 @@ namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>Reads a level's nav graphs, one per <c>AIGraph</c> task, placed in the world.</summary>
 /// <remarks>
-/// A level ships one graph per <c>AIGraph</c> task, named by that task's id (ai.md 1.1), and every HumanAI names the one it
-/// walks through its own "Graph ID" parameter (ai.md 7.6). Level 1 ships eleven of them: giving every soldier the single
+/// A level ships one graph per <c>AIGraph</c> task, named by that task's id, and every HumanAI names the one it
+/// walks through its own "Graph ID" parameter. Level 1 ships eleven of them: giving every soldier the single
 /// largest one routed each over node ids from a graph that was not its own, off the edge of the level.
 /// </remarks>
 public static class NavGraphs

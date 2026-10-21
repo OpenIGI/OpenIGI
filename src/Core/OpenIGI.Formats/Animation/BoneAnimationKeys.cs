@@ -15,7 +15,7 @@ namespace OpenIGI.Formats.Animation;
 /// <remarks>
 /// The on-disk record is <see cref="SizeInBytes"/> bytes, but a track with a single key is only read
 /// for its first <see cref="ShortSizeInBytes"/> — the value and the time — because there is nothing to
-/// interpolate.1 and §4.1.
+/// interpolate.
 /// </remarks>
 public readonly record struct BoneRotationKey(
     Quaternion32 Rotation,
@@ -50,7 +50,7 @@ public readonly record struct BoneRotationKey(
 /// <para>
 /// Which stored tangent is which comes from the sampler (<c>0x4D4840</c>), which takes <c>m0</c> from
 /// the previous key's <c>+16</c> and <c>m1</c> from this key's <c>+28</c>, both scaled by the segment's
-/// duration.2 and §5.4.
+/// duration.
 /// </para>
 /// </remarks>
 public readonly record struct BoneTranslationKey(
@@ -79,7 +79,7 @@ public readonly record struct BoneTranslationKey(
 /// field takes only <c>-1</c> and values that are valid bone indices for their own skeleton, and the
 /// commonest event (<c>1010</c>, 234 occurrences) splits between bones 22 and 27 — a left/right pair,
 /// which is what a footstep looks like. A sentinel of <c>-1</c> also rules out a count or a bitfield.
-/// It is the best-supported reading, but no consumer of the field has been decompiled yet.
+/// It is the best-supported reading, but no consumer of the field in the original has been read yet.
 /// </para>
 /// </remarks>
 public readonly record struct BoneAnimationEvent(int EventId, int BoneIndex, float Time, Vector3f Position)

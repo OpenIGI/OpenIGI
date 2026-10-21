@@ -6,8 +6,7 @@ namespace OpenIGI.Rendering;
 /// </summary>
 /// <remarks>
 /// The original ends every one of these paths in a fatal message box followed by <c>while (1);</c>.
-/// OpenIGI throws instead so the host can report the failure and shut down cleanly; see
-/// the original.
+/// OpenIGI throws instead so the host can report the failure and shut down cleanly.
 /// </remarks>
 public sealed class GraphicsDeviceException : Exception
 {

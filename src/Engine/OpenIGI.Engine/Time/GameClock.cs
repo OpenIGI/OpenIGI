@@ -15,9 +15,8 @@ namespace OpenIGI.Engine.Time;
 /// </para>
 /// <para>
 /// Every rule here is part of the determinism contract, and each exists for a reason that is not
-/// obvious from the code: see the original for the disassembly it comes from.
-/// The short version is that simulation time is <c>tickCount / tickRate</c> and never wall clock, so a
-/// slow machine loses time instead of taking bigger steps.
+/// obvious from the code. The short version is that simulation time is <c>tickCount / tickRate</c> and
+/// never wall clock, so a slow machine loses time instead of taking bigger steps.
 /// </para>
 /// </remarks>
 public sealed class GameClock
@@ -157,7 +156,7 @@ public sealed class GameClock
     /// The two details that look like noise and are not: the sum of the base and the excluded time is a
     /// 32-bit integer addition performed <em>before</em> the widening to <see cref="double"/>, so it
     /// wraps; and the conversion back truncates toward zero rather than rounding, because the original
-    /// runs the whole binary with the x87 rounding mode forced to chop (re-note §3.1).
+    /// runs the whole binary with the x87 rounding mode forced to chop.
     /// </para>
     /// </remarks>
     public long DueMilliseconds
@@ -304,7 +303,7 @@ public sealed class GameClock
     /// While paused, loading or playing a cutscene the original runs one update and one render per frame
     /// with no deadline check, advancing both counters but leaving the render latch and the catch-up
     /// budget exactly as they were — so the first scheduled frame afterwards resumes from the state the
-    /// pause interrupted. See re-note §5.1.
+    /// pause interrupted.
     /// </remarks>
     public void CompleteUnscheduledFrame()
     {

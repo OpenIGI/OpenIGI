@@ -17,10 +17,9 @@ namespace OpenIGI.Formats.Sprites;
 /// (<c>"The font '%s' must be packed."</c>), and so does this loader — no retail file uses them.
 /// </para>
 /// <para>
-/// Field offsets are transcribed from the decompiled loader; see the original
-/// §5–6. Where the three <c>"LOOP"</c> versions disagree — and they disagree about where the format
-/// code lives, which is the interesting part — each branch follows its own version rather than a
-/// unified guess.
+/// Field offsets are those the original loader reads. Where the three <c>"LOOP"</c> versions disagree
+/// — and they disagree about where the format code lives, which is the interesting part — each branch
+/// follows its own version rather than a unified guess.
 /// </para>
 /// </remarks>
 public static class SpriteLoader

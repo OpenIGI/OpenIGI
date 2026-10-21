@@ -17,7 +17,7 @@ namespace OpenIGI.Engine.Tasks;
 /// symbol's context to the task it just made and evaluates its <em>remaining</em> arguments — so any
 /// <c>Task_New</c> among them attaches to that task — and finally restores the previous context. That is
 /// why parameter counts have to be exact: consume one too few and the next child becomes a parameter
-/// value; one too many and a child is silently skipped. See the re-note, §7.
+/// value; one too many and a child is silently skipped.
 /// </para>
 /// </remarks>
 public sealed class TaskScriptCommands

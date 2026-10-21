@@ -21,7 +21,7 @@ public sealed class HumanUpperBodyTests
     /// <remarks>
     /// The whole reason <c>0x489ED0</c> can name a single bone and get a clean split: bones 20–22 (the
     /// weapon chain) hang off bone 1, the head and both arms hang off the spine top above it, and the two
-    /// legs hang off the root beside it (<c>weapons.md</c> §26.1). Nothing is masked; the hierarchy does it.
+    /// legs hang off the root beside it. Nothing is masked; the hierarchy does it.
     /// </remarks>
     [Fact]
     public void TheUpperBodyClipTakesTheTorsoAndLeavesTheLegs()

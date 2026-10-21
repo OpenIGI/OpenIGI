@@ -155,8 +155,7 @@ public sealed class RetailCarDefinition
 /// <remarks>
 /// <para>
 /// Every field mirrors a field of the original car object, and the step is a transcription of the
-/// disassembly in the original -- operation by operation, in the original's order,
-/// with each register value an <see cref="X87"/> and each float store truncated. That is what makes it
+/// original's machine code -- operation by operation, in the original's order, with each register value an <see cref="X87"/> and each float store truncated. That is what makes it
 /// replay a captured retail tick bit for bit.
 /// </para>
 /// <para>Units are the original's: world units (1/4096 m) and ticks. The orientation <see cref="RetailRigidBody.M"/> maps body to world.</para>

@@ -19,8 +19,7 @@ public static class MtpTags
     /// <summary>Chunk <c>BANM</c>: animation set names.</summary>
     /// <remarks>
     /// Long misread as sound bank names. <c>Pack_Bind</c> (<c>0x4CF080</c>) loads each name as
-    /// <c>&lt;packDir&gt;anims/&lt;name&gt;.iff</c> before the texture and model archives bind — see
-    /// the original.
+    /// <c>&lt;packDir&gt;anims/&lt;name&gt;.iff</c> before the texture and model archives bind.
     /// </remarks>
     public static FourCc AnimationSetNames { get; } = FourCc.FromString("BANM");
 

@@ -422,7 +422,7 @@ public sealed class WorldInteraction
     // the stand's magic vertex, and stands the body 2867.2 units along the stand's local Y -- the barrel
     // axis -- on whichever side it came from: the orientation is turned by pi (0x4B3790) when the body is
     // on the -Y side. The body keeps its own height and faces along the turned stand's heading plus pi,
-    // which from the +Y side is down the barrel. Measured in retail (a probe, mission 4 task 775): the
+    // which from the +Y side is down the barrel. Measured on the running original (mission 4 task 775): the
     // body lands 2867 units behind the gun at yaw 1.2687, the gun's gamma -1.8729 plus pi.
     private (Vector3d Position, float Facing) StationaryGunPose(Vector3d from)
     {
@@ -457,8 +457,8 @@ public sealed class WorldInteraction
         {
             // StationaryGun::GetActivate (0x474E30): only a free gun (+540 clear), and only from behind
             // it -- the eye on the positive side of the turned stand's local Y (+112's middle column),
-            // measured from magic vertex 0. From the barrel side retail offers nothing (a probe,
-            // mission 4 task 775: Use pressed in front of the gun never enters state 33).
+            // measured from magic vertex 0. From the barrel side retail offers nothing (measured on the
+            // running original, mission 4 task 775: Use pressed in front of the gun never enters state 33).
             if (gun.IsOccupied)
             {
                 return false;

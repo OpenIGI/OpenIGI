@@ -24,8 +24,8 @@ public enum AiMovementOutcome
 /// <b>The AI steers its soldier through the same 160-byte input frame the player's input sampler produces.</b>
 /// It writes three floats into the scratch at <c>HumanAI+15476</c> — the block the per-tick memsets at the top
 /// of every tick — and the per-tick posts it to the owning <c>Human</c> under the channel message id.
-/// <c>player.md</c> §2 established that frame for <c>HumanPlayerInput</c>, and M8 found <c>AnimTask</c> and
-/// <c>AnimCam</c> on the same interface; this is the <b>fourth</b> receiver. It is also the reason a bot moves
+/// <c>HumanPlayerInput</c> receives the same frame, and <c>AnimTask</c> and <c>AnimCam</c> sit on the same
+/// interface; this is the <b>fourth</b> receiver. It is also the reason a bot moves
 /// exactly like the player: identical locomotion, identical integrator, identical animation, different source
 /// of the frame.
 /// </para>

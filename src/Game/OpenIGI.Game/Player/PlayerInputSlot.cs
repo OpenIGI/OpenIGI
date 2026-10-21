@@ -12,8 +12,8 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// <para>
 /// <b>The join is checked, not assumed.</b> Three consumers agree with it independently: locomotion
-/// state 0 tests the four movement bits in an order that matches the directions <c>player.md</c> §5.6
-/// measured off the animations; <c>0x411000</c> reads slots 23–31 as a nine-way weapon-category
+/// state 0 tests the four movement bits in an order that matches the directions measured
+/// off the animations; <c>0x411000</c> reads slots 23–31 as a nine-way weapon-category
 /// selector; and <c>0x40E9C0</c> raises the binoculars on slot 34. <see cref="Jump"/> was named from a
 /// consumer before the table was found and the table agrees.
 /// </para>

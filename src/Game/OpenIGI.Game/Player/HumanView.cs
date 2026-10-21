@@ -38,7 +38,6 @@ namespace OpenIGI.Game.Player;
 /// clears it. <see cref="Pose"/> reproduces that, so posing twice in a frame costs one evaluation.
 /// </item>
 /// </list>
-/// <para>See the original and the original.</para>
 /// </remarks>
 public sealed class HumanView
 {

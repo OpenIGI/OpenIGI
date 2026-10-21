@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The layout is fixed by three tables being contiguous inside <c>HumanAI</c>, the same argument M8 used for
+/// The layout is fixed by three tables being contiguous inside <c>HumanAI</c>, the same argument that placed
 /// the locomotion state table: the queues run <c>+1776</c>..<c>+2064</c> (24 × a 12-byte list head), the
 /// priority order <c>+2076</c>..<c>+2172</c> (24 ints), the per-type drained counts
 /// <c>+2172</c>..<c>+2268</c> (24 ints) with the order's length at <c>+2268</c>, and the enable mask
@@ -89,7 +89,7 @@ public sealed class AiEventQueues
     /// <summary>Gets whether any queue holds a pending event.</summary>
     /// <remarks>
     /// The idle fallback consults this: <c>AIEVENT_IDLE</c> is posted <b>only when nothing is
-    /// pending</b> (ai.md §3.1) — posting it unconditionally let a standing guard's Idle dispatch
+    /// pending</b> — posting it unconditionally let a standing guard's Idle dispatch
     /// starve the gunshot it had just heard, since one type dispatches per tick and the rest are
     /// drained unheard.
     /// </remarks>

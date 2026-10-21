@@ -80,7 +80,7 @@ public sealed class MenuScriptContext : IScriptExpressionContext
 
     /// <summary>Gets or sets the registry a member path resolves through.</summary>
     /// <remarks>
-    /// The named-variable export from <c>task-system.md</c> §8: a task binds <c>TypeName_id.field</c>
+    /// The task system's named-variable export: a task binds <c>TypeName_id.field</c>
     /// as a live alias onto its own field, so <c>MenuScreen_905.nUserData</c> is a symbol lookup and
     /// nothing more. Menu expressions read <em>and write</em> these.
     /// </remarks>

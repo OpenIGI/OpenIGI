@@ -6,8 +6,7 @@ namespace OpenIGI.Engine.Tasks;
 /// <remarks>
 /// <para>
 /// The original registers this as <c>Level</c> with an instance size of 56 (<c>0x4EE970</c>); its update
-/// method is <c>0x4F0580</c> and <c>Level_Load</c> (<c>0x4F0D40</c>) writes the timing fields. See
-/// the original.
+/// method is <c>0x4F0580</c> and <c>Level_Load</c> (<c>0x4F0D40</c>) writes the timing fields.
 /// </para>
 /// <para>
 /// This clock is not the frame arbiter's. The arbiter schedules ticks against an exact
@@ -38,9 +37,8 @@ public class LevelTask : GameTask
     /// <para>
     /// The pause menu's half of the pause. The original's in-game task (<c>0x416260</c>) forwards the
     /// update to its subtree only while the field at <c>+224</c> is clear, so opening the menu leaves
-    /// everything under it — the scripts, the doors, the timers — exactly where it was; see
-    /// the original. This port has no in-game task of its own, so the gate lives
-    /// on the level root, which is what that subtree hangs from (§9).
+    /// everything under it — the scripts, the doors, the timers — exactly where it was. This port has no
+    /// in-game task of its own, so the gate lives on the level root, which is what that subtree hangs from.
     /// </para>
     /// <para>
     /// The frame schedule is deliberately untouched: ticks keep arriving and doing nothing, which is what

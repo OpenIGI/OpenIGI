@@ -8,9 +8,9 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every reading here is measured rather than assumed — see the original,
-/// which was written from a probe over the retail data because no re-note recorded these parameters'
-/// names and the only statement of what a script <c>Angle</c> means was a doc comment.
+/// Every reading here is measured rather than assumed — taken from a probe over the retail data,
+/// because nothing recorded these parameters' names and the only statement of what a script
+/// <c>Angle</c> means was a doc comment.
 /// </para>
 /// <para>
 /// This closes a standing item carried out of M6: the "residual dimness" left after the diffuse ×

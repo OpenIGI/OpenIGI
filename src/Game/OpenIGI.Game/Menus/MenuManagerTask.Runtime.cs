@@ -259,8 +259,8 @@ public partial class MenuManagerTask
         //
         // DIVERGENCE: MenuManager_Render draws the pointer *first*, before the popup and the screen.
         // Taken literally through a painter's-order 2D batch that buries it under the background, so
-        // it is drawn last here. Why the original gets away with the other order is unresolved and is
-        // listed in the re-note; the visible result is the same cursor in the same place.
+        // it is drawn last here. Why the original gets away with the other order is unresolved; the
+        // visible result is the same cursor in the same place.
         if (Navigator.State == MenuManagerState.Active)
         {
             _host?.DrawPointer(_pointer.X, _pointer.Y);

@@ -180,7 +180,7 @@ public sealed partial class GameHost
     /// would rebuild them are skipped and the rest runs exactly as it does for a cold start. The order of
     /// everything else is deliberately untouched between the two paths: the AI's ray cast closes over
     /// <c>_mission.Terrain</c>, the interactions have to exist before the brains are animated, and the
-    /// weapon rosters have to load before <c>humanplayer.qvm</c> runs (weapons.md section 8).
+    /// weapon rosters have to load before <c>humanplayer.qvm</c> runs.
     /// </param>
     private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
     {
@@ -473,8 +473,8 @@ public sealed partial class GameHost
         bool promoted = b.Promoted;
         ObjectCollisionIndex solids = b.Solids!;
 
-        // The soldiers the level places. Each names its own model, skeleton and stand animation
-        // (player.md section 15); the sets they index were loaded when the packs opened. They are not
+        // The soldiers the level places. Each names its own model, skeleton and stand animation;
+        // the sets they index were loaded when the packs opened. They are not
         // WorldScene placements - a human task is a typed task, and the original draws it through the
         // bone path, not the static one.
         // A promoted backdrop has already built these, behind the menu and against the very same level
@@ -756,7 +756,7 @@ public sealed partial class GameHost
 
                 if (readSun.IsBelowHorizon)
                 {
-                    _logger.Warning("Light", "This level's authored sun is below the horizon; see rendering.md section 12.");
+                    _logger.Warning("Light", "This level's authored sun is below the horizon.");
                 }
             }
             else

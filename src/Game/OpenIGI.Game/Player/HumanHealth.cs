@@ -117,7 +117,7 @@ public sealed class HumanHealth
     /// Whether the head/neck one-shot is disabled on this human — <c>HumanAI+15037</c>, set by
     /// <c>AIFunction_SetInstantDeath(FALSE)</c>. When set, a hit on the head (<see cref="HumanDamage.ProximityZone"/>)
     /// or neck (<see cref="HumanDamage.NeckZone"/>) takes the weapon's plain damage factor instead of the
-    /// zone's lethal multiplier — the branch <c>0x45D3C0</c> takes on <c>v13</c>. Defaults to
+    /// zone's lethal multiplier — the branch <c>0x45D3C0</c> takes on this flag. Defaults to
     /// <see langword="false"/>, so by default those zones keep their ×100 multiplier and one-shot.
     /// </param>
     /// <returns>The damage this hit added.</returns>

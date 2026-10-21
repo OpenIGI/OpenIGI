@@ -227,8 +227,7 @@ public sealed class Igi2WorldScene
     /// <summary>Gets every placement, in the order the level declared them.</summary>
     /// <remarks>
     /// Declaration order, not draw order. What decides drawing is
-    /// <see cref="Igi2Placement.RenderGroup"/>, and the frame empties those queues in ascending order;
-    /// see the original.
+    /// <see cref="Igi2Placement.RenderGroup"/>, and the frame empties those queues in ascending order.
     /// </remarks>
     public IReadOnlyList<Igi2Placement> Placements { get; }
 

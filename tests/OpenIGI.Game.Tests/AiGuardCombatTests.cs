@@ -358,8 +358,8 @@ public sealed class AiGuardCombatTests
     /// <remarks>
     /// <c>sub_48B9C0</c>'s second argument halves the hit probability and the caller clears the
     /// argument-block byte straight after, so it fires exactly once per engagement. The guard arm keeps
-    /// the byte at <c>argBlock+40</c> and the patrol arm at <c>argBlock+32</c>, which is why two notes
-    /// named different offsets and both were right — see the original.
+    /// the byte at <c>argBlock+40</c> and the patrol arm at <c>argBlock+32</c>, which is why two different
+    /// offsets for it are both right.
     /// </remarks>
     [Fact]
     public void TheFirstBurstOfAnEngagementIsHalfAsAccurate()

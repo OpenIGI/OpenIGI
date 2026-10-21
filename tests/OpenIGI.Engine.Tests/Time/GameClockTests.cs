@@ -8,8 +8,8 @@ namespace OpenIGI.Engine.Tests.Time;
 /// </summary>
 /// <remarks>
 /// Every one of these would still "work" if it were relaxed — the game would run, just not the same
-/// way — so each test names the specific relaxation it rules out. The disassembly they are read from is
-/// transcribed in the original.
+/// way — so each test names the specific relaxation it rules out. They are read from the original's
+/// disassembly.
 /// </remarks>
 public sealed class GameClockTests
 {

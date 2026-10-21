@@ -13,9 +13,9 @@ namespace OpenIGI.Game;
 /// </para>
 /// <para>
 /// <b>Nothing declared here may change what the simulation does, with one named exception.</b> These
-/// gate presentation only — what is drawn, not what is recorded — so the determinism contract in
-/// <c>PLAN.md</c> and the vanilla regression gate both stand whatever they are set to. Anything that
-/// would alter observable game logic belongs in <c>TODO.md</c>'s faithfulness work instead.
+/// gate presentation only — what is drawn, not what is recorded — so the determinism contract and the
+/// vanilla regression gate both stand whatever they are set to. Anything that would alter observable game
+/// logic belongs with the faithfulness work instead.
 /// </para>
 /// <para>
 /// The exception is <see cref="Ballistics"/> and its family: tactical ballistics <em>is</em> a

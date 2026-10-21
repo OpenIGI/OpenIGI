@@ -194,7 +194,7 @@ public sealed class GraphFile
                 X87.Add(parentPosition.Z, Row(parentMatrix, 6, x, y, z)));
         }
 
-        // m[2]*z + m[1]*y + m[0]*x, in that order, as the decompiled expression evaluates it.
+        // m[2]*z + m[1]*y + m[0]*x, in that order, as the original evaluates it.
         static double Row(ReadOnlySpan<float> m, int row, double x, double y, double z) =>
             X87.Add(X87.Add(X87.Multiply(m[row + 2], z), X87.Multiply(m[row + 1], y)), X87.Multiply(m[row], x));
     }

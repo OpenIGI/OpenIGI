@@ -43,7 +43,7 @@ internal static class ScriptParamTypeMap
         ["Real32x3"] = new Entry("ReadReal32x3", "global::OpenIGI.Core.Numerics.Vector3f"),
         ["Rgb"] = new Entry("ReadReal32x3", "global::OpenIGI.Core.Numerics.Vector3f"),
 
-        // Three Euler angles on the wire, not nine components. See the re-note, §6.6.
+        // Three Euler angles on the wire, not nine components.
         ["Real32x9"] = new Entry("ReadReal32x9", "global::OpenIGI.Core.Numerics.Vector3f"),
 
         ["Real64x3"] = new Entry("ReadReal64x3", "global::OpenIGI.Core.Numerics.Vector3d"),

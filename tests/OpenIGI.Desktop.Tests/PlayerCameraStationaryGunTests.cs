@@ -36,7 +36,7 @@ public sealed class PlayerCameraStationaryGunTests
             static item => item.Type == InteractionActivateType.StationaryGun && item.Task.Id == 775);
         AiStationaryGun gun = Assert.IsType<AiStationaryGun>(interaction.StationaryGun);
 
-        // The stand's +264 as a probe read it from retail: rows (-0.297, 0.954, 0), (-0.954, -0.297, 0).
+        // The stand's +264 as read from the running original: rows (-0.297, 0.954, 0), (-0.954, -0.297, 0).
         Assert.Equal(-0.297f, gun.Orientation.M11, 2);
         Assert.Equal(0.954f, gun.Orientation.M12, 2);
         Assert.Equal(-0.954f, gun.Orientation.M21, 2);
@@ -65,7 +65,7 @@ public sealed class PlayerCameraStationaryGunTests
         Assert.True(gun.IsOccupied);
 
         // 0x40C970 stands the body 2867.2 units along the stand's barrel axis (local Y), never beside it;
-        // a probe measured retail's at 2867 units behind task 775.
+        // retail's was measured at 2867 units behind task 775.
         Matrix3f stand = gun.Orientation;
         Vector3d offset = camera.Body.Position - gun.Position;
         double along = (offset.X * stand.M12) + (offset.Y * stand.M22);
@@ -150,7 +150,7 @@ public sealed class PlayerCameraStationaryGunTests
 
     /// <summary>
     /// StationaryGun::GetActivate (0x474E30) offers the gun only from behind it; from the barrel side
-    /// retail's Use does nothing (a probe, mission 4 task 775).
+    /// retail's Use does nothing (measured on the running original, mission 4 task 775).
     /// </summary>
     [RequiresGameDataFact]
     public void TheMissionFourM2hbIsNotOfferedFromInFrontOfItsBarrel()

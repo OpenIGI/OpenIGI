@@ -14,13 +14,13 @@ namespace OpenIGI.Rendering;
 /// stays checkable — <see cref="SetMode"/> is <c>DisplaySetMode</c>, <see cref="SwapBuffers"/> is
 /// <c>DisplaySwapBuffers</c>, <see cref="SetViewport"/> is <c>ClipWindowPrimitive</c>,
 /// <see cref="BlitPixels"/> is <c>BlitPrimitive</c>, and the texture members are the twelve-method
-/// texture set. See the original and §8.
+/// texture set.
 /// </para>
 /// <para>
 /// <b>Frame order.</b> The original presents at the <em>start</em> of <c>DisplaySwapBuffers</c> and
 /// begins the new scene at its end, so a frame is <c>SwapBuffers</c> → <c>Clear</c> → draw. Backends
-/// must keep that order: it is what makes the one-render-per-tick interleave in
-/// the original land on the same frame boundaries.
+/// must keep that order: it is what makes the game loop's one-render-per-tick interleave land on the
+/// same frame boundaries.
 /// </para>
 /// <para>
 /// <b>Threading.</b> Every member must be called from the thread that created the device.

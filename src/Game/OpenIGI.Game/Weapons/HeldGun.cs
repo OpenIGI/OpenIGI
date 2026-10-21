@@ -46,8 +46,8 @@ public readonly record struct GunFireResult(
 /// </para>
 /// <para>
 /// <b>The human never decides when a round goes off.</b> The weapon state machine raises a byte every
-/// tick the trigger is down and this class answers on the ticks
-/// its own cooldown allows. Rate of fire, burst length and the magazine all live here.
+/// tick the trigger is down and this class answers on the ticks its own cooldown allows. Rate of fire,
+/// burst length and the magazine all live here.
 /// </para>
 /// </remarks>
 public sealed class HeldGun

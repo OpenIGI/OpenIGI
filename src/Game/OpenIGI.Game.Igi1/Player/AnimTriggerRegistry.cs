@@ -11,8 +11,8 @@ namespace OpenIGI.Game.Igi1.Player;
 /// </summary>
 /// <remarks>
 /// <para>
-/// An animation's <c>BOED</c> events carry an id, a bone and a position
-///. This table is what turns that id into something audible.
+/// An animation's <c>BOED</c> events carry an id, a bone and a position. This table is what turns that id
+/// into something audible.
 /// It is filled by running <c>animtrigger/animtrigger.qvm</c>, which is nothing but 50
 /// <c>DefineAnimTrigger(eventId, taskType, resource, flag)</c> calls — the same shape as
 /// <see cref="OpenIGI.Game.World.MagicObjectRegistry"/>.

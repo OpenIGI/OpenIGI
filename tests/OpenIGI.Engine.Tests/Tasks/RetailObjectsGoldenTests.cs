@@ -20,8 +20,8 @@ namespace OpenIGI.Engine.Tests.Tasks;
 /// Nothing throws; the level is simply wrong.
 /// </para>
 /// <para>
-/// So the assertion is on shape, against ground truth nobody here produced: the community research
-/// repository's <c>DConv</c> decompilation of the same bytecode. Its <c>location0/level1</c>
+/// So the assertion is on shape, against ground truth nobody here produced: the source the community
+/// research repository's <c>DConv</c> tool recovered from the same bytecode. Its <c>location0/level1</c>
 /// <c>objects.qsc</c> contains 1360 <c>Task_New</c> calls nested up to ten deep, and the counts per
 /// depth below are read straight off that text. Getting one arity wrong anywhere in the file moves
 /// tasks between depths and breaks the histogram.
@@ -41,7 +41,7 @@ public sealed class RetailObjectsGoldenTests
 
         Assert.Equal(1360, level.Tasks.Count);
 
-        // Task_New calls per nesting depth in the decompiled objects.qsc, root's children being depth 1.
+        // Task_New calls per nesting depth in the recovered objects.qsc, root's children being depth 1.
         Assert.Equal(
             new Dictionary<int, int>
             {

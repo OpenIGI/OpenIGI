@@ -49,7 +49,7 @@ public enum WeaponAttachSlot
 /// <summary>Draws the weapon the player is holding, at the bone the player's own rig puts it on.</summary>
 /// <remarks>
 /// <para>
-/// This is the last link of the chain the original counted three of: the level
+/// This is the last link of a chain of three: the level
 /// declares a loadout, every <c>WEAPON_ID_*</c> resolves to a roster entry naming a <c>Gun Model</c>,
 /// and the model goes wherever the first-person rig's bone 3 is.
 /// </para>

@@ -7,7 +7,7 @@ namespace OpenIGI.Engine.Tasks;
 /// <remarks>
 /// The original keeps these in a 384-entry table at <c>0xAF5EE0</c> holding a name, an instance size, a
 /// parent id and a copy of the parent's 254-slot vtable taken at registration time. Method installation
-/// and dispatch are ordinary C# virtual calls here; see the re-note, §2.2 and §11.
+/// and dispatch are ordinary C# virtual calls here.
 /// </remarks>
 public sealed class TaskType
 {

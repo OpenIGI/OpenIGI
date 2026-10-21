@@ -6,11 +6,11 @@ namespace OpenIGI.Game.Player;
 /// <remarks>
 /// <para>
 /// Read from the binding table at <c>0x536558</c> — <b>27</b> records of 36 bytes, each a name and
-/// its mask, which <c>0x402FF0</c> walks. This is what <c>player.md</c> §2.1 recorded as unresolved: the action slots
+/// its mask, which <c>0x402FF0</c> walks. This had been unresolved: the action slots
 /// were numbered rather than named because the table that names them had not been found.
 /// </para>
 /// <para>
-/// <b>It cross-checks M8's one independent identification.</b> Jump was named from locomotion state
+/// <b>It cross-checks the one independent identification.</b> Jump was named from locomotion state
 /// zero's per-tick, which tests it by name and moves to the state that plays <c>jump_1</c>; the table
 /// gives Jump the same <c>0x1000</c>. Two unrelated routes to the same bit.
 /// </para>
@@ -54,7 +54,7 @@ public enum PlayerAction
     Crouch = 0x800,
 
     /// <summary>Jump.</summary>
-    /// <remarks>The bit M8 identified from the state machine, confirmed by the table.</remarks>
+    /// <remarks>The bit identified from the state machine, confirmed by the table.</remarks>
     Jump = 0x1000,
 
     /// <summary>Cycle to the next weapon.</summary>

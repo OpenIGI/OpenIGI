@@ -32,7 +32,6 @@ namespace OpenIGI.Game.Igi1.Weapons;
 /// carry. What is faithful here is where the ray starts, which way it goes and how long it is, all
 /// three of which come out of the weapon record with nothing chosen.
 /// </para>
-/// <para>See the original and the divergence in <c>TODO.md</c>.</para>
 /// </remarks>
 public readonly record struct GunImpact(
     Vector3d Position,

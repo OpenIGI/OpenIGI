@@ -10,7 +10,7 @@ namespace OpenIGI.Rendering;
 /// <remarks>
 /// The original enumerates these through the <c>Enum</c> render-mode method (<c>0x4924D0</c>, backed by
 /// <c>IDirectDraw7::EnumDisplayModes</c>) and applies one through <c>DisplaySetMode</c>. Retail boots
-/// at 640×480; see the original.
+/// at 640×480.
 /// </remarks>
 public readonly record struct DisplayMode(int Width, int Height, int BitsPerPixel, int RefreshRate)
 {

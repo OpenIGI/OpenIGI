@@ -50,7 +50,7 @@ else
 fi
 
 # Capture disassembly, xrefs and discovered function metadata. This does not assert semantics:
-# Vehicle fire/contact must still pass the dual-decompiler + live-capture gate before translation.
+# Vehicle fire/contact must still pass the two-independent-readings + live-capture gate before translation.
 r2 -q -e bin.cache=true -c 'aaa; af @ 0x425de0; af @ 0x42eca0; af @ 0x4fb9a0; afl~0x00425d; afl~0x0042ec; afl~0x004fb9; axt @ 0x4fb9a0; pdf @ 0x425de0; pdf @ 0x42eca0; pdf @ 0x4fb9a0; q' "$igi_exe" \
   > "$artifact_dir/r2-vehicle-paths.txt"
 

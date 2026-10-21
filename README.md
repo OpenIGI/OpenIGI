@@ -122,8 +122,7 @@ Settings are saved to `settings.cfg` beside the executable if one exists there, 
   the folder, and **F8** toggles it.
 - **Content packs.** These are folders of replacement art with a load order, installed and ordered from the
   launcher's Content page. The tools to build one from your own installation, such as an AI-upscaled texture pack,
-  are in [`tools/texture-forge`](tools/texture-forge/README.md) and
-  [`tools/OpenIGI.Tools.ResExtract`](tools/OpenIGI.Tools.ResExtract/README.md).
+  are `tools/texture-forge` and `tools/OpenIGI.Tools.ResExtract`.
 - **Code mods.** Mods are C# assemblies written against a versioned API. They can add systems, replace the game's
   tasks, and use the other game's data. Start one with the template:
 
@@ -153,9 +152,8 @@ tools/      asset extraction, QVM disassembly, shader build, release tooling
 tests/      xUnit test projects
 ```
 
-Nothing under `src/` may reference a concrete backend; the applications wire backends in. Architecture tests enforce
-this layering. [`docs/architecture.md`](docs/architecture.md) has the rules, and [`docs/formats`](docs/formats)
-documents the retail file formats.
+Nothing under `src/` may reference a concrete backend; the applications wire backends in. The architecture tests in
+`tests/OpenIGI.Core.Tests/Architecture` enforce this layering.
 
 ## Contributing
 

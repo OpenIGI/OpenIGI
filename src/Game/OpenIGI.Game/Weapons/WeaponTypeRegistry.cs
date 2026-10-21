@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Weapons;
 /// Two consequences worth stating. The call is <b>variable length</b> because the projectile and weapon
 /// task classes read their own parameters from its tail (<see cref="WeaponTaskParameters"/>). And the
 /// <c>WEAPON_ID_*</c> symbols get their values <i>here</i>, as each weapon is read, which is what the
-/// pattern registration in <c>player.md</c> §3.5 was waiting for.
+/// pattern registration was waiting for.
 /// </para>
 /// </remarks>
 public sealed class WeaponTypeRegistry

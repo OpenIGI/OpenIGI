@@ -6,7 +6,7 @@ namespace OpenIGI.Scripting.Expressions;
 /// <remarks>
 /// The parser switches on this before it looks at the operator, so the class decides whether a token
 /// is an operand, an operator, or something that ends the expression. Values come from
-/// <c>Expr_NextToken</c> (<c>0x4BFC70</c>); see the original.
+/// <c>Expr_NextToken</c> (<c>0x4BFC70</c>).
 /// </remarks>
 public enum ScriptTokenKind
 {

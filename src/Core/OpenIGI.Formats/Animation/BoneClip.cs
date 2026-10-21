@@ -81,9 +81,8 @@ public sealed class BoneClip
 
     /// <summary>How far the clip's root-motion track moved the body on the last <see cref="Tick"/>.</summary>
     /// <remarks>
-    /// The engine's clip instance holds the sampled root at <c>+16</c> and this delta at <c>+28</c>
-    /// (<c>animation.md</c> §5). <b>The delta is what moves a human</b>; the sampled value is an absolute
-    /// position along the track.
+    /// The engine's clip instance holds the sampled root at <c>+16</c> and this delta at <c>+28</c>.
+    /// <b>The delta is what moves a human</b>; the sampled value is an absolute position along the track.
     /// </remarks>
     public Vector3f RootDelta { get; private set; }
 

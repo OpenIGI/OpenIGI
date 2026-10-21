@@ -684,7 +684,7 @@ public sealed class PlayerBody
     /// <b>Terrain and objects, in one query.</b> The original's downward ground cast (<c>0x4CBE40</c>)
     /// sweeps the placed models (<c>0x4CDB20</c>) <i>and</i> the terrain octree (<c>0x4CB050</c>) in the
     /// same call, and keeps whichever surface sits nearest the probe — terrain overwrites an object hit
-    /// only when it is the closer of the two (<c>collision.md</c> §8). For a downward probe that is
+    /// only when it is the closer of the two. For a downward probe that is
     /// simply the higher of the two surfaces. Without the object half a body walks <i>through</i> a
     /// crate, a ramp or a building floor and stands on the terrain beneath it, which is the collision
     /// bug this restores.

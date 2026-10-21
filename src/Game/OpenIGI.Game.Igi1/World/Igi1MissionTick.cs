@@ -631,8 +631,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
     /// <remarks>
     /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
     /// <c>Dynamic</c>: its HumanView, Shadow, then HumanPlayerInput, whose CHANNELS packet moves it, then the
-    /// binoculars and the gun. A level without a player task keeps
-    /// updating the player after the walk.
+    /// binoculars and the gun. A level without a player task keeps updating the player after the walk.
     /// </remarks>
     /// <param name="levelRoot">The level's task tree.</param>
     public void AttachToLevelWalk(GameTask levelRoot)

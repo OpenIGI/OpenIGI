@@ -9,9 +9,8 @@ namespace OpenIGI.Platform.Desktop;
 /// </summary>
 /// <remarks>
 /// The engine's key arrays are indexed by <c>DIK_*</c> scan code because that is what the original's
-/// configuration files store; see the original. Silk.NET reports GLFW-style
-/// key identifiers, so every host key has to be mapped rather than cast. Both sets are positional, so
-/// the mapping is layout-independent.
+/// configuration files store. Silk.NET reports GLFW-style key identifiers, so every host key has to be
+/// mapped rather than cast. Both sets are positional, so the mapping is layout-independent.
 /// </remarks>
 public static class DesktopKeyMap
 {

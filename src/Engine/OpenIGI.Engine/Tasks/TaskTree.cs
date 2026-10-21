@@ -13,9 +13,8 @@ namespace OpenIGI.Engine.Tasks;
 /// without touching process-wide state.
 /// </para>
 /// <para>
-/// See the original for the operations reproduced here: <c>Task_New</c>
-/// (<c>0x4012A0</c>), <c>Task_NewSibling</c> (<c>0x4013B0</c>), <c>Task_Delete</c> (<c>0x4015F0</c>) and
-/// <c>Task_SendMessage</c> (<c>0x401D80</c>).
+/// The operations reproduced here are <c>Task_New</c> (<c>0x4012A0</c>), <c>Task_NewSibling</c>
+/// (<c>0x4013B0</c>), <c>Task_Delete</c> (<c>0x4015F0</c>) and <c>Task_SendMessage</c> (<c>0x401D80</c>).
 /// </para>
 /// </remarks>
 public sealed class TaskTree : ILevelTaskTable

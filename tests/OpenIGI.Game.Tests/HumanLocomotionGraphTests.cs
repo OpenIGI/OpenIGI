@@ -8,8 +8,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// The graph was extracted mechanically from all 49 per-tick functions, so these are the invariants
-/// that say the extraction found the real structure rather than a plausible-looking one. See
-/// the original.
+/// that say the extraction found the real structure rather than a plausible-looking one.
 /// </remarks>
 public sealed class HumanLocomotionGraphTests
 {

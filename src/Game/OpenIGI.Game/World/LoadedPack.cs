@@ -99,7 +99,7 @@ public sealed class LoadedPack
     /// <remarks>
     /// <c>location0</c> names the six shipped sets; retail level packs name none. Each set carries the
     /// skeleton id out of its own <c>BOSH</c> chunk, which is the id a soldier's <c>Bone Heirachy</c>
-    /// parameter indexes — see the original.
+    /// parameter indexes.
     /// </remarks>
     public IReadOnlyList<BoneAnimationSet> AnimationSets { get; }
 

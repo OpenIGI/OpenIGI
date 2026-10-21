@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Ai;
 /// Registered by the tail of <c>PatrolPath</c>'s own registrar (<c>0x453550</c>), which walks the
 /// pointer array at <c>off_53E2A0</c> handing out <c>i - 1</c> — so the first constant is
 /// <b><see cref="None"/> = −1</b>, not zero. The array is in descending string-address order, the same
-/// layout as <c>AIEVENT_*</c> in §2.2, so it has to be read as an array rather than off the string table.
+/// layout as <c>AIEVENT_*</c>, so it has to be read as an array rather than off the string table.
 /// </para>
 /// <para>
 /// A command is a <c>PatrolPathCommand</c> task (40 bytes, <c>0x4533B0</c>) whose two <c>Int32</c> script

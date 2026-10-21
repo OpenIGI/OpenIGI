@@ -13,8 +13,7 @@ namespace OpenIGI.Game.Tests;
 /// Runs the retail <c>animtrigger/animtrigger.qvm</c> and checks the table it publishes.
 /// </summary>
 /// <remarks>
-/// This is what turns an animation's <c>BOED</c> event id into a sound. See
-/// the original.
+/// This is what turns an animation's <c>BOED</c> event id into a sound.
 /// </remarks>
 public sealed class RetailAnimTriggerTests
 {

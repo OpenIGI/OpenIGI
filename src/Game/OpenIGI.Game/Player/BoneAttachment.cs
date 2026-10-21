@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Player;
 /// <remarks>
 /// This is the payload <c>0x4600C0</c>, <c>0x4601A0</c> and <c>0x460210</c> fill — twenty-four bytes of
 /// position followed by the forty-byte orientation block. The forty bytes are a 3×3 and the drift
-/// counter that rides after it (<c>animation.md</c> §5.6); only the matrix is carried here, because the
+/// counter that rides after it; only the matrix is carried here, because the
 /// counter exists to schedule renormalisation and this codebase's quaternions are already normalised
 /// where it matters.
 /// </remarks>

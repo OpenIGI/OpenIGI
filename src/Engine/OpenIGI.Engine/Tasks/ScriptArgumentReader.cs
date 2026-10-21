@@ -10,12 +10,12 @@ namespace OpenIGI.Engine.Tasks;
 /// <para>
 /// This is the original's parse state — a four-word block holding an argument cursor, the call context
 /// and the file/line for diagnostics — that <c>Task_New</c> threads through every parameter's Parse
-/// callback (<c>0x4F0780</c>, §7 of the re-note). The cursor starts at argument 3, after the id, the
+/// callback (<c>0x4F0780</c>). The cursor starts at argument 3, after the id, the
 /// type name and the editor label.
 /// </para>
 /// <para>
 /// Each <c>Read</c> consumes exactly as many arguments as the corresponding callback in the original
-/// does; those counts are tabulated and cross-checked against retail level data in the re-note, §6.6.
+/// does; those counts are cross-checked against retail level data.
 /// Two are counter-intuitive: <see cref="ReadReal32x9"/> and <see cref="ReadQuat32"/> each consume
 /// <em>three</em> Euler angles rather than nine or four components.
 /// </para>
@@ -105,7 +105,7 @@ public sealed class ScriptArgumentReader
     /// </para>
     /// <para>
     /// The angles are returned raw. The matrix expansion needs the axis order and handedness of
-    /// <c>sub_4B38E0</c>, which lands with the orientation work in M6 — see the re-note, §12.
+    /// <c>sub_4B38E0</c>, which lands with the orientation work.
     /// </para>
     /// </remarks>
     public Vector3f ReadReal32x9() => ReadReal32x3();
@@ -154,7 +154,7 @@ public sealed class ScriptArgumentReader
     /// <returns>The eleven values in wire order.</returns>
     /// <remarks>
     /// The count is exact (<c>0x4EF860</c>); what the values <em>mean</em> is not yet reverse-engineered,
-    /// so they are handed back raw. See the re-note, §12.
+    /// so they are handed back raw.
     /// </remarks>
     public float[] ReadGraphEnvelope()
     {

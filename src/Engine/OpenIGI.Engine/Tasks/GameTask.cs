@@ -219,7 +219,7 @@ public abstract class GameTask
     /// <remarks>
     /// This is the C# stand-in for indexing the original's vtable. Method resolution is ordinary virtual
     /// dispatch, which is equivalent to the original's copy-on-register plus push-down-on-set scheme for
-    /// the start-up-time registration the original actually performs. See the re-note, §2.2 and §11.
+    /// the start-up-time registration the original actually performs.
     /// </remarks>
     public void Receive(TaskMessage message)
     {

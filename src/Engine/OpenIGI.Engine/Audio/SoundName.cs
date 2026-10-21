@@ -22,10 +22,9 @@ namespace OpenIGI.Engine.Audio;
 /// upper-cased.
 /// </para>
 /// <para>
-/// The multiplier walk is the same family the AI graph's field names use (<c>0x4F9E70</c>, recorded in
-/// <c>ai.md</c> §1): start at one, add a constant each character, keep it to sixteen bits. The constant
-/// differs — 317 there and in <see cref="Hash"/>, but <b>318</b> in <see cref="Bucket"/>, which is easy
-/// to read straight past.
+/// The multiplier walk is the same family the AI graph's field names use (<c>0x4F9E70</c>): start at one,
+/// add a constant each character, keep it to sixteen bits. The constant differs — 317 there and in
+/// <see cref="Hash"/>, but <b>318</b> in <see cref="Bucket"/>, which is easy to read straight past.
 /// </para>
 /// </remarks>
 public static class SoundName

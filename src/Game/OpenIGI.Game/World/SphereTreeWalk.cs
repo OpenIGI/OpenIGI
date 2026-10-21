@@ -17,7 +17,7 @@ public interface ISphereTreeVisitor
 
 /// <summary>
 /// The sphere-tree walk both games' model line handlers share: Project I.G.I.'s <c>RigidDynCubeObj</c> ray handler
-/// (<c>0x4C1840</c>, the original) and I.G.I. 2's <c>RigidDynCubeObj_TraceLinesHandler</c>
+/// (<c>0x4C1840</c>) and I.G.I. 2's <c>RigidDynCubeObj_TraceLinesHandler</c>
 /// (<c>igi2 0x58B3B0</c>) and <c>SplineObjSegment_TraceLinesHandler</c> (<c>igi2 0x5B7390</c>).
 /// </summary>
 /// <remarks>

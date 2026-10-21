@@ -10,11 +10,11 @@ namespace OpenIGI.Game.Ai;
 /// sweep</b>. What the sweep runs is the cone test on the per-tick eye snapshot,
 /// <see cref="AiEyeSnapshot.IsVisible"/>. This type holds the <em>parameters</em> both share and takes the
 /// snapshot; <see cref="IsVisible"/> is kept because <c>0x4502F0</c> is a real function on the
-/// event-admission path, not because detection uses it. See <c>ai.md</c> §8.
+/// event-admission path, not because detection uses it.
 /// </para>
 /// <para>
 /// From <c>0x4502F0</c>. <b>Both cones are always tested and the results are OR'd</b> — which corrects
-/// <c>gameplay-systems.md</c> §5's "cone selection switches on the alert latch". The latch does not select a
+/// an earlier reading's "cone selection switches on the alert latch". The latch does not select a
 /// cone; it selects <em>each</em> cone's range. So an AI sees through a long narrow cone <em>or</em> a short
 /// wide one, and being alerted lengthens both.
 /// </para>
@@ -62,8 +62,7 @@ public sealed class AiVision
     /// <returns>The snapshot to test candidates against for the rest of the tick.</returns>
     /// <remarks>
     /// The snapshot is taken <b>before</b> the alert latch is recomputed, so the cones used on a tick are
-    /// the ones <em>last</em> tick's state selected — a one-tick lag that is in the original
-    /// (<c>ai.md</c> §3.1).
+    /// the ones <em>last</em> tick's state selected — a one-tick lag that is in the original.
     /// </remarks>
     public AiEyeSnapshot Capture(Vector3d eye, Matrix3f orientation, bool alerted) => new(
         eye,

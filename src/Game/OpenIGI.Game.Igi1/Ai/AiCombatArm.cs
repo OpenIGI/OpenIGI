@@ -5,8 +5,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <summary>Which combat behaviour <c>AIAction_Combat</c> installs for an <c>AIType</c>.</summary>
 /// <remarks>
 /// The dispatch is a switch on the type, and its case labels are an independent confirmation of the
-/// interleaved <c>AITYPE_*</c> numbering §2.4 read off the registrar table. See
-/// the original.
+/// interleaved <c>AITYPE_*</c> numbering read off the registrar table.
 /// </remarks>
 public enum AiCombatArm
 {
@@ -38,7 +37,7 @@ public static class AiCombatArms
     /// <remarks>
     /// <para>
     /// The faction prefix means nothing to the dispatch — <c>MAFIA_GUARD_AK</c> and <c>GUARD_AK</c> both
-    /// land on the guard arm, exactly as §2.3 found they run byte-identical scripts. What decides is
+    /// land on the guard arm, exactly as they run byte-identical scripts. What decides is
     /// <c>GUARD</c> against <c>PATROL</c>.
     /// </para>
     /// <para>

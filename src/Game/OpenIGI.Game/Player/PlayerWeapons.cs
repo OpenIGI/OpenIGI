@@ -34,7 +34,6 @@ public readonly record struct WeaponPickupResult(bool AddedWeapon, int AddedRese
 /// The bridge runs <b>after</b> the view has been committed for the tick, because the muzzle is the
 /// eye — call <see cref="Tick"/>, sync the rig, then <see cref="ResolveFire"/>.
 /// </para>
-/// <para>See the original and the original.</para>
 /// </remarks>
 public sealed class PlayerWeapons
 {

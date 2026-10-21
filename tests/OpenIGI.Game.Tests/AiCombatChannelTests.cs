@@ -87,8 +87,8 @@ public sealed class AiCombatChannelTests
 
     /// <summary>A guard's stances are the soldier state machine's 0, 19 and 26.</summary>
     /// <remarks>
-    /// Which is a cross-check against <c>player.md</c> §16: state 0 is standing still, 19 is crouched
-    /// still and 26 the last of the crouched movement set — read there off the state-to-animation table
+    /// Which is a cross-check against the player's locomotion states: state 0 is standing still, 19 is crouched
+    /// still and 26 the last of the crouched movement set — read off the state-to-animation table
     /// with no reference to the AI at all.
     /// </remarks>
     [Fact]
