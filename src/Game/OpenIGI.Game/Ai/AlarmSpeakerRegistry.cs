@@ -61,14 +61,22 @@ public sealed class AlarmSpeaker(
     /// <remarks>Permanent: a destroyed speaker never sounds its working loop again; only a siren's faulty loop is left.</remarks>
     public bool IsDestroyed { get; set; }
 
-    /// <summary>Gets whether damage adds up before it breaks, as a camera lens's does.</summary>
+    /// <summary>Gets whether damage adds up before it breaks, as a camera lens's and a siren's does.</summary>
     /// <remarks>
-    /// A security camera's lens sums every round's and blast's damage (<c>+260</c>) and explodes only once
-    /// the sum reaches <see cref="AlarmSpeakerRegistry.CameraDestroyThreshold"/>; the other emitters break on
-    /// their first hit.
+    /// A security camera's lens sums every round's and blast's damage (<c>+260</c>) and explodes once the sum reaches
+    /// <see cref="AlarmSpeakerRegistry.CameraDestroyThreshold"/>. A siren is an <c>ExplodeObject</c> and does the same
+    /// (<c>+488</c> against <c>+492</c>) at <see cref="AlarmSpeakerRegistry.SirenDestroyThreshold"/>. An alarm light breaks
+    /// on its first hit.
     /// </remarks>
-    public bool AccumulatesDamage =>
-        string.Equals(Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal);
+    public bool AccumulatesDamage => DestroyThreshold > 0f;
+
+    /// <summary>Gets the damage that breaks it, or zero for an emitter the first hit breaks.</summary>
+    public float DestroyThreshold =>
+        string.Equals(Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+            ? AlarmSpeakerRegistry.CameraDestroyThreshold
+            : string.Equals(Task.Type.Name, WorldScene.SirenType, StringComparison.Ordinal)
+                ? AlarmSpeakerRegistry.SirenDestroyThreshold
+                : 0f;
 
     /// <summary>Gets the damage taken so far — the lens's <c>+260</c>.</summary>
     public float Damage { get; internal set; }
@@ -234,11 +242,21 @@ public sealed class AlarmSpeakerRegistry
     /// </remarks>
     public const float CameraDestroyThreshold = 0.5f;
 
+    /// <summary>The damage that blows a siren up.</summary>
+    /// <remarks>
+    /// A siren is an <c>ExplodeObject</c> (<c>0x449360</c>, parent <c>0x481340</c>). Its constructor (<c>0x4492A0</c>) hands
+    /// <c>0x481360</c> 1.0 for <c>+496</c>, which the object's setup (<c>0x481C40</c>) copies into its threshold <c>+492</c>;
+    /// sirens declare no explosion parameters to change it. A round (<c>0x481E60</c>) and a blast (<c>0x481EA0</c>, the
+    /// blast flag <c>+564</c> left set by <c>0x481780</c>) add to <c>+488</c>, and the siren goes off, with no delay, once
+    /// the sum reaches it: five of Mission 1's rounds.
+    /// </remarks>
+    public const float SirenDestroyThreshold = 1.0f;
+
     /// <summary>Hands one round to the exact alarm object named by a rich world trace.</summary>
     /// <param name="owner">The placing task hit by the trace.</param>
     /// <param name="damage">
-    /// The round's damage — the firing weapon's <c>Damage Factor</c>. A camera adds it up; every other
-    /// emitter breaks on the first hit whatever it is.
+    /// The round's damage — the firing weapon's <c>Damage Factor</c>. A camera and a siren add it up; an alarm
+    /// light breaks on the first hit whatever it is.
     /// </param>
     /// <returns>The speaker this round destroyed, or <see langword="null"/>.</returns>
     public AlarmSpeaker? TryDestroy(GameTask? owner, float damage = float.PositiveInfinity)
@@ -319,7 +337,7 @@ public sealed class AlarmSpeakerRegistry
     /// <param name="radiusUnits">How far the destruction reaches — a bullet's touch, a blast's radius.</param>
     /// <returns>The speaker destroyed, or <see langword="null"/> when the hit struck none.</returns>
     /// <remarks>
-    /// The nearest one inside the radius takes it; one impact fells at most one speaker. Cameras are left
+    /// The nearest one inside the radius takes it; one impact fells at most one speaker. Cameras and sirens are left
     /// to <see cref="ApplyExplosion"/> and <see cref="TryDestroy"/>, which add their damage up.
     /// </remarks>
     public AlarmSpeaker? TryDestroyAt(Vector3d impactUnits, float radiusUnits = HitRadiusUnits)
@@ -350,13 +368,13 @@ public sealed class AlarmSpeakerRegistry
         return nearest;
     }
 
-    // A camera adds the hit to its sum and breaks at the threshold; anything else breaks outright.
+    // A camera or a siren adds the hit to its sum and breaks at its threshold; anything else breaks outright.
     private static bool Damage(AlarmSpeaker speaker, float damage)
     {
         if (speaker.AccumulatesDamage)
         {
             speaker.Damage += damage;
-            if (speaker.Damage < CameraDestroyThreshold)
+            if (speaker.Damage < speaker.DestroyThreshold)
             {
                 return false;
             }

@@ -95,9 +95,12 @@ public sealed class AiAlarmRuntimeTests
         Assert.Equal(raises ? 1 : 0, Read(variables, "AlarmControl_98.isTrigger").Integer);
     }
 
-    /// <summary>Siren's update (0x4494D0) swaps a shot-out siren's working loop for its faulty one while its expression holds.</summary>
+    /// <summary>
+    /// A siren is an ExplodeObject: Mission 1's 0.2 rounds add up to its 1.0 threshold (0x481E60 against +492), so it takes
+    /// five. Its update (0x4494D0) then swaps the working loop for its faulty one while its expression holds.
+    /// </summary>
     [Fact]
-    public void A_shot_out_siren_sounds_its_faulty_loop_while_the_alarm_is_on()
+    public void A_siren_takes_five_rounds_and_then_sounds_its_faulty_loop_while_the_alarm_is_on()
     {
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
@@ -131,7 +134,14 @@ public sealed class AiAlarmRuntimeTests
         AlarmSpeaker siren = Assert.Single(speakers.Speakers);
         Assert.Equal("alarmsystem_working", speakers.SoundNow(siren));
 
-        siren.IsDestroyed = true;
+        for (int round = 1; round < 5; round++)
+        {
+            Assert.Null(speakers.TryDestroy(siren.Task, 0.2f));
+            Assert.Null(speakers.TryDestroyAt(siren.PositionUnits));
+        }
+
+        Assert.Same(siren, speakers.TryDestroy(siren.Task, 0.2f));
+        Assert.True(siren.IsDestroyed);
         Assert.False(speakers.IsOn(siren));
         Assert.Equal("alarmsystem_faulty", speakers.SoundNow(siren));
     }
