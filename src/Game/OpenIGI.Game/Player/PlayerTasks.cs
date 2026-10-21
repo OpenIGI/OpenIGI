@@ -54,9 +54,15 @@ public abstract class HumanTask
     /// <inheritdoc/>
     float IAiDetectable.DetectableRadius => (float)HumanSeparation.RadiusInUnits;
 
+    /// <summary>Gets or sets how far off another game's detectors see the human, as a share of a cone's length.</summary>
+    /// <remarks>
+    /// Project I.G.I. keeps no measure of how lit a human stands, so its own humans are seen as well as in the light and its
+    /// detectors never read this. Content that brings another game's detectors may measure it as that game does.
+    /// </remarks>
+    public float VisibilityFactor { get; set; } = 1f;
+
     /// <inheritdoc/>
-    /// <remarks>Project I.G.I. keeps no measure of how lit a human stands: every human is seen as well as in the light.</remarks>
-    float? IAiDetectable.VisibilityFactor => 1f;
+    float? IAiDetectable.VisibilityFactor => VisibilityFactor;
 
     /// <inheritdoc/>
     bool IAiDetectable.IsGone => IsDeleted;
