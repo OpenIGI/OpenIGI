@@ -49,7 +49,8 @@ public sealed class Mod : IOpenIgiMod
 
 `Configure` runs once for each game the mod is for, before that game loads anything. `builder.Directory` is the mod's
 own folder, for data it ships. A mod that also draws implements `IOpenIgiPresentationMod` (`OpenIGI.Modding.Presentation`).
-[`mods/OpenIGI.Mods.Igi2Soldiers`](../mods/OpenIGI.Mods.Igi2Soldiers) is a full example: Project I.G.I.'s missions with I.G.I. 2's soldiers.
+[OpenIGI/igi2-soldiers](https://github.com/OpenIGI/igi2-soldiers) is a full example in a repository of its own: Project I.G.I.'s
+missions with I.G.I. 2's soldiers, built against OpenIGI's source or its released SDK.
 
 ### `mod.json`
 

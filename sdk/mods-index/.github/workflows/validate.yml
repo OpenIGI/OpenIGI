@@ -38,7 +38,10 @@ jobs:
           dotnet openigi/tools/OpenIGI.Tools.Release/bin/Release/net10.0/OpenIGI.Tools.Release.dll mods-index check index \
             --base "origin/${{ github.base_ref }}" --author "${{ github.event.pull_request.user.login }}"
 
+      # A mod that builds against OpenIGI's source (Directory.Build.props in OpenIGI/igi2-soldiers) finds it here.
       - name: Build every version added
+        env:
+          OPENIGI_ROOT: ${{ github.workspace }}/openigi
         run: |
           tool="dotnet openigi/tools/OpenIGI.Tools.Release/bin/Release/net10.0/OpenIGI.Tools.Release.dll"
           $tool mods-index added index --base "origin/${{ github.base_ref }}" | while read -r id version; do
