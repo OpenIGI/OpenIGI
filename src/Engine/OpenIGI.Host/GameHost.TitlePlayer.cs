@@ -272,6 +272,18 @@ public sealed partial class GameHost
     /// </remarks>
     private void RegisterTitlePlayerCommands(ConsoleSystem console)
     {
+        // -runat 120 "menu_action MenuManager_ActivatePopupScreen(934)" opens the quit popup with no pointer.
+        console.Commands.Add("menu_action", "Runs an expression through the retail menus, as an entry's script runs.", context =>
+        {
+            if (_retailMenus is not { } menus)
+            {
+                context.Print("The retail menus are not running.");
+                return;
+            }
+
+            menus.RunAction(string.Join(' ', context.Arguments));
+        }, "<expression...>");
+
         console.Commands.Add("title_ai", "Reports title guards' AI startup, script, graph and animation state.", context =>
         {
             if (_titleFeatures?.Diagnostics is not { } diagnostics)

@@ -11,6 +11,7 @@ namespace OpenIGI.Presentation.Igi1.Menus;
 internal sealed class Igi1RetailMenus : IRetailMenus
 {
     private readonly RetailMenuHost _shell;
+    private readonly MenuSystem _menu;
 
     /// <summary>Initializes a new instance of the <see cref="Igi1RetailMenus"/> class, and starts the menu script.</summary>
     /// <param name="request">What the menus are started with.</param>
@@ -20,6 +21,7 @@ internal sealed class Igi1RetailMenus : IRetailMenus
             request.FileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"),
             request.Loop,
             request.Logger);
+        _menu = menu;
 
         Action<bool> leave = request.Leave;
         _shell = new RetailMenuHost(new RetailMenuPresentationRequest(
@@ -59,6 +61,9 @@ internal sealed class Igi1RetailMenus : IRetailMenus
 
     /// <inheritdoc/>
     public void CloseScreens() => _shell.CloseScreens();
+
+    /// <inheritdoc/>
+    public void RunAction(string expression) => _menu.Manager.RunAction(expression);
 
     /// <inheritdoc/>
     public void Dispose() => _shell.Dispose();

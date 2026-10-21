@@ -67,8 +67,11 @@ public partial class ControlsMenuTask
     private int _pointerY;
 
     /// <summary>Initializes a new instance of the <see cref="ControlsMenuTask"/> class.</summary>
+    /// <remarks><c>0x4232B0</c> also sets <c>+60</c> and <c>+64</c>: it centres itself in its frame on both axes.</remarks>
     public ControlsMenuTask()
     {
+        CentreHorizontally = true;
+        CentreVertically = true;
         LayoutX = 300;
         LayoutY = 230;
         LayoutWidth = LabelWidth + KeyWidth;

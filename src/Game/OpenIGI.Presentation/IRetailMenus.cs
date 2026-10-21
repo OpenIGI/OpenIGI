@@ -63,4 +63,9 @@ public interface IRetailMenus : IDisposable
 {
     /// <summary>Stops drawing the screens and frees what they were drawn with, as a mission takes the frame.</summary>
     void CloseScreens();
+
+    /// <summary>Runs a menu expression through the menu manager, as an entry's script runs.</summary>
+    /// <param name="expression">The expression, such as <c>MenuManager_ActivatePopupScreen(934)</c>.</param>
+    /// <remarks>A developer's way to reach a screen or a popup without a pointer, from the console.</remarks>
+    void RunAction(string expression);
 }
