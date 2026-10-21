@@ -69,6 +69,11 @@ internal static class ContentPublish
             throw new InvalidDataException($"{path}: {ex.Message}", ex);
         }
 
+        if (manifest.Id == ModPacks.LocalFolder)
+        {
+            throw new ArgumentException($"No mod is named '{ModPacks.LocalFolder}': the launcher keeps the mods being tried in a folder of that name.");
+        }
+
         if (string.IsNullOrWhiteSpace(manifest.Summary))
         {
             throw new ArgumentException($"{path} has no summary, which the launcher lists the mod with.");

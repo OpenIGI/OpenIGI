@@ -14,6 +14,38 @@ internal sealed class ContentFeedClient(HttpClient http)
 {
     private string? _tag;
     private ContentIndex? _last;
+    private string? _modsTag;
+    private ContentIndex? _lastMods;
+
+    /// <summary>Fetches the mods index, which lists the mods apart from the other packs.</summary>
+    /// <param name="service">The service's address.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <returns>The index, the previous answer when nothing changed, or an empty one from a service from before mods.</returns>
+    /// <exception cref="HttpRequestException">The service could not be reached or answered with an error.</exception>
+    public async Task<ContentIndex> FetchModsAsync(Uri service, CancellationToken cancellationToken)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, new Uri(service, ModPacks.IndexPath));
+        if (_modsTag is not null && _lastMods is not null)
+        {
+            request.Headers.IfNoneMatch.Add(EntityTagHeaderValue.Parse(_modsTag));
+        }
+
+        using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotModified && _lastMods is not null)
+        {
+            return _lastMods;
+        }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new ContentIndex(string.Empty, []);
+        }
+
+        response.EnsureSuccessStatusCode();
+        _lastMods = ReleaseJson.ReadContentIndex(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        _modsTag = response.Headers.ETag?.ToString();
+        return _lastMods;
+    }
 
     /// <summary>Fetches the content index.</summary>
     /// <param name="service">The service's address.</param>

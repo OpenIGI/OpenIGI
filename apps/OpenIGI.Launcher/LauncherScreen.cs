@@ -69,6 +69,7 @@ internal sealed class LauncherScreen : Screen
     private LauncherBackdrop? _backdrop;
     private HomePage? _home;
     private ContentPage? _content;
+    private ContentPage? _mods;
     private LogsPage? _logs;
     private GameSwitcher? _switcher;
     private UiElement? _chrome;
@@ -116,7 +117,8 @@ internal sealed class LauncherScreen : Screen
         AddPage(main, _home.Root);
         _content = new ContentPage(_rowTheme, _model, _window.Picture);
         AddPage(main, _content.Root);
-        AddPage(main, PlaceholderPage.Build(_theme, "Mods & plugins", "Mods", "Mod management arrives with the mod loader"));
+        _mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods);
+        AddPage(main, _mods.Root);
         _logs = new LogsPage(_theme, _model, _window);
         AddPage(main, _logs.Root);
         AddPage(main, SettingsPage.Build(_rowTheme, _model, _window));
@@ -197,6 +199,7 @@ internal sealed class LauncherScreen : Screen
             _revision = _model.Revision;
             _home?.Refresh();
             _content?.Refresh();
+            _mods?.Refresh();
             if (_switcher is not null)
             {
                 _switcher.Text = _model.Current.Title;
@@ -208,6 +211,7 @@ internal sealed class LauncherScreen : Screen
 
         _home?.Update();
         _content?.Update();
+        _mods?.Update();
         _logs?.Update();
         if (_backdrop is not null)
         {

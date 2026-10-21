@@ -98,6 +98,9 @@ public sealed class ContentModTests : IDisposable
         Write("mod.json", """{ "id": "voices", "version": "1.0.0", "apiVersion": 1 }""");
         Assert.Throws<ArgumentException>(() => ContentPublish.ForMod(_folder, null, null));
 
+        Write("mod.json", """{ "id": "local", "version": "1.0.0", "apiVersion": 1, "summary": "Named as the launcher's own folder." }""");
+        Assert.Throws<ArgumentException>(() => ContentPublish.ForMod(_folder, null, null));
+
         Write("mod.json", """{ "id": "voices", "version": "1.0", "apiVersion": 1, "summary": "New voices." }""");
         Write("a.wav", "sound");
         Assert.Throws<ArgumentException>(() => ContentPublish.Chunk(_folder, ContentPublish.ForMod(_folder, null, null), _cache, DateTimeOffset.UnixEpoch));

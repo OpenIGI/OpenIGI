@@ -53,6 +53,12 @@ internal sealed class ContentEntry
 
     /// <summary>Gets or sets the pack's picture on disk, or <see langword="null"/> while it has none (or it is downloading).</summary>
     public string? ThumbnailPath { get; set; }
+
+    /// <summary>Gets or sets, for a mod, the game it reads that is not installed, by name; <see langword="null"/> when none is missing.</summary>
+    public string? NeedsGame { get; set; }
+
+    /// <summary>Gets or sets, for a mod, a mod it needs that is not switched on with it, by id; <see langword="null"/> when none is.</summary>
+    public string? NeedsMod { get; set; }
 }
 
 /// <summary>One entry of the selected game's load order, as the Content page shows it.</summary>
@@ -81,6 +87,9 @@ internal sealed class LoadOrderItem
 
     /// <summary>Gets or sets where its files overlap the other enabled entries.</summary>
     public ContentConflict Conflict { get; set; } = ContentConflict.None;
+
+    /// <summary>Gets, in a mod order, the mod in the library's local folder this entry is; <see langword="null"/> for any other.</summary>
+    public LocalMod? Mod { get; init; }
 }
 
 /// <content>The optional content packs: listing them, installing, updating, verifying and removing them.</content>
@@ -95,9 +104,9 @@ internal sealed partial class LauncherModel
     private const string ThumbnailFolder = ".thumbnails";
     private const string ProfileFile = "profile.json";
 
-    // Where mods will be installed beside content, once there is a mod loader. Kept apart on purpose: content
-    // is asset overlays the game stacks through its overrides; mods are code, with their own manifest, profile
-    // and loader. See "Content packs and mods" in CONTRIBUTING.md.
+    // Where mods are installed beside content. Kept apart on purpose: content is asset overlays the game stacks
+    // through its overrides; mods have their own manifest, profile and loader. See "Content packs and mods" in
+    // CONTRIBUTING.md.
     internal const string ModsFolder = "mods";
 
     private readonly ContentFeedClient _contentClient;
@@ -175,9 +184,13 @@ internal sealed partial class LauncherModel
                     entry.Installed = installed;
                     entry.Damaged = new HashSet<string>();
                     entry.DownloadBytes = 0;
-                    if (pack.Kind != ContentKind.Runtime)
+                    if (pack.Kind == ContentKind.Overlay)
                     {
                         ChangeSettings(s => ContentLoadOrder.AddInstalled(OrderFor(s, pack.Game), id));
+                    }
+                    else if (pack.Kind == ContentKind.Mod)
+                    {
+                        ChangeSettings(s => AddInstalledMod(s, pack));
                     }
 
                     Job = null;
@@ -237,7 +250,7 @@ internal sealed partial class LauncherModel
                     ChangeSettings(s =>
                     {
                         s.Content.Remove(id);
-                        foreach (List<ContentOrderEntry> order in s.ContentOrder.Values)
+                        foreach (List<ContentOrderEntry> order in s.ContentOrder.Values.Concat(s.ModOrder.Values))
                         {
                             order.RemoveAll(entry => entry.Id == id);
                         }
@@ -415,6 +428,7 @@ internal sealed partial class LauncherModel
             Changed();
         }
 
+        AddModEnvironment(environment, title);
         return environment;
     }
 
@@ -433,8 +447,16 @@ internal sealed partial class LauncherModel
     private ContentInstaller ContentInstallerFor(string id) => InstallerAt(Find(id)?.Pack.Kind ?? ContentKind.Overlay, id);
 
     // Where a pack of a kind lives in the library.
-    private ContentInstaller InstallerAt(ContentKind kind, string id) =>
-        new(_http, Path.Combine(Settings.Library.Trim(), kind == ContentKind.Runtime ? RuntimeFolder : ContentFolder, id));
+    private ContentInstaller InstallerAt(ContentKind kind, string id) => new(_http, PackRoot(kind, id));
+
+    private string PackRoot(ContentKind kind, string id) => Path.Combine(Settings.Library.Trim(), KindFolder(kind), id);
+
+    private static string KindFolder(ContentKind kind) => kind switch
+    {
+        ContentKind.Runtime => RuntimeFolder,
+        ContentKind.Mod => ModsFolder,
+        _ => ContentFolder,
+    };
 
     private ContentEntry? Find(string id) => _packs.Find(p => p.Pack.Id == id);
 
@@ -447,9 +469,9 @@ internal sealed partial class LauncherModel
 
         // Each kind from its own folder, and only a pack of that kind from it: a runtime manifest found among the
         // content, or the other way about, is left where it is rather than loaded from the wrong place.
-        foreach ((ContentKind kind, string name) in (ReadOnlySpan<(ContentKind, string)>)[(ContentKind.Overlay, ContentFolder), (ContentKind.Runtime, RuntimeFolder)])
+        foreach (ContentKind kind in (ReadOnlySpan<ContentKind>)[ContentKind.Overlay, ContentKind.Runtime, ContentKind.Mod])
         {
-            string folder = Path.Combine(Settings.Library.Trim(), name);
+            string folder = Path.Combine(Settings.Library.Trim(), KindFolder(kind));
             if (!Directory.Exists(folder))
             {
                 continue;
@@ -464,12 +486,13 @@ internal sealed partial class LauncherModel
                     && installed.Kind == kind)
                 {
                     // The listing last seen, so a renamed pack keeps its name and picture offline too.
-                    ContentPack pack = RememberedListing(id) ?? installed.Listing;
+                    ContentPack pack = RememberedListing(kind, id) ?? installed.Listing;
                     _packs.Add(new ContentEntry { Pack = pack, Installed = installed, DownloadBytes = 0, ThumbnailPath = CachedThumbnail(pack) });
                 }
             }
         }
 
+        LoadLocalMods();
         if (_contentIndex is not null)
         {
             MergeIndex(_contentIndex);
@@ -489,7 +512,11 @@ internal sealed partial class LauncherModel
             try
             {
                 using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
-                ContentIndex index = await _contentClient.FetchIndexAsync(ReleaseFeedClient.DefaultService, timeout.Token).ConfigureAwait(false);
+                ContentIndex content = await _contentClient.FetchIndexAsync(ReleaseFeedClient.DefaultService, timeout.Token).ConfigureAwait(false);
+                ContentIndex mods = await _contentClient.FetchModsAsync(ReleaseFeedClient.DefaultService, timeout.Token).ConfigureAwait(false);
+
+                // One list for every kind: the chunks are one store's, and each kind is told apart by its own.
+                ContentIndex index = new(content.ChunkUrl, [.. content.Packs, .. mods.Packs.Where(static p => p.Kind == ContentKind.Mod)]);
                 _results.Enqueue(() =>
                 {
                     _checkingContent = false;
@@ -610,9 +637,9 @@ internal sealed partial class LauncherModel
         });
     }
 
-    private ContentPack? RememberedListing(string id)
+    private ContentPack? RememberedListing(ContentKind kind, string id)
     {
-        string path = Path.Combine(Settings.Library.Trim(), ContentFolder, id, ListingFile);
+        string path = Path.Combine(PackRoot(kind, id), ListingFile);
         try
         {
             return File.Exists(path)
@@ -629,7 +656,7 @@ internal sealed partial class LauncherModel
 
     private void RememberListing(ContentPack pack)
     {
-        string path = Path.Combine(Settings.Library.Trim(), ContentFolder, pack.Id, ListingFile);
+        string path = Path.Combine(PackRoot(pack.Kind, pack.Id), ListingFile);
         try
         {
             File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(pack, ReleaseJsonContext.Default.ContentPack));
@@ -708,11 +735,15 @@ internal sealed partial class LauncherModel
 
         foreach (ContentEntry entry in _packs)
         {
-            // A runtime is in use whenever it is installed: it stands in no load order to be switched off in.
-            entry.Enabled = entry.Pack.Kind == ContentKind.Runtime
-                ? entry.Installed is not null
-                : Settings.ContentOrder.TryGetValue(entry.Pack.Game, out List<ContentOrderEntry>? order)
-                    && order.Find(e => e.Id == entry.Pack.Id) is { Enabled: true };
+            // A runtime is in use whenever it is installed: it stands in no load order to be switched off in. A mod is
+            // as the selected game's order has it.
+            entry.Enabled = entry.Pack.Kind switch
+            {
+                ContentKind.Runtime => entry.Installed is not null,
+                ContentKind.Mod => Current.Retail is { } game && ModEnabled(game.Id, entry.Pack.Id),
+                _ => Settings.ContentOrder.TryGetValue(entry.Pack.Game, out List<ContentOrderEntry>? order)
+                    && order.Find(e => e.Id == entry.Pack.Id) is { Enabled: true },
+            };
             if ((Job?.ContentId == entry.Pack.Id && !Job.Paused) || _busy.Contains(entry.Pack.Id))
             {
                 entry.State = ContentState.Working;
@@ -733,7 +764,7 @@ internal sealed partial class LauncherModel
     private void ReconcileLoadOrders()
     {
         bool libraryReachable = Directory.Exists(Path.Combine(Settings.Library.Trim(), ContentFolder));
-        bool changed = false;
+        bool changed = ReconcileModOrders();
 
         foreach (LauncherGame game in Games)
         {
@@ -742,7 +773,7 @@ internal sealed partial class LauncherModel
                 continue;
             }
 
-            string[] installed = [.. _packs.Where(p => p.Pack.Game == title.Id && p.Installed is not null).Select(static p => p.Pack.Id)];
+            string[] installed = [.. _packs.Where(p => p.Pack.Kind == ContentKind.Overlay && p.Pack.Game == title.Id && p.Installed is not null).Select(static p => p.Pack.Id)];
             if (installed.Length == 0 && !Settings.ContentOrder.ContainsKey(title.Id))
             {
                 continue;
@@ -782,12 +813,13 @@ internal sealed partial class LauncherModel
         _available.Clear();
         _runtime.Clear();
         _runtime.AddRange(_packs.Where(static p => p.Pack.Kind == ContentKind.Runtime));
+        BuildModOrder();
         if (Current.Retail is not { } title)
         {
             return;
         }
 
-        _available.AddRange(_packs.Where(p => p.Pack.Game == title.Id && p.Installed is null));
+        _available.AddRange(_packs.Where(p => p.Pack.Kind == ContentKind.Overlay && p.Pack.Game == title.Id && p.Installed is null));
         if (!Settings.ContentOrder.TryGetValue(title.Id, out List<ContentOrderEntry>? order))
         {
             order = [new ContentOrderEntry(ContentLayerSpec.LocalId, true)];
@@ -809,7 +841,7 @@ internal sealed partial class LauncherModel
                     LocalBytes = listing.Bytes,
                 });
             }
-            else if (Find(entry.Id) is { Installed: not null } pack && pack.Pack.Game == title.Id)
+            else if (Find(entry.Id) is { Installed: not null } pack && pack.Pack.Kind == ContentKind.Overlay && pack.Pack.Game == title.Id)
             {
                 _loadOrder.Add(new LoadOrderItem { Id = entry.Id, Entry = pack, Enabled = entry.Enabled });
             }

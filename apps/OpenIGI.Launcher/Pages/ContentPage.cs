@@ -18,9 +18,16 @@ namespace OpenIGI.Launcher.Pages;
 /// install.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A row is the design's: picture, name and summary, size, state, and the one thing to do about it now, with
 /// the lesser actions under it. A load-order row adds a grip with its position on the left, an ON/OFF switch
 /// under its state, and a line saying where its files overlap the others.
+/// </para>
+/// <para>
+/// The Mods page is the same page over the game's mods (<see cref="ContentPageKind.Mods"/>): its PLAY ORDER, where a
+/// later mod's changes are made over an earlier one's, the mods a developer dropped in the library's local folder among
+/// them, and the published mods AVAILABLE under it. A mod with code says so, and asks once before it is installed.
+/// </para>
 /// </remarks>
 internal sealed class ContentPage
 {
@@ -40,16 +47,33 @@ internal sealed class ContentPage
     private readonly SectionTitle _title;
     private readonly DiskMeter _disk;
     private readonly Func<string, BackdropPicture?> _pictures;
+    private readonly ContentPageKind _kind;
+    private readonly OnOffSwitch? _playsMods;
+    private readonly UiElement? _modsBar;
 
-    public ContentPage(UiTheme theme, LauncherModel model, Func<string, BackdropPicture?> pictures)
+    public ContentPage(UiTheme theme, LauncherModel model, Func<string, BackdropPicture?> pictures, ContentPageKind kind = ContentPageKind.Content)
     {
         _theme = theme;
         _model = model;
         _pictures = pictures;
+        _kind = kind;
+        bool mods = kind == ContentPageKind.Mods;
 
-        _orderCaption = new SectionCaption(theme, "LOAD ORDER", "TOP WINS · DRAG TO REORDER");
+        _orderCaption = mods
+            ? new SectionCaption(theme, "PLAY ORDER", "LATER WINS · DRAG TO REORDER")
+            : new SectionCaption(theme, "LOAD ORDER", "TOP WINS · DRAG TO REORDER");
         _ordered = new ReorderList { Spacing = 8f };
-        _ordered.Moved += (from, to) => _model.MoveContent(from, to);
+        _ordered.Moved += (from, to) =>
+        {
+            if (mods)
+            {
+                _model.MoveMod(from, to);
+            }
+            else
+            {
+                _model.MoveContent(from, to);
+            }
+        };
         _availableCaption = new SectionCaption(theme, "AVAILABLE", string.Empty) { Margin = new Thickness(0f, 20f, 0f, 0f) };
         _available = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
 
@@ -64,6 +88,24 @@ internal sealed class ContentPage
         };
 
         _list = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f, VerticalAlignment = VerticalAlignment.Top };
+        if (mods)
+        {
+            // Over the order: whether the game is started with its mods at all, and where a mod's author drops a build.
+            _playsMods = new OnOffSwitch(theme) { VerticalAlignment = VerticalAlignment.Center };
+            _playsMods.Activated += _ => _model.SetPlaysMods(!_model.PlaysMods);
+            var local = new LinkButton(theme) { Text = "OPEN LOCAL MODS FOLDER", VerticalAlignment = VerticalAlignment.Center };
+            local.Activated += _ => _model.OpenLocalMods();
+            var reread = new LinkButton(theme) { Text = "READ IT AGAIN", VerticalAlignment = VerticalAlignment.Center };
+            reread.Activated += _ => _model.RefreshLocalMods();
+            var bar = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 18f, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0f, 0f, 0f, 10f) };
+            bar.Add(new Text(theme.Mono, "PLAY WITH MODS", 13f, Caption, 0.22f) { VerticalAlignment = VerticalAlignment.Center });
+            bar.Add(_playsMods);
+            bar.Add(local);
+            bar.Add(reread);
+            _modsBar = bar;
+            _list.AddChild(bar);
+        }
+
         _list.AddChild(_orderCaption);
         _list.AddChild(_ordered);
         _list.AddChild(_availableCaption);
@@ -72,7 +114,7 @@ internal sealed class ContentPage
         _list.AddChild(_runtime);
         _list.AddChild(_empty);
 
-        _title = new SectionTitle(theme, model.Current.Title.ToUpperInvariant(), "Content")
+        _title = new SectionTitle(theme, model.Current.Title.ToUpperInvariant(), mods ? "Mods" : "Content")
         {
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Bottom,
@@ -111,51 +153,65 @@ internal sealed class ContentPage
         _disk.Describe(_model.Settings.Library, _model.LibraryBytes);
 
         List<Control> arrived = [];
+        bool mods = _kind == ContentPageKind.Mods;
+        IReadOnlyList<LoadOrderItem> order = mods ? _model.ModOrder : _model.LoadOrder;
+        IReadOnlyList<ContentEntry> available = mods ? _model.AvailableMods : _model.AvailableContent;
 
         // The list rebuilt only when what is in it changed. A drop has already put the rows in the order the
         // model now reports, so dragging never rebuilds -- and a row being carried is never pulled away.
         if (!IsReordering
-            && !_ordered.Items.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(_model.LoadOrder.Select(static i => i.Id)))
+            && !_ordered.Items.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(order.Select(static i => i.Id)))
         {
             _ordered.Clear();
-            foreach (LoadOrderItem item in _model.LoadOrder)
+            foreach (LoadOrderItem item in order)
             {
-                var row = new ContentRow(_theme, _model, item.Id, ordered: true, _pictures);
+                var row = new ContentRow(_theme, _model, item.Id, ordered: true, _pictures, _kind);
                 _ordered.Add(row);
                 arrived.AddRange(row.Descendants().OfType<Control>());
             }
         }
 
-        if (!_available.Children.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(_model.AvailableContent.Select(static p => p.Pack.Id)))
+        if (!_available.Children.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(available.Select(static p => p.Pack.Id)))
         {
             _available.ClearChildren();
-            foreach (ContentEntry entry in _model.AvailableContent)
+            foreach (ContentEntry entry in available)
             {
-                var row = new ContentRow(_theme, _model, entry.Pack.Id, ordered: false, _pictures);
+                var row = new ContentRow(_theme, _model, entry.Pack.Id, ordered: false, _pictures, _kind);
                 _available.AddChild(row);
                 arrived.AddRange(row.Descendants().OfType<Control>());
             }
         }
 
-        if (!_runtime.Children.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(_model.RuntimeContent.Select(static p => p.Pack.Id)))
+        IReadOnlyList<ContentEntry> runtime = mods ? [] : _model.RuntimeContent;
+        if (!_runtime.Children.OfType<ContentRow>().Select(static r => r.EntryId).SequenceEqual(runtime.Select(static p => p.Pack.Id)))
         {
             _runtime.ClearChildren();
-            foreach (ContentEntry entry in _model.RuntimeContent)
+            foreach (ContentEntry entry in runtime)
             {
-                var row = new ContentRow(_theme, _model, entry.Pack.Id, ordered: false, _pictures);
+                var row = new ContentRow(_theme, _model, entry.Pack.Id, ordered: false, _pictures, _kind);
                 _runtime.AddChild(row);
                 arrived.AddRange(row.Descendants().OfType<Control>());
             }
         }
 
-        _runtimeCaption.Visibility = _model.RuntimeContent.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _runtimeCaption.Visibility = runtime.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         bool hasGame = _model.Current.Retail is not null;
-        _orderCaption.Visibility = hasGame ? Visibility.Visible : Visibility.Collapsed;
+        _orderCaption.Visibility = hasGame && (!mods || order.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
         _ordered.Visibility = hasGame ? Visibility.Visible : Visibility.Collapsed;
-        _availableCaption.Visibility = _model.AvailableContent.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        _empty.Visibility = hasGame && _model.Packs.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
-        _empty.Value = hasGame ? "No optional content is published yet" : "This game has no content yet";
+        _availableCaption.Visibility = available.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (mods)
+        {
+            _modsBar!.Visibility = hasGame ? Visibility.Visible : Visibility.Collapsed;
+            _playsMods!.IsOn = _model.PlaysMods;
+            _empty.Visibility = hasGame && order.Count + available.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            _empty.Value = hasGame ? "No mods are published for this game yet" : "This game has no mods yet";
+        }
+        else
+        {
+            _empty.Visibility = hasGame && _model.Packs.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            _empty.Value = hasGame ? "No optional content is published yet" : "This game has no content yet";
+        }
 
         // The screen plays its controls' entrance once, when it opens; rows that arrive with the content list
         // come later and play their own, or they would stay invisible.
@@ -225,6 +281,8 @@ internal sealed class ContentPage
         private readonly UiTheme _theme;
         private readonly LauncherModel _model;
         private readonly bool _ordered;
+        private readonly ContentPageKind _kind;
+        private bool _confirming;
         private readonly Func<string, BackdropPicture?> _pictures;
         private readonly ReorderHandle? _handle;
         private readonly Thumbnail _thumbnail;
@@ -240,11 +298,12 @@ internal sealed class ContentPage
         private bool _working;
         private float _lift;
 
-        public ContentRow(UiTheme theme, LauncherModel model, string id, bool ordered, Func<string, BackdropPicture?> pictures)
+        public ContentRow(UiTheme theme, LauncherModel model, string id, bool ordered, Func<string, BackdropPicture?> pictures, ContentPageKind kind)
         {
             _theme = theme;
             _model = model;
             _ordered = ordered;
+            _kind = kind;
             _pictures = pictures;
             EntryId = id;
 
@@ -318,7 +377,9 @@ internal sealed class ContentPage
             }
         }
 
-        private LoadOrderItem? Item => _ordered ? _model.LoadOrder.FirstOrDefault(i => i.Id == EntryId) : null;
+        private LoadOrderItem? Item => _ordered
+            ? (_kind == ContentPageKind.Mods ? _model.ModOrder : _model.LoadOrder).FirstOrDefault(i => i.Id == EntryId)
+            : null;
 
         private ContentEntry? Entry => _ordered ? Item?.Entry : _model.Packs.FirstOrDefault(p => p.Pack.Id == EntryId);
 
@@ -326,6 +387,24 @@ internal sealed class ContentPage
 
         public void Refresh()
         {
+            if (Item is { Mod: { } dropped } localMod)
+            {
+                // A mod its author dropped in the local folder: played as it is, never updated or removed from here.
+                _thumbnail.Picture = null;
+                _thumbnail.Short = "LOCAL";
+                _thumbnail.Local = true;
+                _thumbnail.Dimmed = !localMod.Enabled;
+                _info.Name = dropped.Manifest.Name;
+                _info.Tags = dropped.Manifest.RunsCode ? ["LOCAL", "RUNS CODE"] : ["LOCAL"];
+                _info.Description = dropped.Manifest.Summary ?? "A mod in the library's local mods folder.";
+                (_info.Detail, _info.DetailColor) = localMod.Enabled
+                    ? ($"{dropped.Manifest.Version} · {dropped.Folder.ToUpperInvariant()}", Caption)
+                    : ("OFF · THE GAME STARTS WITHOUT IT", Caption);
+                _size.Value = "—";
+                Update();
+                return;
+            }
+
             if (Item is { IsLocal: true } local)
             {
                 _thumbnail.Picture = null;
@@ -359,6 +438,12 @@ internal sealed class ContentPage
             _info.Tags = Item is { } ordered ? ConflictTag(ordered) : [];
             _info.Description = entry.Pack.Summary;
             (_info.Detail, _info.DetailColor) = Item is { } listed ? Describe(listed, string.Empty) : (string.Empty, Caption);
+            if (entry.Pack.Mod is { } mod)
+            {
+                _info.Tags = mod.RunsCode ? ["RUNS CODE"] : [];
+                (_info.Detail, _info.DetailColor) = DescribeMod(entry, mod, Item);
+            }
+
             _size.Value = LauncherModel.FormatSize((entry.Installed?.Size ?? entry.Pack.Size) / 1e6);
             Update();
         }
@@ -377,7 +462,7 @@ internal sealed class ContentPage
                 _busy.Visibility = Visibility.Collapsed;
                 _main.Visibility = Visibility.Visible;
                 _state.Set(local.Enabled ? "IN USE" : "TURNED OFF", local.Enabled ? _theme.Success : _theme.TextMuted);
-                Main("OPEN FOLDER", CutButtonStyle.Outline, _model.OpenLocalOverrides);
+                Main("OPEN FOLDER", CutButtonStyle.Outline, local.Mod is { } dropped ? () => _model.OpenModFolder(dropped.Id) : _model.OpenLocalOverrides);
                 Links();
                 return;
             }
@@ -409,12 +494,35 @@ internal sealed class ContentPage
             // A runtime stands in no load order; installed, it is in use.
             bool enabled = item?.Enabled ?? (entry.Pack.Kind == ContentKind.Runtime && entry.Enabled);
             string update = entry.DownloadBytes < 0 ? string.Empty : $" · {LauncherModel.FormatSize(entry.DownloadBytes / 1e6)}";
+            // A mod with code asks before its first install: it runs on the player's machine, with the game's rights.
+            if (entry.State == ContentState.Available && _confirming)
+            {
+                _state.Set("RUNS CODE ON THIS PC", accent);
+                Main("INSTALL ANYWAY", CutButtonStyle.Filled, () =>
+                {
+                    _confirming = false;
+                    _model.TrustAndInstallMod(EntryId);
+                });
+                Links(("CANCEL", () => _confirming = false), ("SOURCE", () => _model.OpenModSource(EntryId)));
+                return;
+            }
+
             switch (entry.State)
             {
                 case ContentState.Available:
                     _state.Set("NOT INSTALLED", _theme.TextMuted);
-                    Main("INSTALL", CutButtonStyle.Filled, () => _model.InstallContent(EntryId));
-                    Links();
+                    Main("INSTALL", CutButtonStyle.Filled, () =>
+                    {
+                        if (_model.IsTrusted(EntryId))
+                        {
+                            _model.InstallContent(EntryId);
+                        }
+                        else
+                        {
+                            _confirming = true;
+                        }
+                    });
+                    Links(entry.Pack.Mod is { Source: not null } ? [("SOURCE", () => _model.OpenModSource(EntryId))] : []);
                     break;
                 case ContentState.UpdateAvailable:
                     _state.Set("UPDATE" + update, accent);
@@ -437,9 +545,18 @@ internal sealed class ContentPage
                     Links();
                     break;
                 default:
-                    _state.Set(
-                        !entry.Listed ? "NO LONGER OFFERED" : enabled ? "IN USE" : "TURNED OFF",
-                        enabled && entry.Listed ? _theme.Success : _theme.TextMuted);
+                    if (enabled && (entry.NeedsGame ?? entry.NeedsMod) is { } needs)
+                    {
+                        // On, and not going to load: the loader leaves out a mod whose game or mod is missing.
+                        _state.Set($"NEEDS {needs.ToUpperInvariant()}", Conflict);
+                    }
+                    else
+                    {
+                        _state.Set(
+                            !entry.Listed ? "NO LONGER OFFERED" : enabled ? "IN USE" : "TURNED OFF",
+                            enabled && entry.Listed ? _theme.Success : _theme.TextMuted);
+                    }
+
                     Main("REMOVE", CutButtonStyle.Danger, () => _model.RemoveContent(EntryId));
                     Links(("VERIFY", () => _model.VerifyContent(EntryId)), ("FOLDER", () => _model.OpenContentFolder(EntryId)));
                     break;
@@ -478,10 +595,42 @@ internal sealed class ContentPage
 
         private void Toggle()
         {
-            if (Item is { } item)
+            if (Item is not { } item)
+            {
+                return;
+            }
+
+            if (_kind == ContentPageKind.Mods)
+            {
+                _model.SetModEnabled(EntryId, !item.Enabled);
+            }
+            else
             {
                 _model.SetContentEnabled(EntryId, !item.Enabled);
             }
+        }
+
+        // A mod's third line: what it still needs, else who made it and what its code was built from.
+        private static (string Text, Bgra32 Color) DescribeMod(ContentEntry entry, ContentModInfo mod, LoadOrderItem? item)
+        {
+            if (item is { Enabled: false })
+            {
+                return ("OFF · THE GAME STARTS WITHOUT IT", Caption);
+            }
+
+            if (item is not null && entry.NeedsGame is { } game)
+            {
+                return ($"READS {game.ToUpperInvariant()}'S DATA · SET ITS FOLDER IN SETTINGS", Conflict);
+            }
+
+            if (item is not null && entry.NeedsMod is { } other)
+            {
+                return ($"NEEDS THE MOD {other.ToUpperInvariant()} INSTALLED AND ON", Conflict);
+            }
+
+            string by = mod.Authors.Count > 0 ? "BY " + string.Join(", ", mod.Authors).ToUpperInvariant() : string.Empty;
+            string built = mod.Commit is { Length: > 0 } commit ? $"BUILT FROM {commit[..Math.Min(7, commit.Length)].ToUpperInvariant()}" : string.Empty;
+            return (string.Join(" · ", new[] { entry.Pack.Version, by, built }.Where(static part => part.Length > 0)), Caption);
         }
 
         // A CONFLICT tag on a row another enabled layer wins files from.
@@ -918,4 +1067,14 @@ internal sealed class ContentPage
             }
         }
     }
+}
+
+/// <summary>What a <see cref="ContentPage"/> lists: the game's content, or its mods.</summary>
+internal enum ContentPageKind
+{
+    /// <summary>The asset overlays in their load order, the runtimes, and the packs available.</summary>
+    Content,
+
+    /// <summary>The mods in their play order, local ones among them, and the mods available.</summary>
+    Mods,
 }

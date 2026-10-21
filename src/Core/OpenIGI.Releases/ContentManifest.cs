@@ -244,6 +244,12 @@ public static class ModPacks
     /// <summary>The update service's mods index, relative to its root: a <see cref="ContentIndex"/> of mods alone.</summary>
     public const string IndexPath = "v1/mods";
 
+    /// <summary>
+    /// The folder beside the installed mods where a mod's author drops a build to try, which the launcher plays as it is;
+    /// no published mod may be named so.
+    /// </summary>
+    public const string LocalFolder = "local";
+
     /// <summary>Gets the game id a mod is published for.</summary>
     /// <param name="titles">The games it is for, by title id; empty for every game.</param>
     /// <returns>The one game it names, or <see cref="AnyGame"/>.</returns>
