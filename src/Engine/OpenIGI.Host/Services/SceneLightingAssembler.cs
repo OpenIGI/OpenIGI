@@ -97,13 +97,13 @@ internal sealed class SceneLightingAssembler(
         // off has not turned reflections off. Cleared to nothing while there is no lit cache, so
         // the backend traces nothing rather than against stale handles.
         _device.SetSurfaceCache(
-            _cards.CardLighting is { } reflectionCards && RenderCVars.SurfaceCacheProbe.Value == 0
+            _cards.CardLighting is { } reflectionCards && SurfaceCacheCVars.SurfaceCacheProbe.Value == 0
                 ? reflectionCards.Describe(
                     new Vector3f(
                         (float)(eye.Position.X - reflectionCards.Origin.X),
                         (float)(eye.Position.Y - reflectionCards.Origin.Y),
                         (float)(eye.Position.Z - reflectionCards.Origin.Z)),
-                    RenderCVars.GiBounce.Value)
+                    SurfaceCacheCVars.GiBounce.Value)
                 : SurfaceCacheBinding.None);
 
         // And the distance field, for the same passes and by the same rule. Where the adapter can
@@ -113,12 +113,12 @@ internal sealed class SceneLightingAssembler(
         // frame rather than when the level loads: they move with the camera the clipmaps centre on.
         _device.SetDistanceField(_host.DescribeDistanceField(eye.Position));
 
-        float giStrength = RenderCVars.ScreenGather.Value;
+        float giStrength = ScreenGatherCVars.ScreenGather.Value;
         bool giActive = captured
             && giStrength > 0f
             && _fields.DistanceField is not null
             && _cards.CardLighting is not null
-            && RenderCVars.SurfaceCacheProbe.Value == 0;
+            && SurfaceCacheCVars.SurfaceCacheProbe.Value == 0;
 
         // Every placement that moves, carried in the surface cache to where it was drawn this frame,
         // before anything below looks a surface up -- a truck the camera rides in reads its own
@@ -178,7 +178,7 @@ internal sealed class SceneLightingAssembler(
 
                 // Last frame's lit picture and the camera it was rendered from, as the probes read it.
                 _device.SceneColour,
-                RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
+                ScreenGatherCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
                 giTraceDistance,
                 giTraceThickness,
                 state.ScreenGi.ResolvePrevWorldToView,
@@ -297,8 +297,8 @@ internal sealed class SceneLightingAssembler(
 
             // The gather's cadence: it re-traces every Nth frame and the atlas stands in between.
             // See r_screen_gi_cadence for why that is sound and why it beats cutting the ray count.
-            int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
-            int giCadence = Math.Max(RenderCVars.ScreenGatherCadence.Value, 1);
+            int giFilterRadius = ScreenGatherCVars.ScreenGatherFilter.Value;
+            int giCadence = Math.Max(ScreenGatherCVars.ScreenGatherCadence.Value, 1);
             bool giTraceThisFrame = !state.ScreenGi.HasHistory || (state.ScreenGi.CadenceCursor % giCadence) == 0;
             state.ScreenGi.CadenceCursor++;
 
@@ -331,7 +331,7 @@ internal sealed class SceneLightingAssembler(
                     // before the ray falls through to the surface cache. device.SceneColour holds last
                     // frame's linear scene here -- this runs before the current frame is lit.
                     _device.SceneColour,
-                    RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
+                    ScreenGatherCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
                     giTraceDistance,
                     giTraceThickness,
 
@@ -492,7 +492,7 @@ internal sealed class SceneLightingAssembler(
             // Once, after the first build, and only when asked. A wrong distance field produces a
             // picture that is merely subtly wrong several stages later, so the only way to know it
             // is right is to compare it against the exact answer at the same points.
-            if (!_fields.FieldValidated && RenderCVars.DistanceFieldValidate.Value && _fields.DistanceFieldScene is { } exact)
+            if (!_fields.FieldValidated && RayTracingCVars.DistanceFieldValidate.Value && _fields.DistanceFieldScene is { } exact)
             {
                 _fields.FieldValidated = true;
                 // Every level, not just the innermost. A trace falls through to the outer
@@ -515,7 +515,7 @@ internal sealed class SceneLightingAssembler(
             // it produced one the file held the UNSHADOWED load-time pass while looking exactly
             // like the shadowed one. That is how a probe came back reporting nothing at all.
             bool wantDump = !state.CardLightingDumped
-                && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 }
+                && SurfaceCacheCVars.SurfaceCacheDump.Value is { Length: > 0 }
 
                 // Not the first qualifying frame. On a backend that records a frame's compute and
                 // submits it at the end, a readback taken on the same frame as the dispatches sees
@@ -550,7 +550,7 @@ internal sealed class SceneLightingAssembler(
             // preset. A fixed 64 froze it a few traces in, with most of the error still there.
             int giSettle = Math.Max(
                 GiSettleFrames,
-                2 * Math.Max(RenderCVars.GiAmortize.Value, 1) * (1 + Math.Max(RenderCVars.GiTemporalFrames.Value, 1)));
+                2 * Math.Max(SurfaceCacheCVars.GiAmortize.Value, 1) * (1 + Math.Max(SurfaceCacheCVars.GiTemporalFrames.Value, 1)));
             _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, giSettle + 1);
 
             // A scrub of the clock, and the moments after it: the cache follows the sun at once instead
@@ -568,16 +568,16 @@ internal sealed class SceneLightingAssembler(
                 // How many frames the relight and the bounce spread their tiles across, from the cvar
                 // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
                 litCards.BounceFrameSpread = followingSun
-                    ? Math.Min(RenderCVars.GiAmortize.Value, GiSunFollowSpread)
-                    : RenderCVars.GiAmortize.Value;
-                litCards.MinSliceTiles = RenderCVars.GiMinSlice.Value;
+                    ? Math.Min(SurfaceCacheCVars.GiAmortize.Value, GiSunFollowSpread)
+                    : SurfaceCacheCVars.GiAmortize.Value;
+                litCards.MinSliceTiles = SurfaceCacheCVars.GiMinSlice.Value;
 
                 // How many frames a tile's estimate accumulates over, the pair to the spread above:
                 // the two together set how much of one retrace is admitted and how often, which is
                 // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
                 litCards.TemporalFrames = followingSun
-                    ? Math.Min(RenderCVars.GiTemporalFrames.Value, GiSunFollowTemporalFrames)
-                    : RenderCVars.GiTemporalFrames.Value;
+                    ? Math.Min(SurfaceCacheCVars.GiTemporalFrames.Value, GiSunFollowTemporalFrames)
+                    : SurfaceCacheCVars.GiTemporalFrames.Value;
 
                 // Where the steady-state refresh is centred and how far it reaches. The cache spans
                 // the whole level and the cursor used to walk all of it every round, so a fixed
@@ -589,7 +589,7 @@ internal sealed class SceneLightingAssembler(
                     (float)(eye.Position.X - litCards.Origin.X),
                     (float)(eye.Position.Y - litCards.Origin.Y),
                     (float)(eye.Position.Z - litCards.Origin.Z));
-                litCards.ActiveRadius = RenderCVars.GiCacheRadius.Value;
+                litCards.ActiveRadius = SurfaceCacheCVars.GiCacheRadius.Value;
 
                 // The direct relight: the whole cache at once for a deterministic dump, otherwise a
                 // slice a frame. The sun is fixed, so the only thing the direct term has to track is
@@ -609,10 +609,10 @@ internal sealed class SceneLightingAssembler(
                         // The SAME effective sun the deferred lighting shades with -- colour times
                         // both scales -- or the bounce is lit by a different key than the screen and
                         // the two disagree wherever indirect light dominates.
-                        light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+                        light.Colour * (LightingCVars.SunScale.Value * LightingCVars.LightScale.Value),
                         _host.SkyFillColour(),
                         liveField,
-                        RenderCVars.SurfaceCacheProbe.Value,
+                        SurfaceCacheCVars.SurfaceCacheProbe.Value,
                         amortize: !wantDump);
                 }
             }
@@ -631,21 +631,21 @@ internal sealed class SceneLightingAssembler(
             // the same final -- so the bounce, the frame's single most expensive pass, idles too. The
             // frame counter holds where it was, so the accumulation resumes rather than restarts when
             // motion or a scrub brings the retrace back.
-            if (_cards.CardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
+            if (_cards.CardLighting is { } bounceCards && SurfaceCacheCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
             {
                 bounceCards.Bounce(
                     liveField,
-                    boost: RenderCVars.GlobalIlluminationBoost.Value,
+                    boost: SurfaceCacheCVars.GlobalIlluminationBoost.Value,
                     temporalIndex: wantDump ? 0 : _cards.CardBounceFrame);
                 _cards.CardBounceFrame++;
 
                 // Dumped after the SHADOWED bounce rather than the load-time one, which runs before
                 // there is any field to trace against and would show the unshadowed answer.
-                if (wantDump && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
+                if (wantDump && SurfaceCacheCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
                 {
                     state.CardLightingDumped = true;
                     SurfaceCacheDebugDumps.CardLighting(
-                        _device, bounceCards, shadowInto, _logger, RenderCVars.SurfaceCacheProbe.Value);
+                        _device, bounceCards, shadowInto, _logger, SurfaceCacheCVars.SurfaceCacheProbe.Value);
                 }
             }
 
@@ -655,7 +655,7 @@ internal sealed class SceneLightingAssembler(
             // shimmers. Configured to the baked field's own layout so the two are interchangeable at
             // the sampler, updated a slab a frame off the freshly bounced cache, and bound in place
             // of the baked field for the deferred fill. Needs the baked field only for its grid.
-            if (RenderCVars.RadianceCache.Value != 0
+            if (ScreenGatherCVars.RadianceCache.Value != 0
                 && _cards.CardLighting is { } cacheCards
                 && _host.ProbeField is { } cacheGrid)
             {
@@ -675,8 +675,8 @@ internal sealed class SceneLightingAssembler(
                     // A long one after, where a slow average is what keeps the steady field from
                     // shimmering under the per-sweep ray jitter.
                     maxFrames: _cards.ExposureWarmup > 0 ? 6 : 32,
-                    scale: RenderCVars.RadianceCacheScale.Value,
-                    skyReject: RenderCVars.GlobalIlluminationLeakReject.Value);
+                    scale: ScreenGatherCVars.RadianceCacheScale.Value,
+                    skyReject: ScreenGatherCVars.GlobalIlluminationLeakReject.Value);
 
                 _device.SetRealtimeProbeVolume(
                     cacheCards.RadianceCacheRed,
@@ -697,6 +697,6 @@ internal sealed class SceneLightingAssembler(
             _device.EndStageTiming();
         }
 
-        _device.SetDebugView(RenderCVars.Debug.Value);
+        _device.SetDebugView(FrameCVars.Debug.Value);
     }
 }

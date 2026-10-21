@@ -633,7 +633,7 @@ public static class GraphicsMenu
 
         // What enters the traced world, which is a correctness control rather than a quality dial: the
         // defaults are what make a reflection the same in two sessions, and a player has no way to judge
-        // a radius by looking. See RenderCVars.TracedWorldRadius.
+        // a radius by looking. See RayTracingCVars.TracedWorldRadius.
         "r_rt_world_radius",
         "r_rt_world_angle",
 

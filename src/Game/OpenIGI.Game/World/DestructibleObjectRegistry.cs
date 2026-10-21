@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -571,23 +572,23 @@ public sealed class DestructibleObjectRegistry
 
     private static void ReadExplodeParameters(DeclaredTask task, DestructibleObject item)
     {
-        item.DestroyedModelName = ReadString(task, "Destroyed model");
-        item.ExplosionRadiusUnits = ExplosionDamageDefaults.ToUnits(ReadFloat(task, "Explosion radius"));
-        item.ExplosionFalloffUnits = ExplosionDamageDefaults.ToUnits(ReadFloat(task, "Explosion falloff radius"));
-        item.ExplosionDamageFactor = ReadFloat(task, "Explosion damage scale", ExplosionDamageDefaults.DamageFactor);
-        item.ExplosionDamageThreshold = ReadFloat(
+        item.DestroyedModelName = TextTrimmed(task, "Destroyed model");
+        item.ExplosionRadiusUnits = ExplosionDamageDefaults.ToUnits(RealFromNumberOrShort(task, "Explosion radius"));
+        item.ExplosionFalloffUnits = ExplosionDamageDefaults.ToUnits(RealFromNumberOrShort(task, "Explosion falloff radius"));
+        item.ExplosionDamageFactor = RealFromNumberOrShort(task, "Explosion damage scale", ExplosionDamageDefaults.DamageFactor);
+        item.ExplosionDamageThreshold = RealFromNumberOrShort(
             task,
             "Damage scale",
-            ReadFloat(
+            RealFromNumberOrShort(
                 task,
                 "Max damage before explosion",
                 ExplosionDamageDefaults.DamageThreshold));
-        item.ExplosionDelayTicks = Math.Max(0, (int)(ReadFloat(task, "Explosion delay") * 30f));
-        item.ExplosionSound = ReadString(task, "Explosion sound");
-        item.ExplosionFireballs = ReadFloat(task, "Explosion fireballs");
-        item.ExplosionFragments = ReadInt(task, "Explosion fragments");
+        item.ExplosionDelayTicks = Math.Max(0, (int)(RealFromNumberOrShort(task, "Explosion delay") * 30f));
+        item.ExplosionSound = TextTrimmed(task, "Explosion sound");
+        item.ExplosionFireballs = RealFromNumberOrShort(task, "Explosion fireballs");
+        item.ExplosionFragments = IntStrict(task, "Explosion fragments");
         item.HasExplosionSmoke = true;
-        item.ExplosionExpression = ReadString(task, "Explosion expression");
+        item.ExplosionExpression = TextTrimmed(task, "Explosion expression");
     }
 
     private bool ExplosionEnabled(DestructibleObject item) =>
@@ -645,34 +646,6 @@ public sealed class DestructibleObjectRegistry
         item.ExplosionStarted = true;
         return true;
     }
-
-    private static float ReadFloat(DeclaredTask task, string name, float fallback = 0f)
-    {
-        if (!task.TryGetValue(name, out object? raw))
-        {
-            return fallback;
-        }
-
-        // OBJECTS.QVM declares Explosion fireballs as Int32, while the other explosion tuning
-        // values are Real32.  The native parameter reader accepts either numeric stack type; do the
-        // same here so the authored fireball count is not silently replaced by zero.
-        return raw switch
-        {
-            float value => value,
-            double value => (float)value,
-            int value => value,
-            short value => value,
-            _ => fallback,
-        };
-    }
-
-    private static int ReadInt(DeclaredTask task, string name, int fallback = 0) =>
-        task.TryGetValue(name, out object? raw) && raw is int value ? value : fallback;
-
-    private static string ReadString(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is string value
-            ? value.TrimEnd('\r', '\n')
-            : string.Empty;
 
     /// <summary>Gets whether a task is the ancestor itself or lies anywhere beneath it.</summary>
     internal static bool IsOwnedBy(GameTask? task, GameTask ancestor)

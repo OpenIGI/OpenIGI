@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -504,8 +505,8 @@ internal sealed class RailroadConsist(RailroadPath railroad)
         _cars.Add(new Car(
             Railroad.Flipped ? couplingDistance : -couplingDistance,
             pivotFraction,
-            Real(car, "Displacement X"),
-            Real(car, "Displacement Y")));
+            RealStrict(car, "Displacement X"),
+            RealStrict(car, "Displacement Y")));
         return _cars.Count - 1;
     }
 
@@ -536,9 +537,6 @@ internal sealed class RailroadConsist(RailroadPath railroad)
         RailroadPath.PlaceCar(points[index], points[index + 1], car.Pivot, car.DisplacementX, car.DisplacementY, out position, out orientation);
         return true;
     }
-
-    private static float Real(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is float value ? value : 0f;
 
     private readonly record struct Car(float Step, float Pivot, float DisplacementX, float DisplacementY);
 }

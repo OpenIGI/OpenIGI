@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Scripting.Runtime;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -30,7 +31,7 @@ internal static class WorldInteractionCollector
         {
             Vector3d taskPosition = PositionOf(declared, type);
             Vector3d start = taskPosition;
-            Vector3d end = ReadPosition(declared, "Stop position", start);
+            Vector3d end = Vector(declared, "Stop position", start);
             float facing = FacingOf(declared);
             Matrix3f orientation = OrientationOf(declared);
             int magicIndex = type is InteractionActivateType.Terminal
@@ -64,11 +65,11 @@ internal static class WorldInteractionCollector
                     declared.Id,
                     taskPosition,
                     orientation,
-                    ReadReal(declared, "Max up angle", 25f),
-                    ReadReal(declared, "Max down angle", -25f),
-                    ReadReal(declared, "Max sideways angle", 90f),
-                    ReadString(declared, "Weapon ID", "WEAPON_ID_M2HB"),
-                    (int)ReadReal(declared, "Ammo", -1f))
+                    RealFromNumber(declared, "Max up angle", 25f),
+                    RealFromNumber(declared, "Max down angle", -25f),
+                    RealFromNumber(declared, "Max sideways angle", 90f),
+                    TextOrFallback(declared, "Weapon ID", "WEAPON_ID_M2HB"),
+                    (int)RealFromNumber(declared, "Ammo", -1f))
                 : null;
             if (stationaryGun is not null
                 && models.TryGetValue(modelName, out MefModel? standModel)
@@ -103,18 +104,18 @@ internal static class WorldInteractionCollector
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
                 DurationOf(declared, type), SpriteOf(declared, type), door,
-                ReadBool(declared, "Pickable"), stationaryGun,
+                BoolStrict(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
                 markerPoint, markerLocal,
-                type == InteractionActivateType.PlaceExplosive ? ReadInt(declared, "Task ID to place", -1) : -1,
+                type == InteractionActivateType.PlaceExplosive ? IntTruncating(declared, "Task ID to place", -1) : -1,
                 // An Int16 parameter, which the task holds as a short: read as an int it answered -1 for every
                 // charge, no clip started, and the body kept the pose it walked up in.
                 type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
-                    ? ReadInt(declared, "Activate Anim", -1)
+                    ? IntTruncating(declared, "Activate Anim", -1)
                     : -1)
             {
-                IsDestructable = type == InteractionActivateType.Switch && ReadBool(declared, "Destructable"),
-                IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && ReadBool(declared, "Explodable"),
+                IsDestructable = type == InteractionActivateType.Switch && BoolStrict(declared, "Destructable"),
+                IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && BoolStrict(declared, "Explodable"),
                 TaskPosition = taskPosition,
                 FenceSpan = type == InteractionActivateType.Fence
                     && models.TryGetValue(modelName, out MefModel? spanned)
@@ -140,11 +141,11 @@ internal static class WorldInteractionCollector
                     item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
                 }
             }
-            string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
-            string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
-            string openExpression = ReadString(declared, "Open door expression", string.Empty);
-            string closeExpression = ReadString(declared, "Close door expression", string.Empty);
-            string electricExpression = ReadString(declared, "Electric Expression", string.Empty);
+            string onExpression = TextOrFallback(declared, "On Expression", TextOrFallback(declared, "On", string.Empty));
+            string lockedExpression = TextOrFallback(declared, "Locked expression", string.Empty);
+            string openExpression = TextOrFallback(declared, "Open door expression", string.Empty);
+            string closeExpression = TextOrFallback(declared, "Close door expression", string.Empty);
+            string electricExpression = TextOrFallback(declared, "Electric Expression", string.Empty);
 
             // A terminal's update (0x4438E0) and a GenericTBA's (0x4480B0) force isOn off once the ExplodeObject they derive
             // from has exploded (+400), before they look at the On expression -- a terminal blown up is a terminal switched
@@ -187,22 +188,22 @@ internal static class WorldInteractionCollector
         if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "Generator", StringComparison.Ordinal))
         {
-            string onExpression = ReadString(
+            string onExpression = TextOrFallback(
                 declared,
                 "On expression",
-                ReadString(declared, "On Expression", string.Empty));
+                TextOrFallback(declared, "On Expression", string.Empty));
             // Generator::Run (0x43B500) forces isOn off once the ExplodeObject under it has exploded
             // (+400), before it ever looks at the On expression.
             string explodedSymbol = $"{declared.Name}.isExploded";
             GeneratorPowerState state = new(
                 declared,
-                ReadString(declared, "Run sound", string.Empty),
-                ReadString(declared, "Shutdown sound", string.Empty),
+                TextOrFallback(declared, "Run sound", string.Empty),
+                TextOrFallback(declared, "Shutdown sound", string.Empty),
                 sound => registry.Sounds?.Invoke(sound),
                 ByteSlot(expressions, onExpression, declared),
                 () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
-                ReadBool(declared, "Use backup timer"),
-                ReadReal(declared, "Seconds until power backup", 10f),
+                BoolStrict(declared, "Use backup timer"),
+                RealFromNumber(declared, "Seconds until power backup", 10f),
                 () => ConditionalContainerGate.IsTaskActive(declared));
             registry.AddGenerator(state);
             variables.BindBool(declared, "isOn", () => state.IsOn, value => state.IsOn = value);
@@ -340,7 +341,7 @@ internal static class WorldInteractionCollector
         };
         return type == InteractionActivateType.Fence
             ? WorldInteraction.FenceTraversalTicks
-            : parameter.Length == 0 ? 0 : Math.Max(1, (int)(ReadReal(task, parameter, 4f) * 30f));
+            : parameter.Length == 0 ? 0 : Math.Max(1, (int)(RealFromNumber(task, parameter, 4f) * 30f));
     }
 
     private static string SpriteOf(DeclaredTask task, InteractionActivateType type) => type switch
@@ -353,7 +354,7 @@ internal static class WorldInteractionCollector
         InteractionActivateType.Wire => "a_wire.spr",
         InteractionActivateType.Fence => "a_fence.spr",
         InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
-            ReadString(task, "Click to select sprite", "a_c4.spr")
+            TextOrFallback(task, "Click to select sprite", "a_c4.spr")
                 .Replace("STATUSSCREEN:", string.Empty, StringComparison.OrdinalIgnoreCase),
         _ => string.Empty,
     };
@@ -418,13 +419,13 @@ internal static class WorldInteractionCollector
 
     private static Vector3d PositionOf(DeclaredTask task, InteractionActivateType type) =>
         type == InteractionActivateType.Wire
-            ? ReadPosition(task, "Start position", default)
-            : ReadPosition(task, "Position", ReadPosition(task, "Position start", default));
+            ? Vector(task, "Start position", default)
+            : Vector(task, "Position", Vector(task, "Position start", default));
 
     private static string ModelNameOf(DeclaredTask task, InteractionActivateType type) =>
         type == InteractionActivateType.Switch
             ? WorldScene.SwitchModelNameOf(task)
-            : ReadString(task, "Model", string.Empty);
+            : TextOrFallback(task, "Model", string.Empty);
 
     private static float FacingOf(DeclaredTask task)
     {
@@ -466,35 +467,6 @@ internal static class WorldInteractionCollector
             ? Matrix3f.RotationZ(value)
             : Matrix3f.Identity;
     }
-
-    private static Vector3d ReadPosition(DeclaredTask task, string name, Vector3d fallback) =>
-        task.TryGetValue(name, out object? value) && value is Vector3d position ? position : fallback;
-
-    private static bool ReadBool(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is bool flag && flag;
-
-    /// <summary>Reads a real task parameter, or <paramref name="fallback"/> when it is missing or not a number.</summary>
-    internal static float ReadReal(DeclaredTask task, string name, float fallback) =>
-        task.TryGetValue(name, out object? value) ? value switch
-        {
-            float single => single,
-            double real => (float)real,
-            int integer => integer,
-            _ => fallback,
-        } : fallback;
-
-    private static string ReadString(DeclaredTask task, string name, string fallback) =>
-        task.TryGetValue(name, out object? value) && value is string text && text.Length > 0 ? text : fallback;
-
-    private static int ReadInt(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? value) ? value switch
-        {
-            int integer => integer,
-            short small => small,
-            float real => (int)real,
-            double real => (int)real,
-            _ => fallback,
-        } : fallback;
 
     /// <summary>Every model the level's two packs place, by instance name.</summary>
     internal static Dictionary<string, MefModel> ModelsByName(LoadedMission mission)

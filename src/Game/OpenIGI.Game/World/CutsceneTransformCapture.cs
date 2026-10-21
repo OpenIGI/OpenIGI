@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -44,8 +44,8 @@ internal sealed class CutsceneTransformCapture(
 
         if (string.Equals(task.Type.Name, "Train", StringComparison.Ordinal))
         {
-            float length = Math.Max(0f, _modelLength?.Invoke(Text(declared, "Model")) ?? 0f);
-            float pivot = Math.Max(0f, _modelPivot?.Invoke(Text(declared, "Model")) ?? 0f);
+            float length = Math.Max(0f, _modelLength?.Invoke(TextOrEmpty(declared, "Model")) ?? 0f);
+            float pivot = Math.Max(0f, _modelPivot?.Invoke(TextOrEmpty(declared, "Model")) ?? 0f);
 
             // Retail's Train::UpdateConsist (0x42A2C0/0x42A7C0) places the whole consist from the lead's
             // scalar: one coupler per car walked along the rail's polyline (0x4FEC10), each car laid on the
@@ -79,11 +79,11 @@ internal sealed class CutsceneTransformCapture(
                     ConsistIndex = lead,
                     TrackPosition = railroad.InitialPosition,
                     PreviousTrackPosition = railroad.InitialPosition,
-                    Thrust = RealNamed(declared, "Original thrust"),
-                    TargetThrust = RealNamed(declared, "Original thrust"),
-                    OriginalThrust = RealNamed(declared, "Original thrust"),
-                    ThrustStep = MathF.Abs(RealNamed(declared, "ThrustStep")),
-                    MaxSpeed = RealNamed(declared, "MaxSpeed"),
+                    Thrust = RealStrictIgnoringSpaces(declared, "Original thrust"),
+                    TargetThrust = RealStrictIgnoringSpaces(declared, "Original thrust"),
+                    OriginalThrust = RealStrictIgnoringSpaces(declared, "Original thrust"),
+                    ThrustStep = MathF.Abs(RealStrictIgnoringSpaces(declared, "ThrustStep")),
+                    MaxSpeed = RealStrictIgnoringSpaces(declared, "MaxSpeed"),
                 };
                 trainState.TrainRoot = trainState;
                 _context.Remember(task, trainState);
@@ -102,7 +102,7 @@ internal sealed class CutsceneTransformCapture(
             Heading = angles.Z,
         };
         if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
-            && _context.VehiclePhysics?.TryGetCar(Text(declared, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true)
+            && _context.VehiclePhysics?.TryGetCar(TextOrEmpty(declared, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true)
         {
             state.CarPhysics = car;
             state.Steering = 0f;
@@ -111,12 +111,12 @@ internal sealed class CutsceneTransformCapture(
             // Car::ReadChannels restores both the live throttle and its target from this authored
             // value on animation tick zero, the way the Heli and Train receivers do. Mission 2's
             // truck opens its cutscene already carrying 0.6 and coasts down from it.
-            state.OriginalThrust = RealNamed(declared, "Original thrust");
+            state.OriginalThrust = RealStrictIgnoringSpaces(declared, "Original thrust");
             state.Thrust = state.OriginalThrust;
             state.TargetThrust = state.OriginalThrust;
         }
         if (string.Equals(task.Type.Name, "Plane", StringComparison.Ordinal)
-            && _context.VehiclePhysics?.TryGetPlane(Text(declared, WorldScene.ModelParameter), out PlanePhysicsDefinition plane) == true)
+            && _context.VehiclePhysics?.TryGetPlane(TextOrEmpty(declared, WorldScene.ModelParameter), out PlanePhysicsDefinition plane) == true)
         {
             state.PlanePhysics = plane;
         }
@@ -124,10 +124,10 @@ internal sealed class CutsceneTransformCapture(
         {
             // Heli::ReadChannels restores both live and target collective from this authored value on
             // animation tick zero. It then writes -1 into channel three so the value remains latched.
-            state.Thrust = RealNamed(declared, "Original Thrust");
+            state.Thrust = RealStrictIgnoringSpaces(declared, "Original Thrust");
             state.TargetThrust = state.Thrust;
             state.OriginalThrust = state.Thrust;
-            string model = Text(declared, WorldScene.ModelParameter);
+            string model = TextOrEmpty(declared, WorldScene.ModelParameter);
             if (_context.VehiclePhysics?.TryGetHelicopter(model, out HelicopterPhysicsDefinition physics) == true)
             {
                 state.HelicopterPhysics = physics;
@@ -137,7 +137,7 @@ internal sealed class CutsceneTransformCapture(
             // force helper 0x431E30. The authored collision flag is carried into the live body;
             // the contact solver below uses it only to prevent terrain penetration. The QVM
             // collective and cyclic controls remain free to lift and steer the airframe.
-            state.CollisionEnabled = Bool(declared, "Collision detection");
+            state.CollisionEnabled = BoolStrict(declared, "Collision detection");
         }
         bool attached = _attachments.CaptureAttachment(task, state);
         if (task.Id != GameTask.NoId || attached)

@@ -111,7 +111,7 @@ public sealed partial class GraphicsDevice
                 FrameSlot);
 
             // The sun's shafts, laid onto the bloom where the sun is on screen or near it.
-            float shafts = RenderCVars.SunShafts.Value;
+            float shafts = PostCVars.SunShafts.Value;
             if (shafts > 0f && bloom.Result is { } summed && SunOnScreen(out (float X, float Y) sunUv, out float visible))
             {
                 _sunShafts ??= new SunShaftPass(_device, FramesInFlight, _retired);

@@ -170,7 +170,7 @@ internal sealed class GlobalIllumination : IHostService
     /// </para>
     /// </remarks>
     public LightingModel EffectiveLighting =>
-        RenderCVars.Lighting.Value is var wanted && wanted == LightingModel.Baked ? wanted
+        LightingCVars.Lighting.Value is var wanted && wanted == LightingModel.Baked ? wanted
         : Ready ? wanted
         : LightingModel.Baked;
 
@@ -186,7 +186,7 @@ internal sealed class GlobalIllumination : IHostService
 
     /// <summary>Whether the frame wants the dynamic model at all, on a device that could run it.</summary>
     public bool Wanted =>
-        RenderCVars.Lighting.Value == LightingModel.Dynamic && _device.Capabilities.SupportsCompute;
+        LightingCVars.Lighting.Value == LightingModel.Dynamic && _device.Capabilities.SupportsCompute;
 
     /// <summary>
     /// Whether anything the dynamic model needs is still on its way: a field baking or not yet attempted, a
@@ -309,7 +309,7 @@ internal sealed class GlobalIllumination : IHostService
         // -- and because a lamp's page also skins the furniture beside it. r_lamp_emissive scales the
         // whole set on the way in rather than in the shader: it is a property of the material, so it
         // belongs where the material is decided and costs nothing per pixel.
-        float emissiveScale = RenderCVars.LampEmissiveScale.Value;
+        float emissiveScale = LocalLightCVars.LampEmissiveScale.Value;
 
         Lamps = emissiveScale == 1f
             ? lamps.Lamps

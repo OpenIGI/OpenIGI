@@ -268,7 +268,7 @@ internal sealed class PlayerFirstPersonView
     internal Camera3D Camera(float aimPitch, AiStationaryGun? mounted) => mounted is { } gun
         ? GunSight(gun)
         : new(
-            PlayerCamera.ToMetres(_body.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits),
+            WorldScene.ToMetres(_body.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits),
             Shaken(_body.Yaw, aimPitch, _viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw));
 
     // The camera 0x45FCD0 builds in mode 4: the gun's point and orientation used outright. The eye's
@@ -277,7 +277,7 @@ internal sealed class PlayerFirstPersonView
     {
         Matrix3f m = gun.GunOrientation;
         return new Camera3D(
-            PlayerCamera.ToMetres(gun.SightPosition),
+            WorldScene.ToMetres(gun.SightPosition),
             Matrix3f.FromRows(
                 new Vector3f(m.M11, m.M21, m.M31),
                 new Vector3f(m.M13, m.M23, m.M33),
@@ -344,7 +344,7 @@ internal sealed class PlayerFirstPersonView
     /// and blended from the same tick pair the view uses so a source does not step across the stereo
     /// image at 30 Hz under a camera that glides.
     /// </remarks>
-    internal Vector3d SmoothedEyeMetres(float alpha) => PlayerCamera.ToMetres(_pair.SmoothedEye(_body.Eye, alpha));
+    internal Vector3d SmoothedEyeMetres(float alpha) => WorldScene.ToMetres(_pair.SmoothedEye(_body.Eye, alpha));
 
     /// <inheritdoc cref="PlayerViewInterpolator.SmoothedSightZoom"/>
     internal SightZoomFrame SmoothedSightZoom(float alpha) => _pair.SmoothedSightZoom(Rig, alpha);

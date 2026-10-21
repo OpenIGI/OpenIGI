@@ -39,8 +39,8 @@ public sealed partial class GameHost
     /// <param name="path">The file to write.</param>
     private void WriteLightingDump(string path)
     {
-        float localLightScale = RenderCVars.LocalLightScale.Value;
-        float localLightRange = RenderCVars.LocalLightRange.Value;
+        float localLightScale = LocalLightCVars.LocalLightScale.Value;
+        float localLightRange = LocalLightCVars.LocalLightRange.Value;
 
         using FileStream stream = File.Create(path);
         using Utf8JsonWriter json = new(stream, new JsonWriterOptions { Indented = true });
@@ -63,12 +63,12 @@ public sealed partial class GameHost
         json.WriteNumber("moonRadiance", night.MoonRadiance);
         json.WriteEndObject();
 
-        json.WriteNumber("timeOfDay", RenderCVars.TimeOfDay.Value);
-        json.WriteBoolean("autoExposure", RenderCVars.AutoExposure.Value);
-        json.WriteNumber("exposure", RenderCVars.Exposure.Value);
+        json.WriteNumber("timeOfDay", ExposureCVars.TimeOfDay.Value);
+        json.WriteBoolean("autoExposure", ExposureCVars.AutoExposure.Value);
+        json.WriteNumber("exposure", ExposureCVars.Exposure.Value);
         json.WriteNumber("localLightScale", localLightScale);
         json.WriteNumber("localLightRange", localLightRange);
-        json.WriteNumber("localLightSource", RenderCVars.LocalLightSource.Value);
+        json.WriteNumber("localLightSource", LocalLightCVars.LocalLightSource.Value);
 
         json.WriteStartArray("lamps");
         for (int i = 0; i < _gi.LightFixtures.Count; i++)

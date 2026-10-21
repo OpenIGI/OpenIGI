@@ -46,9 +46,9 @@ public sealed partial class GameHost
         // long hitch for no picture.
         // Any layer with files counts, switched on or not: with every layer off there is still
         // something the switch is the difference between once one comes back on.
-        if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.HasContent)
+        if (_overridesApplied != MaterialCVars.OverridesEnabled.Value && _overrides.HasContent)
         {
-            _overridesApplied = RenderCVars.OverridesEnabled.Value;
+            _overridesApplied = MaterialCVars.OverridesEnabled.Value;
             _overrides.Bypassed = !_overridesApplied;
 
             int swapped = ApplyOverrideChange(out _);
@@ -61,7 +61,7 @@ public sealed partial class GameHost
         }
 
         if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
-            && RenderCVars.GlobalIllumination.Value
+            && GlobalIlluminationCVars.GlobalIllumination.Value
             && _scene is not null
             && _baked.CanRebake)
         {

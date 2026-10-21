@@ -77,8 +77,8 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             // irrespective of the independently archived tactical-message preference.
             objectiveTick.ExtraMessageHoldSeconds =
                 RemasteredHudPresentation.UsesTacticalMessages(
-                    RenderCVars.RemasteredHud.Value,
-                    RenderCVars.TacticalMessages.Value)
+                    HudCVars.RemasteredHud.Value,
+                    HudCVars.TacticalMessages.Value)
                 && host.Cutscenes?.IsPlaying != true
                     ? RemasteredMessageHoldSeconds
                     : 0f;

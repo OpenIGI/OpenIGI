@@ -68,7 +68,7 @@ public sealed partial class GameHost
     /// every mission; each costs an archive or a cached atlas, and neither is worth a restart.
     /// </remarks>
     private ITacticalComputerPresenter? TacticalComputer =>
-        RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
+        HudCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
     // The map gate of the level last asked about; rebuilt when another level comes up.
     private MapComputerGate? _mapGate;

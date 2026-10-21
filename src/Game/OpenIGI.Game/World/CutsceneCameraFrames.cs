@@ -2,7 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 using static OpenIGI.Game.World.CutscenePoses;
 using static OpenIGI.Game.World.CutsceneCameraMath;
 
@@ -201,18 +201,18 @@ internal sealed class CutsceneCameraFrames(CutsceneContext context, CutsceneAtta
             {
                 continue;
             }
-            int link = Int(camera, "Link task ID", -1);
-            int target = Int(camera, "Target task ID", -1);
+            int link = IntStrict(camera, "Link task ID", -1);
+            int target = IntStrict(camera, "Target task ID", -1);
             (Vector3d linkOrigin, Matrix3f linkOrientation) = InitialPose(scene.Tree.FromId(link));
             Vector3d position = Vector(camera, "Position");
             shots.Add(new EditCameraShot(
                 position,
-                Real(camera, "Alpha"), Real(camera, "Beta"), Real(camera, "Gamma"),
-                Math.Clamp(Real(camera, "FOV", 1f), 0.001f, 3f), Real(camera, "Duration"),
-                link, Bool(camera, "Update link continously"), target, Bool(camera, "Update target continously"),
-                Bool(camera, "Smooth to next"), Real(camera, "Time of day", -1f),
-                Text(camera, "FILTER"), Real(camera, "Noise"), Vector32(camera, "Filter color RGB"),
-                Real(camera, "Camera shake"), linkOrigin, linkOrientation));
+                RealStrict(camera, "Alpha"), RealStrict(camera, "Beta"), RealStrict(camera, "Gamma"),
+                Math.Clamp(RealStrict(camera, "FOV", 1f), 0.001f, 3f), RealStrict(camera, "Duration"),
+                link, BoolStrict(camera, "Update link continously"), target, BoolStrict(camera, "Update target continously"),
+                BoolStrict(camera, "Smooth to next"), RealStrict(camera, "Time of day", -1f),
+                TextOrEmpty(camera, "FILTER"), RealStrict(camera, "Noise"), Vector32(camera, "Filter color RGB"),
+                RealStrict(camera, "Camera shake"), linkOrigin, linkOrientation));
         }
         return shots;
     }

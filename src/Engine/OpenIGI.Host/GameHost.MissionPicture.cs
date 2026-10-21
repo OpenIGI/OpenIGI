@@ -74,7 +74,7 @@ public sealed partial class GameHost
         // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
         // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
         // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
-        if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
+        if (GlobalIlluminationCVars.GlobalIllumination.Value || GlobalIlluminationCVars.BakedLightmaps.Value > 0)
         {
             Vector3f bakeSunDirection = _timeOfDay.Sun is { } declared && !declared.IsBelowHorizon
                 ? declared.Direction
@@ -204,7 +204,7 @@ public sealed partial class GameHost
 
                 // At the hour the level's authors placed the sun for, not a fixed one: the cycle lands
                 // back on the authored direction only there.
-                _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, RenderCVars.TimeOfDay.Value);
+                _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, ExposureCVars.TimeOfDay.Value);
 
                 // After the reset, which clears it: a level that authors its own night hands the cycle
                 // that night to cross to, instead of the faint one the cycle invents for a level that
@@ -232,7 +232,7 @@ public sealed partial class GameHost
             else
             {
                 _timeOfDay.BoundSun = null;
-                _timeOfDay.DayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
+                _timeOfDay.DayNight.ResetForLevel(null, ExposureCVars.TimeOfDay.Value);
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
 
@@ -285,7 +285,7 @@ public sealed partial class GameHost
         if (_gi.LampsMissionId != id || !promoted)
         {
             _gi.ApplyLamps(
-                RenderCVars.GlobalIlluminationLamps.Value != 0
+                LocalLightCVars.GlobalIlluminationLamps.Value != 0
                     ? EmissiveLightProposer.Propose(
                         _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger)
                     : EmissiveLightProposer.Proposal.None,

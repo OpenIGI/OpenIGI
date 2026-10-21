@@ -256,7 +256,7 @@ float SampleSceneViewZ(float2 uv)
 
 // The specular lobe averaged over the hemisphere at a roughness and a viewing angle: what F0 and F90 are
 // scaled by to weigh an environment's reflection. The same analytic fit the shading weighs its own
-// estimate of that environment with (Shading.slang, SplitSumApprox), so the reflection that stands in for
+// estimate of that environment with (Common/ShadingBrdf.slang, SplitSumApprox), so the reflection that stands in for
 // it is weighed the same way.
 float2 EnvironmentBrdf(float roughness, float cosNV)
 {

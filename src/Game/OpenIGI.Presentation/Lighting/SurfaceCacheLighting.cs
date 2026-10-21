@@ -166,7 +166,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         Height = height;
 
         _bindings = new SurfaceCacheBindings(
-            device, origin, device.Capabilities.SupportsRayQuery && RenderCVars.HardwareRayTracing.Value);
+            device, origin, device.Capabilities.SupportsRayQuery && RayTracingCVars.HardwareRayTracing.Value);
         _movers = new SurfaceCacheMovers(device, pages, origin, pageRecords, cards, instances);
         _localLights = new SurfaceCacheLocalLights(device, logger, origin);
         _relight = new SurfaceCacheRelight(
@@ -288,7 +288,7 @@ public sealed class SurfaceCacheLighting : IDisposable
             ComputeShaderHandle shader = device.CreateComputeShader(
                 ShaderModuleId.CardsLighting,
                 new ShaderVariant(
-                    device.Capabilities.SupportsRayQuery && RenderCVars.HardwareRayTracing.Value
+                    device.Capabilities.SupportsRayQuery && RayTracingCVars.HardwareRayTracing.Value
                         ? "rayquery"
                         : "software"),
                 "cards.light");
@@ -549,7 +549,7 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// above it and every interior's ceiling read black at night.
     /// </para>
     /// </remarks>
-    public static float DeferredLampScale => MathF.PI * RenderCVars.LocalLightScale.Value;
+    public static float DeferredLampScale => MathF.PI * LocalLightCVars.LocalLightScale.Value;
 
     /// <summary>The most a fixture's relative intensity counts for, as the deferred lamps clamp it.</summary>
     public const float MaximumLampIntensity = 1.5f;
@@ -715,7 +715,7 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// </remarks>
     private void EnsureTraceMode()
     {
-        bool want = _device.Capabilities.SupportsRayQuery && RenderCVars.HardwareRayTracing.Value;
+        bool want = _device.Capabilities.SupportsRayQuery && RayTracingCVars.HardwareRayTracing.Value;
         if (want == _bindings.TracesRays)
         {
             return;

@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Physics;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 using static OpenIGI.Game.World.CutscenePoses;
 
 namespace OpenIGI.Game.World;
@@ -93,10 +93,10 @@ internal sealed class CutsceneVehicleBodies(
                 ? "helicopter_1"
                 : plane
                     ? "su27"
-                    : _context.VehiclePhysics?.TryGetCar(Text(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
+                    : _context.VehiclePhysics?.TryGetCar(TextOrEmpty(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
                         ? car.EngineSoundSet
                         : string.Empty;
-            string gate = Text(vehicle, "Play sound");
+            string gate = TextOrEmpty(vehicle, "Play sound");
             bool on = string.IsNullOrWhiteSpace(gate) || _context.Expressions.EvaluateCondition(gate, emptyValue: true, vehicle);
             float throttle = helicopter
                 ? state.RetailHeli?.Collective ?? 0f
@@ -378,7 +378,7 @@ internal sealed class CutsceneVehicleBodies(
         {
             RetailCarSpawn.Reset(body, placement);
         }
-        else if (_retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } model)
+        else if (_retailCarModels?.Invoke(TextOrEmpty(declared, WorldScene.ModelParameter)) is { } model)
         {
             RetailCarBody created = RetailCarSpawn.Create(physics, model, placement);
             created.Owner = task;
@@ -483,7 +483,7 @@ internal sealed class CutsceneVehicleBodies(
 
         RetailRayModel? model = null;
         if (task is DeclaredTask declared
-            && _retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } mef
+            && _retailCarModels?.Invoke(TextOrEmpty(declared, WorldScene.ModelParameter)) is { } mef
             && OpenIGI.Formats.World.MefCollisionMesh.TryRead(mef.Container, meshIndex: 0, out OpenIGI.Formats.World.MefCollisionMesh? mesh)
             && mesh is { Faces.Length: > 0 })
         {
@@ -509,7 +509,7 @@ internal sealed class CutsceneVehicleBodies(
         }
 
         if (_retailCarModels is not { } models
-            || models(Text(task, WorldScene.ModelParameter)) is not { } model
+            || models(TextOrEmpty(task, WorldScene.ModelParameter)) is not { } model
             || _retailMagic is null)
         {
             return null;
@@ -534,7 +534,7 @@ internal sealed class CutsceneVehicleBodies(
             return existing;
         }
 
-        if (_retailCarModels?.Invoke(Text(task, WorldScene.ModelParameter)) is not { } model || _retailMagic is null)
+        if (_retailCarModels?.Invoke(TextOrEmpty(task, WorldScene.ModelParameter)) is not { } model || _retailMagic is null)
         {
             return null;
         }

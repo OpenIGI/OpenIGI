@@ -262,13 +262,13 @@ public sealed partial class GraphicsDevice
                     world.HitRecordHandle,
                     _cameraPosition,
                     _lighting.WorldSunDirection(_viewToWorld),
-                    RenderCVars.SunAngle.Value,
+                    ShadowCVars.SunAngle.Value,
 
                     // Cycled over a short period: the ray direction is built from this through a fract(),
                     // and a float as large as a frame count has lost the low bits that vary it. Raw, for
                     // ray reconstruction, the white noise is hashed from the whole count instead.
                     RawLighting ? _frameCounter & 0xFFFFFFUL : _frameCounter % 64UL,
-                    RenderCVars.ShadowAccumulate.Value,
+                    ShadowCVars.ShadowAccumulate.Value,
                     RawLighting),
                 state,
                 _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null);

@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 using static OpenIGI.Game.World.CutscenePoses;
 
 namespace OpenIGI.Game.World;
@@ -279,7 +279,7 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
         _attachments[task] = attachment;
         if (task is DeclaredTask attached
             && _context.VehiclePhysics?.TryGetRotor(
-                Text(attached, WorldScene.ModelParameter), out RotorPhysicsDefinition rotor) == true)
+                TextOrEmpty(attached, WorldScene.ModelParameter), out RotorPhysicsDefinition rotor) == true)
         {
             if (rotor.ProducesLift)
             {

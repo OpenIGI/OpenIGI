@@ -910,10 +910,15 @@ public sealed class WorldScene
     /// from exact position cross-reference because it terrain-snaps them at load, so their authored height
     /// need not match the surface they settle on.
     /// </remarks>
-    private static bool IsCharacterPlacement(DeclaredTask declared) =>
-        string.Equals(declared.Type.Name, AiSoldierType, StringComparison.Ordinal)
-        || string.Equals(declared.Type.Name, AiSoldierFemaleType, StringComparison.Ordinal)
-        || string.Equals(declared.Type.Name, HumanPlayerType, StringComparison.Ordinal);
+    private static bool IsCharacterPlacement(DeclaredTask declared) => IsCharacterTypeName(declared.Type.Name);
+
+    /// <summary>Returns whether a task type name is one of the human character types retail grounds onto the terrain.</summary>
+    /// <param name="typeName">The task's type name.</param>
+    /// <remarks>The AI soldiers, male and female, and the player body; the name must match exactly.</remarks>
+    internal static bool IsCharacterTypeName(string? typeName) =>
+        string.Equals(typeName, AiSoldierType, StringComparison.Ordinal)
+        || string.Equals(typeName, AiSoldierFemaleType, StringComparison.Ordinal)
+        || string.Equals(typeName, HumanPlayerType, StringComparison.Ordinal);
 
     /// <summary>Builds an orientation from the three Euler angles level data stores.</summary>
     /// <param name="angles">The alpha, beta and gamma angles in radians.</param>

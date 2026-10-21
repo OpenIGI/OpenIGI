@@ -114,13 +114,13 @@ public sealed partial class GameHost
         SceneTargetDescription sceneTarget = new(
             resolution.RenderWidth,
             resolution.RenderHeight,
-            RenderCVars.OffscreenScene.Value ? Math.Max(1, RenderCVars.MultiSampling.Value) : 1,
-            Deferred: RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value,
+            FrameCVars.OffscreenScene.Value ? Math.Max(1, FrameCVars.MultiSampling.Value) : 1,
+            Deferred: FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value,
 
             // An 8-bit target under the vanilla preset: with no tone map and unit exposure the whole
             // offscreen detour is then a copy, which is what keeps that preset identical to the
             // build that had no offscreen path at all.
-            HighDynamicRange: RenderCVars.ToneMap.Value != ToneMapOperator.None,
+            HighDynamicRange: ExposureCVars.ToneMap.Value != ToneMapOperator.None,
 
             // Asked for only when something reconstructs to it -- the accumulation under a render scale,
             // or an NVIDIA reconstruction at any size: without one these are two buffers holding a
@@ -130,7 +130,7 @@ public sealed partial class GameHost
             GBuffer: (_gi.EffectiveLighting != LightingModel.Dynamic
                     ? GBufferLayout.BakedLighting
                     : GBufferLayout.Compact)
-                | (wantsTemporal || RenderCVars.MotionBlur.Value > 0f
+                | (wantsTemporal || PostCVars.MotionBlur.Value > 0f
                     ? GBufferLayout.MotionVectors
                     : GBufferLayout.Compact));
 
@@ -160,7 +160,7 @@ public sealed partial class GameHost
         // from here, so it travels as the one hidden variable rather than as another argument
         // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
         // a comparison capture wants: a pinned sun and an unmodified exposure.
-        RenderCVars.Nightfall.Value = _timeOfDay.DayNight.Nightfall;
+        ExposureCVars.Nightfall.Value = _timeOfDay.DayNight.Nightfall;
 
         // And what the LEVEL says about its own darkness, which the adaptation cannot work out
         // for itself: a scene lit dimly all over reads to it as a correctly-exposed dark subject.
@@ -184,15 +184,15 @@ public sealed partial class GameHost
         // load -- and the adaptation that rides on it is temporal, so the step would be chased
         // rather than taken. What the exposure follows has to be a decision the player made, not a
         // state the loader is in.
-        RenderCVars.AuthoredNightfall.Value =
-            _deferredLighting is null || RenderCVars.Lighting.Value != LightingModel.Dynamic
+        ExposureCVars.AuthoredNightfall.Value =
+            _deferredLighting is null || LightingCVars.Lighting.Value != LightingModel.Dynamic
                 ? 0f
                 : _timeOfDay.DayNight.Nightfall;
 
         // And how much a full night of it is worth, which is the title's to say: see
         // DeferredLighting.NightExposureDrop.
-        RenderCVars.AuthoredNightDropFor.Value =
-            _deferredLighting?.NightExposureDrop ?? RenderCVars.AuthoredNightDrop;
+        ExposureCVars.AuthoredNightDropFor.Value =
+            _deferredLighting?.NightExposureDrop ?? ExposureCVars.AuthoredNightDrop;
 
         _timeOfDay.EffectiveSun = light;
         Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
@@ -224,24 +224,24 @@ public sealed partial class GameHost
         float aspectRatio = view.AspectRatio;
         Matrix4f unjitteredProjection = view.UnjitteredProjection;
 
-        bool wantsShadows = RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value
-            && RenderCVars.Shadows.Value > 0;
+        bool wantsShadows = FrameCVars.OffscreenScene.Value
+            && LightingCVars.Deferred.Value
+            && ShadowCVars.Shadows.Value > 0;
 
         ShadowSettings shadowSettings = wantsShadows
             ? new ShadowSettings(
-                RenderCVars.ShadowCascades.Value,
-                RenderCVars.Shadows.Value,
-                RenderCVars.ShadowDistance.Value)
+                ShadowCVars.ShadowCascades.Value,
+                ShadowCVars.Shadows.Value,
+                ShadowCVars.ShadowDistance.Value)
             {
-                ContactReach = RenderCVars.ContactShadows.Value,
-                FilterRadius = RenderCVars.ShadowSoftness.Value,
+                ContactReach = ShadowCVars.ContactShadows.Value,
+                FilterRadius = ShadowCVars.ShadowSoftness.Value,
 
                 // The live software/hardware switch: off, a tracing backend leaves the sun to the
                 // cascaded map like everyone else. r_rt_shadows moves the sun's shadow on its own,
                 // leaving every other trace in the frame alone, which is what makes the two shadow
                 // systems comparable in place.
-                TracedSun = RenderCVars.HardwareRayTracing.Value && RenderCVars.TracedSunShadows.Value,
+                TracedSun = RayTracingCVars.HardwareRayTracing.Value && RayTracingCVars.TracedSunShadows.Value,
 
                 // The day/night cycle fades the colour to exactly nought a tenth below the
                 // horizon; from there every sun-shadow mask is multiplied by zero, and the whole
@@ -311,9 +311,9 @@ public sealed partial class GameHost
         // by deleting the yard's fog too, so a compound seen from a doorway came up in clear air.
         // The room is now dry and the yard beyond the window is not, which is what is actually
         // out there.
-        bool wantsFog = RenderCVars.FogQuality.Value > 0
-            && RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value;
+        bool wantsFog = FogCVars.FogQuality.Value > 0
+            && FrameCVars.OffscreenScene.Value
+            && LightingCVars.Deferred.Value;
 
         // The mission actually on screen, as the colour grade reads it. This read -mission's id, so a
         // mission entered from the campaign -- where that is nought -- was drawn in the generic
@@ -331,7 +331,7 @@ public sealed partial class GameHost
                 fogMission,
                 authoredDensity,
                 (float)(_scene.GroundHeight + (_sky is { HasSky: true } ? _sky.PlaneHeight : 0f)),
-                RenderCVars.FogQuality.Value);
+                FogCVars.FogQuality.Value);
 
             // A console override beats the authored preset, so a value can be dialled in live and
             // then written back into the file.
@@ -350,24 +350,24 @@ public sealed partial class GameHost
                 medium = medium with { Albedo = tint.FogColour };
             }
 
-            if (RenderCVars.FogDensity.Value > 0f)
+            if (FogCVars.FogDensity.Value > 0f)
             {
-                medium = medium with { Density = RenderCVars.FogDensity.Value };
+                medium = medium with { Density = FogCVars.FogDensity.Value };
             }
 
-            if (!RenderCVars.FogHeightFalloff.IsDefault)
+            if (!FogCVars.FogHeightFalloff.IsDefault)
             {
-                medium = medium with { HeightFalloff = RenderCVars.FogHeightFalloff.Value };
+                medium = medium with { HeightFalloff = FogCVars.FogHeightFalloff.Value };
             }
 
-            if (!RenderCVars.FogAnisotropy.IsDefault)
+            if (!FogCVars.FogAnisotropy.IsDefault)
             {
-                medium = medium with { Anisotropy = RenderCVars.FogAnisotropy.Value };
+                medium = medium with { Anisotropy = FogCVars.FogAnisotropy.Value };
             }
 
-            if (!RenderCVars.FogDistance.IsDefault)
+            if (!FogCVars.FogDistance.IsDefault)
             {
-                medium = medium with { Distance = RenderCVars.FogDistance.Value };
+                medium = medium with { Distance = FogCVars.FogDistance.Value };
             }
         }
 
@@ -390,7 +390,7 @@ public sealed partial class GameHost
         // temporal path: a per-frame seed above zero turns it on, zero leaves the hard cut-out. The
         // seed only has to change each frame for the dither to differ; the jitter counter does that.
         _device.SetAlphaHash(
-            RenderCVars.HashedAlpha.Value && wantsTemporal
+            MaterialCVars.HashedAlpha.Value && wantsTemporal
                 ? 1f + (float)(state.TemporalFrame & 63)
                 : 0f);
 
@@ -402,30 +402,30 @@ public sealed partial class GameHost
         // chose. Read here, every frame, because that is what makes it instant: nothing is
         // unloaded and nothing is rebuilt -- the shader simply stops scaling its slope by it.
         _device.SetMaterialDetail(
-            RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value
-            && RenderCVars.MaterialDetailEnabled.Value
-                ? RenderCVars.MaterialDetail.Value
+            FrameCVars.OffscreenScene.Value
+            && LightingCVars.Deferred.Value
+            && MaterialCVars.MaterialDetailEnabled.Value
+                ? MaterialCVars.MaterialDetail.Value
                 : 0f);
         _device.SetFloorGloss(
-            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
-                ? RenderCVars.FloorGloss.Value
+            FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value
+                ? MaterialCVars.FloorGloss.Value
                 : 1f);
         _device.SetReflections(
-            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+            FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value
                 ? new ReflectionSettings(
-                    RenderCVars.Reflections.Value,
-                    RenderCVars.ReflectionIntensity.Value,
-                    RenderCVars.ReflectionMaxRoughness.Value)
+                    ReflectionCVars.Reflections.Value,
+                    ReflectionCVars.ReflectionIntensity.Value,
+                    ReflectionCVars.ReflectionMaxRoughness.Value)
                 : ReflectionSettings.Off);
 
         // How wet the ground is. Driven by the storm rather than by a number of its own: it is
         // raining or it is not, and a road that stays dry through a downpour is the single thing
         // that most gives away rain as an effect rather than as weather. Off the moment the storm
         // is not drawing, so a level with no rain is not quietly shaded damp.
-        bool wetGround = RenderCVars.Wetness.Value
-            && RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value
+        bool wetGround = WeatherCVars.Wetness.Value
+            && FrameCVars.OffscreenScene.Value
+            && LightingCVars.Deferred.Value
             && _storm is { IsActive: true };
         _device.SetWetness(
             wetGround
@@ -442,10 +442,10 @@ public sealed partial class GameHost
         probeFade = probeFade * probeFade * (3f - (2f * probeFade));
 
         _device.SetIrradianceVolumeSettings(
-            _baked.ProbeField is not null && RenderCVars.GlobalIllumination.Value
+            _baked.ProbeField is not null && GlobalIlluminationCVars.GlobalIllumination.Value
                 ? new IrradianceVolumeSettings(
                     true,
-                    RenderCVars.GlobalIlluminationIntensity.Value,
+                    GlobalIlluminationCVars.GlobalIlluminationIntensity.Value,
                     light.Ambient,
                     probeFade)
                 : IrradianceVolumeSettings.Off);
@@ -453,13 +453,13 @@ public sealed partial class GameHost
         // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
         // there is a G-buffer; without one the lighting has no ambient term of its own to shade.
         _device.SetAmbientOcclusion(
-            RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+            FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value
                 ? new AmbientOcclusionSettings(
-                    RenderCVars.AmbientOcclusion.Value,
-                    RenderCVars.AmbientOcclusionRadius.Value,
-                    RenderCVars.AmbientOcclusionIntensity.Value,
-                    RenderCVars.ScreenSpaceGi.Value,
-                    RenderCVars.ScreenSpaceGiIntensity.Value)
+                    ShadowCVars.AmbientOcclusion.Value,
+                    ShadowCVars.AmbientOcclusionRadius.Value,
+                    ShadowCVars.AmbientOcclusionIntensity.Value,
+                    ShadowCVars.ScreenSpaceGi.Value,
+                    ShadowCVars.ScreenSpaceGiIntensity.Value)
                 : AmbientOcclusionSettings.Off);
 
         // Reprojection compares two frames, and the jitter is precisely what differs between them,
@@ -467,10 +467,10 @@ public sealed partial class GameHost
         _device.SetTemporalAntiAliasing(
             new TemporalAaSettings(
                 wantsTemporal,
-                RenderCVars.TemporalFeedback.Value,
+                ReconstructionCVars.TemporalFeedback.Value,
                 jitterX,
                 jitterY,
-                RenderCVars.TemporalSharpening.Value),
+                ReconstructionCVars.TemporalSharpening.Value),
             unjitteredProjection,
             eye.Position,
             eye.Orientation.Transposed());

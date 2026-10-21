@@ -45,8 +45,8 @@ public sealed partial class GraphicsDevice
     private void ReportReflectionTrace(bool complete) => ReportOnChange(
         "Traced reflections",
         TracedWorld is null ? "off: this adapter cannot trace"
-        : !RenderCVars.HardwareRayTracing.Value ? "off: r_rt is 0"
-        : !RenderCVars.TracedReflections.Value ? "off: r_rt_reflections is 0"
+        : !RayTracingCVars.HardwareRayTracing.Value ? "off: r_rt is 0"
+        : !RayTracingCVars.TracedReflections.Value ? "off: r_rt_reflections is 0"
         : !_surfaceCacheBinding.IsPresent ? "off: no lit surface cache (SetSurfaceCache handed over nothing)"
         : TracedWorld is not { IsWorldReady: true, WorldScene: not null } ? "off: the world's acceleration structure is not built yet"
         : !complete ? "off: the surface cache named a resource this device no longer holds"

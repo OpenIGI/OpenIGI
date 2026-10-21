@@ -10,7 +10,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -219,9 +219,9 @@ public sealed class CutsceneRuntime
                 {
                     CutsceneTimerState timer = new(
                         declared,
-                        Text(declared, "On"),
-                        Text(declared, "Reset"),
-                        Bool(declared, "Initial run"));
+                        TextOrEmpty(declared, "On"),
+                        TextOrEmpty(declared, "Reset"),
+                        BoolStrict(declared, "Initial run"));
                     _timers.Add(timer);
                     variables.BindBool(declared, "isRun", () => timer.IsRun, value => timer.IsRun = value);
                     variables.BindInt(declared, "nTick", () => timer.Tick, value => timer.Tick = value);
@@ -230,13 +230,13 @@ public sealed class CutsceneRuntime
                     && declared.TryGetValue("AnimData", out object? data)
                     && data is IReadOnlyList<AnimDataEntry> entries)
                 {
-                    int target = Int(declared, "TargetID", Int(declared, "Target ID", -1));
+                    int target = IntStrict(declared, "TargetID", IntStrict(declared, "Target ID", -1));
                     CutsceneAnimationState animation = new(
                         declared,
                         target,
                         order,
-                        Text(declared, "Run"),
-                        Bool(declared, "Initial run"),
+                        TextOrEmpty(declared, "Run"),
+                        BoolStrict(declared, "Initial run"),
                         new AnimDataProgram(entries));
                     _animations.Add(animation);
 
@@ -259,9 +259,9 @@ public sealed class CutsceneRuntime
                         FirstTextNamed(declared, "condition"),
                         FirstTextNamed(declared, "sound"),
                         Vector(declared, "Position"),
-                        Bool(declared, "Simple"),
-                        Bool(declared, "OneShot"),
-                        Bool(declared, "Relative to microphone")));
+                        BoolStrict(declared, "Simple"),
+                        BoolStrict(declared, "OneShot"),
+                        BoolStrict(declared, "Relative to microphone")));
                 }
                 else if (string.Equals(task.Type.Name, "BinocularOverlayHolder", StringComparison.Ordinal))
                 {
@@ -834,7 +834,7 @@ public sealed class CutsceneRuntime
         {
             if (ConditionalContainerGate.IsTaskActive(holder)
                 && _context.Expressions.EvaluateCondition(
-                    Text(holder, "Visible expression"), emptyValue: false, holder))
+                    TextOrEmpty(holder, "Visible expression"), emptyValue: false, holder))
             {
                 return true;
             }

@@ -287,7 +287,7 @@ internal sealed class DebugOverlays(
         // and is read while the game is being played rather than while it is being inspected. Top
         // right, so the two can be up together. When F12 is also enabled, place this panel below
         // the measured F12 panel instead of letting both panels claim the same top-right corner.
-        if (RenderCVars.PerformanceLog.Value
+        if (FrameCVars.PerformanceLog.Value
             && !options.IsBenchmark
             && host.Overlay is { IsReady: true } performanceOverlay)
         {
@@ -341,7 +341,7 @@ internal sealed class DebugOverlays(
                 ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                 : "measuring...");
 
-            if (RenderCVars.PerformanceLogPasses.Value is > 0 and int shown)
+            if (FrameCVars.PerformanceLogPasses.Value is > 0 and int shown)
             {
                 IReadOnlyList<RenderPassTiming> passes = device.PassTimings();
                 for (int p = 0; p < passes.Count && p < shown; p++)
@@ -439,18 +439,18 @@ internal sealed class DebugOverlays(
         int layers = host.Overrides.Layers.Count(layer => layer.Enabled && layer.Wins > 0);
         string upscaled = host.Overrides.Count == 0
             ? "original (no content)"
-            : RenderCVars.OverridesEnabled.Value
+            : MaterialCVars.OverridesEnabled.Value
                 ? $"{host.Resources.OverriddenCount} override(s) from {layers} layer(s) [F8 for the originals]"
                 : $"original [F8 for the {host.Overrides.Count} override(s)]";
 
         // Zero at every preset but high, so "off" here is usually the authored answer rather than a key
         // somebody pressed -- worth distinguishing, because the maps look identical to absent when the
         // strength is nothing.
-        string detail = RenderCVars.MaterialDetail.Value <= 0f
+        string detail = MaterialCVars.MaterialDetail.Value <= 0f
             ? "no detail (r_material_detail is 0)"
-            : RenderCVars.MaterialDetailEnabled.Value
-                ? $"detail {RenderCVars.MaterialDetail.Value:0.##} [F9 off]"
-                : $"detail off [F9 back to {RenderCVars.MaterialDetail.Value:0.##}]";
+            : MaterialCVars.MaterialDetailEnabled.Value
+                ? $"detail {MaterialCVars.MaterialDetail.Value:0.##} [F9 off]"
+                : $"detail off [F9 back to {MaterialCVars.MaterialDetail.Value:0.##}]";
 
         return $"{upscaled}, {detail}";
     }
@@ -465,9 +465,9 @@ internal sealed class DebugOverlays(
     /// </remarks>
     private string ShadowModeLabel()
     {
-        bool enabled = RenderCVars.Shadows.Value > 0
-            && RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value;
+        bool enabled = ShadowCVars.Shadows.Value > 0
+            && FrameCVars.OffscreenScene.Value
+            && LightingCVars.Deferred.Value;
 
         if (!enabled)
         {
@@ -477,23 +477,23 @@ internal sealed class DebugOverlays(
         if (!device.Capabilities.SupportsRayQuery)
         {
             return FormattableString.Invariant(
-                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value} (no ray tracing on this backend)");
+                $"cascaded map, {ShadowCVars.ShadowCascades.Value} cascades at {ShadowCVars.Shadows.Value} (no ray tracing on this backend)");
         }
 
-        if (!RenderCVars.HardwareRayTracing.Value)
+        if (!RayTracingCVars.HardwareRayTracing.Value)
         {
             return FormattableString.Invariant(
-                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F6 traces everything]");
+                $"cascaded map, {ShadowCVars.ShadowCascades.Value} cascades at {ShadowCVars.Shadows.Value}  [F6 traces everything]");
         }
 
-        if (!RenderCVars.TracedSunShadows.Value)
+        if (!RayTracingCVars.TracedSunShadows.Value)
         {
             return FormattableString.Invariant(
-                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F7 traces the sun; rest of the frame is traced]");
+                $"cascaded map, {ShadowCVars.ShadowCascades.Value} cascades at {ShadowCVars.Shadows.Value}  [F7 traces the sun; rest of the frame is traced]");
         }
 
         return FormattableString.Invariant(
-            $"ray query, sun disc {RenderCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
+            $"ray query, sun disc {ShadowCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
     }
 
     /// <inheritdoc/>

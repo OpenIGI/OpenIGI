@@ -2,7 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 using static OpenIGI.Game.World.CutscenePoses;
 
 namespace OpenIGI.Game.World;
@@ -195,7 +195,7 @@ internal sealed class CutsceneVehicleArmament(
 
             // A car's "Can fire" is an expression: 0x42E870 evaluates it every tick and registers the
             // car's vision while it holds, removing it again when it stops.
-            bool canFire = _context.Expressions.EvaluateCondition(Text(declared, "Can fire"), emptyValue: false, vehicle);
+            bool canFire = _context.Expressions.EvaluateCondition(TextOrEmpty(declared, "Can fire"), emptyValue: false, vehicle);
             CarAiState? controller = _carAis.Find(state => ReferenceEquals(state.Car, vehicle));
             bool active = ConditionalContainerGate.IsTaskActive(vehicle)
                 && (controller is null || ConditionalContainerGate.IsTaskActive(controller.Task))
@@ -398,9 +398,9 @@ internal sealed class CutsceneVehicleArmament(
             seen,
             active,
             canFire,
-            CutsceneTaskValues.Single(vehicle, "ViewCone Alpha (degrees)", 180f),
-            CutsceneTaskValues.Single(vehicle, "ViewCone Gamma (degrees)", 360f),
-            CutsceneTaskValues.Single(vehicle, "ViewCone Length (meter)", 0f),
+            DeclaredTaskValues.RealConverted(vehicle, "ViewCone Alpha (degrees)", 180f),
+            DeclaredTaskValues.RealConverted(vehicle, "ViewCone Gamma (degrees)", 360f),
+            DeclaredTaskValues.RealConverted(vehicle, "ViewCone Length (meter)", 0f),
             visible,
             weapon.MuzzleVelocity,
             weapon.RoundsPerMinute));
@@ -434,7 +434,7 @@ internal sealed class CutsceneVehicleArmament(
         }
 
         bool helicopter = string.Equals(vehicle.Type.Name, "Heli", StringComparison.Ordinal);
-        bool canFire = _context.Expressions.EvaluateCondition(Text(declared, "Can fire"), emptyValue: false, vehicle);
+        bool canFire = _context.Expressions.EvaluateCondition(TextOrEmpty(declared, "Can fire"), emptyValue: false, vehicle);
         Vector3d eyePosition = helicopter
             ? transform.Position
             : transform.Position + new Vector3d(0d, 0d, VehicleVision.CarEyeHeightUnits);
@@ -443,9 +443,9 @@ internal sealed class CutsceneVehicleArmament(
             eyePosition,
             orientation,
             new AiSnapshotCone(
-                CutsceneTaskValues.Single(declared, "ViewCone Alpha (degrees)", 180f) * 0.017453292,
-                CutsceneTaskValues.Single(declared, "ViewCone Gamma (degrees)", 360f) * 0.017453292,
-                CutsceneTaskValues.Single(declared, "ViewCone Length (meter)", 0f) * 4096.0),
+                DeclaredTaskValues.RealConverted(declared, "ViewCone Alpha (degrees)", 180f) * 0.017453292,
+                DeclaredTaskValues.RealConverted(declared, "ViewCone Gamma (degrees)", 360f) * 0.017453292,
+                DeclaredTaskValues.RealConverted(declared, "ViewCone Length (meter)", 0f) * 4096.0),
             default,
             secondaryEnabled: false);
         Vector3d? target = VehicleSightTarget?.Invoke() ?? VehicleCombatTarget?.Invoke();

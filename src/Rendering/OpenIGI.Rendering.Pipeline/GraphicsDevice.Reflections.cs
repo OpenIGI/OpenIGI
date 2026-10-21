@@ -269,7 +269,7 @@ public sealed partial class GraphicsDevice
 
         data[24] = traces ? 1f : 0f;
         data[25] = ReflectionReachMetres;
-        data[26] = RenderCVars.TracedReflectionClamp.Value;
+        data[26] = ReflectionCVars.TracedReflectionClamp.Value;
         data[27] = SkyConditions.ViewHeightFor(altitudeMetres: 2f);
 
         SurfaceCacheBinding cache = _surfaceCacheBinding;
@@ -286,7 +286,7 @@ public sealed partial class GraphicsDevice
         data[36] = cache.AtlasWidth;
         data[37] = cache.AtlasHeight;
         data[38] = cache.BounceScale;
-        data[39] = RenderCVars.GlassReflection.Value;
+        data[39] = ReflectionCVars.GlassReflection.Value;
 
         data[40] = raw ? 1f : 0f;
         data[41] = _viewModelLensX;

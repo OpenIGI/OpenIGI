@@ -111,7 +111,7 @@ public sealed partial class GameHost
         // The measurement, written down. The overlay answers "is it fast right now" for somebody watching
         // it; this is what a capture run leaves behind, and it is the only form the acceptance criterion
         // can actually be checked in -- nobody reads an overlay in a thirty-frame headless capture.
-        if (RenderCVars.PerformanceLog.Value)
+        if (FrameCVars.PerformanceLog.Value)
         {
             IReadOnlyList<RenderStageTiming> finalTimings = _device.StageTimings();
 

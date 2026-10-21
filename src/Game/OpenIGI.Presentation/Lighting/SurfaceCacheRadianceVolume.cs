@@ -244,7 +244,7 @@ internal sealed class SurfaceCacheRadianceVolume
         _device.SetTexture(6, _final);
 
         _device.SetComputeUniform(_cacheUpdate, "uSkyColour", skyColour);
-        _device.SetComputeUniform(_cacheUpdate, "uBounceScale", RenderCVars.GiBounce.Value);
+        _device.SetComputeUniform(_cacheUpdate, "uBounceScale", SurfaceCacheCVars.GiBounce.Value);
         _bindings.WriteSkyHarmonics(_cacheUpdate);
         _device.SetComputeUniform(_cacheUpdate, "uAtlasSize", new Vector3f(_width, _height, 0f));
         _device.SetComputeUniform(_cacheUpdate, "uLookupBuckets", SurfaceCacheLookup.Buckets);

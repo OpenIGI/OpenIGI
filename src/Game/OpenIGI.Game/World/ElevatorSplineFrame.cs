@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -64,9 +65,9 @@ public sealed class ElevatorSplineFrame
     {
         ArgumentNullException.ThrowIfNull(elevator);
         if (spline is not DeclaredTask splineObj
-            || Flag(elevator, "Linear")
-            || Flag(elevator, "Force orientation")
-            || !Flag(splineObj, "Linear Segments"))
+            || BoolStrict(elevator, "Linear")
+            || BoolStrict(elevator, "Force orientation")
+            || !BoolStrict(splineObj, "Linear Segments"))
         {
             return null;
         }
@@ -83,8 +84,8 @@ public sealed class ElevatorSplineFrame
         Matrix3f[] segments = new Matrix3f[waypoints.Count - 1];
         for (int i = 1; i < waypoints.Count; i++)
         {
-            Vector3d from = Position(waypoints[i - 1]);
-            Vector3d to = Position(waypoints[i]);
+            Vector3d from = Vector(waypoints[i - 1], "Position");
+            Vector3d to = Vector(waypoints[i], "Position");
             segments[i - 1] = HeadingFrame((float)(to.X - from.X), (float)(to.Y - from.Y));
         }
 
@@ -107,10 +108,4 @@ public sealed class ElevatorSplineFrame
             s, c, 0f,
             0f, 0f, 1f);
     }
-
-    private static bool Flag(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is true;
-
-    private static Vector3d Position(DeclaredTask waypoint) =>
-        waypoint.TryGetValue("Position", out object? value) && value is Vector3d position ? position : default;
 }

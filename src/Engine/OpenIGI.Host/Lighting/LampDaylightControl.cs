@@ -51,7 +51,7 @@ internal sealed class LampDaylightControl
 
     /// <summary>Gets whether the renderer draws lamps that can follow the daylight at all.</summary>
     /// <remarks>The deferred path, which vanilla does not draw, for the same reason the flashlight needs it.</remarks>
-    private static bool LampDaylightAvailable => RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value;
+    private static bool LampDaylightAvailable => FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value;
 
     /// <summary>Lets the photocells see this pass's daylight, and the lamps' supplies follow.</summary>
     /// <param name="board">The level's lamps.</param>
@@ -86,7 +86,7 @@ internal sealed class LampDaylightControl
 
         LampPhotocells cells = _lampPhotocells;
         LampDaylight mode = LampDaylightAvailable && !sunOverridden
-            ? RenderCVars.LampDaylight.Value
+            ? ExposureCVars.LampDaylight.Value
             : LampDaylight.Off;
         bool shelterChanged = !ReferenceEquals(_lampShelter, shelter) || !ReferenceEquals(_lampWalls, walls);
 

@@ -180,7 +180,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         }
 
         Viewport viewport = ScreenViewport(screenWidth, screenHeight);
-        Vector3d centreMetres = ToMetres(_centreUnits);
+        Vector3d centreMetres = WorldScene.ToMetres(_centreUnits);
         // The map owns a genuine second 3D view in retail. Looking straight down keeps terrain,
         // buildings and moving units live instead of replacing them with a fabricated grid.
         Camera3D camera = new(
@@ -536,8 +536,6 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
     private static float LogLinkY(Viewport device) => device.Y + device.Height * 0.735f;
 
     private static float ObjectivesLinkY(Viewport device) => device.Y + device.Height * 0.795f;
-
-    private static Vector3d ToMetres(Vector3d units) => new(units.X / 4096.0, units.Y / 4096.0, units.Z / 4096.0);
 
     public void Dispose()
     {

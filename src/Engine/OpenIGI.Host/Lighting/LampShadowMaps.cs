@@ -212,7 +212,7 @@ internal sealed class LampShadowMaps
     /// </remarks>
     private static (Vector3d From, Matrix4f Projection) LampMapView(LightFixture lamp)
     {
-        float reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f);
+        float reach = Math.Clamp(lamp.Radius * LocalLightCVars.LocalLightRange.Value, 2f, 60f);
         if (!lamp.IsDirectional)
         {
             float housing = lamp.HasRect ? 0.05f : Math.Clamp(MathF.Max(lamp.Extent, 0.05f) * 0.75f, 0.05f, 0.3f);
@@ -257,7 +257,7 @@ internal sealed class LampShadowMaps
             }
 
             LightFixture lamp = fixtures[fixture];
-            double reach = Math.Clamp(lamp.Radius * RenderCVars.LocalLightRange.Value, 2f, 60f) + 1.0;
+            double reach = Math.Clamp(lamp.Radius * LocalLightCVars.LocalLightRange.Value, 2f, 60f) + 1.0;
             foreach (Vector3d person in _lampMapPeople)
             {
                 double dx = person.X - lamp.Position.X;

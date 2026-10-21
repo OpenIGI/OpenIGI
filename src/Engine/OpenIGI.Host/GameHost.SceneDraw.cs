@@ -76,7 +76,7 @@ public sealed partial class GameHost
         // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
         // same authored haze through the froxel volume instead, and their models are lit by the
         // G-buffer pass rather than by this one.
-        bool retailFog = RenderCVars.RetailFog.Value;
+        bool retailFog = FogCVars.RetailFog.Value;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
         _device.SetModelAmbient(
             _gi.EffectiveLighting == LightingModel.Baked
@@ -129,7 +129,7 @@ public sealed partial class GameHost
         // fewer. Where the order does decide the picture, the render group is honoured: the sky
         // is drawn first, the water last, and the world's own objects come out grouped, which is
         // what BuildDrawOrder is for.
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: GeometryCVars.WorldOcclusion.Value));
         EndStageIfSlow("the sky and the world's objects");
 
         if (captured)
@@ -155,7 +155,7 @@ public sealed partial class GameHost
 
             // -viewdist still wins when it is given, so an existing diagnostic command line keeps
             // meaning what it did; otherwise the setting decides.
-            _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
+            _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : GeometryCVars.TerrainDetail.Value,
 
             // The original's own picture -- drawn straight to the back buffer, with no G-buffer to
             // keep the passes apart -- draws the ground as the original does, chunk by chunk with
@@ -163,7 +163,7 @@ public sealed partial class GameHost
             // name: a vanilla player who changes one setting reads as Custom, and used to lose the
             // ground's light with it.
             captured,
-            RenderCVars.TerrainOcclusion.Value,
+            GeometryCVars.TerrainOcclusion.Value,
 
             // The ground casts into the cascades through the same caster the traced sun reads,
             // built here for the next frame's cascades.
@@ -257,7 +257,7 @@ public sealed partial class GameHost
         EndStageIfSlow("the soldiers");
 
         // The marks rounds have left, over the world and under the first-person rig.
-        if (_marks is not null && RenderCVars.BulletMarks.Value)
+        if (_marks is not null && CombatEffectCVars.BulletMarks.Value)
         {
             WorldView?.DrawMarks(_marks, eye, projection, _world.DrawPoses);
         }
@@ -421,7 +421,7 @@ public sealed partial class GameHost
             // ground behind it: a rainy night became a wall of rain with nothing visible through it.
             DirectionalLightSettings stormSun = _timeOfDay.EffectiveSun ?? default;
             Vector3f stormSunLight =
-                stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
+                stormSun.Colour * LightingCVars.SunScale.Value * LightingCVars.LightScale.Value;
 
             // What a refracting drop really shows is the frame BEHIND it, and outdoors that
             // is overwhelmingly sky rather than the flat fill the interiors are lit by. The sky
@@ -482,7 +482,7 @@ public sealed partial class GameHost
         // scene and is carried into the resolve, so the lens and bloom pick it up. Only while the
         // remastered optics are up.
         if (remasteredOptics
-            && RenderCVars.BinocularOutline.Value
+            && HudCVars.BinocularOutline.Value
             && Viewpoint?.IsBinocularsOpen == true)
         {
             _soldiers?.DrawBinocularOutlines(eye, radiusPixels: 8f);

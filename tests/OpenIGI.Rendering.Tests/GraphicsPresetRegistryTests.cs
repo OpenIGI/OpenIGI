@@ -34,24 +34,24 @@ public sealed class GraphicsPresetRegistryTests
     [Fact]
     public void OnlyVanillaKeepsTheBakes()
     {
-        _ = RenderCVars.Lighting;
+        _ = LightingCVars.Lighting;
 
         GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
-        Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
+        Assert.Equal(LightingModel.Baked, LightingCVars.Lighting.Value);
 
         foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
             [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
         {
             GraphicsPresetRegistry.Default.Apply(preset);
 
-            Assert.Equal(LightingModel.Dynamic, RenderCVars.Lighting.Value);
+            Assert.Equal(LightingModel.Dynamic, LightingCVars.Lighting.Value);
 
             // Everything the dynamic model needs in order to have anything to light with.
-            Assert.True(RenderCVars.SurfaceCache.Value, $"{preset} lights dynamically with no surface cache");
-            Assert.True(RenderCVars.DistanceFields.Value, $"{preset} lights dynamically with no distance field");
-            Assert.True(RenderCVars.ScreenGather.Value > 0f, $"{preset} lights dynamically with no screen gather");
-            Assert.True(RenderCVars.RadianceCache.Value != 0, $"{preset} lights dynamically with no radiance cache");
-            Assert.True(RenderCVars.LocalLightScale.Value > 0f, $"{preset} lights dynamically with no lamps");
+            Assert.True(SurfaceCacheCVars.SurfaceCache.Value, $"{preset} lights dynamically with no surface cache");
+            Assert.True(RayTracingCVars.DistanceFields.Value, $"{preset} lights dynamically with no distance field");
+            Assert.True(ScreenGatherCVars.ScreenGather.Value > 0f, $"{preset} lights dynamically with no screen gather");
+            Assert.True(ScreenGatherCVars.RadianceCache.Value != 0, $"{preset} lights dynamically with no radiance cache");
+            Assert.True(LocalLightCVars.LocalLightScale.Value > 0f, $"{preset} lights dynamically with no lamps");
         }
     }
 
@@ -61,20 +61,20 @@ public sealed class GraphicsPresetRegistryTests
     [Fact]
     public void OnlyVanillaHasNoFlashlight()
     {
-        _ = RenderCVars.Flashlight;
+        _ = FlashlightCVars.Flashlight;
 
         GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
-        Assert.False(RenderCVars.Flashlight.Value, "vanilla must not have a flashlight");
-        Assert.Equal(0, RenderCVars.FlashlightShadows.Value);
+        Assert.False(FlashlightCVars.Flashlight.Value, "vanilla must not have a flashlight");
+        Assert.Equal(0, FlashlightCVars.FlashlightShadows.Value);
 
         foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
             [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
         {
             GraphicsPresetRegistry.Default.Apply(preset);
 
-            Assert.True(RenderCVars.Flashlight.Value, $"{preset} has no flashlight");
-            Assert.Equal(1, RenderCVars.FlashlightShadows.Value);
-            Assert.True(RenderCVars.FlashlightFog.Value > 0f, $"{preset} has no flashlight beam in the air");
+            Assert.True(FlashlightCVars.Flashlight.Value, $"{preset} has no flashlight");
+            Assert.Equal(1, FlashlightCVars.FlashlightShadows.Value);
+            Assert.True(FlashlightCVars.FlashlightFog.Value > 0f, $"{preset} has no flashlight beam in the air");
         }
     }
 
@@ -92,16 +92,16 @@ public sealed class GraphicsPresetRegistryTests
     [Fact]
     public void OnlyVanillaDrawsTheOriginalsRain()
     {
-        _ = RenderCVars.Storm;
+        _ = WeatherCVars.Storm;
 
         GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
-        Assert.False(RenderCVars.Storm.Value, "vanilla has to keep the original's rain band");
+        Assert.False(WeatherCVars.Storm.Value, "vanilla has to keep the original's rain band");
 
         foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
             [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
         {
             GraphicsPresetRegistry.Default.Apply(preset);
-            Assert.True(RenderCVars.Storm.Value, $"{preset} draws the original's rain band, not the storm");
+            Assert.True(WeatherCVars.Storm.Value, $"{preset} draws the original's rain band, not the storm");
         }
     }
 
@@ -163,7 +163,7 @@ public sealed class GraphicsPresetRegistryTests
             "r_dlssg_ui_recomposition",
         ];
 
-        _ = RenderCVars.Lighting;
+        _ = LightingCVars.Lighting;
         HashSet<string> managed = [.. GraphicsPresetRegistry.Default.Managed.Select(variable => variable.Name)];
 
         string[] unmanaged =

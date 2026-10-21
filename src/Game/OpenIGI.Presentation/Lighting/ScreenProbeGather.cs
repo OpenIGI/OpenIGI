@@ -143,7 +143,7 @@ internal sealed class ScreenProbeGather
         // and the bounce is read at its physical strength whatever the live calibration says.
         _device.SetComputeUniform(_screenGather, "uSkyShValid", 0);
         _device.SetComputeUniform(_screenGather, "uBounceScale", 1f);
-        _device.SetComputeUniform(_screenGather, "uDebugSource", RenderCVars.GiSource.Value);
+        _device.SetComputeUniform(_screenGather, "uDebugSource", ScreenGatherCVars.GiSource.Value);
         _bindings.BindTerrainHeights(_screenGather);
 
         _device.SetComputeUniform(_screenGather, "uAtlasSize", new Vector3f(_width, _height, 0f));
@@ -261,8 +261,8 @@ internal sealed class ScreenProbeGather
         _device.SetComputeUniform(_pixelGather, "uColourCameraToCache", colourCameraToCache);
         _device.SetComputeUniform(_pixelGather, "uSkyColour", skyColour);
         _device.SetComputeUniform(_pixelGather, "uGroundSun", _bindings.GroundSun());
-        _device.SetComputeUniform(_pixelGather, "uBounceScale", RenderCVars.GiBounce.Value);
-        _device.SetComputeUniform(_pixelGather, "uDebugSource", RenderCVars.GiSource.Value);
+        _device.SetComputeUniform(_pixelGather, "uBounceScale", SurfaceCacheCVars.GiBounce.Value);
+        _device.SetComputeUniform(_pixelGather, "uDebugSource", ScreenGatherCVars.GiSource.Value);
 
         // Wrapped, as the traces' counts are: the noise only needs it to differ from one frame to the next.
         _device.SetComputeUniform(_pixelGather, "uFrame", (int)(frame & 0xFFFFFFu));
@@ -406,8 +406,8 @@ internal sealed class ScreenProbeGather
         _device.SetComputeUniform(_screenGatherTemporal, "uScreenThickness", MathF.Max(screenThickness, 0f));
         _device.SetComputeUniform(_screenGatherTemporal, "uSkyColour", skyColour);
         _device.SetComputeUniform(_screenGatherTemporal, "uGroundSun", _bindings.GroundSun());
-        _device.SetComputeUniform(_screenGatherTemporal, "uBounceScale", RenderCVars.GiBounce.Value);
-        _device.SetComputeUniform(_screenGatherTemporal, "uDebugSource", RenderCVars.GiSource.Value);
+        _device.SetComputeUniform(_screenGatherTemporal, "uBounceScale", SurfaceCacheCVars.GiBounce.Value);
+        _device.SetComputeUniform(_screenGatherTemporal, "uDebugSource", ScreenGatherCVars.GiSource.Value);
         _bindings.BindTerrainHeights(_screenGatherTemporal);
         _bindings.WriteSkyHarmonics(_screenGatherTemporal);
 

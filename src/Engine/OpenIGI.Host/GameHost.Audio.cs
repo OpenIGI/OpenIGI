@@ -107,7 +107,7 @@ public sealed partial class GameHost
         }
 
         // The same blend the presentation uses, so the ear and the eye agree about where the head is.
-        float alpha = RenderCVars.SmoothPresentation.Value
+        float alpha = FrameCVars.SmoothPresentation.Value
             ? _loop.Clock.TickFraction(_loop.Clock.FrameInstantMilliseconds)
             : 1f;
 
@@ -220,7 +220,7 @@ public sealed partial class GameHost
         // No player is the menu, where there is no ear to place the weather around.
         bool raining = AudioCVars.Rain.Value && HostedPlayer is not null && (_rain?.IsWeatherEnabled ?? false);
         float intensity = raining
-            ? (_storm is { Enabled: true } ? RenderCVars.StormIntensity.Value : 1f)
+            ? (_storm is { Enabled: true } ? WeatherCVars.StormIntensity.Value : 1f)
             : 0f;
 
         rain.Update(
@@ -259,7 +259,7 @@ public sealed partial class GameHost
             return;
         }
 
-        float intensity = RenderCVars.ImpactParticles.Value;
+        float intensity = CombatEffectCVars.ImpactParticles.Value;
         if (!(intensity > 0f))
         {
             return;

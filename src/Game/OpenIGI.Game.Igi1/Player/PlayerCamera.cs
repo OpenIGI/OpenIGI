@@ -461,7 +461,7 @@ public sealed class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void InstallLandingViewKick(float amplitudeUnits) => _firstPerson.InstallLandingViewKick(amplitudeUnits);
 
     /// <summary>Gets where the player is standing, in metres, for diagnostics.</summary>
-    public Vector3d Position => ToMetres(_body.Position);
+    public Vector3d Position => WorldScene.ToMetres(_body.Position);
 
     /// <summary>Gets where the player is standing, in the game's world units, for the debug overlay.</summary>
     public Vector3d PositionUnits => _body.Position;
@@ -667,10 +667,6 @@ public sealed class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _firstPerson.ResetKicks();
         return PlayerPlacement.PlaceAt(_body, terrain, spawn, registrationGround);
     }
-
-    /// <summary>Converts world units to the renderer's metres.</summary>
-    internal static Vector3d ToMetres(Vector3d units) =>
-        new(units.X / UnitsPerMetre, units.Y / UnitsPerMetre, units.Z / UnitsPerMetre);
 
     /// <summary>Takes the look from this frame's mouse motion.</summary>
     /// <param name="input">The window's input.</param>

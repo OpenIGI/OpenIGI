@@ -41,7 +41,7 @@ public sealed partial class GameHost
         public void SpawnImpactBurst(in WorldRayHit worldHit)
         {
             if (host._effects.Particles is { } bursts
-                && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
+                && CombatEffectCVars.ImpactParticles.Value is > 0f and var intensity)
             {
                 string material = host._mission.Materials is { } names
                     && names.TryGet(worldHit.Material, out GameMaterial struck)
@@ -221,7 +221,7 @@ public sealed partial class GameHost
 
         public bool IsRaining => host._rain?.IsWeatherEnabled == true;
 
-        public bool ImpactEffectsWanted => RenderCVars.ImpactEffects.Value;
+        public bool ImpactEffectsWanted => CombatEffectCVars.ImpactEffects.Value;
 
         public bool BloodWanted => host._configuration.Active?.BloodEnabled ?? true;
 
@@ -233,7 +233,7 @@ public sealed partial class GameHost
         public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
 
         public void Fireball(Vector3d positionInUnits) =>
-            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
 
 
         public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>

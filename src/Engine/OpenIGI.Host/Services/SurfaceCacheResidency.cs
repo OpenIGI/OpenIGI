@@ -135,8 +135,8 @@ internal sealed class SurfaceCacheResidency(
 
     /// <summary>Gets whether the cache is wanted and its capture has not yet been attempted at this density.</summary>
     public bool IsCapturePending =>
-        RenderCVars.SurfaceCache.Value && _host.World is not null && _capturedCards is null
-        && !RenderCVars.SurfaceCacheDensity.Value.Equals(_attemptedCardDensity);
+        SurfaceCacheCVars.SurfaceCache.Value && _host.World is not null && _capturedCards is null
+        && !SurfaceCacheCVars.SurfaceCacheDensity.Value.Equals(_attemptedCardDensity);
 
     /// <summary>Whether a convergence is stepping, or one is wanted and has not yet run on a ready level.</summary>
     /// <param name="ready">Whether both structures the dynamic model lights from are built.</param>
@@ -152,12 +152,12 @@ internal sealed class SurfaceCacheResidency(
     public float ConvergeProgress => _giConvergence?.Progress ?? (_giConverged ? 1f : 0f);
 
     private static bool WantsConvergence =>
-        RenderCVars.GiConverge.Value > 0 && RenderCVars.SurfaceCacheProbe.Value == 0;
+        SurfaceCacheCVars.GiConverge.Value > 0 && SurfaceCacheCVars.SurfaceCacheProbe.Value == 0;
 
     public void EnsureSurfaceCache()
     {
-        bool wanted = RenderCVars.SurfaceCache.Value && _host.World is not null;
-        float density = RenderCVars.SurfaceCacheDensity.Value;
+        bool wanted = SurfaceCacheCVars.SurfaceCache.Value && _host.World is not null;
+        float density = SurfaceCacheCVars.SurfaceCacheDensity.Value;
 
         if (!wanted)
         {
@@ -198,7 +198,7 @@ internal sealed class SurfaceCacheResidency(
 
         captureClock.Stop();
 
-        if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } into)
+        if (SurfaceCacheCVars.SurfaceCacheDump.Value is { Length: > 0 } into)
         {
             SurfaceCacheDebugDumps.CardAtlas(_device, cards.Capture, into, _logger);
         }
@@ -248,7 +248,7 @@ internal sealed class SurfaceCacheResidency(
     /// </remarks>
     public void BeginConvergence()
     {
-        int passes = RenderCVars.GiConverge.Value;
+        int passes = SurfaceCacheCVars.GiConverge.Value;
 
         if (_giConverged || _giConvergence is not null || !WantsConvergence)
         {
@@ -311,9 +311,9 @@ internal sealed class SurfaceCacheResidency(
             cards,
             field,
             CacheSunDirection(sun),
-            sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+            sun.Colour * (LightingCVars.SunScale.Value * LightingCVars.LightScale.Value),
             SkyLight.Fill(sun),
-            RenderCVars.GlobalIlluminationBoost.Value,
+            SurfaceCacheCVars.GlobalIlluminationBoost.Value,
             fullPasses);
 
         if (_lockstep)
@@ -400,7 +400,7 @@ internal sealed class SurfaceCacheResidency(
 
         _giRefreshLastFrame = _host.FrameCount;
 
-        int slices = RenderCVars.GiFarRefresh.Value;
+        int slices = SurfaceCacheCVars.GiFarRefresh.Value;
         if (slices <= 0
             || CardLighting is not { } cards
             || _fields.DistanceField is not { } field
@@ -417,7 +417,7 @@ internal sealed class SurfaceCacheResidency(
         // settled: past then it is view-dependent -- what leaves the view expires and comes back when the
         // player turns -- so it "grows" on every turn of the head, and waking on that kept the sweep going
         // for good while telling the far cards nothing new.
-        Vector3f sunColour = sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value);
+        Vector3f sunColour = sun.Colour * (LightingCVars.SunScale.Value * LightingCVars.LightScale.Value);
         Vector3f sunDirection = CacheSunDirection(sun);
         bool worldSettled = _device.WorldTraceSettled;
         _giRefreshWorldSettled |= worldSettled;
@@ -481,13 +481,13 @@ internal sealed class SurfaceCacheResidency(
         // one half and jitters every probe the same way every time: each sweep dragged every tile, the
         // ones by the player included, halfway to one fixed sixteen-ray estimate, and once the steady
         // bounce idled that estimate was all the cache held -- the per-probe blotches every ray read back.
-        int steady = Math.Max(RenderCVars.GiTemporalFrames.Value, 1);
+        int steady = Math.Max(SurfaceCacheCVars.GiTemporalFrames.Value, 1);
         // Right after a change -- a scrub of the clock, a lamp switched -- the first sweeps take the new
         // light at half weight, so the far cache follows the hour instead of easing towards it over the long
         // steady blend; the sweeps after fold bounce in at that steady weight as before.
         int pass = _giRefreshQuietRounds < 2 ? 1 : steady + 1 + _giRefreshRounds;
         cards.ConvergeBounceSlice(
-            field, RenderCVars.GlobalIlluminationBoost.Value, pass: pass, slice, slices);
+            field, SurfaceCacheCVars.GlobalIlluminationBoost.Value, pass: pass, slice, slices);
     }
 
     private static bool NearlyEqual(Vector3f a, Vector3f b) =>
@@ -585,7 +585,7 @@ internal sealed class SurfaceCacheResidency(
             _host.Sun?.Colour ?? default,
             _host.SkyFillColour());
 
-        if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
+        if (SurfaceCacheCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
         {
             SurfaceCacheDebugDumps.CardLighting(
                 _device, CardLighting, lightingInto, _logger, 0, "cards-direct-load.png");

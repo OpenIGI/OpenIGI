@@ -138,10 +138,10 @@ public sealed partial class GameHost
         // running, since that fills the cache atlas with a diagnostic rather than light.
         if (captured
             && !state.ScreenGiDumped
-            && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
+            && SurfaceCacheCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
             && _gi.DistanceField is { } giField
             && _gi.CardLighting is { } giCards
-            && RenderCVars.SurfaceCacheProbe.Value == 0)
+            && SurfaceCacheCVars.SurfaceCacheProbe.Value == 0)
         {
             state.ScreenGiDumped = true;
             SurfaceCacheDebugDumps.ScreenGather(
@@ -177,7 +177,7 @@ public sealed partial class GameHost
         SceneTargetDescription sceneTarget, DirectionalLightSettings light, Vector3f viewSunDirection, MapSceneView? mapScene,
         RenderResolution resolution)
     {
-        bool captured = RenderCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
+        bool captured = FrameCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
         if (captured)
         {
             // The scheduler cleared the back buffer; the target it did not know about needs it too.
@@ -185,7 +185,7 @@ public sealed partial class GameHost
 
             // The live sun, calibrated against the independently-normalised sky by r_sun_scale.
             // The baked model ignores it (it never adds a live sun), so the scale is a no-op there.
-            Vector3f scaledSun = light.Colour * RenderCVars.SunScale.Value;
+            Vector3f scaledSun = light.Colour * LightingCVars.SunScale.Value;
 
             // The atmospheric sky keeps its own source illuminance. Sharing scaledSun here made
             // r_sun_scale dim the sky SH together with the direct term, so their ratio could never
@@ -211,8 +211,8 @@ public sealed partial class GameHost
             // How far down is r_night_sky's to say. Two percent kept the moonlit sky from reading
             // as a dim day, and left it and the fill projected from it black; with the resolve's
             // night shift doing the job of making it read as night, a third lets the sky light the
-            // moon's shadows again. See RenderCVars.NightSkyScale.
-            float nightSky = RenderCVars.NightSkyScale.Value;
+            // moon's shadows again. See SkyCVars.NightSkyScale.
+            float nightSky = SkyCVars.NightSkyScale.Value;
             float nightFeed = _deferredLighting is { Night: null } nightly
                 ? 1f + ((nightSky - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                 : 1f;
@@ -226,7 +226,7 @@ public sealed partial class GameHost
             // second reddening, the orange-brown dusk -- and then, as the direct light passed to
             // the moon, a sun that had gone and a moon not yet up: a black sky and a black fill
             // for the half hour between.
-            float atmosphereScale = RenderCVars.AtmosphereSunScale.Value;
+            float atmosphereScale = SkyCVars.AtmosphereSunScale.Value;
             Vector3f atmosphereSun;
             Vector3f? atmosphereSunDirection = null;
             Vector3f atmosphereMoon = default;
@@ -238,7 +238,7 @@ public sealed partial class GameHost
                 // passes on its own share (see SkyView's deck transmission), while the clear air
                 // scatters only r_night_sky's. Knocked down or veiled here as well, the deck took
                 // the cloud's toll twice and a rainy night came out black.
-                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (RenderCVars.Moonlight.Value * atmosphereScale);
+                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (SkyCVars.Moonlight.Value * atmosphereScale);
             }
             else
             {
@@ -248,7 +248,7 @@ public sealed partial class GameHost
             // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
             // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
             // is how that stand-in is dialled down or removed to confirm what lights enclosed spaces.
-            Vector3f scaledAmbient = light.Ambient * RenderCVars.AmbientScale.Value;
+            Vector3f scaledAmbient = light.Ambient * LightingCVars.AmbientScale.Value;
 
             _dumpWorldSun = light.Direction;
             _device.SetLighting(_dumpLighting = new SceneLighting(
@@ -256,7 +256,7 @@ public sealed partial class GameHost
                 viewSunDirection,
                 scaledSun,
                 scaledAmbient,
-                RenderCVars.LightScale.Value,
+                LightingCVars.LightScale.Value,
 
                 // Whether the level's bakes already carry its direct light, so the hybrid model
                 // must not add a sun over them. See DeferredLighting.CompleteBake.
@@ -271,7 +271,7 @@ public sealed partial class GameHost
                 // How brightly the sky lights the world, for a backend that models the sky as a
                 // real light source rather than folding it into the flat ambient. Same dial that
                 // scaled the flat stand-in, now driving the thing it stood in for.
-                RenderCVars.SkyLight.Value,
+                SkyCVars.SkyLight.Value,
 
                 // The source that builds both the visible atmosphere and its diffuse SH. Separate
                 // from scaledSun so direct-light calibration does not move the sky with it.

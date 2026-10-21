@@ -136,7 +136,7 @@ public sealed partial class GameHost
         bool smoothPresentation = !_menuFlow.PauseMenu
             && _mission.Cutscenes?.IsPlaying != true
             && !_options.Lockstep
-            && RenderCVars.SmoothPresentation.Value;
+            && FrameCVars.SmoothPresentation.Value;
         double pacingWall = _loop.Clock.FrameInstantMilliseconds;
         float tickBlend = smoothPresentation
             ? _loop.Clock.TickFraction(pacingWall)
@@ -153,7 +153,7 @@ public sealed partial class GameHost
             _menuFlow.PauseMenu,
             _mission.Cutscenes?.IsPlaying == true,
             _options.Lockstep,
-            RenderCVars.SmoothPresentation.Value);
+            FrameCVars.SmoothPresentation.Value);
         if (_loop.Clock.FrameCount % 600 == 0)
         {
             _pacing.Report("vulkan");
@@ -267,36 +267,36 @@ public sealed partial class GameHost
         _lastBinocularMilliseconds = binocularNow;
         _binocularOptics.Update(Viewpoint?.IsBinocularsOpen == true, binocularElapsed);
         BinocularDisplaySettings binocularDisplay =
-            RenderCVars.BinocularLens.Value ? _binocularOptics.Display : default;
+            HudCVars.BinocularLens.Value ? _binocularOptics.Display : default;
         // A little extra edge fringing while the optics are up, on top of the ordinary value, so
         // the lens carries chromatic aberration that ramps in with the glass.
         float binocularAberration = binocularDisplay.Amount * 2f;
         PostProcessSettings postProcess = new(
-            RenderCVars.ToneMap.Value,
+            ExposureCVars.ToneMap.Value,
 
             // The player's brightness less whatever the night is taking off it; see
-            // RenderCVars.EffectiveExposure. Never r_exposure directly -- the night must not be
+            // ExposureCVars.EffectiveExposure. Never r_exposure directly -- the night must not be
             // able to edit, and then have to put back, the setting the player chose.
-            RenderCVars.EffectiveExposure,
-            RenderCVars.Bloom.Value,
-            RenderCVars.BloomThreshold.Value,
-            RenderCVars.WhitePoint.Value,
+            ExposureCVars.EffectiveExposure,
+            PostCVars.Bloom.Value,
+            PostCVars.BloomThreshold.Value,
+            ExposureCVars.WhitePoint.Value,
             // The dynamic model now composites in linear space -- albedo decoded before the multiply
             // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
             // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
             // display-encoded and has to be decoded before the tone map.
             SceneIsDisplayEncoded: _gi.EffectiveLighting != LightingModel.Dynamic,
-            Contrast: RenderCVars.Contrast.Value,
-            Saturation: RenderCVars.Saturation.Value,
-            Vignette: RenderCVars.Vignette.Value,
-            Grain: RenderCVars.Grain.Value,
-            ChromaticAberration: MathF.Max(RenderCVars.ChromaticAberration.Value, binocularAberration),
-            Sharpen: RenderCVars.Sharpen.Value,
-            MotionBlur: MathF.Max(RenderCVars.MotionBlur.Value, computerFlightBlur),
-            SpatialAa: RenderCVars.SpatialAa.Value,
-            SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
-            ColourLookup: RenderCVars.ColourLookup.Value,
-            AutoExposure: RenderCVars.AutoExposure.Value,
+            Contrast: PostCVars.Contrast.Value,
+            Saturation: PostCVars.Saturation.Value,
+            Vignette: PostCVars.Vignette.Value,
+            Grain: PostCVars.Grain.Value,
+            ChromaticAberration: MathF.Max(PostCVars.ChromaticAberration.Value, binocularAberration),
+            Sharpen: PostCVars.Sharpen.Value,
+            MotionBlur: MathF.Max(PostCVars.MotionBlur.Value, computerFlightBlur),
+            SpatialAa: PostCVars.SpatialAa.Value,
+            SpatialAaThreshold: PostCVars.SpatialAaThreshold.Value,
+            ColourLookup: PostCVars.ColourLookup.Value,
+            AutoExposure: ExposureCVars.AutoExposure.Value,
             GreenPhosphor: mapScene is not null && TacticalComputer is null,
             Tactical: computerDisplay,
             Binocular: binocularDisplay,
@@ -315,7 +315,7 @@ public sealed partial class GameHost
             // The eye's night vision, only as deep as the night: a day is untouched.
             // Only once the sun is some six degrees under (Nightfall past about 0.45): dusk keeps its
             // colour, and the eye's night vision takes over only as real night does.
-            NightShift: RenderCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(RenderCVars.Nightfall.Value));
+            NightShift: PostCVars.NightShift.Value * TimeOfDayLighting.NightVisionWeight(ExposureCVars.Nightfall.Value));
 
         if (_gi.ExposureWarmup > 0)
         {
@@ -363,9 +363,9 @@ public sealed partial class GameHost
         // It is a translation in clip space, which is exactly a sub-pixel shift of the whole
         // frustum: clip.xy += offset * clip.w, applied uniformly at every depth. Moving the camera
         // instead would shift the near plane more than the far one and reproject wrongly.
-        bool wantsTemporal = RenderCVars.TemporalFeedback.Value < 1f
-            && RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value;
+        bool wantsTemporal = ReconstructionCVars.TemporalFeedback.Value < 1f
+            && FrameCVars.OffscreenScene.Value
+            && LightingCVars.Deferred.Value;
 
         Matrix4f projection = unjitteredProjection;
         float jitterX = 0f;
@@ -376,8 +376,8 @@ public sealed partial class GameHost
         // working any of them out separately is how a jitter ends up sized for one buffer and applied
         // to another. See RenderResolutionPolicy.
         ReconstructionPlan reconstruction = _device.PlanReconstruction(new ReconstructionRequest(
-            RenderCVars.Reconstruction.Value,
-            RenderCVars.DlssQualityMode.Value,
+            ReconstructionCVars.Reconstruction.Value,
+            ReconstructionCVars.DlssQualityMode.Value,
             _window.Width,
             _window.Height,
             wantsTemporal));
@@ -385,7 +385,7 @@ public sealed partial class GameHost
         RenderResolution resolution = RenderResolutionPolicy.Choose(
             _window.Width,
             _window.Height,
-            RenderCVars.RenderScale.Value,
+            ReconstructionCVars.RenderScale.Value,
             wantsTemporal,
             reconstruction);
         _device.SetTextureLodBias(resolution.MipBias);
@@ -476,7 +476,7 @@ public sealed partial class GameHost
         // the head far enough for a body to be a body rather than the inside of a skull filling
         // the screen. r_player_body overrides that for first person deliberately -- see the cvar
         // for what it buys and what it costs.
-        bool thirdPersonBody = Viewpoint?.ShowsBody == true || RenderCVars.PlayerBody.Value;
+        bool thirdPersonBody = Viewpoint?.ShowsBody == true || FrameCVars.PlayerBody.Value;
         if (_soldiers is { } shownBody)
         {
             shownBody.PlayerBodyFollowVisible = thirdPersonBody;

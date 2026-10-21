@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -388,16 +389,16 @@ public sealed class RotatingObjectRegistry
                 && string.Equals(placement.Owner.Type.Name, RotatingObjectTaskType, StringComparison.Ordinal)
                 && placement.Owner is DeclaredTask declared)
             {
-                float speedX = ReadFloat(declared, "Degrees per second X-axis");
-                float speedY = ReadFloat(declared, "Degrees per second Y-axis");
-                float speedZ = ReadFloat(declared, "Degrees per second Z-axis");
+                float speedX = RealFromNumberOrShort(declared, "Degrees per second X-axis");
+                float speedY = RealFromNumberOrShort(declared, "Degrees per second Y-axis");
+                float speedZ = RealFromNumberOrShort(declared, "Degrees per second Z-axis");
 
-                float accelX = ReadFloat(declared, "Acceleration, degrees per second X-axis");
-                float accelY = ReadFloat(declared, "Acceleration, degrees per second Y-axis");
-                float accelZ = ReadFloat(declared, "Acceleration, degrees per second Z-axis");
+                float accelX = RealFromNumberOrShort(declared, "Acceleration, degrees per second X-axis");
+                float accelY = RealFromNumberOrShort(declared, "Acceleration, degrees per second Y-axis");
+                float accelZ = RealFromNumberOrShort(declared, "Acceleration, degrees per second Z-axis");
 
-                string onExpr = ReadString(declared, "On expression");
-                string sound = ReadString(declared, "Rotate sound");
+                string onExpr = TextTrimmed(declared, "On expression");
+                string sound = TextTrimmed(declared, "Rotate sound");
 
                 registry.Add(new PlacedRotatingObject(
                     placement,
@@ -635,30 +636,5 @@ public sealed class RotatingObjectRegistry
         }
 
         return updated;
-    }
-
-    private static float ReadFloat(DeclaredTask task, string name)
-    {
-        if (task.TryGetValue(name, out object? raw))
-        {
-            return raw switch
-            {
-                float f => f,
-                double d => (float)d,
-                int i => i,
-                short s => s,
-                _ => 0f,
-            };
-        }
-        return 0f;
-    }
-
-    private static string ReadString(DeclaredTask task, string name)
-    {
-        if (task.TryGetValue(name, out object? raw) && raw is string s)
-        {
-            return s.TrimEnd('\r', '\n');
-        }
-        return string.Empty;
     }
 }

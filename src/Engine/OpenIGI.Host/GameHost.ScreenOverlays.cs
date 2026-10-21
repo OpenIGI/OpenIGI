@@ -76,13 +76,13 @@ public sealed partial class GameHost
         // exactly once per frame, and the through-wall glow pass below has to mark the very
         // contacts it finds while the scene is still being captured. The HUD after the resolve
         // reuses this same target list rather than advancing the detector a second time.
-        bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
+        bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(HudCVars.RemasteredHud.Value);
         bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
             TacticalComputer is not null,
             _remasteredHud is { IsReady: true });
         bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
             remasterHud,
-            RenderCVars.TacticalMessages.Value);
+            HudCVars.TacticalMessages.Value);
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && Viewpoint?.IsDeathViewActive != true
@@ -105,7 +105,7 @@ public sealed partial class GameHost
         // is reading.
         bool worldInteractionPrompt = InteractionPromptPresentation.UsesWorldPrompt(
             remasterHud,
-            RenderCVars.InteractionPrompt.Value);
+            HudCVars.InteractionPrompt.Value);
         int interactionPromptNow = _loop.TimeSource.Milliseconds;
         float interactionPromptElapsed =
             Math.Clamp((interactionPromptNow - _lastInteractionPromptMilliseconds) / 1000f, 0f, 0.1f);
@@ -122,8 +122,8 @@ public sealed partial class GameHost
         // stay retail-uncapped (positive infinity).
         float binocularZoomIn = Viewpoint?.BinocularZoomIn(sight.TanX) ?? 0f;
         float binocularDetectionRange = remasteredOptics
-            ? RenderCVars.BinocularRange.Value
-                + ((RenderCVars.BinocularRangeZoomed.Value - RenderCVars.BinocularRange.Value) * binocularZoomIn)
+            ? HudCVars.BinocularRange.Value
+                + ((HudCVars.BinocularRangeZoomed.Value - HudCVars.BinocularRange.Value) * binocularZoomIn)
             : float.PositiveInfinity;
         IReadOnlyList<EnemyOverlayBox> binocularTargets =
             showFirstPersonHud

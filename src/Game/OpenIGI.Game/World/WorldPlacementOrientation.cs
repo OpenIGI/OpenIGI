@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -27,9 +28,9 @@ internal static class WorldPlacementOrientation
                 return CameraHolderOrientation(task);
             }
 
-            float holderGamma = FloatValue(task, "Holder Gamma");
-            float cameraAlpha = FloatValue(task, "Camera Alpha");
-            float cameraGamma = FloatValue(task, "Camera Gamma");
+            float holderGamma = RealStrict(task, "Holder Gamma");
+            float cameraAlpha = RealStrict(task, "Camera Alpha");
+            float cameraGamma = RealStrict(task, "Camera Gamma");
             return Matrix3f.FromEngineEulerAngles(cameraAlpha, 0f, holderGamma + cameraGamma);
         }
 
@@ -68,7 +69,7 @@ internal static class WorldPlacementOrientation
     }
 
     private static Matrix3f CameraHolderOrientation(DeclaredTask task) =>
-        Matrix3f.RotationZ(FloatValue(task, "Holder Gamma"));
+        Matrix3f.RotationZ(RealStrict(task, "Holder Gamma"));
 
     /// <summary>Places a security camera's lens on its holder model's mount.</summary>
     /// <param name="task">The <c>SCamera</c> task.</param>
@@ -100,7 +101,4 @@ internal static class WorldPlacementOrientation
             holderPosition.Y + (offset.Y / WorldScene.UnitsPerMetre),
             holderPosition.Z + (offset.Z / WorldScene.UnitsPerMetre));
     }
-
-    private static float FloatValue(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? raw) && raw is float value ? value : 0f;
 }

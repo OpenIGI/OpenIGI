@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using static OpenIGI.Game.World.CutsceneTaskValues;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 using static OpenIGI.Game.World.CutscenePoses;
 
 namespace OpenIGI.Game.World;
@@ -395,7 +395,7 @@ internal sealed class CutsceneAnimationPackets(
         transform.RotorPhaseTick = _context.SimulationTick;
         if (target is DeclaredTask liveHeli)
         {
-            transform.CollisionEnabled = Bool(liveHeli, "Collision detection");
+            transform.CollisionEnabled = BoolStrict(liveHeli, "Collision detection");
         }
 
         RetailHelicopterPhysics.Apply(transform, physics);
@@ -531,7 +531,7 @@ internal sealed class CutsceneAnimationPackets(
         }
         if (target is DeclaredTask livePlane)
         {
-            transform.CollisionEnabled = Bool(livePlane, "Collision detection");
+            transform.CollisionEnabled = BoolStrict(livePlane, "Collision detection");
         }
         // Plane_Physics selects config +32 after thrust reaches 0.8 and config +36 before it.
         // SU-27 supplies 0.054 / 0.006.  The old fixed 0.001 made the Level 3 takeoff spend

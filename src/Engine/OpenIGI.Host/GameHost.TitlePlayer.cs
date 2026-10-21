@@ -139,7 +139,7 @@ public sealed partial class GameHost
         _titleWheel += _window.Input.Mouse.WheelDelta;
         if (_titleFeatures?.Look is { } look)
         {
-            if (RenderCVars.SmoothPresentation.Value && !_options.Lockstep)
+            if (FrameCVars.SmoothPresentation.Value && !_options.Lockstep)
             {
                 PlayerProfile? profile = _configuration.Active;
                 look.GatherLook(_window.Input.Mouse.DeltaX, _window.Input.Mouse.DeltaY,
@@ -197,7 +197,7 @@ public sealed partial class GameHost
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
-            UnfilteredMouse: RenderCVars.SmoothPresentation.Value && !_options.Lockstep,
+            UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
             TitleHeld: _gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
@@ -307,7 +307,7 @@ public sealed partial class GameHost
                     return;
                 }
 
-                string gates = $"r_smooth={RenderCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
+                string gates = $"r_smooth={FrameCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
                     + $"walking={_playerMode}, computer={_computerOpen}, entry={_entry.IsCameraActive}, "
                     + $"hostCutscene={_mission.Cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
                     + $"canPreview={_titleFeatures?.Look is { CanPreviewLook: true }}, "

@@ -87,13 +87,13 @@ public sealed partial class GameHost
         // once the last one has been presented, so the passes that only tick neither sleep nor count, and
         // it begins BEFORE the input below is read -- sleeping first is how the frame's input comes fresher.
         // Frame generation needs Reflex on and turns it on whatever the setting says.
-        _device.SetLowLatency(EffectiveLowLatency(), RenderCVars.FrameLimit.Value);
+        _device.SetLowLatency(EffectiveLowLatency(), ReconstructionCVars.FrameLimit.Value);
 
         // Frame generation interpolates along the motion of play; a menu, a pause, the warm-up hold or a
         // cutscene has none to follow, so it stands down for those and resumes with play. Asked here, at
         // the top of the pass, because loading or unloading it rebuilds the swapchain between frames.
         _device.SetFrameGeneration(
-            RenderCVars.FrameGeneration.Value,
+            ReconstructionCVars.FrameGeneration.Value,
             gameplay: !_menuFlow.MenuMode
                 && !_menuFlow.PauseMenu
                 && _session.Mission is not null
@@ -107,7 +107,7 @@ public sealed partial class GameHost
         // The setting is read here rather than captured at construction so that turning
         // r_material_detail up mid-session starts deriving for whatever loads next -- it is zero
         // under vanilla and enhanced, and deriving maps the shader multiplies by nothing is waste.
-        _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+        _detailMaps.DeriveMissing = MaterialCVars.MaterialDetail.Value > 0f;
         _detailMaps.Enabled = _detailMaps.DeriveMissing;
         _detailMaps.PumpDerived();
 
@@ -460,11 +460,11 @@ public sealed partial class GameHost
             int dayNightNow = _loop.TimeSource.Milliseconds;
             float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
             _dayNightMilliseconds = dayNightNow;
-            bool clockRuns = RenderCVars.DayNightCycle.Value && !_menuFlow.MenuMode && _session.Mission is not null;
+            bool clockRuns = ExposureCVars.DayNightCycle.Value && !_menuFlow.MenuMode && _session.Mission is not null;
             _timeOfDay.DayNight.Update(
                 _window.Input.Keyboard,
                 dayNightElapsed,
-                clockRuns ? RenderCVars.DayLength.Value * 60f : 0f);
+                clockRuns ? ExposureCVars.DayLength.Value * 60f : 0f);
         }
 
         // The level's lamps, on every pass and on real elapsed time, for exactly the reasons the sweep

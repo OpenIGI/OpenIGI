@@ -24,9 +24,9 @@ public static class TextureLodBias
     /// </remarks>
     public static float FromSettings()
     {
-        float scale = Math.Clamp(RenderCVars.RenderScale.Value, 0.25f, 1f);
+        float scale = Math.Clamp(ReconstructionCVars.RenderScale.Value, 0.25f, 1f);
         float resolution = MathF.Log2(scale);
-        float temporal = RenderCVars.TemporalFeedback.Value < 1f ? -0.3f : 0f;
+        float temporal = ReconstructionCVars.TemporalFeedback.Value < 1f ? -0.3f : 0f;
         return Math.Clamp(MathF.Max(resolution + temporal, -2f), -4f, 4f);
     }
 }

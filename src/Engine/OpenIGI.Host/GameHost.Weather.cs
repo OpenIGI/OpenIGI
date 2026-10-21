@@ -60,7 +60,7 @@ public sealed partial class GameHost
     // mostly clear streak it is printed with all come on top, so it takes this much for the rain to read:
     // chosen by eye on mission 3's night, where 2.5 barely showed, 5 reads as rain with the dome and the
     // hills clear through it, and the level's daytime fill (about 10) was a wall. See
-    // StormRenderer.BuildDrops.
+    // PrecipitationGeometry.BuildDrops.
     private const float RainVeilDisplay = 5f;
     private SnowRenderer? _snow;
 
@@ -78,18 +78,18 @@ public sealed partial class GameHost
         // r_weather_kind, and it has to FORCE: eleven of the fourteen retail missions author no weather
         // at all, so a choice that only asked politely would do nothing in most of the campaign and read
         // as a broken setting. Default forces nothing and leaves every answer where it was.
-        WeatherKind weatherKind = _conditions.WeatherStyle(RenderCVars.WeatherStyle.Value);
-        bool forceWeather = RenderCVars.WeatherForce.Value || _conditions.ForcesWeather;
+        WeatherKind weatherKind = _conditions.WeatherStyle(WeatherCVars.WeatherStyle.Value);
+        bool forceWeather = WeatherCVars.WeatherForce.Value || _conditions.ForcesWeather;
 
         _rain?.ApplySettings(
-            RenderCVars.WeatherEnabled.Value,
+            WeatherCVars.WeatherEnabled.Value,
             weatherKind,
-            RenderCVars.WeatherSpeed.Value,
+            WeatherCVars.WeatherSpeed.Value,
             forceWeather);
         _snow?.ApplySettings(
-            RenderCVars.WeatherEnabled.Value,
+            WeatherCVars.WeatherEnabled.Value,
             weatherKind,
-            RenderCVars.WeatherSpeed.Value,
+            WeatherCVars.WeatherSpeed.Value,
             forceWeather);
 
         if (_storm is { } storm)
@@ -99,11 +99,11 @@ public sealed partial class GameHost
             // whether it rains at all (unless r_weather_force overrides it); r_storm only decides which
             // renderer draws it.
             bool rains = _rain?.IsWeatherEnabled ?? false;
-            storm.Enabled = rains && RenderCVars.Storm.Value;
+            storm.Enabled = rains && WeatherCVars.Storm.Value;
             storm.Configure(storm.Settings with
             {
-                Intensity = RenderCVars.StormIntensity.Value,
-                FallSpeedScale = RenderCVars.WeatherSpeed.Value,
+                Intensity = WeatherCVars.StormIntensity.Value,
+                FallSpeedScale = WeatherCVars.WeatherSpeed.Value,
             });
 
             // Reported every time rather than only on a change: the case worth seeing is the one where
@@ -112,7 +112,7 @@ public sealed partial class GameHost
             _logger.Information(
                 "Storm",
                 FormattableString.Invariant(
-                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={RenderCVars.Storm.Value} r_weather_enabled={RenderCVars.WeatherEnabled.Value} kind={weatherKind} force={forceWeather} campaign={_conditions.Weather}/{_conditions.TimeOfDay} intensity={RenderCVars.StormIntensity.Value}"));
+                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={WeatherCVars.Storm.Value} r_weather_enabled={WeatherCVars.WeatherEnabled.Value} kind={weatherKind} force={forceWeather} campaign={_conditions.Weather}/{_conditions.TimeOfDay} intensity={WeatherCVars.StormIntensity.Value}"));
         }
     }
 

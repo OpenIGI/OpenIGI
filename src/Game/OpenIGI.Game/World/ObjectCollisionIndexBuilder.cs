@@ -264,11 +264,6 @@ internal static class ObjectCollisionIndexBuilder
         return any;
     }
 
-    private static bool IsCharacterPlacement(WorldPlacement placement)
-    {
-        string? type = placement.Owner.Type.Name;
-        return string.Equals(type, "HumanPlayer", StringComparison.Ordinal)
-            || string.Equals(type, "HumanSoldier", StringComparison.Ordinal)
-            || string.Equals(type, "HumanSoldierFemale", StringComparison.Ordinal);
-    }
+    private static bool IsCharacterPlacement(WorldPlacement placement) =>
+        WorldScene.IsCharacterTypeName(placement.Owner.Type.Name);
 }

@@ -153,7 +153,7 @@ internal sealed class SurfaceCacheBindings
     /// around every lamp.
     /// </remarks>
     internal float ExposedRayCap()
-        => RenderCVars.ScreenGatherMaxIntensity.Value / MathF.Max(_device.SceneExposure, 1e-3f);
+        => ScreenGatherCVars.ScreenGatherMaxIntensity.Value / MathF.Max(_device.SceneExposure, 1e-3f);
 
     /// <summary>Hands the clipmaps to the pass, or tells it there are none.</summary>
     /// <remarks>

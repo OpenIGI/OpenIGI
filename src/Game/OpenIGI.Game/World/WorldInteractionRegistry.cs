@@ -345,10 +345,10 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
             double radius = item.Type == InteractionActivateType.PlaceExplosive
                 ? Math.Max(
                     ActivateRadius,
-                    WorldInteractionCollector.ReadReal(
+                    DeclaredTaskValues.RealFromNumber(
                         item.Task,
                         "Activate radius (meters)",
-                        WorldInteractionCollector.ReadReal(item.Task, "Activate radius(meters)", 2f)) * WorldScene.UnitsPerMetre)
+                        DeclaredTaskValues.RealFromNumber(item.Task, "Activate radius(meters)", 2f)) * WorldScene.UnitsPerMetre)
                 : ActivateRadius;
             Consider(item, item.CandidatePoint(eye), radius);
             if (item.Type == InteractionActivateType.Door)

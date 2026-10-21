@@ -40,7 +40,7 @@ public sealed class GraphicsMenuPresetAlignmentTests : IDisposable
     /// <summary>Remembers every managed value, so applying presets here does not leak into other tests.</summary>
     public GraphicsMenuPresetAlignmentTests()
     {
-        _ = RenderCVars.Lighting; // force the CVar container's static initialiser
+        _ = LightingCVars.Lighting; // force the CVar container's static initialiser
         _restore = GraphicsPresetRegistry.Default.Managed.ToDictionary(
             variable => variable, variable => variable.ValueText);
     }

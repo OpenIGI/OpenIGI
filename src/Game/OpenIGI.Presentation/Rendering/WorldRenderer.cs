@@ -288,7 +288,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
         // Interior sectors and meshes without authored normals have no reliable outward facing.
         // Choose culling per mesh below, including when an archived r_world_cull enables it.
-        bool cullBackFaces = RenderCVars.WorldCull.Value != 0;
+        bool cullBackFaces = GeometryCVars.WorldCull.Value != 0;
         CullMode appliedCull = CullMode.None;
         _device.SetCullMode(appliedCull);
 
@@ -336,7 +336,7 @@ public sealed class WorldRenderer : IWorldPresenter
         // copying it per frame to share one loop would be a real cost for no gain.
         // Whether this pass is the one that feeds the traced world. Exactly one of the three must be,
         // or every placement behind the camera would be submitted three times a frame.
-        bool tracedOnly = !glassOnly && !rotorsOnly && RenderCVars.TracedWorldRadius.Value > 0f;
+        bool tracedOnly = !glassOnly && !rotorsOnly && RayTracingCVars.TracedWorldRadius.Value > 0f;
 
         ReadOnlySpan<int> order = drawOrder;
         if (glassOnly)

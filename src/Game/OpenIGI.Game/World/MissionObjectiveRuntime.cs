@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -110,16 +111,16 @@ public sealed class MissionObjectiveRuntime
                     Vector(declared, "Position"),
                     Orientation(declared),
                     Vector32(declared, "Dimensions"),
-                    String(declared, "Criteria"));
+                    TextTrimmed(declared, "Criteria"));
                 _areas.Declare(declared, area, variables);
             }
             else if (string.Equals(task.Type.Name, "EditVariable", StringComparison.Ordinal))
             {
                 EditVariable edit = new(
                     declared,
-                    Int(declared, "Initial value", 0),
-                    String(declared, "Add"),
-                    String(declared, "Sub"));
+                    IntStrict(declared, "Initial value", 0),
+                    TextTrimmed(declared, "Add"),
+                    TextTrimmed(declared, "Sub"));
                 _editVariables.Add(edit);
                 variables.BindInt(declared, "nValue", () => edit.Value, value => edit.Value = value);
             }
@@ -129,10 +130,10 @@ public sealed class MissionObjectiveRuntime
                 // messages off LevelFlow_10.nTick, so these fields have to be exported, not just computed.
                 LevelFlow flow = new(
                     declared,
-                    String(declared, "Complete"),
-                    String(declared, "Failed"),
-                    Bool(declared, "Interface timer enabled"),
-                    Math.Max(0f, Real(declared, "Max level play time", 0f)),
+                    TextTrimmed(declared, "Complete"),
+                    TextTrimmed(declared, "Failed"),
+                    BoolLenient(declared, "Interface timer enabled"),
+                    Math.Max(0f, RealFromFloatOrDouble(declared, "Max level play time", 0f)),
                     difficulty);
                 flow.Export(variables, _digitKeys);
                 _levelFlows.Add(flow);
@@ -142,13 +143,13 @@ public sealed class MissionObjectiveRuntime
             {
                 StatusMessage message = new(
                     declared,
-                    String(declared, "Send"),
-                    String(declared, "Text"),
-                    Bool(declared, "Is send once"),
-                    Bool(declared, "Cutscene message"),
-                    Real(declared, "Duration", 2f))
+                    TextTrimmed(declared, "Send"),
+                    TextTrimmed(declared, "Text"),
+                    BoolLenient(declared, "Is send once"),
+                    BoolLenient(declared, "Cutscene message"),
+                    RealFromFloatOrDouble(declared, "Duration", 2f))
                 {
-                    Sound = String(declared, "Sound"),
+                    Sound = TextTrimmed(declared, "Sound"),
                 };
                 _messages.Declare(declared, message, variables);
             }
@@ -559,43 +560,14 @@ public sealed class MissionObjectiveRuntime
         for (int number = 1; number <= ObjectiveSlotCount; number++)
         {
             slots.Add(new Slot(
-                String(task, $"Objective {number} Text Resource"),
-                Int(task, $"Objective {number} Link To Position", -1),
-                String(task, $"Objective {number} Complete Expression"),
-                String(task, $"Objective {number} Failed Expression")));
+                TextTrimmed(task, $"Objective {number} Text Resource"),
+                IntStrict(task, $"Objective {number} Link To Position", -1),
+                TextTrimmed(task, $"Objective {number} Complete Expression"),
+                TextTrimmed(task, $"Objective {number} Failed Expression")));
         }
 
-        return new Definition(task, String(task, "Objectives Valid"), slots);
+        return new Definition(task, TextTrimmed(task, "Objectives Valid"), slots);
     }
-
-    private static string String(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
-
-    private static int Int(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? value) && value is int number ? number : fallback;
-
-    private static bool Bool(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value switch
-        {
-            bool flag => flag,
-            byte number => number != 0,
-            int number => number != 0,
-            _ => false,
-        };
-
-    private static float Real(DeclaredTask task, string name, float fallback) =>
-        task.TryGetValue(name, out object? value) ? value switch
-        {
-            float number => number,
-            double number => (float)number,
-            _ => fallback,
-        } : fallback;
-
-    private static Vector3d Vector(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is Vector3d vector ? vector : default;
-
-    private static Vector3f Vector32(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is Vector3f vector ? vector : default;
 
     private static Matrix3f Orientation(DeclaredTask task) =>
         task.TryGetValue("Orientation", out object? value) && value is Vector3f angles

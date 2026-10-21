@@ -138,8 +138,8 @@ public sealed partial class GameHost
         // so the camera-relative subtract is done before the cast to float. Only under a shading
         // model and only when the scale asks for them; a windowless interior the gather cannot
         // reach is exactly what these light. The shader also guards on the model and the count.
-        float localLightScale = RenderCVars.LocalLightScale.Value;
-        float localLightRange = RenderCVars.LocalLightRange.Value;
+        float localLightScale = LocalLightCVars.LocalLightScale.Value;
+        float localLightRange = LocalLightCVars.LocalLightRange.Value;
         _stormLampCount = 0;
         if (captured
             && localLightScale > 0f

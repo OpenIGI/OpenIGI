@@ -138,14 +138,14 @@ internal sealed class BakedLighting(
 
         // Path-traced object lightmaps: the same cast and sun, the sky's own colour, and the result swapped in
         // for the shipped pages (r_lightmap 2) or used where the level ships none (1).
-        bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
-        if (RenderCVars.BakedLightmaps.Value > 0 && world is not null)
+        bool discardRetailLightmaps = GlobalIlluminationCVars.BakedLightmaps.Value >= 2;
+        if (GlobalIlluminationCVars.BakedLightmaps.Value > 0 && world is not null)
         {
             Vector3f lmSun = sun?.Colour ?? new Vector3f(1f, 1f, 1f);
 
             // The sky's own colour, from the Dirlight's ambient term -- a level with no Dirlight has a neutral
             // sky -- at the player's sky-light setting.
-            Vector3f lmSky = (sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
+            Vector3f lmSky = (sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * SkyCVars.SkyLight.Value;
             _lightmapBakeMission = missionId;
             _lightmapBakeSun = bakeSunDirection;
             _lightmapBakeSunColour = lmSun;
@@ -190,14 +190,14 @@ internal sealed class BakedLighting(
 
         // The probe field, guarded on its own cvar so it does not trace under a lightmap-only request (r_gi off,
         // r_lightmap on -- the ultra preset is exactly that).
-        if (!RenderCVars.GlobalIllumination.Value)
+        if (!GlobalIlluminationCVars.GlobalIllumination.Value)
         {
             return;
         }
 
         // Whatever the console says, but never so fine that a big level spends a minute of load tracing rays
         // nobody asked for.
-        float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
+        float giSpacing = GlobalIlluminationCVars.GlobalIlluminationSpacing.Value;
 
         // Remembered so the live re-bake (F11) can trace the field again from exactly the inputs this load
         // used -- the same cast, sun and spacing -- whether the field arrived from the cache or the tracer.
@@ -293,7 +293,7 @@ internal sealed class BakedLighting(
             _lightmapBake = null;
             if (bakedLightmaps is not null)
             {
-                world?.SetBakedLightmaps(bakedLightmaps, RenderCVars.BakedLightmaps.Value >= 2);
+                world?.SetBakedLightmaps(bakedLightmaps, GlobalIlluminationCVars.BakedLightmaps.Value >= 2);
                 lightmapCache.Save(
                     _lightmapBakeMission, _lightmapBakeSun, _lightmapBakeSunColour, _lightmapBakeSky, bakedLightmaps);
             }

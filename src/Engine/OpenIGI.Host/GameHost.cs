@@ -683,7 +683,7 @@ public sealed partial class GameHost : IDisposable
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
             _loop.Clock.UncappedRenders = _options.IsBenchmark
                 || _menuFlow.MenuMode
-                || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
+                || (!_options.Lockstep && FrameCVars.SmoothPresentation.Value);
 
             // The level's own half of the pause, and the reason the frozen picture behind the menu really is
             // frozen: with this set the level task forwards nothing to its subtree, so the scripts, the

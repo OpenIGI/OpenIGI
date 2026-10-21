@@ -56,13 +56,13 @@ internal sealed class DistanceFieldResidency(
 
     /// <summary>Gets whether the field is wanted and still on its way: baking, or not yet attempted at this resolution.</summary>
     public bool IsPending =>
-        RenderCVars.DistanceFields.Value && DistanceField is null
-        && (FieldBake is not null || _attemptedFieldResolution != RenderCVars.DistanceFieldResolution.Value);
+        RayTracingCVars.DistanceFields.Value && DistanceField is null
+        && (FieldBake is not null || _attemptedFieldResolution != RayTracingCVars.DistanceFieldResolution.Value);
 
     public void EnsureDistanceFields()
     {
-        bool wanted = RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute;
-        int resolution = RenderCVars.DistanceFieldResolution.Value;
+        bool wanted = RayTracingCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute;
+        int resolution = RayTracingCVars.DistanceFieldResolution.Value;
 
         if (!wanted)
         {
@@ -121,7 +121,7 @@ internal sealed class DistanceFieldResidency(
     /// and keeps the cheaper shape.
     /// </remarks>
     private GlobalDistanceFieldSettings DistanceFieldSettings() =>
-        _device.Capabilities.SupportsRayQuery && RenderCVars.HardwareRayTracing.Value
+        _device.Capabilities.SupportsRayQuery && RayTracingCVars.HardwareRayTracing.Value
             ? GlobalDistanceFieldSettings.Default
             : GlobalDistanceFieldSettings.Default with { Resolution = 128 };
 
@@ -203,7 +203,7 @@ internal sealed class DistanceFieldResidency(
     /// <param name="baking">The bake in flight, if it was not.</param>
     public void AdoptBackdropField(int resolution, SceneDistanceField? read, DistanceFieldBake? baking)
     {
-        if (!RenderCVars.DistanceFields.Value || !_device.Capabilities.SupportsCompute)
+        if (!RayTracingCVars.DistanceFields.Value || !_device.Capabilities.SupportsCompute)
         {
             // Started before the lite profile was in force -- the very first backdrop is built before
             // there is one -- and wanted by nobody now. Play bakes its own if it needs one.

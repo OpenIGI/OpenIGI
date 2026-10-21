@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.Ai;
 
@@ -112,30 +113,30 @@ public sealed class SecurityCamera
     internal SecurityCamera(DeclaredTask task)
     {
         Task = task;
-        OnExpression = ReadString(task, "On Expression");
-        HeadModelName = ReadString(task, WorldScene.SecurityCameraModelParameters[1]);
+        OnExpression = TextTrimmed(task, "On Expression");
+        HeadModelName = TextTrimmed(task, WorldScene.SecurityCameraModelParameters[1]);
         if (HeadModelName.Length == 0)
         {
             HeadModelName = WorldScene.SecurityCameraModels[1];
         }
 
-        _holderGamma = ReadFloat(task, "Holder Gamma");
-        _cameraAlpha = ReadFloat(task, "Camera Alpha");
-        _cameraGamma = ReadFloat(task, "Camera Gamma");
-        _rightLimit = ReadInt(task, "Rotate Gamma Right (d)", 45) * DegreesToRadians;
-        _leftLimit = ReadInt(task, "Rotate Gamma Left (d)", 45) * DegreesToRadians;
-        _scanStep = ReadInt(task, "Rotate Gamma Speed (d/s)", 45) * DegreesToRadians / 30f;
-        _endDelayTicks = Math.Max(0, (int)(ReadFloat(task, "Gamma Delay (s)", 1f) * 30f));
+        _holderGamma = RealFromFloatOrDouble(task, "Holder Gamma");
+        _cameraAlpha = RealFromFloatOrDouble(task, "Camera Alpha");
+        _cameraGamma = RealFromFloatOrDouble(task, "Camera Gamma");
+        _rightLimit = IntWidening(task, "Rotate Gamma Right (d)", 45) * DegreesToRadians;
+        _leftLimit = IntWidening(task, "Rotate Gamma Left (d)", 45) * DegreesToRadians;
+        _scanStep = IntWidening(task, "Rotate Gamma Speed (d/s)", 45) * DegreesToRadians / 30f;
+        _endDelayTicks = Math.Max(0, (int)(RealFromFloatOrDouble(task, "Gamma Delay (s)", 1f) * 30f));
 
-        double alpha = (ReadInt(task, "Viewcone Alpha (d)", 90) / 2.0) * Math.PI / 180.0;
-        double gamma = (ReadInt(task, "Viewcone Gamma (d)", 90) / 2.0) * Math.PI / 180.0;
-        double length = ReadFloat(task, "Viewcone length (m)", 10f) * WorldScene.UnitsPerMetre;
+        double alpha = (IntWidening(task, "Viewcone Alpha (d)", 90) / 2.0) * Math.PI / 180.0;
+        double gamma = (IntWidening(task, "Viewcone Gamma (d)", 90) / 2.0) * Math.PI / 180.0;
+        double length = RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * WorldScene.UnitsPerMetre;
         _viewCone = new AiSnapshotCone(alpha, gamma, length);
 
         CurrentAlpha = _cameraAlpha;
         _previousAlpha = CurrentAlpha;
         _previousGamma = CurrentGamma;
-        HeadPositionUnits = ReadPosition(task);
+        HeadPositionUnits = Vector(task, "Holder Position");
         HolderPositionUnits = HeadPositionUnits;
         RefreshTransform();
     }
@@ -480,29 +481,6 @@ public sealed class SecurityCamera
         float difference = MathF.IEEERemainder(to - from, 2f * MathF.PI);
         return from + (difference * amount);
     }
-
-    private static Vector3d ReadPosition(DeclaredTask task) =>
-        task.TryGetValue("Holder Position", out object? raw) && raw is Vector3d position ? position : default;
-
-    private static int ReadInt(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? raw) ? raw switch
-        {
-            short value => value,
-            int value => value,
-            byte value => value,
-            _ => fallback,
-        } : fallback;
-
-    private static float ReadFloat(DeclaredTask task, string name, float fallback = 0f) =>
-        task.TryGetValue(name, out object? raw) ? raw switch
-        {
-            float value => value,
-            double value => (float)value,
-            _ => fallback,
-        } : fallback;
-
-    private static string ReadString(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is string value ? value.TrimEnd('\r', '\n') : string.Empty;
 }
 
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
@@ -766,7 +744,7 @@ public sealed class SecurityCameraRegistry
             string explodedSymbol = $"{controlTask.Name}.isExploded";
             Control control = new(
                 controlTask,
-                ReadString(controlTask, "Detection Expression"),
+                TextTrimmed(controlTask, "Detection Expression"),
                 () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls.Add(control);
             variables.BindBool(task, "isDetection", () => control.IsDetection, value => control.IsDetection = value);
@@ -777,7 +755,4 @@ public sealed class SecurityCameraRegistry
             Collect(child, variables);
         }
     }
-
-    private static string ReadString(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is string value ? value.TrimEnd('\r', '\n') : string.Empty;
 }

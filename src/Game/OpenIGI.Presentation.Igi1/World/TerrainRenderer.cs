@@ -285,7 +285,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     /// </remarks>
     void ITerrainPresenter.Draw(in TerrainFrame frame)
     {
-        CacheLimit = RenderCVars.TerrainCache.Value;
+        CacheLimit = GeometryCVars.TerrainCache.Value;
         _castsIntoCascades = frame.CastsIntoCascades;
 
         Draw(
