@@ -1,7 +1,7 @@
 # Publishes the versions a merge adds to OpenIGI's download store.
 #
 # In two jobs, so the mods' code never runs where the publishing key is: the first builds each version from its
-# source, with no secrets, on a GitHub-hosted runner; the second, in the mods-publish environment that holds the key
+# source, with only a read token, on a GitHub-hosted runner; the second, in the mods-publish environment that holds the key
 # and needs a maintainer's approval, only chunks and uploads what the first built. The source and commit a listing
 # names come from the index, never from the package.
 name: Publish
@@ -32,6 +32,15 @@ jobs:
           repository: OpenIGI/OpenIGI
           ref: master
           path: openigi
+          token: ${{ secrets.OPENIGI_READ_TOKEN || github.token }}
+      # While OpenIGI and its mods' repositories are private, the clone a build makes reads them with this token. It
+      # can only read, and only those repositories; a pull request from a fork gets no secrets and so reads public ones.
+      - name: Read the private repositories
+        env:
+          TOKEN: ${{ secrets.OPENIGI_READ_TOKEN }}
+        run: |
+          [ -z "$TOKEN" ] || git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -71,6 +80,7 @@ jobs:
           repository: OpenIGI/OpenIGI
           ref: master
           path: openigi
+          token: ${{ secrets.OPENIGI_READ_TOKEN || github.token }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x

@@ -1,7 +1,7 @@
 # Checks a pull request to the index and builds every version it adds.
 #
 # Untrusted: a pull request's mod is built here, and MSBuild runs what a project tells it to. So this runs on a
-# GitHub-hosted runner, never the release VM's self-hosted one, with a read-only token and no secrets.
+# GitHub-hosted runner, never the release VM's self-hosted one, with read-only tokens and no other secret.
 name: Validate
 
 on:
@@ -25,6 +25,15 @@ jobs:
           repository: OpenIGI/OpenIGI
           ref: master
           path: openigi
+          token: ${{ secrets.OPENIGI_READ_TOKEN || github.token }}
+
+      # While OpenIGI and its mods' repositories are private, the clone a build makes reads them with this token. It
+      # can only read, and only those repositories; a pull request from a fork gets no secrets and so reads public ones.
+      - name: Read the private repositories
+        env:
+          TOKEN: ${{ secrets.OPENIGI_READ_TOKEN }}
+        run: |
+          [ -z "$TOKEN" ] || git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
 
       - uses: actions/setup-dotnet@v4
         with:
