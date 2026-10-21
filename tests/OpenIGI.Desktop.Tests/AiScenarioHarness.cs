@@ -1146,9 +1146,9 @@ public sealed class AiScenarioHarness : IDisposable
 
             if (host.Soldiers() is SoldierRenderer soldiers)
             {
-                foreach (SoldierRenderer.Group group in soldiers.GroupsForTesting)
+                foreach (SoldierGroup group in soldiers.GroupsForTesting)
                 {
-                    foreach (SoldierRenderer.Member member in group.Soldiers)
+                    foreach (SoldierMember member in group.Soldiers)
                     {
                         SoldierView view = member.Agent.View;
                         Vector3d where = member.TickWhere * Metre;
@@ -1715,7 +1715,7 @@ public sealed class AiScenarioHarness : IDisposable
 
             if (EnvInt("OPENIGI_VEH_SCENARIO_HELI", -1) is int heliId and >= 0)
             {
-                foreach (CutsceneRuntime.AnimationState animation in runtime.AnimationsForTesting)
+                foreach (CutsceneAnimationState animation in runtime.AnimationsForTesting)
                 {
                     if (animation.TargetId != heliId || !animation.RanThisTick)
                     {
@@ -1728,7 +1728,7 @@ public sealed class AiScenarioHarness : IDisposable
                     OpenIGI.Engine.Tasks.GameTask heli = loop.Tasks.FromId(heliId)!;
                     Vector3d at = runtime.TryGetDrawTransform(heli, out Vector3d metres, out _) ? metres * Metre : default;
                     string extra = string.Empty;
-                    if (runtime.TransformsForTesting.TryGetValue(heliId, out CutsceneRuntime.TransformState? state))
+                    if (runtime.TransformsForTesting.TryGetValue(heliId, out CutsceneTransformState? state))
                     {
                         Matrix3f m = state.Orientation;
                         Vector3d v = state.Velocity;
@@ -1744,7 +1744,7 @@ public sealed class AiScenarioHarness : IDisposable
             // OPENIGI_VEH_SCENARIO_BODY=<id>: that car's retail rigid body every tick, bit-exact, for lining the
             // port's drive up against a probe carstep capture.
             if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
-                && runtime.TransformsForTesting.TryGetValue(bodyId, out CutsceneRuntime.TransformState? bodyState))
+                && runtime.TransformsForTesting.TryGetValue(bodyId, out CutsceneTransformState? bodyState))
             {
                 if (bodyState.RetailBody is RetailCarBody body)
                 {
@@ -1795,9 +1795,9 @@ public sealed class AiScenarioHarness : IDisposable
             {
                 soldiers.Simulation.Snapshot(soldierSnapshots);
                 List<Vector3d> drawn = [];
-                foreach (SoldierRenderer.Group group in soldiers.GroupsForTesting)
+                foreach (SoldierGroup group in soldiers.GroupsForTesting)
                 {
-                    foreach (SoldierRenderer.Member member in group.Soldiers)
+                    foreach (SoldierMember member in group.Soldiers)
                     {
                         drawn.Add(member.TickWhere * Metre);
                         SoldierAgent agent = member.Agent;
@@ -1808,7 +1808,7 @@ public sealed class AiScenarioHarness : IDisposable
 
                             // The port's half of the probe's [human] parent/local: what the actor rides, its offset
                             // in the parent's frame, and where that parent is now.
-                            if (runtime.AttachmentsForTesting.TryGetValue(view.Soldier, out CutsceneRuntime.AttachmentState? attachment))
+                            if (runtime.AttachmentsForTesting.TryGetValue(view.Soldier, out CutsceneAttachmentState? attachment))
                             {
                                 OpenIGI.Engine.Tasks.GameTask parentTask = attachment.ParentTask;
                                 Vector3d relative = attachment.RelativePosition;
@@ -1844,7 +1844,7 @@ public sealed class AiScenarioHarness : IDisposable
             if (tick % posEvery == 0)
             {
                 log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={MissionOf(host).IsPlayerDead} shove=({player.Body.HitShove.X:0.00},{player.Body.HitShove.Y:0.00})");
-                foreach (CutsceneRuntime.CarAiState state in runtime.CarAisForTesting)
+                foreach (CarAiState state in runtime.CarAisForTesting)
                 {
                     AiPatrolRoute? route = state.Route;
                     OpenIGI.Engine.Tasks.GameTask task = state.Task;

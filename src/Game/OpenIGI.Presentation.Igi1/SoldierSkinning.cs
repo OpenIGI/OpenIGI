@@ -22,9 +22,9 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Physics;
-using Group = OpenIGI.Presentation.Igi1.SoldierRenderer.Group;
-using HeldWeapon = OpenIGI.Presentation.Igi1.SoldierRenderer.HeldWeapon;
-using Member = OpenIGI.Presentation.Igi1.SoldierRenderer.Member;
+using Group = OpenIGI.Presentation.Igi1.SoldierGroup;
+using HeldWeapon = OpenIGI.Presentation.Igi1.SoldierHeldWeapon;
+using Member = OpenIGI.Presentation.Igi1.SoldierMember;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -42,7 +42,7 @@ internal static class SoldierSkinning
     /// The upload moves the mesh's current stream into its previous one before writing this pose, which is the pair the
     /// motion vectors and the between-tick blending read.
     /// </remarks>
-    public static bool Upload(IGraphicsDevice device, SoldierRenderer.Member member, MeshGeometry geometry, MefModel model, BonePose pose)
+    public static bool Upload(IGraphicsDevice device, Member member, MeshGeometry geometry, MefModel model, BonePose pose)
     {
         if (!member.Mesh.IsValid)
         {

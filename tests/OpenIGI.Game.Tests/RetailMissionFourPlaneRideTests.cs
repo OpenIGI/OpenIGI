@@ -303,7 +303,7 @@ public sealed class RetailMissionFourPlaneRideTests
 
     private static void WritePlaneHold(CutsceneRuntime runtime, int targetId, float thrust)
     {
-        foreach (CutsceneRuntime.AnimationState state in runtime.AnimationsForTesting)
+        foreach (CutsceneAnimationState state in runtime.AnimationsForTesting)
         {
             if (state.TargetId != targetId)
             {

@@ -50,14 +50,14 @@ public sealed class BakedLightmaps
     /// <param name="targets">The baked pages from <see cref="LightmapBaker"/>, their radiance filled.</param>
     /// <returns>The composited pages.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public static BakedLightmaps Compose(WorldScene scene, IReadOnlyList<LightmapBaker.LightmapTarget> targets)
+    public static BakedLightmaps Compose(WorldScene scene, IReadOnlyList<LightmapTarget> targets)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(targets);
 
         Dictionary<string, Dictionary<int, Page>> pages = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (LightmapBaker.LightmapTarget target in targets)
+        foreach (LightmapTarget target in targets)
         {
             if (target.PlacementIndex < 0 || target.PlacementIndex >= scene.Placements.Count)
             {

@@ -1,10 +1,7 @@
 ﻿using System.Collections.ObjectModel;
-using System.Globalization;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.World;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -28,7 +25,8 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public sealed class WorldScene
 {
-    private const string LogCategory = "World";
+    /// <summary>The log category the scene walk reports under.</summary>
+    internal const string LogCategory = "World";
 
     private double? _groundHeight;
 
@@ -459,24 +457,10 @@ public sealed class WorldScene
 
         List<WorldPlacement> placements = [];
         List<LadderPlacement> ladders = [];
-        Dictionary<GameTask, TrainPlacementState> trainPlacements = [];
+        TrainPlacementBuilder trains = new(byName);
         int unresolved = 0;
         int unplaced = 0;
         int attached = 0;
-
-        (float Length, float Pivot) TrainGeometry(IEnumerable<string> names)
-        {
-            foreach (string name in names)
-            {
-                if (!byName.TryGetValue(name, out var bound))
-                {
-                    continue;
-                }
-
-                return (TrainCouplingDistance(bound.Model), TrainCouplingPivotFraction(bound.Model));
-            }
-            return default;
-        }
 
         foreach (GameTask task in levelRoot.Descendants())
         {
@@ -498,24 +482,7 @@ public sealed class WorldScene
             TrainPlacementState? trainPlacement = null;
             if (string.Equals(declared.Type.Name, "Train", StringComparison.Ordinal))
             {
-                (float ownLength, float ownPivot) = TrainGeometry(placedNames);
-
-                // A child Train couples behind the cars already on its lead's consist; a lead starts one.
-                RailroadConsist? consist =
-                    task.Parent is DeclaredTask parent
-                    && string.Equals(parent.Type.Name, "Train", StringComparison.Ordinal)
-                    && trainPlacements.TryGetValue(parent, out TrainPlacementState? parentTrain)
-                        ? parentTrain.Consist
-                        : RailroadPath.FromTrain(declared) is { } railroad ? new RailroadConsist(railroad) : null;
-                if (consist is not null)
-                {
-                    int car = consist.Add(declared, ownLength, ownPivot);
-                    if (consist.TryPlace(consist.Railroad.InitialPosition, car, out Vector3d carPosition, out Matrix3f carOrientation))
-                    {
-                        trainPlacement = new TrainPlacementState(consist, carPosition, carOrientation);
-                        trainPlacements[task] = trainPlacement;
-                    }
-                }
+                trainPlacement = trains.Place(declared, placedNames);
             }
 
             int slot = 0;
@@ -576,7 +543,7 @@ public sealed class WorldScene
                     position = coupler[0] / UnitsPerMetre;
                 }
 
-                Matrix3f orientation = trainPlacement?.Orientation ?? PlacementOrientation(declared, modelSlot);
+                Matrix3f orientation = trainPlacement?.Orientation ?? WorldPlacementOrientation.PlacementOrientation(declared, modelSlot);
 
                 // SCameraLens is not committed at the holder task's origin. Retail asks the holder
                 // model for magic vertex 0, rotates that mount through the holder's own orientation,
@@ -585,7 +552,7 @@ public sealed class WorldScene
                 if (string.Equals(declared.Type.Name, SecurityCameraType, StringComparison.Ordinal)
                     && modelSlot == 1)
                 {
-                    position = CameraLensPosition(declared, position, byName);
+                    position = WorldPlacementOrientation.CameraLensPosition(declared, position, byName);
                 }
 
                 // Retail grounds character models onto the terrain when it loads them — the editor's
@@ -620,7 +587,7 @@ public sealed class WorldScene
                     bake.Set ?? string.Empty,
                     bake.Root?.LightmapIndex ?? -1);
 
-                LogPlacementVerification(
+                WorldSceneDiagnostics.LogPlacementVerification(
                     log,
                     mission,
                     declared,
@@ -714,7 +681,7 @@ public sealed class WorldScene
                 // shells and none of their contents.
                 if (bake.Root is not null)
                 {
-                    attached += AddAttached(
+                    attached += WorldAttachmentWalker.AddAttached(
                         mission, log, bake.Root, position, orientation, orientation, bake.Set ?? string.Empty,
                         task.Name, task, byName, magic, placements, ladders);
                 }
@@ -722,14 +689,14 @@ public sealed class WorldScene
                     && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
                     && loose is not null)
                 {
-                    attached += AddAttached(
+                    attached += WorldAttachmentWalker.AddAttached(
                         mission, log, loose, position, orientation, orientation, string.Empty, task.Name, task,
                         byName, magic, placements, ladders);
                 }
             }
         }
 
-        int segments = AddSplineSegments(mission, levelRoot, byName, placements, log);
+        int segments = TrainPlacementBuilder.AddSplineSegments(mission, levelRoot, byName, placements, log);
 
         log.Information(
             LogCategory,
@@ -801,135 +768,15 @@ public sealed class WorldScene
             && pack.TryGetArchiveModel(spelling, out model);
     }
 
-    private sealed record TrainPlacementState(
-        RailroadConsist Consist,
-        Vector3d Position,
-        Matrix3f Orientation);
-
-    /// <summary>Lays every <c>SplineObj</c> chain: one bent segment per consecutive waypoint pair.</summary>
-    /// <remarks>
-    /// <para>
-    /// A segment spans from the <em>previous</em> waypoint to the waypoint that names its model, which
-    /// is <c>sub_500EF0</c>'s arrangement — a chain of N waypoints lays N−1 segments and the first
-    /// waypoint's own <c>Segment Model</c> goes unused. The curve is the one <c>sub_4E4530</c> builds:
-    /// a Hermite cubic between the two waypoint positions whose tangents are the waypoints' local X
-    /// axes scaled by the chord length, evaluated here per vertex rather than at the original's
-    /// <c>NumAreas</c> sampled matrices — the same curve, continuously.
-    /// </para>
-    /// <para>
-    /// A vertex's local X picks its place along the curve (the original measures the model's X extent
-    /// the same way, <c>sub_4E4530</c>'s tail); its local Y and Z ride the curve's zero-roll frame.
-    /// <b>Divergence:</b> the original also interpolates a twist angle between the endpoint
-    /// orientations; every level-1 waypoint is authored yaw-only, so the twist is dropped until a
-    /// level needs it.
-    /// </para>
-    /// </remarks>
-    private static int AddSplineSegments(
-        LoadedMission mission,
-        GameTask levelRoot,
-        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
-        List<WorldPlacement> placements,
-        IOpenIgiLogger log)
-    {
-        int added = 0;
-        int chain = 0;
-        foreach (GameTask task in levelRoot.Descendants())
-        {
-            if (task is not DeclaredTask spline
-                || !string.Equals(spline.Type.Name, SplineObjType, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            chain++;
-            List<(DeclaredTask Task, Vector3d Position)> waypoints = [];
-            foreach (GameTask child in spline.Children)
-            {
-                if (child is DeclaredTask waypoint
-                    && string.Equals(waypoint.Type.Name, SplineWaypointType, StringComparison.Ordinal)
-                    && TryGetPosition(waypoint, out Vector3d position))
-                {
-                    waypoints.Add((waypoint, position));
-                }
-            }
-
-            for (int i = 1; i < waypoints.Count; i++)
-            {
-                (DeclaredTask waypoint, Vector3d to) = waypoints[i];
-                (DeclaredTask previous, Vector3d from) = waypoints[i - 1];
-
-                if (!waypoint.TryGetValue(SegmentModelParameter, out object? raw)
-                    || raw is not string name
-                    || name.Length == 0
-                    || !byName.TryGetValue(name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
-                {
-                    continue;
-                }
-
-                MeshGeometry? bent = BendSegment(bound.Model, from, to, Tangent(previous), Tangent(waypoint));
-                if (bent is null)
-                {
-                    continue;
-                }
-
-                placements.Add(new WorldPlacement(
-                    from,
-                    Matrix3f.Identity,
-                    bound.Instance,
-                    bound.Pack,
-                    bound.Model,
-                    $"spline:{chain}:{i}",
-                    waypoint,
-                    string.Empty,
-                    -1)
-                {
-                    BentGeometry = bent,
-                });
-                LogDerivedPlacement(
-                    log,
-                    mission,
-                    waypoint,
-                    name,
-                    from,
-                    Matrix3f.Identity,
-                    "SPLINE");
-                added++;
-            }
-        }
-
-        return added;
-
-        // The tangent direction is the waypoint orientation's local X axis in world space — the
-        // matrix's first column, exactly the elements [0], [3], [6] that sub_4E4530 reads.
-        // An automatically oriented spline (0x500EF0) runs on the frame rebuilt from its neighbours instead.
-        static Vector3f Tangent(DeclaredTask waypoint)
-        {
-            if (RetailWorldObjects.IsAutomaticallyOriented(waypoint))
-            {
-                float[] automatic = RetailWorldObjects.WaypointOrientation(waypoint);
-                return new Vector3f(automatic[0], automatic[3], automatic[6]);
-            }
-
-            waypoint.TryGetValue(OrientationParameter, out object? raw);
-            Matrix3f m = raw is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
-            return new Vector3f(m.M11, m.M21, m.M31);
-        }
-    }
-
     /// <summary>Gets the coupling distance the retail Train solver reads from a car model.</summary>
+    /// <param name="model">The car model.</param>
+    /// <returns>The distance between its two couplers, or nought when it has no coupler vertices.</returns>
     /// <remarks>
     /// Train initialization (<c>0x42A150</c>) asks the model for magic vertices 0 and 1 through
     /// <c>0x414ED0</c>, stores <c>abs(v0.x - v1.x)</c> at Train+1868, and passes one such value per car
     /// to the railroad evaluator. Mesh bounds include overhangs and are not the consist spacing.
     /// </remarks>
-    public static float TrainCouplingDistance(MefModel model)
-    {
-        ArgumentNullException.ThrowIfNull(model);
-        return model.TryGetMagicVertex(0, out Vector3f front)
-            && model.TryGetMagicVertex(1, out Vector3f rear)
-                ? MathF.Abs(front.X - rear.X)
-                : 0f;
-    }
+    public static float TrainCouplingDistance(MefModel model) => TrainPlacementBuilder.TrainCouplingDistance(model);
 
     /// <summary>Gets the rolling radius of a wheel model, in world units.</summary>
     /// <param name="model">The wheel model.</param>
@@ -942,208 +789,17 @@ public sealed class WorldScene
     /// a straight implies in a capture of the running game -- where the suspension travel that
     /// stood in for it before was 0.3 m, forty per cent out.
     /// </remarks>
-    public static float WheelRadius(MefModel model)
-    {
-        ArgumentNullException.ThrowIfNull(model);
-        ReadOnlySpan<MefVertex> vertices = model.Vertices;
-        if (vertices.Length == 0)
-        {
-            return 0f;
-        }
-
-        Vector3f least = vertices[0].Position;
-        Vector3f most = least;
-        for (int i = 1; i < vertices.Length; i++)
-        {
-            Vector3f position = vertices[i].Position;
-            least = new Vector3f(
-                MathF.Min(least.X, position.X),
-                MathF.Min(least.Y, position.Y),
-                MathF.Min(least.Z, position.Z));
-            most = new Vector3f(
-                MathF.Max(most.X, position.X),
-                MathF.Max(most.Y, position.Y),
-                MathF.Max(most.Z, position.Z));
-        }
-
-        float widest = MathF.Max(most.X - least.X, MathF.Max(most.Y - least.Y, most.Z - least.Z));
-        return widest * 0.5f;
-    }
+    public static float WheelRadius(MefModel model) => TrainPlacementBuilder.WheelRadius(model);
 
     /// <summary>Gets the retail model-origin fraction between a Train car's two couplers.</summary>
+    /// <param name="model">The car model.</param>
+    /// <returns>The model origin's fraction of the way from the front coupler, or nought.</returns>
     /// <remarks>
     /// Train initialization (<c>0x42A150</c>) stores <c>abs(v0.x) / abs(v0.x - v1.x)</c> at
     /// Train+1864. The consist updater later interpolates the two railroad samples by this fraction;
     /// omitting it places the model origin on its front coupler instead of inside the car.
     /// </remarks>
-    public static float TrainCouplingPivotFraction(MefModel model)
-    {
-        ArgumentNullException.ThrowIfNull(model);
-        if (!model.TryGetMagicVertex(0, out Vector3f front)
-            || !model.TryGetMagicVertex(1, out Vector3f rear))
-        {
-            return 0f;
-        }
-
-        float length = MathF.Abs(front.X - rear.X);
-        return length > float.Epsilon ? MathF.Abs(front.X) / length : 0f;
-    }
-
-    /// <summary>Bends one segment model along its span's Hermite curve.</summary>
-    /// <param name="model">The segment model, authored along its local X.</param>
-    /// <param name="from">The span's start, in metres — also the placement's position.</param>
-    /// <param name="to">The span's end, in metres.</param>
-    /// <param name="fromTangent">The start waypoint's unit tangent.</param>
-    /// <param name="toTangent">The end waypoint's unit tangent.</param>
-    /// <returns>The geometry, positioned relative to <paramref name="from"/>, or <see langword="null"/>.</returns>
-    private static MeshGeometry? BendSegment(
-        MefModel model,
-        Vector3d from,
-        Vector3d to,
-        Vector3f fromTangent,
-        Vector3f toTangent)
-    {
-        if (model.IsEmpty || model.DrawRecords.Count == 0)
-        {
-            return null;
-        }
-
-        ReadOnlySpan<MefVertex> source = model.Vertices;
-        float minX = float.MaxValue;
-        float maxX = float.MinValue;
-        foreach (MefVertex vertex in source)
-        {
-            minX = Math.Min(minX, vertex.Position.X);
-            maxX = Math.Max(maxX, vertex.Position.X);
-        }
-
-        float length = maxX - minX;
-        if (length <= 0)
-        {
-            return null;
-        }
-
-        // The Hermite endpoints relative to the span's start, with tangents scaled by the chord — the
-        // v79 factor sub_4E4530 multiplies both endpoint axes by.
-        double dx = to.X - from.X;
-        double dy = to.Y - from.Y;
-        double dz = to.Z - from.Z;
-        double chord = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-        if (chord < 1e-3)
-        {
-            return null;
-        }
-
-        Span<double> t0 = [fromTangent.X * chord, fromTangent.Y * chord, fromTangent.Z * chord];
-        Span<double> t1 = [toTangent.X * chord, toTangent.Y * chord, toTangent.Z * chord];
-        Span<double> p1 = [dx, dy, dz];
-
-        Vertex3D[] vertices = new Vertex3D[source.Length];
-        for (int i = 0; i < source.Length; i++)
-        {
-            MefVertex v = source[i];
-            double t = Math.Clamp((v.Position.X - minX) / length, 0.0, 1.0);
-
-            // Hermite basis and its derivative, once per vertex.
-            double t2 = t * t;
-            double t3 = t2 * t;
-            double h00 = (2 * t3) - (3 * t2) + 1;
-            double h10 = t3 - (2 * t2) + t;
-            double h01 = (-2 * t3) + (3 * t2);
-            double h11 = t3 - t2;
-            double d00 = (6 * t2) - (6 * t);
-            double d10 = (3 * t2) - (4 * t) + 1;
-            double d01 = (6 * t) - (6 * t2);
-            double d11 = (3 * t2) - (2 * t);
-
-            double px = (h10 * t0[0]) + (h01 * p1[0]) + (h11 * t1[0]);
-            double py = (h10 * t0[1]) + (h01 * p1[1]) + (h11 * t1[1]);
-            double pz = (h10 * t0[2]) + (h01 * p1[2]) + (h11 * t1[2]);
-            _ = h00; // the start point is the origin, so its term vanishes
-
-            double gx = (d00 * 0) + (d10 * t0[0]) + (d01 * p1[0]) + (d11 * t1[0]);
-            double gy = (d10 * t0[1]) + (d01 * p1[1]) + (d11 * t1[1]);
-            double gz = (d10 * t0[2]) + (d01 * p1[2]) + (d11 * t1[2]);
-
-            // The curve's zero-roll frame: X down the tangent, Y level, Z perpendicular up — what
-            // sub_4E4530 builds through sub_4B38E0 from the direction angles with no twist.
-            double glen = Math.Sqrt((gx * gx) + (gy * gy) + (gz * gz));
-            if (glen < 1e-9)
-            {
-                gx = dx / chord;
-                gy = dy / chord;
-                gz = dz / chord;
-                glen = 1.0;
-            }
-
-            double fx = gx / glen;
-            double fy = gy / glen;
-            double fz = gz / glen;
-
-            double sx = -fy;
-            double sy = fx;
-            double slen = Math.Sqrt((sx * sx) + (sy * sy));
-            if (slen < 1e-9)
-            {
-                sx = 0.0;
-                sy = 1.0;
-                slen = 1.0;
-            }
-
-            sx /= slen;
-            sy /= slen;
-
-            double ux = -(fz * sy);
-            double uy = fz * sx;
-            double uz = (fx * sy) - (fy * sx);
-
-            double offY = v.Position.Y / UnitsPerMetre;
-            double offZ = v.Position.Z / UnitsPerMetre;
-
-            vertices[i] = new Vertex3D(
-                new Vector3f(
-                    (float)(px + (sx * offY) + (ux * offZ)),
-                    (float)(py + (sy * offY) + (uy * offZ)),
-                    (float)(pz + (uz * offZ))),
-                new Vector3f(
-                    (float)((fx * v.Normal.X) + (sx * v.Normal.Y) + (ux * v.Normal.Z)),
-                    (float)((fy * v.Normal.X) + (sy * v.Normal.Y) + (uy * v.Normal.Z)),
-                    (float)((fz * v.Normal.X) + (uz * v.Normal.Z))),
-                v.DiffuseU,
-                v.DiffuseV,
-                v.LightmapU,
-                v.LightmapV);
-        }
-
-        int total = 0;
-        foreach (MefDrawRecord record in model.DrawRecords)
-        {
-            total += record.Indices.Length;
-        }
-
-        ushort[] indices = new ushort[total];
-        List<MeshSubset> subsets = new(model.DrawRecords.Count);
-        int cursor = 0;
-        foreach (MefDrawRecord record in model.DrawRecords)
-        {
-            ReadOnlySpan<ushort> run = record.Indices.Span;
-            int start = cursor;
-            foreach (ushort index in run)
-            {
-                indices[cursor++] = (ushort)record.ToVertexIndex(index);
-            }
-
-            subsets.Add(new MeshSubset(start, run.Length, record.MaterialSlot, record.LightmapPage));
-        }
-
-        // The same repair the ordinary mesh builder makes, and for the same reason: a model's flattened
-        // draw order does not wind uniformly, and the world pass culls back faces. Without it a bent
-        // segment keeps whichever facing it was authored with and half of it is removed -- which is what
-        // hid the railway at the one preset that culls, while every other preset drew it.
-        MefMeshBuilder.RepairWinding(vertices, indices);
-
-        return new MeshGeometry(vertices, indices, [.. subsets]);
-    }
+    public static float TrainCouplingPivotFraction(MefModel model) => TrainPlacementBuilder.TrainCouplingPivotFraction(model);
 
     /// <summary>
     /// Expands every lightmap owner's subtree and records, per placing task, which set it belongs to and
@@ -1216,214 +872,6 @@ public sealed class WorldScene
         return false;
     }
 
-    /// <summary>Places a node's attached children, and theirs, in the parent's frame.</summary>
-    /// <remarks>
-    /// An attachment's position is in its parent model's space and in the same engine units as a vertex,
-    /// so it converts to metres the same way a placement's does. The rotations compose in the order the
-    /// camera already uses for a placement's own orientation.
-    /// </remarks>
-    private static int AddAttached(
-        LoadedMission mission,
-        IOpenIgiLogger log,
-        WorldObject node,
-        Vector3d position,
-        Matrix3f drawOrientation,
-        Matrix3f taskOrientation,
-        string set,
-        string taskName,
-        GameTask owner,
-        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
-        MagicObjectRegistry? magic,
-        List<WorldPlacement> placements,
-        List<LadderPlacement> ladders)
-    {
-        int added = 0;
-        foreach (WorldObject child in node.Children)
-        {
-            string magicTaskTypeName = string.Empty;
-            bool isRotor = false;
-            float magicExplosionFireballs = 0f;
-            int magicExplosionFragments = 0;
-            string magicExplosionSound = string.Empty;
-            string magicDestroyedModel = string.Empty;
-            int magicExplosionDelayTicks = 0;
-            float magicExplosionDamageFactor = 0f;
-            float magicExplosionFalloffMetres = 0f;
-            float magicExplosionRadiusMetres = 0f;
-            float magicExplosionDamageThreshold = 0f;
-            WorldModelBinding? magicDestroyedReplacement = null;
-            if (magic is not null && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition))
-            {
-                magicTaskTypeName = magic.TaskTypeName(childDefinition.TaskType);
-                isRotor = string.Equals(magicTaskTypeName, "TASKTYPE_ROTOR", StringComparison.Ordinal);
-                magicExplosionFireballs = childDefinition.ExplosionFireballs;
-                magicExplosionFragments = childDefinition.ExplosionFragments;
-                magicExplosionSound = childDefinition.ExplosionSound;
-                magicDestroyedModel = childDefinition.DestroyedModel;
-                magicExplosionDelayTicks = childDefinition.ExplosionDelayTicks;
-                magicExplosionDamageFactor = childDefinition.ExplosionDamageFactor;
-                magicExplosionFalloffMetres = childDefinition.ExplosionFalloffMetres;
-                magicExplosionRadiusMetres = childDefinition.ExplosionRadiusMetres;
-                magicExplosionDamageThreshold = childDefinition.ExplosionDamageThreshold;
-                if (childDefinition.DestroyedModel.Length > 0
-                    && byName.TryGetValue(childDefinition.DestroyedModel, out var destroyed))
-                {
-                    magicDestroyedReplacement = new WorldModelBinding(
-                        destroyed.Instance,
-                        destroyed.Pack,
-                        destroyed.Model);
-                }
-            }
-            // Some retail rotor attachments have no magic-object entry in the level registry.  The
-            // verified Bell/Mil attachment families remain rotor presentation objects even when that
-            // lookup misses; keep this fallback alongside the develop-side destructible metadata.
-            if (!isRotor
-                && owner is DeclaredTask { Type.Name: "Heli" }
-                && HelicopterRotorCatalog.IsKnownRotorModel(child.Name))
-            {
-                isRotor = true;
-            }
-            // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
-            // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
-            // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
-            // composition below is already the column-vector convention's parent∘child order.
-            Vector3f offset = drawOrientation.Transposed().Transform(child.Position);
-            Vector3d childPosition = new(
-                position.X + (offset.X / UnitsPerMetre),
-                position.Y + (offset.Y / UnitsPerMetre),
-                position.Z + (offset.Z / UnitsPerMetre));
-            Matrix3f childDrawOrientation = drawOrientation * child.Orientation;
-
-            // sub_4DFA50 does not copy an ATTA matrix into the spawned magic task. It rebuilds a
-            // right-handed basis from the attachment's first two axes before composing it with its
-            // parent. After the model-to-world axis conversion used by this port, that rebuilt local
-            // frame is exactly the ATTA orientation's transpose. Keeping the task frame separate from
-            // the draw frame matters for quarter-turn attachments: the old blanket 180-degree fix made
-            // the first building ladder look right but pointed WaterTower's 435_02_1 ladder inward.
-            Matrix3f childTaskOrientation = taskOrientation * child.Orientation.Transposed();
-
-            // A ladder is a TASKTYPE_LADDER magic object whose model carries the climb line as its magic
-            // vertices 2 (foot) and 3 (head). Collected here, where its world transform is known.
-            TryCollectLadder(
-                child,
-                childPosition,
-                childDrawOrientation,
-                childTaskOrientation,
-                magic,
-                ladders);
-
-            // A child draws only if its model is also a pack instance, because the textures a sub-mesh
-            // uses are named by the instance, not by the model. Its subtree is walked either way: the
-            // lightmap numbering already counted it, and its own children may well be instances.
-            // An Afterburner (0x42BEB0) draws through its own primitive instead of its model, and that primitive's
-            // draw callback (0x42C4B0) is an empty stub: the original never shows it. Its children still follow.
-            bool neverDrawn = string.Equals(magicTaskTypeName, "TASKTYPE_AFTERBURNER", StringComparison.Ordinal);
-            if (!neverDrawn && byName.TryGetValue(child.Name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
-            {
-                // The attachment draws in the rebuilt right-handed frame sub_4DFA50 builds, which after the
-                // model-to-world axis conversion is the ATTA orientation's transpose — the same childTaskOrientation
-                // the ladder task frame uses (and the reference editor's attLocalRot = R_row^T). The old draw
-                // frame dropped the transpose, which put attached sub-meshes such as a building's windows on the
-                // wrong side of their parent. The ladder's climb line keeps the non-transposed draw frame: its
-                // magic-vertex positions were pinned to the retail game's climb line.
-                placements.Add(new WorldPlacement(
-                    childPosition,
-                    childTaskOrientation,
-                    bound.Instance,
-                    bound.Pack,
-                    bound.Model,
-                    taskName,
-                    owner,
-                    set,
-                    set.Length > 0 ? child.LightmapIndex : -1)
-                {
-                    IsRotor = isRotor,
-                    IsAttached = true,
-                    MagicTaskTypeName = magicTaskTypeName,
-                    MagicExplosionFireballs = magicExplosionFireballs,
-                    MagicExplosionFragments = magicExplosionFragments,
-                    MagicExplosionSound = magicExplosionSound,
-                    MagicDestroyedModel = magicDestroyedModel,
-                    MagicExplosionDelayTicks = magicExplosionDelayTicks,
-                    MagicExplosionDamageFactor = magicExplosionDamageFactor,
-                    MagicExplosionFalloffMetres = magicExplosionFalloffMetres,
-                    MagicExplosionRadiusMetres = magicExplosionRadiusMetres,
-                    MagicExplosionDamageThreshold = magicExplosionDamageThreshold,
-                    DestroyedReplacement = magicDestroyedReplacement,
-                });
-                LogDerivedPlacement(
-                    log,
-                    mission,
-                    owner as DeclaredTask,
-                    child.Name,
-                    childPosition,
-                    childTaskOrientation,
-                    "ATTA");
-                added++;
-            }
-
-            added += AddAttached(
-                mission, log, child, childPosition, childDrawOrientation, childTaskOrientation, set,
-                taskName, owner, byName, magic, placements, ladders);
-        }
-
-        return added;
-    }
-
-    /// <summary>The magic-object task type a ladder is spawned with.</summary>
-    private const string LadderTaskType = "TASKTYPE_LADDER";
-
-    /// <summary>Records a ladder when a node is one — its climb line from magic vertices 2 and 3.</summary>
-    private static void TryCollectLadder(
-        WorldObject child,
-        Vector3d positionMetres,
-        Matrix3f drawOrientation,
-        Matrix3f taskOrientation,
-        MagicObjectRegistry? magic,
-        List<LadderPlacement> ladders)
-    {
-        if (magic is null
-            || !magic.TryGet(child.Name, out MagicObjectDefinition definition)
-            || !string.Equals(magic.TaskTypeName(definition.TaskType), LadderTaskType, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        MefModel model = child.Models.Highest;
-        if (!model.TryGetMagicVertex(1, out Vector3f activationTop)
-            || !model.TryGetMagicVertex(2, out Vector3f foot)
-            || !model.TryGetMagicVertex(3, out Vector3f head))
-        {
-            return;
-        }
-
-        Vector3d origin = new(
-            positionMetres.X * UnitsPerMetre,
-            positionMetres.Y * UnitsPerMetre,
-            positionMetres.Z * UnitsPerMetre);
-
-        ladders.Add(new LadderPlacement(
-            origin,
-            ToWorldUnits(origin, drawOrientation, activationTop),
-            ToWorldUnits(origin, drawOrientation, foot),
-            ToWorldUnits(origin, drawOrientation, head),
-            taskOrientation));
-    }
-
-    /// <summary>Places a model-space magic vertex in the world, in engine units.</summary>
-    /// <remarks>
-    /// <b>Verified against the running game</b> (the ladder mount computed to the byte from
-    /// this): the magic vertex is rotated as <c>v · M</c> (<see cref="Matrix3f.Transform(Vector3f)"/>), NOT
-    /// the transpose. Using the transpose negated the vertex's X and Y (Z survives on an axis-aligned
-    /// ladder), which stood the climbing body ~6 cm off the rungs. Unlike an attachment offset, a magic
-    /// vertex takes the plain product.
-    /// </remarks>
-    private static Vector3d ToWorldUnits(Vector3d originUnits, Matrix3f orientation, Vector3f local)
-    {
-        Vector3f rotated = orientation.Transform(local);
-        return new Vector3d(originUnits.X + rotated.X, originUnits.Y + rotated.Y, originUnits.Z + rotated.Z);
-    }
-
     /// <summary>Walks a task and everything under it, the task itself first.</summary>
     private static IEnumerable<GameTask> Subtree(GameTask task)
     {
@@ -1479,177 +927,4 @@ public sealed class WorldScene
     /// </remarks>
     public static Matrix3f ToOrientation(Vector3f angles) =>
         Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z);
-
-    private static Matrix3f PlacementOrientation(DeclaredTask task, int modelSlot)
-    {
-        if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
-        {
-            if (modelSlot == 0)
-            {
-                return CameraHolderOrientation(task);
-            }
-
-            float holderGamma = FloatValue(task, "Holder Gamma");
-            float cameraAlpha = FloatValue(task, "Camera Alpha");
-            float cameraGamma = FloatValue(task, "Camera Gamma");
-            return Matrix3f.FromEngineEulerAngles(cameraAlpha, 0f, holderGamma + cameraGamma);
-        }
-
-        // A door's base orientation (+272) and a fence's turn are built by 0x4B38E0 exactly: the door's pose is
-        // recomputed from it every tick it moves, and must start where the drawn placement stands.
-        if (string.Equals(task.Type.Name, "Door", StringComparison.Ordinal)
-            && task.TryGetValue(OrientationParameter, out object? doorAngles)
-            && doorAngles is Vector3f door)
-        {
-            return RetailOrientation.EulerMatrix(door.X, door.Y, door.Z);
-        }
-
-        if (string.Equals(task.Type.Name, "Fence", StringComparison.Ordinal)
-            && task.TryGetValue("Gamma", out object? fenceGamma)
-            && fenceGamma is float fence)
-        {
-            return RetailOrientation.EulerMatrix(0f, 0f, fence);
-        }
-
-        if (task.TryGetValue(OrientationParameter, out object? rawOrientation))
-        {
-            return rawOrientation switch
-            {
-                Vector3f angles => ToOrientation(angles),
-                float gamma => Matrix3f.RotationZ(gamma),
-                _ => Matrix3f.Identity,
-            };
-        }
-
-        // Point objects may expose their heading as a standalone Gamma instead of the three-angle
-        // Orientation value. Fence does exactly that: its interaction path already consumes Gamma,
-        // and drawing the model at identity left the visible mesh on a different plane from the vault.
-        return task.TryGetValue("Gamma", out object? rawGamma) && rawGamma is float value
-            ? Matrix3f.RotationZ(value)
-            : Matrix3f.Identity;
-    }
-
-    private static Matrix3f CameraHolderOrientation(DeclaredTask task) =>
-        Matrix3f.RotationZ(FloatValue(task, "Holder Gamma"));
-
-    private static Vector3d CameraLensPosition(
-        DeclaredTask task,
-        Vector3d holderPosition,
-        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName)
-    {
-        string holderName = task.TryGetValue(SecurityCameraModelParameters[0], out object? raw)
-            && raw is string declaredName
-            && declaredName.Length > 0
-                ? declaredName
-                : SecurityCameraModels[0];
-
-        if (!byName.TryGetValue(holderName, out var holder)
-            || !holder.Model.TryGetMagicVertex(0, out Vector3f mount))
-        {
-            return holderPosition;
-        }
-
-        // Matrix3f stores the engine's row-major basis, while the holder-to-world operation here is
-        // M*v. Transposing before the row-vector helper gives the same product as retail sub_414E20.
-        Vector3f offset = CameraHolderOrientation(task).Transposed().Transform(mount);
-        return new Vector3d(
-            holderPosition.X + (offset.X / UnitsPerMetre),
-            holderPosition.Y + (offset.Y / UnitsPerMetre),
-            holderPosition.Z + (offset.Z / UnitsPerMetre));
-    }
-
-    private static float FloatValue(DeclaredTask task, string parameter) =>
-        task.TryGetValue(parameter, out object? raw) && raw is float value ? value : 0f;
-
-    /// <summary>
-    /// Emits the same per-object record consumed by the reference level verifier, while also recording
-    /// the authored-to-runtime comparison. The model id is the pack instance id, not a friendly catalog
-    /// name: that is the identity the retail loader uses when it adds the object.
-    /// </summary>
-    private static void LogPlacementVerification(
-        IOpenIgiLogger log,
-        LoadedMission mission,
-        DeclaredTask task,
-        string modelId,
-        Vector3d runtimePositionMetres,
-        Matrix3f runtimeOrientation,
-        int modelSlot,
-        bool isTrain,
-        bool isCharacter,
-        bool isCameraLens)
-    {
-        string type = task.Type.Name;
-        string name = task.Name;
-        string source = $"LOCAL:{mission.Descriptor.MissionDirectory}/objects.qvm";
-        string positionText = FormatPosition(runtimePositionMetres * UnitsPerMetre);
-        string orientationText = FormatOrientation(runtimeOrientation);
-
-        bool hasAuthoredPosition = TryGetPosition(task, out Vector3d authoredPositionMetres);
-        Matrix3f authoredOrientation = PlacementOrientation(task, modelSlot);
-        bool positionMatch = hasAuthoredPosition
-            && LevelPositionValidator.PosMatch(
-                authoredPositionMetres * UnitsPerMetre,
-                runtimePositionMetres);
-        bool orientationMatch = LevelPositionValidator.OriMatch(authoredOrientation, runtimeOrientation);
-        string verification = isTrain
-            ? "DERIVED_TRAIN"
-            : isCameraLens
-                ? "DERIVED_CAMERA_LENS"
-            : !hasAuthoredPosition
-                ? "DERIVED_RUNTIME"
-                : isCharacter && !positionMatch
-                    ? "EXPECTED_TERRAIN_GROUNDING"
-                    : positionMatch && orientationMatch ? "PASS" : "MISMATCH";
-
-        log.Information(
-            LogCategory + ".Loader",
-            $"Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
-                + $"Pos={positionText}, Ori={orientationText}, Tex={modelId}, Model={modelId}, "
-                + $"Source={source}, PositionMatch={positionMatch}, OrientationMatch={orientationMatch}, "
-                + $"Verification={verification}");
-
-        if (verification == "MISMATCH")
-        {
-            log.Error(
-                LogCategory + ".Loader",
-                $"Object verification failed: ModelID={modelId}, Type={type}, Name={name}, "
-                    + $"Source={source}, authoredPos={FormatPosition(authoredPositionMetres * UnitsPerMetre)}, "
-                    + $"runtimePos={positionText}, authoredOri={FormatOrientation(authoredOrientation)}, "
-                    + $"runtimeOri={orientationText}");
-        }
-    }
-
-    private static void LogDerivedPlacement(
-        IOpenIgiLogger log,
-        LoadedMission mission,
-        DeclaredTask? owner,
-        string modelId,
-        Vector3d positionMetres,
-        Matrix3f orientation,
-        string sourceKind)
-    {
-        string type = owner?.Type.Name ?? "Derived";
-        string name = owner?.Name ?? string.Empty;
-        string source = $"LOCAL:{mission.Descriptor.MissionDirectory}/objects.qvm";
-        log.Information(
-            LogCategory + ".Loader",
-            $"Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
-                + $"Pos={FormatPosition(positionMetres * UnitsPerMetre)}, Ori={FormatOrientation(orientation)}, "
-                + $"Tex={modelId}, Model={modelId}, Source={source}, PositionMatch=True, "
-                + $"OrientationMatch=True, Verification=DERIVED_{sourceKind}");
-    }
-
-    private static string FormatPosition(Vector3d position) =>
-        string.Create(
-            CultureInfo.InvariantCulture,
-            $"({position.X:F6}, {position.Y:F6}, {position.Z:F6})");
-
-    private static string FormatOrientation(Matrix3f matrix)
-    {
-        float beta = MathF.Asin(Math.Clamp(-matrix.M31, -1f, 1f));
-        float alpha = MathF.Atan2(matrix.M32, matrix.M33);
-        float gamma = MathF.Atan2(matrix.M21, matrix.M11);
-        return string.Create(CultureInfo.InvariantCulture, $"({alpha:F6}, {beta:F6}, {gamma:F6})");
-    }
-
 }

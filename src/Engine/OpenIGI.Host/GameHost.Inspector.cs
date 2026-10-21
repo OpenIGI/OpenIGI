@@ -10,6 +10,11 @@ namespace OpenIGI.Host;
 
 public sealed partial class GameHost
 {
+    // The eye and the lens the last frame was drawn with, which the inspector projects a selection through.
+    private Camera3D _inspectorEye = Camera3D.Default;
+    private float _inspectorTangent = 1f;
+    private float _inspectorAspect = 16f / 9f;
+
     /// <summary>What the console's inspector reads of the host.</summary>
     /// <param name="host">The host.</param>
     private sealed class InspectedWorld(GameHost host) : IInspectedWorld

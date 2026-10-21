@@ -57,20 +57,9 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
     /// <summary>How high above the ground the map is read from, in metres.</summary>
     /// <remarks>The retail altitude, kept: it is what the authored field-of-view range is calibrated to.</remarks>
-    public const double AltitudeMetres = 900.0;
+    public const double AltitudeMetres = TacticalMapProjection.AltitudeMetres;
 
-    private const double UnitsPerMetre = 4096.0;
-
-    /// <summary>The widest the map opens out to, in radians — the retail overview.</summary>
-    private const float WidestFieldOfView = 0.7853982f;
-
-    /// <summary>The closest the map goes in, in radians.</summary>
-    /// <remarks>
-    /// About forty metres of ground across the frame, which is a building and its yard. The retail
-    /// closest was a tenth of this and framed roughly a doorway, which is past the point where an
-    /// overhead view of a level tells anyone anything.
-    /// </remarks>
-    private const float NarrowestFieldOfView = 0.0455f;
+    private const double UnitsPerMetre = TacticalMapProjection.UnitsPerMetre;
 
     /// <summary>Where the map opens: wide enough to hold a mission, close enough to read it.</summary>
     private const float DefaultZoom = 0.34f;
@@ -85,6 +74,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
     private readonly Func<string, string> _resolveText;
+    private readonly TacticalMapOverlay _overlay;
 
     private UiFont? _body;
     private UiFont? _label;
@@ -126,13 +116,14 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         _resources = resources;
         _logger = logger;
         _resolveText = resolveText;
+        _overlay = new TacticalMapOverlay(ComputerString);
     }
 
     /// <summary>Gets a value indicating whether the interface has its faces and can draw.</summary>
     public bool IsReady => _body is not null;
 
     /// <summary>Gets the vertical field of view the map is currently read at, in radians.</summary>
-    public float FieldOfView => FieldOfViewFor(_zoom);
+    public float FieldOfView => TacticalMapProjection.FieldOfViewFor(_zoom);
 
     /// <summary>Builds the interface's faces.</summary>
     /// <returns><see langword="false"/> when the fonts are missing and the computer cannot be shown.</returns>
@@ -199,12 +190,12 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        Chrome chrome = Measure(context, _page != Page.Map);
+        TacticalComputerChrome chrome = TacticalComputerChrome.Measure(context, _page != Page.Map, PageNames.Length);
 
         _hoverPage = -1;
         for (int i = 0; i < PageNames.Length; i++)
         {
-            if (IsSelectable((Page)i) && Contains(chrome.PageRow(i), _mouseX, _mouseY))
+            if (IsSelectable((Page)i) && TacticalComputerChrome.Contains(chrome.PageRow(i), _mouseX, _mouseY))
             {
                 _hoverPage = i;
             }
@@ -267,20 +258,20 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
 
         Viewport map = MapViewport(screenWidth, screenHeight);
-        float previousFieldOfView = FieldOfViewFor(_zoom);
+        float previousFieldOfView = TacticalMapProjection.FieldOfViewFor(_zoom);
 
         // Exponential smoothing framed as a half-life rather than a per-frame factor, so the zoom takes
         // the same real time to arrive whatever the frame rate is.
         _zoom += (_zoomTarget - _zoom) * (1f - MathF.Exp(-ZoomResponse * step));
-        float fieldOfView = FieldOfViewFor(_zoom);
+        float fieldOfView = TacticalMapProjection.FieldOfViewFor(_zoom);
 
         // Cursor-anchored zoom: whatever is under the pointer stays under it. Done by unprojecting the
         // same pixel through the old and the new frustum and moving the centre by the difference, which
         // is exact at every intermediate step of the ease rather than only at its ends.
         if (MathF.Abs(fieldOfView - previousFieldOfView) > 1e-7f)
         {
-            Vector3d before = Unproject(_mouseX, _mouseY, _centreUnits, previousFieldOfView, map);
-            Vector3d after = Unproject(_mouseX, _mouseY, _centreUnits, fieldOfView, map);
+            Vector3d before = TacticalMapProjection.Unproject(_mouseX, _mouseY, _centreUnits, previousFieldOfView, map);
+            Vector3d after = TacticalMapProjection.Unproject(_mouseX, _mouseY, _centreUnits, fieldOfView, map);
             _centreUnits = new Vector3d(
                 _centreUnits.X + (before.X - after.X),
                 _centreUnits.Y + (before.Y - after.Y),
@@ -289,7 +280,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         if (_dragging && (input.Mouse.DeltaX != 0f || input.Mouse.DeltaY != 0f))
         {
-            (double unitsPerPixelX, double unitsPerPixelY) = UnitsPerPixel(fieldOfView, map);
+            (double unitsPerPixelX, double unitsPerPixelY) = TacticalMapProjection.UnitsPerPixel(fieldOfView, map);
             _centreUnits = new Vector3d(
                 _centreUnits.X - (input.Mouse.DeltaX * unitsPerPixelX),
                 _centreUnits.Y + (input.Mouse.DeltaY * unitsPerPixelY),
@@ -310,7 +301,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             _hasCentre = true;
         }
 
-        return new MapSceneView(Vantage().ToCamera(), FieldOfViewFor(_zoom), MapViewport(screenWidth, screenHeight));
+        return new MapSceneView(Vantage().ToCamera(), TacticalMapProjection.FieldOfViewFor(_zoom), MapViewport(screenWidth, screenHeight));
     }
 
     /// <summary>Gets the pose the map is read from, for the transition to fly to and from.</summary>
@@ -360,16 +351,18 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         var painter = UiPainter.Create(batch, context);
-        Chrome chrome = Measure(context, _page != Page.Map);
+        TacticalComputerChrome chrome = TacticalComputerChrome.Measure(context, _page != Page.Map, PageNames.Length);
         Viewport map = MapViewport(screenWidth, screenHeight);
-        float fieldOfView = FieldOfViewFor(_zoom);
+        float fieldOfView = TacticalMapProjection.FieldOfViewFor(_zoom);
 
         // The whole interface fades and rises together. A few pixels of travel is the difference between
         // the screen having been switched on and the interface having been brought up on it.
         painter.PushOpacity(opacity);
         float lift = (1f - opacity) * context.Px(14f);
 
-        DrawMapOverlay(painter, context, chrome, map, fieldOfView, runtime, player, guards, highlights);
+        _overlay.Draw(
+            painter, context, chrome, map, fieldOfView, runtime, player, guards, highlights,
+            _centreUnits, _seconds, _label ?? body);
 
         if (_page != Page.Map)
         {
@@ -448,228 +441,13 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     }
 
     // ---------------------------------------------------------------------------------------------
-    // The map itself.
-    // ---------------------------------------------------------------------------------------------
-
-    private void DrawMapOverlay(
-        UiPainter painter,
-        LayoutContext context,
-        in Chrome chrome,
-        Viewport map,
-        float fieldOfView,
-        MissionObjectiveRuntime runtime,
-        Vector3d player,
-        IReadOnlyList<Vector3d> guards,
-        IEnumerable<ComputerMapHighlight> highlights)
-    {
-        DrawGrid(painter, context, map, fieldOfView);
-
-        // Points of interest first, so a hostile standing on one is drawn over its label rather than
-        // under it. Labels are suppressed once they would collide, nearest-authored winning, because a
-        // map whose annotations overlap is less readable than one that is missing a few.
-        List<(float X, float Y)> taken = [];
-        float labelGuardX = context.Px(150f);
-        float labelGuardY = context.Px(26f);
-        foreach (ComputerMapHighlight highlight in highlights)
-        {
-            if (!TryProject(highlight.Position, _centreUnits, fieldOfView, map, out float hx, out float hy))
-            {
-                continue;
-            }
-
-            UiVectors.DrawDiamond(painter, new UiVec2(hx, hy), context.Px(6f), Signal.WithAlpha(210));
-            UiVectors.DrawDiamond(painter, new UiVec2(hx, hy), context.Px(2.5f), UiPalette.TextBright);
-
-            bool clear = taken.All(point =>
-                MathF.Abs(point.X - hx) > labelGuardX || MathF.Abs(point.Y - hy) > labelGuardY);
-            string title = ComputerString(highlight.TitleResource);
-            if (clear && !string.IsNullOrWhiteSpace(title) && !chrome.OverInterface(hx, hy))
-            {
-                DrawLabelChip(painter, context, title, new UiVec2(hx + context.Px(12f), hy - context.Px(9f)));
-                taken.Add((hx, hy));
-            }
-        }
-
-        foreach (MissionObjective objective in runtime.Objectives)
-        {
-            if (objective.Position is not { } position || objective.State == MissionObjectiveState.Failed)
-            {
-                continue;
-            }
-
-            if (TryProject(position, _centreUnits, fieldOfView, map, out float ox, out float oy))
-            {
-                DrawObjectiveMarker(
-                    painter,
-                    context,
-                    new UiVec2(ox, oy),
-                    objective.State == MissionObjectiveState.Complete);
-            }
-        }
-
-        foreach (Vector3d guard in guards)
-        {
-            if (TryProject(guard, _centreUnits, fieldOfView, map, out float gx, out float gy))
-            {
-                DrawHostileMarker(painter, context, new UiVec2(gx, gy));
-            }
-        }
-
-        if (TryProject(player, _centreUnits, fieldOfView, map, out float px, out float py))
-        {
-            DrawPlayerMarker(painter, context, new UiVec2(px, py));
-        }
-    }
-
-    /// <summary>Draws the world-aligned reference grid the map is read against.</summary>
-    /// <remarks>
-    /// Aligned to the world rather than to the screen, so it pans and zooms with the terrain and is a
-    /// measure of it instead of a texture over it. The spacing steps through a 1-2-5 sequence — the one
-    /// every chart and every map in the world uses — so a division is always a number a person can hold,
-    /// and every fifth line is drawn brighter to give the eye something to count in.
-    /// </remarks>
-    private void DrawGrid(UiPainter painter, LayoutContext context, Viewport map, float fieldOfView)
-    {
-        double halfHeightMetres = AltitudeMetres * Math.Tan(fieldOfView * 0.5);
-        double metresPerPixel = 2.0 * halfHeightMetres / Math.Max(1, map.Height);
-        double spacing = NiceStep(metresPerPixel * context.Px(120f));
-        double spacingUnits = spacing * UnitsPerMetre;
-        if (spacingUnits <= 0.0)
-        {
-            return;
-        }
-
-        float thin = MathF.Max(1f, context.Px(1f));
-        Bgra32 minor = UiPalette.White(0.05f);
-        Bgra32 major = UiPalette.White(0.11f);
-
-        (double unitsPerPixelX, double unitsPerPixelY) = UnitsPerPixel(fieldOfView, map);
-        double leftUnits = _centreUnits.X - (unitsPerPixelX * map.Width * 0.5);
-        double topUnits = _centreUnits.Y + (unitsPerPixelY * map.Height * 0.5);
-
-        // NiceStep is chosen so a division is about 120 design units wide, which bounds the count at a
-        // couple of dozen per axis; the cap is only there so a degenerate viewport or a zoom that has run
-        // to a denormal cannot turn a grid into a hang.
-        const int MaxLines = 256;
-
-        long firstColumn = (long)Math.Floor(leftUnits / spacingUnits);
-        for (int drawn = 0; drawn < MaxLines; drawn++)
-        {
-            long i = firstColumn + drawn;
-            float x = map.X + (float)(((i * spacingUnits) - leftUnits) / unitsPerPixelX);
-            if (x > map.X + map.Width)
-            {
-                break;
-            }
-
-            if (x >= map.X)
-            {
-                painter.FillRect(new UiRect(x, map.Y, thin, map.Height), (i % 5) == 0 ? major : minor);
-            }
-        }
-
-        long firstRow = (long)Math.Floor(topUnits / spacingUnits);
-        for (int drawn = 0; drawn < MaxLines; drawn++)
-        {
-            long i = firstRow - drawn;
-            float y = map.Y + (float)((topUnits - (i * spacingUnits)) / unitsPerPixelY);
-            if (y > map.Y + map.Height)
-            {
-                break;
-            }
-
-            if (y >= map.Y)
-            {
-                painter.FillRect(new UiRect(map.X, y, map.Width, thin), (i % 5) == 0 ? major : minor);
-            }
-        }
-    }
-
-    private void DrawPlayerMarker(UiPainter painter, LayoutContext context, UiVec2 at)
-    {
-        // A slow breath rather than a blink. The player's own marker is the one thing on the map that has
-        // to be findable without being looked for, and a pulse does that where a brighter static dot only
-        // competes with everything else that is also bright.
-        float pulse = 0.5f + (0.5f * MathF.Sin(_seconds * 2.4f));
-        float radius = context.Px(9f);
-
-        UiVectors.StrokeRing(painter, at, radius + (context.Px(7f) * pulse), context.Px(1.5f),
-            Accent.WithAlpha((byte)(90 * (1f - pulse))));
-        UiVectors.StrokeRing(painter, at, radius, context.Px(2f), Accent);
-        UiVectors.FillDisc(painter, at, context.Px(4f), UiPalette.AccentLight);
-
-        // Four brackets rather than a full ring, so the marker reads as a fix on a position instead of as
-        // one more circle among the objective markers.
-        float arm = context.Px(16f);
-        float gap = context.Px(11f);
-        float weight = MathF.Max(1f, context.Px(1.5f));
-        painter.FillRect(new UiRect(at.X - arm, at.Y - (weight * 0.5f), arm - gap, weight), Accent.WithAlpha(190));
-        painter.FillRect(new UiRect(at.X + gap, at.Y - (weight * 0.5f), arm - gap, weight), Accent.WithAlpha(190));
-        painter.FillRect(new UiRect(at.X - (weight * 0.5f), at.Y - arm, weight, arm - gap), Accent.WithAlpha(190));
-        painter.FillRect(new UiRect(at.X - (weight * 0.5f), at.Y + gap, weight, arm - gap), Accent.WithAlpha(190));
-    }
-
-    private static void DrawHostileMarker(UiPainter painter, LayoutContext context, UiVec2 at)
-    {
-        UiVectors.DrawDiamond(painter, at, context.Px(8f), Bgra32.FromRgba(40, 10, 8, 220));
-        UiVectors.DrawDiamond(painter, at, context.Px(6f), Hostile);
-        UiVectors.DrawDiamond(painter, at, context.Px(2f), UiPalette.Danger);
-    }
-
-    private static void DrawObjectiveMarker(UiPainter painter, LayoutContext context, UiVec2 at, bool complete)
-    {
-        Bgra32 colour = complete ? Complete : Accent;
-        float half = context.Px(9f);
-        float tick = context.Px(5f);
-        float weight = MathF.Max(1f, context.Px(1.8f));
-
-        // Corner ticks: a target rather than a box. Four short pairs of rectangles, which is both cheaper
-        // and more legible at small sizes than an outlined square.
-        foreach ((float sx, float sy) in new[] { (-1f, -1f), (1f, -1f), (-1f, 1f), (1f, 1f) })
-        {
-            float cornerX = at.X + (half * sx);
-            float cornerY = at.Y + (half * sy);
-            painter.FillRect(
-                new UiRect(sx < 0f ? cornerX : cornerX - tick, cornerY - (weight * 0.5f), tick, weight), colour);
-            painter.FillRect(
-                new UiRect(cornerX - (weight * 0.5f), sy < 0f ? cornerY : cornerY - tick, weight, tick), colour);
-        }
-
-        if (complete)
-        {
-            UiVectors.FillDisc(painter, at, context.Px(3.5f), colour, 10);
-        }
-        else
-        {
-            UiVectors.StrokeRing(painter, at, context.Px(3.5f), weight, colour, 10);
-        }
-    }
-
-    private void DrawLabelChip(UiPainter painter, LayoutContext context, string text, UiVec2 at)
-    {
-        UiFont font = _label ?? _body!;
-        float size = context.Px(14f);
-        float tracking = context.Px(1.2f);
-        float width = UiVectors.MeasureTracked(font, text, size, tracking);
-        float padX = context.Px(8f);
-        float padY = context.Px(5f);
-        float height = font.LineHeight(size) + (padY * 2f);
-
-        var chip = new UiRect(at.X, at.Y - (height * 0.5f), width + (padX * 2f) + context.Px(3f), height);
-        painter.FillRect(chip, UiPalette.Ink.WithAlpha(190));
-        painter.FillRect(new UiRect(chip.X, chip.Y, context.Px(2f), chip.Height), Signal.WithAlpha(200));
-        UiVectors.DrawTracked(painter, font, text, new UiVec2(chip.X + padX + context.Px(3f), chip.Y + padY), size,
-            UiPalette.Text, tracking);
-    }
-
-    // ---------------------------------------------------------------------------------------------
     // The chrome.
     // ---------------------------------------------------------------------------------------------
 
     private void DrawHeader(
         UiPainter painter,
         LayoutContext context,
-        in Chrome chrome,
+        in TacticalComputerChrome chrome,
         UiFont body,
         MissionObjectiveRuntime runtime,
         int contacts,
@@ -757,7 +535,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         return left;
     }
 
-    private void DrawRail(UiPainter painter, LayoutContext context, in Chrome chrome, UiFont body, float lift)
+    private void DrawRail(UiPainter painter, LayoutContext context, in TacticalComputerChrome chrome, UiFont body, float lift)
     {
         UiFont label = _label ?? body;
         UiRect card = chrome.Rail with { X = chrome.Rail.X - lift };
@@ -803,7 +581,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     private void DrawStatusBlock(
         UiPainter painter,
         LayoutContext context,
-        in Chrome chrome,
+        in TacticalComputerChrome chrome,
         UiFont body,
         Vector3d player,
         Viewport map,
@@ -849,7 +627,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     private void DrawFooter(
         UiPainter painter,
         LayoutContext context,
-        in Chrome chrome,
+        in TacticalComputerChrome chrome,
         UiFont body,
         Viewport map,
         float fieldOfView,
@@ -869,49 +647,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         x = DrawKeyCap(painter, context, label, "WHEEL", "ZOOM", x, mid);
         DrawKeyCap(painter, context, label, "SPACE", "RECENTRE", x, mid);
 
-        DrawScaleBar(painter, context, label, bar, map, fieldOfView);
-    }
-
-    /// <summary>Draws the bar that says how far across the map a given distance is.</summary>
-    /// <remarks>
-    /// A ratio tells the player how far in they are; a bar tells them how far away something is, which is
-    /// the question a map is actually asked. Its length is chosen from the 1-2-5 sequence so the number
-    /// under it is always round, and the bar is whatever width that number turns out to be rather than a
-    /// fixed width with an awkward number under it.
-    /// </remarks>
-    private static void DrawScaleBar(
-        UiPainter painter,
-        LayoutContext context,
-        UiFont label,
-        UiRect bar,
-        Viewport map,
-        float fieldOfView)
-    {
-        double halfHeightMetres = AltitudeMetres * Math.Tan(fieldOfView * 0.5);
-        double metresPerPixel = 2.0 * halfHeightMetres / Math.Max(1, map.Height);
-        double metres = NiceStep(metresPerPixel * context.Px(170f));
-        float width = (float)(metres / Math.Max(metresPerPixel, 1e-9));
-        if (!float.IsFinite(width) || width <= 0f)
-        {
-            return;
-        }
-
-        float right = bar.Right - context.Px(28f);
-        float left = right - width;
-        float mid = bar.Y + (bar.Height * 0.5f);
-        float weight = MathF.Max(1f, context.Px(1.5f));
-        float tick = context.Px(6f);
-
-        painter.FillRect(new UiRect(left, mid + context.Px(3f), width, weight), Signal.WithAlpha(200));
-        painter.FillRect(new UiRect(left, mid + context.Px(3f) - tick, weight, tick + weight), Signal.WithAlpha(200));
-        painter.FillRect(new UiRect(right - weight, mid + context.Px(3f) - tick, weight, tick + weight), Signal.WithAlpha(200));
-
-        string text = metres >= 1000.0 ? $"{metres / 1000.0:0.#} KM" : $"{metres:0} M";
-        float size = context.Px(12f);
-        float tracking = context.Px(1.6f);
-        UiVectors.DrawTracked(painter, label, text,
-            new UiVec2(right - UiVectors.MeasureTracked(label, text, size, tracking), mid - context.Px(14f)),
-            size, TextMuted, tracking);
+        TacticalMapOverlay.DrawScaleBar(painter, context, label, bar, map, fieldOfView);
     }
 
     private static float DrawKeyCap(
@@ -959,7 +695,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     private void DrawPagePanel(
         UiPainter painter,
         LayoutContext context,
-        in Chrome chrome,
+        in TacticalComputerChrome chrome,
         UiFont body,
         MissionObjectiveRuntime runtime,
         float lift)
@@ -1171,7 +907,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Layout, projection and drawing primitives.
+    // Layout, projection and drawing primitives: see TacticalComputerChrome and TacticalMapProjection.
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>Gets the part of the screen the overhead view is rendered into: all of it.</summary>
@@ -1180,109 +916,6 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     /// <returns>The full-screen viewport.</returns>
     public static Viewport MapViewport(int width, int height) =>
         new(0, 0, Math.Max(1, width), Math.Max(1, height));
-
-    private static Chrome Measure(LayoutContext context, bool pageVisible)
-    {
-        float gutter = context.Px(28f);
-        float width = context.Viewport.X;
-        float height = context.Viewport.Y;
-        float headerHeight = context.Px(72f);
-        float footerHeight = context.Px(54f);
-        float railWidth = context.Px(268f);
-        float rowHeight = context.Px(44f);
-        float railPad = context.Px(12f);
-
-        var rail = new UiRect(
-            gutter,
-            headerHeight + gutter,
-            railWidth,
-            (rowHeight * PageNames.Length) + (railPad * 2f));
-
-        var status = new UiRect(gutter, rail.Bottom + context.Px(14f), railWidth, context.Px(178f));
-
-        float pageLeft = rail.Right + gutter;
-        var page = new UiRect(
-            pageLeft,
-            headerHeight + gutter,
-            MathF.Max(context.Px(200f), width - pageLeft - gutter),
-            MathF.Max(context.Px(200f), height - footerHeight - gutter - headerHeight - gutter));
-
-        return new Chrome(
-            new UiRect(0f, 0f, width, headerHeight),
-            new UiRect(0f, height - footerHeight, width, footerHeight),
-            rail,
-            status,
-            page,
-            pageVisible,
-            rowHeight,
-            railPad,
-            gutter);
-    }
-
-    /// <summary>Gets the field of view a zoom position asks for, in radians.</summary>
-    /// <remarks>
-    /// Geometric rather than linear across the range, for the reason
-    /// <see cref="MapComputerCamera"/> interpolates one geometrically: zoom is perceived in ratios, and a
-    /// linear ramp over a range this wide races at one end and crawls at the other.
-    /// </remarks>
-    private static float FieldOfViewFor(float zoom) =>
-        WidestFieldOfView * MathF.Pow(NarrowestFieldOfView / WidestFieldOfView, Math.Clamp(zoom, 0f, 1f));
-
-    private static (double X, double Y) UnitsPerPixel(float fieldOfView, Viewport viewport)
-    {
-        double altitudeUnits = AltitudeMetres * UnitsPerMetre;
-        double halfHeight = altitudeUnits * Math.Tan(fieldOfView * 0.5);
-        double halfWidth = halfHeight * viewport.Width / Math.Max(1.0, viewport.Height);
-        return (2.0 * halfWidth / Math.Max(1, viewport.Width), 2.0 * halfHeight / Math.Max(1, viewport.Height));
-    }
-
-    private static bool TryProject(
-        Vector3d worldUnits,
-        Vector3d centreUnits,
-        float fieldOfView,
-        Viewport viewport,
-        out float x,
-        out float y)
-    {
-        (double unitsPerPixelX, double unitsPerPixelY) = UnitsPerPixel(fieldOfView, viewport);
-        x = viewport.X + (viewport.Width * 0.5f) + (float)((worldUnits.X - centreUnits.X) / unitsPerPixelX);
-        y = viewport.Y + (viewport.Height * 0.5f) - (float)((worldUnits.Y - centreUnits.Y) / unitsPerPixelY);
-        return x >= viewport.X && x <= viewport.X + viewport.Width
-            && y >= viewport.Y && y <= viewport.Y + viewport.Height;
-    }
-
-    private static Vector3d Unproject(
-        float x,
-        float y,
-        Vector3d centreUnits,
-        float fieldOfView,
-        Viewport viewport)
-    {
-        (double unitsPerPixelX, double unitsPerPixelY) = UnitsPerPixel(fieldOfView, viewport);
-        return new Vector3d(
-            centreUnits.X + ((x - viewport.X - (viewport.Width * 0.5)) * unitsPerPixelX),
-            centreUnits.Y - ((y - viewport.Y - (viewport.Height * 0.5)) * unitsPerPixelY),
-            centreUnits.Z);
-    }
-
-    /// <summary>Rounds a span up to the next 1, 2 or 5 times a power of ten.</summary>
-    /// <param name="value">The span to round.</param>
-    /// <returns>The nearest round number at or above it.</returns>
-    private static double NiceStep(double value)
-    {
-        if (!double.IsFinite(value) || value <= 0.0)
-        {
-            return 1.0;
-        }
-
-        double magnitude = Math.Pow(10.0, Math.Floor(Math.Log10(value)));
-        double normalised = value / magnitude;
-        double step = normalised <= 1.0 ? 1.0 : normalised <= 2.0 ? 2.0 : normalised <= 5.0 ? 5.0 : 10.0;
-        return step * magnitude;
-    }
-
-    private static bool Contains(UiRect rect, float x, float y) =>
-        x >= rect.X && x <= rect.Right && y >= rect.Y && y <= rect.Bottom;
 
     private string ComputerString(string key)
     {
@@ -1307,16 +940,16 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     // rather than about the level — where they are, and what is selected — over warm greys and dark glass.
     // ---------------------------------------------------------------------------------------------
 
-    private static Bgra32 Signal => UiPalette.Accent;
-    private static Bgra32 SignalDim => UiPalette.AccentAt(0.6f);
-    private static Bgra32 Accent => UiPalette.AccentLight;
-    private static Bgra32 Hostile => UiPalette.Danger;
-    private static Bgra32 Complete => UiPalette.Success;
-    private static Bgra32 Text => UiPalette.Text;
-    private static Bgra32 TextMuted => UiPalette.TextMuted;
-    private static Bgra32 Panel => UiPalette.GlassDense;
-    private static Bgra32 PanelSolid => UiPalette.GlassMenu;
-    private static Bgra32 Border => UiPalette.Hairline;
+    internal static Bgra32 Signal => UiPalette.Accent;
+    internal static Bgra32 SignalDim => UiPalette.AccentAt(0.6f);
+    internal static Bgra32 Accent => UiPalette.AccentLight;
+    internal static Bgra32 Hostile => UiPalette.Danger;
+    internal static Bgra32 Complete => UiPalette.Success;
+    internal static Bgra32 Text => UiPalette.Text;
+    internal static Bgra32 TextMuted => UiPalette.TextMuted;
+    internal static Bgra32 Panel => UiPalette.GlassDense;
+    internal static Bgra32 PanelSolid => UiPalette.GlassMenu;
+    internal static Bgra32 Border => UiPalette.Hairline;
 
     private bool IsSelectable(Page page) => page != Page.Map || MapAvailable;
 
@@ -1325,42 +958,5 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         Map,
         Objectives,
         Log,
-    }
-
-    /// <summary>Where every piece of the interface is this frame, in back-buffer pixels.</summary>
-    /// <remarks>
-    /// Measured once and passed to both the hit tests and the draws. Two copies of a layout is the oldest
-    /// way there is to get a button that highlights somewhere other than where it can be clicked.
-    /// </remarks>
-    private readonly record struct Chrome(
-        UiRect Header,
-        UiRect Footer,
-        UiRect Rail,
-        UiRect Status,
-        UiRect Page,
-        bool PageVisible,
-        float RowHeight,
-        float RailPad,
-        float Gutter)
-    {
-        /// <summary>Gets the row a page's rail entry occupies.</summary>
-        /// <param name="index">The page's index.</param>
-        /// <returns>The row rectangle.</returns>
-        public UiRect PageRow(int index) => new(
-            Rail.X + RailPad,
-            Rail.Y + RailPad + (RowHeight * index),
-            Rail.Width - (RailPad * 2f),
-            RowHeight);
-
-        /// <summary>Determines whether a point is over the interface rather than over the bare map.</summary>
-        /// <param name="x">The horizontal position in pixels.</param>
-        /// <param name="y">The vertical position in pixels.</param>
-        /// <returns><see langword="true"/> when a click there belongs to a control.</returns>
-        public bool OverInterface(float x, float y) =>
-            Contains(Header, x, y)
-            || Contains(Footer, x, y)
-            || Contains(Rail, x, y)
-            || Contains(Status, x, y)
-            || (PageVisible && Contains(Page, x, y));
     }
 }

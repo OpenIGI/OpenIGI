@@ -165,9 +165,9 @@ internal sealed class BakedLighting(
                 // Resolving each surface's albedo reads the resource registry, so the texel maps, textured
                 // triangles and their BVH are built here on the main thread; the worker then does only the
                 // tracing, which touches immutable data and the cast.
-                IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(scene);
-                LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(scene, lmTargets, resources);
-                LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
+                IReadOnlyList<LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(scene);
+                LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(scene, lmTargets, resources);
+                LightmapBvh lmBvh = LightmapBvh.Build(lmTris);
 
                 _lightmapBake?.Cancel();
                 _lightmapBake = LightmapBake.Start(

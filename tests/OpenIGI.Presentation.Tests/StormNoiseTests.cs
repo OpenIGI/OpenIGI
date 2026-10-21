@@ -17,7 +17,7 @@ public sealed class StormNoiseTests
         for (int i = 0; i < 2000; i++)
         {
             float t = i * 0.137f;
-            float value = StormRenderer.SmoothNoise(t, t * 0.31f, -t * 0.77f);
+            float value = PrecipitationSimulation.SmoothNoise(t, t * 0.31f, -t * 0.77f);
             Assert.InRange(value, 0f, 1f);
         }
     }
@@ -32,8 +32,8 @@ public sealed class StormNoiseTests
         for (int i = 0; i < 500; i++)
         {
             float t = i * 0.911f;
-            float here = StormRenderer.SmoothNoise(t, t * 0.5f, t * 0.25f);
-            float there = StormRenderer.SmoothNoise(t + 0.01f, t * 0.5f, t * 0.25f);
+            float here = PrecipitationSimulation.SmoothNoise(t, t * 0.5f, t * 0.25f);
+            float there = PrecipitationSimulation.SmoothNoise(t + 0.01f, t * 0.5f, t * 0.25f);
             worst = MathF.Max(worst, MathF.Abs(here - there));
         }
 
@@ -47,7 +47,7 @@ public sealed class StormNoiseTests
         float high = 0f;
         for (int i = 0; i < 500; i++)
         {
-            float value = StormRenderer.SmoothNoise(i * 1.7f, i * 0.3f, i * 2.1f);
+            float value = PrecipitationSimulation.SmoothNoise(i * 1.7f, i * 0.3f, i * 2.1f);
             low = MathF.Min(low, value);
             high = MathF.Max(high, value);
         }
@@ -61,7 +61,7 @@ public sealed class StormNoiseTests
         // It is the hash, interpolated — so at whole coordinates the two must be the same number.
         for (int i = -3; i <= 3; i++)
         {
-            Assert.Equal(StormRenderer.Noise(i, i * 2, i * 3), StormRenderer.SmoothNoise(i, i * 2, i * 3), 4);
+            Assert.Equal(PrecipitationSimulation.Noise(i, i * 2, i * 3), PrecipitationSimulation.SmoothNoise(i, i * 2, i * 3), 4);
         }
     }
 }

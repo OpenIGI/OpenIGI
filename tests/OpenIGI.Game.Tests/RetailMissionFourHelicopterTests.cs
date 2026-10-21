@@ -855,8 +855,13 @@ public sealed class RetailMissionFourHelicopterTests
     [Fact]
     public void ParkedHeliRestDoesNotHardCodeTaskEightHundred()
     {
-        string source = File.ReadAllText(
-            Path.Combine(RepoSrc(), "Game", "OpenIGI.Game", "World", "CutsceneRuntime.cs"));
+        // The runtime and the collaborators it is built from: every Cutscene*.cs and the retail helicopter physics.
+        string world = Path.Combine(RepoSrc(), "Game", "OpenIGI.Game", "World");
+        string source = string.Concat(
+            Directory.GetFiles(world, "Cutscene*.cs")
+                .Append(Path.Combine(world, "RetailHelicopterPhysics.cs"))
+                .Order(StringComparer.Ordinal)
+                .Select(File.ReadAllText));
         Assert.False(
             System.Text.RegularExpressions.Regex.IsMatch(source, @"\b800\b"),
             "generic CutsceneRuntime must not contain Mission 4's task-800 identifier");

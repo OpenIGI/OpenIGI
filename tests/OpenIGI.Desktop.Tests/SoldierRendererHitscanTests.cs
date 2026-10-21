@@ -86,7 +86,7 @@ public sealed class SoldierRendererHitscanTests
         using Scenario scenario = CreateScenario(prepareContainers: true);
         SoldierView anya = Assert.Single(RendererSoldiers(scenario.Renderer),
             view => view.Soldier.Model == "015_01_1");
-        SoldierRenderer.Member member = MemberFor(scenario.Renderer, anya);
+        SoldierMember member = MemberFor(scenario.Renderer, anya);
         Assert.True(member.Agent.IsCutsceneActor);
         Assert.Equal(6, anya.Soldier.BoneHierarchy);
         Assert.Equal(5, anya.StandAnimation);
@@ -156,7 +156,7 @@ public sealed class SoldierRendererHitscanTests
             scenario.Renderer,
             view => view.Soldier.Team != scenario.Renderer.Simulation.PlayerTeam
                 && !CinematicActor.IsStaged(view.Soldier));
-        SoldierRenderer.Member targetMember = MemberFor(scenario.Renderer, ray.View);
+        SoldierMember targetMember = MemberFor(scenario.Renderer, ray.View);
         MeshHandle bodyMesh = targetMember.Mesh;
         KeepOnlyTarget(scenario.Renderer, targetMember);
 
@@ -231,7 +231,7 @@ public sealed class SoldierRendererHitscanTests
             ConditionalContainerGate.IsTaskActive(target.Soldier),
             DescribeAncestry(target.Soldier));
 
-        SoldierRenderer.Member targetMember = MemberFor(scenario.Renderer, target);
+        SoldierMember targetMember = MemberFor(scenario.Renderer, target);
         Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(targetMember.Agent.WeaponType).ScriptId);
         Assert.NotNull(targetMember.Weapon);
 
@@ -304,7 +304,7 @@ public sealed class SoldierRendererHitscanTests
             ConditionalContainerGate.IsTaskActive(firstLife.Soldier),
             DescribeAncestry(firstLife.Soldier));
 
-        SoldierRenderer.Member firstMember = MemberFor(scenario.Renderer, firstLife);
+        SoldierMember firstMember = MemberFor(scenario.Renderer, firstLife);
         Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(firstMember.Agent.WeaponType).ScriptId);
         Assert.NotNull(firstMember.Weapon);
 
@@ -372,9 +372,9 @@ public sealed class SoldierRendererHitscanTests
         Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == taskId);
         Assert.Equal(soldiersAlive, scenario.Renderer.Count);
 
-        SoldierRenderer.Member replacementMember = MemberFor(scenario.Renderer, replacement);
+        SoldierMember replacementMember = MemberFor(scenario.Renderer, replacement);
         Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(replacementMember.Agent.WeaponType).ScriptId);
-        SoldierRenderer.HeldWeapon? replacementWeaponValue = replacementMember.Weapon;
+        SoldierHeldWeapon? replacementWeaponValue = replacementMember.Weapon;
         Assert.NotNull(replacementWeaponValue);
         MeshHandle replacementWeaponMesh = replacementWeaponValue.Mesh;
 
@@ -621,7 +621,7 @@ public sealed class SoldierRendererHitscanTests
 
     private static void AssertBodyRemainsDrawableNearSpawn(
         Scenario scenario,
-        SoldierRenderer.Member targetMember,
+        SoldierMember targetMember,
         MeshHandle bodyMesh,
         Vector3d spawnMetres,
         int tick)
@@ -667,7 +667,7 @@ public sealed class SoldierRendererHitscanTests
         using Scenario scenario = CreateScenario();
         int groups = 0;
         int prepared = 0;
-        foreach (SoldierRenderer.Group group in scenario.Renderer.GroupsForTesting)
+        foreach (SoldierGroup group in scenario.Renderer.GroupsForTesting)
         {
             groups++;
             bool wasPrepared = group.Body.CollisionMeshPrepared;
@@ -1069,14 +1069,14 @@ public sealed class SoldierRendererHitscanTests
 
     private static MeshBackedSoldier FirstMeshBackedSoldier(SoldierRenderer renderer)
     {
-        foreach (SoldierRenderer.Group group in renderer.GroupsForTesting)
+        foreach (SoldierGroup group in renderer.GroupsForTesting)
         {
             if (group.Body.CollisionMesh is not MefCollisionMesh mesh)
             {
                 continue;
             }
 
-            foreach (SoldierRenderer.Member member in group.Soldiers)
+            foreach (SoldierMember member in group.Soldiers)
             {
                 SoldierView view = member.Agent.View;
                 return new MeshBackedSoldier(view, mesh, member);
@@ -1086,11 +1086,11 @@ public sealed class SoldierRendererHitscanTests
         throw new Xunit.Sdk.XunitException("Mission four did not provide a loaded soldier collision mesh.");
     }
 
-    private static void KeepOnlyTarget(SoldierRenderer renderer, SoldierRenderer.Member target)
+    private static void KeepOnlyTarget(SoldierRenderer renderer, SoldierMember target)
     {
-        foreach (SoldierRenderer.Group group in renderer.GroupsForTesting)
+        foreach (SoldierGroup group in renderer.GroupsForTesting)
         {
-            List<SoldierRenderer.Member> members = group.Soldiers;
+            List<SoldierMember> members = group.Soldiers;
             for (int i = members.Count - 1; i >= 0; i--)
             {
                 if (!ReferenceEquals(members[i], target))
@@ -1101,11 +1101,11 @@ public sealed class SoldierRendererHitscanTests
         }
     }
 
-    private static SoldierRenderer.Member MemberFor(SoldierRenderer renderer, SoldierView target)
+    private static SoldierMember MemberFor(SoldierRenderer renderer, SoldierView target)
     {
-        foreach (SoldierRenderer.Group group in renderer.GroupsForTesting)
+        foreach (SoldierGroup group in renderer.GroupsForTesting)
         {
-            foreach (SoldierRenderer.Member member in group.Soldiers)
+            foreach (SoldierMember member in group.Soldiers)
             {
                 if (ReferenceEquals(member.Agent.View, target))
                 {
@@ -1117,7 +1117,7 @@ public sealed class SoldierRendererHitscanTests
         throw new Xunit.Sdk.XunitException($"No renderer member owns soldier '{target.Soldier.Name}'.");
     }
 
-    private static void MovePresentationAwayFromSimulation(SoldierRenderer renderer, SoldierRenderer.Member member, bool smooth)
+    private static void MovePresentationAwayFromSimulation(SoldierRenderer renderer, SoldierMember member, bool smooth)
     {
         Vector3d simulatedRoot = member.TickWhere;
         member.PrevTickWhere = new Vector3d(
@@ -1136,14 +1136,14 @@ public sealed class SoldierRendererHitscanTests
 
     private static IEnumerable<(SoldierView View, MefCollisionMesh Mesh)> MeshBackedSoldiers(SoldierRenderer renderer)
     {
-        foreach (SoldierRenderer.Group group in renderer.GroupsForTesting)
+        foreach (SoldierGroup group in renderer.GroupsForTesting)
         {
             if (group.Body.CollisionMesh is not MefCollisionMesh mesh)
             {
                 continue;
             }
 
-            foreach (SoldierRenderer.Member member in group.Soldiers)
+            foreach (SoldierMember member in group.Soldiers)
             {
                 SoldierView view = member.Agent.View;
                 yield return (view, mesh);
@@ -1229,7 +1229,7 @@ public sealed class SoldierRendererHitscanTests
         Vector3f Facing,
         Vector3d BodySphereCentre);
 
-    private readonly record struct MeshBackedSoldier(SoldierView View, MefCollisionMesh Mesh, SoldierRenderer.Member Member);
+    private readonly record struct MeshBackedSoldier(SoldierView View, MefCollisionMesh Mesh, SoldierMember Member);
 
     private readonly record struct BlendedOnlyRay(
         Vector3d Origin,

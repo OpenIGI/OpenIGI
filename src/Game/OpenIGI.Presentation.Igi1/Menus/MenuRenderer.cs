@@ -27,8 +27,6 @@ namespace OpenIGI.Presentation.Igi1.Menus;
 /// </remarks>
 public sealed class MenuRenderer : IDisposable
 {
-    private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, BitmapTextRenderer?> _fonts = new(StringComparer.OrdinalIgnoreCase);
     private int _scale = UiScale.Native;
 
     /// <summary>Gets or sets the magnification asked for; <see cref="UiScale.Automatic"/> derives one.</summary>
@@ -37,8 +35,9 @@ public sealed class MenuRenderer : IDisposable
     /// <summary>Gets the magnification the last draw used.</summary>
     public int EffectiveScale => _scale;
 
-    private readonly IGraphicsDevice _device;
-    private readonly List<IresArchive> _archives = [];
+    // The menu's archive, then the extra archives, searched in that order. Task parameters name a bare
+    // file, so a sprite is matched by its stem; a sprite that will not decode throws, as it always has.
+    private readonly RetailUiResources _resources;
     private readonly MenuStringTable _strings;
 
     /// <summary>Initializes a new instance of the <see cref="MenuRenderer"/> class.</summary>
@@ -64,15 +63,15 @@ public sealed class MenuRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(strings);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourcePath);
 
-        _device = device;
         _strings = strings;
-        _archives.Add(IresArchive.Read(fileSystem.ReadAllBytes(resourcePath)));
+        _resources = new RetailUiResources(device, new RetailUiResourceOptions { MatchStem = true });
+        _resources.AddArchive(IresArchive.Read(fileSystem.ReadAllBytes(resourcePath)));
 
         foreach (string extra in extraArchives ?? [])
         {
             if (fileSystem.Exists(extra))
             {
-                _archives.Add(IresArchive.Read(fileSystem.ReadAllBytes(extra)));
+                _resources.AddArchive(IresArchive.Read(fileSystem.ReadAllBytes(extra)));
             }
         }
     }
@@ -104,7 +103,7 @@ public sealed class MenuRenderer : IDisposable
                 BlendMode.Opaque);
         }
 
-        DrawBackgroundFx(batch, (screen.Manager as MenuManagerTask)?.BackgroundFx, screenWidth, screenHeight);
+        MenuBackgroundFx.Draw(batch, (screen.Manager as MenuManagerTask)?.BackgroundFx, screenWidth, screenHeight, _scale);
         DrawLogo(batch, screenWidth, screenHeight);
         DrawScreenPanel(batch, screen, screenWidth, screenHeight);
         DrawSubtree(batch, screen, screenWidth, screenHeight);
@@ -147,13 +146,7 @@ public sealed class MenuRenderer : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        foreach (SpriteResource? sprite in _sprites.Values)
-        {
-            sprite?.Dispose();
-        }
-
-        _sprites.Clear();
-        _fonts.Clear();
+        _resources.Dispose();
     }
 
     /// <summary>Resolves and measures a screen's or a popup's labels so the line-up has sizes to work with.</summary>
@@ -536,157 +529,6 @@ public sealed class MenuRenderer : IDisposable
         Draw(batch, font, label, x, y, screenWidth, screenHeight);
     }
 
-    /// <summary>Draws the turning green overlay.</summary>
-    /// <remarks>
-    /// <c>BackgroundFX_Render</c> (<c>0x419820</c>) draws the whole effect <b>twice</b>, at the
-    /// current frame count and at one past it. Two faint passes a frame apart are what give the lines
-    /// their doubled edge; one pass at double the alpha does not look the same.
-    /// </remarks>
-    private void DrawBackgroundFx(SpriteBatch batch, BackgroundFxTask? fx, int screenWidth, int screenHeight)
-    {
-        if (fx is null)
-        {
-            return;
-        }
-
-        DrawBackgroundFxPass(batch, fx.Time, screenWidth, screenHeight);
-        DrawBackgroundFxPass(batch, fx.Time + 1f, screenWidth, screenHeight);
-    }
-
-    private void DrawBackgroundFxPass(SpriteBatch batch, float time, int screenWidth, int screenHeight)
-    {
-        Bgra32 lineColour = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(BackgroundFxTask.LineAlpha));
-        Bgra32 circleColour = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(BackgroundFxTask.CircleAlpha));
-
-        foreach (BackgroundFxLayer layer in BackgroundFxTask.Layers)
-        {
-            BackgroundFxTransform m = BackgroundFxTask.GetTransform(layer, time);
-
-            if (layer.Grid is { } grid)
-            {
-                DrawFxGrid(batch, grid, m, lineColour, screenWidth, screenHeight);
-            }
-
-            foreach (BackgroundFxLine line in layer.Lines)
-            {
-                (float ax, float ay) = m.Apply(line.X0, line.Y0);
-                (float bx, float by) = m.Apply(line.X1, line.Y1);
-                DrawFxSegment(batch, ax, ay, bx, by, lineColour, screenWidth, screenHeight);
-            }
-
-            foreach (BackgroundFxCircle circle in layer.Circles)
-            {
-                DrawFxCircle(batch, circle, m, circleColour, screenWidth, screenHeight);
-            }
-        }
-    }
-
-    /// <summary>Draws a circle the way the original does: a closed loop of straight segments.</summary>
-    /// <remarks>
-    /// The count is <c>(int)(radius * pi / 10)</c> capped at forty, so a small circle is visibly a
-    /// polygon and a large one is not. Reproduced rather than smoothed.
-    /// </remarks>
-    private void DrawFxCircle(
-        SpriteBatch batch,
-        BackgroundFxCircle circle,
-        in BackgroundFxTransform m,
-        Bgra32 colour,
-        int screenWidth,
-        int screenHeight)
-    {
-        (float cx, float cy) = m.Apply(circle.X, circle.Y);
-        float radius = circle.Radius * m.Scale;
-
-        int segments = Math.Min(BackgroundFxTask.MaxCircleSegments, (int)(radius * BackgroundFxTask.CircleSegmentFactor));
-        if (segments <= 0)
-        {
-            return;
-        }
-
-        float step = MathF.Tau / segments;
-        for (int i = 0; i < segments; i++)
-        {
-            float a = i * step;
-            float b = (i + 1) * step;
-            DrawFxSegment(
-                batch,
-                cx + (MathF.Cos(a) * radius),
-                cy + (MathF.Sin(a) * radius),
-                cx + (MathF.Cos(b) * radius),
-                cy + (MathF.Sin(b) * radius),
-                colour,
-                screenWidth,
-                screenHeight);
-        }
-    }
-
-    private void DrawFxGrid(
-        SpriteBatch batch,
-        in BackgroundFxGrid grid,
-        in BackgroundFxTransform m,
-        Bgra32 colour,
-        int screenWidth,
-        int screenHeight)
-    {
-        // Centred on the origin, stepping five percent of the extent per line, count + 1 lines.
-        float left = grid.OriginX - (grid.Width * 0.5f);
-        float top = grid.OriginY - (grid.Height * 0.5f);
-
-        for (int i = 0; i <= grid.Columns; i++)
-        {
-            float x = left + (grid.Width * BackgroundFxGrid.Step * i);
-            (float ax, float ay) = m.Apply(x, top);
-            (float bx, float by) = m.Apply(x, top + grid.Height);
-            DrawFxSegment(batch, ax, ay, bx, by, colour, screenWidth, screenHeight);
-        }
-
-        for (int i = 0; i <= grid.Rows; i++)
-        {
-            float y = top + (grid.Height * BackgroundFxGrid.Step * i);
-            (float ax, float ay) = m.Apply(left, y);
-            (float bx, float by) = m.Apply(left + grid.Width, y);
-            DrawFxSegment(batch, ax, ay, bx, by, colour, screenWidth, screenHeight);
-        }
-    }
-
-    /// <summary>Draws one line of the overlay as a thin quad.</summary>
-    /// <remarks>
-    /// The original submits a two-vertex line primitive. A one-pixel quad along the same span is as
-    /// close as this batch gets without a line pipeline, and at these alphas the difference does not
-    /// show.
-    /// </remarks>
-    private void DrawFxSegment(
-        SpriteBatch batch,
-        float ax,
-        float ay,
-        float bx,
-        float by,
-        Bgra32 colour,
-        int screenWidth,
-        int screenHeight)
-    {
-        (int x0, int y0) = MenuLayout.ToScreen((int)ax, (int)ay, screenWidth, screenHeight, _scale);
-        (int x1, int y1) = MenuLayout.ToScreen((int)bx, (int)by, screenWidth, screenHeight, _scale);
-
-        float dx = x1 - x0;
-        float dy = y1 - y0;
-        float length = MathF.Sqrt((dx * dx) + (dy * dy));
-        if (length < 1f)
-        {
-            return;
-        }
-
-        float nx = -dy / length * 0.5f;
-        float ny = dx / length * 0.5f;
-
-        batch.DrawQuad(
-            TextureHandle.None,
-            new Vertex2D(x0 + nx, y0 + ny, 0f, 0f, colour),
-            new Vertex2D(x1 + nx, y1 + ny, 1f, 0f, colour),
-            new Vertex2D(x1 - nx, y1 - ny, 1f, 1f, colour),
-            new Vertex2D(x0 - nx, y0 - ny, 0f, 1f, colour));
-    }
-
     /// <summary>Draws the green panel a screen frames its contents with.</summary>
     /// <remarks>
     /// <para>
@@ -740,7 +582,8 @@ public sealed class MenuRenderer : IDisposable
             edge);
     }
 
-    private static byte Alpha(float value) => (byte)Math.Clamp(value * byte.MaxValue, 0f, byte.MaxValue);
+    /// <summary>Converts a 0-to-1 alpha to a byte, clamped.</summary>
+    internal static byte Alpha(float value) => (byte)Math.Clamp(value * byte.MaxValue, 0f, byte.MaxValue);
 
     /// <summary>Draws the logo every screen carries above its contents.</summary>
     /// <remarks>
@@ -1007,64 +850,12 @@ public sealed class MenuRenderer : IDisposable
     private (string Label, BitmapTextRenderer? Font) Resolve(string textResource, string fontResource) =>
         (_strings.Get(textResource), TryGetFont(fontResource));
 
-    private BitmapTextRenderer? TryGetFont(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        if (_fonts.TryGetValue(name, out BitmapTextRenderer? cached))
-        {
-            return cached;
-        }
-
-        SpriteResource? sprite = TryGetSprite(name);
-        BitmapTextRenderer? font = sprite is { IsFont: true } ? new BitmapTextRenderer(sprite) : null;
-        _fonts[name] = font;
-        return font;
-    }
+    private BitmapTextRenderer? TryGetFont(string name) => _resources.Font(name);
 
     /// <summary>Loads a sprite named by a task parameter, caching hits and misses alike.</summary>
     /// <remarks>
     /// Parameters name a bare file, so the archive is searched by stem. A name that resolves to
     /// nothing is not an error: the original tolerates an unset parameter and draws nothing.
     /// </remarks>
-    private SpriteResource? TryGetSprite(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        if (_sprites.TryGetValue(name, out SpriteResource? cached))
-        {
-            return cached;
-        }
-
-        IresEntry? entry = null;
-        foreach (IresArchive archive in _archives)
-        {
-            entry = archive.Entries.FirstOrDefault(
-                e => e.Kind == IresEntryKind.Body
-                    && Path.GetFileNameWithoutExtension(e.Name).Equals(
-                        Path.GetFileNameWithoutExtension(name),
-                        StringComparison.OrdinalIgnoreCase));
-
-            if (entry is not null)
-            {
-                break;
-            }
-        }
-
-        SpriteResource? resource = null;
-        if (entry is not null)
-        {
-            SpriteAsset asset = SpriteLoader.Load(entry.Data, entry.Name);
-            resource = SpriteResource.Upload(_device, asset, TextureFilter.Point);
-        }
-
-        _sprites[name] = resource;
-        return resource;
-    }
+    private SpriteResource? TryGetSprite(string name) => _resources.Sprite(name);
 }

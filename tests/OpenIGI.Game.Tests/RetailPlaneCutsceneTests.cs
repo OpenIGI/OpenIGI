@@ -56,7 +56,7 @@ public sealed class RetailPlaneCutsceneTests
 
         // Force every AnimTask to run so the plane programmes publish deterministically.
         runtime.RunEveryAnimationForTesting();
-        IReadOnlyList<CutsceneRuntime.AnimationState> animations = runtime.AnimationsForTesting;
+        IReadOnlyList<CutsceneAnimationState> animations = runtime.AnimationsForTesting;
 
         // Map task ids to type names so the plane-targeted AnimTasks are identifiable.
         Dictionary<int, string> typeNames = new();
@@ -68,7 +68,7 @@ public sealed class RetailPlaneCutsceneTests
             }
         }
 
-        IReadOnlyDictionary<int, CutsceneRuntime.TransformState> transforms = runtime.TransformsForTesting;
+        IReadOnlyDictionary<int, CutsceneTransformState> transforms = runtime.TransformsForTesting;
 
         // Pass 1: right after construction (before any Tick), every plane must sit exactly at its
         // authored pose with zeroed motion and control. Retail's tick-zero reset restores the body
@@ -77,7 +77,7 @@ public sealed class RetailPlaneCutsceneTests
         // dispatches.
         int planesChecked = 0;
         HashSet<int> seenPlanes = new();
-        foreach (CutsceneRuntime.AnimationState state in animations)
+        foreach (CutsceneAnimationState state in animations)
         {
             int target = state.TargetId;
             if (!typeNames.TryGetValue(target, out string? ownerType) || !ownerType.Contains("Plane"))
@@ -85,7 +85,7 @@ public sealed class RetailPlaneCutsceneTests
                 continue;
             }
 
-            if (!seenPlanes.Add(target) || !transforms.TryGetValue(target, out CutsceneRuntime.TransformState? transform))
+            if (!seenPlanes.Add(target) || !transforms.TryGetValue(target, out CutsceneTransformState? transform))
             {
                 continue;
             }
@@ -96,7 +96,7 @@ public sealed class RetailPlaneCutsceneTests
         }
 
         // Pass 2: per-plane single-apply reference on a held, known control packet.
-        foreach (CutsceneRuntime.AnimationState state in animations)
+        foreach (CutsceneAnimationState state in animations)
         {
             int target = state.TargetId;
             if (!typeNames.TryGetValue(target, out string? ownerType) || !ownerType.Contains("Plane"))
@@ -104,7 +104,7 @@ public sealed class RetailPlaneCutsceneTests
                 continue;
             }
 
-            if (!seenPlanes.Contains(target) || !transforms.TryGetValue(target, out CutsceneRuntime.TransformState? transform))
+            if (!seenPlanes.Contains(target) || !transforms.TryGetValue(target, out CutsceneTransformState? transform))
             {
                 continue;
             }
@@ -159,7 +159,7 @@ public sealed class RetailPlaneCutsceneTests
         Assert.True(planesChecked >= 2, $"mission 3 must drive at least two planes, checked {planesChecked}");
     }
 
-    private static void AssertPlanePose(CutsceneRuntime.TransformState transform, Vector3d authoredPosition, Matrix3f authoredOrientation)
+    private static void AssertPlanePose(CutsceneTransformState transform, Vector3d authoredPosition, Matrix3f authoredOrientation)
     {
         Vector3d position = transform.Position;
         Matrix3f orientation = transform.Orientation;

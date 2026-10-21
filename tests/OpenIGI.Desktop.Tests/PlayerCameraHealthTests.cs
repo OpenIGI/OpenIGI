@@ -52,7 +52,7 @@ public sealed class PlayerCameraHealthTests
         camera.Tick(input, terrain: null);
         input.BeginFrame();
         input.Mouse.SetButton(MouseButton.Left, down: true);
-        Assert.True(PlayerCamera.SampleFrame(input, camera.InputProfile).IsSet(PlayerInputSlot.Fire));
+        Assert.True(PlayerInputSampler.SampleFrame(input, camera.InputProfile).IsSet(PlayerInputSlot.Fire));
         camera.Tick(input, terrain: null);
 
         Assert.Equal(HumanWeaponState.Medipack, camera.Weapons.State);

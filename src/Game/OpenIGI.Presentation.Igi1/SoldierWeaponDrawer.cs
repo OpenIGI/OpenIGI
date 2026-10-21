@@ -1,0 +1,378 @@
+using System.Runtime.InteropServices;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.Ai;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Formats.Textures;
+using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Physics;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
+using OpenIGI.Game;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Rendering;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Igi1.Physics;
+using OpenIGI.Game.Igi1.Weapons;
+
+namespace OpenIGI.Presentation.Igi1;
+
+/// <summary>Draws the soldiers: each body, the weapon in its hand, the stationary and vehicle guns, and their muzzle flames.</summary>
+/// <remarks>
+/// The order is the original's and is kept: the guns on their stands and the vehicles' guns first, then each
+/// soldier's weapon ahead of his body, which carry different previous transforms into the geometry pass.
+/// </remarks>
+/// <param name="groups">The groups the renderer draws; shared, not copied.</param>
+/// <param name="device">The device to draw with.</param>
+/// <param name="armoury">What each soldier and gun is armed with.</param>
+/// <param name="frames">What resolves a soldier drawn before its frame was.</param>
+/// <param name="textures">The textures the models name, loaded on first use.</param>
+/// <param name="logger">Where a stationary gun's first draw is reported.</param>
+internal sealed class SoldierWeaponDrawer(
+    List<SoldierGroup> groups,
+    IGraphicsDevice device,
+    SoldierArmoury armoury,
+    SoldierFrameInterpolator frames,
+    Func<TexTextureCache> textures,
+    IOpenIgiLogger logger)
+{
+    private readonly List<SoldierGroup> _groups = groups;
+    private readonly IGraphicsDevice _device = device;
+    private readonly SoldierArmoury _armoury = armoury;
+    private readonly SoldierFrameInterpolator _frames = frames;
+    private readonly Func<TexTextureCache> _textures = textures;
+    private readonly IOpenIgiLogger _logger = logger;
+
+    /// <summary>Draws every active soldier's body and held weapon, and the stationary and vehicle guns.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The current world projection.</param>
+    public void Draw(in Camera3D camera, in Matrix4f projection)
+    {
+        if (_groups.Count == 0 && _armoury.StationaryWeaponVisuals.Count == 0 && _armoury.VehicleGuns is null)
+        {
+            return;
+        }
+
+        _device.SetProjection(projection);
+        _device.SetCullMode(CullMode.None);
+        _device.SetDepthState(DepthState.TestAndWrite);
+
+        // StationaryGun's holder is a separate authored model. An AI gunner replaces it with the
+        // mounted soldier's hand attachment, but the first-person player has no equivalent world
+        // attachment, so the holder stays visible while the player owns the task.
+        DrawStationaryGuns(camera, projection);
+        DrawVehicleGuns(camera, projection);
+
+        // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
+        // built against the scene camera, which the shadow cascades' light cameras are not.
+
+        foreach (SoldierGroup group in _groups)
+        {
+            foreach (SoldierMember member in group.Soldiers)
+            {
+                if (!ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier))
+                {
+                    continue;
+                }
+
+                // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
+                // vanishing was only ever the port having no death animation to play. Each soldier
+                // carries its own skinned mesh, so a corpse is posed by its own death clip.
+                if (!member.HasFrameState)
+                {
+                    _frames.ResolveFrameState(member, 1f, smooth: false);
+                }
+
+                Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
+
+                // The pose blend applies to the body's animated mesh in every pass — the shadow pass
+                // blends too, or the body would stand a step from its own shadow.
+                _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
+
+                // The gun first, with its OWN previous transform: it is placed by the hand bone, and
+                // handing it the body's previous pose would report it sliding by the distance between
+                // the two.
+                DrawWeapon(member, camera, projection);
+
+                // Matte, and out of the ambient occlusion: see SurfaceMaterial.Body. The occlusion's
+                // right repair is a thickness test in the search itself; until that exists, soldiers
+                // are left out rather than shaded wrongly.
+                _device.SetMaterialOverride(SurfaceMaterial.Body with
+                {
+                    NoHistory = member.NoHistoryThisFrame,
+                });
+
+                DrawSubsets(group, member, modelView);
+
+                _device.SetMaterialOverride(SurfaceMaterial.Default);
+                _device.ClearPoseInterpolation();
+            }
+        }
+    }
+
+    private void DrawStationaryGuns(in Camera3D camera, in Matrix4f projection)
+    {
+        foreach ((AiStationaryGun gun, SoldierHeldWeapon? visual) in _armoury.StationaryWeaponVisuals)
+        {
+            // 0x474190 poses the gun on its stand every tick, whoever is on it (0x474420): an AI gunner holds his own
+            // weapon, which 0x4600C0 keeps on his hand, and works the stand's.
+            if (visual is null)
+            {
+                continue;
+            }
+
+            if (_armoury.FirstDrawOf(gun.TaskId))
+            {
+                _logger.Information(
+                    SoldierRenderer.LogCategory + ".Gunner",
+                    $"static visual task={gun.TaskId} weapon={gun.WeaponId} "
+                    + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) drawn");
+            }
+
+            // 0x474420's pose: on the stand's mount point, turned and elevated by the shown aim. The
+            // gun's barrel is authored on local +Y and the stand's on local -Y; the π inside
+            // GunOrientation is what swings one onto the other.
+            if (visual.Presentation is { } presentation)
+            {
+                presentation.Draw(
+                    new BoneAttachment(gun.GunPosition, gun.GunOrientation),
+                    camera,
+                    projection,
+                    firedThisTick: false,
+                    shotSequence: 0,
+                    WeaponDrawParts.BodyOnly);
+            }
+            else
+            {
+                // No multipart presenter is built for the level's weapons, so the gun is drawn the way a
+                // soldier's is: as its one rigid mesh. Requiring the presenter here is what left every
+                // stand empty.
+                DrawRigidWeapon(visual, gun.GunPosition / WorldScene.UnitsPerMetre, gun.GunOrientation, camera);
+            }
+        }
+    }
+
+    private void DrawVehicleGuns(in Camera3D camera, in Matrix4f projection)
+    {
+        if (_armoury.VehicleGuns is not { } guns)
+        {
+            return;
+        }
+
+        foreach (VehicleGunVisual gun in guns())
+        {
+            if (!_armoury.TryGetVehicleWeapon(gun.WeaponModel, out SoldierHeldWeapon? visual) || visual is null)
+            {
+                continue;
+            }
+
+            if (visual.Presentation is { } presentation)
+            {
+                presentation.Draw(
+                    new BoneAttachment(gun.PositionUnits, gun.Orientation),
+                    camera,
+                    projection,
+                    firedThisTick: false,
+                    shotSequence: 0,
+                    WeaponDrawParts.BodyOnly);
+            }
+            else
+            {
+                DrawRigidWeapon(visual, gun.PositionUnits / WorldScene.UnitsPerMetre, gun.Orientation, camera);
+            }
+        }
+    }
+
+    /// <summary>Draws the muzzle flames of every gun that fired this tick, in the forward pass.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The current world projection.</param>
+    public void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
+    {
+        foreach (SoldierGroup group in _groups)
+        {
+            foreach (SoldierMember member in group.Soldiers)
+            {
+                if (!member.Agent.FiredThisTick
+                    || !member.HasWeaponFrameState
+                    || member.Weapon is not { } weapon
+                    || weapon.Presentation is not { } presentation)
+                {
+                    continue;
+                }
+
+                presentation.Draw(
+                    new BoneAttachment(
+                        member.DrawnWeaponOrigin * WorldScene.UnitsPerMetre,
+                        member.DrawnWeaponRotation),
+                    camera,
+                    projection,
+                    firedThisTick: true,
+                    member.Agent.ShotSequence,
+                    WeaponDrawParts.FlameOnly);
+            }
+        }
+
+        // A gun the player is firing from its stand flames at the same pose DrawStationaryGuns drew.
+        foreach ((AiStationaryGun gun, SoldierHeldWeapon? visual) in _armoury.StationaryWeaponVisuals)
+        {
+            if (!gun.FiredThisTick || visual?.Presentation is not { } gunPresentation)
+            {
+                continue;
+            }
+
+            gunPresentation.Draw(
+                new BoneAttachment(gun.GunPosition, gun.GunOrientation),
+                camera,
+                projection,
+                firedThisTick: true,
+                gun.ShotSequence,
+                WeaponDrawParts.FlameOnly);
+        }
+
+        // A vehicle's gun flames on the ticks it puts a round out, on the weapon object DrawVehicleGuns drew. Only a
+        // weapon model with a gun-flame child has one: a T80's M2HB does, its cannon does not.
+        if (_armoury.VehicleGuns is { } vehicleGuns)
+        {
+            foreach (VehicleGunVisual gun in vehicleGuns())
+            {
+                if (!gun.FiredThisTick
+                    || !_armoury.TryGetVehicleWeapon(gun.WeaponModel, out SoldierHeldWeapon? visual)
+                    || visual?.Presentation is not { } vehiclePresentation)
+                {
+                    continue;
+                }
+
+                vehiclePresentation.Draw(
+                    new BoneAttachment(gun.PositionUnits, gun.Orientation),
+                    camera,
+                    projection,
+                    firedThisTick: true,
+                    gun.ShotSequence,
+                    WeaponDrawParts.FlameOnly);
+            }
+        }
+    }
+
+    /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
+    /// <param name="member">The soldier.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The current world projection.</param>
+    /// <remarks>
+    /// <para>
+    /// The attachment handlers (<c>0x4600C0</c>) do exactly two things: they add the
+    /// object's own position to the bone's, and they <b>copy the bone's rotation whole</b>. There is no
+    /// per-weapon offset anywhere in the engine, so the model's own origin is where the hand grips it.
+    /// </para>
+    /// <para>
+    /// The transform itself — hand bone through the body's heading, interpolated between ticks — was
+    /// resolved by <see cref="SoldierFrameInterpolator.ResolveFrameState"/>. The composed rotation is <c>heading · bone</c>,
+    /// applied as <c>M·v</c>, which is the convention
+    /// <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/> and the bone palette both use —
+    /// <b>not</b> <see cref="Matrix3f.Transform(Vector3f)"/>'s row-vector one, which is its inverse.
+    /// </para>
+    /// <para>
+    /// A gun is rigid, so unlike the body its previous <em>transform</em> reprojects every vertex
+    /// exactly; last frame's is reported as its previous pose on the geometry pass.
+    /// </para>
+    /// </remarks>
+    internal void DrawWeapon(SoldierMember member, in Camera3D camera, in Matrix4f projection)
+    {
+        if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
+        {
+            return;
+        }
+
+        if (weapon.Presentation is { } presentation)
+        {
+            // Body only: the muzzle flame is LIGHT, and drawing it here put it into the deferred
+            // G-buffer to be shaded like scenery -- a one-frame dark square at the muzzle. It is
+            // drawn by DrawMuzzleFlashes instead, in the forward pass, like the player's own.
+            presentation.Draw(
+                new BoneAttachment(
+                    member.DrawnWeaponOrigin * WorldScene.UnitsPerMetre,
+                    member.DrawnWeaponRotation),
+                camera,
+                projection,
+                firedThisTick: false,
+                member.Agent.ShotSequence,
+                WeaponDrawParts.BodyOnly);
+            return;
+        }
+
+        DrawRigidWeapon(weapon, member.DrawnWeaponOrigin, member.DrawnWeaponRotation, camera);
+    }
+
+    // A weapon model drawn whole as one rigid mesh, for when no multipart presenter was built for it.
+    // The origin is in metres, as CreateModelView takes it.
+    private void DrawRigidWeapon(SoldierHeldWeapon weapon, Vector3d originMetres, Matrix3f rotation, in Camera3D camera)
+    {
+        Matrix4f modelView = camera.CreateModelView(originMetres, rotation);
+
+        foreach (MeshSubset subset in weapon.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && weapon.Instance is { } instance
+                && weapon.Pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = _textures().Get(texture);
+            }
+
+            _device.DrawMesh(
+                weapon.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                diffuse,
+                TextureHandle.None,
+                BlendMode.Opaque);
+        }
+
+    }
+
+    // Every textured subset of a body's own mesh, opaque, through the material the caller set.
+    public void DrawSubsets(SoldierGroup group, SoldierMember member, in Matrix4f modelView)
+    {
+        foreach (MeshSubset subset in group.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && group.Instance is { } instance
+                && group.Pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = _textures().Get(texture);
+            }
+
+            _device.DrawMesh(
+                member.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                diffuse,
+                TextureHandle.None,
+                BlendMode.Opaque);
+        }
+    }
+}

@@ -37,73 +37,24 @@ public sealed class WorldRenderer : IWorldPresenter
     /// value here that disagrees with the shaders would preserve the wrong quantity and thin the fence
     /// anyway. Change both together.
     /// </remarks>
-    private const string LogCategory = "World";
-
-    /// <summary>How far a lamp placement may stand from the light it houses, in metres.</summary>
-    /// <remarks>See where it is used; the extractor's clustering is what sets the scale.</remarks>
-    private const double LampBindingRadius = 4.0;
+    internal const string LogCategory = "World";
 
     private readonly IGraphicsDevice _device;
-    private LampSwitchboard? _switchboard;
-    private readonly ResourceRegistry _resources;
-    private readonly AssetFormatProfile _formats;
     private readonly IOpenIgiLogger _logger;
-    private MaterialLibrary _materials = MaterialLibrary.Empty;
-    private readonly Dictionary<string, MeshGeometry?> _geometry = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, MeshHandle> _meshes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly WorldTextureCache _textures;
+    private readonly WorldLightmapPages _lightmapPages;
+    private readonly WorldPlacementTransforms _transforms = new();
+    private readonly WorldSubsetResolver _subsets;
+    private readonly WorldFrameState _frameState;
 
     /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
     private readonly List<MeshDrawRange> _outlineRanges = [];
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _missingTextures = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, TextureHandle[]> _lightmaps = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<string, IresEntry>? _lightmapArchive;
-
-    // Path-traced lightmap pages that override the retail .olm ones, keyed by entry name then page index.
-    // Empty unless a bake has been applied; GetLightmapPages substitutes these pixels for the shipped ones.
-    private readonly Dictionary<string, Dictionary<int, Bgra32[]>> _bakedPages = new(StringComparer.OrdinalIgnoreCase);
-
-    // When true, a lightmapped page the bake did not cover reads black instead of falling back to the
-    // shipped .olm -- so the frame shows only our own lighting, with its gaps visible rather than papered
-    // over by the artists' light.
-    private bool _discardRetailLightmaps;
-
-    // The headroom the baked pages are divided by before their sRGB encode when the bake is exclusive, so a
-    // sunlit or sky-lit surface's radiance keeps its value above one in an eight-bit page instead of clipping;
-    // the shader multiplies back up. One when the shipped LDR pages are in play (they have no such range).
-    private const float HdrHeadroom = 4f;
-    private float _lightmapScale = 1f;
 
     /// <inheritdoc/>
     public ObjectShading Shading { get; set; } = ObjectShading.Default;
 
-    /// <summary>Each placement's mesh and per-subset draw state, resolved once and kept.</summary>
-    /// <remarks>
-    /// Keyed by reference: <see cref="WorldPlacement"/> is a record, and its value equality would hash
-    /// every field of every placement on every lookup.
-    /// </remarks>
-    private readonly Dictionary<WorldPlacement, ResolvedModel?> _resolved = new(ReferenceEqualityComparer.Instance);
-
-    /// <summary>The destroyed-variant models, for placements whose head has been shot out.</summary>
-    private readonly Dictionary<WorldPlacement, ResolvedModel?> _resolvedDestroyed = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<WorldPlacement, ResolvedModel?[]> _resolvedVariants = new(ReferenceEqualityComparer.Instance);
-
-    /// <summary>One frame's per-placement state, shared by every pass drawn from it.</summary>
-    /// <remarks>
-    /// The shadow cascades and the geometry pass each draw the whole scene, and none of what this
-    /// holds — pickup and gate visibility, door and elevator and cutscene transforms — depends on the
-    /// camera. Resolving it once per frame instead of once per pass is what took the door registry's
-    /// linear scan out of the profile's top ten.
-    /// </remarks>
-    private FrameEntry[] _frame = [];
-    private int[] _drawOrder = [];
-
     // The glass pass's own order, rebuilt per frame. See the comment where it is filled.
     private readonly List<int> _glassOrder = [];
-    private WorldScene? _frameScene;
-    private bool _framePrepared;
-    private float _frameAlpha = 1f;
-    private bool _frameSmooth;
     private PlacementPose? _drawPoses;
     private bool _disposed;
 
@@ -117,7 +68,6 @@ public sealed class WorldRenderer : IWorldPresenter
     /// wall drawn later in the same pass could not hide anything tested before it.
     /// </remarks>
     private readonly List<int> _queryQueue = [];
-    private long _frameNumber;
     private readonly OcclusionSettle _occlusionSettle = new(windowed: false);
 
     /// <summary>Initializes a new instance of the <see cref="WorldRenderer"/> class.</summary>
@@ -143,9 +93,11 @@ public sealed class WorldRenderer : IWorldPresenter
         ArgumentNullException.ThrowIfNull(formats);
 
         _device = device;
-        _resources = resources;
-        _formats = formats;
         _logger = logger ?? NullLogger.Instance;
+        _textures = new WorldTextureCache(device, resources, _logger);
+        _lightmapPages = new WorldLightmapPages(device, resources, formats, _logger);
+        _subsets = new WorldSubsetResolver(device, _logger, _transforms, _textures, _lightmapPages);
+        _frameState = new WorldFrameState(_transforms, _subsets, _occlusionSettle);
     }
 
     /// <summary>Gets how many sub-meshes the last <see cref="Draw"/> submitted.</summary>
@@ -165,43 +117,43 @@ public sealed class WorldRenderer : IWorldPresenter
     public int LastOccludedCount { get; private set; }
 
     /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
-    public DoorRegistry? Doors { get; set; }
+    public DoorRegistry? Doors { get => _transforms.Doors; set => _transforms.Doors = value; }
 
     /// <summary>Gets or sets the live elevator transforms applied to lift placements.</summary>
-    public ElevatorRegistry? Elevators { get; set; }
+    public ElevatorRegistry? Elevators { get => _transforms.Elevators; set => _transforms.Elevators = value; }
 
     /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
-    public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
+    public AlarmSpeakerRegistry? AlarmSpeakers { get => _transforms.AlarmSpeakers; set => _transforms.AlarmSpeakers = value; }
 
     /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
-    public DestructibleObjectRegistry? Destructibles { get; set; }
+    public DestructibleObjectRegistry? Destructibles { get => _transforms.Destructibles; set => _transforms.Destructibles = value; }
 
     /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
-    public SecurityCameraRegistry? SecurityCameras { get; set; }
+    public SecurityCameraRegistry? SecurityCameras { get => _transforms.SecurityCameras; set => _transforms.SecurityCameras = value; }
 
     /// <inheritdoc/>
-    public IPlacementSpin? Spins { get; set; }
+    public IPlacementSpin? Spins { get => _transforms.Spins; set => _transforms.Spins = value; }
 
     /// <inheritdoc/>
-    public IPlacementMotion? Motions { get; set; }
+    public IPlacementMotion? Motions { get => _transforms.Motions; set => _transforms.Motions = value; }
 
     /// <inheritdoc/>
-    public IPlacementDestruction? Destruction { get; set; }
+    public IPlacementDestruction? Destruction { get => _transforms.Destruction; set => _transforms.Destruction = value; }
 
     /// <inheritdoc/>
-    public IPlacementVariant? Variants { get; set; }
+    public IPlacementVariant? Variants { get => _transforms.Variants; set => _transforms.Variants = value; }
 
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
-    public CutsceneRuntime? Cutscenes { get; set; }
+    public CutsceneRuntime? Cutscenes { get => _transforms.Cutscenes; set => _transforms.Cutscenes = value; }
 
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
-    public GenericPickupRegistry? GenericPickups { get; set; }
+    public GenericPickupRegistry? GenericPickups { get => _frameState.GenericPickups; set => _frameState.GenericPickups = value; }
 
     /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
-    public WorldInteractionRegistry? Interactions { get; set; }
+    public WorldInteractionRegistry? Interactions { get => _transforms.Interactions; set => _transforms.Interactions = value; }
 
     /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
-    public RotatingObjectRegistry? RotatingObjects { get; set; }
+    public RotatingObjectRegistry? RotatingObjects { get => _transforms.RotatingObjects; set => _transforms.RotatingObjects = value; }
 
     /// <inheritdoc/>
     void IWorldPresenter.Draw(
@@ -240,9 +192,9 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </remarks>
     public void BeginFrame(float tickFraction, bool smooth)
     {
-        _frameAlpha = Math.Clamp(tickFraction, 0f, 1f);
-        _frameSmooth = smooth;
-        _framePrepared = false;
+        _transforms.FrameAlpha = Math.Clamp(tickFraction, 0f, 1f);
+        _transforms.FrameSmooth = smooth;
+        _frameState.Invalidate();
     }
 
     /// <summary>Resolves one placement's mesh, textures and lightmap pages without drawing it.</summary>
@@ -281,27 +233,7 @@ public sealed class WorldRenderer : IWorldPresenter
             return false;
         }
 
-        WorldPlacement placement = DisplayedPlacement(scene.Placements[index]);
-
-        MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
-        if (geometry is null)
-        {
-            return true;
-        }
-
-        GetMesh(placement.BentGeometry is null ? placement.Instance.Name : placement.TaskName, geometry);
-        GetLightmapPages(scene, placement);
-
-        foreach (MeshSubset subset in geometry.Subsets)
-        {
-            if (subset.IndexCount > 0
-                && subset.HasMaterial
-                && placement.Pack.TryGetTextureName(placement.Instance, subset.MaterialSlot, out string texture))
-            {
-                GetTexture(texture);
-            }
-        }
-
+        _subsets.MakeResident(scene, scene.Placements[index]);
         return true;
     }
 
@@ -347,10 +279,9 @@ public sealed class WorldRenderer : IWorldPresenter
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (!_framePrepared || !ReferenceEquals(_frameScene, scene))
-        {
-            PrepareFrame(scene);
-        }
+        _frameState.EnsurePrepared(scene);
+        WorldFrameEntry[] frame = _frameState.Entries;
+        int[] drawOrder = _frameState.DrawOrder;
 
         _device.SetProjection(projection);
         _device.SetDepthState(rotorsOnly || glassOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
@@ -364,13 +295,13 @@ public sealed class WorldRenderer : IWorldPresenter
         // The lightmap headroom for the objects' pages -- one unless an exclusive HDR bake is applied.
         // Reset to one at the end of the pass so the terrain, which keeps its shipped LDR lightmaps, is not
         // scaled by it.
-        _device.SetLightmapScale(_lightmapScale);
+        _device.SetLightmapScale(_lightmapPages.Scale);
 
         // What this pass composites with, read once: the title's lightmap gain and, if it has one, the
         // sun its unlightmapped objects are lit by. Both are applied per sub-mesh below and tracked so
         // the device is told only when something changes.
         ObjectShading shading = Shading;
-        float appliedScale = _lightmapScale;
+        float appliedScale = _lightmapPages.Scale;
         Vector3f appliedSun = Vector3f.Zero;
         bool appliedMotion = false;
 
@@ -407,14 +338,14 @@ public sealed class WorldRenderer : IWorldPresenter
         // or every placement behind the camera would be submitted three times a frame.
         bool tracedOnly = !glassOnly && !rotorsOnly && RenderCVars.TracedWorldRadius.Value > 0f;
 
-        ReadOnlySpan<int> order = _drawOrder;
+        ReadOnlySpan<int> order = drawOrder;
         if (glassOnly)
         {
             _glassOrder.Clear();
-            for (int i = 0; i < _drawOrder.Length; i++)
+            for (int i = 0; i < drawOrder.Length; i++)
             {
-                int candidate = _drawOrder[i];
-                ref FrameEntry glass = ref _frame[candidate];
+                int candidate = drawOrder[i];
+                ref WorldFrameEntry glass = ref frame[candidate];
                 if (!glass.Skip && glass.Model is { HasGlass: true })
                 {
                     _glassOrder.Add(candidate);
@@ -423,15 +354,15 @@ public sealed class WorldRenderer : IWorldPresenter
 
             Vector3d eye = camera.Position;
             _glassOrder.Sort((left, right) =>
-                (_frame[right].Position - eye).LengthSquared.CompareTo(
-                    (_frame[left].Position - eye).LengthSquared));
+                (frame[right].Position - eye).LengthSquared.CompareTo(
+                    (frame[left].Position - eye).LengthSquared));
 
             order = CollectionsMarshal.AsSpan(_glassOrder);
         }
 
         foreach (int index in order)
         {
-            ref FrameEntry entry = ref _frame[index];
+            ref WorldFrameEntry entry = ref frame[index];
             if (entry.Skip || entry.Model is not { } model)
             {
                 continue;
@@ -511,7 +442,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
                     // Hidden placements retest every frame so they reappear the moment a doorway
                     // opens onto them; visible ones only occasionally, staggered to spread out.
-                    if (!visible || ((_frameNumber + model.Query.Id) % VisibleRetestInterval) == 0)
+                    if (!visible || ((_frameState.FrameNumber + model.Query.Id) % VisibleRetestInterval) == 0)
                     {
                         _queryQueue.Add(index);
                     }
@@ -530,7 +461,7 @@ public sealed class WorldRenderer : IWorldPresenter
                 }
             }
 
-            SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, entry.Displayed!);
+            WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, entry.Displayed!);
 
             CullMode cull = cullBackFaces && model.CanCullBackFaces ? CullMode.CounterClockwise : CullMode.None;
             if (cull != appliedCull)
@@ -559,7 +490,7 @@ public sealed class WorldRenderer : IWorldPresenter
                 ? board.LevelOf(model.LampFixture)
                 : 1f;
 
-            foreach (SubsetDraw subset in subsets)
+            foreach (WorldSubsetDraw subset in subsets)
             {
                 // The glass pass takes only the glazing; every other pass takes everything, the glazing
                 // included. That asymmetry is the point: a window's frame belongs in the G-buffer and its
@@ -570,7 +501,7 @@ public sealed class WorldRenderer : IWorldPresenter
                     continue;
                 }
 
-                _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
+                _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material);
 
                 // A bake is multiplied by the title's gain on top of whatever headroom it was encoded
                 // with; a sub-mesh with none is drawn at the headroom alone and lit -- if the title
@@ -579,7 +510,7 @@ public sealed class WorldRenderer : IWorldPresenter
                 // (ObjectShading cites the state blocks); Project I.G.I. answers Default at the seam, and
                 // both of these are then the calls this pass always made.
                 bool baked = subset.Lightmap.IsValid;
-                float scale = baked ? _lightmapScale * shading.LightmapGain : _lightmapScale;
+                float scale = baked ? _lightmapPages.Scale * shading.LightmapGain : _lightmapPages.Scale;
                 if (scale != appliedScale)
                 {
                     _device.SetLightmapScale(scale);
@@ -677,8 +608,8 @@ public sealed class WorldRenderer : IWorldPresenter
         _device.SetDepthState(DepthState.TestAndWrite);
         foreach (int index in _queryQueue)
         {
-            ref FrameEntry entry = ref _frame[index];
-            ResolvedModel model = entry.Model!;
+            ref WorldFrameEntry entry = ref _frameState.Entries[index];
+            ResolvedWorldModel model = entry.Model!;
             _device.IssueOcclusionQuery(
                 model.Query,
                 camera.CreateModelView(entry.Position, entry.Orientation),
@@ -691,202 +622,8 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <summary>What the last prepared frame decided for every placement a task owns, for scenario runs.</summary>
     /// <param name="owner">The task whose placements, its own and its attachments', are described.</param>
     /// <returns>One line per placement: skipped or drawn, the model shown, and where, in engine units.</returns>
-    internal IEnumerable<string> DescribeFrameForTesting(Engine.Tasks.GameTask owner)
-    {
-        if (_frameScene is not { } scene || _frame.Length != scene.Placements.Count)
-        {
-            yield break;
-        }
-
-        for (int i = 0; i < _frame.Length; i++)
-        {
-            WorldPlacement placement = scene.Placements[i];
-            if (!ReferenceEquals(placement.Owner, owner))
-            {
-                continue;
-            }
-
-            FrameEntry entry = _frame[i];
-            Vector3d at = entry.Position * WorldScene.UnitsPerMetre;
-            yield return entry.Skip
-                ? $"{placement.Instance.Name} SKIPPED destroyed={entry.WasDestroyed} model={(entry.Model is null ? "null" : "set")}"
-                : $"{placement.Instance.Name} drawn as {entry.Displayed?.Instance.Name} at ({at.X:0},{at.Y:0},{at.Z:0}) destroyed={entry.WasDestroyed}";
-        }
-    }
-
-    /// <summary>Resolves everything camera-independent about the frame, once, for every pass to share.</summary>
-    private void PrepareFrame(WorldScene scene)
-    {
-        _frameNumber++;
-
-        if (!ReferenceEquals(_frameScene, scene))
-        {
-            _frameScene = scene;
-            _frame = new FrameEntry[scene.Placements.Count];
-            _movers.Clear();
-            _drawOrder = BuildDrawOrder(scene);
-
-            // A new scene means new placement objects; entries keyed by the old ones would never be
-            // asked for again and would keep the old scene's geometry alive — and their occlusion
-            // queries are device objects, so they are handed back rather than dropped.
-            DestroyResolvedQueries();
-            _resolved.Clear();
-            _resolvedDestroyed.Clear();
-            _resolvedVariants.Clear();
-            _occlusionSettle.Forget();
-        }
-
-        for (int i = 0; i < _frame.Length; i++)
-        {
-            ref FrameEntry entry = ref _frame[i];
-            WorldPlacement authored = scene.Placements[i];
-
-            if (GenericPickups?.IsCollected(authored.Owner) == true
-                || !ConditionalContainerGate.IsTaskActive(authored.Owner))
-            {
-                entry.Skip = true;
-                continue;
-            }
-
-            // Blown up with nothing authored to stand in its place: there is no rubble model to
-            // swap to, so the placement leaves the frame entirely rather than drawing intact.
-            if ((Destructibles?.IsDestroyed(authored) == true || Destruction?.IsDestroyed(authored) == true)
-                && authored.DestroyedReplacement is null)
-            {
-                entry.Skip = true;
-                continue;
-            }
-
-            entry.Skip = false;
-            entry.IsRotor = authored.IsRotor;
-
-            bool destroyed = UsesDestroyedReplacement(authored);
-            int variant = VariantOf(authored);
-            ResolvedModel? model;
-            if (variant >= 0)
-            {
-                // A placement wearing one of its variants: each resolved once, the displayed one refreshed as it changes.
-                if (!_resolvedVariants.TryGetValue(authored, out ResolvedModel?[]? resolvedVariants))
-                {
-                    resolvedVariants = new ResolvedModel?[authored.Variants!.Count];
-                    _resolvedVariants[authored] = resolvedVariants;
-                }
-
-                model = resolvedVariants[variant];
-                if (model is null || entry.Displayed is null || variant != entry.Variant || destroyed != entry.WasDestroyed)
-                {
-                    WorldPlacement displayed = DisplayedPlacement(authored);
-                    model ??= resolvedVariants[variant] = ResolveModel(displayed);
-                    entry.Displayed = displayed;
-                }
-            }
-            else
-            {
-                Dictionary<WorldPlacement, ResolvedModel?> cache = destroyed ? _resolvedDestroyed : _resolved;
-                if (!cache.TryGetValue(authored, out model))
-                {
-                    WorldPlacement displayed = DisplayedPlacement(authored);
-                    model = ResolveModel(displayed);
-                    entry.Displayed = displayed;
-                    cache[authored] = model;
-                }
-                else if (entry.Displayed is null || destroyed != entry.WasDestroyed || entry.Variant >= 0)
-                {
-                    entry.Displayed = DisplayedPlacement(authored);
-                }
-            }
-
-            entry.Variant = variant;
-            entry.WasDestroyed = destroyed;
-            entry.Model = model;
-            if (model is null)
-            {
-                entry.Skip = true;
-                continue;
-            }
-
-            // The security camera's swivel changes the orientation but never the model, so the
-            // displayed placement cached above stays right; only the transform is per-frame.
-            if (SecurityCameras?.TryGetHeadOrientation(
-                authored,
-                _frameAlpha,
-                _frameSmooth,
-                out Matrix3f headOrientation) == true)
-            {
-                entry.Displayed = entry.Displayed! with { Orientation = headOrientation };
-            }
-
-            // A fan or a radar head, which turns for ever and never leaves its spot. Same reasoning as
-            // the camera above: the model and the position are settled, only the transform is per-frame.
-            if (Spins?.TryGetOrientation(authored, _frameAlpha, out Matrix3f spun) == true)
-            {
-                entry.Displayed = entry.Displayed! with { Orientation = spun };
-            }
-
-            // A door a title swings: it leaves its spot as well as turning.
-            if (Motions?.TryGetTransform(authored, _frameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
-            {
-                entry.Displayed = entry.Displayed! with { Position = moved, Orientation = movedOrientation };
-            }
-
-            if (TryGetStandOrientation(authored, out Matrix3f stand))
-            {
-                entry.Displayed = entry.Displayed! with { Orientation = stand };
-            }
-
-            ResolveDrawTransform(
-                entry.Displayed!,
-                out entry.Position,
-                out entry.Orientation,
-                out entry.Rotor,
-                out entry.HasRotor);
-
-            // Anything drawn away from where it was placed is a mover -- a vehicle, a door, a fan, a camera
-            // head -- and stays one, so the frame it comes to rest on is paired against the one before.
-            if (entry.HasRotor || entry.Position != authored.Position || entry.Orientation != authored.Orientation)
-            {
-                _movers.Add(authored);
-            }
-
-            entry.Moving = _movers.Contains(authored);
-        }
-
-        _framePrepared = true;
-    }
-
-    /// <summary>Returns every resolved placement's occlusion query to the device.</summary>
-    private void DestroyResolvedQueries()
-    {
-        foreach (ResolvedModel? model in _resolved.Values)
-        {
-            if (model is { Query.IsValid: true })
-            {
-                _device.DestroyOcclusionQuery(model.Query);
-                model.Query = OcclusionQueryHandle.None;
-            }
-        }
-
-        foreach (ResolvedModel? model in _resolvedDestroyed.Values)
-        {
-            if (model is { Query.IsValid: true })
-            {
-                _device.DestroyOcclusionQuery(model.Query);
-                model.Query = OcclusionQueryHandle.None;
-            }
-        }
-
-        foreach (ResolvedModel?[] variants in _resolvedVariants.Values)
-        {
-            foreach (ResolvedModel? model in variants)
-            {
-                if (model is { Query.IsValid: true })
-                {
-                    _device.DestroyOcclusionQuery(model.Query);
-                    model.Query = OcclusionQueryHandle.None;
-                }
-            }
-        }
-    }
+    internal IEnumerable<string> DescribeFrameForTesting(Engine.Tasks.GameTask owner) =>
+        _frameState.DescribeForTesting(owner);
 
     /// <summary>Orders the placements by render group, then by model so consecutive draws share GPU state.</summary>
     /// <remarks>
@@ -932,55 +669,6 @@ public sealed class WorldRenderer : IWorldPresenter
         return order;
     }
 
-    /// <summary>Resolves a displayed placement's geometry and mesh; subsets stay lazy.</summary>
-    /// <remarks>
-    /// Deliberately in two stages: the mesh is needed before culling, but the textures and lightmaps
-    /// are not — resolving those only when a placement first passes a frustum keeps residency
-    /// spreading over the walk exactly as it did when the draw loop resolved them inline.
-    /// </remarks>
-    private ResolvedModel? ResolveModel(WorldPlacement displayed)
-    {
-        MeshGeometry? geometry = displayed.BentGeometry ?? GetGeometry(displayed);
-        if (geometry is null)
-        {
-            return null;
-        }
-
-        MeshHandle mesh = GetMesh(
-            displayed.BentGeometry is null ? displayed.Instance.Name : displayed.TaskName,
-            geometry);
-        return mesh.IsValid ? new ResolvedModel(geometry, mesh, displayed.Model.IsSector) : null;
-    }
-
-    /// <summary>The same surface with its lamp turned down, or turned off altogether.</summary>
-    /// <remarks>
-    /// <para>
-    /// Emission is not a brightness on this path — it is a SHADING MODEL. A surface with any emission at
-    /// all is written to the G-buffer as unlit and comes out of the lighting pass as its own albedo
-    /// times that number, so scaling it towards zero does not fade a panel back into the room: it fades
-    /// it to black, and a switched-off lamp in a lit corridor ends up a hole in the wall.
-    /// </para>
-    /// <para>
-    /// So the last part of the fade is a handover rather than a ramp. Below the threshold the emission
-    /// is dropped outright and the panel becomes an ordinary lit surface, which is what a dead fitting
-    /// is. The threshold is low — under a third of albedo, dimmer than the same panel would be lit in
-    /// any room worth lighting — so the step it costs is smaller than the step of leaving it out, and it
-    /// lands two hundred milliseconds into a fade nobody is looking at the panel during.
-    /// </para>
-    /// <para>
-    /// It also has to clear <see cref="SurfaceMaterial.ExcludedFromOcclusion"/>, which is a quarter and
-    /// is not a brightness at all: the G-buffer has no flags channel, so that one value in the emissive
-    /// slot means "leave this surface out of the ambient occlusion". A lamp allowed to fade through it
-    /// would spend a frame claiming to be that instead.
-    /// </para>
-    /// </remarks>
-    private static SurfaceMaterial Dimmed(SurfaceMaterial material, float glow)
-    {
-        float emissive = material.Emissive * glow;
-
-        return material with { Emissive = emissive < 0.3f ? 0f : emissive };
-    }
-
     /// <summary>Offers a placement the camera will not draw to the traced world anyway.</summary>
     /// <param name="scene">The level, for resolving the model's subsets.</param>
     /// <param name="model">The model that was culled.</param>
@@ -1014,7 +702,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </remarks>
     private void SubmitTracedOnly(
         WorldScene scene,
-        ResolvedModel model,
+        ResolvedWorldModel model,
         WorldPlacement displayed,
         in Matrix4f modelView,
         float viewX,
@@ -1037,14 +725,14 @@ public sealed class WorldRenderer : IWorldPresenter
         // props, fittings and shells around the player's start were judged from the loading-screen
         // camera, arrived only once play began, and the lighting crept across the room as they did.
 
-        SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, displayed);
+        WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, displayed);
 
         // Each run with the material it would be drawn with -- lamp, switch and all -- because nothing is
         // drawn here to take one from.
         float glow = model.LampFixture >= 0 && Switchboard is { } board
             ? board.LevelOf(model.LampFixture)
             : 1f;
-        foreach (SubsetDraw subset in subsets)
+        foreach (WorldSubsetDraw subset in subsets)
         {
             _device.SubmitTracedMesh(
                 model.Mesh,
@@ -1052,277 +740,9 @@ public sealed class WorldRenderer : IWorldPresenter
                 subset.IndexCount,
                 modelView,
                 subset.Diffuse,
-                material: subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
+                material: subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material);
         }
     }
-
-    /// <summary>Resolves a model's per-subset textures, materials and lightmap pages, once.</summary>
-    private SubsetDraw[] ResolveSubsets(WorldScene scene, ResolvedModel model, WorldPlacement displayed)
-    {
-        TextureHandle[] pages = GetLightmapPages(scene, displayed);
-
-        int drawable = 0;
-        foreach (MeshSubset subset in model.Geometry.Subsets)
-        {
-            if (subset.IndexCount > 0)
-            {
-                drawable++;
-            }
-        }
-
-        SubsetDraw[] subsets = new SubsetDraw[drawable];
-        int cursor = 0;
-        bool anyLamp = false;
-        foreach (MeshSubset subset in model.Geometry.Subsets)
-        {
-            if (subset.IndexCount == 0)
-            {
-                continue;
-            }
-
-            TextureHandle diffuse = TextureHandle.None;
-            SurfaceMaterial material = _materials.Default;
-            bool lamp = false;
-
-            if (subset.HasMaterial
-                && displayed.Pack.TryGetTextureName(displayed.Instance, subset.MaterialSlot, out string texture))
-            {
-                diffuse = GetTexture(texture);
-
-                // What this surface is made of. A sub-mesh that names no texture takes the default
-                // rather than inheriting the previous draw's, exactly as the inline loop did.
-                material = _materials.For(texture);
-
-                // ...and whether this particular sub-mesh is a lamp, which is not a property of the
-                // texture. A texture is shared -- the page that skins a ceiling tube also skins the panel
-                // it hangs from and, in level 1, the side of an office cabinet -- so making a texture
-                // emissive glowed a whole garage soffit and put a flat white slab down that cabinet.
-                // Size alone does not save it either: the cabinet's panel is smaller than a fluorescent
-                // batten. Only the model and material slot the detector or the manifest named will do.
-                //
-                // The strength comes from there too, because one texture is not one brightness: a
-                // floodlight and the lamp over a door draw with the same page and are not the same light.
-                //
-                // Never over an authored material. A materials.json entry saying a surface glows is
-                // somebody having looked at it, and nothing worked out here overrules that.
-                if (material.Emissive <= 0f
-                    && Lamps.TryGetStrength(displayed.Instance.Name, subset.MaterialSlot, out float glow))
-                {
-                    material = material with { Emissive = glow };
-
-                    // ...and this, and only this, is what a wall switch may turn down. An authored
-                    // emissive above -- a screen, a sign, the sky dome -- is somebody having decided that
-                    // surface gives off light, and it is not a lamp anybody can switch off.
-                    lamp = true;
-                    anyLamp = true;
-                }
-            }
-
-            // Each sub-mesh names the page it samples; a model with none, or one whose bake is
-            // absent, draws with the device's white lightmap and is simply unshaded.
-            TextureHandle lightmap = subset.LightmapPage < pages.Length
-                ? pages[subset.LightmapPage]
-                : TextureHandle.None;
-
-            subsets[cursor++] = new SubsetDraw(
-                subset.IndexOffset,
-                subset.IndexCount,
-                subset.TriangleCount,
-                diffuse,
-                material,
-                lightmap,
-                lamp);
-        }
-
-        // Which of the level's lights this placement is the housing of, so that switching that light off
-        // stops this geometry glowing. Resolved here rather than in the switchboard because here is where
-        // the placement is already known to draw a lamp at all -- that is a fact about the model's
-        // sub-meshes, and asking every placement in the level how near a fixture it stands would ask it
-        // of five hundred crates as well.
-        //
-        // A generous radius: a fixture is the merged centroid of a whole cluster of emitting triangles,
-        // and a long batten's centroid can sit a couple of metres from the origin of the placement that
-        // draws part of it. Wrong only where two unrelated lamps stand within a few metres of each other
-        // and were still not merged, which is a lamp switching its neighbour off -- visible, harmless,
-        // and rarer than the alternative of a switch that does nothing.
-        model.LampFixture = anyLamp && Switchboard is { } board
-            ? board.NearestFixture(displayed.Position, LampBindingRadius)
-            : -1;
-
-        model.Subsets = subsets;
-
-        bool glass = false;
-        foreach (SubsetDraw drawn in subsets)
-        {
-            glass |= drawn.Material.Glass;
-        }
-
-        model.HasGlass = glass;
-        return subsets;
-    }
-
-    /// <summary>One placement's camera-independent state for the current frame.</summary>
-    // Placements that have ever been drawn away from their authored transform: see PrepareFrame.
-    private readonly HashSet<WorldPlacement> _movers = new(ReferenceEqualityComparer.Instance);
-
-    private struct FrameEntry
-    {
-        public bool Skip;
-        public bool WasDestroyed;
-        public int Variant;
-        public bool HasRotor;
-        public bool IsRotor;
-
-        /// <summary>Whether the placement moves on its own, so its draws stamp their own motion.</summary>
-        public bool Moving;
-        public ResolvedModel? Model;
-        public WorldPlacement? Displayed;
-        public Vector3d Position;
-        public Matrix3f Orientation;
-        public RotorDrawState Rotor;
-    }
-
-    /// <summary>A placement's uploaded mesh and, once first drawn, its per-subset draw state.</summary>
-    private sealed class ResolvedModel(MeshGeometry geometry, MeshHandle mesh, bool isSector)
-    {
-        public MeshGeometry Geometry { get; } = geometry;
-
-        public MeshHandle Mesh { get; } = mesh;
-
-        /// <summary>Whether winding repair has usable normals and the mesh is not an interior sector.</summary>
-        /// <remarks>
-        /// IGI2 lightmapped MEFs omit normals. Their authored winding must remain two-sided; applying
-        /// the prop optimization erases mission 2's cave. IGI1 sectors likewise enclose the viewer.
-        /// Evaluate once at residency, rather than scanning vertices in every render pass.
-        /// </remarks>
-        public bool CanCullBackFaces { get; } = !isSector && Array.TrueForAll(
-            geometry.Vertices, vertex => float.IsFinite(vertex.Normal.LengthSquared) && vertex.Normal.LengthSquared > 0.000001f);
-
-        public SubsetDraw[]? Subsets { get; set; }
-
-        /// <summary>Gets or sets whether any of those subsets is glazing.</summary>
-        /// <remarks>
-        /// So the glass pass can reject a placement before it frustum-tests it. Almost nothing in a level
-        /// is a window, and without this the pass would walk every crate, tree and oil drum in the draw
-        /// order to find the handful of models that have a pane in them.
-        /// </remarks>
-        public bool HasGlass { get; set; }
-
-        /// <summary>The light this placement is the fixture of, or -1 when it is not one.</summary>
-        /// <remarks>Resolved with the subsets, and melted with them whenever the switchboard changes.</remarks>
-        public int LampFixture { get; set; } = -1;
-
-        /// <summary>Gets or sets the placement's occlusion query, created on first geometry-pass use.</summary>
-        public OcclusionQueryHandle Query { get; set; }
-
-        /// <summary>Gets the local box the query rasterises — the bounding sphere's enclosing cube.</summary>
-        public OcclusionBounds QueryBounds { get; } = new(
-            new Vector3f(
-                geometry.Bounds.Centre.X - geometry.Bounds.Radius,
-                geometry.Bounds.Centre.Y - geometry.Bounds.Radius,
-                geometry.Bounds.Centre.Z - geometry.Bounds.Radius),
-            new Vector3f(
-                geometry.Bounds.Centre.X + geometry.Bounds.Radius,
-                geometry.Bounds.Centre.Y + geometry.Bounds.Radius,
-                geometry.Bounds.Centre.Z + geometry.Bounds.Radius));
-    }
-
-    /// <summary>One drawable subset: its index range and the states it binds.</summary>
-    /// <remarks>
-    /// <c>IsLamp</c> says the sub-mesh glows because the lamp detection called it a fixture, as opposed
-    /// to because a material file said the surface emits. Only the first kind answers to a light switch:
-    /// an authored emissive is a screen or a sign or the sky, and nobody is switching those off.
-    /// </remarks>
-    private readonly record struct SubsetDraw(
-        int IndexOffset,
-        int IndexCount,
-        int TriangleCount,
-        TextureHandle Diffuse,
-        SurfaceMaterial Material,
-        TextureHandle Lightmap,
-        bool IsLamp = false);
-
-    // A StationaryGun's stand turns with its gun: 0x474420 writes the traverse into the task's own
-    // orientation (+112, the authored one times Z(traverse)), and that is what the stand model is drawn
-    // with. Only the traverse -- the elevation belongs to the gun alone -- so the yoke stays square to
-    // the gun it holds.
-    private bool TryGetStandOrientation(WorldPlacement placement, out Matrix3f orientation)
-    {
-        // The type test first: TryGet walks the level's interactions, and this runs per placement.
-        if (placement.Owner is { } owner
-            && string.Equals(owner.Type.Name, "StationaryGun", StringComparison.Ordinal)
-            && Interactions?.TryGet(owner, out WorldInteraction? interaction) == true
-            && interaction?.StationaryGun is { } gun)
-        {
-            orientation = gun.TurnedOrientation;
-            return true;
-        }
-
-        orientation = default;
-        return false;
-    }
-
-    // Which of its variants a placement wears, or -1 for the model the walk placed: an index the title gives, whose binding resolved.
-    private int VariantOf(WorldPlacement placement) =>
-        placement.Variants is { } variants
-        && Variants?.VariantOf(placement) is int variant
-        && variant >= 0
-        && variant < variants.Count
-        && variants[variant] is not null
-            ? variant
-            : -1;
-
-    private WorldPlacement DisplayedPlacement(WorldPlacement placement)
-    {
-        WorldPlacement displayed = placement;
-        if (VariantOf(placement) is >= 0 and int worn && placement.Variants![worn] is { } variantBinding)
-        {
-            displayed = placement with { Instance = variantBinding.Instance, Pack = variantBinding.Pack, Model = variantBinding.Model };
-        }
-
-        if (placement.DestroyedReplacement is { } replacement && UsesDestroyedReplacement(placement))
-        {
-            displayed = placement with
-            {
-                Instance = replacement.Instance,
-                Pack = replacement.Pack,
-                Model = replacement.Model,
-            };
-        }
-
-        if (SecurityCameras?.TryGetHeadOrientation(
-            placement,
-            _frameAlpha,
-            _frameSmooth,
-            out Matrix3f orientation) == true)
-        {
-            displayed = displayed with { Orientation = orientation };
-        }
-
-        if (Spins?.TryGetOrientation(placement, _frameAlpha, out Matrix3f spun) == true)
-        {
-            displayed = displayed with { Orientation = spun };
-        }
-
-        if (Motions?.TryGetTransform(placement, _frameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
-        {
-            displayed = displayed with { Position = moved, Orientation = movedOrientation };
-        }
-
-        if (TryGetStandOrientation(placement, out Matrix3f stand))
-        {
-            displayed = displayed with { Orientation = stand };
-        }
-
-        return displayed;
-    }
-
-    /// <summary>Whether the renderer must swap an authored placement for its destroyed-model binding.</summary>
-    private bool UsesDestroyedReplacement(WorldPlacement placement) =>
-        placement.DestroyedReplacement is not null
-        && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
-            || Destructibles?.IsDestroyed(placement) == true
-            || Destruction?.IsDestroyed(placement) == true);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -1334,35 +754,11 @@ public sealed class WorldRenderer : IWorldPresenter
 
         _disposed = true;
 
-        DestroyResolvedQueries();
-
-        foreach (MeshHandle mesh in _meshes.Values)
-        {
-            _device.DestroyMesh(mesh);
-        }
-
-        foreach (TextureHandle[] pages in _lightmaps.Values)
-        {
-            foreach (TextureHandle page in pages)
-            {
-                _device.DestroyTexture(page);
-            }
-        }
-
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            DetailMaps?.Release(texture);
-            _device.DestroyTexture(texture);
-        }
-
-        _lightmaps.Clear();
-        _bakedPages.Clear();
-        _meshes.Clear();
-        _textures.Clear();
-        _geometry.Clear();
-        _resolved.Clear();
-        _resolvedDestroyed.Clear();
-        _resolvedVariants.Clear();
+        _subsets.DestroyResolvedQueries();
+        _subsets.DestroyMeshes();
+        _lightmapPages.Release();
+        _textures.Release();
+        _subsets.Clear();
     }
 
     /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>
@@ -1379,91 +775,19 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </param>
     public void SetBakedLightmaps(BakedLightmaps? baked, bool discardRetail = false)
     {
-        _bakedPages.Clear();
-
-        // Independent of whether a bake has landed yet: under the exclusive mode a surface with no bake
-        // reads black even while the worker is still tracing, so the shipped lightmaps never flash up first.
-        _discardRetailLightmaps = discardRetail;
-
-        // The exclusive path carries our own high-dynamic-range lighting, so its pages are encoded with the
-        // headroom and the shader scales them back up; the fallback path mixes with the shipped LDR pages,
-        // so it clamps to one and scales by one.
-        _lightmapScale = discardRetail ? HdrHeadroom : 1f;
-
-        if (baked is not null)
-        {
-            foreach ((string entryName, Dictionary<int, BakedLightmaps.Page> pages) in baked.Pages)
-            {
-                Dictionary<int, Bgra32[]> entry = new(pages.Count);
-                foreach ((int index, BakedLightmaps.Page page) in pages)
-                {
-                    Vector3f[] radiance = page.Radiance;
-                    Bgra32[] pixels = new Bgra32[radiance.Length];
-                    for (int i = 0; i < pixels.Length; i++)
-                    {
-                        Vector3f r = radiance[i];
-                        pixels[i] = new Bgra32(
-                            r: LinearToSrgb(r.X / _lightmapScale),
-                            g: LinearToSrgb(r.Y / _lightmapScale),
-                            b: LinearToSrgb(r.Z / _lightmapScale),
-                            a: 255);
-                    }
-
-                    entry[index] = pixels;
-                }
-
-                _bakedPages[entryName] = entry;
-            }
-        }
-
-        foreach (TextureHandle[] uploaded in _lightmaps.Values)
-        {
-            foreach (TextureHandle page in uploaded)
-            {
-                if (page.IsValid)
-                {
-                    _device.DestroyTexture(page);
-                }
-            }
-        }
-
-        _lightmaps.Clear();
+        _lightmapPages.ApplyBake(baked, discardRetail);
 
         // Each placement caches the lightmap handles it resolved into its per-subset draw state, and those
         // now point at textures just destroyed. Drop the resolutions so the next draw rebuilds them against
         // the swapped-in pages -- without this the frame the async bake lands on draws a dangling handle and
         // the device rejects it.
-        DestroyResolvedQueries();
-        _resolved.Clear();
-        _resolvedDestroyed.Clear();
-        _resolvedVariants.Clear();
+        _subsets.ForgetResolved();
 
         _logger.Information(
             LogCategory,
             baked is null
                 ? "Restored the shipped object lightmaps."
-                : $"Applied a path-traced lightmap bake over {_bakedPages.Count} object(s).");
-    }
-
-    // Encodes one linear channel to sRGB, clamped to the displayable range. The page is decoded back to
-    // linear in the G-buffer, so this is only the storage encoding; the HDR headroom is carried separately.
-    private static byte LinearToSrgb(float linear)
-    {
-        float c = Math.Clamp(linear, 0f, 1f);
-        float s = c <= 0.0031308f ? c * 12.92f : (1.055f * MathF.Pow(c, 1f / 2.4f)) - 0.055f;
-        return (byte)Math.Clamp((int)MathF.Round(s * 255f), 0, 255);
-    }
-
-    private MeshGeometry? GetGeometry(WorldPlacement placement)
-    {
-        if (_geometry.TryGetValue(placement.Instance.Name, out MeshGeometry? cached))
-        {
-            return cached;
-        }
-
-        MeshGeometry? built = MefMeshBuilder.Build(placement.Model, (float)(1.0 / WorldScene.UnitsPerMetre));
-        _geometry[placement.Instance.Name] = built;
-        return built;
+                : $"Applied a path-traced lightmap bake over {_lightmapPages.BakedEntryCount} object(s).");
     }
 
     /// <summary>Returns a rotor's bound across every phase and aerodynamic-tilt sample.</summary>
@@ -1476,112 +800,11 @@ public sealed class WorldRenderer : IWorldPresenter
     private static BoundingSphere RotorCullBounds(in BoundingSphere bounds) =>
         new(Vector3f.Zero, bounds.Centre.Length + bounds.Radius);
 
-
-    /// <summary>
-    /// Works out where a placement is drawn this frame, after everything that can move it has moved it.
-    /// </summary>
-    /// <param name="placement">The placement being drawn.</param>
-    /// <param name="drawPosition">Receives the position to draw at.</param>
-    /// <param name="drawOrientation">Receives the orientation to draw with.</param>
-    /// <param name="rotorDraw">Receives the motion-blurred rotor state, when one applies.</param>
-    /// <param name="hasRotorDraw">Receives whether a rotor state applies.</param>
-    /// <remarks>
-    /// A door swings, an elevator carries what stands on it, a cutscene can seize either, and a rotor
-    /// smears across the frame. Pulled out of the draw loop so the selection outline resolves the same
-    /// transform from the same code: an outline computed a second way would drift off its subject the
-    /// moment any of these took hold, which is exactly when a reader is watching it.
-    /// </remarks>
-    private void ResolveDrawTransform(
-        WorldPlacement placement,
-        out Vector3d drawPosition,
-        out Matrix3f drawOrientation,
-        out RotorDrawState rotorDraw,
-        out bool hasRotorDraw)
-    {
-        drawPosition = placement.Position;
-        drawOrientation = placement.Orientation;
-        rotorDraw = default;
-        hasRotorDraw = false;
-
-        if (Doors?.TryGetDrawTransform(
-            placement.Owner,
-            _frameAlpha,
-            _frameSmooth,
-            out Vector3d doorPosition,
-            out Matrix3f doorOrientation) == true)
-        {
-            drawPosition = doorPosition;
-            drawOrientation = doorOrientation;
-            if (Elevators?.TryGetDisplacement(
-                placement.Owner,
-                _frameAlpha,
-                _frameSmooth,
-                out Vector3d doorDisplacement) == true)
-            {
-                drawPosition += doorDisplacement;
-            }
-        }
-        else if (Elevators?.TryGetDrawTransform(
-            placement.Owner,
-            placement.Position,
-            placement.Orientation,
-            _frameAlpha,
-            _frameSmooth,
-            out Vector3d elevatorPosition,
-            out Matrix3f elevatorOrientation) == true)
-        {
-            drawPosition = elevatorPosition;
-            drawOrientation = elevatorOrientation;
-        }
-        else if (Cutscenes?.TryGetRotorDrawState(placement, out rotorDraw) == true)
-        {
-            drawPosition = rotorDraw.Position;
-            hasRotorDraw = true;
-        }
-        else if (Cutscenes?.TryGetPlacementDrawTransform(
-            placement,
-            out Vector3d cinematicPosition,
-            out Matrix3f cinematicOrientation) == true)
-        {
-            drawPosition = cinematicPosition;
-            drawOrientation = cinematicOrientation;
-        }
-        else if (RotatingObjects?.TryGetDrawTransform(
-            placement,
-            _frameAlpha,
-            _frameSmooth,
-            out Vector3d rotatingPosition,
-            out Matrix3f rotatingOrientation) == true)
-        {
-            drawPosition = rotatingPosition;
-            drawOrientation = rotatingOrientation;
-        }
-        else if (Interactions?.TryGetPlacedPose(
-            placement.Owner,
-            out Vector3d placedUnits,
-            out Matrix3f placedOrientation) == true)
-        {
-            // A planted charge: state 36 moved its EditRigidObj to where the plant's trace struck.
-            drawPosition = placedUnits / WorldScene.UnitsPerMetre;
-            drawOrientation = placedOrientation;
-        }
-    }
+    /// <inheritdoc/>
+    public PlacementPose DrawPoses => _drawPoses ??= _transforms.TryGetDrawTransform;
 
     /// <inheritdoc/>
-    public PlacementPose DrawPoses => _drawPoses ??= TryGetDrawTransform;
-
-    /// <inheritdoc/>
-    public IReadOnlyCollection<WorldPlacement> Movers => _movers;
-
-    // The transform a placement is drawn with this frame, through the same precedence the draw loop
-    // and the selection outline use. A rotor has no single orientation mid-blur; nothing on one takes a
-    // mark (0x42D416), so its authored orientation stands.
-    private bool TryGetDrawTransform(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
-    {
-        ArgumentNullException.ThrowIfNull(placement);
-        ResolveDrawTransform(DisplayedPlacement(placement), out positionMetres, out orientation, out _, out _);
-        return true;
-    }
+    public IReadOnlyCollection<WorldPlacement> Movers => _frameState.Movers;
 
     /// <summary>Draws a selection glow around one placement.</summary>
     /// <param name="scene">The scene the placement belongs to.</param>
@@ -1618,14 +841,14 @@ public sealed class WorldRenderer : IWorldPresenter
             return false;
         }
 
-        WorldPlacement placement = DisplayedPlacement(scene.Placements[placementIndex]);
-        MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
+        WorldPlacement placement = _transforms.DisplayedPlacement(scene.Placements[placementIndex]);
+        MeshGeometry? geometry = placement.BentGeometry ?? _subsets.GetGeometry(placement);
         if (geometry is null)
         {
             return false;
         }
 
-        MeshHandle mesh = GetMesh(
+        MeshHandle mesh = _subsets.GetMesh(
             placement.BentGeometry is null ? placement.Instance.Name : placement.TaskName,
             geometry);
         if (!mesh.IsValid)
@@ -1647,135 +870,13 @@ public sealed class WorldRenderer : IWorldPresenter
             return false;
         }
 
-        ResolveDrawTransform(placement, out Vector3d position, out Matrix3f orientation, out _, out _);
+        _transforms.ResolveDrawTransform(placement, out Vector3d position, out Matrix3f orientation, out _, out _);
         Matrix4f modelView = camera.CreateModelView(position, orientation);
 
         _device.SetPoseInterpolation(0f, 0f);
         _device.DrawOutline(mesh, CollectionsMarshal.AsSpan(_outlineRanges), modelView, colour, radius, throughWalls);
         _device.ClearPoseInterpolation();
         return true;
-    }
-
-    private MeshHandle GetMesh(string name, MeshGeometry geometry)
-    {
-        if (_meshes.TryGetValue(name, out MeshHandle cached))
-        {
-            return cached;
-        }
-
-        MeshHandle handle = MeshHandle.None;
-        try
-        {
-            handle = _device.CreateMesh(geometry.Vertices, geometry.Indices);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-        {
-            _logger.Warning(LogCategory, $"Model '{name}' did not upload: {ex.Message}");
-        }
-
-        _meshes[name] = handle;
-        return handle;
-    }
-
-    /// <summary>Gets the uploaded pages of a placement's baked lightmap, empty when it has none.</summary>
-    /// <remarks>
-    /// One <c>.olm</c> entry holds every page of one model at one level of detail, so this uploads them
-    /// together and caches by entry name. Level 1's archive is 1308 entries, but only the ones actually
-    /// drawn are ever touched.
-    /// </remarks>
-    private TextureHandle[] GetLightmapPages(WorldScene scene, WorldPlacement placement)
-    {
-        if (!placement.HasLightmap)
-        {
-            return [];
-        }
-
-        string entryName = placement.LightmapEntryName();
-        if (_lightmaps.TryGetValue(entryName, out TextureHandle[]? cached))
-        {
-            return cached;
-        }
-
-        TextureHandle[] pages = [];
-        if (GetLightmapArchive(scene).TryGetValue(entryName, out IresEntry? entry) && entry is not null)
-        {
-            try
-            {
-                ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data, _formats);
-                pages = new TextureHandle[lightmap.Images.Count];
-                for (int i = 0; i < pages.Length; i++)
-                {
-                    ObjectLightmapImage image = lightmap.Images[i];
-
-                    // A path-traced bake, if one was applied, replaces the shipped page's pixels here --
-                    // same dimensions, same upload, so nothing downstream knows the difference. Falls back
-                    // to the retail page when this entry or page was not baked, or the sizes disagree --
-                    // unless the bake is exclusive, in which case an uncovered page reads black so only our
-                    // own lighting shows.
-                    ReadOnlySpan<Bgra32> pixels = MemoryMarshal.Cast<byte, Bgra32>(image.Pixels.Span);
-                    if (_bakedPages.TryGetValue(entryName, out Dictionary<int, Bgra32[]>? bakedEntry)
-                        && bakedEntry.TryGetValue(i, out Bgra32[]? bakedPage)
-                        && bakedPage.Length == image.Width * image.Height)
-                    {
-                        pixels = bakedPage;
-                    }
-                    else if (_discardRetailLightmaps)
-                    {
-                        pixels = new Bgra32[image.Width * image.Height];
-                    }
-
-                    // A page is an atlas of this model's own surfaces, so it clamps rather than repeats:
-                    // wrapping would bleed one surface's light onto another at the edges.
-                    pages[i] = _device.CreateTexture(
-                        new TextureDescription(
-                            image.Width,
-                            image.Height,
-                            1,
-                            TextureFilter.Linear,
-                            TextureAddressMode.Clamp),
-                        pixels);
-                }
-            }
-            catch (Exception ex) when (ex is PackFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Lightmap '{entryName}' did not load: {ex.Message}");
-                pages = [];
-            }
-        }
-
-        _lightmaps[entryName] = pages;
-        return pages;
-    }
-
-    private Dictionary<string, IresEntry> GetLightmapArchive(WorldScene scene)
-    {
-        if (_lightmapArchive is not null)
-        {
-            return _lightmapArchive;
-        }
-
-        _lightmapArchive = new Dictionary<string, IresEntry>(StringComparer.OrdinalIgnoreCase);
-        if (scene.Mission.TryReadLightmapArchive(_resources, out IresArchive? archive) && archive is not null)
-        {
-            foreach (IresEntry entry in archive.Entries)
-            {
-                _lightmapArchive[BareEntryName(entry.Name)] = entry;
-            }
-
-            _logger.Information(LogCategory, $"Object lightmaps: {_lightmapArchive.Count} entries.");
-        }
-        else
-        {
-            _logger.Warning(LogCategory, "The level has no object-lightmap archive; the world draws unshaded.");
-        }
-
-        return _lightmapArchive;
-    }
-
-    private static string BareEntryName(string name)
-    {
-        int slash = name.LastIndexOfAny(['/', '\\']);
-        return slash >= 0 ? name[(slash + 1)..] : name;
     }
 
     /// <summary>Gets or sets which of the level's sub-meshes are light fixtures.</summary>
@@ -1785,7 +886,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// DETECTED emitter is allowed to glow -- see the resolve, and <see cref="LampDetector"/> for why the
     /// texture alone cannot answer that. Empty is the honest default: nothing detected glows.
     /// </remarks>
-    public LampDetector.Lamps Lamps { get; set; } = LampDetector.Lamps.None;
+    public LampDetector.Lamps Lamps { get => _subsets.Lamps; set => _subsets.Lamps = value; }
 
     /// <summary>Gets or sets which of the level's lamps are currently lit, or <see langword="null"/> for all of them.</summary>
     /// <remarks>
@@ -1793,24 +894,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// is on. Null is the level as it ships — every fixture at full output, and not one comparison per
     /// draw spent asking.
     /// </remarks>
-    public LampSwitchboard? Switchboard
-    {
-        get => _switchboard;
-        set
-        {
-            if (ReferenceEquals(_switchboard, value))
-            {
-                return;
-            }
-
-            _switchboard = value;
-
-            // Each placement's binding to the light it houses is resolved with its subsets, so a new
-            // board has to melt them for the same reason a reloaded material library does. They
-            // re-resolve on the next draw at the cost of a dictionary lookup each.
-            MeltResolvedSubsets();
-        }
-    }
+    public LampSwitchboard? Switchboard { get => _subsets.Switchboard; set => _subsets.Switchboard = value; }
 
     /// <summary>Gets or sets what each of the level's textures is made of.</summary>
     /// <remarks>
@@ -1818,49 +902,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// reload, and because a renderer with no library still draws -- every surface simply takes the
     /// default, which is the behaviour from before materials existed.
     /// </remarks>
-    public MaterialLibrary Materials
-    {
-        get => _materials;
-        set
-        {
-            _materials = value ?? MaterialLibrary.Empty;
-
-            // The resolved subsets bake each surface's material in, so a reloaded library has to melt
-            // them; they re-resolve from the caches on the next draw at dictionary-lookup cost.
-            MeltResolvedSubsets();
-        }
-    }
-
-    /// <summary>Drops every placement's resolved per-subset state, so the next draw resolves it again.</summary>
-    private void MeltResolvedSubsets()
-    {
-        foreach (ResolvedModel? model in _resolved.Values)
-        {
-            if (model is not null)
-            {
-                model.Subsets = null;
-            }
-        }
-
-        foreach (ResolvedModel? model in _resolvedDestroyed.Values)
-        {
-            if (model is not null)
-            {
-                model.Subsets = null;
-            }
-        }
-
-        foreach (ResolvedModel?[] variants in _resolvedVariants.Values)
-        {
-            foreach (ResolvedModel? model in variants)
-            {
-                if (model is not null)
-                {
-                    model.Subsets = null;
-                }
-            }
-        }
-    }
+    public MaterialLibrary Materials { get => _subsets.Materials; set => _subsets.Materials = value; }
 
     /// <summary>Drops every uploaded diffuse texture so the next draw loads them all again.</summary>
     /// <remarks>
@@ -1871,15 +913,15 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </para>
     /// <para>
     /// <b>Clearing the dictionary is not enough, and that is the whole subtlety.</b> A resolved model
-    /// caches its subsets, and a <c>SubsetDraw</c> carries its diffuse <i>by value</i> — so a texture
+    /// caches its subsets, and a <c>WorldSubsetDraw</c> carries its diffuse <i>by value</i> — so a texture
     /// dropped here would still be drawn from the cached draw list, by a handle that no longer exists.
-    /// <see cref="MeltResolvedSubsets"/> is the existing answer to exactly that, already used when the
+    /// <see cref="WorldSubsetResolver.MeltResolvedSubsets"/> is the existing answer to exactly that, already used when the
     /// material library or the switchboard is replaced; the subsets re-resolve on next use at the cost of
     /// a dictionary lookup.
     /// </para>
     /// <para>
     /// <b>And the decode cache has to go with them.</b> It holds images decoded on workers during the
-    /// load, and <see cref="GetTexture"/> prefers it over the archive — so leaving it would hand back the
+    /// load, and <see cref="WorldTextureCache.GetTexture"/> prefers it over the archive — so leaving it would hand back the
     /// very pixels this is trying to replace. It is an optimisation with no semantics of its own, so
     /// dropping it costs a slower reload and nothing else.
     /// </para>
@@ -1890,22 +932,8 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </remarks>
     public void ReloadTextures()
     {
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            if (texture.IsValid)
-            {
-                DetailMaps?.Release(texture);
-                _device.DestroyTexture(texture);
-            }
-        }
-
-        _textures.Clear();
-
-        // A name that had no texture before may well have one now, and the other way round.
-        _missingTextures.Clear();
-
-        Decoded = null;
-        MeltResolvedSubsets();
+        _textures.Reload();
+        _subsets.MeltResolvedSubsets();
     }
 
     /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
@@ -1914,15 +942,14 @@ public sealed class WorldRenderer : IWorldPresenter
     /// this renderer: the same pack serves the world, the soldiers and the terrain, and each of them
     /// loads its own textures.
     /// </remarks>
-    public MaterialDetailPack? DetailMaps { get; set; }
+    public MaterialDetailPack? DetailMaps { get => _textures.DetailMaps; set => _textures.DetailMaps = value; }
 
     /// <summary>Gets or sets the level's textures, decoded ahead of this renderer on worker threads.</summary>
     /// <remarks>
     /// Optional and purely a speed-up: with none set every texture is decoded on the thread that first
     /// draws it, which is what this renderer always did. See <see cref="TextureDecodeCache"/>.
     /// </remarks>
-    public TextureDecodeCache? Decoded { get; set; }
-
+    public TextureDecodeCache? Decoded { get => _textures.Decoded; set => _textures.Decoded = value; }
 
     /// <summary>Captures every distinct model's surface into the card atlas.</summary>
     /// <param name="scene">The level, for the placements that name which models are used.</param>
@@ -1947,255 +974,6 @@ public sealed class WorldRenderer : IWorldPresenter
     {
         ArgumentNullException.ThrowIfNull(scene);
 
-        List<SurfaceCacheCapture.Subject> subjects = [];
-        List<MeshHandle> meshes = [];
-
-        // Which captured model each instance name became, so the per-placement lighting layout can join
-        // a placement back to the cards its model contributed.
-        Dictionary<string, int> modelOfName = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-
-        foreach (WorldPlacement placement in scene.Placements)
-        {
-            if (placement.BentGeometry is not null || !seen.Add(placement.Instance.Name))
-            {
-                continue;
-            }
-
-            if (GetGeometry(placement) is not { } geometry || geometry.Indices.Length < 3)
-            {
-                continue;
-            }
-
-            MeshHandle mesh = GetMesh(placement.Instance.Name, geometry);
-
-            if (!mesh.IsValid)
-            {
-                continue;
-            }
-
-            IReadOnlyList<MeshCard> cards = MeshCardBaker.Bake(geometry, cardResolution);
-
-            if (cards.Count == 0)
-            {
-                continue;
-            }
-
-
-            // Captured by value so the closure does not depend on which placement the loop is on when
-            // the capture actually runs.
-            WorldPlacement owner = placement;
-
-            subjects.Add(new SurfaceCacheCapture.Subject(
-                geometry,
-                cards,
-                subset =>
-                {
-                    TextureHandle diffuse = TextureHandle.None;
-                    SurfaceMaterial material = _materials.Default;
-
-                    if (subset.HasMaterial
-                        && owner.Pack.TryGetTextureName(owner.Instance, subset.MaterialSlot, out string texture))
-                    {
-                        diffuse = GetTexture(texture);
-                        material = _materials.For(texture);
-                    }
-
-                    // No lightmap. A card belongs to a model and a bake belongs to a placement, so
-                    // there is no single bake a shared card could carry -- see CardAtlasShaders.
-                    return (diffuse, TextureHandle.None, material);
-                }));
-
-            modelOfName[placement.Instance.Name] = subjects.Count - 1;
-            meshes.Add(mesh);
-        }
-
-        if (SurfaceCacheCapture.Capture(_device, subjects, meshes, 8192, _logger) is not { } captured)
-        {
-            return null;
-        }
-
-        // A card's SURFACE belongs to the model and is shared; its LIGHTING belongs to the placement and
-        // is not -- one crate stands in sunlight and another in a hangar's shadow. So the lighting gets
-        // a second layout, a page per placement of each card.
-        SurfaceCacheInstances? instances = SurfaceCacheInstances.Build(
-            captured,
-            scene.Placements,
-            placement => placement.BentGeometry is null
-                && modelOfName.TryGetValue(placement.Instance.Name, out int model) ? model : -1,
-            8192,
-            _logger);
-
-        return (captured, instances);
-    }
-
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
-
-        // Decoded on a worker while the backdrop was being built, if one was offered. Everything from
-        // the file down to the corrected mip chain has then already happened, and what is left here is
-        // the upload -- which is the only part that had to be on this thread in the first place.
-        if (Decoded is not null && Decoded.TryTakeSurface(name, out DecodedSurface? ready))
-        {
-            TextureHandle prepared = TextureHandle.None;
-            if (ready is not null)
-            {
-                try
-                {
-                    prepared = ready.Compressed is { } blocks
-                        ? CreateFromCompressed(name, blocks, ready.CompressedDetail)
-                        : ready.Image is { } image
-                            ? CreateFromDecoded(name, image, ready.Detail)
-                            : TextureHandle.None;
-                }
-                catch (GraphicsDeviceException ex)
-                {
-                    _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
-                }
-            }
-
-            _textures[name] = prepared;
-            return prepared;
-        }
-
-        TextureHandle handle = TextureHandle.None;
-        string resource = LoadedPack.TextureResourceName(name);
-
-        if (_resources.TryLoad(resource, out ReadOnlyMemory<byte> bytes))
-        {
-            try
-            {
-                // An upscaled replacement if the player built one, the game's own texture otherwise. Asked
-                // only for names the registry HAS -- a name the level never declared is still one the level
-                // never declared, and letting a stray PNG conjure one would let a pack add textures the game
-                // does not ask for. Normally the decode cache has already done this on a worker; this is the
-                // same substitution for whatever the cache never saw, so the two paths cannot disagree.
-                SurfaceAsset asset = _device.Capabilities.SupportsBlockCompression
-                    ? SurfaceAssetReader.ReadKeepingBlocks(bytes)
-                    : SurfaceAssetReader.Read(bytes.Span);
-
-                // A texture pack's stored chain: everything below was done to it when the pack was built.
-                if (asset.CompressedDiffuse is { } blocks)
-                {
-                    handle = CreateFromCompressed(name, blocks, asset.CompressedDetail);
-                    _textures[name] = handle;
-                    return handle;
-                }
-
-                TextureImage image = asset.Diffuse;
-
-                // The wire of a fence, the slats of a grille, the leaves of a canopy: everything drawn as
-                // a cut-out quad loses its coverage as the chain averages down, so it thins with distance
-                // and flickers as the level crosses over. Restored before the chain is uploaded, against
-                // the same cutoff the shaders test. Textures that are opaque, or that are entirely holes,
-                // are left alone -- there is no coverage to preserve and scaling would corrupt a channel
-                // nothing reads.
-                // Most of this game's textures carry a single level, and this backend generates none --
-                // so without this the whole world was sampled at full resolution however far away it was,
-                // which sparkles on every surface and makes thin things crawl.
-                // A cut-out's partly-covered edge texels would be discarded by the half-alpha test, which
-                // thins barbed wire visibly against the sky (see AlphaCoverage.WidenCutout). Widened
-                // first, so the chain below filters the alpha we actually intend to keep. Real
-                // transparencies -- window glass above all -- are classified out and left alone.
-                // Classified from level zero before the alpha is touched. A cut-out needs its chain rebuilt
-                // even when it shipped with one: a chain imported by the original tool carries the black of
-                // the transparent gaps in every level, so the wire goes dark at distance -- the far fences
-                // that read pure black under a render scale. Rebuilding from level zero runs the alpha-
-                // weighted filter that keeps the wire's colour; an opaque surface keeps whatever chain it
-                // has and only generates one if it shipped without.
-                bool cutout = AlphaCoverage.IsCutout(image.GetLevel(0));
-
-                image.WidenCutoutAlpha(TextureDecodeCache.AlphaTestCutoff);
-
-                image = cutout ? image.RebuildMipChain() : image.WithMipChain();
-                image.PreserveAlphaCoverage(TextureDecodeCache.AlphaTestCutoff);
-
-                handle = CreateFromDecoded(name, image, asset.Detail);
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
-            }
-        }
-        else if (_missingTextures.Add(name))
-        {
-            _logger.Warning(LogCategory, $"Texture '{resource}' is not registered.");
-        }
-
-        _textures[name] = handle;
-        return handle;
-    }
-
-    /// <summary>Uploads an already-decoded image and registers whatever derives from it.</summary>
-    /// <param name="name">The texture's name, which the detail pack keys its maps by.</param>
-    /// <param name="image">The decoded chain, from the cache or from this thread.</param>
-    /// <param name="detail">
-    /// The packed surface map the asset carried, or <see langword="null"/> when it carried none — which
-    /// is every texture the game itself ships, and every replacement built without them.
-    /// </param>
-    /// <returns>The uploaded texture.</returns>
-    /// <remarks>
-    /// The half of <see cref="GetTexture"/> that has to be on the render thread, split out so the
-    /// decoded-ahead path and the decode-here path upload through exactly the same code.
-    /// </remarks>
-    private TextureHandle CreateFromCompressed(string name, CompressedTextureImage image, CompressedTextureImage? detail)
-    {
-        TextureImage? proxy = image.Proxy;
-        TextureHandle handle = _device.CreateCompressedTexture(
-            new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
-            image.Format,
-            image.Levels.Span,
-            proxy is null ? default : proxy.GetLevel(0),
-            proxy?.Width ?? 0,
-            proxy?.Height ?? 0);
-
-        // The pack's own map when it carries one, compressed beside the picture; otherwise a map cached
-        // by name. Nothing is derived from a compressed picture -- there are no full-size pixels to derive
-        // from, and a pack that wants maps ships them.
-        if (detail is not null)
-        {
-            DetailMaps?.AttachCompressed(
-                handle, detail.Format, detail.Width, detail.Height, detail.MipLevels, detail.Levels.Span);
-        }
-        else
-        {
-            DetailMaps?.Attach(DetailKey(name), handle);
-        }
-
-        return handle;
-    }
-
-    // The detail pack keys a replaced texture apart from the shipped one, so neither is handed the
-    // other's derived map.
-    private string DetailKey(string name) =>
-        MaterialDetailPack.KeyFor(name, _resources.OverrideStamp(LoadedPack.TextureResourceName(name)));
-
-    private TextureHandle CreateFromDecoded(string name, TextureImage image, TextureImage? detail = null)
-    {
-        TextureHandle handle = _device.CreateTexture(
-            new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
-            image.Pixels);
-
-        // The derived normal, roughness and occlusion this game never shipped. Registered against the
-        // texture rather than carried through the draw, so nothing below this line knows the maps exist.
-        //
-        // The asset's OWN map wins when it carries one: a replacement in the overrides folder holds the
-        // map derived from the picture it replaces, at the same resolution and by a better estimator than
-        // the one this process can run between frames. Without one, the top level goes to the pack so a
-        // texture nothing has derived for can derive its own instead of staying flat forever.
-        if (detail is not null)
-        {
-            DetailMaps?.AttachPacked(handle, detail.GetLevel(0), detail.Width, detail.Height);
-        }
-        else
-        {
-            DetailMaps?.Attach(DetailKey(name), handle, image.GetLevel(0), image.Width, image.Height);
-        }
-
-        return handle;
+        return _subsets.CaptureSurfaceCache(scene, cardResolution);
     }
 }

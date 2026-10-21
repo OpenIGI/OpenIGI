@@ -8,7 +8,7 @@ namespace OpenIGI.Benchmarks;
 /// <remarks>
 /// <para>
 /// The bake fires a hemisphere of rays per texel across every lightmapped page in a level, so
-/// <see cref="LightmapBaker.LightmapBvh.ClosestHit"/> is called tens of millions of times per bake and
+/// <see cref="LightmapBvh.ClosestHit"/> is called tens of millions of times per bake and
 /// is essentially the whole of its cost. It is already spread over every core by
 /// <c>Parallel.For</c>, which shortens the wall clock but does not make the traversal itself cheaper.
 /// </para>
@@ -30,8 +30,8 @@ public class LightmapBvhBenchmarks
 
     private const double WorldOrigin = 24_000.0;
 
-    private LightmapBaker.LightmapBvh? _bvh;
-    private LightmapBaker.LightmapTriangle[] _triangles = [];
+    private LightmapBvh? _bvh;
+    private LightmapTriangle[] _triangles = [];
     private Vector3d[] _origins = [];
     private Vector3d[] _directions = [];
 
@@ -44,7 +44,7 @@ public class LightmapBvhBenchmarks
     public void Setup()
     {
         _triangles = BuildScene(Boxes);
-        _bvh = LightmapBaker.LightmapBvh.Build(_triangles);
+        _bvh = LightmapBvh.Build(_triangles);
 
         _origins = new Vector3d[RayCount];
         _directions = new Vector3d[RayCount];
@@ -78,8 +78,8 @@ public class LightmapBvhBenchmarks
     /// <summary>Building the hierarchy, which the bake pays once per level.</summary>
     /// <returns>The built hierarchy.</returns>
     [Benchmark(Description = "LightmapBvh.Build")]
-    public LightmapBaker.LightmapBvh Build() =>
-        LightmapBaker.LightmapBvh.Build(_triangles);
+    public LightmapBvh Build() =>
+        LightmapBvh.Build(_triangles);
 
     /// <summary>Tracing the rays, which is where a bake spends essentially all of its time.</summary>
     /// <returns>How many rays hit something, so nothing is dead code.</returns>
@@ -123,15 +123,15 @@ public class LightmapBvhBenchmarks
         return hits;
     }
 
-    private static LightmapBaker.LightmapTriangle[] BuildScene(int boxes)
+    private static LightmapTriangle[] BuildScene(int boxes)
     {
-        List<LightmapBaker.LightmapTriangle> triangles = [];
+        List<LightmapTriangle> triangles = [];
         Vector3f albedo = new(0.5f, 0.5f, 0.5f);
 
         void Quad(Vector3d a, Vector3d b, Vector3d c, Vector3d d)
         {
-            triangles.Add(new LightmapBaker.LightmapTriangle(a, b, c, 0, 0f, 0f, 1f, 0f, 1f, 1f, albedo));
-            triangles.Add(new LightmapBaker.LightmapTriangle(a, c, d, 0, 0f, 0f, 1f, 1f, 0f, 1f, albedo));
+            triangles.Add(new LightmapTriangle(a, b, c, 0, 0f, 0f, 1f, 0f, 1f, 1f, albedo));
+            triangles.Add(new LightmapTriangle(a, c, d, 0, 0f, 0f, 1f, 1f, 0f, 1f, albedo));
         }
 
         // The ground, split into a grid so the hierarchy has something to partition rather than two

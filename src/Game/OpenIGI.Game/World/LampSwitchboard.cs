@@ -1,73 +1,6 @@
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
-
-/// <summary>What one of a level's lamps has been told to do.</summary>
-public enum LampMode
-{
-    /// <summary>Lit, as the level ships it.</summary>
-    On,
-
-    /// <summary>Switched off at the wall.</summary>
-    Off,
-
-    /// <summary>Failing: the tube strikes, runs, stutters and drops out on its own.</summary>
-    Broken,
-}
-
-/// <summary>What sort of lamp a fitting is, which decides how it comes on.</summary>
-/// <remarks>
-/// The level does not say -- I.G.I. declares no lights at all -- so each fixture is given one when the board
-/// is built, leaning on its colour: an amber lamp is more likely a sodium lantern, a white one a tube.
-/// The point is not to be right about any one fitting. It is that a yard of lamps coming on at dusk does
-/// not all do the same thing, because real ones do not.
-/// </remarks>
-public enum LampCharacter
-{
-    /// <summary>A fluorescent tube on a glow starter: cathode glow, a flash, maybe a few tries, then light.</summary>
-    Tube,
-
-    /// <summary>A filament: no ignition at all, it simply heats up.</summary>
-    Filament,
-
-    /// <summary>A high-intensity discharge lantern: an ignitor's crackle, a dim arc, a long warm-up.</summary>
-    Discharge,
-}
-
-/// <summary>Something a lamp did that can be heard.</summary>
-/// <remarks>
-/// Raised at the instant the light does it, from the same state machine that moves the light, so the
-/// sound cannot drift from the picture: the starter's tick lands on the frame of the flash.
-/// </remarks>
-public enum LampSound
-{
-    /// <summary>A wall switch was flipped, either way.</summary>
-    Switch,
-
-    /// <summary>A glow starter opened and the tube tried to strike: the flash.</summary>
-    Starter,
-
-    /// <summary>A discharge lamp's ignitor began a burst of high-voltage pulses.</summary>
-    Ignitor,
-
-    /// <summary>The arc caught: the ballast takes the load and hums.</summary>
-    Arc,
-
-    /// <summary>A cold filament took the current.</summary>
-    Filament,
-
-    /// <summary>The supply to a lit lamp was cut.</summary>
-    Extinguish,
-
-    /// <summary>A failing tube began a burst of restrikes.</summary>
-    Sputter,
-}
-
-/// <summary>One sound a lamp made, for whoever plays them.</summary>
-/// <param name="Index">The fixture's index.</param>
-/// <param name="Sound">What it did.</param>
-public readonly record struct LampEvent(int Index, LampSound Sound);
-
 /// <summary>
 /// The switch on the wall for every lamp a level has, and the filament behind it.
 /// </summary>
@@ -84,8 +17,8 @@ public readonly record struct LampEvent(int Index, LampSound Sound);
 /// <b>Nothing here happens instantly.</b> A light switch is a step function and a light is not: a real
 /// fitting takes a couple of hundred milliseconds to die and rather longer to come back, and it is the
 /// SHAPE of those two curves that makes the difference read as a lamp rather than as a texture being
-/// swapped. The curves are in <see cref="Cooling"/> and <see cref="Warming"/> and each is documented
-/// with what it is modelling.
+/// swapped. The curves are in <see cref="LampPhysics.Cooling"/> and <see cref="LampPhysics.Warming"/>
+/// and each is documented with what it is modelling.
 /// </para>
 /// <para>
 /// Everything is driven from a seconds delta and a per-lamp deterministic generator — never from the
@@ -114,12 +47,6 @@ public sealed class LampSwitchboard
     /// consumer drains every frame, and a frame never raises anything like this many.
     /// </remarks>
     private const int MaxPendingEvents = 256;
-
-    /// <summary>How long a tube's flash holds, in seconds, once the starter opens.</summary>
-    private const float FlashSeconds = 0.045f;
-
-    /// <summary>When a tube's flash has dropped back nearly dark, as the arc settles or fails.</summary>
-    private const float DipEndSeconds = 0.085f;
 
     /// <summary>How far off the crosshair's axis a lamp may sit and still be the one aimed at.</summary>
     /// <remarks>
@@ -198,7 +125,7 @@ public sealed class LampSwitchboard
         {
             foreach (Lamp lamp in _lamps)
             {
-                if (lamp.Mode != LampMode.On || !lamp.Supplied || lamp.Transition != Transition.Steady)
+                if (lamp.Mode != LampMode.On || !lamp.Supplied || lamp.Transition != LampTransition.Steady)
                 {
                     return false;
                 }
@@ -287,7 +214,7 @@ public sealed class LampSwitchboard
         {
             if (on)
             {
-                BeginWarming(ref lamp, cold: true);
+                LampPhysics.BeginWarming(ref lamp, cold: true);
             }
             else
             {
@@ -297,7 +224,7 @@ public sealed class LampSwitchboard
                     Raise(index, LampSound.Extinguish);
                 }
 
-                BeginCooling(ref lamp);
+                LampPhysics.BeginCooling(ref lamp);
             }
         }
 
@@ -322,7 +249,7 @@ public sealed class LampSwitchboard
 
         ref Lamp lamp = ref _lamps[index];
         lamp.Supplied = on;
-        lamp.Transition = Transition.Steady;
+        lamp.Transition = LampTransition.Steady;
 
         if (on && lamp.Mode != LampMode.Off)
         {
@@ -330,7 +257,7 @@ public sealed class LampSwitchboard
 
             if (lamp.Mode == LampMode.Broken)
             {
-                EnterBroken(ref lamp, BrokenPhase.Run);
+                LampPhysics.EnterBroken(ref lamp, LampBrokenPhase.Run);
             }
         }
         else
@@ -374,12 +301,12 @@ public sealed class LampSwitchboard
 
         ref Lamp lamp = ref _lamps[index];
 
-        if (lamp.Transition == Transition.Warming)
+        if (lamp.Transition == LampTransition.Warming)
         {
-            return WarmingTint(ref lamp);
+            return LampPhysics.WarmingTint(ref lamp);
         }
 
-        if (lamp.Transition != Transition.Cooling)
+        if (lamp.Transition != LampTransition.Cooling)
         {
             return Vector3f.One;
         }
@@ -420,7 +347,7 @@ public sealed class LampSwitchboard
 
             if (lamp.Supplied)
             {
-                BeginWarming(ref lamp, cold: false);
+                LampPhysics.BeginWarming(ref lamp, cold: false);
             }
         }
         else
@@ -430,7 +357,7 @@ public sealed class LampSwitchboard
 
             if (lamp.Supplied)
             {
-                BeginCooling(ref lamp);
+                LampPhysics.BeginCooling(ref lamp);
             }
         }
 
@@ -472,7 +399,7 @@ public sealed class LampSwitchboard
             // Unless the daylight has its supply off, in which case it is repaired in the dark.
             if (lamp.Supplied)
             {
-                BeginWarming(ref lamp, cold: false);
+                LampPhysics.BeginWarming(ref lamp, cold: false);
             }
         }
         else
@@ -488,7 +415,7 @@ public sealed class LampSwitchboard
             // fault waits for the supply.
             if (lamp.Supplied)
             {
-                BeginCooling(ref lamp);
+                LampPhysics.BeginCooling(ref lamp);
             }
         }
 
@@ -508,7 +435,7 @@ public sealed class LampSwitchboard
             ref Lamp lamp = ref _lamps[i];
             lamp.Mode = LampMode.On;
             lamp.WasBroken = false;
-            lamp.Transition = Transition.Steady;
+            lamp.Transition = LampTransition.Steady;
             lamp.Level = lamp.Supplied ? 1f : 0f;
         }
 
@@ -538,46 +465,46 @@ public sealed class LampSwitchboard
 
             switch (lamp.Transition)
             {
-                case Transition.Cooling:
+                case LampTransition.Cooling:
                     lamp.Elapsed += step;
-                    lamp.Level = lamp.From * Cooling(lamp.Elapsed);
+                    lamp.Level = lamp.From * LampPhysics.Cooling(lamp.Elapsed);
 
                     if (lamp.Level <= DarkLevel)
                     {
                         lamp.Level = 0f;
-                        lamp.Transition = Transition.Steady;
+                        lamp.Transition = LampTransition.Steady;
 
                         // A tube switched off while broken resumes its fault the moment it is lit again,
                         // and the state machine has to be waiting for it rather than mid-run. One the
                         // daylight put out waits for the supply instead.
                         if (lamp.Mode == LampMode.Broken && lamp.Supplied)
                         {
-                            EnterBroken(ref lamp, BrokenPhase.Dark);
+                            LampPhysics.EnterBroken(ref lamp, LampBrokenPhase.Dark);
                         }
                     }
 
                     break;
 
-                case Transition.Warming:
+                case LampTransition.Warming:
                     lamp.Elapsed += step;
-                    lamp.Level = lamp.From + ((1f - lamp.From) * Warming(ref lamp, i));
+                    lamp.Level = lamp.From + ((1f - lamp.From) * LampPhysics.Warming(ref lamp, i, _events));
 
                     if (lamp.Level >= 0.995f)
                     {
                         lamp.Level = 1f;
-                        lamp.Transition = Transition.Steady;
+                        lamp.Transition = LampTransition.Steady;
 
                         // Struck, warmed up — and faulty. From here the fault owns the lamp.
                         if (lamp.Mode == LampMode.Broken)
                         {
-                            EnterBroken(ref lamp, BrokenPhase.Run);
+                            LampPhysics.EnterBroken(ref lamp, LampBrokenPhase.Run);
                         }
                     }
 
                     break;
 
                 default:
-                    if (lamp.Mode == LampMode.Broken && lamp.Supplied && StepBroken(ref lamp, step))
+                    if (lamp.Mode == LampMode.Broken && lamp.Supplied && LampPhysics.StepBroken(ref lamp, step))
                     {
                         Raise(i, LampSound.Sputter);
                     }
@@ -695,300 +622,6 @@ public sealed class LampSwitchboard
         return found;
     }
 
-    /// <summary>How much of its output a lamp still gives out, this long after the current stopped.</summary>
-    /// <remarks>
-    /// <para>
-    /// Two decays added, because a fitting going out has two things happening in it and they run at very
-    /// different rates. Most of the light stops within a couple of mains cycles — an arc extinguishes,
-    /// a filament's surface cools — and that is the fast term, around 35 ms. What is left is thermal
-    /// mass and phosphor persistence, and it lingers for a fifth of a second as the ember or the
-    /// afterglow everybody has seen and nobody would describe.
-    /// </para>
-    /// <para>
-    /// A single exponential gets the timing right and the LOOK wrong: it is either fast enough to be a
-    /// snap or slow enough to be a dissolve, and never both. The sum is what reads as a light going out.
-    /// </para>
-    /// </remarks>
-    private static float Cooling(float seconds) =>
-        (0.82f * MathF.Exp(-seconds / 0.035f)) + (0.18f * MathF.Exp(-seconds / 0.16f));
-
-    /// <summary>How far into coming back on a lamp is, from nought to one.</summary>
-    /// <remarks>
-    /// <para>
-    /// A tube does not fade up. It draws a dim glow across the cathodes, strikes — one hard flash, far
-    /// brighter than the dim it came from — drops nearly dark again as the arc settles, and only then
-    /// climbs to full over a few tenths of a second as the mercury warms. That sequence is the whole
-    /// reason a switched-on lamp reads as a lamp; a linear ramp reads as a slider being dragged.
-    /// </para>
-    /// <para>
-    /// Not every fitting does it, so not every lamp here does: a fixture whose generator says otherwise
-    /// simply warms, the way a filament does. A corridor whose lamps all strike in the same way at the
-    /// same moment is the artefact that says a single effect is being played on all of them.
-    /// </para>
-    /// <para>
-    /// The sounds are raised from here, at the instant the light does the thing they are the sound of.
-    /// </para>
-    /// </remarks>
-    private float Warming(ref Lamp lamp, int index)
-    {
-        float t = lamp.Elapsed;
-
-        if (lamp.Strikes)
-        {
-            return lamp.Character == LampCharacter.Discharge
-                ? Igniting(ref lamp, index, t)
-                : Striking(ref lamp, index, t);
-        }
-
-        // Nothing to ignite: a filament, a tube on an instant-start ballast, or any lamp that was still
-        // partly lit and so still has its arc. Heard only when it really is a start from dark.
-        if (!lamp.Fired)
-        {
-            lamp.Fired = true;
-
-            if (lamp.From < 0.15f)
-            {
-                Raise(index, lamp.Character == LampCharacter.Filament ? LampSound.Filament : LampSound.Arc);
-            }
-        }
-
-        // The mercury warming, or the filament heating: fast at first and asymptotic, which is what both
-        // of them actually do. Normalised so the curve reaches one rather than approaching it forever.
-        return Math.Clamp(1f - MathF.Exp(-t / (lamp.Character == LampCharacter.Discharge ? 0.3f : 0.19f)), 0f, 1f);
-    }
-
-    /// <summary>A tube on a glow starter coming on: preheat, flash, and as many goes as it takes.</summary>
-    /// <remarks>
-    /// <para>
-    /// The starter is a little neon bulb with a bimetal strip in it. It glows, the strip warms and closes,
-    /// current heats the tube's cathodes -- the dim orange glow at each end -- and then the strip cools
-    /// and springs open, and the choke's kick across the tube is the flash. If the arc holds, that is the
-    /// lamp lit; if not, the starter closes again and the whole thing repeats. A warm tube on a good
-    /// starter catches first time in a tenth of a second. A cold one at dusk often does not: a second go,
-    /// a third, now and then a tube that blinks half a dozen times before it holds, which is the one
-    /// everybody notices.
-    /// </para>
-    /// <para>
-    /// And it does not catch at full. Cold mercury is thin vapour, so a tube lit after a day standing dark
-    /// comes up at half or two thirds of its brightness and creeps the rest of the way over a few seconds.
-    /// </para>
-    /// </remarks>
-    private float Striking(ref Lamp lamp, int index, float t)
-    {
-        if (!lamp.Arc)
-        {
-            float u = t - lamp.AttemptStart;
-
-            if (u < lamp.Preheat)
-            {
-                // The cathode glow: visible, dim, and not yet the lamp.
-                return lamp.Glow * (u / MathF.Max(lamp.Preheat, 0.0001f));
-            }
-
-            if (u < lamp.Preheat + FlashSeconds)
-            {
-                if (!lamp.Fired)
-                {
-                    lamp.Fired = true;
-                    Raise(index, LampSound.Starter);
-                }
-
-                return lamp.Peak;
-            }
-
-            if (u < lamp.Preheat + DipEndSeconds)
-            {
-                return 0.06f;
-            }
-
-            if (lamp.Attempts > 0)
-            {
-                // The arc did not hold. The starter closes and preheats the cathodes for another go.
-                lamp.Attempts--;
-                lamp.AttemptStart = t;
-                lamp.Fired = false;
-                RollStrike(ref lamp);
-                return 0f;
-            }
-
-            lamp.Arc = true;
-            lamp.ArcAt = lamp.AttemptStart + lamp.Preheat + DipEndSeconds;
-            Raise(index, LampSound.Arc);
-        }
-
-        float w = t - lamp.ArcAt;
-
-        return lamp.Cold
-            ? Math.Clamp(lamp.ColdStart + ((1f - lamp.ColdStart) * (1f - MathF.Exp(-w / lamp.Ramp))), 0f, 1f)
-            : Math.Clamp(1f - MathF.Exp(-w / 0.19f), 0f, 1f);
-    }
-
-    /// <summary>A discharge lantern coming on: the ignitor's crackle, a dim arc, and a long climb.</summary>
-    /// <remarks>
-    /// <para>
-    /// A sodium or metal-halide lamp has no cathodes to warm. An ignitor fires pulses of a few kilovolts
-    /// across the tube, every half-cycle of the mains, until the gas breaks down -- an audible crackle and
-    /// nothing much to see but a faint spitting -- and then the arc holds in the starting gas, dim and the
-    /// wrong colour, and climbs as the metal in the tube vaporises. A real one takes minutes. This takes
-    /// seconds, because a dusk the player is watching is not minutes long, but keeps the shape: dim at
-    /// first, then most of the way quite quickly, then the last of it slowly.
-    /// </para>
-    /// <para>
-    /// A cold tube does not always break down on the first burst, and the ignitor pauses and tries again.
-    /// </para>
-    /// </remarks>
-    private float Igniting(ref Lamp lamp, int index, float t)
-    {
-        if (!lamp.Arc)
-        {
-            float u = t - lamp.AttemptStart;
-
-            if (u < IgnitorSeconds)
-            {
-                if (!lamp.Fired)
-                {
-                    lamp.Fired = true;
-                    Raise(index, LampSound.Ignitor);
-                }
-
-                // Sparks across the gap rather than light: a faint, unsteady spitting.
-                return ((int)(u * 41f) & 3) == 0 ? 0.035f : 0.008f;
-            }
-
-            if (lamp.Attempts > 0)
-            {
-                // Preheat stands for the ignitor's pause between bursts: a discharge lamp has no preheat.
-                if (u < IgnitorSeconds + lamp.Preheat)
-                {
-                    return 0f;
-                }
-
-                lamp.Attempts--;
-                lamp.AttemptStart = t;
-                lamp.Fired = false;
-                lamp.Preheat = 0.5f + XorShift32.NextUnit(ref lamp.Rng);
-                return 0f;
-            }
-
-            lamp.Arc = true;
-            lamp.ArcAt = lamp.AttemptStart + IgnitorSeconds;
-            Raise(index, LampSound.Arc);
-        }
-
-        float w = t - lamp.ArcAt;
-
-        return Math.Clamp(0.06f + (0.94f * (1f - MathF.Exp(-w / lamp.Ramp))), 0f, 1f);
-    }
-
-    /// <summary>What colour a lamp coming on gives out, before it is giving out its own.</summary>
-    private static Vector3f WarmingTint(ref Lamp lamp)
-    {
-        switch (lamp.Character)
-        {
-            case LampCharacter.Tube when lamp.Strikes && !lamp.Arc && lamp.Level < 0.15f:
-                // The cathodes heating, with no arc between them yet.
-                return new Vector3f(1f, 0.62f, 0.36f);
-
-            case LampCharacter.Discharge when lamp.Strikes:
-                if (!lamp.Arc)
-                {
-                    // The ignitor's sparks: a cold blue-white.
-                    return new Vector3f(0.78f, 0.86f, 1f);
-                }
-
-                // The starting gas's colour, giving way to the lamp's own as the metal vaporises. Tied to
-                // the brightness rather than to time, because both are the same thing happening.
-                float own = Math.Clamp((lamp.Level - 0.06f) / 0.94f, 0f, 1f);
-                Vector3f start = lamp.Sodium ? new Vector3f(1f, 0.42f, 0.55f) : new Vector3f(0.70f, 0.88f, 1f);
-                return start + ((Vector3f.One - start) * own);
-
-            default:
-                return Vector3f.One;
-        }
-    }
-
-    private static void BeginCooling(ref Lamp lamp)
-    {
-        lamp.Transition = Transition.Cooling;
-        lamp.Elapsed = 0f;
-        lamp.From = lamp.Level;
-    }
-
-    private static void BeginWarming(ref Lamp lamp, bool cold)
-    {
-        lamp.Transition = Transition.Warming;
-        lamp.Elapsed = 0f;
-        lamp.From = lamp.Level;
-        lamp.Cold = cold;
-        lamp.Arc = false;
-        lamp.Fired = false;
-        lamp.AttemptStart = 0f;
-
-        // Only from dark, because a strike is an arc being established and a lamp that is already half
-        // lit has one. Without that condition a lamp brought back up from nine tenths flashes on its way
-        // to full, which is not something any fitting does.
-        bool fromDark = lamp.From < 0.15f;
-
-        switch (lamp.Character)
-        {
-            case LampCharacter.Tube:
-                // Rolled per switch-on rather than per lamp: the same fitting does not strike identically
-                // every time, and a lamp that always flashes at exactly 90 ms is a canned animation. A cold
-                // tube always goes through its starter; a warm one on an electronic ballast often does not.
-                lamp.Strikes = fromDark && (cold || XorShift32.NextUnit(ref lamp.Rng) < 0.6f);
-                lamp.Attempts = !lamp.Strikes ? 0
-                    : cold ? ColdStrikeAttempts(ref lamp.Rng)
-                    : XorShift32.NextUnit(ref lamp.Rng) < 0.12f ? 1 : 0;
-                lamp.Ramp = 0.6f + (XorShift32.NextUnit(ref lamp.Rng) * 0.6f);
-                lamp.ColdStart = 0.45f + (XorShift32.NextUnit(ref lamp.Rng) * 0.25f);
-                RollStrike(ref lamp);
-                break;
-
-            case LampCharacter.Discharge:
-                float roll = XorShift32.NextUnit(ref lamp.Rng);
-                lamp.Strikes = fromDark;
-                lamp.Attempts = cold ? (roll < 0.55f ? 0 : roll < 0.85f ? 1 : 2) : 0;
-                lamp.Preheat = 0.5f + XorShift32.NextUnit(ref lamp.Rng);
-                lamp.Ramp = cold ? 1.4f + (XorShift32.NextUnit(ref lamp.Rng) * 1.6f) : 0.3f;
-                break;
-
-            default:
-                lamp.Strikes = false;
-                lamp.Attempts = 0;
-                break;
-        }
-    }
-
-    /// <summary>Rolls one go of a tube's starter: how long it preheats, and how bright the flash is.</summary>
-    /// <remarks>
-    /// A cold starter's bimetal takes far longer to close and open than a warm one's, which is the long
-    /// orange-ended pause before a tube at dusk first blinks. A flash that fails is a weaker one -- the
-    /// arc barely formed -- and the one that takes is the full flash.
-    /// </remarks>
-    private static void RollStrike(ref Lamp lamp)
-    {
-        lamp.Preheat = lamp.Cold
-            ? 0.35f + (XorShift32.NextUnit(ref lamp.Rng) * 0.8f)
-            : 0.05f + (XorShift32.NextUnit(ref lamp.Rng) * 0.08f);
-        lamp.Peak = lamp.Attempts > 0 ? 0.3f + (XorShift32.NextUnit(ref lamp.Rng) * 0.6f) : 0.95f;
-        lamp.Glow = lamp.Cold ? 0.05f + (XorShift32.NextUnit(ref lamp.Rng) * 0.04f) : 0.12f;
-    }
-
-    /// <summary>How many times a cold tube's starter fails before it catches.</summary>
-    /// <remarks>
-    /// Mostly none or one. Now and then a tube is stubborn and blinks several times over a few seconds,
-    /// and that rare one is worth more to the scene than any amount of the common case.
-    /// </remarks>
-    private static int ColdStrikeAttempts(ref uint rng)
-    {
-        float roll = XorShift32.NextUnit(ref rng);
-
-        return roll < 0.42f ? 0
-            : roll < 0.72f ? 1
-            : roll < 0.88f ? 2
-            : 3 + (int)(XorShift32.NextUnit(ref rng) * 2f);
-    }
-
     /// <summary>Decides what sort of lamp a fixture is, from its colour and a hash of where it is listed.</summary>
     /// <remarks>
     /// Its own hash rather than the lamp's generator, so giving lamps a character did not move any
@@ -1013,199 +646,17 @@ public sealed class LampSwitchboard
             : roll < 0.6f ? LampCharacter.Tube : roll < 0.82f ? LampCharacter.Filament : LampCharacter.Discharge;
     }
 
-    private void Raise(int index, LampSound sound)
+    /// <summary>Queues a sound for whoever plays them, unless nobody has come for the last few hundred.</summary>
+    /// <param name="events">The board's pending sounds.</param>
+    /// <param name="index">The fixture's index.</param>
+    /// <param name="sound">What it did.</param>
+    internal static void Raise(List<LampEvent> events, int index, LampSound sound)
     {
-        if (_events.Count < MaxPendingEvents)
+        if (events.Count < MaxPendingEvents)
         {
-            _events.Add(new LampEvent(index, sound));
+            events.Add(new LampEvent(index, sound));
         }
     }
 
-    /// <summary>Advances a failing lamp, in the phase it is currently stuck in.</summary>
-    /// <remarks>
-    /// <para>
-    /// A broken fluorescent is not noise. It is a loop of four recognisable states — a dim glow at the
-    /// cathodes, a burst of rapid restrikes, a stretch of running unsteadily, and darkness — and what
-    /// makes it read as broken rather than as a flicker shader is that the durations are wildly uneven
-    /// and the transitions are not a cycle. Random per frame gives white noise, which looks like a fault
-    /// in the renderer; this looks like a fault in the lamp.
-    /// </para>
-    /// <para>
-    /// Every phase's brightness is a function of the phase's own clock, never of the frame, so the same
-    /// fault plays out identically whatever the frame rate is.
-    /// </para>
-    /// </remarks>
-    /// <returns><see langword="true"/> when the lamp has just begun a burst of restrikes, which is heard.</returns>
-    private static bool StepBroken(ref Lamp lamp, float step)
-    {
-        lamp.BrokenElapsed += step;
-        lamp.BrokenLeft -= step;
-        bool struck = false;
-
-        if (lamp.BrokenLeft <= 0f)
-        {
-            float roll = XorShift32.NextUnit(ref lamp.Rng);
-
-            EnterBroken(ref lamp, lamp.Broken switch
-            {
-                BrokenPhase.Run => roll < 0.5f ? BrokenPhase.Dark
-                    : roll < 0.8f ? BrokenPhase.Glow : BrokenPhase.Strike,
-                BrokenPhase.Dark => roll < 0.75f ? BrokenPhase.Strike : BrokenPhase.Glow,
-                BrokenPhase.Strike => roll < 0.55f ? BrokenPhase.Run
-                    : roll < 0.8f ? BrokenPhase.Dark : BrokenPhase.Glow,
-                _ => roll < 0.6f ? BrokenPhase.Strike : BrokenPhase.Dark,
-            });
-
-            struck = lamp.Broken == BrokenPhase.Strike;
-        }
-
-        float t = lamp.BrokenElapsed;
-
-        lamp.Level = lamp.Broken switch
-        {
-            // The arc trying and failing to hold: a hard square wave, because that is what an arc does —
-            // it is either struck or it is not, and there is nothing in between to ramp through.
-            BrokenPhase.Strike => ((int)(t * lamp.BrokenRate) & 1) == 0 ? lamp.BrokenPeak : 0.04f,
-
-            // Lit, but not well. A slow wobble a few per cent deep, at a rate low enough to be seen
-            // rather than aliased into a shimmer by whatever the frame rate happens to be.
-            BrokenPhase.Run => lamp.BrokenPeak
-                * (1f - (0.07f * (0.5f + (0.5f * MathF.Sin(t * lamp.BrokenRate))))),
-
-            // The cathodes glowing with no arc across them: dim, orange in a real tube, and unsteady.
-            BrokenPhase.Glow => 0.06f + (0.05f * (0.5f + (0.5f * MathF.Sin(t * lamp.BrokenRate)))),
-
-            _ => 0f,
-        };
-
-        return struck;
-    }
-
-    private static void EnterBroken(ref Lamp lamp, BrokenPhase phase)
-    {
-        lamp.Broken = phase;
-        lamp.BrokenElapsed = 0f;
-
-        switch (phase)
-        {
-            case BrokenPhase.Strike:
-                // Twelve to thirty-five restrikes a second: fast enough to read as a fault rather than as
-                // a signal, slow enough that a 60 Hz frame still resolves individual flashes.
-                lamp.BrokenRate = 12f + (XorShift32.NextUnit(ref lamp.Rng) * 23f);
-                lamp.BrokenPeak = 0.75f + (XorShift32.NextUnit(ref lamp.Rng) * 0.25f);
-                lamp.BrokenLeft = 0.08f + (XorShift32.NextUnit(ref lamp.Rng) * 0.42f);
-                break;
-
-            case BrokenPhase.Run:
-                lamp.BrokenRate = 5f + (XorShift32.NextUnit(ref lamp.Rng) * 9f);
-                lamp.BrokenPeak = 0.8f + (XorShift32.NextUnit(ref lamp.Rng) * 0.2f);
-
-                // The long phase, and deliberately the widest range of the four: a tube that fails every
-                // second on the second is a metronome. Some of these hold for four seconds and the room
-                // looks fine, which is what makes the next dropout land.
-                lamp.BrokenLeft = 0.4f + (XorShift32.NextUnit(ref lamp.Rng) * 3.6f);
-                break;
-
-            case BrokenPhase.Glow:
-                lamp.BrokenRate = 3f + (XorShift32.NextUnit(ref lamp.Rng) * 6f);
-                lamp.BrokenLeft = 0.12f + (XorShift32.NextUnit(ref lamp.Rng) * 0.78f);
-                break;
-
-            default:
-                lamp.BrokenLeft = 0.04f + (XorShift32.NextUnit(ref lamp.Rng) * 0.76f);
-                break;
-        }
-    }
-
-    /// <summary>Which curve, if any, a lamp is currently on.</summary>
-    private enum Transition
-    {
-        Steady,
-        Cooling,
-        Warming,
-    }
-
-    /// <summary>What a failing lamp is doing at the moment.</summary>
-    private enum BrokenPhase
-    {
-        Run,
-        Strike,
-        Glow,
-        Dark,
-    }
-
-    /// <summary>One lamp's switch, its supply, its filament and its fault.</summary>
-    private struct Lamp
-    {
-        public LampMode Mode;
-
-        /// <summary>Whether the daylight's side of the circuit is closed.</summary>
-        public bool Supplied;
-
-        public LampCharacter Character;
-
-        /// <summary>Whether the fixture's light is amber, which is what a sodium lantern starts pink towards.</summary>
-        public bool Sodium;
-
-        /// <summary>Whether the fault is still there behind a lamp that is switched off.</summary>
-        public bool WasBroken;
-
-        public float Level;
-
-        public Transition Transition;
-
-        /// <summary>Seconds into the current curve.</summary>
-        public float Elapsed;
-
-        /// <summary>Where the curve started, so an interrupted fade resumes from where it got to.</summary>
-        public float From;
-
-        /// <summary>Whether this start goes through an ignition at all, rather than simply warming.</summary>
-        public bool Strikes;
-
-        /// <summary>Whether this start is from a day standing dark, which is longer and less certain.</summary>
-        public bool Cold;
-
-        /// <summary>Whether the arc has caught, after which the lamp only climbs.</summary>
-        public bool Arc;
-
-        /// <summary>Whether the current attempt has raised its sound yet.</summary>
-        public bool Fired;
-
-        /// <summary>How many more tries the starter or the ignitor makes before one holds.</summary>
-        public int Attempts;
-
-        /// <summary>Seconds into the warm-up at which the current attempt began.</summary>
-        public float AttemptStart;
-
-        /// <summary>A tube's preheat before its flash; a discharge lamp's pause between ignitor bursts.</summary>
-        public float Preheat;
-
-        /// <summary>How bright the current attempt's flash is.</summary>
-        public float Peak;
-
-        /// <summary>How bright the cathodes glow while they preheat.</summary>
-        public float Glow;
-
-        /// <summary>Seconds into the warm-up at which the arc caught.</summary>
-        public float ArcAt;
-
-        /// <summary>The time constant the lamp climbs to full on once the arc has caught, in seconds.</summary>
-        public float Ramp;
-
-        /// <summary>Where a cold tube's light lands when its arc catches.</summary>
-        public float ColdStart;
-
-        public BrokenPhase Broken;
-
-        public float BrokenElapsed;
-
-        public float BrokenLeft;
-
-        public float BrokenRate;
-
-        public float BrokenPeak;
-
-        public uint Rng;
-    }
+    private void Raise(int index, LampSound sound) => Raise(_events, index, sound);
 }

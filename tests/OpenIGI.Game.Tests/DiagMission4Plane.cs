@@ -524,7 +524,7 @@ public sealed class DiagMission4Plane
     {
         try
         {
-            foreach (CutsceneRuntime.AnimationState animation in runtime.AnimationsForTesting)
+            foreach (CutsceneAnimationState animation in runtime.AnimationsForTesting)
             {
                 if (animation.TargetId != 356)
                 {
@@ -540,7 +540,7 @@ public sealed class DiagMission4Plane
                     sb.Append(CultureInfo.InvariantCulture, $" ch0={channels[0]:R} ch1={channels[1]:R} ch2={channels[2]:R} ch3={channels[3]:R} ch4={channels[4]:R}");
                 }
 
-                foreach ((GameTask task, CutsceneRuntime.TransformState state) in runtime.TaskTransformsForTesting)
+                foreach ((GameTask task, CutsceneTransformState state) in runtime.TaskTransformsForTesting)
                 {
                     if (task.Id != 356)
                     {

@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
@@ -28,11 +27,9 @@ public sealed class MissionObjectiveRuntime
     private readonly LevelExpressionRuntime _expressions;
     private readonly Func<string, string> _resolveText;
     private readonly List<Definition> _definitions = [];
-    private readonly List<AreaActivation> _areaActivations = [];
+    private readonly MissionAreaActivation _areas;
     private readonly List<EditVariable> _editVariables = [];
-    private readonly List<StatusMessage> _statusMessages = [];
-    private readonly List<StatusMessage> _transientMessages = [];
-    private readonly HashSet<StatusMessage> _walkedMessages = [];
+    private readonly MissionStatusMessages _messages;
     private readonly List<LevelFlow> _levelFlows = [];
 
     /// <summary>
@@ -42,26 +39,8 @@ public sealed class MissionObjectiveRuntime
     private readonly sbyte[] _digitKeys = new sbyte[10];
     private readonly Func<KeyCode, bool>? _isKeyDown;
 
-    /// <summary>The live message slots, exactly as many as <c>0x486650</c> searches.</summary>
-    /// <remarks>
-    /// Twenty-four, and a send that finds them all busy is dropped rather than queued — the original
-    /// walks the array looking for a free entry and simply returns when it does not find one. Modelled as
-    /// an array rather than a list because the slot index is the draw order.
-    /// </remarks>
-    private readonly StatusMessage?[] _messageSlots = new StatusMessage?[MessageSlotCount];
-    private readonly List<MissionComputerLogEntry> _log = [];
-    private readonly Dictionary<int, HumanOccupant> _soldierOccupants = [];
-    private readonly Dictionary<int, VehicleOccupant> _vehicleOccupants = [];
-
     /// <summary>The LevelFlow the original's <c>flt_BC2360</c> points at: the last one initialised.</summary>
     private readonly LevelFlow? _levelFlow;
-    private bool _playerAlive = true;
-    private Vector3d? _statePlayer;
-    private int _stateTeam;
-    private Vector3d? _stateExtraPlayer;
-    private Func<IEnumerable<VehicleOccupant>>? _vehicleSource;
-    private Func<IEnumerable<HumanOccupant>>? _soldierSource;
-    private Func<AreaPlayer>? _playerSource;
     private bool _attached;
     private int _tick;
     private bool _released;
@@ -72,7 +51,11 @@ public sealed class MissionObjectiveRuntime
     /// (<c>+436</c>) is not empty: no position, unit gain and pitch. Every level authors <c>message</c> on its
     /// radio transmissions and <c>fail</c> on its mission-failed line.
     /// </remarks>
-    public Action<string>? MessageSound { get; set; }
+    public Action<string>? MessageSound
+    {
+        get => _messages.MessageSound;
+        set => _messages.MessageSound = value;
+    }
 
     /// <summary>Builds the runtime from the authored level task tree.</summary>
     /// <param name="levelRoot">The loaded level's task tree.</param>
@@ -99,6 +82,8 @@ public sealed class MissionObjectiveRuntime
         _expressions = new LevelExpressionRuntime(variables, native);
         _resolveText = resolveText ?? (static key => key);
         _isKeyDown = isKeyDown;
+        _areas = new MissionAreaActivation(levelRoot);
+        _messages = new MissionStatusMessages(_expressions, _resolveText, () => _tick);
 
         List<GameTask> tasks = levelRoot.Descendants().ToList();
 
@@ -126,8 +111,7 @@ public sealed class MissionObjectiveRuntime
                     Orientation(declared),
                     Vector32(declared, "Dimensions"),
                     String(declared, "Criteria"));
-                _areaActivations.Add(area);
-                variables.BindInt(declared, "nActive", () => area.ActiveCount, value => area.ActiveCount = value);
+                _areas.Declare(declared, area, variables);
             }
             else if (string.Equals(task.Type.Name, "EditVariable", StringComparison.Ordinal))
             {
@@ -166,18 +150,7 @@ public sealed class MissionObjectiveRuntime
                 {
                     Sound = String(declared, "Sound"),
                 };
-                _statusMessages.Add(message);
-
-                // 0x485770 exports these five fields. In particular, retail LevelFlow expressions
-                // use StatusMessage_N.isSendt to finish missions, so these must be live aliases.
-                variables.BindBool(declared, "isSendt", () => message.IsSent, value => message.IsSent = value);
-                variables.BindInt(declared, "nTickSendt", () => message.SentTick, value => message.SentTick = value);
-                variables.BindBool(declared, "isFinishedDisplay", () => message.IsFinishedDisplay,
-                    value => message.IsFinishedDisplay = value);
-                variables.BindInt(declared, "nFinishedDisplay", () => message.FinishedDisplayTick,
-                    value => message.FinishedDisplayTick = value);
-                variables.BindInt(declared, "nTicksSinceFinishedDisplay", () => message.TicksSinceFinishedDisplay,
-                    value => message.TicksSinceFinishedDisplay = value);
+                _messages.Declare(declared, message, variables);
             }
         }
 
@@ -225,10 +198,10 @@ public sealed class MissionObjectiveRuntime
     public float ExtraMessageHoldSeconds { get; set; }
 
     /// <summary>Gets authored, non-cutscene status messages recorded by IGI1's ComputerLog.</summary>
-    public IReadOnlyList<MissionComputerLogEntry> Log => _log;
+    public IReadOnlyList<MissionComputerLogEntry> Log => _messages.Log;
 
     /// <summary>Gets how many authored status-message tasks the mission contains.</summary>
-    public int StatusMessageCount => _statusMessages.Count;
+    public int StatusMessageCount => _messages.Count;
 
     /// <summary>Shows a non-scripted retail-style status message in the next free top-left slot.</summary>
     /// <param name="text">The already formatted text to draw.</param>
@@ -251,25 +224,7 @@ public sealed class MissionObjectiveRuntime
             throw new ArgumentOutOfRangeException(nameof(durationSeconds));
         }
 
-        StatusMessage message = new(
-            owner: null,
-            string.Empty,
-            string.Empty,
-            sendOnce: true,
-            cutscene: false,
-            durationSeconds)
-        {
-            IsSent = true,
-            SentTick = _tick,
-        };
-        if (!TryTakeMessageSlot(message))
-        {
-            return false;
-        }
-
-        message.BeginDisplay(text);
-        _transientMessages.Add(message);
-        return true;
+        return _messages.ShowTransient(text, durationSeconds);
     }
 
     /// <summary>Gets the messages on screen now, in the slot order the original draws them in.</summary>
@@ -285,23 +240,7 @@ public sealed class MissionObjectiveRuntime
     /// than a list rebuilt thirty times a second for a renderer that usually draws nothing.
     /// </para>
     /// </remarks>
-    public IEnumerable<StatusMessageDisplay> DisplayedMessages
-    {
-        get
-        {
-            foreach (StatusMessage? slot in _messageSlots)
-            {
-                if (slot is { IsDisplaying: true })
-                {
-                    yield return new StatusMessageDisplay(
-                        slot.DisplayText,
-                        slot.RevealedCharacters,
-                        slot.DisplayFrame,
-                        slot.Cutscene);
-                }
-            }
-        }
-    }
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => _messages.DisplayedMessages;
 
     /// <summary>Empties every message slot, as the <c>StatusMessageScreen_ClearMessages</c> native does.</summary>
     /// <remarks>
@@ -318,46 +257,14 @@ public sealed class MissionObjectiveRuntime
     /// Messages without a task, such as weapon pickups, just leave the screen.
     /// </para>
     /// </remarks>
-    public void ClearMessages()
-    {
-        for (int i = 0; i < _messageSlots.Length; i++)
-        {
-            if (_messageSlots[i] is not { } message)
-            {
-                continue;
-            }
-
-            _messageSlots[i] = null;
-            message.StopDisplay();
-            if (_transientMessages.Remove(message))
-            {
-                continue;
-            }
-
-            message.IsFinishedDisplay = true;
-            message.FinishedDisplayTick = _tick;
-            message.TicksSinceFinishedDisplay = 0;
-        }
-    }
+    public void ClearMessages() => _messages.ClearMessages();
 
     /// <summary>Removes subtitles that belong to a cutscene which the player skipped.</summary>
     /// <remarks>
     /// Cutscene messages share the same slots as ordinary status messages. Releasing them here prevents
     /// a subtitle from surviving the camera hand-off and being drawn as a normal gameplay message.
     /// </remarks>
-    public void ClearCutsceneMessages()
-    {
-        foreach (StatusMessage message in _statusMessages)
-        {
-            if (!message.Cutscene || !message.IsDisplaying)
-            {
-                continue;
-            }
-
-            message.StopDisplay();
-            ReleaseMessageSlot(message);
-        }
-    }
+    public void ClearCutsceneMessages() => _messages.ClearCutsceneMessages();
 
     /// <summary>Gets how many authored objective definitions the mission contains.</summary>
     public int DefinitionCount => _definitions.Count;
@@ -474,10 +381,7 @@ public sealed class MissionObjectiveRuntime
             return;
         }
 
-        foreach (AreaActivation area in _areaActivations)
-        {
-            UpdateArea(area);
-        }
+        _areas.UpdateAll();
 
         foreach (EditVariable edit in _editVariables)
         {
@@ -507,17 +411,7 @@ public sealed class MissionObjectiveRuntime
     {
         ArgumentNullException.ThrowIfNull(walker);
         _attached = true;
-        _vehicleSource = vehicles;
-        _soldierSource = soldiers;
-        _playerSource = player;
-        foreach (AreaActivation area in _areaActivations)
-        {
-            walker.Bind(area.Task, task =>
-            {
-                UpdateArea(area);
-                walker.RunChildren(task);
-            });
-        }
+        _areas.AttachTo(walker, vehicles, soldiers, player);
 
         foreach (EditVariable edit in _editVariables)
         {
@@ -528,61 +422,7 @@ public sealed class MissionObjectiveRuntime
             });
         }
 
-        // StatusMessage::Run (0x4855F0) is the task's update: it runs where the walk reaches it, so a task later in
-        // the tree sees this tick's send, and a message in a closed container does not update.
-        foreach (StatusMessage message in _statusMessages)
-        {
-            if (message.Task is { } owner)
-            {
-                _walkedMessages.Add(message);
-                walker.Bind(owner, task =>
-                {
-                    UpdateMessage(message);
-                    walker.RunChildren(task);
-                });
-            }
-        }
-    }
-
-    /// <summary>
-    /// StatusMessage::Run (<c>0x4855F0</c>): the ticks since its display finished count on, then it sends when its
-    /// expression holds -- a one-shot once, a repeating one no sooner than 210 ticks after its last send.
-    /// </summary>
-    private void UpdateMessage(StatusMessage message)
-    {
-        if (message.IsFinishedDisplay)
-        {
-            message.TicksSinceFinishedDisplay++;
-        }
-
-        if ((!message.SendOnce || !message.IsSent)
-            && _tick > message.SentTick + 210
-            && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false, message.Task))
-        {
-            message.IsSent = true;
-            message.SentTick = _tick;
-
-            // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
-            // only begins if it got one: a message with nowhere to go is not shown, and the original does not
-            // queue it for later.
-            if (TryTakeMessageSlot(message))
-            {
-                message.BeginDisplay(_resolveText(message.TextResource));
-                if (message.Sound.Length > 0)
-                {
-                    MessageSound?.Invoke(message.Sound);
-                }
-            }
-
-            if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
-            {
-                if (_log.Count == 50)
-                {
-                    _log.RemoveAt(0);
-                }
-                _log.Add(new MissionComputerLogEntry(message.TextResource));
-            }
-        }
+        _messages.AttachTo(walker);
     }
 
     /// <summary>Latches the player's projections and liveness for the areas that count them this tick.</summary>
@@ -592,59 +432,7 @@ public sealed class MissionObjectiveRuntime
     /// <param name="playerAlive">Whether the player can occupy areas.</param>
     public void SetLevelStateInputs(Vector3d? playerPosition, int playerTeam, Vector3d? extraPlayerPosition, bool playerAlive)
     {
-        _playerAlive = playerAlive;
-        _statePlayer = playerPosition;
-        _stateTeam = playerTeam;
-        _stateExtraPlayer = extraPlayerPosition;
-        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
-        {
-            player.IsDead = true;
-        }
-    }
-
-    /// <summary>AreaActivate::Update (<c>0x5048A0</c>): nActive cleared and recounted over every matching occupant.</summary>
-    private void UpdateArea(AreaActivation area)
-    {
-        int count = 0;
-        AreaPlayer player = _playerSource?.Invoke()
-            ?? new AreaPlayer(_statePlayer, _stateTeam, _stateExtraPlayer, _playerAlive);
-        if (player.Alive
-            && area.AcceptsPlayer(player.Team)
-            && ((player.Position is { } point && area.Contains(point))
-                || (player.ExtraPosition is { } extra && area.Contains(extra))))
-        {
-            count++;
-        }
-
-        IEnumerable<HumanOccupant> soldiers = _soldierSource?.Invoke() ?? _soldierOccupants.Values;
-        foreach (HumanOccupant occupant in soldiers)
-        {
-            GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
-            if (soldier is not null
-                && !occupant.IsDead
-                && ConditionalContainerGate.IsTaskActive(soldier)
-                && area.AcceptsSoldier(occupant.Team)
-                && area.Contains(occupant.Position))
-            {
-                count++;
-            }
-        }
-
-        // CRITERIA_VEHICLE (0x4F4560) counts the whole vehicle list; a vehicle stays listed while its container is
-        // closed, so no active test here.
-        IEnumerable<VehicleOccupant> vehicles = _vehicleSource?.Invoke() ?? _vehicleOccupants.Values;
-        foreach (VehicleOccupant occupant in vehicles)
-        {
-            GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
-            if (vehicle is not null
-                && area.AcceptsVehicle
-                && area.Contains(occupant.Position))
-            {
-                count++;
-            }
-        }
-
-        area.ActiveCount = count;
+        _areas.SetLevelStateInputs(playerPosition, playerTeam, extraPlayerPosition, playerAlive);
     }
 
     /// <summary>EditVariable::Update (<c>0x4889B0</c>): Add first, Sub second, every tick.</summary>
@@ -674,73 +462,22 @@ public sealed class MissionObjectiveRuntime
     public void SetSoldierOccupants(IEnumerable<HumanOccupant> occupants)
     {
         ArgumentNullException.ThrowIfNull(occupants);
-        _soldierOccupants.Clear();
-        foreach (HumanOccupant occupant in occupants)
-        {
-            _soldierOccupants[occupant.TaskId] = occupant;
-
-            // Write the report through to the task itself, which is where the original keeps it and
-            // where HumanTask's export reads it from. A soldier the host has not reported keeps the
-            // latch it already had, and a freshly declared one starts alive.
-            if (_levelRoot.Tree.FromId(occupant.TaskId) is HumanTask human && occupant.IsDead)
-            {
-                human.IsDead = true;
-            }
-        }
+        _areas.SetSoldierOccupants(occupants);
     }
 
     /// <summary>Feeds the live positions of graph-driven vehicles into vehicle-only areas.</summary>
     public void SetVehicleOccupants(IEnumerable<VehicleOccupant> occupants)
     {
         ArgumentNullException.ThrowIfNull(occupants);
-        _vehicleOccupants.Clear();
-        foreach (VehicleOccupant occupant in occupants)
-        {
-            _vehicleOccupants[occupant.TaskId] = occupant;
-        }
+        _areas.SetVehicleOccupants(occupants);
     }
-
-    /// <summary>Whether the named soldier's last reported state was dead.</summary>
-    private bool IsSoldierDead(int taskId) =>
-        _soldierOccupants.TryGetValue(taskId, out HumanOccupant occupant) && occupant.IsDead;
 
     /// <summary>Evaluates objectives, messages, cutscenes, and level flow after live level state has advanced.</summary>
     public void TickAfterLevelState()
     {
         PublishObjectives();
 
-        // A message the level walk reaches sends from its own update (UpdateMessage); without a walk they update
-        // here, in list order.
-        foreach (StatusMessage message in _statusMessages)
-        {
-            if (!_walkedMessages.Contains(message))
-            {
-                UpdateMessage(message);
-            }
-
-            if (message.IsFinishedDisplay)
-            {
-                continue;
-            }
-
-            if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
-            {
-                message.IsFinishedDisplay = true;
-                message.FinishedDisplayTick = _tick;
-                message.TicksSinceFinishedDisplay = 0;
-                ReleaseMessageSlot(message);
-            }
-        }
-
-        for (int i = _transientMessages.Count - 1; i >= 0; i--)
-        {
-            StatusMessage message = _transientMessages[i];
-            if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
-            {
-                ReleaseMessageSlot(message);
-                _transientMessages.RemoveAt(i);
-            }
-        }
+        _messages.Tick(ExtraMessageHoldSeconds);
 
         // LevelFlow::Update (0x489290) updates its child tasks before it writes its own result, so the
         // messages above see the result of the tick before this one -- as Level 14's MISSION_FAILED does.
@@ -853,46 +590,6 @@ public sealed class MissionObjectiveRuntime
             double number => (float)number,
             _ => fallback,
         } : fallback;
-
-    /// <summary>Puts a message in the lowest free slot, as <c>0x486650</c> does.</summary>
-    /// <param name="message">The message being sent.</param>
-    /// <returns><see langword="false"/> when all the slots are busy and the send is dropped.</returns>
-    private bool TryTakeMessageSlot(StatusMessage message)
-    {
-        // A repeating message that is sent again while its previous showing is still on screen keeps the
-        // slot it already has rather than taking a second one, which is what stops one noisy trigger from
-        // filling the column with copies of itself.
-        for (int i = 0; i < _messageSlots.Length; i++)
-        {
-            if (ReferenceEquals(_messageSlots[i], message))
-            {
-                return true;
-            }
-        }
-
-        for (int i = 0; i < _messageSlots.Length; i++)
-        {
-            if (_messageSlots[i] is null)
-            {
-                _messageSlots[i] = message;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private void ReleaseMessageSlot(StatusMessage message)
-    {
-        for (int i = 0; i < _messageSlots.Length; i++)
-        {
-            if (ReferenceEquals(_messageSlots[i], message))
-            {
-                _messageSlots[i] = null;
-                return;
-            }
-        }
-    }
 
     private static Vector3d Vector(DeclaredTask task, string name) =>
         task.TryGetValue(name, out object? value) && value is Vector3d vector ? vector : default;
@@ -1031,278 +728,4 @@ public sealed class MissionObjectiveRuntime
         public string AddExpression { get; } = addExpression;
         public string SubExpression { get; } = subExpression;
     }
-
-    private sealed class AreaActivation
-    {
-        public DeclaredTask Task { get; }
-
-        private readonly Vector3d _minimum;
-        private readonly Vector3d _maximum;
-        private readonly OccupantFilter _filter;
-        private readonly Vector3d _position;
-        private readonly Matrix3f _orientation;
-        private readonly Vector3f _half;
-
-        public AreaActivation(DeclaredTask task, Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
-        {
-            Task = task;
-            _position = position;
-            _orientation = orientation;
-            _half = dimensions * 0.5f;
-            // AreaActivate::Prepare (0x5045F0) halves Dimensions, rotates all eight corners and
-            // publishes their component-wise min/max as the query bounds.
-            Vector3f half = dimensions * 0.5f;
-            double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
-            double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
-            for (int corner = 0; corner < 8; corner++)
-            {
-                Vector3f local = new(
-                    (corner & 1) == 0 ? half.X : -half.X,
-                    (corner & 2) == 0 ? half.Y : -half.Y,
-                    (corner & 4) == 0 ? half.Z : -half.Z);
-                Vector3f rotated = orientation.Transposed().Transform(local);
-                Vector3d world = position + new Vector3d(rotated.X, rotated.Y, rotated.Z);
-                minX = Math.Min(minX, world.X); minY = Math.Min(minY, world.Y); minZ = Math.Min(minZ, world.Z);
-                maxX = Math.Max(maxX, world.X); maxY = Math.Max(maxY, world.Y); maxZ = Math.Max(maxZ, world.Z);
-            }
-            _minimum = new Vector3d(minX, minY, minZ);
-            _maximum = new Vector3d(maxX, maxY, maxZ);
-
-            // The criteria names which humans the volume counts. An empty or unknown criteria counts
-            // every human; CRITERIA_HUMAN0/HUMAN1 count a team; the player-only spellings count just the
-            // player object. Mission 4's gate volumes use CRITERIA_HUMAN0 so the FRIENDLY squad's advance
-            // -- not just the player walking in -- registers an occupant, which is what turns the
-            // objective-complete trigger once the squad reaches the internal plateau.
-            string filter = criteria.Trim();
-            if (filter.Equals("CRITERIA_HUMAN0", StringComparison.OrdinalIgnoreCase))
-            {
-                _filter = OccupantFilter.Team0;
-            }
-            else if (filter.Equals("CRITERIA_HUMAN1", StringComparison.OrdinalIgnoreCase))
-            {
-                _filter = OccupantFilter.Team1;
-            }
-            else if (filter.Contains("HumanPlayer", StringComparison.OrdinalIgnoreCase)
-                || filter.Equals("PLAYER", StringComparison.OrdinalIgnoreCase))
-            {
-                _filter = OccupantFilter.PlayerOnly;
-            }
-            else if (filter.Equals("CRITERIA_VEHICLE", StringComparison.OrdinalIgnoreCase))
-            {
-                _filter = OccupantFilter.Vehicle;
-            }
-            else
-            {
-                _filter = OccupantFilter.All;
-            }
-        }
-
-        /// <summary>Whether the player (on the given team) counts toward this volume.</summary>
-        public bool AcceptsPlayer(int team) => _filter switch
-        {
-            OccupantFilter.Team0 => team == 0,
-            OccupantFilter.Team1 => team == 1,
-            OccupantFilter.Vehicle => false,
-            _ => true, // All, or PlayerOnly (the player is the player)
-        };
-
-        /// <summary>Whether a soldier on the given team counts toward this volume.</summary>
-        public bool AcceptsSoldier(int team) => _filter switch
-        {
-            OccupantFilter.Team0 => team == 0,
-            OccupantFilter.Team1 => team == 1,
-            OccupantFilter.PlayerOnly => false,
-            OccupantFilter.Vehicle => false,
-            _ => true, // All
-        };
-
-        /// <summary>Whether a vehicle counts toward this volume.</summary>
-        public bool AcceptsVehicle => _filter is OccupantFilter.Vehicle or OccupantFilter.All;
-
-        public int ActiveCount { get; set; }
-
-        /// <summary>Whether a point lies in the volume: the box test <c>0x5042B0</c>, in the area's own frame.</summary>
-        /// <remarks>
-        /// The rotated corners' min/max (<c>+32</c>/<c>+56</c>) are only the query's bounds; the test itself takes the
-        /// offset into the area's axes (<c>Mᵀ·(p − pos)</c>, single precision) and compares each against the half
-        /// extent. For an area turned off the world axes -- mission 7's gate volumes are turned 126° -- the bounds
-        /// hold far more ground than the box does.
-        /// </remarks>
-        public bool Contains(Vector3d point)
-        {
-            if (point.X < _minimum.X || point.X > _maximum.X
-                || point.Y < _minimum.Y || point.Y > _maximum.Y
-                || point.Z < _minimum.Z || point.Z > _maximum.Z)
-            {
-                return false;
-            }
-
-            double dx = point.X - _position.X, dy = point.Y - _position.Y, dz = point.Z - _position.Z;
-            Matrix3f m = _orientation;
-            float x = (float)((dz * m.M31) + (dy * m.M21) + (dx * m.M11));
-            float y = (float)((dz * m.M32) + (dy * m.M22) + (dx * m.M12));
-            float z = (float)((dz * m.M33) + (dy * m.M23) + (dx * m.M13));
-            return !(x > _half.X) && !(y > _half.Y) && !(z > _half.Z)
-                && !(-_half.X > x) && -_half.Y <= y && -_half.Z <= z;
-        }
-    }
-
-    private enum OccupantFilter
-    {
-        All,
-        Team0,
-        Team1,
-        PlayerOnly,
-        Vehicle,
-    }
-
-    private sealed class StatusMessage(
-        DeclaredTask? owner,
-        string sendExpression,
-        string textResource,
-        bool sendOnce,
-        bool cutscene,
-        float duration)
-    {
-        public DeclaredTask? Task { get; } = owner;
-        public string SendExpression { get; } = sendExpression;
-        public string TextResource { get; } = textResource;
-        public bool SendOnce { get; } = sendOnce;
-        public bool Cutscene { get; } = cutscene;
-        public float Duration { get; } = duration;
-        public string Sound { get; init; } = string.Empty;
-        public bool IsSent { get; set; }
-        public int SentTick { get; set; } = -100000;
-        public bool IsFinishedDisplay { get; set; }
-        public int FinishedDisplayTick { get; set; } = -1;
-        public int TicksSinceFinishedDisplay { get; set; }
-        public bool IsDisplaying { get; private set; }
-
-        /// <summary>Gets the localized text, kept so a renderer has something to draw.</summary>
-        public string DisplayText { get; private set; } = string.Empty;
-
-        /// <summary>Gets how much of <see cref="DisplayText"/> has been typed out so far.</summary>
-        /// <remarks>
-        /// The original keeps a cursor into the string (<c>+44</c>) rather than a count, and starts it at
-        /// the <em>end</em> for a cutscene message so a subtitle is whole from its first frame. Same thing
-        /// counted from the other side, which is what the reveal below already maintains.
-        /// </remarks>
-        public int RevealedCharacters => DisplayText.Length - CharactersRemaining;
-
-        /// <summary>Gets how many ticks this message has been on screen, for the panel's opening flash.</summary>
-        public int DisplayFrame { get; private set; }
-
-        private int CharactersRemaining { get; set; }
-        private int HoldTicks { get; set; }
-
-        public void BeginDisplay(string text)
-        {
-            IsDisplaying = true;
-            DisplayFrame = 0;
-            DisplayText = text;
-
-            // A repeating message gets a fresh slot in the original, so its display state starts over.
-            // Without this the second send of a message never advances again -- Tick only advances a
-            // message that has not finished -- and the card sticks on screen for the rest of the mission.
-            IsFinishedDisplay = false;
-            TicksSinceFinishedDisplay = 0;
-
-            // A cutscene message is fully revealed on its first frame; everything else types out.
-            CharactersRemaining = Cutscene ? 0 : text.Length;
-            HoldTicks = 0;
-        }
-
-        public void StopDisplay() => IsDisplaying = false;
-
-        public bool AdvanceDisplay(float extraHoldSeconds)
-        {
-            // StatusMessageScreen::UpdateSlot, 0x485B80. Cutscene subtitles hold immediately;
-            // ordinary messages fade for nine ticks, reveal one character every other tick, then hold.
-            // The original's hold is Duration seconds at 30 Hz; the extra is added in the same units and
-            // is zero unless the host asked for it.
-            int hold = (int)(Duration * 30f) + (int)(MathF.Max(0f, extraHoldSeconds) * 30f);
-
-            if (Cutscene)
-            {
-                if (HoldTicks++ > hold)
-                {
-                    IsDisplaying = false;
-                    return true;
-                }
-                return false;
-            }
-
-            if (DisplayFrame >= 9)
-            {
-                if (CharactersRemaining > 0)
-                {
-                    if (((DisplayFrame - 9) & 1) == 0)
-                    {
-                        CharactersRemaining--;
-                    }
-                }
-                else if (++HoldTicks > hold)
-                {
-                    IsDisplaying = false;
-                    return true;
-                }
-            }
-            DisplayFrame++;
-            return false;
-        }
-    }
 }
-
-/// <summary>The three objective states IGI1's objectives screen labels.</summary>
-public enum MissionObjectiveState
-{
-    /// <summary>The objective has neither completed nor failed.</summary>
-    Incomplete,
-    /// <summary>The objective's authored completion expression is true.</summary>
-    Complete,
-    /// <summary>The objective's authored failure expression is true.</summary>
-    Failed,
-}
-
-/// <summary>One row in the active map-computer objective definition.</summary>
-public sealed record MissionObjective(
-    string TextResource,
-    int LinkTaskId,
-    Vector3d? Position,
-    MissionObjectiveState State)
-{
-    /// <summary>Gets the localized text resolved when this snapshot was produced.</summary>
-    /// <remarks>
-    /// A renderer should consume this rather than owning another language-table lookup.  The resource key
-    /// remains available for the retail map computer and save/debug tooling that addresses it directly.
-    /// </remarks>
-    public string Text { get; init; } = string.Empty;
-}
-
-/// <summary>One localized StatusMessage captured by IGI1's map-computer log.</summary>
-public sealed record MissionComputerLogEntry(string TextResource);
-
-/// <summary>One status message as it is on screen this tick.</summary>
-/// <remarks>
-/// A snapshot for a renderer, not the message itself: the state machine that produces it belongs to the
-/// simulation and steps at 30 Hz, while whatever draws this may run several times per tick and must not
-/// be able to advance it.
-/// </remarks>
-/// <param name="Text">The localized text in full.</param>
-/// <param name="RevealedCharacters">
-/// How many leading characters of <paramref name="Text"/> have been typed out. Renderers should draw
-/// <c>Text.AsSpan(0, RevealedCharacters)</c>, which needs no allocation per frame.
-/// </param>
-/// <param name="DisplayFrame">
-/// How many ticks the message has been up. The original spends the first nine of them fading its panel in
-/// from three-quarters opacity to a sixth, and holds the category icon back until they have passed.
-/// </param>
-/// <param name="IsCutscene">
-/// Whether this is a cutscene message — the flag the original calls <c>+454</c>. Those are drawn as a
-/// subtitle low on the screen, are whole from their first frame, and are kept out of the computer log.
-/// </param>
-public readonly record struct StatusMessageDisplay(
-    string Text,
-    int RevealedCharacters,
-    int DisplayFrame,
-    bool IsCutscene);
