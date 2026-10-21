@@ -11,7 +11,7 @@ internal static class ContentCommand
     /// <summary>The SSH destination when none is given: the release VM's deploy user.</summary>
     private const string DefaultSsh = "deploy@sh-de";
 
-    private const string Store = "[--ssh <host> [--remote <cmd>] [--service <url>] | --to-dir <dir> | --upload-file <tar.gz>]";
+    internal const string Store = "[--ssh <host> [--remote <cmd>] [--service <url>] | --to-dir <dir> | --upload-file <tar.gz>]";
 
     // What a mod's mod.json says of it, which the command line may not say otherwise.
     private static readonly string[] ModManifestOptions = ["--pack", "--version", "--title", "--summary", "--game", "--min-game", "--platform"];
@@ -74,7 +74,10 @@ internal static class ContentCommand
         }
     }
 
-    private static IContentStore OpenStore(Dictionary<string, string> options) =>
+    /// <summary>Opens the store the options name: the release VM over SSH (the default), a folder, or an upload file.</summary>
+    /// <param name="options">The command line's options.</param>
+    /// <returns>The store.</returns>
+    internal static IContentStore OpenStore(Dictionary<string, string> options) =>
         options.TryGetValue("--to-dir", out string? directory) ? new FolderStore(directory)
         : options.TryGetValue("--upload-file", out string? tarball) ? new TarballStore(tarball)
         : new SshStore(
