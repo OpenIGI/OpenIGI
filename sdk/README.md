@@ -123,4 +123,5 @@ dotnet run --project tools/OpenIGI.Tools.Release -- mods-index publish <index> <
 outside the index.
 
 The SDK packages are made by `tools/release/pack-modding-sdk.sh <version>`. A game release pushes them to nuget.org
-once the repository has a `NUGET_API_KEY` secret.
+through Trusted Publishing, once the repository's `NUGET_USER` variable names the nuget.org profile whose policy
+trusts `release.yml`.
