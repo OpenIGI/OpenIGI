@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Streamline;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Streamline;
 using Silk.NET.Vulkan;
@@ -24,7 +25,7 @@ public sealed class VulkanRhi : IDisposable
     private readonly VulkanRhiDevice _rhi;
     private readonly VulkanSwapchain? _swapchain;
     private readonly StreamlineRuntime? _streamlineRuntime;
-    private readonly VulkanRhiStreamline? _streamline;
+    private readonly StreamlineSession? _streamline;
     private bool _disposed;
 
     /// <summary>The features every Streamline session asks for.</summary>
@@ -51,7 +52,7 @@ public sealed class VulkanRhi : IDisposable
         VulkanRhiDevice rhi,
         VulkanSwapchain? swapchain = null,
         StreamlineRuntime? streamlineRuntime = null,
-        VulkanRhiStreamline? streamline = null)
+        StreamlineSession? streamline = null)
     {
         _instance = instance;
         _device = device;
@@ -67,11 +68,7 @@ public sealed class VulkanRhi : IDisposable
     public IRhiDevice Device => _rhi;
 
     /// <summary>Gets how many nanoseconds one tick of the device's timestamp counter is.</summary>
-    /// <remarks>
-    /// Read from the adapter rather than assumed. It differs by an order of magnitude between vendors,
-    /// and a wrong one reports every stage's cost wrong by that factor while looking entirely plausible.
-    /// </remarks>
-    public double TimestampPeriodNanoseconds { get; private set; } = 1.0;
+    public double TimestampPeriodNanoseconds => _rhi.TimestampPeriodNanoseconds;
 
     /// <summary>Opens a device with no window, drawing into textures of its own.</summary>
     /// <param name="width">The frame's width in pixels.</param>
@@ -108,10 +105,7 @@ public sealed class VulkanRhi : IDisposable
 
             rhi.AttachOffscreen(width, height, format);
 
-            return new VulkanRhi(instance, device, allocator, commands, rhi)
-            {
-                TimestampPeriodNanoseconds = selection.Properties.Limits.TimestampPeriod,
-            };
+            return new VulkanRhi(instance, device, allocator, commands, rhi);
         }
         catch
         {
@@ -152,12 +146,16 @@ public sealed class VulkanRhi : IDisposable
         // creation add what its plugins need, and a device created any other way is one it cannot use.
         StreamlineRuntime? runtime = streamline is null
             ? null
-            : StreamlineRuntime.TryCreate(streamline, StreamlineFeatures, log);
+            : StreamlineRuntime.TryCreate(streamline, StreamlineFeatures, log, SlRenderApi.Vulkan);
 
         VulkanInstance instance;
         try
         {
-            instance = new(surface, enableValidation, log, runtime?.CreateVulkanApi());
+            instance = new(
+                surface,
+                enableValidation,
+                log,
+                runtime is null ? null : StreamlineVulkanLoader.CreateApi(runtime.InterposerPath));
         }
         catch
         {
@@ -179,7 +177,7 @@ public sealed class VulkanRhi : IDisposable
             // while loaded, the host renders off-screen and pays a copy every frame even with it off.
             if (runtime is not null
                 && streamline is { FrameGeneration: false }
-                && runtime.IsFeatureSupported(SlFeature.DlssG, (nint)selection.Device.Handle) == SlResult.Ok)
+                && runtime.IsFeatureSupported(SlFeature.DlssG, SlAdapterInfo.ForVulkan(selection.Device.Handle)) == SlResult.Ok)
             {
                 _ = runtime.SetFeatureLoaded(SlFeature.DlssG, false);
             }
@@ -192,17 +190,15 @@ public sealed class VulkanRhi : IDisposable
 
             rhi.AttachSwapchain(swapchain);
 
-            VulkanRhiStreamline? seam = null;
+            StreamlineSession? seam = null;
             if (runtime is not null)
             {
-                seam = new VulkanRhiStreamline(runtime, rhi, selection.Device, log);
-                rhi.AttachStreamline(seam);
+                VulkanStreamlineAdapter adapter = new(rhi, selection.Device);
+                seam = new StreamlineSession(runtime, adapter, log);
+                rhi.AttachStreamline(seam, adapter);
             }
 
-            return new VulkanRhi(instance, device, allocator, commands, rhi, swapchain, runtime, seam)
-            {
-                TimestampPeriodNanoseconds = selection.Properties.Limits.TimestampPeriod,
-            };
+            return new VulkanRhi(instance, device, allocator, commands, rhi, swapchain, runtime, seam);
         }
         catch
         {

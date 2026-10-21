@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Game.Hosting;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
@@ -10,7 +11,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Menus;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -18,18 +19,23 @@ using OpenIGI.Game;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
+using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Presentation.World;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Host.Audio;
+using OpenIGI.Host.Configuration;
+using System.Diagnostics;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
+    // The mission being played: which, its level tree, and how far it has got to being decided.
+    private readonly MissionSession _session;
+
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];
     private void StartMission(int id)
@@ -52,12 +58,10 @@ internal sealed partial class GameHost
 
         _logger.Information("Mission", $"Starting {chosen}.");
         LevelTask levelRoot = (LevelTask)_loop.Tasks.New(_loop.Tasks.Root, _loop.Types.Get(EngineTaskTypes.Level));
-        _activeLevelRoot = levelRoot;
-        _activeMission = chosen;
+        _session.Begin(chosen, levelRoot);
 
         // The menu's lite profile ends here, before anything below reads the variables it overrides.
         UpdateBackdropProfile();
-        _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();
 
@@ -83,7 +87,7 @@ internal sealed partial class GameHost
         // shipping a later mesh version has every model in it refused on the way in -- the pack still
         // opens, still reports a name, and holds nothing.
         MissionLoader missionLoader = new(
-            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank,
+            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _audioOut.Bank,
             _titleRuntime.Formats);
         LoadedMission loaded = missionLoader.Load(id);
 
@@ -95,131 +99,6 @@ internal sealed partial class GameHost
 
         BringMissionUp(loaded, levelRoot, id, promoted: false);
     }
-
-    /// <summary>Resolves a retail directory without assuming the install's casing matches the script.</summary>
-    private static string? ResolveDirectoryCaseInsensitive(string root, string relativePath)
-    {
-        string current = Path.GetFullPath(root);
-        foreach (string part in relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            string exact = Path.Combine(current, part);
-            if (Directory.Exists(exact))
-            {
-                current = exact;
-                continue;
-            }
-
-            if (!Directory.Exists(current))
-            {
-                return null;
-            }
-
-            string? match = Directory.EnumerateDirectories(current)
-                .FirstOrDefault(path => string.Equals(
-                    Path.GetFileName(path), part, StringComparison.OrdinalIgnoreCase));
-            if (match is null)
-            {
-                return null;
-            }
-
-            current = match;
-        }
-
-        return current;
-    }
-
-    /// <summary>Gets the along-track extent retail uses to space cars in a Train consist.</summary>
-    /// <summary>Gets a wheel model's rolling radius in world units, for the wheel animation.</summary>
-    private static float CutsceneWheelRadius(LoadedMission mission, string name)
-    {
-        return mission.TryGetModel(name, out MefModel? model) && model is not null
-            ? WorldScene.WheelRadius(model)
-            : 0f;
-    }
-
-    private static float CutsceneModelLength(LoadedMission mission, string name)
-    {
-        if (!mission.TryGetModel(name, out MefModel? model) || model is null)
-        {
-            return 0f;
-        }
-
-        return WorldScene.TrainCouplingDistance(model);
-    }
-
-    /// <summary>Gets the retail origin fraction between a Train model's two coupling vertices.</summary>
-    private static float CutsceneModelPivot(LoadedMission mission, string name)
-    {
-        if (!mission.TryGetModel(name, out MefModel? model) || model is null)
-        {
-            return 0f;
-        }
-
-        return WorldScene.TrainCouplingPivotFraction(model);
-    }
-
-    /// <summary>Chooses the engine-unit occupant used by retail AreaActivate volumes.</summary>
-    /// <param name="playerUnits">The player's body position in engine units.</param>
-    /// <param name="cutsceneViewMetres">
-    /// The authored cutscene camera in renderer metres when it owns the frame; otherwise null.
-    /// </param>
-    /// <param name="freeViewMetres">
-    /// The diagnostic free camera in renderer metres. It is only a fallback when no player body exists;
-    /// moving a debug camera must never satisfy gameplay gates such as Mission 4's extraction volume.
-    /// </param>
-    internal static Vector3d? AreaActivationOccupant(
-        Vector3d? playerUnits,
-        Vector3d? cutsceneViewMetres,
-        Vector3d? freeViewMetres = null)
-    {
-        if (cutsceneViewMetres is { } cutscene)
-        {
-            return cutscene * WorldScene.UnitsPerMetre;
-        }
-
-        if (playerUnits is { } player)
-        {
-            return player;
-        }
-
-        return freeViewMetres is { } free
-            ? free * WorldScene.UnitsPerMetre
-            : null;
-    }
-
-    /// <summary>
-    /// Gets the player-body projection that preserves occupancy while a cutscene camera drives activation.
-    /// </summary>
-    /// <param name="playerUnits">The player's body position in engine units.</param>
-    /// <param name="cutsceneViewMetres">
-    /// The authored cutscene camera in renderer metres when it owns the frame; otherwise null.
-    /// </param>
-    /// <remarks>
-    /// Retail queries humans rather than cameras, so the stationary body never stops occupying its
-    /// volume when a cinematic starts. Without this, Mission 4's latch-less outro gate
-    /// (<c>AreaActivate_156.nActive</c>) drops as soon as the <c>CutScene_2222</c> camera leaves the
-    /// extraction volume, aborting the cutscene and refiring it every other tick. The camera remains
-    /// the primary projection (Mission 14 streams tunnel sections off it), while the body is an
-    /// alternate projection of that same logical player rather than another occupant.
-    /// </remarks>
-    internal static Vector3d? AreaActivationExtraOccupant(
-        Vector3d? playerUnits,
-        Vector3d? cutsceneViewMetres) =>
-        cutsceneViewMetres is not null && playerUnits is { } player ? player : null;
-
-    /// <summary>Feeds the desktop host's player projections and liveness into authored areas.</summary>
-    internal static void TickAreaActivations(
-        MissionObjectiveRuntime? objectives,
-        Vector3d? playerUnits,
-        int playerTeam,
-        Vector3d? cutsceneViewMetres,
-        Vector3d? freeViewMetres,
-        bool playerAlive) =>
-        objectives?.TickLevelState(
-            AreaActivationOccupant(playerUnits, cutsceneViewMetres, freeViewMetres),
-            playerTeam,
-            AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres),
-            playerAlive);
 
     /// <summary>Applies what a title reads off a level once and the renderer keeps for the whole of it.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -290,197 +169,6 @@ internal sealed partial class GameHost
         }
     }
 
-    /// <summary>
-    /// Handles the retail transient-object cleanup native without giving it ownership of cinematic state.
-    /// </summary>
-    /// <param name="name">The native the script called.</param>
-    /// <param name="clearTransientProjectiles">What to run when it is the cleanup one.</param>
-    /// <returns>The script's answer, or null when this native is not the one.</returns>
-    /// <remarks>
-    /// <c>IGI.EXE!Game_CutsceneDelete</c> walks the mine/grenade/missile registry, not the QVM
-    /// <c>CutScene</c> registry. Mission 3 calls it while scene 700 is starting, so completing scene 700
-    /// here would immediately satisfy the authored mission-complete expression.
-    /// </remarks>
-    internal static QvmValue? TryHandleCutsceneCleanupNative(string name, Action clearTransientProjectiles)
-    {
-        ArgumentNullException.ThrowIfNull(clearTransientProjectiles);
-        if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        clearTransientProjectiles();
-        return QvmValue.FromInt32(1);
-    }
-
-    private void ClearTransientCutsceneObjects()
-    {
-        _player?.Grenades.Clear();
-        _player?.Missiles.Clear();
-        _vehicleMissiles.Clear();
-        _player?.M203.Clear();
-    }
-    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
-    /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
-    /// <remarks>
-    /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
-    /// <c>Dynamic</c>: its HumanView, Shadow, then HumanPlayerInput, whose CHANNELS packet moves it, then the
-    /// binoculars and the gun. A level without a player task keeps
-    /// updating the player after the walk.
-    /// </remarks>
-    private void AttachActorsToLevelWalk(GameTask levelRoot)
-    {
-        _soldiersInWalk = false;
-        _playerInWalk = false;
-        if (_cutscenes is not { } cutscenes)
-        {
-            return;
-        }
-
-        LevelUpdateWalker walker = cutscenes.Walker;
-        if (_soldiers is { } soldiers)
-        {
-            soldiers.AttachTo(walker);
-            _soldiersInWalk = true;
-        }
-
-        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
-        {
-            walker.Register(playerTask, task =>
-            {
-                UpdatePlayerTask();
-                walker.WalkChildren(task);
-            });
-            _playerInWalk = true;
-        }
-    }
-
-    /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
-    /// <remarks>
-    /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
-    /// stepped rather than being stepped with no input. Without this a corpse walks around. What the update set
-    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="_playerTicked"/>.
-    /// </remarks>
-    private void UpdatePlayerTask()
-    {
-        if (_playerTicked
-            || _cutscenes?.IsPlaying == true
-            || !_playerMode
-            || _player is not { } player
-            || _playerDead
-            || _missionFailedMenu)
-        {
-            return;
-        }
-
-        _playerTicked = true;
-
-        // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
-        _soldiers?.PublishCollisionBodies();
-        player.InputProfile = _configuration.Active;
-        GrantCheatWeapons(player);
-        if (_computerOpen)
-        {
-            player.TickMapComputer();
-        }
-        else
-        {
-            player.Tick(ViewInput, _ground);
-
-            // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
-            // Do not advance the same registry again after the walk.
-            _interactionsTickedByPlayer = true;
-        }
-
-        TickVehicleMissiles();
-        CheckRunOver();
-
-        // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
-        // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
-        NotifyGrenadeAiEvents();
-    }
-
-    /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>
-    /// <remarks>
-    /// In the fly-through the eye is the CAMERA's: guards otherwise watch an immobile body at the spawn. The feet
-    /// are what combat aims at (sub_451380). A dead player is no longer a target (the detection scan
-    /// 0x489750 unregisters it), and neither is one hidden behind a cinematic.
-    /// </remarks>
-    private SoldierEnemy SoldierEnemyNow()
-    {
-        bool body = _playerMode && _player is not null;
-        Vector3d eye = body ? _player!.Body.Eye : _camera?.Position ?? _player?.Body.Eye ?? default;
-        Vector3d feet = body ? _player!.Body.Position : eye;
-        return new SoldierEnemy(eye, !_playerDead && _cutscenes?.IsPlaying != true, feet, body && _player!.IsCrouched);
-    }
-
-    /// <summary>The player as an area counts it at the moment the area updates.</summary>
-    /// <remarks>
-    /// During an authored cinematic the occupant is the cutscene camera rather than the stationary player body; a
-    /// diagnostic free camera must not impersonate a player that exists (Mission 4's AreaActivate_156 would start
-    /// the outro as the camera follows Bell 800).
-    /// </remarks>
-    private AreaPlayer AreaPlayerNow()
-    {
-        Vector3d? cutsceneView = _cutscenes?.Frame?.Camera.Position;
-        Vector3d? freeView = !_playerMode ? _camera?.Position : null;
-        return new AreaPlayer(
-            AreaActivationOccupant(_player?.Body.Origin, cutsceneView, freeView),
-            _soldiers?.PlayerTeam ?? 0,
-            AreaActivationExtraOccupant(_player?.Body.Origin, cutsceneView),
-            !_playerDead);
-    }
-
-    private void TickVehicleMissiles()
-    {
-        if (_player is not { } player)
-        {
-            return;
-        }
-        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
-        {
-            hit = default;
-            if (_playerHealth.IsDead)
-            {
-                return false;
-            }
-            if (_soldiers?.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
-            {
-                return true;
-            }
-            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
-            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
-        }
-        MissileWorldTraceCast? walls = _worldTrace is { } trace
-            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
-            {
-                bool found = trace(
-                    new WorldTraceRequest(
-                        from,
-                        to,
-                        WorldTraceMask.World,
-                        IgnoredOwner: missile.CollisionOwner),
-                    out hit);
-                return found;
-            }
-            : _effectWalls is { } effectWalls
-                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
-                {
-                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
-                    hit = found
-                        ? WorldTraceHit.FromRayHit(
-                            new WorldTraceRequest(from, to, WorldTraceMask.World),
-                            rayHit,
-                            WorldTraceHitKind.StaticObject)
-                        : default;
-                    return found;
-                }
-                : null;
-        _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
-    }
-
-
-
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -491,12 +179,61 @@ internal sealed partial class GameHost
     /// and camera were all built by <see cref="AdoptPreview"/> off the render thread — so the steps that
     /// would rebuild them are skipped and the rest runs exactly as it does for a cold start. The order of
     /// everything else is deliberately untouched between the two paths: the AI's ray cast closes over
-    /// <c>_playerTerrain</c>, the interactions have to exist before the brains are animated, and the
+    /// <c>_mission.Terrain</c>, the interactions have to exist before the brains are animated, and the
     /// weapon rosters have to load before <c>humanplayer.qvm</c> runs (weapons.md section 8).
     /// </param>
     private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
     {
         BeginStage();
+        LevelUpdateWalker walker = new(levelRoot);
+        MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
+        LevelSystems<MissionLevelBuild> systems = MissionSystems();
+        if (_title.Services.TryGet(out LevelSystemEdits? edits))
+        {
+            // A mod's systems join the host's by their names (MissionSystemNames), for this session's missions.
+            edits.Apply(systems);
+        }
+
+        systems.BuildAll(build);
+    }
+
+    /// <summary>Makes the mission systems, in the order a mission is brought up: the host's, and the game's set among them.</summary>
+    /// <returns>A fresh list, which the session's level-system edits may change.</returns>
+    private LevelSystems<MissionLevelBuild> MissionSystems()
+    {
+        LevelSystems<MissionLevelBuild> systems = new LevelSystems<MissionLevelBuild>()
+            .Add(HostSystem(MissionSystemNames.Sounds, MissionSounds))
+            .Add(HostSystem(MissionSystemNames.TestCaptures, MissionTestCaptures))
+            .Add(HostSystem(MissionSystemNames.Computer, MissionComputer))
+            .Add(HostSystem(MissionSystemNames.Scene, MissionScene))
+            .Add(HostSystem(MissionSystemNames.SceneView, MissionSceneView))
+            .Add(HostSystem(MissionSystemNames.Soldiers, MissionSoldiers))
+            .Add(HostSystem(MissionSystemNames.InteractionsView, MissionInteractionsView))
+            .Add(HostSystem(MissionSystemNames.CamerasView, MissionCamerasView))
+            .Add(HostSystem(MissionSystemNames.LightBakes, MissionLightBakes))
+            .Add(HostSystem(MissionSystemNames.AlarmsView, MissionAlarmsView))
+            .Add(HostSystem(MissionSystemNames.Picture, MissionPicture))
+            .Add(HostSystem(MissionSystemNames.Player, MissionPlayer))
+            .Add(HostSystem(MissionSystemNames.Adornments, MissionAdornments));
+
+        // The cutscenes, objectives, vehicles, interactions, cameras, nav graphs, brains and walk are the game's own.
+        _hosted.AddMissionSystems(systems);
+        return systems;
+    }
+
+    // One of the host's own systems, which reads the host's build; a mod's reads the public one.
+    private static LevelSystem<MissionLevelBuild> HostSystem(string name, Action<MissionBuild> build) =>
+        new(name, b => build((MissionBuild)b));
+
+    // A system ran before the one it depends on.
+    private static InvalidOperationException MissingSystem(string name) =>
+        new($"The mission system '{name}' has not run.");
+
+    /// <summary>The mission's terrain, its sounds and its score.</summary>
+    private void MissionSounds(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        bool promoted = b.Promoted;
 
         // The mission's terrain, first thing, because three separate passes below close over it and it
         // used to be assigned a thousand lines after the first of them. A cold start therefore built the
@@ -507,7 +244,7 @@ internal sealed partial class GameHost
         //
         // Terrain stays optional: Mission 14 is entirely inside placed building and tunnel models, whose
         // collision floors are enough to walk on even though its terrain files are not live data.
-        _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
+        _mission.Terrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
 
         // The mission's sounds and its score. Both routes into a mission come through here -- a cold
         // start and a backdrop being promoted -- and only the cold one passes the mission loader, so
@@ -528,152 +265,12 @@ internal sealed partial class GameHost
         }
 
         MountMissionSounds(loaded);
-        _music?.Play(MusicPlayer.GameMusic);
+        _audioOut.Music?.Play(MusicPlayer.GameMusic);
+    }
 
-        MenuStringTable missionStrings = new(_resources);
-
-        // Mission text is addressed by its own key, not by the menu table's LOCAL:<language>/<key> —
-        // see MissionStringResolver. Everything that resolves mission data goes through this one.
-        MissionStringResolver missionText = new(_resources, missionStrings);
-
-        // The objective runtime owns the message slots but is built after the cutscene runtime, which
-        // needs it for StatusMessageScreen_ClearMessages. The native reads this local rather than the
-        // field so a clear during construction cannot reach the previous mission's messages.
-        MissionObjectiveRuntime? objectives = null;
-        _cutscenes = new CutsceneRuntime(
-            levelRoot,
-            _loop.Variables,
-            (name, arguments) =>
-            {
-                if (name == GameMusicNatives.EnableNative)
-                {
-                    if (_music is not null)
-                    {
-                        _music.Enabled = true;
-                    }
-                    return QvmValue.FromInt32(1);
-                }
-                if (name == GameMusicNatives.DisableNative)
-                {
-                    if (_music is not null)
-                    {
-                        _music.Enabled = false;
-                    }
-                    return QvmValue.FromInt32(1);
-                }
-                if (name == "MenuManager_SetEnabled")
-                {
-                    // Cutscene start/stop expressions own this native in retail.  The menu manager
-                    // lives in the shared loop task tree, so update its live script context rather
-                    // than returning success while leaving input enabled during cinematics.
-                    MenuManagerTask? manager = FindMenuManager();
-                    if (manager?.ScriptContext is { } context && arguments.Count >= 1)
-                    {
-                        context.IsEnabled = arguments.GetBoolean(0);
-                    }
-
-                    return QvmValue.FromInt32(1);
-                }
-
-                if (name == "StatusMessageScreen_ClearMessages")
-                {
-                    // 0x485AD0: clears every slot and returns true.
-                    objectives?.ClearMessages();
-                    return QvmValue.FromInt32(1);
-                }
-
-                if (TryHandleCutsceneCleanupNative(name, ClearTransientCutsceneObjects) is { } cleanup)
-                {
-                    return cleanup;
-                }
-
-                return null;
-            },
-            SetCutsceneSound,
-            modelLength: name => CutsceneModelLength(loaded, name),
-            modelPivot: name => CutsceneModelPivot(loaded, name),
-            vehiclePhysics: _vehiclePhysics,
-            terrain: loaded.Terrain,
-            logger: _logger,
-            vehicleObstacleHit: (task, origin, end) =>
-            {
-                if (_worldSolids?.TryCastIgnoring(
-                        task,
-                        origin,
-                        end,
-                        out WorldRayHit hit,
-                        out GameTask? obstacle,
-                        out string obstacleLabel) == true
-                    && obstacle is not null)
-                {
-                    return (obstacle, hit, obstacleLabel);
-                }
-
-                return null;
-            },
-            vehicleObstacleReleased: obstacle =>
-                _doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
-        bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
-        if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
-        {
-            string parameters = string.Join(
-                ", ",
-                levelTimer.Type.Parameters.Select(
-                    (parameter, index) => $"{parameter.Name}={levelTimer.GetValue(index) ?? "<null>"}"));
-            _logger.Information("Mission.Timer", $"LevelTimer_1608 {parameters}");
-        }
-        if (collectDiagnostics && levelRoot.Tree.FromId(161) is DeclaredTask activation)
-        {
-            string parameters = string.Join(
-                ", ",
-                activation.Type.Parameters.Select(
-                    (parameter, index) => $"{parameter.Name}={activation.GetValue(index) ?? "<null>"}"));
-            _logger.Information("Mission.Timer", $"AreaActivate_161 {parameters}");
-        }
-        // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
-        // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
-        _missionObjectives = objectives = new MissionObjectiveRuntime(
-            levelRoot,
-            _loop.Variables,
-            missionText.Get,
-            _cutscenes.TryInvokeNative,
-            difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
-            isKeyDown: key => _window.Input.Keyboard.IsDown(key));
-
-        // A transmission sounds as it goes up: 0x486650 plays the message's Sound ("message", "fail") at the
-        // listener, like the pickup cue.
-        objectives.MessageSound = sound => _sounds?.PlayDefinition(sound, priority: 180);
-
-        // The areas and edit variables update inside the level's one walk, where the tree places them.
-        objectives.AttachTo(
-            _cutscenes.Walker,
-            _cutscenes.VehicleOccupants,
-            () => _soldiers?.LiveOccupants() ?? [],
-            AreaPlayerNow);
-
-        // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
-        // out: the level expressions still use its native surface, and mission outros may activate it
-        // later. Instead take the exact path Escape takes in retail: the break key is down when the level's
-        // first tick walks, and that walk -- tick 0, not a walk of its own before it -- is where the objective
-        // flow reads it and closes the intro. A pre-walk here had set the skip variable a tick early: mission 4's
-        // LevelTimer_760 (Run "CutScene_1000.isFinished || EditVariable_4000.nValue") counted from tick 0 where
-        // retail's, which reads the variable before the walk sets it, counts from tick 1 -- and the squad that
-        // timer releases, and everything it met, ran a tick ahead. The intro still runs through the ticks that
-        // close it, as retail's does (two on mission 4); what it would show and sound in them is held back
-        // (CutsceneFrameShown) until it stops.
-        // OPENIGI_BREAK_CUTSCENE=1 takes the same edge, for a lockstep run that should skip without a key.
-        if (_cutscenes.IsPlaying
-            && (!_options.PlayCutscenes
-                || string.Equals(
-                    Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
-                    "1",
-                    StringComparison.Ordinal)))
-        {
-            _cutscenes.RequestBreak();
-            StopCutsceneSounds();
-            _introSkipPending = true;
-        }
-
+    /// <summary>The test captures' script writes, made over the objectives the game just built.</summary>
+    private void MissionTestCaptures(MissionBuild b)
+    {
         // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
         // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
         // "EditVariable_199.nValue=1,AreaActivate_5.nActive=1"; the same writes are re-applied on
@@ -697,15 +294,26 @@ internal sealed partial class GameHost
                 _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
             }
 
-            _cutscenes.RequestBreak();
-            _cutscenes.Tick();
-            _missionObjectives.TickLevelState();
-            _missionObjectives.TickAfterLevelState();
-            _cutscenes.FinishExpressionTick();
+            CutsceneRuntime outroCutscenes = _mission.Cutscenes!;
+            outroCutscenes.RequestBreak();
+            outroCutscenes.Tick();
+            MissionObjectiveRuntime outroObjectives = _mission.Objectives!;
+            outroObjectives.TickLevelState();
+            outroObjectives.TickAfterLevelState();
+            outroCutscenes.FinishExpressionTick();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
-        _computerHighlights = _presentation.CreateComputerHighlights(new ComputerHighlightRequest(levelRoot, _loop.Variables));
-        _mapComputer = _presentation.CreateMapComputer(
+    }
+
+    /// <summary>The map computer, its highlights, the tactical computer and the comms cards.</summary>
+    private void MissionComputer(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        MissionStringResolver missionText = b.MissionText!;
+
+        _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables));
+        _mapComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
         if (_mapComputer is not null && !_mapComputer.Load(_fileSystem))
         {
@@ -723,7 +331,7 @@ internal sealed partial class GameHost
         // Both presentations are built, and r_computer_tactical decides which is drawn — see
         // GameHost.TacticalComputer. The retail pair above needs the installation's own archives; this
         // one needs only the shipped faces, so a mission whose computer.res is missing still has a map.
-        _tacticalComputer = _presentation.CreateTacticalComputer(
+        _tacticalComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, ITacticalComputerPresenter>(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
         if (_tacticalComputer is not null && !_tacticalComputer.Load())
         {
@@ -749,13 +357,26 @@ internal sealed partial class GameHost
         // world renderer and the collision index are exactly what AdoptPreview put up to draw the menu
         // over, and they are the same level.
         EndStage("objectives, highlights and the map computer");
+    }
+
+    /// <summary>The scene walk, the world renderer and the collision index; the vehicles on it, what can be destroyed, and the weather.</summary>
+    private void MissionScene(MissionBuild b)
+    {
+        if (_mission.Cutscenes is null)
+        {
+            throw MissingSystem(MissionSystemNames.Cutscenes);
+        }
+
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        bool promoted = b.Promoted;
 
         ObjectCollisionIndex solids;
         IWorldPresenter world;
         WorldScene scene;
         if (promoted)
         {
-            solids = _worldSolids ?? throw new InvalidOperationException(
+            solids = _mission.Solids ?? throw new InvalidOperationException(
                 "A promoted mission must arrive with the backdrop's collision index already built.");
             world = _world ?? throw new InvalidOperationException(
                 "A promoted mission must arrive with the backdrop's world renderer already built.");
@@ -769,11 +390,12 @@ internal sealed partial class GameHost
             // Without it every placement went unbound, and the renderer drops a destroyed placement that has
             // nothing to swap in -- so a LAW'd tank simply vanished where retail leaves its wreck.
             WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, _vehiclePhysics));
+                new WorldBuildRequest(
+                    loaded, levelRoot, _resources, _mission.MagicObjects, _logger, _mission.VehiclePhysics, _title.Services));
             scene = built.Scene;
             _scene = scene;
-            _ground = built.Ground;
-            _spins = built.Spins;
+            _mission.Ground = built.Ground;
+            _mission.Spins = built.Spins;
 
             if (built.UnresolvedCount > 0 || built.LightmappedCount > 0)
             {
@@ -787,85 +409,38 @@ internal sealed partial class GameHost
             // the collision index, the destructibles and the cut-scene bindings below all attach to it.
             // A title that has not written one yet can still show a menu, and says so here rather than
             // by a null reference three hundred lines later.
-            world = _presentation.CreateWorld(new WorldPresentationRequest(_device, _resources, _logger))
+            world = _presentation.Presenters.Create<WorldPresentationRequest, IWorldPresenter>(new WorldPresentationRequest(_device, _resources, _logger))
                 ?? throw new InvalidOperationException(
                     "The title supplies no world presenter, so it cannot load a mission yet.");
 
             world.Materials = _materials;
             world.DetailMaps = _detailMaps;
-            world.Lamps = _lamps;
+            world.Lamps = _gi.Lamps;
 
             // The parts of the level's objects that never stop turning. Set here rather than beside the
             // other registries below because a promoted backdrop skips that block entirely, and it
             // arrives with its own already walked.
-            world.Spins = _spins;
+            world.Spins = _mission.Spins;
             _world = world;
-            solids = ObjectCollisionIndex.Build(
-                scene.Placements,
-                _titleRuntime.Formats.Collision,
-                name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
-            _worldSolids = solids;
+            solids = built.Solids ?? ObjectCollisionIndex.Build([]);
+            _mission.Solids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
-        // Mission 4's authored getaway Bell is a one-shot terminal landing. Configure that
-        // behavior explicitly here; CutsceneRuntime remains generic and does not infer it from ids.
-        if (id == 4 && levelRoot.Tree.FromId(800) is { } getawayBell)
-        {
-            _cutscenes.EnableTerminalTerrainLanding(getawayBell);
-        }
+        b.Scene = scene;
+        b.Solids = solids;
+        b.World = world;
+    }
 
-        // Every mission: a car's suspension reads this for the surface under each wheel, and much
-        // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
-        // garage floor above the dirt. Re-seating the helicopters on it stays Mission 4's.
-        _cutscenes.CollisionIndex = solids;
-        if (id == 4)
-        {
-            _cutscenes.RestHelicoptersOnSupport();
-        }
+    /// <summary>The destructibles and the cutscenes handed to the world renderer, and the weather fresh for the mission.</summary>
+    private void MissionSceneView(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        WorldScene scene = b.Scene ?? throw MissingSystem(MissionSystemNames.Scene);
+        IWorldPresenter world = b.World ?? throw MissingSystem(MissionSystemNames.Scene);
 
-        // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
-        // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
-
-        // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
-        if (loaded.Terrain is { } carTerrain)
-        {
-            RetailTerrainRay carRays = new(
-                carTerrain.Octree,
-                carTerrain.Commands,
-                TerrainDiscardBinding.For(carTerrain).Regions,
-                TerrainHeightBindings.Bind(carTerrain, levelRoot));
-            Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
-            CutsceneRuntime cutscenes = _cutscenes;
-            _cutscenes.ConfigureRetailCars(
-                new RetailCarWorld(
-                    carRays,
-                    RetailWorldObjects.Build(
-                        levelRoot,
-                        carModels,
-                        name => _magic?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
-                    cutscenes.RetailVehicleModels,
-                    static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
-                carModels,
-                name => _magic?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
-        }
-
-        // The level's one global stream, seeded as LevelFlow's start seeds it (0x416D90), before the first draw:
-        // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
-        _soundRandom.SeedForLevel();
-
-        // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
-        // CarAI stops, and follows its body, through the same registry.
-        _destructibles = DestructibleObjectRegistry.Build(
-            levelRoot,
-            scene.Placements,
-            _loop.Variables,
-            _vehiclePhysics,
-            random: _soundRandom);
-        world.Destructibles = _destructibles;
-        solids.Destructibles = _destructibles;
-        _cutscenes.Destructibles = _destructibles;
-        world.Cutscenes = _cutscenes;
+        world.Destructibles = _mission.Destructibles;
+        world.Cutscenes = _mission.Cutscenes;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
         // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
@@ -888,6 +463,15 @@ internal sealed partial class GameHost
         // second time, and shelters under the same roofs.
         _storm.SetShelter(_shelterField);
         ApplyWeatherSettings();
+    }
+
+    /// <summary>The soldiers' meshes and textures.</summary>
+    private void MissionSoldiers(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        bool promoted = b.Promoted;
+        ObjectCollisionIndex solids = b.Solids!;
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
@@ -896,1048 +480,220 @@ internal sealed partial class GameHost
         // A promoted backdrop has already built these, behind the menu and against the very same level
         // and collision index, so it hands them over rather than uploading a second copy of every
         // soldier's mesh. Taking the reference is also what stops the backdrop disposing them.
-        if (promoted && _backdropSoldiers is { } armedSoldiers)
+        if (promoted && _menuBackdrop.TakeSoldiers() is { } armedSoldiers)
         {
             _soldiers?.Dispose();
             _soldiers = armedSoldiers;
-            _backdropSoldiers = null;
+            _mission.AdoptSoldiers(armedSoldiers);
         }
         else
         {
             _soldiers?.Dispose();
-            _soldiers = new SoldierRenderer(_device, _resources, _logger, _magic) { DetailMaps = _detailMaps };
-            _soldiers.Load(
+            _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierBodies>(
+                new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps));
+            _mission.AdoptSoldiers(_soldiers);
+            _soldiers?.Load(
                 loaded,
                 levelRoot,
                 // The walk's ground when the title keeps one in the level, and the mission's terrain
-                // otherwise. _ground itself is not settled until the player is stood up below.
-                _ground ?? _playerTerrain,
+                // otherwise. _mission.Ground itself is not settled until the player is stood up below.
+                _mission.Ground ?? _mission.Terrain,
                 solids.Caster());
         }
 
         EndStage("the soldiers' meshes and textures");
-        _soldiers.UseRandom(_soundRandom);
-        _soldiers.Cutscenes = _cutscenes;
+    }
 
-        // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
-        // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
-        // knife leaves: KnifeStab itself never reaches the decal message.
-        _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
-        _cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
-
-        // Interactions are level systems, not AI systems: build them even when a mission has no usable
-        // navigation graph. The same door objects are shared by player use, AI door hops and collision.
-        _doors = DoorRegistry.Build(levelRoot);
-        _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
-        _interactions = WorldInteractionRegistry.Build(
-            levelRoot, loaded, _doors, _loop.Variables, _elevators, random: _soundRandom);
-        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables, scene.Placements);
-        world.GenericPickups = _genericPickups;
+    /// <summary>The doors, elevators, pickups and world interactions handed to the world renderer.</summary>
+    private void MissionInteractionsView(MissionBuild b)
+    {
+        IWorldPresenter world = b.World!;
 
         // Never handed over after the move to the host, which left the renderer's interaction-driven
         // transforms dead: a gun's stand did not turn with the gun it holds.
-        world.Interactions = _interactions;
-        solids.GenericPickups = _genericPickups;
-        _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
-        _soldiers.UseInteractions(_interactions);
-        _soldiers.SetDoors(_doors, solids);
-        _soldiers.SetElevators(_elevators);
-
-        // The first genuinely world-positioned sound in the port. Its distances are the definition's
-        // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
-        // without anything here choosing a range.
-        _soldiers.SetDeathSound(position => PlayDeathSound(
-            HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
-
-        // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
-        // Each area draws its first gap at load (0x44C740) and updates where the tree places it, against the camera
-        // as the player's update last left it -- nowhere on the first tick, so every area starts silent and draws.
-        _ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
-        _ambienceListener = null;
-        if (_cutscenes is { } walked)
-        {
-            _ambience.AttachTo(
-                walked.Walker,
-                () => _ambienceListener,
-                name => _sounds?.Definitions?.TryResolve(name, out SoundDefinition? found) == true
-                    && found is { IsPlayable: true });
-        }
-        _ambientVoices.Clear();
-        if (_ambience.Areas.Count > 0)
-        {
-            _logger.Information("Audio", $"{_ambience.Areas.Count} ambient area(s).");
-        }
-
-        // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-        _soldiers.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
-        _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
-        _soldiers.SetMeleeStrikeSink(StrikePlayer);
-        _soldiers.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
-
-        // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
-        // HumanAI's current position. Both begin at the same live position; the backend owns any voice
-        // following after that point.
-        _soldiers.SetScriptSound((name, position, attached) =>
-            _sounds?.PlayDefinition(name, position, priority: 200));
-
-        // Each AI weapon owns its automatic loop and updates its world position every tick. The round
-        // callback handles ballistics only; without this parallel path AI shots were completely silent.
-        _soldiers.SetWeaponSound(TickSoldierWeaponSound);
-
-        // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
-        _soldiers.SetFootstepSound(step => PlayFootstep(step));
-
-        // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
-        _doors.SetSoundSink(PlayDoorSound);
-        _doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
-        _elevators.SetSoundSink(PlayElevatorSound);
-        world.Doors = _doors;
-        world.Elevators = _elevators;
-        if (_doors.Doors.Count > 0)
-        {
-            _logger.Information("World", $"{_doors.Doors.Count} door(s) available to players and AI.");
-        }
+        world.GenericPickups = _mission.GenericPickups;
+        world.Interactions = _mission.Interactions;
+        world.Variants = _mission.Interactions;
+        world.Doors = _mission.Doors;
+        world.Elevators = _mission.Elevators;
 
         EndStage("the doors, elevators and world interactions");
+    }
 
-        // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
-        // objects, not navigation actors, so construct them independently of whether this mission
-        // happens to ship any AI graphs.
-        WorldTraceCast worldTrace = _playerTerrain is { } ground
-            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
-            : solids.Tracer();
-        _cameraBeepVoices.Clear();
-        _cameraMoveVoices.Clear();
-        StopCutsceneSounds();
-        _securityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
-        _securityCameras.BindScene(scene.Placements);
-        world.SecurityCameras = _securityCameras;
+    /// <summary>The security cameras and the rotating objects handed to the world renderer, and the cameras' status lights.</summary>
+    private void MissionCamerasView(MissionBuild b)
+    {
+        IWorldPresenter world = b.World!;
+
+        world.SecurityCameras = _mission.SecurityCameras;
         _cameraStatusLights?.Dispose();
-        _cameraStatusLights = _presentation.CreateCameraStatusLights(EffectsRequest());
+        _cameraStatusLights = _presentation.Presenters.Create<EffectsPresentationRequest, ICameraStatusLightPresenter>(EffectsRequest());
         if (_cameraStatusLights is not null && !_cameraStatusLights.Load(_fileSystem))
         {
             _cameraStatusLights.Dispose();
             _cameraStatusLights = null;
         }
-        _logger.Information(
-            "Ai",
-            $"{_securityCameras.Cameras.Count} security camera(s), "
-                + $"{_securityCameras.ControlCount} camera control(s) placed.");
 
-        // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
-        // what turns them: the walk gives a placement, this gives it an angle per tick.
-        _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
-        world.RotatingObjects = _rotatingObjects;
+        world.RotatingObjects = _mission.RotatingObjects;
+    }
 
-        // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
-        // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
+    /// <summary>The level's baked lighting: the probe field, the path-traced lightmaps and the distance fields, started.</summary>
+    private void MissionLightBakes(MissionBuild b)
+    {
+        if (_scene is null)
+        {
+            throw MissingSystem(MissionSystemNames.Scene);
+        }
+
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        bool promoted = b.Promoted;
+        ObjectCollisionIndex solids = b.Solids!;
+
+        // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
+        // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
+        // path-traced lightmap was baked with `_timeOfDay.Sun` still null -- a zero sun direction and a fallback
+        // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
+        // backdrop already carried one in. The later read stays and simply re-confirms the same value.
+        if (_timeOfDay.Sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
+        {
+            _timeOfDay.Sun = bakeSun;
+        }
+
+        // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
+        // about three seconds in Release and half a minute in Debug, and by this point the window
+        // and its GL context are live -- so the process stops answering, the GPU is handed no
+        // work for the whole of it, and Windows' watchdog takes the context away. Loading mission
+        // 1 from the menu died that way, with exit 0xCFFFFFFF. The main thread carries on loading
+        // and presenting; IrradianceProbeBake hands the volume over when it is ready.
         //
-        // Level 1 ships eleven of them. Picking a single graph -- the one with the most nodes -- and giving
-        // it to every soldier routed each one over node ids belonging to a graph that was not its own,
-        // which is why guards walked to places no patrol goes and off the edge of the level.
-        try
+        // It traces with every door SHUT, which is two things at once. A door standing open would
+        // otherwise be baked as a hole in the wall it belongs to, and the field is static, so the
+        // hole would outlast the door -- that is why this used to have to run before the doors
+        // did. And the shut cast is the only one that reads no state the game mutates, which is
+        // what makes running it alongside a live level safe rather than merely early.
+        //
+        // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
+        // alone -- which is what such a level looks like anyway.
+        // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
+        // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
+        // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
+        if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
         {
-            string graphDirectory = ResolveDirectoryCaseInsensitive(
-                    _gamePath, Path.Combine(loaded.Descriptor.MissionDirectory, "graphs"))
-                ?? Path.Combine(_gamePath, loaded.Descriptor.MissionDirectory, "graphs");
-            Dictionary<int, GraphFile> graphs = [];
-            if (Directory.Exists(graphDirectory))
+            Vector3f bakeSunDirection = _timeOfDay.Sun is { } declared && !declared.IsBelowHorizon
+                ? declared.Direction
+                : default;
+
+            WorldRayCast bakeCast = _mission.Collision.DaylightCast
+                ?? throw new InvalidOperationException("A mission whose world is built has its collision.");
+
+            // Dev verification for the path-traced lightmapper (phases 1-2): when IGI_BAKELM_DIR is
+            // set, enumerate the lightmapped texels, bake direct sun + sky, and dump the largest few
+            // pages' normals and radiance so the texel map and the direct pass can be checked by eye.
+            // Off unless the env var is set.
+            if (Environment.GetEnvironmentVariable("IGI_BAKELM_DIR") is { Length: > 0 } lightmapDir
+                && _scene is { } lightmapScene)
             {
-                // Retail installs commonly preserve uppercase pack names (GRAPHS/GRAPH9.DAT). The
-                // VFS accepts those names, but this direct filesystem walk must do so explicitly on a
-                // case-sensitive volume as well.
-                foreach (string file in Directory.EnumerateFiles(graphDirectory)
-                    .Where(file => Path.GetFileNameWithoutExtension(file)
-                        .StartsWith("graph", StringComparison.OrdinalIgnoreCase)
-                        && string.Equals(Path.GetExtension(file), ".dat", StringComparison.OrdinalIgnoreCase)))
-                {
-                    string stem = Path.GetFileNameWithoutExtension(file);
-                    if (!int.TryParse(stem.AsSpan("graph".Length), out int graphId))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        GraphFile graph = GraphFile.Read(File.ReadAllBytes(file));
-
-                        // The graph file stores node positions in the graph's own frame. The world
-                        // position is node + graphTask.Position — what 0x4F9770 adds every time.
-                        Vector3d graphPos = TaskGeometry.FindPosition(levelRoot, graphId);
-
-                        // A graph under a placed model is in that model's frame (0x4F9770's other branch).
-                        // Mission 9's intro office is a Building whose graphs sit at a few metres: added to
-                        // nothing, they put Anya's feet 42 km under the level.
-                        if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask graphParent
-                            && graphParent.TryGetValue(WorldScene.ModelParameter, out object? parentModel)
-                            && parentModel is string { Length: > 0 }
-                            && graphParent.TryGetValue("Position", out object? parentPlace)
-                            && parentPlace is Vector3d parentPosition
-                            && graphParent.TryGetValue("Orientation", out object? parentTurn)
-                            && parentTurn is Vector3f parentAngles)
-                        {
-                            graph.ApplyWorldOffset(
-                                graphPos,
-                                parentPosition,
-                                RetailOrientation.Euler(parentAngles.X, parentAngles.Y, parentAngles.Z));
-                        }
-                        else if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask { Type.Name: "Train" } graphTrain
-                            && scene.Placements.FirstOrDefault(placement => ReferenceEquals(placement.Owner, graphTrain)) is { } trainPlacement)
-                        {
-                            // A Train has no point position -- its "Position" is a scalar along its rail -- so the
-                            // branch above never saw one, and the wagon's graph landed at the world origin. The car
-                            // stands where its consist puts it (0x42A7C0); its graph is in that frame like any other.
-                            Matrix3f m = trainPlacement.Orientation;
-                            graph.ApplyWorldOffset(
-                                graphPos,
-                                trainPlacement.Position * WorldScene.UnitsPerMetre,
-                                [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33]);
-                        }
-                        else
-                        {
-                            graph.ApplyWorldOffset(graphPos);
-                        }
-
-                        // The graph task's own "Node cover midoffset" -- where the can-shoot ray starts.
-                        if (TaskGeometry.TryFindValue(levelRoot, graphId, "Node cover midoffset", out object? midOffset)
-                            && midOffset is IConvertible convertible)
-                        {
-                            graph.CoverMidOffsetMetres = convertible.ToDouble(System.Globalization.CultureInfo.InvariantCulture);
-                        }
-
-                        graphs[graphId] = graph;
-                    }
-                    catch (GraphFormatException ex)
-                    {
-                        _logger.Warning("Ai", $"Nav graph '{stem}' did not parse: {ex.Message}");
-                    }
-                }
+                DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
             }
 
-            if (graphs.Count > 0)
+            // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
+            // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
+            // .olm ones would be sampled. Cached to disk like the probe field, so only a mission
+            // without a bake pays to trace it, and traced on a worker so the load does not stall.
+            // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
+            // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
+            // lightmaps entirely; 1 keeps them where the bake produced nothing.
+            if (_scene is { } bakeScene)
             {
-                _logger.Information(
-                    "Ai",
-                    $"Nav graphs: {graphs.Count} — " +
-                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
-
-                // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
-                // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
-                // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
-                // PatrolPath route. d843661b dropped this call and left every one of them parked.
-                _cutscenes?.ConfigureCarAi(graphs);
-
-                // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
-                // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
-                // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
-                // leaving every guard on GD_2/Normal whatever the profile said. -difficulty still overrides,
-                // for testing a difficulty without editing a profile.
-                AiDifficulty effectiveDifficulty = _options.Difficulty
-                    ?? (AiDifficulty)Math.Clamp(
-                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
-                        (int)AiDifficulty.Easy,
-                        (int)AiDifficulty.Hard);
-                _logger.Information(
-                    "Ai",
-                    $"Difficulty {HumanAiConfigRegistry.NameOf(effectiveDifficulty)} ({effectiveDifficulty}) "
-                        + (_options.Difficulty is null
-                            ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
-                            : "from -difficulty override."));
-                // The sight and bullet rays test placed objects AND the terrain, as the original's
-                // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
-                // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
-                // hills.
-
-                // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
-                // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
-                // path-traced lightmap was baked with `_sun` still null -- a zero sun direction and a fallback
-                // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
-                // backdrop already carried one in. The later read stays and simply re-confirms the same value.
-                if (_sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
-                {
-                    _sun = bakeSun;
-                }
-
-                // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
-                // about three seconds in Release and half a minute in Debug, and by this point the window
-                // and its GL context are live -- so the process stops answering, the GPU is handed no
-                // work for the whole of it, and Windows' watchdog takes the context away. Loading mission
-                // 1 from the menu died that way, with exit 0xCFFFFFFF. The main thread carries on loading
-                // and presenting; IrradianceProbeBake hands the volume over when it is ready.
-                //
-                // It traces with every door SHUT, which is two things at once. A door standing open would
-                // otherwise be baked as a hole in the wall it belongs to, and the field is static, so the
-                // hole would outlast the door -- that is why this used to have to run before the doors
-                // did. And the shut cast is the only one that reads no state the game mutates, which is
-                // what makes running it alongside a live level safe rather than merely early.
-                //
-                // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
-                // alone -- which is what such a level looks like anyway.
-                // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
-                // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
-                // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
-                if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
-                {
-                    Vector3f bakeSunDirection = _sun is { } declared && !declared.IsBelowHorizon
-                        ? declared.Direction
-                        : default;
-
-                    WorldRayCast shutObjectCast = solids.CasterWithDoorsShut();
-
-                    // A bake ray passes through glass and chain-link the way a line of sight does
-                    // (GameMaterial.IsSightTransparent), so daylight reaches a room through its windows
-                    // instead of stopping at the pane -- the very thing that left window rooms as dark as
-                    // sealed ones. It steps a hair past each see-through face and casts on until it meets
-                    // something solid or leaves the level. Portal polygons (doorway/window openings) are
-                    // already skipped by the cast itself. Terrain always blocks -- it reports material Air.
-                    WorldRayCast seeThroughObjectCast = (a, b, out blockedAt) =>
-                    {
-                        Vector3d origin = a;
-                        for (int pass = 0; pass < 8; pass++)
-                        {
-                            if (!shutObjectCast(origin, b, out WorldRayHit hit))
-                            {
-                                blockedAt = default;
-                                return false;
-                            }
-
-                            if (!GameMaterial.IsSightTransparent(hit.Material))
-                            {
-                                blockedAt = hit;
-                                return true;
-                            }
-
-                            Vector3d toEnd = new(b.X - hit.Position.X, b.Y - hit.Position.Y, b.Z - hit.Position.Z);
-                            double length = Math.Sqrt((toEnd.X * toEnd.X) + (toEnd.Y * toEnd.Y) + (toEnd.Z * toEnd.Z));
-                            if (length <= 1e-6)
-                            {
-                                blockedAt = default;
-                                return false;
-                            }
-
-                            // A few units past the pane (4/4096 m ~= 1 mm); thicker or layered glass is
-                            // cleared by the loop, one see-through face at a time.
-                            double scale = 4.0 / length;
-                            origin = new Vector3d(
-                                hit.Position.X + (toEnd.X * scale),
-                                hit.Position.Y + (toEnd.Y * scale),
-                                hit.Position.Z + (toEnd.Z * scale));
-                        }
-
-                        blockedAt = default;
-                        return false;
-                    };
-
-                    WorldRayCast bakeCast = (a, b, out blockedAt) =>
-                    {
-                        bool hitObject = seeThroughObjectCast(a, b, out WorldRayHit onObject);
-                        if (_playerTerrain is { } bakeGround
-                            && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
-                            && (!hitObject || onGround.Distance < onObject.Distance))
-                        {
-                            blockedAt = onGround;
-                            return true;
-                        }
-
-                        blockedAt = onObject;
-                        return hitObject;
-                    };
-
-                    // Dev verification for the path-traced lightmapper (phases 1-2): when IGI_BAKELM_DIR is
-                    // set, enumerate the lightmapped texels, bake direct sun + sky, and dump the largest few
-                    // pages' normals and radiance so the texel map and the direct pass can be checked by eye.
-                    // Off unless the env var is set.
-                    if (Environment.GetEnvironmentVariable("IGI_BAKELM_DIR") is { Length: > 0 } lightmapDir
-                        && _scene is { } lightmapScene)
-                    {
-                        DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
-                    }
-
-                    // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
-                    // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
-                    // .olm ones would be sampled. Cached to disk like the probe field, so only a mission
-                    // without a bake pays to trace it, and traced on a worker so the load does not stall.
-                    // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
-                    // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
-                    // lightmaps entirely; 1 keeps them where the bake produced nothing.
-                    bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
-                    if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
-                    {
-                        Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
-
-                        // The LEVEL's ambient, not SkyFillColour's. That reads the effective sun -- the
-                        // authored one after the day/night sweep and the daylight re-point have had it,
-                        // which moves every frame and belongs to the frame before this load. The two
-                        // inputs beside it come from the level's own Dirlight, so mixing the two gave a
-                        // disk-cache key that could not be reproduced: entering the same mission twice in
-                        // a session missed its own bake and traced the level again.
-                        Vector3f lmSky = (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f))
-                            * RenderCVars.SkyLight.Value;
-                        _lightmapBakeMission = id;
-                        _lightmapBakeSun = bakeSunDirection;
-                        _lightmapBakeSunColour = lmSun;
-                        _lightmapBakeSky = lmSky;
-
-                        if (_lightmapCache.TryLoad(id, bakeSunDirection, lmSun, lmSky) is { } cachedLightmaps)
-                        {
-                            _world.SetBakedLightmaps(cachedLightmaps, discardRetailLightmaps);
-                        }
-                        else
-                        {
-                            // Set the mode straight away so the worker's seconds are not spent showing the
-                            // shipped lightmaps under an exclusive (r_lightmap 2) request: with no bake yet,
-                            // lightmapped surfaces read black until the bake lands. Mode 1 keeps the shipped
-                            // pages meanwhile, which is what its fallback means.
-                            _world.SetBakedLightmaps(null, discardRetailLightmaps);
-
-                            // Resolving each surface's albedo reads the resource registry, so the texel
-                            // maps, textured triangles and their BVH are built here on the main thread; the
-                            // worker then does only the tracing, which touches immutable data and the cast.
-                            IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
-                            LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
-                            LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
-
-                            _lightmapBake?.Cancel();
-                            _lightmapBake = LightmapBake.Start(
-                                bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
-                                _work, bounces: 4, hemisphereRays: 128, logger: _logger);
-
-                            if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
-                            {
-                                _world.SetBakedLightmaps(readyLightmaps, discardRetailLightmaps);
-                                _lightmapCache.Save(id, bakeSunDirection, lmSun, lmSky, readyLightmaps);
-                                _lightmapBake = null;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // The setting is off, or off since the last load: make sure no stale bake lingers.
-                        _world?.SetBakedLightmaps(null, discardRetail: false);
-                    }
-
-                    // The probe field, guarded on its own cvar so it does not trace under a lightmap-only
-                    // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
-                    if (RenderCVars.GlobalIllumination.Value)
-                    {
-                    // Whatever the console says, but never so fine that a big level spends a minute of
-                    // load tracing rays nobody asked for.
-                    float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
-
-                    // Remembered so the live re-bake (F11) can trace the field again from exactly the
-                    // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
-                    // from the cache or the tracer below.
-                    _bakeCast = bakeCast;
-                    _probeBakeMission = id;
-                    _probeBakeSpacing = giSpacing;
-                    _probeBakeSun = bakeSunDirection;
-
-                    // A shipped (or previously-written) bake loads instantly; only a mission without one
-                    // pays to trace it here, and then writes the result so no load pays for it again.
-                    if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
-                    {
-                        _probeField = cachedField;
-                    }
-                    else
-                    {
-                        _probeBake = IrradianceProbeBake.Start(
-                            _scene,
-                            bakeCast,
-                            bakeSunDirection,
-                            giSpacing,
-
-                            // One albedo for the whole level. The alternative is reading each hit's own
-                            // texture, which needs the ray to report a material rather than a triangle --
-                            // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
-                            // any of them.
-                            ProbeBakeAlbedo,
-                            _work,
-                            _logger);
-
-                        if (_options.Lockstep)
-                        {
-                            // A capture is not allowed to race the worker: a reference image has to either
-                            // contain the field or not, never "whatever frame 30 caught". So a lockstep run
-                            // blocks for the finished field and writes the cache inline.
-                            _probeField = _probeBake.WaitForResult();
-                            _probeBake = null;
-
-                            if (_probeField is not null)
-                            {
-                                _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
-                            }
-                        }
-                        else
-                        {
-                            // Interactive play enters the level on flat ambient and watches the light
-                            // stream in: the render loop polls TryCollectLatest and eases each snapshot in
-                            // as it lands, so a room fills with light over the first seconds rather than the
-                            // load stalling until it is lit. The cache is written once the bake completes,
-                            // under the key already remembered above.
-                            _probeField = null;
-                        }
-                    }
-                    }
-                }
-
-                // The distance fields, on a worker beside the probe bake. Tracing every distinct
-                // model is arithmetic and moves off the render thread freely; only the upload cannot,
-                // because a GL texture belongs to the context that made it.
-                //
-                // Started here rather than built here: EnsureDistanceFields is the same call the render
-                // loop makes every frame, so a level begins its bake at load and a player who switches the
-                // lighting model on later gets one started for them. See GameHost.RealtimeGi.cs.
-                // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
-                // field is one of the two moments that can complete the pair and converge the cache, and
-                // with the old cards still standing it would converge THOSE against the new level's field
-                // -- then latch, so the real convergence a few hundred lines below was skipped and the
-                // level opened on the ramp this is all meant to remove. It failed silently, because a
-                // converged-looking cache and a stale one differ only in the picture.
-                // Not on a promotion: the backdrop already carries this very mission's cards and field
-                // -- built or baking behind the menu, which is what lets the menu show the lit level --
-                // and discarding them here would throw the field away and bake it again in front of
-                // the player.
-                if (!promoted)
-                {
-                    DiscardSurfaceCache();
-                    DiscardDistanceFields();
-                }
-
-                EnsureDistanceFields();
-
-                // A capture must not race the worker, for the reason the probe bake records: a
-                // reference image has to either contain the field or not, never whichever frame
-                // the worker happened to reach.
-                if (_options.Lockstep && _sdfBake is { } pendingField
-                    && pendingField.WaitForResult() is { } readyField)
-                {
-                    _sdfBake = null;
-                    AdoptDistanceField(readyField.Scene, readyField.Atlas, fromCache: false);
-                }
-
-                // Every distinct model's surface is captured into the card atlas, but deliberately NOT
-                // here -- even though this is where the geometry first exists. Lighting the cache needs
-                // the level's own sun, which is not read until further down this load, and lighting the
-                // cards before that gave every page a zero sun direction and a picture of pure sky, which
-                // is exactly what the first run produced. EnsureSurfaceCache captures and lights in one
-                // go, so it is called once the sun is known; the outgoing cards were dropped above.
-
-                _device.SetIrradianceVolume(_probeField);
-                ApplyColourLookup(_options.StartMission);
-
-                // The level's doors, before the brains: a walker asks the registry for the nearest door
-                // on a door hop, and an open door is switched out of the collision index so the
-                // doorway is walkable. Both have to exist before Animate hands each brain its query.
-
-                EndStage("reading the nav graphs");
-
-                _soldiers.Animate(
-                    graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
-                    _loop.Variables);
-                EndStage("animating the soldiers' brains");
-
-                // The level's alarm speakers, for the sirens: each follows its own expression over
-                // the same live variables the controls export through.
-                _sirenVoices.Clear();
-                _reportedSirenFailures.Clear();
-                _alarmSpeakers = AlarmSpeakerRegistry.Build(
-                    levelRoot,
-                    _loop.Variables,
-                    () => _soldiers.AnyAlarmOn);
-                _alarmSpeakers.BindScene(scene.Placements);
-                world.AlarmSpeakers = _alarmSpeakers;
-                _logger.Information("Ai", $"{_alarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
-
-                // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
-                // where it becomes a cast. The AI's hit probability decides whether the round is on
-                // target -- the original hands that same figure to the gun with every shot (ai.md 11.6),
-                // so a miss is a round that went somewhere else rather than a round that never existed.
-                _soldiers.SetRoundHandler((from, at, probability, weapon, shooter) =>
-                {
-                    _guardRounds++;
-                    if (_player is null)
-                    {
-                        return;
-                    }
-
-                    // A soldier's round is already in its gun's GunShot task, to be marched after the walk; all
-                    // that is left here is the streak it draws.
-                    if (shooter is not null && _soldiers.MarchesRounds)
-                    {
-                        SpawnSoldierStreak(from, at, weapon);
-                        return;
-                    }
-
-                    // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
-                    // extended past the target, exactly as the retail round is a cast from the muzzle to
-                    // the end of its remaining range (GunShot per-tick 0x47B750). A moving player walks
-                    // out of the lagging aim and the round geometrically misses; that is retail's miss.
-                    Vector3d to = new(
-                        from.X + ((at.X - from.X) * 4.0),
-                        from.Y + ((at.Y - from.Y) * 4.0),
-                        from.Z + ((at.Z - from.Z) * 4.0));
-
-                    Vector3d feet = _player.Body.Position;
-
-                    // Which side fired decides who the round may hurt. A guard's round (opposing the
-                    // player's team) may strike the player; a friendly's may not -- it is aimed at an
-                    // opposing soldier and a friendly's own gun never endangers the player. Null is
-                    // defensive: the player's own shots do not flow through this handler, so no real
-                    // round is hostile-neutral; treating it as hostile keeps a round from vanishing.
-                    bool shooterHostileToPlayer = shooter is null
-                        || shooter.Soldier.Team != _soldiers.PlayerTeam;
-
-                    // The player's living body is a physical obstacle to every round, whatever the
-                    // shooter's team -- retail's cast collides with a same-team human too (it just deals
-                    // no damage). A DEAD player is not: the detection scan unregisters the corpse, so a
-                    // round passes through where the body fell instead of hanging in the air on it.
-                    bool playerInTheRay = !_playerHealth.IsDead;
-
-                    // Resolve the guard's round against the player's OWN skinned body (limb hits do less,
-                    // and the hitbox is the real body, not a fat cylinder). Only if the body is not loaded
-                    // does it fall back to the cylinder-and-trunk stand-in. Skipped entirely for a corpse.
-                    HumanHit hit = default;
-                    bool met = false;
-                    IReadOnlyList<HumanBodyCrossing> crossings = [];
-                    if (playerInTheRay)
-                    {
-                        if (_soldiers is not null
-                            && _soldiers.TryCastPlayerBody(from, to, feet, _player.Body.Yaw, out crossings)
-                            && crossings.Count > 0)
-                        {
-                            hit = crossings[0].Hit;
-                            met = true;
-                        }
-
-                        if (!met)
-                        {
-                            Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
-                            met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
-                        }
-                    }
-
-                    // Where the world stops this ray, over its whole length -- one walk serves cover,
-                    // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
-                    // the same mark a player's round does. In retail a miss is visible: the round lands
-                    // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
-                    // are why the guards seemed to hit with every bullet.
-                    // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
-                    // owner through), so its own hull never stops the round.
-                    //
-                    // It is a WALK, not one cast: 0x47B750 marches every round, the player's or a guard's,
-                    // through each surface its power beats (GunShotBallistics.ResolveEntry). Stopping at the
-                    // first surface had the mission-1 water-tower sniper empty its rifle into its own
-                    // railing -- Fence, resistance 0, against the Dragunov's power 3. The probe saw all 18 of
-                    // retail's rounds strike that railing 4.3 m out and carry on, 15 of them to hit; the
-                    // port's 37 all stopped there. A glance ends the walk here: the reflected leg is not
-                    // followed. Distances are along the whole round, from the muzzle.
-                    List<WorldTraceHit> passed = [];
-                    bool worldBlocked = false;
-                    bool worldDeflected = false;
-                    WorldTraceHit blocker = default;
-                    {
-                        Vector3d line = to - from;
-                        double length = line.Length;
-                        Vector3d direction = length > 0.0 ? line / length : default;
-                        Vector3d origin = from;
-                        double travelled = 0.0;
-                        for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && travelled < length; pass++)
-                        {
-                            if (!worldTrace(
-                                new WorldTraceRequest(origin, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
-                                out WorldTraceHit surface))
-                            {
-                                break;
-                            }
-
-                            surface = surface with { Distance = travelled + surface.Distance };
-                            GunShotImpact outcome = _worldMaterials is { } faces && faces.TryGet(surface.Material, out GameMaterial face)
-                                ? GunShotBallistics.ResolveEntry(
-                                    weapon.PenetrationPower,
-                                    face,
-                                    namedObject: surface.Owner is not null,
-                                    GunShotBallistics.IncidenceRadians(direction, surface.Normal),
-                                    alreadyDeflected: false,
-                                    () => (float)_shotRandom.NextDouble())
-                                : GunShotImpact.Stopped;
-                            if (outcome != GunShotImpact.Penetrated)
-                            {
-                                worldBlocked = true;
-                                worldDeflected = outcome == GunShotImpact.Deflected;
-                                blocker = surface;
-                                break;
-                            }
-
-                            passed.Add(surface);
-                            travelled = surface.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                            origin = from + (direction * travelled);
-                        }
-                    }
-
-                    WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
-
-                    // A round that meets no hostile body falls through to the soldiers behind the
-                    // player -- an opposing soldier for a guard, a guard for a friendly. This is the
-                    // NPC-vs-NPC half of the gate fight: the round is offered to every soldier on the
-                    // ray, nearest first, and the first one it meets (per its own probability roll)
-                    // takes it. True when a soldier consumed the round; false when it flew past them all.
-                    bool SoldiersTakeTheRound()
-                    {
-                        if (_soldiers is null
-                            || !_soldiers.TryShootAiRound(
-                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out HumanHit taken))
-                        {
-                            return false;
-                        }
-
-                        MarkPassed(taken.Distance);
-                        return true;
-                    }
-
-                    // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
-                    void OfferNearMiss(Vector3d stop)
-                    {
-                        if (shooter is not null)
-                        {
-                            _soldiers?.NotifyRoundPassed(from, stop, shooter, struck: null);
-                        }
-                    }
-
-                    // The streak, before the outcome: visual only, along the very ray this handler is
-                    // resolving, dying where the world stops it. Whether the round connects is decided
-                    // below exactly as ever -- from inside the head, a streak that reaches the eye and
-                    // a round that hits look the same.
-                    if (GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value)
-                    {
-                        Vector3d streakEnd = worldBlocked ? worldHit.Position : to;
-                        Vector3d line = streakEnd - from;
-                        double lineLength = line.Length;
-                        if (lineLength > 1e-6)
-                        {
-                            AmmoType? streakAmmo = _ammoTypes is { } table
-                                && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
-                                ? found
-                                : null;
-                            _player.Ballistics.SpawnVisual(
-                                from,
-                                new Vector3f(
-                                    (float)(line.X / lineLength),
-                                    (float)(line.Y / lineLength),
-                                    (float)(line.Z / lineLength)),
-                                streakEnd,
-                                weapon,
-                                streakAmmo);
-                        }
-                    }
-
-                    // The surface that ended the round, after every one it went through on the way.
-                    void MarkTheImpact()
-                    {
-                        MarkPassed(double.MaxValue);
-                        if (!worldBlocked)
-                        {
-                            return;
-                        }
-
-                        MarkSurface(blocker);
-                        if (worldDeflected)
-                        {
-                            PlayRicochetSound(blocker.Position);
-                        }
-                    }
-
-                    // The surfaces the round went through before it ended this far from the muzzle.
-                    void MarkPassed(double upTo)
-                    {
-                        foreach (WorldTraceHit surface in passed)
-                        {
-                            if (surface.Distance < upTo)
-                            {
-                                MarkSurface(surface);
-                            }
-                        }
-
-                        passed.RemoveAll(surface => surface.Distance < upTo);
-                    }
-
-                    void MarkSurface(in WorldTraceHit surface)
-                    {
-                        WorldRayHit face = surface.RayHit;
-                        if (_worldMaterials is { } table)
-                        {
-                            _player.Marks.TryAdd(
-                                face,
-                                BulletMarks.SurfaceOf(surface),
-                                table,
-                                probe: _player.MarkProbe,
-                                placement: surface.Placement);
-                        }
-
-                        PlayBulletImpactSound(
-                            face.Position,
-                            struckHuman: false,
-                            surfaceMaterial: face.Material);
-
-                        // A guard's stray round pops a speaker exactly as the player's does -- the
-                        // retail damage message never asked who fired.
-                        ApplyRoundContact(
-                            face.Position,
-                            surface.Owner,
-                            surface.Placement,
-                            weapon.DamageFactor);
-
-                        // A guard's round kicks the same burst a player's does -- misses landing
-                        // around you are half of what sells incoming fire.
-                        if (_impactParticles is { } bursts
-                            && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
-                        {
-                            string material = _worldMaterials is { } names
-                                && names.TryGet(face.Material, out GameMaterial struck)
-                                ? struck.Name
-                                : string.Empty;
-                            bursts.SpawnBurst(
-                                face.Position,
-                                face.Normal,
-                                ImpactParticleRenderer.KindOf(material),
-                                intensity);
-                        }
-                    }
-
-                    if (!met)
-                    {
-                        _logger.Debug(
-                            "Weapon",
-                            $"Guard {shooter?.Soldier.Id} round missed the player's body"
-                                + (worldBlocked ? $"; the world stops it at {blocker.Kind} '{blocker.Label}', {worldHit.Distance / WorldScene.UnitsPerMetre:0.0} m." : "."));
-
-                        // Geometric miss -- aim lag against a moving target, a running patrol's spray, or
-                        // a dead player whose corpse stops nothing. The round flies on: offer it to the
-                        // soldiers, and only then does it land where the world says.
-                        if (SoldiersTakeTheRound())
-                        {
-                            return;
-                        }
-                        MarkTheImpact();
-                        return;
-                    }
-
-                    // The world is in the way: the retail cast meets the nearest surface first, so a wall
-                    // or a crate between the muzzle and the body simply takes the round (0x47B750 -- the
-                    // round penetrates or stops per the surface, but it does not reach the player). The
-                    // small margin keeps the player's own contact from re-testing the surface it stands on.
-                    if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
-                    {
-                        OfferNearMiss(worldHit.Position);
-                        MarkTheImpact();
-                        _logger.Debug(
-                            "Weapon",
-                            $"Guard {shooter?.Soldier.Id} round blocked by {blocker.Kind} '{blocker.Label}' "
-                                + $"(material {worldHit.Material}) {worldHit.Distance / WorldScene.UnitsPerMetre:0.0} m out, "
-                                + $"before the player body at {hit.Distance / WorldScene.UnitsPerMetre:0.0} m.");
-                        return;
-                    }
-
-                    // Only now the probability gate, and it is rolled TWICE: the cast offers the player to
-                    // the Human's evaluate (0x45E3E0, `random <= probability` for player 0 only) once as the
-                    // octree visit's gate (0x45F500 -> 0x45F53D) and again for the narrow contact after the
-                    // 0.94 m sphere test (0x45F580, then the per-shape dispatch -> 0x4D76DA). Measured on
-                    // Hard at 16 m: 105 rounds, 74 passed the first roll (p 0.695), 30 hit. One roll made
-                    // the port's guards hit about 1/p times as often. A failed roll is a round that flew
-                    // past -- through to whatever stands behind the player, where it marks.
-                    if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
-                    {
-                        _logger.Debug(
-                            "Weapon",
-                            $"Guard {shooter?.Soldier.Id} round reached the player's body and failed its roll (p {probability:0.000}).");
-
-                        // The roll failed against the player -- the round flies past to whoever stands
-                        // behind them: an opposing soldier if the shooter is hostile, a guard if the
-                        // shooter is a friendly.
-                        if (SoldiersTakeTheRound())
-                        {
-                            return;
-                        }
-                        MarkTheImpact();
-                        return;
-                    }
-
-                    // The round stops at the player: the soldiers it passed on the way still hear it go by,
-                    // and the surfaces it went through on the way keep their marks.
-                    OfferNearMiss(hit.Position);
-                    MarkPassed(hit.Distance);
-
-                    // The roll connected with the player's body. A friendly's round that meets the
-                    // player is consumed there with no damage -- retail's cast collides with a same-team
-                    // human but deals none, and it never flies on to a soldier behind the player. Only a
-                    // hostile round may hurt the player.
-                    if (!shooterHostileToPlayer)
-                    {
-                        return;
-                    }
-
-                    if (StrikePlayer(hit) || crossings.Count == 0)
-                    {
-                        return;
-                    }
-
-                    // The round does not stop at the body (0x47B750). The body's entry face is a surface like any
-                    // other: the player's handler takes the hit, and the round goes on only if it beats the face's
-                    // material (power against bullet resistance; the human materials author no ricochet angle).
-                    // A round that goes on leaves through an exit face and stops at the next surface it enters,
-                    // after that surface has taken the hit too -- another part of the body behind, which hits
-                    // the player a second time, or the world beyond. Each cast that meets the body rolls the
-                    // player's evaluate again. Probed on mission 1 (a guard's power-2 rounds) and mission 7 (the
-                    // T80's M2HB): pairs of hits from one round.
-                    if (!Penetrates(crossings[0].Material))
-                    {
-                        return;
-                    }
-
-                    bool leftBody = false;
-                    double next = hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                    for (int index = 1; index < crossings.Count; index++)
-                    {
-                        HumanBodyCrossing crossing = crossings[index];
-                        if (crossing.Hit.Distance < next)
-                        {
-                            continue;
-                        }
-
-                        if ((worldBlocked && worldHit.Distance < crossing.Hit.Distance)
-                            || _shotRandom.NextDouble() > probability
-                            || _shotRandom.NextDouble() > probability)
-                        {
-                            break;
-                        }
-
-                        if (!crossing.Entering)
-                        {
-                            leftBody = true;
-                            next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                            continue;
-                        }
-
-                        if (StrikePlayer(crossing.Hit) || leftBody || !Penetrates(crossing.Material))
-                        {
-                            return;
-                        }
-
-                        next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
-                    }
-
-                    // Past the body the round meets the world, which takes it.
-                    if (worldBlocked && worldHit.Distance > hit.Distance)
-                    {
-                        MarkTheImpact();
-                    }
-
-                    return;
-
-                    // Whether the round gets through a face of this material; the equal case draws its sample.
-                    bool Penetrates(int material)
-                    {
-                        if (_worldMaterials is not { } materials || !materials.TryGet(material, out GameMaterial face))
-                        {
-                            return false;
-                        }
-
-                        float margin = weapon.PenetrationPower - face.BulletResistance;
-                        float sample = margin == 0f ? (float)_shotRandom.NextDouble() : 0f;
-                        return GunShotBallistics.Penetrates(weapon.PenetrationPower, face.BulletResistance, sample);
-                    }
-
-                    // One call of the player's hit handler (0x412440): the damage, the grunt, the shake, the flash
-                    // and the shove. Returns whether it killed the player.
-                    bool StrikePlayer(HumanHit struck)
-                    {
-                        _playerHealth.Apply(struck.Zone, weapon.DamageFactor);
-                        PlayBulletImpactSound(struck.Position, struckHuman: true, surfaceMaterial: 0);
-                        _guardHits++;
-
-                        // The retail handler transforms the round into camera space before writing the four
-                        // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
-                        // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
-                        Vector3f incoming = new(
-                            (float)(to.X - from.X),
-                            (float)(to.Y - from.Y),
-                            (float)(to.Z - from.Z));
-                        Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-
-                        // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
-                        if (!_playerHealth.IsDead)
-                        {
-                            PlayPlayerGrunt();
-                        }
-
-                        InstallPlayerHitShake();
-                        _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
-
-                        // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
-                        // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
-                        // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
-                        // what makes sustained fire stagger the player in retail.
-                        if (!_playerHealth.IsDead)
-                        {
-                            double shoveX = to.X - from.X;
-                            double shoveY = to.Y - from.Y;
-                            double shoveZ = to.Z - from.Z;
-                            double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
-                            if (length > 1e-6)
-                            {
-                                _player.Body.AddHitShove(
-                                    (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
-                                    (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
-                            }
-                        }
-
-                        _logger.Information(
-                            "Weapon",
-                            $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
-                                + $"({_guardHits} of {_guardRounds} round(s); "
-                                + $"{_playerHealth.RemainingFraction:P0} left).");
-
-                        if (_playerHealth.IsDead)
-                        {
-                            BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
-                            _logger.Information(
-                                "Weapon",
-                                $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
-                                    + $"struck in zone {struck.Zone}; the death camera has pulled back.");
-                        }
-
-                        return _playerHealth.IsDead;
-                    }
-                });
-            }
-            else
-            {
-                _logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
-
-                // A missing patrol graph only removes movement.  Retail still registers every
-                // HumanAI as a live human: it can stand, be seen and be selected by the binocular
-                // detector.  Leaving Animate inside the graphs-present branch rendered the guards
-                // but left _brains empty, so BinocularTargets had no contacts to project at all.
-                AiDifficulty effectiveDifficulty = _options.Difficulty
-                    ?? (AiDifficulty)Math.Clamp(
-                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
-                        (int)AiDifficulty.Easy,
-                        (int)AiDifficulty.Hard);
-                _soldiers.Animate(
-                    graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
-                    _loop.Variables);
-                EndStage("registering stationary soldiers' brains");
+                _baked.Start(id, bakeScene, _world, _resources, _timeOfDay.Sun, bakeCast);
             }
         }
-        catch (Exception ex) when (ex is IOException or GraphFormatException)
+
+        // The distance fields, on a worker beside the probe bake. Tracing every distinct
+        // model is arithmetic and moves off the render thread freely; only the upload cannot,
+        // because a GL texture belongs to the context that made it.
+        //
+        // Started here rather than built here: _gi.EnsureDistanceFields is the same call the render
+        // loop makes every frame, so a level begins its bake at load and a player who switches the
+        // lighting model on later gets one started for them. See GameHost.RealtimeGi.cs.
+        // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
+        // field is one of the two moments that can complete the pair and converge the cache, and
+        // with the old cards still standing it would converge THOSE against the new level's field
+        // -- then latch, so the real convergence a few hundred lines below was skipped and the
+        // level opened on the ramp this is all meant to remove. It failed silently, because a
+        // converged-looking cache and a stale one differ only in the picture.
+        // Not on a promotion: the backdrop already carries this very mission's cards and field
+        // -- built or baking behind the menu, which is what lets the menu show the lit level --
+        // and discarding them here would throw the field away and bake it again in front of
+        // the player.
+        if (!promoted)
         {
-            _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
+            _gi.DiscardSurfaceCache();
+            _gi.DiscardDistanceFields();
         }
 
-        // The soldiers' guns march their rounds through the same world the soldiers see.
-        AttachGunShotWorld(worldTrace);
+        _gi.EnsureDistanceFields();
 
-        // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
-        AttachActorsToLevelWalk(levelRoot);
+        // A capture must not race the worker, for the reason the probe bake records: a
+        // reference image has to either contain the field or not, never whichever frame
+        // the worker happened to reach.
+        if (_options.Lockstep)
+        {
+            _gi.WaitForFieldBake();
+        }
+
+        // Every distinct model's surface is captured into the card atlas, but deliberately NOT
+        // here -- even though this is where the geometry first exists. Lighting the cache needs
+        // the level's own sun, which is not read until further down this load, and lighting the
+        // cards before that gave every page a zero sun direction and a picture of pure sky, which
+        // is exactly what the first run produced. _gi.EnsureSurfaceCache captures and lights in one
+        // go, so it is called once the sun is known; the outgoing cards were dropped above.
+
+        _baked.Show();
+        ApplyColourLookup(_options.StartMission);
+        EndStage("starting the light bakes");
+    }
+
+    /// <summary>The alarm speakers the game's brains left, handed to the world renderer.</summary>
+    private void MissionAlarmsView(MissionBuild b)
+    {
+        if (_hosted.Setup.HasSoldiers)
+        {
+            b.World!.AlarmSpeakers = _mission.AlarmSpeakers;
+        }
+    }
+
+    /// <summary>The difficulty every guard reads its combat row at.</summary>
+    /// <returns>The <c>-difficulty</c> override, or else the active profile's.</returns>
+    /// <remarks>
+    /// Faithfully the ACTIVE PLAYER PROFILE's (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the
+    /// player picked in the menu reaches the AI; -difficulty still overrides, for testing one without editing a profile.
+    /// </remarks>
+    private AiDifficulty EffectiveDifficulty() => _options.Difficulty
+        ?? (AiDifficulty)Math.Clamp(
+            _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
+            (int)AiDifficulty.Easy,
+            (int)AiDifficulty.Hard);
+
+    /// <summary>Where <see cref="EffectiveDifficulty"/> came from, for the log.</summary>
+    private string DifficultySource => _options.Difficulty is null
+        ? $"from profile '{_configuration.Active?.Name ?? "(none)"}'."
+        : "from -difficulty override.";
+
+    /// <summary>The terrain, sky, sun, grade and camera; the lamps and the surface cache; what impact effects trace against; the player's state reset.</summary>
+    private void MissionPicture(MissionBuild b)
+    {
+        if (_scene is null)
+        {
+            throw MissingSystem(MissionSystemNames.Scene);
+        }
+
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        bool promoted = b.Promoted;
+        WorldScene scene = b.Scene!;
 
         // Everything from here to the free camera is what makes the level a PICTURE, and a promoted
         // backdrop is already that picture -- AdoptPreview built the terrain (with its ground detail
@@ -1954,18 +710,18 @@ internal sealed partial class GameHost
             // already built as a TerrainSurface answers CreateTerrain. Asking in that order is what lets
             // the two coexist without either pretending to the other's shape.
             _terrain?.Dispose();
-            _terrain = _presentation.CreateGround(
+            _terrain = _presentation.Presenters.Create<GroundPresentationRequest, ITerrainPresenter>(
                 new GroundPresentationRequest(_device, levelRoot, _resources, _logger));
 
             _terrain ??= loaded.Terrain is { IsUsable: true } usable
-                ? _presentation.CreateTerrain(new TerrainPresentationRequest(
+                ? _presentation.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(new TerrainPresentationRequest(
                     _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
                 : null;
 
             // The sky is script data on the level's task tree; its fog colour is also what the frame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
-            _sky = _presentation.CreateSky(
+            _sky = _presentation.Presenters.Create<SkyPresentationRequest, ISkyPresenter>(
                 new SkyPresentationRequest(_device, levelRoot, _fileSystem, _resources, FarPlane, _logger));
             _shadowPass = new ShadowCasterPass(_device);
 
@@ -1973,19 +729,19 @@ internal sealed partial class GameHost
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
-                _sun = readSun;
-                _cycleSun = DayNightBinding.Bind(readSun, _deferredLighting);
+                _timeOfDay.Sun = readSun;
+                _timeOfDay.BoundSun = DayNightBinding.Bind(readSun, _deferredLighting);
 
                 // At the hour the level's authors placed the sun for, not a fixed one: the cycle lands
                 // back on the authored direction only there.
-                _dayNight.ResetForLevel(_cycleSun, RenderCVars.TimeOfDay.Value);
+                _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, RenderCVars.TimeOfDay.Value);
 
                 // After the reset, which clears it: a level that authors its own night hands the cycle
                 // that night to cross to, instead of the faint one the cycle invents for a level that
                 // does not have one. See DayNightCycle.SetNightLighting.
                 if (_deferredLighting is { Night: { } boundNight } authoredNight)
                 {
-                    _dayNight.SetNightLighting(
+                    _timeOfDay.DayNight.SetNightLighting(
                         boundNight.SunIsMoon ? readSun.Colour : null,
                         authoredNight.Ambient);
                 }
@@ -2005,8 +761,8 @@ internal sealed partial class GameHost
             }
             else
             {
-                _cycleSun = null;
-                _dayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
+                _timeOfDay.BoundSun = null;
+                _timeOfDay.DayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
 
@@ -2056,9 +812,9 @@ internal sealed partial class GameHost
         // long as the player was reading the briefing; surveying again here was the largest single cost
         // of pressing Play, and it would have produced the same answer.
         // A cold start has a NEW world renderer that has to be handed them either way.
-        if (_lampsMissionId != id || !promoted)
+        if (_gi.LampsMissionId != id || !promoted)
         {
-            ApplyLamps(
+            _gi.ApplyLamps(
                 RenderCVars.GlobalIlluminationLamps.Value != 0
                     ? EmissiveLightProposer.Propose(
                         _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger)
@@ -2069,323 +825,60 @@ internal sealed partial class GameHost
         // The surfaces, now that the sun and the fixtures they are lit by are both known. Captures the
         // atlas and lights it in one step -- see GameHost.RealtimeGi.cs, which is also what the render
         // loop calls when the lighting model is switched on mid-level.
-        EnsureSurfaceCache();
+        _gi.EnsureSurfaceCache();
 
         // The walk has already spoken for a title that keeps its ground in the level; for the one that
         // keeps it in the mission, the terrain IS the ground.
-        _ground ??= _playerTerrain;
-        _worldTrace = _worldSolids is { } liveSolids
-            ? _playerTerrain is { } liveTerrain
-                ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
-                : liveSolids.Tracer()
-            : null;
-
-        // What the impact effects trace against, built here rather than beside the security cameras
-        // because the terrain is only known now: a blood droplet lands on the ground at least as often
-        // as it hits a wall, and the splash behind a body needs whatever is three metres past it. The
-        // player's movement cast will not do: it is a coarser collision whose rows name no mark, so every
-        // splash traced against it was refused.
-        //
-        // The terrain leaf reports no material row, so a hit on open ground comes back as Air and marks
-        // nothing -- which would leave the ground clean of both bullet holes and blood, where retail's
-        // Ground row names hole_concrete1.tex. The level's own terrain row is substituted, which is the
-        // same row the footsteps and the player's material lookup read.
-        _effectWalls = _worldTrace is { } effectTrace
-            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-            {
-                if (!effectTrace(
-                        new WorldTraceRequest(origin, end, WorldTraceMask.World), out WorldTraceHit rich))
-                {
-                    hit = default;
-                    return false;
-                }
-
-                hit = rich.RayHit with { OnTerrain = rich.Kind == WorldTraceHitKind.Terrain };
-                if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
-                {
-                    hit = hit with { Material = ground };
-                }
-
-                return true;
-            }
-            : null;
-        _player = null;
+        _mission.Ground ??= _mission.Terrain;
+        _mission.ForgetPlayer();
+        _titleFeatures = null;
+        _titleHud?.Dispose();
+        _titleHud = null;
         _playerMode = false;
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
-        _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
-        };
-        _playerDead = false;
-        _damageFlash = new();
-        _flashbangScreenFlash = new();
-        _deathCamera.Reset();
-        ResetFlashlight();
+        _mission.StartFreshLife();
+        Viewpoint?.ResetDeathView();
+        _flashlight.Reset();
 
         EndStage("the terrain, sky, sun, grade and camera");
+    }
+
+    /// <summary>The player: its rig, its animations, its loadout and HUD, stood up at the spawn; or the title's own player.</summary>
+    private void MissionPlayer(MissionBuild b)
+    {
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+        int id = b.Id;
+        MissionStringResolver missionText = b.MissionText!;
+        WorldScene scene = b.Scene!;
+        ObjectCollisionIndex solids = b.Solids!;
 
         {
-            PlayerCamera candidate = new(_logger);
-
-            // 000.iff, kept so the player's third-person body can be built from the same set it walks on
-            // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
-            // animation's own root motion, so without it the player can stand and fall but not walk.
-            //
-            // Read once for the session rather than per mission: it lives under common/, so it is the
-            // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
-            // a mission started was most of that step's cost.
-            ReadSharedAnimations();
+            var playerSetup = _hosted.NewPlayerSetup();
+            playerSetup.Begin(loaded, levelRoot, solids, missionText);
             Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
-            if (playerBodySet is not null)
-            {
-                candidate.UseAnimations(playerBodySet);
-            }
-
-            // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
-            // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
-            // The index is the one built above for the soldiers' ground probe.
-            candidate.UseWalls(solids);
-            _logger.Information(
-                "Player",
-                $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
-
-            // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
-            // ground query, but a grenade has no such query and would fall through the world.
-            candidate.GrenadeWalls = _playerTerrain is { } grenadeGround
-                ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
-                : solids.Caster();
-            candidate.GrenadeTrace = _playerTerrain is { } grenadeTraceGround
-                ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
-                : solids.Tracer();
-
-            // The view model's forward sweep, which wants a ray through the terrain rather than the
-            // height under a point. Null for a title whose ground nothing can trace yet, and the
-            // pullback then meets placed objects only.
-            candidate.TerrainTrace = _playerTerrain is { } viewModelGround
-                ? TerrainRayTrace.Caster(viewModelGround)
-                : null;
-
-            // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
-            // W/S up and down, E held to slide).
-            if (_scene is not null)
-            {
-                candidate.UseLadders(_scene.Ladders);
-                _logger.Information("Player", $"{_scene.Ladders.Count} ladder(s) to climb.");
-            }
-            if (_interactions is { } interactions)
-            {
-                candidate.UseInteractions(interactions);
-                candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
-                candidate.ElectrifiedFenceTouched += fence => ResolvePlayerElectricFence(candidate, fence);
-                candidate.UnarmedStationaryGun += gun => _logger.Warning(
-                    "Player",
-                    $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
-                _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
-            }
-            if (_genericPickups is { } genericPickups)
-            {
-                candidate.UseGenericPickups(genericPickups);
-                candidate.GenericPickedUp += PlayGenericPickupSound;
-                _logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
-            }
-
-            // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
-            // symbols that get their values as the two tables are read, so the rosters have to load
-            // before humanplayer.qvm runs -- otherwise every id in its weapon cycle is a placeholder
-            // and the cycle names weapons nobody carries. section 8.
-            WeaponTypeRegistry weaponRoster = new(_logger);
-            AmmoTypeRegistry ammoTable = new(_logger);
-            GameMaterialRegistry materialTable = new(_logger);
-            try
-            {
-                weaponRoster.Register(_loop.Natives);
-                weaponRoster.Load(_fileSystem, _resources, _loop.Natives);
-                WeaponConfigRegistry.RegisterTypes(_loop.Types);
-                WeaponConfigRegistry weaponConfig = new(_logger);
-                if (weaponConfig.Load(_resources, _loop.Natives, _loop.Tasks) == WeaponConfigRegistry.NoScript)
-                {
-                    _logger.Warning(
-                        "Weapon",
-                        $"No weapon configuration at {WeaponConfigRegistry.ScriptResource}; this title keeps it elsewhere.");
-                }
-                else
-                {
-                    weaponConfig.AttachTo(weaponRoster);
-                }
-                ammoTable.Register(_loop.Natives);
-                ammoTable.Load(_fileSystem, _resources, _loop.Natives);
-
-                // Shared with the guard-round handler: the ammunition record is what colours a
-                // ballistic streak, exactly as it colours the retail tracer.
-                _ammoTypes = ammoTable;
-
-                // Kept beside it for the all-weapons cheat, which can be switched on mid-mission and
-                // then needs the whole roster, not just what the level declared.
-                _weaponTypes = weaponRoster;
-
-                // What every surface in the world is made of, and therefore what a round leaves on it.
-                materialTable.Register(_loop.Natives);
-                if (_fileSystem.Exists(GameMaterialRegistry.ScriptResource))
-                {
-                    _resources.Register(
-                        GameMaterialRegistry.ScriptResource,
-                        _fileSystem.ReadAllBytes(GameMaterialRegistry.ScriptResource));
-                }
-                else
-                {
-                    _logger.Warning("Material", $"No material table at {GameMaterialRegistry.ScriptResource}.");
-                }
-
-                int materialCount = materialTable.Load(_resources, _loop.Natives);
-                candidate.UseMaterials(materialTable);
-                _soldiers?.UseMaterials(materialTable);
-                _worldMaterials = materialTable;
-                _logger.Information("Material", $"Read {materialCount} game material(s).");
-
-                // What the open ground is made of. The terrain declares it the same way a mesh face
-                // does -- see FootstepSounds.TerrainGameMaterialIndex -- and it is Snow in the Arctic
-                // missions rather than Ground, which is the whole difference in how they sound.
-                int? terrainRow = loaded.Terrain is { } terrainData
-                    ? FootstepSounds.TerrainGameMaterialIndex(terrainData.Materials)
-                    : null;
-                candidate.TerrainGameMaterialIndex = terrainRow;
-                _effectTerrainRow = terrainRow;
-                if (_soldiers is not null)
-                {
-                    _soldiers.TerrainGameMaterialIndex = terrainRow;
-                }
-
-                if (terrainRow is int row && materialTable.TryGet(row, out GameMaterial groundRow))
-                {
-                    _logger.Information("Material", $"Terrain walks on '{groundRow.Name}' (row {row}).");
-                }
-
-                _gunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
-                GunPickupRegistry gunPickups = _gunPickups;
-                gunPickups.Landed = PlayWeaponDropSound;
-                candidate.UseGunPickups(gunPickups);
-                candidate.GunPickedUp += pickup =>
-                {
-                    PlayGunPickupSound(pickup);
-                    string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
-                    _missionObjectives?.ShowTransientMessage(missionText.Get(key));
-                };
-                _soldiers?.UseDroppedWeaponPickups(gunPickups);
-                _soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
-                {
-                    GunPickup pickup = gunPickups.Spawn(position, orientation, weapon, velocity);
-                    _gunPickupRenderer?.Add(loaded, pickup);
-                });
-
-                // What a dropped gun lands on: the same solids and terrain a round strikes, as triangles
-                // for the realistic body and as one ray for the original's fifty-metre drop probe.
-                ObjectCollisionIndex? dropSolids = _worldSolids;
-                TerrainData? dropTerrain = _playerTerrain;
-                _soldiers?.SetDroppedWeaponWorld(
-                    (min, max, into) =>
-                    {
-                        dropSolids?.CollectTriangles(min, max, into);
-                        if (dropTerrain is not null)
-                        {
-                            TerrainRayTrace.CollectTriangles(dropTerrain, min, max, into);
-                        }
-                    },
-                    _worldTrace is { } dropTrace ? WorldTrace.AsRayCast(dropTrace) : null);
-                if (_gunPickups.Items.Count > 0)
-                {
-                    _logger.Information("Weapon", $"{_gunPickups.Items.Count} gun pickup(s) available.");
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
-            {
-                _logger.Warning("Weapon", $"Could not read the weapon or ammunition tables: {ex.Message}");
-            }
-
-            EndStage("the player's animation sets, walls, ladders and the weapon tables");
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
-            _soldiers?.Arm(loaded, weaponRoster);
-            ArmVehicles(loaded, levelRoot, weaponRoster, candidate);
+            _soldiers?.Arm(loaded, playerSetup.Weapons);
+            playerSetup.ArmVehicles(loaded, levelRoot);
             EndStage("the guards' weapon models");
 
-            // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
-            // is what says how high a jump goes and how far a step travels.
-            try
-            {
-                HumanPlayerConfig config = new();
-                config.Register(_loop.Natives);
-                config.Load(_resources, _loop.Natives);
-
-                if (config.PlaceholderIds.Count > 0)
-                {
-                    _logger.Warning(
-                        "Player",
-                        $"humanplayer.qvm left {config.PlaceholderIds.Count} id(s) unresolved; the weapon "
-                            + "cycle may name weapons that do not exist.");
-                }
-
-                if (config.Parameters is { } tuning)
-                {
-                    candidate.UseParameters(tuning);
-
-                    // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
-                    _playerDeltaTranslationScale = tuning.DeltaTranslationScale;
-
-                    // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
-                    // 3.0 in retail, and the single number that sets the player's time-to-kill.
-                    _playerMaximumHealth = tuning.MaximumHealth;
-
-                    // Argument 8 is the dose one powered fence contact adds (0x412F80's fmul against
-                    // the human's damage scale) -- 0.5 in retail. Read it for the same reason argument
-                    // 7 is read: a retuned humanplayer.qvm owns its own shock, not the shipped number.
-                    _electricFenceDose = tuning.ElectricFenceDose;
-                    _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
-                    {
-                        DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
-                    };
-                }
-                else
-                {
-                    _logger.Warning("Player", "humanplayer.qvm published no parameters; using the retail defaults.");
-                }
-
-                // The same script says which weapon starts in hand, and it is not a guess any more:
-                // 0x40F760's cycle index begins at -1, so the first update lands on entry 0 of
-                // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
-                // list starts with the knife. section 16.7.
-                candidate.UseWeaponCycle(config.WeaponCycle);
-
-                // And the nine categories the number keys select — 0x411000 reads exactly this table.
-                candidate.Weapons?.UseCategories(config.Categories);
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
-            {
-                _logger.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
-            }
-
-            EndStage("humanplayer.qvm");
-
-            // PlayerBody resolves the landing on the tick after contact, just as retail does. Its
-            // default health exists for standalone physics use; the desktop must give it the exact
-            // accumulator the HUD, guard hits and death state already share. The sink crosses the
-            // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
-            candidate.UseHealth(_playerHealth);
-            candidate.Body.SetFallImpactSink(impact => ResolvePlayerFallImpact(candidate, impact));
+            playerSetup.Configure();
 
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
             // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
             // without it there is nothing to draw a gun on.
             if (_viewRigAnimations is { } viewRigSet)
             {
-                candidate.UseViewRig(viewRigSet);
+                playerSetup.UseViewRig(viewRigSet);
 
                 // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
                 // skinning: 005_01_1 is mesh format 1.
                 _arms?.Dispose();
-                _arms = _presentation.CreateViewModel(ViewModelRequest());
+                _arms = _presentation.Presenters.Create<ViewModelPresentationRequest, IViewModelPresenter>(ViewModelRequest());
                 if (_arms is not null && !_arms.Load(loaded))
                 {
                     _arms.Dispose();
@@ -2405,112 +898,35 @@ internal sealed partial class GameHost
             _marks?.Dispose();
             _tracers?.Dispose();
             _tracers = null;
-            _impactParticles?.Dispose();
-            _impactParticles = null;
-            _retailImpacts?.Dispose();
-            _retailImpacts = null;
-            _impactEffects.Clear();
-            _explosions?.Dispose();
-            _explosions = null;
-            _missileSmoke?.Dispose();
-            _missileSmoke = null;
+            _effects.Release();
             _heldWeapon = null;
 
             // Set whether or not the level declares a loadout: a weapon the all-weapons cheat grants
             // later is loaded from this mission's packs like any other.
             _loadedMissionForWeapon = loaded;
 
-            if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
+            if (playerSetup.CarryDeclaredLoadout(levelRoot, out bool carried))
             {
-                _logger.Information("Player", $"Carrying {loadout}.");
-                _heldWeapon = CarryLoadout(candidate, loadout, loaded, weaponRoster, ammoTable);
+                _heldWeapon = carried ? CreateHeldWeapon() : null;
 
                 // The player's rounds are offered to the soldiers, which own their own health.
-                if (_soldiers is { } guards)
-                {
-                    candidate.Humans = guards.Shooter();
-                    candidate.HumanProbes = guards.Probe();
-                    HumanProximityCast soldierProximity = guards.ProximityProbe();
-                    candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
-                    {
-                        bool found = soldierProximity(center, radiusUnits, out target);
-                        if (!_playerHealth.IsDead)
-                        {
-                            double distance = Vector3d.Distance(center, candidate.Body.Position);
-                            if (distance <= radiusUnits && (!found || distance < target.Distance))
-                            {
-                                target = new HumanProximityTarget(candidate.Body.Position, distance);
-                                found = true;
-                            }
-                        }
-
-                        return found;
-                    };
-                    candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
-                    candidate.AiNoise = noise => guards.NotifyHumanNoise(
-                        noise, candidate.Body.Position, candidate.Body.Position);
-
-                    // A glancing round whizzes where it turned, on the ricochet sound's own limit --
-                    // 0x47BD7B sounds it there directly rather than through the material's window.
-                    candidate.Deflected = PlayRicochetSound;
-
-                    // One grenade pool for both throwers: the player's own and every guard's lob fly,
-                    // bounce and detonate through the same simulation and the same drain.
-                    guards.SetGrenades(candidate.Grenades);
-                }
+                playerSetup.ConnectSoldiers(_hosted.Sounds.PlayRicochet);
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
-                _marks = _presentation.CreateBulletMarks(EffectsRequest());
+                _marks = _presentation.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(EffectsRequest());
 
                 // The ballistic streaks, beside the marks they end in. Cheap to have around: with
                 // g_ballistics off nothing is ever spawned and Draw returns at the count check.
                 _tracers?.Dispose();
                 _tracers = new TracerTrailRenderer(_device);
 
-                // And the bursts where rounds land. Also cheap when off: r_impact_particles 0
-                // spawns nothing, and an empty pool returns at the count check.
-                _impactParticles?.Dispose();
-                _impactParticles = new ImpactParticleRenderer(_device, _resources, _fileSystem);
-                if (!_impactParticles.Load(loaded))
-                {
-                    _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
-                }
-
-                // The original's own impact effects: concrete1.spr dust, the material's own chip model,
-                // and blood1/blood2 for a body. The runtime keeps the motion; this only draws it. Without
-                // it the blood is still thrown and still stamps its splashes, but no drop or mist is seen.
-                _retailImpacts?.Dispose();
-                _retailImpacts = new RetailImpactRenderer(_device, _resources, _fileSystem);
-                int impactModels = _retailImpacts.Load(loaded);
-                _impactEffects.Clear();
-                _impactEffects.SetMistFrameCount(_retailImpacts.MistFrameCount);
-                if (!_retailImpacts.SpritesAvailable)
-                {
-                    _logger.Warning(
-                        "Impact",
-                        "concrete1.spr, blood1.spr or blood2.spr did not resolve; the original's "
-                            + "impact dust and blood will not draw.");
-                }
-                else
-                {
-                    _logger.Debug(
-                        "Impact",
-                        $"Retail impact effects bound: {impactModels} chip model(s), "
-                            + $"{_retailImpacts.MistFrameCount} blood frame(s).");
-                }
-
-                // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
-                // texture lazily on first blast; falls back to the procedural burst without it.
-                _explosions?.Dispose();
-                _explosions = new ExplosionEffectRenderer(_device, _fileSystem, _logger);
-
-                // The retail smoke2.spr trail behind rockets and the grey column a blast leaves.
-                _missileSmoke?.Dispose();
-                _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, _logger);
+                // The world's effects: the bursts where rounds land, the original's own dust, chips and blood,
+                // the fireball every blast shares, and the smoke rockets and blasts leave.
+                _effects.Load(loaded, _presentation.Presenters, _resources, _fileSystem);
 
                 _hud?.Dispose();
-                _hud = _presentation.CreateHud(new HudPresentationRequest(_device, _logger));
+                _hud = _presentation.Presenters.Create<HudPresentationRequest, IHudPresenter>(new HudPresentationRequest(_device, _logger));
                 if (_hud is not null && !_hud.Load(_fileSystem))
                 {
                     _hud.Dispose();
@@ -2518,7 +934,7 @@ internal sealed partial class GameHost
                 }
 
                 _remasteredHud?.Dispose();
-                _remasteredHud = _presentation.CreateRemasteredHud(new HudPresentationRequest(_device, _logger));
+                _remasteredHud = _presentation.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(new HudPresentationRequest(_device, _logger));
                 if (_remasteredHud is not null && !_remasteredHud.Load())
                 {
                     _remasteredHud.Dispose();
@@ -2534,9 +950,9 @@ internal sealed partial class GameHost
                 }
             }
 
-            if (_gunPickups is { } pickups)
+            if (_mission.GunPickups is { } pickups)
             {
-                _gunPickupRenderer = _presentation.CreateGunPickups(ViewModelRequest());
+                _gunPickupRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGunPickupPresenter>(ViewModelRequest());
                 if (_gunPickupRenderer is not null)
                 {
                     _gunPickupRenderer.Materials = _materials;
@@ -2547,26 +963,19 @@ internal sealed partial class GameHost
             // The grenades in the air, drawn with their own retail models. Loaded beside the
             // pickups because it is the same model machinery at a transform the simulation owns.
             _grenadeRenderer?.Dispose();
-            _grenadeRenderer = _presentation.CreateGrenades(ViewModelRequest());
+            _grenadeRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IGrenadePresenter>(ViewModelRequest());
             _grenadeRenderer?.Load(loaded);
             _missileRenderer?.Dispose();
-            _missileRenderer = _presentation.CreateMissiles(ViewModelRequest());
+            _missileRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(ViewModelRequest());
             _missileRenderer?.Load(loaded);
 
             EndStage("the loadout, the bullet marks and the HUD");
 
-            // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
-            // with a Position and a Gamma. Standing there is standing where the game starts you.
-            // Without a declared spawn the player is stood where the opening camera looks from, so that
-            // fallback needs a camera to read; a level with neither is simply not placed, which the
+            // A level with neither a declared spawn nor an opening camera is simply not placed, which the
             // warning below already covers.
-            bool placed = PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
-                ? candidate.PlaceAt(_ground, spawn, solids.PlayerRegistrationCaster())
-                : _camera is { } opening && candidate.Place(_ground, opening.Position, _options.CameraYaw);
-
-            if (placed)
+            if (playerSetup.Stand(levelRoot, _mission.Ground, solids, _camera?.Position, _options.CameraYaw, out PlayerSpawnPoint spawn))
             {
-                _player = candidate;
+                IHostedPlayer candidate = playerSetup.Player;
 
                 // The player's own third-person body -- the rig the death camera reveals. Built from the
                 // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
@@ -2613,6 +1022,17 @@ internal sealed partial class GameHost
             }
         }
 
+        // A title that brings its own player stands it here, in place of the rig above.
+        StandTitlePlayer(loaded, levelRoot, scene);
+    }
+
+    /// <summary>The forest and the water, the menu's renderer and backdrop dropped, and the mission reported built.</summary>
+    private void MissionAdornments(MissionBuild b)
+    {
+        bool promoted = b.Promoted;
+        LoadedMission loaded = b.Loaded;
+        LevelTask levelRoot = b.LevelRoot;
+
         // The things standing in the world rather than being it: planted foliage, and water. Both are
         // handed the mission's model lookup, which is the one thing the ground and the sky do not need --
         // a forest plants instances of a model, and the model lives in a pack rather than in the level's
@@ -2631,21 +1051,21 @@ internal sealed partial class GameHost
             _logger);
 
         _forest?.Dispose();
-        _forest = _presentation.CreateForest(adornments);
+        _forest = _presentation.Presenters.Create<ScenePresentationRequest, IForestPresenter>(adornments);
 
         _water?.Dispose();
-        _water = _presentation.CreateWater(adornments);
+        _water = _presentation.Presenters.Create<ScenePresentationRequest, IWaterPresenter>(adornments);
+        MakeTaskPresenters(levelRoot);
 
-        // The menus are done; without dropping the renderer the last screen would keep drawing over
-        // the world.
-        _renderer = null;
+        // The menus are done; without closing their screens the last one would keep drawing over the world.
+        _retailMenus?.CloseScreens();
 
         // The menu's backdrop is not needed once a real mission is up. On a cold start that releases the
         // previewed level's packs outright. On a promotion it releases nothing: the preview IS this
         // mission now, and its registry and file system are reachable through `_resources` and through
         // the renderers that were built against them — dropping this reference only says the level has
         // stopped being scenery.
-        _backdrop = null;
+        _menuBackdrop.Clear();
         _arming = null;
 
         // Built. What the hold is waiting on from here is the lighting, not the level.
@@ -2713,13 +1133,11 @@ internal sealed partial class GameHost
         _loop = preview.Loop;
         _resourceFileSystem = preview.FileSystem;
         _resources = preview.Resources;
-        _activeLevelRoot = preview.LevelRoot;
-        _activeMission = chosen;
+        _session.Begin(chosen, preview.LevelRoot);
 
         // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the
         // real-time structures it skipped are built from here, under the warm-up's hold.
         UpdateBackdropProfile();
-        _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();
 
@@ -2744,73 +1162,6 @@ internal sealed partial class GameHost
             $"Promoted the backdrop for mission {preview.MissionId} in {clock.Elapsed.TotalMilliseconds:F1} ms "
                 + "on the render thread.");
         return true;
-    }
-
-    /// <summary>
-    /// The mid-swing doorway ray: whether a human currently stands in the opening between the two
-    /// doorway endpoints.
-    /// </summary>
-    /// <param name="from">One end of the doorway segment, in metres.</param>
-    /// <param name="to">The other end of the doorway segment, in metres.</param>
-    /// <remarks>
-    /// This is the player body and every living AI soldier, tested against the doorway segment the
-    /// door spans. The retail ray (0x446D10 at 0x447302) casts across the doorway at roughly body
-    /// height; we test each human's feet against the segment with a generous half-metre radius, which
-    /// finds a body standing in the opening whether it is at waist, chest or head.
-    /// </remarks>
-    private bool DoorwayIsBlockedByHuman(Vector3d from, Vector3d to)
-    {
-        if (HumanStandsInSegment(_player?.Body.Position, from, to))
-        {
-            return true;
-        }
-
-        if (_soldiers is { } soldiers)
-        {
-            foreach (Vector3d feet in soldiers.MapContacts())
-            {
-                if (HumanStandsInSegment(feet, from, to))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>Whether a human's feet (world units) stand within a half metre of the doorway segment (metres).</summary>
-    private static bool HumanStandsInSegment(Vector3d? feetWorld, Vector3d from, Vector3d to)
-    {
-        if (feetWorld is not { } feet)
-        {
-            return false;
-        }
-
-        Vector3d point = new(
-            feet.X / WorldScene.UnitsPerMetre,
-            feet.Y / WorldScene.UnitsPerMetre,
-            feet.Z / WorldScene.UnitsPerMetre);
-        Vector3d closest = ClosestPointOnSegment(from, to, point);
-        return Vector3d.Distance(closest, point) <= 0.5;
-    }
-
-    private static Vector3d ClosestPointOnSegment(Vector3d start, Vector3d end, Vector3d point)
-    {
-        double dx = end.X - start.X;
-        double dy = end.Y - start.Y;
-        double dz = end.Z - start.Z;
-        double lengthSquared = (dx * dx) + (dy * dy) + (dz * dz);
-        if (lengthSquared <= 0.0)
-        {
-            return start;
-        }
-
-        double t = (((point.X - start.X) * dx)
-            + ((point.Y - start.Y) * dy)
-            + ((point.Z - start.Z) * dz)) / lengthSquared;
-        t = Math.Clamp(t, 0.0, 1.0);
-        return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
     /// <summary>Builds the level's top-down map of what the solid world stands over, and binds it.</summary>
@@ -2901,6 +1252,8 @@ internal sealed partial class GameHost
 
     private void ReleasePlayedMission()
     {
+        ReleaseTaskPresenters();
+
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
         // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one
@@ -2908,16 +1261,11 @@ internal sealed partial class GameHost
         // what the new level then had to load against -- and a session that entered a handful of missions
         // carried a handful of those at once. The heap stood at one and a half gigabytes of lightmap
         // texels alone by the sixth.
-        _probeBake?.Cancel();
-        _probeBake = null;
-        _lightmapBake?.Cancel();
-        _lightmapBake = null;
+        _baked.Abandon();
 
         _computerOpen = false;
         _computerFlight.Reset();
-        _missionFailureTicks = 0;
-        _missionFailedMenu = false;
-        _missionResultHandled = false;
+        _session.ResetOutcome();
         _mapComputer?.Dispose();
         _mapComputer = null;
         _mapComputerDevice?.Dispose();
@@ -2927,30 +1275,24 @@ internal sealed partial class GameHost
         _messages?.Dispose();
         _messages = null;
         _computerHighlights = null;
-        _missionObjectives?.Release();
-        _missionObjectives = null;
-        _cutscenes = null;
-        _soldiersInWalk = false;
-        _playerInWalk = false;
-        _securityCameras = null;
-        _cameraBeepVoices.Clear();
-        _cameraMoveVoices.Clear();
-        StopCutsceneSounds();
-        _activeMission = null;
+        _mission.ReleaseRuntimes();
+        _hosted.Audio.ForgetCameras();
+        _cutsceneSounds.StopAll();
+        _session.Mission = null;
 
         // The level's own sun goes with the level. It is read on load only when it is not already set --
         // which is how a promoted backdrop hands its own in -- so a sun left standing here was taken for
         // one that had been handed in, and the next mission was lit and BAKED by the one before it. The
         // backdrop the menu puts up next sets its own in AdoptPreview, so nothing that needs one is left
         // without.
-        _sun = null;
-        _effectiveSun = null;
+        _timeOfDay.Sun = null;
+        _timeOfDay.EffectiveSun = null;
 
         // And so does what the level said about its own light. Left standing, the next title's mission
         // would be lit by the last one's answer -- and for Project I.G.I. that means its sky model would
         // stay switched off after a visit to the sequel.
         _deferredLighting = null;
-        _cycleSun = null;
+        _timeOfDay.BoundSun = null;
 
         // Before a single mesh is destroyed. The backend has assembled its own copy of the level from
         // the frames it drew -- the traceable world, and the material records a hit is looked up in --
@@ -2969,7 +1311,7 @@ internal sealed partial class GameHost
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
-        _backdropSoldiers?.Dispose();
+        _menuBackdrop.ReleaseSoldiers();
         _heldWeapon?.Dispose();
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
@@ -2977,14 +1319,12 @@ internal sealed partial class GameHost
         _debugOverlay?.Dispose();
         _marks?.Dispose();
         _tracers?.Dispose();
-        _impactParticles?.Dispose();
-        _retailImpacts?.Dispose();
-        _explosions?.Dispose();
-        _missileSmoke?.Dispose();
+        _effects.Release();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
         _arms?.Dispose();
+        _titleArms?.Dispose();
         _sky = null;
         _rain?.Dispose();
         _rain = null;
@@ -2996,7 +1336,6 @@ internal sealed partial class GameHost
         _terrain = null;
         _world = null;
         _soldiers = null;
-        _backdropSoldiers = null;
         _heldWeapon = null;
         _gunPickupRenderer = null;
         _hud = null;
@@ -3004,39 +1343,24 @@ internal sealed partial class GameHost
         _debugOverlay = null;
         _marks = null;
         _tracers = null;
-        _impactParticles = null;
-        _retailImpacts = null;
-        _impactEffects.Clear();
-        _explosions = null;
-        _missileSmoke = null;
         _cameraStatusLights = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
         _arms = null;
-        _player = null;
+        _titleFeatures = null;
+        _titleArms = null;
         _playerMode = false;
         _scene = null;
-        _playerTerrain = null;
-        _ground = null;
-        _effectWalls = null;
-        _dropletWalls = null;
-        _worldSolids = null;
-        _destructibles = null;
-        _worldMaterials = null;
-        _doors = null;
-        _elevators = null;
-        _interactions = null;
-        _gunPickups = null;
-        _genericPickups = null;
+        _mission.Terrain = null;
+        _mission.Ground = null;
+        _mission.ReleaseWorld();
         _loadedMissionForWeapon = null;
 
-        // Rockets a vehicle fired in the run being left must not keep flying into the next one, nor its engines
-        // and guns keep sounding.
-        _vehicleMissiles.Clear();
+        // A vehicle's engines and guns must not keep sounding into the next run.
         _vehicleSounds?.StopAll();
         _vehicleSounds = null;
 
-        if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)
+        if (_session.LevelRoot is not null && !_session.LevelRoot.IsDeleted)
         {
             // Deleting a task does not unexport its names (TaskTree.Delete), and a restart reuses this loop's
             // variables. Left bound, AreaActivate_175.nActive, Car_361.isExploded and the rest answered for the
@@ -3044,15 +1368,15 @@ internal sealed partial class GameHost
             // already been decided. Mission 7's real T80 (ConditionalContainer_700, which latches itself through
             // this.isRun) came up live at tick 0 whenever the player restarted from inside its trigger area.
             // Unbound, the new level starts from the same zeros a first load does.
-            _loop.Variables.UnexportTree(_activeLevelRoot);
-            _loop.Tasks.Delete(_activeLevelRoot);
+            _loop.Variables.UnexportTree(_session.LevelRoot);
+            _loop.Tasks.Delete(_session.LevelRoot);
         }
-        _activeLevelRoot = null;
+        _session.LevelRoot = null;
 
         // Back to the front end, so back to the menu theme. Every voice the level started goes with it:
         // an ambience bed outliving its level would follow the player into the menus.
-        _sounds?.StopAll();
-        _music?.Play(MusicPlayer.MenuMusic);
+        _audioOut.Sounds?.StopAll();
+        _audioOut.Music?.Play(MusicPlayer.MenuMusic);
     }
 
     // The path-traced lightmapper's phase 1-2 verification: enumerate the lightmapped texels, bake the
@@ -3083,8 +1407,8 @@ internal sealed partial class GameHost
         _logger.Information(
             "Lightmap", $"Enumerated {targets.Count} target(s); {covered}/{total} texels covered.");
 
-        Vector3f sunColour = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
-        Vector3f skyColour = _sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
+        Vector3f sunColour = _timeOfDay.Sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+        Vector3f skyColour = _timeOfDay.Sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
         Stepping.Drain(LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, 64, _work));
 
         // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
@@ -3160,55 +1484,11 @@ internal sealed partial class GameHost
         _logger.Information("Lightmap", $"Dumped {dumped} page(s) to {outputDirectory}.");
     }
 
-    // Puts a weapon in the player's hands and loads the model its roster entry names.
-    //
-    // Hands the player everything the mission declares, with the ammunition each weapon draws from.
-    // WHICH of them ends up in hand is no longer decided here: the weapon cycler's index starts at -1
-    // and the first tick lands on entry 0 of DefineHumanPlayerWeaponCycle, stepping on until it finds
-    // one that is carried. That retires the divergence this function used to carry -- see
-    // the original. The renderer's model follows whatever ends up in hand.
-    private IHeldWeaponPresenter? CarryLoadout(
-        PlayerCamera candidate,
-        PlayerLoadout loadout,
-        LoadedMission loadedMission,
-        WeaponTypeRegistry roster,
-        AmmoTypeRegistry ammunition)
+    // The presenter for the player's hand, which follows whatever weapon ends up in it (Igi1PlayerSetup.Carry hands
+    // the player everything the mission declares).
+    private IHeldWeaponPresenter? CreateHeldWeapon()
     {
-        if (candidate.View is null || loadout.Weapons.Count == 0)
-        {
-            return null;
-        }
-
-        foreach (LoadoutWeapon declared in loadout.Weapons)
-        {
-            if (!roster.TryGetByScriptId(declared.WeaponId, out WeaponType weapon))
-            {
-                _logger.Warning("Weapon", $"{declared.WeaponId} is not in the roster; it is not carried.");
-                continue;
-            }
-
-            // A weapon finds its ammunition by naming a Calibre ID, and -1 -- the knife's -- names
-            // none at all, which is exactly why a knife never runs out.
-            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-            candidate.Carry(weapon, hasAmmo ? ammo : null);
-        }
-
-        foreach (LoadoutAmmo declared in loadout.Ammunition)
-        {
-            AmmoType? pool = ammunition.Types.FirstOrDefault(a =>
-                string.Equals(a.ScriptId, declared.AmmoId, StringComparison.Ordinal));
-
-            if (pool is not null)
-            {
-                candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
-                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
-                {
-                    candidate.Weapons?.SetM203Ammunition(pool);
-                }
-            }
-        }
-
-        IHeldWeaponPresenter? presenter = _presentation.CreateHeldWeapon(ViewModelRequest());
+        IHeldWeaponPresenter? presenter = _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest());
         if (presenter is not null)
         {
             presenter.Materials = _materials;
@@ -3217,30 +1497,13 @@ internal sealed partial class GameHost
         return presenter;
     }
 
-    // Tops the player's inventory up to the whole roster while the all-weapons cheat is in force. Runs
-    // before every player tick, so it covers both mission start and switching the cheat on mid-mission;
-    // a weapon already carried is left exactly as it is. Switching the cheat off takes nothing away.
-    private void GrantCheatWeapons(PlayerCamera player)
+    // The all-weapons cheat put weapons in the player's hands (Igi1MissionTick tops the inventory up).
+    private void ShowCheatWeapons()
     {
-        if (!PlayerCheatOptions.Current.AllWeapons
-            || _weaponTypes is not { } roster
-            || _ammoTypes is not { } ammunition)
-        {
-            return;
-        }
-
-        int added = player.EnsureAllWeapons(roster.Weapons, ammunition);
-        if (added == 0)
-        {
-            return;
-        }
-
-        _logger.Information("Player", $"All-weapons cheat added {added} weapon(s).");
-
         // A level that declared no loadout never built a presenter for the hand, so the first granted
         // weapon would be carried but never drawn.
-        if (_heldWeapon is null && player.View is not null
-            && _presentation.CreateHeldWeapon(ViewModelRequest()) is { } presenter)
+        if (_heldWeapon is null && HostedPlayer?.View is not null
+            && _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest()) is { } presenter)
         {
             presenter.Materials = _materials;
             _heldWeapon = presenter;
@@ -3256,478 +1519,7 @@ internal sealed partial class GameHost
     /// until a mission has loaded, so it cannot be cached beside the provider.
     /// </remarks>
     private ViewModelPresentationRequest ViewModelRequest() =>
-        new(_device, _resources, _magic, _logger);
-
-    /// <summary>The player's grunt — <c>player_hit_</c> through <c>0x4637C0</c>'s per-human rate limit.</summary>
-    /// <remarks>
-    /// Flat, not positional: the sound belongs to the player, who is the listener. The limit is what lets
-    /// sustained fire stagger the player without stuttering the sound.
-    /// </remarks>
-    /// <summary>
-    /// The shake a bullet or a blow puts in the view — <c>0x412440</c> and <c>0x412CE0</c>: a draw clamped
-    /// to <c>[0.25, 1]</c> scales the full 5 cm and 0.75 degrees, for fifteen ticks.
-    /// </summary>
-    private void InstallPlayerHitShake()
-    {
-        float share = Math.Clamp(_soundRandom.NextSingle(), 0.25f, 1f);
-        _player!.InstallViewShake(
-            HumanViewShake.HitPositionUnits * share, HumanViewShake.HitAngleRadians * share, HumanViewShake.HitTicks);
-    }
-
-    private void PlayPlayerGrunt()
-    {
-        if (_loop.Clock.TickCount < _playerHitQuietUntil)
-        {
-            return;
-        }
-
-        _playerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
-        PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
-    }
-
-    /// <summary>A soldier's close-combat blow landing on the player — the blunt-hit handler <c>0x412CE0</c>.</summary>
-    /// <param name="attacker">The striking soldier's position.</param>
-    /// <param name="damage">The blow's damage, the settings row's close-combat figure.</param>
-    /// <remarks>
-    /// The zone is 13 when the attacker is in front of the player and 14 when behind, the damage is that
-    /// zone's multiplier times the blow (scaled by difficulty, as every player hit is), and a surviving
-    /// player grunts and then hears <c>punched_01</c> or <c>punched_02</c> by the parity of a random draw.
-    /// Each corner of the red flash takes its own draw.
-    /// </remarks>
-    private void StrikePlayer(Vector3d attacker, float damage)
-    {
-        if (_player is null || _playerDead)
-        {
-            return;
-        }
-
-        // The body's forward axis against the direction from the attacker: negative when facing it.
-        Vector3d towardsPlayer = new(
-            _player.Body.Position.X - attacker.X,
-            _player.Body.Position.Y - attacker.Y,
-            _player.Body.Position.Z - attacker.Z);
-        float yaw = _player.Body.Yaw;
-        double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
-        int zone = facing < 0.0 ? PlayerBluntFrontZone : PlayerBluntBackZone;
-
-        _playerHealth.Apply(zone, damage);
-        if (!_playerHealth.IsDead)
-        {
-            PlayPlayerGrunt();
-            _sounds?.PlayDefinition(
-                (_soundRandom.NextRaw() & 1) != 0 ? "punched_01" : "punched_02",
-                positionInUnits: null,
-                priority: 250);
-        }
-
-        InstallPlayerHitShake();
-        _damageFlash.HitEveryCorner(
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle());
-
-        if (_playerHealth.IsDead)
-        {
-            // A close-combat blow is melee, not a round.
-            BeginPlayerDeath(attacker, zone, bone: -1, WeaponCategory.Knife);
-        }
-    }
-
-    // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
-    private const int PlayerBluntFrontZone = 13;
-    private const int PlayerBluntBackZone = 14;
-
-    /// <summary>Puts the player through the whole death sequence, whatever killed them.</summary>
-    /// <param name="from">Where the killing thing came from — the shooter's muzzle, or the blast.</param>
-    /// <param name="zone">The zone the killing damage landed on.</param>
-    /// <param name="bone">The bone the round went through, or <c>-1</c> when nothing so precise.</param>
-    /// <param name="category">The killing weapon's category, which picks the fall's family.</param>
-    /// <remarks>
-    /// Extracted from the guard-round handler so that EVERYTHING lethal runs it — a grenade that
-    /// zeroes the health must kill exactly the way a bullet does, or the player stands at zero
-    /// health forever, which is precisely the bug this fixed.
-    /// </remarks>
-    private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category)
-    {
-        if (_player is null || _playerDead)
-        {
-            return;
-        }
-
-        // Locomotion state 47 (0x40E560): the clip comes from the LAST ZONE STRUCK's row in the
-        // player's own hit-zone table, one of its two reactions by rand(2). The player stops taking
-        // input from here on -- it is a state, not a message.
-        _playerDead = true;
-        _player.ResetOptics();
-        _player.StopWeaponsForDeath();
-        StopBinocularTransitionSound();
-        StopLadderSlideSound();
-
-        // The player receives no further simulation ticks after death, so the weapon sound player
-        // cannot observe a quiet tick and retire an automatic loop on its own.
-        _weaponSounds?.Reset();
-        int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _shotRandom.Next(2));
-
-        // The lethal hit has already written the retail corner flash. Do not replace it with a uniform
-        // full-screen wash here: 0x412440 writes the flash as part of damage receipt, before it changes
-        // the locomotion state to death.
-
-        // Which way the body is thrown: the facing whose backward axis points away from the killer,
-        // exactly as the soldier death faces the incoming round (SoldierDeath.TurnToTheShot).
-        double throwX = _player.Body.Position.X - from.X;
-        double throwY = _player.Body.Position.Y - from.Y;
-        double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
-        float throwFacing = throwLength > 1e-6
-            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
-            : _player.Body.Yaw;
-
-        _soldiers?.KillPlayerBody(
-            fall,
-            _player.Body.Position,
-            throwFacing,
-            bone,
-            new Vector3d(
-                _player.Body.Position.X - from.X,
-                _player.Body.Position.Y - from.Y,
-                _player.Body.Position.Z - from.Z),
-            category,
-            new Vector3d(
-                _player.Body.Velocity.X,
-                _player.Body.Velocity.Y,
-                _player.Body.Velocity.Z));
-
-        if (_worldSolids is { } deathSolids)
-        {
-            WorldRayCast deathCaster = deathSolids.Caster();
-            _deathCamera.Begin(
-                _player.Body.Position,
-                throwFacing,
-                (f, t, out h) =>
-                {
-                    bool blocked = deathCaster(f, t, out WorldRayHit wall);
-                    h = blocked ? wall.Position : default;
-                    return blocked;
-                });
-        }
-
-        // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
-        PlayDeathSound(HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
-    }
-
-    /// <summary>Routes a resolved body landing into the desktop-owned presentation and death state.</summary>
-    private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact)
-    {
-        // 0x408460 arms the camera's dip on every ground contact, before it has decided whether the
-        // landing hurt: a step off a crate drops the view a little, a long drop drops it the full
-        // quarter-metre. 0x4659B0 is two stores, so this is unconditional and cannot fail.
-        player.InstallLandingViewKick(impact.ViewKickUnits);
-
-        // The ground's own landing sound, which is what every harmless drop sounds like. Both airborne
-        // states play it on contact from the struck material, independently of the fall-damage cue
-        // below -- a hurting fall is heard twice, once as the surface and once as the player.
-        if (player.TakeLandingSound() is { } landing)
-        {
-            PlayLandingSound(landing);
-        }
-
-        // State 35 names one of these three definitions only when damage is non-zero. Like the player's
-        // own hit and death sounds it belongs to the listener, so it is flat rather than world-panned.
-        if (!string.IsNullOrEmpty(impact.SoundName))
-        {
-            _sounds?.PlayDefinition(impact.SoundName, priority: 250);
-        }
-
-        // Every ground contact posts type 11. A safe landing carries five metres; a damaging one ten.
-        _soldiers?.NotifyGroundImpact(
-            player.Body.Position,
-            player.Body.Position,
-            impact.HearingRadiusUnits);
-
-        if (impact.Damage <= 0f)
-        {
-            return;
-        }
-
-        // PlayerBody has already added the direct, difficulty-independent dose to the shared health.
-        // Raise the desktop wash that the render pass actually draws rather than the body's standalone one.
-        _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
-        _logger.Information(
-            "Player",
-            $"Fall impact {impact.SpeedMetresPerSecond:F2} m/s dealt {impact.Damage:F3} "
-                + $"({_playerHealth.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
-
-        if (_playerHealth.IsDead)
-        {
-            // Zone 13 is the retail fall bucket. With no external attacker the source is the feet,
-            // leaving the death fall aligned to the player's current facing.
-            BeginPlayerDeath(
-                player.Body.Position,
-                HumanDamage.FrontZone,
-                bone: -1,
-                WeaponCategory.Gun);
-        }
-    }
-
-    /// <summary>Applies one native electric-fence shock after the player's 45-tick guard permits it.</summary>
-    private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence)
-    {
-        if (_playerHealth.IsDead)
-        {
-            return;
-        }
-
-        float healthBefore = _playerHealth.RemainingFraction;
-        _logger.Information(
-            "Player.Fence",
-            $"contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
-                + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
-                + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
-
-        ElectricFenceShock shock = ElectricFenceContact.Shock(_playerHealth, _electricFenceDose);
-        float dealt = shock.Damage;
-        if (dealt <= 0f)
-        {
-            _logger.Warning(
-                "Player.Fence",
-                $"contact produced no damage task={fence.Task.Id} "
-                    + $"health={_playerHealth.RemainingFraction:P0} hits={_playerHealth.Hits}.");
-            return;
-        }
-
-        // 0x412F80: the full shake for forty-five ticks, and four separate corner draws.
-        player.InstallViewShake(
-            HumanViewShake.HitPositionUnits, HumanViewShake.HitAngleRadians, HumanViewShake.FenceTicks);
-        _damageFlash.HitEveryCorner(
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle(),
-            _soundRandom.NextSingle());
-        if (!shock.IsLethal)
-        {
-            // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.
-            _sounds?.PlayDefinition("elfence_spark1", priority: 250);
-        }
-
-        _logger.Information(
-            "Player",
-            $"Electric fence shock dealt {dealt:F3} ({_playerHealth.RemainingFraction:P0} left).");
-
-        if (shock.IsLethal)
-        {
-            BeginPlayerDeath(fence.Anchor, ElectricFenceContact.Zone, bone: -1, WeaponCategory.Gun);
-        }
-    }
-
-    // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
-    // anything on the tick the weapon actually changed.
-    private void FollowHeldWeapon(PlayerCamera candidate, IHeldWeaponPresenter? held, LoadedMission loadedMission)
-    {
-        if (held is null || !candidate.WeaponChanged)
-        {
-            return;
-        }
-
-        candidate.AcknowledgeWeaponChange();
-
-        if (candidate.HeldWeaponType is not { } weapon)
-        {
-            return;
-        }
-
-        if (held.Load(loadedMission, weapon.GunModel))
-        {
-            _logger.Information("Weapon", $"Holding {weapon.ScriptId} ('{weapon.GunModel}') on view bone "
-                + $"{HumanAttachPoints.FirstPersonWeapon}.");
-        }
-    }
-
-    private MenuManagerTask? FindMenuManager()
-    {
-        foreach (GameTask task in WalkTasks(_loop.Tasks.Root))
-        {
-            if (task is MenuManagerTask manager)
-            {
-                return manager;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
-    /// <remarks>
-    /// <para>
-    /// A vehicle's guns are attachments of its model (<c>0x4F4800</c> spawns them through <c>0x4C4950</c>);
-    /// each <c>TASKTYPE_AISTATIONARYGUN</c> names its weapon by model (<c>0x413C00</c>). A gun mounted on
-    /// another gun -- a T80's coaxial M2HB on its turret -- sits at the sum of both attachment offsets.
-    /// </para>
-    /// <para>
-    /// Missile rows (T80, APC) launch into the vehicle missile simulation; gunshot rows (M2HB, MIL) go
-    /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
-    /// </para>
-    /// </remarks>
-    /// <summary>The vehicle whose gun's round is being cast, so the cast passes through its own hull.</summary>
-    private GameTask? _vehicleRoundOwner;
-
-    private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
-    {
-        if (_cutscenes is not { } runtime || _magic is not { } magic)
-        {
-            return;
-        }
-
-        int armed = 0;
-        List<string> weaponModels = [];
-        foreach (DeclaredTask vehicle in WalkTasks(levelRoot).OfType<DeclaredTask>())
-        {
-            if (vehicle.Type.Name is ("Car" or "Heli")
-                && vehicle.TryGetValue("Model", out object? rawZoneModel)
-                && rawZoneModel is string zoneModel)
-            {
-                runtime.ConfigureDeathZones(
-                    vehicle,
-                    VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
-            }
-
-            // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
-            if (vehicle.Type.Name is not ("Car" or "Heli")
-                || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
-                || rawCanFire is not string canFire
-                || string.IsNullOrWhiteSpace(canFire)
-                || !vehicle.TryGetValue("Model", out object? rawModel)
-                || rawModel is not string modelName)
-            {
-                continue;
-            }
-
-            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
-                modelName,
-                ModelOf,
-                magic,
-                roster,
-                (attachment, weaponModel) => _logger.Warning(
-                    "Ai",
-                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
-            if (guns.Count == 0)
-            {
-                continue;
-            }
-
-            runtime.ConfigureVehicleGuns(vehicle, guns);
-            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
-            armed++;
-            _logger.Information(
-                "Ai",
-                $"{vehicle.Type.Name} {vehicle.Id} ({modelName}) carries "
-                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
-        }
-
-        if (armed == 0)
-        {
-            return;
-        }
-
-        // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
-        if (_scene is { } armedScene)
-        {
-            runtime.BindVehicleGunPlacements(armedScene);
-        }
-
-        _soldiers?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
-
-        // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
-        // about a metre over the feet standing and half that crouched -- not the eye.
-        runtime.VehicleCombatTarget = () => !_playerHealth.IsDead
-            ? player.Body.Position + new Vector3d(
-                0d,
-                0d,
-                player.Body.IsCrouched ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits)
-            : null;
-        // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
-        // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.VehicleSightTarget = () => !_playerHealth.IsDead
-            ? player.Body.Position + new Vector3d(0d, 0d, AiSoldier.DetectionMarkAboveFeet(player.Body.IsCrouched))
-            : null;
-        runtime.VehicleCombatLineOfSight = (owner, from, to) =>
-            _worldTrace is null
-            || SoldierRenderer.HasLineOfSight(_worldTrace, from, to, AiSoldier.SightObstructionTolerance, owner);
-        runtime.VehicleCombatShotFired = shot =>
-        {
-            if (shot.IsHitscan)
-            {
-                if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
-                {
-                    _vehicleRoundOwner = shot.Owner;
-                    try
-                    {
-                        _soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
-                    }
-                    finally
-                    {
-                        _vehicleRoundOwner = null;
-                    }
-                }
-
-                return;
-            }
-
-            // The report is the gun's, on the hold edges Gun_Fire plays it on (VehicleSoundPlayer); the missile
-            // task makes no launch sound of its own.
-            _vehicleMissiles.Spawn(
-                shot.Origin,
-                shot.Target,
-                shot.MissileType,
-                shot.MuzzleVelocityMetresPerSecond,
-                shot.Direction,
-                shot.ModelName,
-                collisionOwner: shot.Owner,
-                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
-        };
-        _logger.Information("Ai", $"{armed} armed vehicle(s).");
-
-        MefModel? ModelOf(string name) =>
-            loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
-                ? mef
-                : null;
-    }
-
-    /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
-    private void CheckRunOver()
-    {
-        if (_player is null || _playerDead || _cutscenes is not { } runtime)
-        {
-            return;
-        }
-
-        Vector3d origin = _player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
-        if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
-        {
-            return;
-        }
-
-        _playerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
-        _logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
-        if (_playerHealth.IsDead)
-        {
-            Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
-                ? metres * WorldScene.UnitsPerMetre
-                : origin;
-            BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
-        }
-    }
-
-    private static IEnumerable<GameTask> WalkTasks(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in WalkTasks(child))
-            {
-                yield return nested;
-            }
-        }
-    }
+        new(_device, _resources, _mission.MagicObjects, _logger, _work);
 
     /// <summary>Parses the test-only outro forcing list: "Var=Value,Var=Value".</summary>
     private static List<(string Name, string Value)> TestOutroWrites(string? spec)
@@ -3747,5 +1539,401 @@ internal sealed partial class GameHost
             }
         }
         return writes;
+    }
+
+    /// <summary>The mission's side of one pass of the loop: the world, the player and the level's state, ticked.</summary>
+    /// <param name="state">The frame loop's state.</param>
+    /// <param name="outcome">What the loop's frame did; only a tick advances anything.</param>
+    private void TickMission(FrameLoopState state, FrameOutcome outcome)
+    {
+        _missionHost.State = state;
+        _hosted.Tick.Run(outcome == FrameOutcome.Tick);
+    }
+
+    /// <summary>The host's side of <see cref="IHostedMission"/>: the picture, the sound, the files, the menus and the log of a title's mission.</summary>
+    /// <param name="host">The host.</param>
+    private sealed class MissionHostServices(GameHost host) : IMissionHostServices
+    {
+
+        public void SpawnImpactBurst(in WorldRayHit worldHit)
+        {
+            if (host._effects.Particles is { } bursts
+                && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
+            {
+                string material = host._mission.Materials is { } names
+                    && names.TryGet(worldHit.Material, out GameMaterial struck)
+                    ? struck.Name
+                    : string.Empty;
+                bursts.SpawnBurst(
+                    worldHit.Position,
+                    worldHit.Normal,
+                    ImpactParticleRenderer.KindOf(material),
+                    intensity);
+            }
+        }
+
+        /// <summary>Gets or sets the frame loop's state for the pass being run.</summary>
+        public FrameLoopState State { get; set; } = null!;
+
+        public bool PlayerMode => host._playerMode;
+
+        public Vector3d? FreeCameraPosition => host._camera?.Position;
+
+        public WorldScene? Scene => host._scene;
+
+
+        // Its spawn column follows the eye, so it is handed the position the last frame drew from -- one frame stale
+        // is nothing to a column forty metres across, and the tick has no camera of its own.
+        public void StepWeather() => host._storm?.Tick(host._stormEyeMetres);
+
+
+        public void SoundVehicles(CutsceneRuntime cutscenes)
+        {
+            if (host._audioOut.Sounds is not { } vehicleSoundSystem)
+            {
+                return;
+            }
+
+            host._vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
+            host._vehicleSounds.Tick(
+                cutscenes.VehicleSoundSources(),
+                cutscenes.VehicleGunSounds(),
+                host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
+        }
+
+        public IOpenIgiLogger Logger => host._logger;
+
+        public OpenIGI.Input.InputState ViewInput => host.ViewInput;
+
+        public bool FailedMenu => host._session.FailedMenu;
+
+        public bool ComputerOpen => host._computerOpen;
+
+        public bool TickTitlePlayer() => host.TickTitlePlayer();
+
+        public void CheatWeaponsGranted() => host.ShowCheatWeapons();
+
+        public void PlayMineTrigger(Vector3d origin) =>
+            host._audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
+
+
+
+
+        public void PresentPlayerImpacts() => host.PresentPlayerImpacts();
+
+
+
+
+        public void StepEffectsAfterDeath() => host.StepEffectsAfterDeath();
+
+        public void StepScreen() => host._hud?.Tick();
+
+        // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates whose variables the level
+        // scripts reset stay satisfied while the scene plays.
+        public void ApplyTestWrites()
+        {
+            foreach ((string writeName, string writeValue) in host._testOutroTickWrites)
+            {
+                host._loop.Variables.TryWrite(
+                    writeName,
+                    QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
+            }
+        }
+
+        public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(centre);
+
+        public OpenIGI.Input.InputState Input => host._window.Input;
+
+        public OpenIGI.Game.Config.PlayerProfile? InputProfile => host._configuration.Active;
+
+        public IGroundHeightField? Ground => host._mission.Ground;
+
+        public bool IsInteractionViewActive => host.Viewpoint?.IsInteractionViewActive == true;
+
+        public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls) =>
+            host.Viewpoint?.BeginInteractionView(feet, facing, walls);
+
+        public void FollowInteractionView(Vector3d feet) => host.Viewpoint?.FollowInteractionView(feet);
+
+        public void TickInteractionView() => host.Viewpoint?.TickInteractionView();
+
+        public void ResetInteractionView() => host.Viewpoint?.ResetInteractionView();
+
+        public bool BodyFollowAllowed =>
+            host._playerMode
+            && !host._session.FailedMenu
+            && !host._computerOpen
+            && !host._entry.IsCameraActive
+            && !host._menuFlow.OverShowcase;
+
+        public void CloseTick() => host.SettleMissionOutcome(State);
+
+        public GameLoop Game => host._loop;
+
+        public VirtualFileSystem FileSystem => host._fileSystem;
+
+        public OpenIGI.Engine.Resources.ResourceRegistry Resources => host._resources;
+
+        public TerrainData? Terrain => host._mission.Terrain;
+
+        public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
+        {
+            host.ReadSharedAnimations();
+            return host._playerBodyAnimations;
+        }
+
+        public void EndStage(string what) => host.EndStage(what);
+
+
+
+        public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
+
+        public void TerrainRowRead(int? row) => host._mission.TerrainMaterialRow = row;
+
+        public SoundSystem? SoundOutput => host._audioOut.Sounds;
+
+
+        public void PlayDefinition(string name, Vector3d? positionInUnits = null, int priority = 0) =>
+            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
+
+
+
+        public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
+            host.Viewpoint?.BeginDeathView(position, facing, walls);
+
+        public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
+
+        public AiDifficulty Difficulty => host.EffectiveDifficulty();
+
+        public string DifficultySource => host.DifficultySource;
+
+        public string GamePath => host._gamePath;
+
+        public bool PlayCutscenes => host._options.PlayCutscenes;
+
+        public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
+        {
+        if (name == GameMusicNatives.EnableNative)
+        {
+            if (host._audioOut.Music is not null)
+            {
+                host._audioOut.Music.Enabled = true;
+            }
+            return QvmValue.FromInt32(1);
+        }
+        if (name == GameMusicNatives.DisableNative)
+        {
+            if (host._audioOut.Music is not null)
+            {
+                host._audioOut.Music.Enabled = false;
+            }
+            return QvmValue.FromInt32(1);
+        }
+            return null;
+        }
+
+        public void CutsceneSound(CutsceneSoundEvent sound) => host._cutsceneSounds.Set(sound);
+
+        public void StopCutsceneSounds() => host._cutsceneSounds.StopAll();
+
+        public bool IsRaining => host._rain?.IsWeatherEnabled == true;
+
+        public bool ImpactEffectsWanted => RenderCVars.ImpactEffects.Value;
+
+        public bool BloodWanted => host._configuration.Active?.BloodEnabled ?? true;
+
+        public bool IsKeyDown(OpenIGI.Input.KeyCode key) => host._window.Input.Keyboard.IsDown(key);
+
+        public void PlayDefinition(string name, Vector3d positionInUnits, int priority) =>
+            host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
+
+        public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
+
+        public void Fireball(Vector3d positionInUnits) =>
+            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+
+
+        public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>
+            host._effects.Particles?.SpawnRetailExplosion(positionInUnits, new RetailExplosionShape(fullRangeUnits, fireballs, fragments));
+
+        public void SpeakerExplosion(Vector3d positionInUnits, bool isCameraLens) =>
+            host._effects.Particles?.SpawnRetailExplosion(
+                positionInUnits,
+                isCameraLens ? RetailExplosionShape.CameraLens : RetailExplosionShape.AlarmLight);
+
+        public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
+            host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
+    }
+
+    /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
+    private void PresentPlayerImpacts()
+    {
+        IHostedPlayer player = HostedPlayer!;
+
+        // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
+        // material table, where the round arrived rather than where it was fired.
+        _hosted.Sounds.PlayPlayerImpacts();
+
+        // The same impacts, seen: sparks and dust composed from the struck material.
+        // Ticked before spawning so a new burst draws its birth frame unmoved.
+        _effects.Tick();
+
+        // The original's own effects, on the same rhythm: the dust and chips step, and the
+        // blood droplets in the air are traced against the world, marking whatever they
+        // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
+        // it was born.
+        _hosted.Impacts.Tick();
+
+        SpawnBallisticImpactParticles();
+        _hosted.Impacts.SpawnPlayerImpacts();
+
+        // The launcher rockets in the air lay their smoke trail, one column of puffs per
+        // segment they crossed this tick.
+        _effects.SpawnMissileTrails(player.Missiles, _mission.VehicleMissiles);
+    }
+
+    /// <summary>The world's effects stepping on under the death camera, after the player's update has stopped.</summary>
+    /// <remarks>
+    /// A blast that killed the player burns out, and its debris and smoke settle, under the death camera as they do in the
+    /// original. Stepping them only from the player's update froze them on screen.
+    /// </remarks>
+    private void StepEffectsAfterDeath()
+    {
+        _effects.Tick();
+        _hosted.Impacts.Tick();
+    }
+
+    /// <summary>Holds the objectives' messages, and opens the failure menu or moves on once the mission is decided.</summary>
+    private void SettleMissionOutcome(FrameLoopState state)
+    {
+        if (_mission.Objectives is { } objectiveTick)
+        {
+            // The remaster holds a message three seconds longer than the original does, because
+            // the authored durations are short and the hold only starts once the last character
+            // has been typed. The retail HUD always retains the original timing and message block,
+            // irrespective of the independently archived tactical-message preference.
+            objectiveTick.ExtraMessageHoldSeconds =
+                RemasteredHudPresentation.UsesTacticalMessages(
+                    RenderCVars.RemasteredHud.Value,
+                    RenderCVars.TacticalMessages.Value)
+                && _mission.Cutscenes?.IsPlaying != true
+                    ? RemasteredMessageHoldSeconds
+                    : 0f;
+        }
+
+        _mission.Objectives?.TickAfterLevelState();
+        if (_mission.Objectives is { IsFailed: true } || TitlePlayer is { Outcome: TitleMissionOutcome.Failed })
+        {
+            // The retail grace period first; see MissionSession.CountFailure.
+            if (_session.CountFailure() && state.Shell is not null)
+            {
+                _session.FailedMenu = true;
+
+                // Said out loud because the level decided this, not the player: a LevelFlow
+                // 'Failed' expression is authored out of message and area state, and when it
+                // turns for a reason nobody in the room understands this line is where the
+                // reading starts.
+                _logger.Information(
+                    "Mission",
+                    $"The level's LevelFlow has failed the mission; opening the failed page.");
+                _computerOpen = false;
+                _computerFlight.Reset();
+                HostedPlayer?.SetMapComputerOpen(false);
+
+                // The result is a shell page, not a drawn card, so its two choices can be clicked
+                // and navigated like every other page and the shell's own cursor is the one on
+                // screen. Menu mode hands it the frame's input and draw; the pause flag holds the
+                // showcase off, because the level this is drawn over is still loaded -- the same
+                // pair the pause menu sets.
+                _menuFlow.MenuMode = true;
+                _menuFlow.PauseMenu = true;
+                state.Shell.OpenMissionFailed();
+
+                // The platform cursor stays hidden: the shell draws its own, so revealing this one
+                // would put a second, unrelated pointer beside it.
+                _window.CursorVisible = false;
+                HostedPlayer?.HoldStill();
+                _window.CursorLocked = false;
+            }
+        }
+        else
+        {
+            _session.ClearFailure();
+        }
+        if (!_session.ResultHandled
+            && (_mission.Objectives is { IsComplete: true } || TitlePlayer is { Outcome: TitleMissionOutcome.Completed })
+            && _session.Mission is { } completedMission)
+        {
+            _session.ResultHandled = true;
+            // A successor the catalogue does not offer ends the campaign the way the last mission
+            // does -- in a build cut to the opening missions, the last one offered is its finale.
+            int nextMissionId = completedMission.NextMissionId;
+            if (nextMissionId != MissionDescriptor.NextMissionUndefined && _missions.TryGet(nextMissionId, out _))
+            {
+                if (_configuration.Active is { } activeProfile)
+                {
+                    MissionProgression.UnlockNext(activeProfile, _missions, nextMissionId);
+                    // Retail writes LOCAL:config.qsc after every non-final completion, even when
+                    // replaying an earlier mission leaves the frontier unchanged.
+                    HostConfiguration.Save(_configuration, _logger);
+                }
+
+                _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
+                TitlePlayer?.MissionCompleted(nextMissionId);
+                StartMission(nextMissionId);
+            }
+            else
+            {
+                _logger.Information("Mission", $"Completed final mission {completedMission.Id}; campaign complete.");
+                ReleasePlayedMission();
+                if (state.Shell is not null)
+                {
+                    // Event 7 is the retail outro-screen path. The authored final cutscene has
+                    // completed before LevelFlow reaches here, so the shell now continues to its
+                    // campaign-complete destination.
+                    state.Shell.OpenOn("extras");
+                    _menuFlow.MenuMode = true;
+                    _menuFlow.ShowcasePending = true;
+                }
+            }
+        }
+    }
+
+    // The presenters the title registered for the level as a whole, then for particular task types, one for each such task.
+    private readonly List<ITaskPresenter> _taskPresenters = [];
+
+    /// <summary>Makes a presenter for every task of the level whose type has one registered.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    private void MakeTaskPresenters(LevelTask levelRoot)
+    {
+        ReleaseTaskPresenters();
+        PresenterRegistry presenters = _presentation.Presenters;
+        if (presenters.TaskTypeCount == 0 && presenters.LevelPresenterCount == 0)
+        {
+            return;
+        }
+
+        TaskPresenterRequest request = new(_device, _resources, levelRoot, _logger);
+        _taskPresenters.AddRange(presenters.CreateForLevel(request));
+        foreach (GameTask task in levelRoot.Descendants())
+        {
+            if (presenters.CreateForTask(task, request) is { } presenter)
+            {
+                _taskPresenters.Add(presenter);
+            }
+        }
+
+        _logger.Information("Mission", $"{_taskPresenters.Count} task presenter(s) made.");
+    }
+
+    // Frees the presenters made for the level's tasks.
+    private void ReleaseTaskPresenters()
+    {
+        foreach (ITaskPresenter presenter in _taskPresenters)
+        {
+            presenter.Dispose();
+        }
+
+        _taskPresenters.Clear();
     }
 }

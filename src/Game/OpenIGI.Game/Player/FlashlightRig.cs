@@ -154,7 +154,7 @@ public sealed class FlashlightRig
 
         AdvanceSwitch(seconds);
 
-        target = Normalise(target, Aim);
+        target = target.ReciprocalNormalizedOr(Aim, 1e-6f);
 
         // One loop of the figure of eight a stride, plus a slow breath that never stops, so a torch held
         // perfectly still still lives a little.
@@ -167,9 +167,9 @@ public sealed class FlashlightRig
         float yaw = (swing * MathF.Sin(_swayPhase)) + (breath * MathF.Sin(_breathPhase * 0.7f));
         float pitch = (0.5f * swing * MathF.Sin(2f * _swayPhase)) + (breath * MathF.Sin(_breathPhase));
 
-        Vector3f swayed = Normalise(target + (right * MathF.Tan(yaw)) + (up * MathF.Tan(pitch)), target);
+        Vector3f swayed = (target + (right * MathF.Tan(yaw)) + (up * MathF.Tan(pitch))).ReciprocalNormalizedOr(target, 1e-6f);
 
-        if (!_hasAim || Dot(Aim, swayed) < MathF.Cos(SnapDegrees * (MathF.PI / 180f)))
+        if (!_hasAim || Vector3f.Dot(Aim, swayed) < MathF.Cos(SnapDegrees * (MathF.PI / 180f)))
         {
             Aim = swayed;
             _hasAim = true;
@@ -184,7 +184,7 @@ public sealed class FlashlightRig
 
         // Exponential, so it is the same lag at any frame rate: what is left of the gap halves every half-life.
         float keep = MathF.Pow(0.5f, seconds / lagHalfLife);
-        Aim = Normalise((Aim * keep) + (swayed * (1f - keep)), swayed);
+        Aim = ((Aim * keep) + (swayed * (1f - keep))).ReciprocalNormalizedOr(swayed, 1e-6f);
     }
 
     // Moves the switch's clock on by a frame and takes the light's average over that frame.
@@ -281,19 +281,6 @@ public sealed class FlashlightRig
     private static float Overshoot(float s) => 1f + (0.06f * MathF.Exp(-s / 0.18f));
 
     // A small xorshift, so the chatter is rolled the same way every run and never from the clock.
-    private float NextFloat()
-    {
-        _rng ^= _rng << 13;
-        _rng ^= _rng >> 17;
-        _rng ^= _rng << 5;
-        return (_rng & 0xFFFFFF) / 16777216f;
-    }
+    private float NextFloat() => (XorShift32.Next(ref _rng) & 0xFFFFFF) / 16777216f;
 
-    private static float Dot(Vector3f a, Vector3f b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z);
-
-    private static Vector3f Normalise(Vector3f v, Vector3f fallback)
-    {
-        float length = MathF.Sqrt(Dot(v, v));
-        return length > 1e-6f ? v * (1f / length) : fallback;
-    }
 }

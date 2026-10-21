@@ -1,5 +1,8 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Player;
 
@@ -14,8 +17,85 @@ namespace OpenIGI.Game.Player;
 /// <c>Position, Gamma, Model, Team</c>).
 /// </para>
 /// </remarks>
-public abstract class HumanTask : ContainerTask
+public abstract class HumanTask
+    : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable
 {
+    /// <summary>
+    /// Gets or sets the live body the human's game keeps for it: where it stands, its eyes and its stance; <see langword="null"/>
+    /// before the game stands one, when the human is where its parameters put it, standing.
+    /// </summary>
+    /// <remarks>
+    /// The original keeps these on the <c>Human</c> itself (<c>+32</c> the body's origin, <c>+829</c> crouched, <c>+3318</c> active);
+    /// the port's games keep the body in their own rigs, so they give their humans this, as they give them <see cref="Events"/>.
+    /// </remarks>
+    public IHumanBodyState? Body { get; set; }
+
+    /// <summary>
+    /// Gets or sets the game whose body stands for the human when it is not the game whose level it is in, or
+    /// <see langword="null"/> when the level's own game drives it.
+    /// </summary>
+    /// <remarks>
+    /// A human another game drives is that game's: its brain, its body, its drawing and its collision. The level's own game
+    /// leaves it alone and keeps only the task, which the level's scripts read (<c>isDead</c>, <c>eTeam</c>) and which the other
+    /// game's body keeps current.
+    /// </remarks>
+    public GameTitle? Driver { get; set; }
+
+    /// <inheritdoc/>
+    Vector3d IAiHuman.Position => Body?.Feet ?? Position;
+
+    /// <inheritdoc/>
+    /// <remarks>Without a body, its eyes standing where its parameters put it.</remarks>
+    public Vector3d OriginalViewPosition => Body?.Eyes ?? new Vector3d(Position.X, Position.Y, Position.Z + PlayerBody.StandingEyeHeight);
+
+    /// <inheritdoc/>
+    Vector3d IAiDetectable.DetectablePosition => Body?.Feet ?? Position;
+
+    /// <inheritdoc/>
+    float IAiDetectable.DetectableRadius => (float)HumanSeparation.RadiusInUnits;
+
+    /// <summary>Gets or sets how far off another game's detectors see the human, as a share of a cone's length.</summary>
+    /// <remarks>
+    /// Project I.G.I. keeps no measure of how lit a human stands, so its own humans are seen as well as in the light and its
+    /// detectors never read this. Content that brings another game's detectors may measure it as that game does.
+    /// </remarks>
+    public float VisibilityFactor { get; set; } = 1f;
+
+    /// <inheritdoc/>
+    float? IAiDetectable.VisibilityFactor => VisibilityFactor;
+
+    /// <inheritdoc/>
+    bool IAiDetectable.IsGone => IsDeleted;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Human</c>'s answer (<c>0x45FE30</c>): a human of its side, alive unless its death latch is set, active as its body says,
+    /// seen at one point, its eyes (<c>0x465820</c>: its origin lifted 2826.24 standing, 1433.6 crouched).
+    /// </remarks>
+    public AiDetectionInfo DetectionInfo() =>
+        AiDetectionInfo.OnePoint(AiDetectableKind.Human, OriginalViewPosition, Team, !IsDead, Body?.IsActive ?? true);
+
+    /// <summary>Gets or sets the handlers the human's game gives its hit events; <see langword="null"/> takes every bullet and does nothing.</summary>
+    /// <remarks>
+    /// Every type the shot or a blast can strike takes the engine's hit events itself (<c>Human</c>, <c>0x45E450</c>, links
+    /// <c>WeaponCollisionEvaluate</c>, <c>WeaponHit</c> and <c>ExplosionHit</c>; <c>HumanPlayer</c> and each soldier class
+    /// override the last two). What the handlers read -- the health, the brain, the view -- the game keeps, so the game
+    /// gives its humans these.
+    /// </remarks>
+    public IHumanEvents? Events { get; set; }
+
+    /// <inheritdoc/>
+    public bool EvaluateWeaponCollision(in WeaponCollisionQuery query) => Events?.EvaluateWeaponCollision(this, query) ?? true;
+
+    /// <inheritdoc/>
+    public void WeaponHit(in WeaponHit hit) => Events?.WeaponHit(this, hit);
+
+    /// <inheritdoc/>
+    public void ExplosionHit(in ExplosionHit hit) => Events?.ExplosionHit(this, hit);
+
+    /// <inheritdoc/>
+    public void SendEvent(in HumanAiEvent aiEvent) => Events?.SendEvent(this, aiEvent);
+
     /// <summary>Gets or sets the world position, in engine units.</summary>
     /// <remarks>The original keeps this as three <see cref="double"/> at <c>Human+32</c>.</remarks>
     public Vector3d Position { get; set; }
@@ -69,6 +149,22 @@ public abstract class HumanTask : ContainerTask
     }
 }
 
+/// <summary>The live body a game keeps for one of its humans, as any game's AI perceives it.</summary>
+public interface IHumanBodyState
+{
+    /// <summary>Gets where the human's feet are, in world units.</summary>
+    Vector3d Feet { get; }
+
+    /// <summary>Gets where its eyes are by its stance.</summary>
+    Vector3d Eyes { get; }
+
+    /// <summary>Gets a value indicating whether it keeps low, settled in a crouch or lying flat.</summary>
+    bool IsKeepingLow { get; }
+
+    /// <summary>Gets a value indicating whether it takes part in the level, <c>Human+3318</c>.</summary>
+    bool IsActive { get; }
+}
+
 /// <summary>The player's character — the original's <c>HumanPlayer</c>.</summary>
 /// <remarks>
 /// <para>
@@ -78,8 +174,17 @@ public abstract class HumanTask : ContainerTask
 /// initialiser with a literal). The player's rig is not a level-data decision.
 /// </para>
 /// </remarks>
-public partial class HumanPlayerTask : HumanTask
+public partial class HumanPlayerTask : HumanTask, IAiPlayer
 {
+    /// <summary>Gets how many times a squad has first spotted the player, as an AI that keeps the count reports it.</summary>
+    public int TimesSpotted { get; private set; }
+
+    /// <inheritdoc/>
+    public bool IsKeepingLow => Body?.IsKeepingLow ?? false;
+
+    /// <inheritdoc/>
+    public void NoteDetected() => TimesSpotted++;
+
     /// <summary>Gets or sets the position the level places the player at.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
     public Vector3d SpawnPosition { get => Position; set => Position = value; }
@@ -114,6 +219,10 @@ public partial class HumanPlayerTask : HumanTask
 /// every level declares them with the same six parameters and their handlers are this class's over
 /// different data. <see cref="HumanSoldierFemaleTask"/> and <see cref="HumanSoldierRpgTask"/> carry that
 /// data as their <see cref="Class"/>.
+/// </para>
+/// <para>
+/// Its hit events are <see cref="HumanTask"/>'s: <c>0x45CAB0</c> links <c>WeaponHit</c> to <c>0x45D3C0</c> and
+/// <c>ExplosionHit</c> to <c>0x45A3D0</c>, over <c>Human</c>'s <c>WeaponCollisionEvaluate</c> (<c>0x45E3E0</c>).
 /// </para>
 /// </remarks>
 public partial class HumanSoldierTask : HumanTask
@@ -161,6 +270,34 @@ public partial class HumanSoldierTask : HumanTask
     /// <summary>Gets or sets the animation the soldier stands in.</summary>
     [ScriptParam(ScriptParamType.Int32, "Stand Animation")]
     public int StandAnimation { get; set; }
+}
+
+/// <summary>The handlers a game gives its humans' engine events, as each human's type links them.</summary>
+public interface IHumanEvents
+{
+    /// <summary>Answers whether a bullet may strike the human: <c>WeaponCollisionEvaluate</c>.</summary>
+    /// <param name="human">The human asked.</param>
+    /// <param name="query">The trace's context.</param>
+    /// <returns>Whether it may.</returns>
+    bool EvaluateWeaponCollision(HumanTask human, in WeaponCollisionQuery query);
+
+    /// <summary>A round or a blade struck the human: <c>WeaponHit</c>.</summary>
+    /// <param name="human">The human struck.</param>
+    /// <param name="hit">The hit.</param>
+    void WeaponHit(HumanTask human, in WeaponHit hit);
+
+    /// <summary>A blast reached the human: <c>ExplosionHit</c>.</summary>
+    /// <param name="human">The human reached.</param>
+    /// <param name="hit">The blast.</param>
+    void ExplosionHit(HumanTask human, in ExplosionHit hit);
+
+    /// <summary>An AI event reached the human, for its brain: <c>HumanAISendEvent</c> (<c>0x45FDA0</c> hands it on).</summary>
+    /// <param name="human">The human it reached.</param>
+    /// <param name="aiEvent">The event.</param>
+    /// <remarks>A human with no brain lets it go.</remarks>
+    void SendEvent(HumanTask human, in HumanAiEvent aiEvent)
+    {
+    }
 }
 
 /// <summary>A female soldier — the original's <c>HumanSoldierFemale</c>, registered at <c>0x454970</c>.</summary>

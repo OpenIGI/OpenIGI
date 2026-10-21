@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Releases.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Core\OpenIGI.Releases\OpenIGI.Releases.csproj" />
     <ProjectReference Include="..\OpenIGI.Tools.Common\OpenIGI.Tools.Common.csproj" />
   </ItemGroup>

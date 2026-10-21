@@ -4,6 +4,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -52,7 +53,7 @@ public sealed class RetailSightOcclusionTests
                 out WorldTraceHit blocked),
             "room wall missed");
         Assert.False(
-            AiSoldier.WorldBlockerAllowsSight(Length(from, to), blocked.Distance),
+            Igi1HumanAi.WorldBlockerAllowsSight(Length(from, to), blocked.Distance),
             $"room wall '{blocked.Label}' at t={blocked.Fraction:0.###} still counted as visible");
     }
 
@@ -139,7 +140,7 @@ public sealed class RetailSightOcclusionTests
     }
 
     private static Vector3d Mark(Vector3d feet, double alongYMetres) =>
-        new(feet.X, feet.Y + (alongYMetres * U), feet.Z + AiSoldier.DetectionRaiseStandingInUnits);
+        new(feet.X, feet.Y + (alongYMetres * U), feet.Z + Igi1HumanAi.DetectionRaiseStandingInUnits);
 
     private static double Length(Vector3d a, Vector3d b)
     {

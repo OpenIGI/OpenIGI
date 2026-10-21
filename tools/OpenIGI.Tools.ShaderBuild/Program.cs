@@ -1,7 +1,8 @@
 using OpenIGI.Tools;
+using OpenIGI.Shaders;
 using OpenIGI.Tools.ShaderBuild;
 
-// Compiles src/Rendering/OpenIGI.Shaders from Slang to SPIR-V and WGSL.
+// Compiles src/Rendering/OpenIGI.Shaders from Slang to SPIR-V, WGSL and DXIL.
 //
 //   dotnet run --project tools/OpenIGI.Tools.ShaderBuild            regenerate the committed output
 //   dotnet run --project tools/OpenIGI.Tools.ShaderBuild -- --check fail if the committed output is stale
@@ -23,11 +24,15 @@ static int Run(ToolContext ctx)
     {
         string projectDirectory = ShaderProjectLocator.Locate();
         string slangc = SlangLocator.Locate();
-        SlangCompiler compiler = new(slangc);
+        ShaderManifest manifest = ShaderLibraryBuilder.ReadManifest(projectDirectory);
+        string repositoryRoot = Path.GetFullPath(Path.Combine(projectDirectory, "..", "..", ".."));
+        DxcInstall dxc = DxcLocator.Locate(repositoryRoot, manifest.DxcVersion);
+        SlangCompiler compiler = new(slangc, dxc.LibraryDirectory);
 
         string version = compiler.Version();
         ctx.Info($"slangc   {slangc}");
         ctx.Info($"version  {version}");
+        ctx.Info($"dxc      {dxc.LibraryDirectory} ({dxc.Version})");
         ctx.Info($"library  {projectDirectory}");
         ctx.Info(string.Empty);
 

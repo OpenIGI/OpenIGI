@@ -1,0 +1,29 @@
+#nullable enable
+const OpenIGI.Modding.ModApi.Version = 1 -> int
+OpenIGI.Modding.IModBuilder
+OpenIGI.Modding.IModBuilder.AddModule(OpenIGI.Engine.Titles.IContentModule! contentModule) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.EditLevelSystems<TBuild>(System.Action<OpenIGI.Game.Level.LevelSystems<TBuild!>!>! edit) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.Manifest.get -> OpenIGI.Core.Content.ModManifest!
+OpenIGI.Modding.IModBuilder.MountTitleData(OpenIGI.Core.Titles.GameTitle! title, string! deviceName) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.ReplaceTask(string! typeName, System.Func<OpenIGI.Engine.Tasks.GameTask!>! factory, OpenIGI.Engine.Tasks.ITaskParameterAdapter? adapter = null) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.Title.get -> OpenIGI.Core.Titles.GameTitle!
+OpenIGI.Modding.InstalledMod
+OpenIGI.Modding.InstalledMod.Code.get -> OpenIGI.Modding.IOpenIgiMod?
+OpenIGI.Modding.InstalledMod.Code.init -> void
+OpenIGI.Modding.InstalledMod.Directory.get -> string!
+OpenIGI.Modding.InstalledMod.Directory.init -> void
+OpenIGI.Modding.InstalledMod.InstalledMod(OpenIGI.Core.Content.ModManifest! Manifest, string! Directory, OpenIGI.Modding.IOpenIgiMod? Code) -> void
+OpenIGI.Modding.InstalledMod.Manifest.get -> OpenIGI.Core.Content.ModManifest!
+OpenIGI.Modding.InstalledMod.Manifest.init -> void
+OpenIGI.Modding.IOpenIgiMod
+OpenIGI.Modding.IOpenIgiMod.Configure(OpenIGI.Modding.IModBuilder! builder) -> void
+OpenIGI.Modding.ModApi
+OpenIGI.Modding.ModSet
+OpenIGI.Modding.ModSet.Extend(OpenIGI.Engine.Titles.IGameTitleRuntime! runtime) -> OpenIGI.Engine.Titles.IGameTitleRuntime!
+OpenIGI.Modding.ModSet.For(OpenIGI.Core.Titles.GameTitle! title) -> System.Collections.Generic.IEnumerable<OpenIGI.Modding.InstalledMod!>!
+OpenIGI.Modding.ModSet.Mods.get -> System.Collections.Generic.IReadOnlyList<OpenIGI.Modding.InstalledMod!>!
+OpenIGI.Modding.ModSet.ModSet(System.Collections.Generic.IEnumerable<OpenIGI.Modding.InstalledMod!>! mods) -> void
+OpenIGI.Modding.OpenIgiModAttribute
+OpenIGI.Modding.OpenIgiModAttribute.ModType.get -> System.Type!
+OpenIGI.Modding.OpenIgiModAttribute.OpenIgiModAttribute(System.Type! modType) -> void
+static OpenIGI.Modding.ModSet.None.get -> OpenIGI.Modding.ModSet!

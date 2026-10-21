@@ -12,14 +12,11 @@ namespace OpenIGI.Game.Igi2;
 /// </remarks>
 public sealed class Igi2Runtime : IGameTitleRuntime
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2Runtime Instance { get; } = new();
-
     /// <inheritdoc/>
     public GameTitle Title => GameTitle.Igi2;
 
     /// <inheritdoc/>
-    public ITitleDataLayout Layout => Igi2DataLayout.Instance;
+    public ITitleDataLayout Layout { get; } = new Igi2DataLayout();
 
     /// <inheritdoc/>
     public AssetFormatProfile Formats => AssetFormatProfile.Igi2;

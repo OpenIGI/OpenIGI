@@ -1,0 +1,105 @@
+# Publishes the versions a merge adds to OpenIGI's download store.
+#
+# In two jobs, so the mods' code never runs where the publishing key is: the first builds each version from its
+# source, with no secrets, on a GitHub-hosted runner; the second, in the mods-publish environment that holds the key
+# and needs a maintainer's approval, only chunks and uploads what the first built. The source and commit a listing
+# names come from the index, never from the package.
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      added: ${{ steps.added.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: index
+      - uses: actions/checkout@v4
+        with:
+          repository: OpenIGI/OpenIGI
+          ref: master
+          path: openigi
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build openigi/tools/OpenIGI.Tools.Release -c Release
+
+      # A mod that builds against OpenIGI's source (Directory.Build.props in OpenIGI/igi2-soldiers) finds it here.
+      - name: Build every version added
+        id: added
+        env:
+          OPENIGI_ROOT: ${{ github.workspace }}/openigi
+        run: |
+          tool="dotnet openigi/tools/OpenIGI.Tools.Release/bin/Release/net10.0/OpenIGI.Tools.Release.dll"
+          $tool mods-index check index
+          $tool mods-index added index --base "${{ github.event.before }}" > added.txt
+          while read -r id version; do
+            $tool mods-index build index "$id" "$version" --out "packages/$id/$version" --work "$RUNNER_TEMP/source/$id"
+          done < added.txt
+          echo "list=$(tr '\n' ';' < added.txt)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: packages
+          if-no-files-found: ignore
+
+  publish:
+    needs: build
+    if: needs.build.outputs.added != ''
+    runs-on: ubuntu-latest
+    environment: mods-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: index
+      - uses: actions/checkout@v4
+        with:
+          repository: OpenIGI/OpenIGI
+          ref: master
+          path: openigi
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build openigi/tools/OpenIGI.Tools.Release -c Release
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: packages
+
+      # The publisher key the release VM's dispatcher accepts (deploy/vm/bootstrap.sh), which can run its verbs alone.
+      - name: Reach the store
+        env:
+          KEY: ${{ secrets.MODS_PUBLISH_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.MODS_PUBLISH_KNOWN_HOSTS }}
+          HOST: ${{ vars.MODS_PUBLISH_HOST }}
+        run: |
+          install -d -m 0700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/ssh/key" && chmod 0600 "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          printf 'Host store\n  HostName %s\n  User deploy\n  IdentityFile %s\n  UserKnownHostsFile %s\n  IdentitiesOnly yes\n' \
+            "$HOST" "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts" > "$RUNNER_TEMP/ssh/config"
+          mkdir -p ~/.ssh && cp "$RUNNER_TEMP/ssh/config" ~/.ssh/config
+
+      - name: Publish
+        env:
+          ADDED: ${{ needs.build.outputs.added }}
+        run: |
+          tool="dotnet openigi/tools/OpenIGI.Tools.Release/bin/Release/net10.0/OpenIGI.Tools.Release.dll"
+          printf '%s' "$ADDED" | tr ';' '\n' | while read -r id version; do
+            [ -n "$id" ] || continue
+            $tool mods-index publish index "$id" "$version" --package "packages/$id/$version" --ssh store
+          done

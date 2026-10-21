@@ -45,6 +45,9 @@ public abstract class GameTask
         _tree ?? throw new InvalidOperationException(
             $"The task of CLR type '{GetType().Name}' was not created through a {nameof(TaskTree)}.");
 
+    /// <summary>Gets a value indicating whether the task was created through a <see cref="TaskTree"/>, and so has a <see cref="Tree"/>.</summary>
+    public bool HasTree => _tree is not null;
+
     /// <summary>Gets the parent task, or <see langword="null"/> for a tree root.</summary>
     public GameTask? Parent { get; private set; }
 
@@ -124,6 +127,76 @@ public abstract class GameTask
                 yield return child;
             }
         }
+    }
+
+    /// <summary>Walks every task below this one, depth first, a parent before its children and children in order.</summary>
+    /// <returns>The descendants, this task excluded.</returns>
+    /// <remarks>
+    /// Like <see cref="Children"/>, the walk reads the live links one step at a time, so it allocates no stack and sees the tree
+    /// as it is when each step is taken. It is the order the original's own tree walks visit tasks in, and the one level loading
+    /// binds services in; use <see cref="TaskTreeWalker"/> for a walk that must survive a task deleting itself.
+    /// </remarks>
+    public IEnumerable<GameTask> Descendants()
+    {
+        GameTask? next = FirstChild;
+        while (next is not null)
+        {
+            GameTask current = next;
+            yield return current;
+            next = current.FirstChild ?? NextAfter(current);
+        }
+    }
+
+    /// <summary>Walks this task and every task below it, in the order of <see cref="Descendants"/>.</summary>
+    /// <returns>This task, then its descendants.</returns>
+    public IEnumerable<GameTask> DescendantsAndSelf()
+    {
+        yield return this;
+        foreach (GameTask descendant in Descendants())
+        {
+            yield return descendant;
+        }
+    }
+
+    /// <summary>Gets whether this task is a given task or lies anywhere below it.</summary>
+    /// <param name="ancestor">The task to look for on the way up.</param>
+    /// <returns><see langword="true"/> when <paramref name="ancestor"/> is this task or one of its ancestors.</returns>
+    public bool IsSelfOrDescendantOf(GameTask ancestor)
+    {
+        for (GameTask? current = this; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Walks the tasks above this one, its parent first.</summary>
+    /// <returns>The ancestors, this task excluded.</returns>
+    public IEnumerable<GameTask> Ancestors()
+    {
+        for (GameTask? parent = Parent; parent is not null; parent = parent.Parent)
+        {
+            yield return parent;
+        }
+    }
+
+    // The next task of a pre-order walk below this one once a task's own subtree is done: its next sibling, or the nearest
+    // ancestor's below this one, or nothing.
+    private GameTask? NextAfter(GameTask task)
+    {
+        for (GameTask? at = task; at is not null && !ReferenceEquals(at, this); at = at.Parent)
+        {
+            if (at.NextSibling is { } sibling)
+            {
+                return sibling;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Gets the number of children.</summary>
@@ -251,9 +324,45 @@ public abstract class GameTask
     {
     }
 
+    /// <summary>Gets the value a parameter was given, by the name level data declares it under.</summary>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">Receives the value.</param>
+    /// <returns><see langword="true"/> when the type declares a parameter with that name.</returns>
+    /// <remarks>
+    /// The same question whether the type is a class or a placeholder: the code the <c>[ScriptParam]</c> generator emits answers it
+    /// from the class's members, <see cref="DeclaredTask"/> from the values it kept. Readers that look a level's data up by type name
+    /// use it, so a type keeps being read when a class comes to implement it.
+    /// </remarks>
+    public virtual bool TryGetScriptValue(string name, out object? value)
+    {
+        value = null;
+        return false;
+    }
+
+    /// <summary>Sets a parameter by the name level data declares it under, when the value is of the parameter's type.</summary>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">The value.</param>
+    /// <returns><see langword="true"/> when the type declares a parameter with that name and the value was of its type.</returns>
+    /// <remarks>
+    /// The other half of <see cref="TryGetScriptValue"/>, emitted by the same generator: what lets a level's values reach a
+    /// class whose own parameters are the same names in another order -- another version of the engine's declaration of a
+    /// type -- through <see cref="ByNameParameterAdapter"/>.
+    /// </remarks>
+    public virtual bool TrySetScriptValue(string name, object? value) => false;
+
     /// <summary>Gets the script parameters this task type declares, in wire order.</summary>
     /// <remarks>Overridden by the generated code; empty for a type that declares none.</remarks>
     protected virtual IReadOnlyList<TaskParameter> ScriptParameters => [];
+
+    /// <summary>Takes the level's services this task's <see cref="LevelServiceAttribute"/> properties ask for.</summary>
+    /// <param name="services">The level's services.</param>
+    /// <remarks>
+    /// Overridden by the code the <c>[LevelService]</c> source generator emits, which sets each attributed property the level
+    /// provides a service for and leaves the rest. An override calls the base first, so a derived type binds its base's too.
+    /// </remarks>
+    protected virtual void BindLevelServices(Titles.IServiceCatalog services)
+    {
+    }
 
     /// <inheritdoc/>
     public override string ToString() => _type is null ? GetType().Name : Name;
@@ -263,6 +372,8 @@ public abstract class GameTask
     internal IReadOnlyList<TaskParameter> GetDeclaredScriptParameters() => ScriptParameters;
 
     internal void InvokeBindScriptParameters(ScriptArgumentReader reader) => BindScriptParameters(reader);
+
+    internal void InvokeBindLevelServices(Titles.IServiceCatalog services) => BindLevelServices(services);
 
     internal void InvokeExportVars(ScriptVarRegistry variables) => OnExportVars(variables);
 

@@ -130,6 +130,17 @@ public sealed class AnimDataProgram
         }
     }
 
+    /// <summary>Clears every channel, the delay and the program counter with them, and sets the tick counter back to nought.</summary>
+    /// <remarks>
+    /// The rewind a seek backwards starts with, for a task that steps the programme and keeps its own count of ticks: an
+    /// I.G.I. 2 <c>AnimTask</c> sends its target the tick as it stands at every step, even while it replays.
+    /// </remarks>
+    public void Rewind()
+    {
+        Array.Clear(_channels);
+        Tick = 0;
+    }
+
     /// <summary>Moves the tick counter on once a step's packet has gone out.</summary>
     /// <remarks>
     /// <c>0x4F3EF0</c> calls the step <c>0x4F3F60</c>, whose packet (<c>0x4F4060</c>) carries the counter

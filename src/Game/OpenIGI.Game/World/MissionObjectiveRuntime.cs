@@ -100,7 +100,7 @@ public sealed class MissionObjectiveRuntime
         _resolveText = resolveText ?? (static key => key);
         _isKeyDown = isKeyDown;
 
-        List<GameTask> tasks = Walk(levelRoot).ToList();
+        List<GameTask> tasks = levelRoot.Descendants().ToList();
 
         foreach (GameTask task in tasks)
         {
@@ -395,6 +395,12 @@ public sealed class MissionObjectiveRuntime
     /// <summary>Gets LevelFlow's <c>isComplete</c> byte, which a failure clears on the same update.</summary>
     public bool IsComplete => _levelFlow is { Complete: not 0 };
 
+    /// <summary>
+    /// Gets the level's tick, LevelFlow's <c>nTick</c> (<c>+104</c>), which the level's tasks stamp their pulses with; <see langword="null"/>
+    /// for a level with no LevelFlow.
+    /// </summary>
+    public int? LevelTick => _levelFlow?.Tick;
+
     /// <summary>Gets LevelFlow's <c>isFailed</c> byte, the one <c>LevelFlow_LevelFailed</c> (<c>0x488E50</c>) returns.</summary>
     public bool IsFailed => _levelFlow is { Failed: not 0 };
 
@@ -506,19 +512,19 @@ public sealed class MissionObjectiveRuntime
         _playerSource = player;
         foreach (AreaActivation area in _areaActivations)
         {
-            walker.Register(area.Task, task =>
+            walker.Bind(area.Task, task =>
             {
                 UpdateArea(area);
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
             });
         }
 
         foreach (EditVariable edit in _editVariables)
         {
-            walker.Register(edit.Task, task =>
+            walker.Bind(edit.Task, task =>
             {
                 UpdateEdit(edit);
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
             });
         }
 
@@ -529,10 +535,10 @@ public sealed class MissionObjectiveRuntime
             if (message.Task is { } owner)
             {
                 _walkedMessages.Add(message);
-                walker.Register(owner, task =>
+                walker.Bind(owner, task =>
                 {
                     UpdateMessage(message);
-                    walker.WalkChildren(task);
+                    walker.RunChildren(task);
                 });
             }
         }
@@ -898,18 +904,6 @@ public sealed class MissionObjectiveRuntime
         task.TryGetValue("Orientation", out object? value) && value is Vector3f angles
             ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
             : Matrix3f.Identity;
-
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
-    }
 
     private static Vector3d FindPosition(GameTask task)
     {

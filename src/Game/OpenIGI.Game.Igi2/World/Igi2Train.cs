@@ -43,14 +43,14 @@ public static class Igi2Train
     /// </remarks>
     public const string DistanceParameter = "Position";
 
-    /// <summary>Places a locomotive and its carriages along the spline they ride.</summary>
+    /// <summary>Places a locomotive and its carriages along the spline they ride, where the level starts them.</summary>
     /// <param name="lead">The locomotive: a <c>Train</c> whose parent is not one.</param>
     /// <param name="path">The spline its <c>RailroadQTaskID</c> names.</param>
     /// <param name="models">Resolves a model name to the mesh, for the coupling measurement.</param>
     /// <returns>One placement per carriage, the locomotive first, or nothing when a model is missing.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     public static IReadOnlyList<Igi2Placement> Carriages(
-        DeclaredTask lead,
+        Vehicles.Igi2TrainTask lead,
         Igi2SplinePath path,
         Func<string, MefModel?> models)
     {
@@ -58,33 +58,22 @@ public static class Igi2Train
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(models);
 
-        List<DeclaredTask> rake = [lead];
-        foreach (GameTask child in lead.Children)
-        {
-            if (child is DeclaredTask carriage
-                && string.Equals(carriage.Type.Name, TrainType, StringComparison.Ordinal))
-            {
-                rake.Add(carriage);
-            }
-        }
+        List<Vehicles.Igi2TrainTask> rake = [lead, .. lead.Children.OfType<Vehicles.Igi2TrainTask>()];
 
-        // Every step takes the locomotive's flag: Train_GetPositions negates the whole array on
-        // `!train[+2260]`, reading the train it was called for rather than each carriage.
-        bool flipped = Flag(lead, "Flip Direction");
+        // Every step takes the locomotive's flag: Train_GetPositions negates the whole array on the
+        // locomotive's isFlipDirection, reading the train it was called for rather than each carriage.
         float[] steps = new float[rake.Count];
-        string[] named = new string[rake.Count];
         for (int i = 0; i < rake.Count; i++)
         {
-            if (!TryModel(rake[i], models, out string model, out float length))
+            if (!TryMeasure(rake[i].Model, models, out float length))
             {
                 return [];
             }
 
-            named[i] = model;
-            steps[i] = flipped ? length : -length;
+            steps[i] = lead.FlipDirection ? length : -length;
         }
 
-        if (!path.TryWalk(Distance(lead), steps, out Vector3d[] points))
+        if (!path.TryWalk(lead.OriginalPosition, steps, out Vector3d[] points))
         {
             return [];
         }
@@ -96,10 +85,10 @@ public static class Igi2Train
             placed.Add(new Igi2Placement(
                 rake[i].Id,
                 TrainType,
-                named[i],
-                Offset(points[i], facing, rake[i]),
+                rake[i].Model,
+                Offset(points[i], facing, rake[i].DisplacementX, rake[i].DisplacementZ),
                 default,
-                Number(rake[i], Igi2WorldScene.RenderGroupParameter, 0),
+                0,
                 ModelVariant: 0,
                 MountedModel: string.Empty,
                 MountedOrientation: default,
@@ -107,6 +96,31 @@ public static class Igi2Train
         }
 
         return placed;
+    }
+
+    /// <summary>
+    /// Measures a carriage from coupling to coupling: the distance between its model's first two magic vertices
+    /// (<c>Train_UpdateInternalDataHandler</c>).
+    /// </summary>
+    /// <param name="model">The carriage's model.</param>
+    /// <param name="models">Resolves a model name to the mesh.</param>
+    /// <param name="length">Receives the length, in world units.</param>
+    /// <returns>Whether the model is there with both couplings, a length apart.</returns>
+    public static bool TryMeasure(string model, Func<string, MefModel?> models, out float length)
+    {
+        ArgumentNullException.ThrowIfNull(models);
+        length = 0f;
+        MefModel? mesh = string.IsNullOrWhiteSpace(model) ? null : models(model);
+        if (mesh is null
+            || !mesh.TryGetMagicVertex(0, out Vector3f head)
+            || !mesh.TryGetMagicVertex(1, out Vector3f tail))
+        {
+            return false;
+        }
+
+        float x = head.X - tail.X, y = head.Y - tail.Y, z = head.Z - tail.Z;
+        length = Fpu.Sqrt(((Fpu)x * x) + ((Fpu)y * y) + ((Fpu)z * z)).F;
+        return length > 0f;
     }
 
     /// <summary>Builds the rotation a carriage takes from the two couplings it spans.</summary>
@@ -121,94 +135,42 @@ public static class Igi2Train
     /// </remarks>
     public static Matrix3f Facing(Vector3d front, Vector3d back)
     {
-        Vector3f along = Normalize(new Vector3f(
+        Vector3f along = (new Vector3f(
             (float)(front.X - back.X),
             (float)(front.Y - back.Y),
-            (float)(front.Z - back.Z)));
+            (float)(front.Z - back.Z))).NormalizedOrSelf();
         if (along.X == 0f && along.Y == 0f && along.Z == 0f)
         {
             return Matrix3f.Identity;
         }
 
-        Vector3f side = Normalize(new Vector3f(along.Y, -along.X, 0f));
-        Vector3f up = Normalize(Cross(side, along));
+        Vector3f side = (new Vector3f(along.Y, -along.X, 0f)).NormalizedOrSelf();
+        Vector3f up = (Vector3f.Cross(side, along)).NormalizedOrSelf();
         return new Matrix3f(
             side.X, along.X, up.X,
             side.Y, along.Y, up.Y,
             side.Z, along.Z, up.Z);
     }
 
-    /// <summary>Gets where the train's front coupling is, in engine units along the spline.</summary>
-    private static double Distance(DeclaredTask lead) =>
-        lead.TryGetValue(DistanceParameter, out object? raw) && raw is float value ? value : 0.0;
-
-    /// <summary>Shifts a carriage off the rail by its authored displacement.</summary>
+    /// <summary>Shifts a carriage off the rail by its displacement.</summary>
+    /// <param name="point">The forward coupling.</param>
+    /// <param name="facing">The carriage's rotation.</param>
+    /// <param name="across">Its displacement across, in metres.</param>
+    /// <param name="up">Its displacement up, in metres.</param>
+    /// <returns>Where it stands.</returns>
     /// <remarks>
     /// <c>Train_MoveCarriage</c> multiplies both by <c>WORLD_METER</c> and turns them through the
-    /// carriage's own rotation, across and up — never along. It is what sets a carriage on its bogies
+    /// carriage's own rotation, across and up -- never along. It is what sets a carriage on its bogies
     /// rather than with the rail through its middle.
     /// </remarks>
-    private static Vector3d Offset(Vector3d point, Matrix3f facing, DeclaredTask carriage)
+    public static Vector3d Offset(Vector3d point, Matrix3f facing, float across, float up)
     {
-        float across = Real(carriage, "Displacement X") * (float)WorldScene.UnitsPerMetre;
-        float up = Real(carriage, "Displacement Z") * (float)WorldScene.UnitsPerMetre;
+        float x = across * (float)WorldScene.UnitsPerMetre;
+        float z = up * (float)WorldScene.UnitsPerMetre;
         return new Vector3d(
-            point.X + (facing.M11 * across) + (facing.M13 * up),
-            point.Y + (facing.M21 * across) + (facing.M23 * up),
-            point.Z + (facing.M31 * across) + (facing.M33 * up));
+            point.X + (facing.M11 * x) + (facing.M13 * z),
+            point.Y + (facing.M21 * x) + (facing.M23 * z),
+            point.Z + (facing.M31 * x) + (facing.M33 * z));
     }
 
-    /// <summary>Reads a carriage's model and the coupling-to-coupling length of it.</summary>
-    private static bool TryModel(
-        DeclaredTask carriage,
-        Func<string, MefModel?> models,
-        out string name,
-        out float length)
-    {
-        name = string.Empty;
-        length = 0f;
-        if (!carriage.TryGetValue(Igi2WorldScene.ModelParameter, out object? raw)
-            || raw is not string model
-            || string.IsNullOrWhiteSpace(model))
-        {
-            return false;
-        }
-
-        name = model;
-        MefModel? mesh = models(model);
-        if (mesh is null
-            || !mesh.TryGetMagicVertex(0, out Vector3f head)
-            || !mesh.TryGetMagicVertex(1, out Vector3f tail))
-        {
-            return false;
-        }
-
-        length = MathF.Sqrt(
-            ((head.X - tail.X) * (head.X - tail.X))
-            + ((head.Y - tail.Y) * (head.Y - tail.Y))
-            + ((head.Z - tail.Z) * (head.Z - tail.Z)));
-        return length > 0f;
-    }
-
-    private static bool Flag(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is bool value && value;
-
-    private static float Real(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is float value ? value : 0f;
-
-    private static int Number(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? raw) && raw is int value ? value : fallback;
-
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : value;
-    }
-
-    private static Vector3f Cross(Vector3f left, Vector3f right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
 }

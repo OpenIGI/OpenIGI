@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The parity oracle boots the real host headless, so it needs the app and its shipped assets. -->
+    <ProjectReference Include="..\..\apps\OpenIGI.Desktop\OpenIGI.Desktop.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
+          Link="Assets\fonts\Barlow-Regular.ttf"
+          CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- The storm's drop sheet, so the tests that read its layout read the shipped images rather than a
+         copy of them that is free to drift. -->
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\weather\*.png"
+          Link="Assets\weather\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- The lamps named by hand, for the same reason: the test has to read the file the game ships, or
+         it pins a copy that is free to drift away from it. -->
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\lamps.json"
+          Link="Assets\lamps.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

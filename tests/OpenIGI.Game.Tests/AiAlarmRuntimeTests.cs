@@ -6,6 +6,7 @@ using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -48,10 +49,107 @@ public sealed class AiAlarmRuntimeTests
         Assert.Equal(7, Read(variables, "AlarmControl_98.nTriggerLastTick").Integer);
     }
 
+    /// <summary>
+    /// AlarmControl is a Terminal: its update (0x4408A0) raises nothing while the terminal's isOn is off or the panel has
+    /// exploded. Missions 5 and 7 power their alarms from Generator_99.isOn, and mission 9 from !Terminal_94.isHacked.
+    /// </summary>
+    [Theory]
+    [InlineData("TRUE", false, true)]
+    [InlineData("FALSE", false, false)]
+    [InlineData("TRUE", true, false)]
+    [InlineData("", false, true)]
+    public void A_control_whose_terminal_is_off_or_exploded_raises_nothing(string onExpression, bool exploded, bool raises)
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AlarmControl"),
+                QvmExpression.Text("Trigger Expression"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Alarm Expression"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("On Expression"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(98),
+                QvmExpression.Text("AlarmControl"),
+                QvmExpression.Text("Main Alarm"),
+                QvmExpression.Text("TRUE"),
+                QvmExpression.Text("TRUE"),
+                QvmExpression.Text(onExpression))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+        GameTask control = tree.Root.Descendants().First(static task => task.Id == 98);
+        variables.BindBool(control, "isExploded", () => exploded, _ => { });
+
+        AiAlarmControlRegistry alarms = AiAlarmControlRegistry.Build(tree.Root, variables);
+        alarms.Tick(7);
+
+        Assert.Equal(raises, alarms.IsOn(98));
+        Assert.Equal(raises ? 1 : 0, Read(variables, "AlarmControl_98.isTrigger").Integer);
+    }
+
+    /// <summary>
+    /// A siren is an ExplodeObject: Mission 1's 0.2 rounds add up to its 1.0 threshold (0x481E60 against +492), so it takes
+    /// five. Its update (0x4494D0) then swaps the working loop for its faulty one while its expression holds.
+    /// </summary>
+    [Fact]
+    public void A_siren_takes_five_rounds_and_then_sounds_its_faulty_loop_while_the_alarm_is_on()
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("Siren"),
+                QvmExpression.Text("Explosion sound"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Working Sound"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Faulty Sound"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("On Expression"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(93),
+                QvmExpression.Text("Siren"),
+                QvmExpression.Text("Siren"),
+                QvmExpression.Text("explosion_1"),
+                QvmExpression.Text("alarmsystem_working"),
+                QvmExpression.Text("alarmsystem_faulty"),
+                QvmExpression.Text("TRUE"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        AlarmSpeaker siren = Assert.Single(speakers.Speakers);
+        Assert.Equal("alarmsystem_working", speakers.SoundNow(siren));
+
+        for (int round = 1; round < 5; round++)
+        {
+            Assert.Null(speakers.TryDestroy(siren.Task, 0.2f));
+            Assert.Null(speakers.TryDestroyAt(siren.PositionUnits));
+        }
+
+        Assert.Same(siren, speakers.TryDestroy(siren.Task, 0.2f));
+        Assert.True(siren.IsDestroyed);
+        Assert.False(speakers.IsOn(siren));
+        Assert.Equal("alarmsystem_faulty", speakers.SoundNow(siren));
+    }
+
     [Fact]
     public void AlarmStatusIsIndependentOfTheSoldiersAlertLatch()
     {
-        AiSoldier soldier = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1)
+        Igi1HumanAi soldier = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1)
         {
             AlarmControlId = 98,
         };
@@ -278,8 +376,8 @@ public sealed class AiAlarmRuntimeTests
     [Fact]
     public void ScriptScratchSlotsBelongToEachSoldier()
     {
-        AiSoldier first = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1);
-        AiSoldier second = new(graph: null, position: default, facing: 0f, phase: 1, seed: 2);
+        Igi1HumanAi first = new(graph: null, position: default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi second = new(graph: null, position: default, facing: 0f, phase: 1, seed: 2);
 
         first.SetScriptInteger(3, 17);
         first.SetScriptReal(4, 2.5f);

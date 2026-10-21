@@ -14,7 +14,7 @@ namespace OpenIGI.Game.World;
 /// <para>
 /// <b>This is deliberately not "the terrain".</b> A terrain is also a thing you ray-trace through, draw,
 /// bake lightmaps from and block sight with, and those stay on the concrete type that can do them —
-/// <see cref="TerrainRayTrace"/> and <see cref="TerrainSightBlock"/> still take a
+/// <see cref="TerrainRayTrace"/> and <c>TerrainSightBlock</c> still take a
 /// <see cref="TerrainData"/>, because there is nothing to share yet. What is behind this seam is only
 /// what the player's feet need, which is the part I.G.I. 2 can already answer.
 /// </para>

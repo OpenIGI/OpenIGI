@@ -12,6 +12,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -47,10 +48,14 @@ public sealed class RetailIgi2MissionCatalogueTests
         Assert.True(campaign > 0, "not one mission declared the single-player mode.");
         Assert.True(multiplayer > 0, "not one map declared the multiplayer mode.");
 
-        // No mission names the one that follows it: the first game's fourth argument has no counterpart,
-        // so a campaign order cannot be read out of this table.
+        // No mission names the one that follows it; Game_RunHandler takes the next node of the mission list, so each
+        // campaign mission leads to the next one defined, the last to none, and no multiplayer map leads anywhere.
+        MissionDescriptor[] singlePlayer = [.. catalogue.Missions.Where(static m => m.GameMode == Igi2MissionCatalogue.SinglePlayerMode)];
+        Assert.Equal(
+            [.. singlePlayer.Skip(1).Select(static m => m.Id), MissionDescriptor.NextMissionUndefined],
+            singlePlayer.Select(static m => m.NextMissionId));
         Assert.All(
-            catalogue.Missions,
+            catalogue.Missions.Where(static m => m.GameMode != Igi2MissionCatalogue.SinglePlayerMode),
             m => Assert.Equal(MissionDescriptor.NextMissionUndefined, m.NextMissionId));
 
         // And every id is distinct, which the original enforces by aborting.
@@ -102,7 +107,7 @@ public sealed class RetailIgi2MissionCatalogueTests
         // the first, Container is registered with no parameters and every I.G.I. 2 level refuses to load
         // -- the level's own editor declares it with one, which is the whole reason the set is the
         // title's to supply.
-        Igi2Runtime title = Igi2Runtime.Instance;
+        Igi2Runtime title = new Igi2Runtime();
         GameLoop loop = new(new ManualTimeSource(1_000), structuralTypes: title.Layout.StructuralTaskTypes);
         TitleSession session = TitleSession.Start(title.Modules, loop, files, resources, loadTables: false);
 

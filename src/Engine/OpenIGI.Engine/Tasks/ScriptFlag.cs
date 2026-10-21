@@ -45,10 +45,15 @@ public sealed class ScriptFlag
     /// press expires they clear <c>isPressed</c> and copy its old value to <c>isLastPressed</c>; the next
     /// ordinary commit clears the shadow again.
     /// </remarks>
-    public void EndPulse()
+    public void EndPulse() => Shift(false);
+
+    /// <summary>Takes a new value, its old one going to the shadow, as a task that writes both in one step does.</summary>
+    /// <param name="value">The new value.</param>
+    /// <remarks>A switch pressed (<c>0x444BC0</c>) shifts <c>isPressed</c> into <c>isLastPressed</c> and sets it.</remarks>
+    public void Shift(bool value)
     {
         Last = Value;
-        Value = false;
+        Value = value;
     }
 
     /// <inheritdoc/>

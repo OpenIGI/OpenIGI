@@ -38,7 +38,7 @@ public static class AiVisionPhases
         int counter = 0;
 
         // The lenses initialise as they are constructed, before any post-load runs.
-        foreach (GameTask task in Descendants(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (IsType(task, "SCamera"))
             {
@@ -78,16 +78,4 @@ public static class AiVisionPhases
 
     private static bool IsType(GameTask task, string name) =>
         string.Equals(task.Type?.Name, name, StringComparison.Ordinal);
-
-    private static IEnumerable<GameTask> Descendants(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 }

@@ -141,8 +141,8 @@ public static class RenderSurfaceProbe
         Vector3d e1 = new(b.X - a.X, b.Y - a.Y, b.Z - a.Z);
         Vector3d e2 = new(c.X - a.X, c.Y - a.Y, c.Z - a.Z);
 
-        Vector3d p = Cross(direction, e2);
-        double determinant = Dot(e1, p);
+        Vector3d p = Vector3d.Cross(direction, e2);
+        double determinant = Vector3d.Dot(e1, p);
 
         if (Math.Abs(determinant) < Epsilon)
         {
@@ -151,22 +151,22 @@ public static class RenderSurfaceProbe
 
         double inverse = 1.0 / determinant;
         Vector3d s = new(origin.X - a.X, origin.Y - a.Y, origin.Z - a.Z);
-        double u = Dot(s, p) * inverse;
+        double u = Vector3d.Dot(s, p) * inverse;
 
         if (u is < 0.0 or > 1.0)
         {
             return false;
         }
 
-        Vector3d q = Cross(s, e1);
-        double v = Dot(direction, q) * inverse;
+        Vector3d q = Vector3d.Cross(s, e1);
+        double v = Vector3d.Dot(direction, q) * inverse;
 
         if (v < 0.0 || u + v > 1.0)
         {
             return false;
         }
 
-        double t = Dot(e2, q) * inverse;
+        double t = Vector3d.Dot(e2, q) * inverse;
 
         if (t <= Epsilon || t > 1.0)
         {
@@ -174,12 +174,8 @@ public static class RenderSurfaceProbe
         }
 
         // The direction carries the ray's whole length, so t is a fraction of it.
-        distance = t * Math.Sqrt(Dot(direction, direction));
+        distance = t * Math.Sqrt(Vector3d.Dot(direction, direction));
         return true;
     }
 
-    private static Vector3d Cross(Vector3d l, Vector3d r) =>
-        new((l.Y * r.Z) - (l.Z * r.Y), (l.Z * r.X) - (l.X * r.Z), (l.X * r.Y) - (l.Y * r.X));
-
-    private static double Dot(Vector3d l, Vector3d r) => (l.X * r.X) + (l.Y * r.Y) + (l.Z * r.Z);
 }

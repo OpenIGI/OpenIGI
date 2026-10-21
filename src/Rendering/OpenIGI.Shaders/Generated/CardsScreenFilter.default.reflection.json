@@ -21,7 +21,12 @@
       "dimensions": 2,
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uAccum",
@@ -31,7 +36,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uPosition",
@@ -41,7 +51,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uSceneNormal",
@@ -51,7 +66,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "g",
@@ -61,7 +81,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uAccumSampler",
@@ -71,7 +96,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uPositionSampler",
@@ -81,7 +111,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uSceneNormalSampler",
@@ -91,7 +126,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,
@@ -105,33 +145,40 @@
       {
         "name": "uWidth",
         "offset": 0,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 0
       },
       {
         "name": "uHeight",
         "offset": 4,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 4
       },
       {
         "name": "uRadius",
         "offset": 8,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 8
       },
       {
         "name": "uAccum",
         "offset": 12,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 12
       },
       {
         "name": "uPosition",
         "offset": 16,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 16
       },
       {
         "name": "uSceneNormal",
         "offset": 20,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 20
       }
-    ]
+    ],
+    "hlslSize": 32
   }
 }

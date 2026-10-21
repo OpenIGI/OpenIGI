@@ -49,20 +49,9 @@ public sealed class SpriteBatch
         _sdfDevice = device as ISdfTextDevice;
         _capacityInQuads = capacityInQuads;
         _vertices = new Vertex2D[capacityInQuads * 4];
-        _indices = new ushort[capacityInQuads * 6];
 
         // Index layout is fixed for the lifetime of the batch: quad n always spans vertices 4n..4n+3.
-        for (int quad = 0; quad < capacityInQuads; quad++)
-        {
-            int v = quad * 4;
-            int i = quad * 6;
-            _indices[i + 0] = (ushort)(v + 0);
-            _indices[i + 1] = (ushort)(v + 1);
-            _indices[i + 2] = (ushort)(v + 2);
-            _indices[i + 3] = (ushort)(v + 0);
-            _indices[i + 4] = (ushort)(v + 2);
-            _indices[i + 5] = (ushort)(v + 3);
-        }
+        _indices = QuadIndices.Build(capacityInQuads);
     }
 
     /// <summary>Gets the number of draw calls the last <see cref="Begin"/>/<see cref="End"/> pair issued.</summary>

@@ -188,9 +188,9 @@ public sealed class MissionRegistry : IMissionCatalogue<MissionDescriptor>
             call.GetString(2),
             call.GetString(3),
             call.GetInt32(4),
-            Normalize(call.GetString(5)),
-            Normalize(call.GetString(6)),
-            Normalize(call.GetString(7)),
+            Core.ResourcePath.NormalizeDirectory(call.GetString(5)),
+            Core.ResourcePath.NormalizeDirectory(call.GetString(6)),
+            Core.ResourcePath.NormalizeDirectory(call.GetString(7)),
             call.GetString(8),
             call.GetString(9),
             call.GetString(10));
@@ -204,5 +204,4 @@ public sealed class MissionRegistry : IMissionCatalogue<MissionDescriptor>
         return QvmValue.FromInt32(1);
     }
 
-    private static string Normalize(string path) => path.Replace('\\', '/').TrimEnd('/');
 }

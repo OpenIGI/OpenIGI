@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What a mod draws: kept apart from the modding API, which names no picture, so a build that draws nothing never loads it. -->
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+</Project>

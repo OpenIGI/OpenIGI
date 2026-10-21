@@ -7,6 +7,9 @@
       <Build Project="false" />
     </Project>
   </Folder>
+  <Folder Name="/sdk/">
+    <Project Path="sdk/OpenIGI.Modding.Sdk/OpenIGI.Modding.Sdk.csproj" />
+  </Folder>
   <Folder Name="/services/">
     <Project Path="services/OpenIGI.Services/OpenIGI.Services.csproj" />
   </Folder>
@@ -21,6 +24,8 @@
     <Project Path="src/Engine/OpenIGI.Engine/OpenIGI.Engine.csproj" />
     <Project Path="src/Engine/OpenIGI.Host/OpenIGI.Host.csproj" />
     <Project Path="src/Engine/OpenIGI.Modding/OpenIGI.Modding.csproj" />
+    <Project Path="src/Engine/OpenIGI.Modding.Loader/OpenIGI.Modding.Loader.csproj" />
+    <Project Path="src/Engine/OpenIGI.Modding.Presentation/OpenIGI.Modding.Presentation.csproj" />
   </Folder>
   <Folder Name="/src/Game/">
     <Project Path="src/Game/OpenIGI.Frontend.Settings/OpenIGI.Frontend.Settings.csproj" />
@@ -29,15 +34,20 @@
     <Project Path="src/Game/OpenIGI.Game.Igi2/OpenIGI.Game.Igi2.csproj" />
     <Project Path="src/Game/OpenIGI.Game/OpenIGI.Game.csproj" />
     <Project Path="src/Game/OpenIGI.Presentation/OpenIGI.Presentation.csproj" />
+    <Project Path="src/Game/OpenIGI.Presentation.Igi1/OpenIGI.Presentation.Igi1.csproj" />
+    <Project Path="src/Game/OpenIGI.Presentation.Igi2/OpenIGI.Presentation.Igi2.csproj" />
   </Folder>
   <Folder Name="/src/Rendering/">
+    <Project Path="src/Rendering/OpenIGI.Rendering.D3D12/OpenIGI.Rendering.D3D12.csproj" />
     <Project Path="src/Rendering/OpenIGI.Rendering.Pipeline/OpenIGI.Rendering.Pipeline.csproj" />
     <Project Path="src/Rendering/OpenIGI.Rendering.Rhi/OpenIGI.Rendering.Rhi.csproj" />
+    <Project Path="src/Rendering/OpenIGI.Rendering.Streamline/OpenIGI.Rendering.Streamline.csproj" />
     <Project Path="src/Rendering/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
     <Project Path="src/Rendering/OpenIGI.Rendering.WebGpu.Native/OpenIGI.Rendering.WebGpu.Native.csproj" />
     <Project Path="src/Rendering/OpenIGI.Rendering.WebGpu/OpenIGI.Rendering.WebGpu.csproj" />
     <Project Path="src/Rendering/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
     <Project Path="src/Rendering/OpenIGI.Shaders/OpenIGI.Shaders.csproj" />
+    <Project Path="src/Rendering/OpenIGI.Shaders.Dxil/OpenIGI.Shaders.Dxil.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
     <Project Path="src/Audio/OpenIGI.Audio.OpenAL/OpenIGI.Audio.OpenAL.csproj" />
@@ -61,6 +71,7 @@
     <Project Path="tests/OpenIGI.Benchmarks/OpenIGI.Benchmarks.csproj" />
     <Project Path="tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj" />
     <Project Path="tests/OpenIGI.Desktop.Tests/OpenIGI.Desktop.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Parity.Tests/OpenIGI.Parity.Tests.csproj" />
     <Project Path="tests/OpenIGI.Engine.Tests/OpenIGI.Engine.Tests.csproj" />
     <Project Path="tests/OpenIGI.Formats.Tests/OpenIGI.Formats.Tests.csproj" />
     <Project Path="tests/OpenIGI.Frontend.Tests/OpenIGI.Frontend.Tests.csproj" />
@@ -69,11 +80,15 @@
     <Project Path="tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj" />
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Launcher.Tests/OpenIGI.Launcher.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Modding.SampleMod/OpenIGI.Modding.SampleMod.csproj" />
+    <Project Path="tests/OpenIGI.Modding.Tests/OpenIGI.Modding.Tests.csproj" />
     <Project Path="tests/OpenIGI.Platform.Web.Tests/OpenIGI.Platform.Web.Tests.csproj" />
     <Project Path="tests/OpenIGI.Presentation.Tests/OpenIGI.Presentation.Tests.csproj" />
     <Project Path="tests/OpenIGI.Releases.Tests/OpenIGI.Releases.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Pipeline.Tests/OpenIGI.Rendering.Pipeline.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Rhi.Tests/OpenIGI.Rendering.Rhi.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.Streamline.Tests/OpenIGI.Rendering.Streamline.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.D3D12.Tests/OpenIGI.Rendering.D3D12.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Vulkan.Tests/OpenIGI.Rendering.Vulkan.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.WebGpu.Native.Tests/OpenIGI.Rendering.WebGpu.Native.Tests.csproj" />

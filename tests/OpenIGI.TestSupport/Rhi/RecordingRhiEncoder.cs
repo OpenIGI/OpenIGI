@@ -105,6 +105,24 @@ public sealed class RecordingRhiEncoder(string label) : IRhiCommandEncoder
     }
 
     /// <inheritdoc/>
+    public void BuildAccelerationStructures(
+        ReadOnlySpan<RhiBottomLevelBuild> bottomLevel,
+        RhiTopLevelBuild? topLevel,
+        RhiTimestampWrites? timestamps = null)
+    {
+        ThrowIfInPass();
+
+        List<(string, bool)> bottom = [];
+        foreach (RhiBottomLevelBuild build in bottomLevel)
+        {
+            bottom.Add((build.Destination.Label, build.Update));
+        }
+
+        Add(new RecordedRhiCommand.BuildAccelerationStructures(
+            bottom, topLevel?.Destination.Label, topLevel?.InstanceCount ?? 0));
+    }
+
+    /// <inheritdoc/>
     public void ClearBuffer(IRhiBuffer buffer, ulong offset = 0, ulong sizeInBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(buffer);

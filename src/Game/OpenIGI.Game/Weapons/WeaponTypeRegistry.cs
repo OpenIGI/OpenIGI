@@ -39,7 +39,7 @@ public sealed class WeaponTypeRegistry
     public const string WeaponScriptName = "weapon.qvm";
 
     /// <summary>The prefix of the task-type constants the last two arguments use.</summary>
-    public const string TaskTypeConstantPrefix = "TASKTYPE_";
+    public const string TaskTypeConstantPrefix = Config.TaskTypeConstants.Prefix;
 
     /// <summary>The index of the projectile task type, and so of the fixed part's end.</summary>
     /// <remarks>Arguments 0 to 47 are always present; everything after 47 depends on the classes named.</remarks>
@@ -47,9 +47,8 @@ public sealed class WeaponTypeRegistry
 
     private readonly List<WeaponType> _weapons = [];
     private readonly Dictionary<int, WeaponType> _byId = [];
-    private readonly Dictionary<int, string> _taskTypeNames = [];
+    private readonly Config.TaskTypeConstants _taskTypes = new();
     private readonly IOpenIgiLogger _logger;
-    private int _nextTaskTypeId = 1;
 
     /// <summary>Initializes a new instance of the <see cref="WeaponTypeRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
@@ -148,7 +147,7 @@ public sealed class WeaponTypeRegistry
                 throw new EngineFatalException($"WeaponType_Open(): Couldn't load script: {script}", ex);
             }
 
-            DeclareTaskTypeConstants(program, natives);
+            _taskTypes.Declare(program, natives);
 
             QvmInterpreter interpreter = new(program, natives);
             QvmError error = interpreter.Run();
@@ -177,7 +176,7 @@ public sealed class WeaponTypeRegistry
     /// <remarks>
     /// This is the lookup a <b>level</b> needs, as opposed to the two the executable does: a mission's
     /// <c>objects.qvm</c> declares its loadout with these symbols rather than with numeric ids, so
-    /// <see cref="Player.PlayerLoadout"/> resolves through here.
+    /// <c>PlayerLoadout</c> resolves through here.
     /// </remarks>
     public bool TryGetByScriptId(string scriptId, out WeaponType weapon)
     {
@@ -225,54 +224,13 @@ public sealed class WeaponTypeRegistry
     /// <summary>Gets the script constant a task type id came from, for diagnostics.</summary>
     /// <param name="taskType">The id.</param>
     /// <returns>The constant's name, or an empty string when the id is not one this registry allocated.</returns>
-    public string TaskTypeName(int taskType) => _taskTypeNames.GetValueOrDefault(taskType, string.Empty);
+    public string TaskTypeName(int taskType) => _taskTypes.NameOf(taskType);
 
     private static void RegisterConstant(NativeRegistry natives, string name, int value)
     {
         if (!natives.Contains(name))
         {
             natives.RegisterConstant(name, value);
-        }
-    }
-
-    /// <summary>
-    /// Declares the <c>TASKTYPE_*</c> constants a weapon script names.
-    /// </summary>
-    /// <remarks>
-    /// <b>Divergence, deliberate</b> — the same one <c>MagicObjectRegistry</c> records. The original
-    /// allocates a task type id as each class registers at start-up, so the number depends only on
-    /// initialisation order and appears in no data file. The classes do not exist yet, so ids are handed
-    /// out in first-seen order and kept alongside their names. The <i>name</i> is what selects the
-    /// parameter reader, so the numbering does not affect what is read.
-    /// </remarks>
-    private void DeclareTaskTypeConstants(QvmProgram program, NativeRegistry natives)
-    {
-        foreach (string? symbol in program.SymbolNames)
-        {
-            if (symbol is null || !symbol.StartsWith(TaskTypeConstantPrefix, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            // The TASKTYPE_* constants live in the process-wide native namespace, which OUTLIVES this
-            // registry: a mission restart or a level change builds a fresh WeaponTypeRegistry but reuses
-            // the same natives. The id->name map (_taskTypeNames), however, is per-instance and starts
-            // empty. When an earlier load already registered the constant we must still adopt its value
-            // into this instance's map -- otherwise TaskTypeName() returns "" for it, ReadTaskBinding
-            // hands WeaponTaskParameters.Read an empty class name, and every optical weapon (the Dragunov
-            // scope, the MP5SD sight, the binoculars) loads with no task type and no zoom parameters on
-            // every load after the first. That is issue #79: ADS is dead after a restart or level change.
-            if (natives.TryResolve(symbol, out QvmSymbol? existing) && existing.IsReadable)
-            {
-                int existingId = existing.Read().ToInt32();
-                _taskTypeNames[existingId] = symbol;
-                _nextTaskTypeId = Math.Max(_nextTaskTypeId, existingId + 1);
-                continue;
-            }
-
-            natives.RegisterConstant(symbol, _nextTaskTypeId);
-            _taskTypeNames[_nextTaskTypeId] = symbol;
-            _nextTaskTypeId++;
         }
     }
 

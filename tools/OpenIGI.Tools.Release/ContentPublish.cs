@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using OpenIGI.Core.Content;
 using OpenIGI.Releases;
 
 namespace OpenIGI.Tools.Release;
@@ -32,6 +33,7 @@ internal static class ContentPublish
     /// <param name="MinGameVersion">The oldest game build that can read it, if any.</param>
     /// <param name="Kind">What the pack is: an overlay of game files, or a runtime the engine loads.</param>
     /// <param name="Platforms">The platforms it is for, by runtime identifier, or <see langword="null"/> for every one.</param>
+    /// <param name="Mod">What a mod says besides a pack's, for <see cref="ContentKind.Mod"/>; see <see cref="ForMod"/>.</param>
     internal sealed record Details(
         string Id,
         string Version,
@@ -40,7 +42,72 @@ internal static class ContentPublish
         string Game,
         string? MinGameVersion,
         ContentKind Kind = ContentKind.Overlay,
-        IReadOnlyList<string>? Platforms = null);
+        IReadOnlyList<string>? Platforms = null,
+        ContentModInfo? Mod = null);
+
+    /// <summary>Describes a mod's version from the <c>mod.json</c> in its folder, which is the one account of it.</summary>
+    /// <param name="folder">The mod's package: its <c>mod.json</c> and files, as an installed mod's folder holds them.</param>
+    /// <param name="source">The public repository its code was built from; required for a mod with code.</param>
+    /// <param name="commit">The commit of <paramref name="source"/> it was built from; required with it.</param>
+    /// <returns>The details: the manifest's id, version, name, summary, games and oldest game build.</returns>
+    /// <exception cref="ArgumentException">The manifest is missing what a listing needs, or a mod with code names no source.</exception>
+    internal static Details ForMod(string folder, string? source, string? commit)
+    {
+        string path = Path.Combine(Path.GetFullPath(folder), ModManifest.FileName);
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"A mod's folder holds its {ModManifest.FileName}, and {folder} has none.", path);
+        }
+
+        ModManifest manifest;
+        try
+        {
+            manifest = ModManifest.Parse(File.ReadAllText(path));
+        }
+        catch (ModLoadException ex)
+        {
+            throw new InvalidDataException($"{path}: {ex.Message}", ex);
+        }
+
+        if (manifest.Id == ModPacks.LocalFolder)
+        {
+            throw new ArgumentException($"No mod is named '{ModPacks.LocalFolder}': the launcher keeps the mods being tried in a folder of that name.");
+        }
+
+        if (string.IsNullOrWhiteSpace(manifest.Summary))
+        {
+            throw new ArgumentException($"{path} has no summary, which the launcher lists the mod with.");
+        }
+
+        // Code runs on every player's machine, so what is published is built from source anyone can read: the mods
+        // index builds it from this commit, and the listing says where that is.
+        if (manifest.RunsCode && (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(commit)))
+        {
+            throw new ArgumentException("A mod with code is published built from its source: give --source <repository> and --commit <sha>.");
+        }
+
+        ContentModInfo mod = new(
+            [.. manifest.Titles.Select(static title => title.ToLowerInvariant())],
+            manifest.Authors,
+            manifest.RunsCode,
+            manifest.RunsCode ? source : null,
+            manifest.RunsCode ? commit : null,
+            manifest.Homepage,
+            manifest.License,
+            manifest.RequiresTitleData.Count > 0 ? manifest.RequiresTitleData : null,
+            manifest.Dependencies.Count > 0 ? manifest.Dependencies : null,
+            manifest.Conflicts.Count > 0 ? manifest.Conflicts : null,
+            manifest.AffectsSimulation);
+        return new Details(
+            manifest.Id,
+            manifest.Version,
+            manifest.Name,
+            manifest.Summary,
+            ModPacks.GameFor(mod.Titles),
+            manifest.MinGameVersion,
+            ContentKind.Mod,
+            Mod: mod);
+    }
 
     /// <summary>A chunked pack folder: the manifest, and where each chunk's stored object was written.</summary>
     /// <param name="Manifest">The version's manifest.</param>
@@ -108,6 +175,10 @@ internal static class ContentPublish
         {
             RequireRuntime(details, paths);
         }
+        else if (details.Kind == ContentKind.Mod)
+        {
+            RequireMod(root, paths);
+        }
 
         List<ContentFile> files = new(paths.Count);
         foreach (string path in paths)
@@ -128,9 +199,50 @@ internal static class ContentPublish
             files.Sum(static file => file.Size),
             files,
             details.Kind,
-            details.Platforms is { Count: > 0 } platforms ? [.. platforms.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)] : null);
+            details.Platforms is { Count: > 0 } platforms ? [.. platforms.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)] : null,
+            details.Mod);
 
         return new Chunked(manifest, cache);
+    }
+
+    /// <summary>Refuses a mod's package that carries what it must not: the game's own assemblies, or code it does not declare.</summary>
+    /// <param name="root">The package's folder.</param>
+    /// <param name="paths">Its files, relative to it.</param>
+    /// <remarks>
+    /// A mod gets the port's assemblies from the game it runs in, so a package carrying one would carry dead weight at best
+    /// and, at worst, a copy the loader never loads while the mod was tested against it. A mod of content alone runs no code,
+    /// so it carries none: what a player is told it runs is what it runs.
+    /// </remarks>
+    private static void RequireMod(string root, IReadOnlyList<string> paths)
+    {
+        ModManifest manifest = ModManifest.Parse(File.ReadAllText(Path.Combine(root, ModManifest.FileName)));
+        string[] code = [.. paths.Where(static path =>
+            path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase))];
+        if (!manifest.RunsCode)
+        {
+            if (code.Length > 0)
+            {
+                throw new InvalidDataException($"'{code[0]}' is code, and the mod's {ModManifest.FileName} names no assembly: a mod of content alone runs none.");
+            }
+
+            return;
+        }
+
+        string assembly = manifest.Assembly!.Replace('\\', '/');
+        if (!paths.Contains(assembly, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException($"The mod's assembly '{assembly}' is not in its folder.");
+        }
+
+        if (code.FirstOrDefault(path =>
+                !string.Equals(path, assembly, StringComparison.Ordinal)
+                && Path.GetFileName(path).StartsWith("OpenIGI.", StringComparison.OrdinalIgnoreCase)) is { } port)
+        {
+            throw new InvalidDataException($"'{port}' is one of the game's own assemblies, which every mod gets from the game; build the package with OpenIGI.Modding.Sdk.");
+        }
     }
 
     /// <summary>Refuses a runtime pack that holds anything but what the engine loads and the licences beside it.</summary>

@@ -35,7 +35,7 @@ namespace OpenIGI.Game.World;
 /// <param name="Position">The centroid of the cluster's triangles, in world space and in metres.</param>
 /// <param name="Radius">
 /// How far the light is proposed to reach, in metres. Derived from <see cref="Extent"/> and the
-/// colour's luminance — see <see cref="LightFixtureExtractor.DefaultRadiusScale"/> for the derivation
+/// colour's luminance — see <c>DefaultRadiusScale</c> for the derivation
 /// and for how arbitrary the constant in it is.
 /// </param>
 /// <param name="Colour">

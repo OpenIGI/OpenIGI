@@ -5,6 +5,7 @@ using OpenIGI.Game.World;
 using Xunit;
 using Xunit.Abstractions;
 using OpenIGI.TestSupport;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -12,6 +13,7 @@ namespace OpenIGI.Game.Tests;
 /// Drives the captured retail cars with the port's own wheel rays -- <see cref="RetailTerrainRay"/> over the
 /// level's real terrain -- and demands both the original's ray results and its car state back, bit for bit.
 /// </summary>
+[Collection(RetailMissionWorld.Name)]
 public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
 {
         public static TheoryData<int, string> Fixtures => new()

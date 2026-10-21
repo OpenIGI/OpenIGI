@@ -1,13 +1,11 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -32,11 +30,8 @@ namespace OpenIGI.Presentation.Rendering;
 /// to the procedural burst so a blast is never invisible.
 /// </para>
 /// </remarks>
-internal sealed class ExplosionEffectRenderer : IDisposable
+public sealed class ExplosionEffectRenderer : IDisposable
 {
-    /// <summary>The global archive retail's by-name sprite loader reads.</summary>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
-
     /// <summary>The retail fireball sprite (<c>dword_5C1158</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "fireball.spr";
 
@@ -68,6 +63,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
+    private readonly string _spriteArchive;
     private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
@@ -84,9 +80,11 @@ internal sealed class ExplosionEffectRenderer : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ExplosionEffectRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="fileSystem">The virtual file system the common sprite archive is mounted in.</param>
+    /// <param name="spriteArchive">The archive in <paramref name="fileSystem"/> the sprite ships in.</param>
     /// <param name="logger">The logger for load diagnostics.</param>
-    public ExplosionEffectRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
+    public ExplosionEffectRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, string spriteArchive, IOpenIgiLogger? logger = null)
     {
+        _spriteArchive = spriteArchive ?? throw new ArgumentNullException(nameof(spriteArchive));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _logger = logger ?? NullLogger.Instance;
@@ -206,7 +204,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumPuffs));
             }
 
             // Each fireball may be on a different animation frame — a distinct texture — so draw one
@@ -369,7 +367,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
             return used;
         }
 
-        Vector3d position = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d position = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d centre = (position / WorldScene.UnitsPerMetre) - eye;
         double distance = centre.Length;
         if (!(distance > 1e-6))
@@ -395,7 +393,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
         Vector3d toEye = centre / -distance;
         Vector3d reference = Math.Abs(toEye.Z) < 0.9 ? new Vector3d(0, 0, 1) : new Vector3d(1, 0, 0);
-        Vector3d rightD = Cross(reference, toEye);
+        Vector3d rightD = Vector3d.Cross(reference, toEye);
         double rightLength = rightD.Length;
         if (!(rightLength > 1e-9))
         {
@@ -403,7 +401,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
         }
 
         rightD /= rightLength;
-        Vector3d upD = Cross(toEye, rightD);
+        Vector3d upD = Vector3d.Cross(toEye, rightD);
 
         float cos = MathF.Cos(p.Roll);
         float sin = MathF.Sin(p.Roll);
@@ -460,19 +458,17 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
         try
         {
-            if (!_fileSystem.Exists(SpriteArchive))
+            if (!_fileSystem.Exists(_spriteArchive))
             {
-                _logger.Warning("Explosion", $"No sprite archive at {SpriteArchive}; using the procedural burst.");
+                _logger.Warning("Explosion", $"No sprite archive at {_spriteArchive}; using the procedural burst.");
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(SpriteArchive));
-            IresEntry? entry = archive.Entries.FirstOrDefault(
-                candidate => candidate.Kind == IresEntryKind.Body
-                    && Path.GetFileName(candidate.Name).Equals(SpriteName, StringComparison.OrdinalIgnoreCase));
+            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(_spriteArchive));
+            IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {
-                _logger.Warning("Explosion", $"'{SpriteName}' is missing from {SpriteArchive}; using the procedural burst.");
+                _logger.Warning("Explosion", $"'{SpriteName}' is missing from {_spriteArchive}; using the procedural burst.");
                 return false;
             }
 
@@ -495,11 +491,6 @@ internal sealed class ExplosionEffectRenderer : IDisposable
         }
     }
 
-    private static Vector3d Cross(Vector3d a, Vector3d b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
-
     private static bool IsFinite(Vector3f v) =>
         float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
 
@@ -507,24 +498,6 @@ internal sealed class ExplosionEffectRenderer : IDisposable
     {
         static byte Channel(float value) => (byte)Math.Clamp((int)(value * 255f), 0, 255);
         return new Bgra32(Channel(b), Channel(g), Channel(r), Math.Max((byte)1, Channel(a)));
-    }
-
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumPuffs * 6];
-        for (int quad = 0; quad < MaximumPuffs; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
     }
 
     private struct Pending

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -13,6 +14,8 @@ using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats;
+using OpenIGI.Game.Igi1;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -271,7 +274,7 @@ public sealed class DestructibleModelReplacementTests
             fileSystem,
             resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(missionId);
-        WorldScene scene = WorldScene.Build(mission, root, magic);
+        WorldScene scene = WorldScene.Build(mission, root, magic, destroyedModelArchiveName: new Igi1Quirks().DestroyedModelArchiveName);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
             root,

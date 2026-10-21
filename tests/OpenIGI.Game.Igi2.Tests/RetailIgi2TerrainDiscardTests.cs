@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -29,7 +28,7 @@ public sealed class RetailIgi2TerrainDiscardTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.Discards.Length == 0)
             {
                 continue;
@@ -53,7 +52,7 @@ public sealed class RetailIgi2TerrainDiscardTests
     [RequiresTitleDataFact("igi2")]
     public void The_hangar_box_spans_the_authored_width_and_height()
     {
-        Igi2TerrainSurface surface = Surface(Hangar());
+        Igi2TerrainSurface surface = Hangar().Terrain();
         Igi2TerrainDiscard box = Assert.Single(surface.Discards);
 
         Assert.Equal(-1891183.4 - (56.5 * 2048.0), box.MinX, 1);
@@ -77,7 +76,7 @@ public sealed class RetailIgi2TerrainDiscardTests
     [RequiresTitleDataFact("igi2")]
     public void The_mesh_drops_every_face_wholly_inside_the_box_and_no_other()
     {
-        Igi2TerrainSurface surface = Surface(Hangar());
+        Igi2TerrainSurface surface = Hangar().Terrain();
         Igi2TerrainDiscard box = Assert.Single(surface.Discards);
 
         int cut = 0;
@@ -121,7 +120,7 @@ public sealed class RetailIgi2TerrainDiscardTests
     [RequiresTitleDataFact("igi2")]
     public void The_ground_refuses_a_point_inside_the_box()
     {
-        Igi2TerrainSurface surface = Surface(Hangar());
+        Igi2TerrainSurface surface = Hangar().Terrain();
         Igi2TerrainDiscard box = Assert.Single(surface.Discards);
         IGroundHeightField ground = new Igi2Ground(surface);
 
@@ -145,7 +144,7 @@ public sealed class RetailIgi2TerrainDiscardTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.Discards.Length != 0 || surface.IsEmpty)
             {
                 continue;
@@ -161,16 +160,5 @@ public sealed class RetailIgi2TerrainDiscardTests
         Assert.Fail("no level without discards was measured.");
     }
 
-    private static Igi2Level Hangar() =>
-        Igi2Level.All().Single(level =>
-            Path.GetFileName(level.Directory).Equals("level1", StringComparison.OrdinalIgnoreCase)
-            && Path.GetFileName(Path.GetDirectoryName(level.Directory)!)
-                .Equals("location1", StringComparison.OrdinalIgnoreCase));
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
-    }
+    private static Igi2Level Hangar() => Igi2Level.Find("location1", "level1");
 }

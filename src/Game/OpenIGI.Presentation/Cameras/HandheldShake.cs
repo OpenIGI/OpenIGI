@@ -103,7 +103,7 @@ public sealed class HandheldShake
     /// <param name="roll">The roll in radians.</param>
     /// <returns>The rolled orientation.</returns>
     /// <remarks>
-    /// <see cref="OpenIGI.Rendering.Camera3D.LookRotation"/> cannot express a roll — it is built from a yaw and a
+    /// <see cref="OpenIGI.Core.Graphics.Camera3D.LookRotation"/> cannot express a roll — it is built from a yaw and a
     /// pitch alone — but a roll is exactly a rotation about the view's forward axis, and in this
     /// convention the orientation's rows <em>are</em> the view axes: right, up, forward. So it mixes the
     /// first two rows and leaves the third alone. Six lines, and it is most of the difference between a

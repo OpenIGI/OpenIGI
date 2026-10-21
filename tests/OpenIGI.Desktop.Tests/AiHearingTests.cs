@@ -9,6 +9,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -16,6 +17,8 @@ using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using System.Reflection;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -89,28 +92,6 @@ public sealed class AiHearingTests
     }
 
     /// <summary>
-    /// A soldier on the player's side is not there for the player's round: the trace's evaluate
-    /// (<c>0x45E3E0</c>) rejects a human sharing the shooter's team, so the narrow test never runs
-    /// (<c>0x4D76E6</c>). The round meets nobody -- it neither hurts nor stops on the friendly.
-    /// </summary>
-    [RequiresGameDataFact]
-    public void TheRoundPassesThroughSoldiersOnThePlayersSide()
-    {
-        using PublisherFixture fixture = PublisherFixture.Create(team: 0);
-        Assert.Equal(0, fixture.Renderer.PlayerTeam);
-
-        Assert.False(fixture.Renderer.TryShoot(
-            fixture.BulletOrigin,
-            fixture.BulletEnd,
-            damageFactor: 0.1f,
-            WeaponCategory.Gun,
-            out _));
-
-        Assert.Equal(0, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
-        Assert.All(fixture.Health.Values, health => Assert.Equal(0f, health.Damage));
-    }
-
-    /// <summary>
     /// <c>KnifeStab</c> (<c>0x46DFB0</c>) stabs a soldier with no fight on (<c>sub_4528F0</c>: no combat record
     /// at <c>HumanAI+15016</c>) at a damage factor of 1000 -- the silent kill -- whatever the blade's own.
     /// </summary>
@@ -130,28 +111,71 @@ public sealed class AiHearingTests
         Assert.Single(fixture.Health.Values, health => health.IsDead);
     }
 
-    /// <summary>An explosion's damage, likewise, is news only to the soldier it hurt.</summary>
+    /// <summary>
+    /// An explosion's damage is news to nobody's brain: <c>HumanSoldier</c>'s ExplosionHit (<c>0x45A3D0</c>) posts no AI
+    /// event -- only the WeaponHit and close-combat handlers call <c>0x450D50</c> -- and a soldier hears a blast through the
+    /// explosion's own noise event instead.
+    /// </summary>
     [RequiresGameDataFact]
-    public void AnExplosionHitTellsOnlyTheSoldierItHit()
+    public void AnExplosionHitTellsNoBrain()
     {
         using PublisherFixture fixture = PublisherFixture.Create();
 
-        fixture.Renderer.ApplyExplosion(
+        fixture.Renderer.Simulation.ApplyExplosion(
             fixture.StruckBrain.Position,
             radiusUnits: 5 * (float)Metre,
             falloffUnits: 0f,
             damageFactor: 0.1f);
 
-        Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
         Assert.Equal(0, fixture.RecipientBrain.Events.PendingCount(AiEvent.Alert));
+    }
+
+    /// <summary>
+    /// The player's round passes through a soldier on the player's side: <c>Human</c>'s WeaponCollisionEvaluate
+    /// (<c>0x45E3E0</c>) lets a body stop a round only when the shooter is of another team, and nobody hears of it.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void APlayersRoundPassesThroughSoldiersOnThePlayersSide()
+    {
+        using PublisherFixture fixture = PublisherFixture.Create(playerOnTheSoldiersSide: true);
+
+        Assert.False(fixture.Renderer.TryShoot(
+            fixture.BulletOrigin,
+            fixture.BulletEnd,
+            damageFactor: 0.1f,
+            WeaponCategory.Gun,
+            out _));
+
+        Assert.Equal(0, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
+    }
+
+    /// <summary>
+    /// An invulnerable soldier's brain still hears the round: <c>0x45D3C0</c> skips the damage, then posts TAKINGDAMAGE
+    /// (<c>0x45D577</c>) whatever the round did.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AnInvulnerableSoldierStillHearsTheRound()
+    {
+        using PublisherFixture fixture = PublisherFixture.Create();
+        fixture.StruckBrain.IsInvulnerable = true;
+
+        Assert.True(fixture.Renderer.TryShoot(
+            fixture.BulletOrigin,
+            fixture.BulletEnd,
+            damageFactor: 0.1f,
+            WeaponCategory.Gun,
+            out _));
+
+        Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
     }
 
     private sealed class PublisherFixture : IDisposable
     {
         private PublisherFixture(
             SoldierRenderer renderer,
-            AiSoldier struckBrain,
-            AiSoldier recipientBrain,
+            Igi1HumanAi struckBrain,
+            Igi1HumanAi recipientBrain,
             Vector3d struckPosition)
         {
             Renderer = renderer;
@@ -163,20 +187,17 @@ public sealed class AiHearingTests
 
         public SoldierRenderer Renderer { get; }
 
-        public AiSoldier StruckBrain { get; }
+        public Igi1HumanAi StruckBrain { get; }
 
-        public AiSoldier RecipientBrain { get; }
+        public Igi1HumanAi RecipientBrain { get; }
 
         public Vector3d BulletOrigin { get; }
 
         public Vector3d BulletEnd { get; }
 
-        public IReadOnlyDictionary<SoldierView, HumanHealth> Health =>
-            (Dictionary<SoldierView, HumanHealth>)typeof(SoldierRenderer)
-                .GetField("_health", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(Renderer)!;
+        public IReadOnlyDictionary<SoldierView, HumanHealth> Health => Renderer.Simulation.Health;
 
-        public static PublisherFixture Create(int? team = null)
+        public static PublisherFixture Create(bool playerOnTheSoldiersSide = false, int? team = null)
         {
             VirtualFileSystem fileSystem = new();
             fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -220,11 +241,19 @@ public sealed class AiHearingTests
                 recipient.Team = side;
             }
 
+            if (playerOnTheSoldiersSide)
+            {
+                HumanPlayerTask player = (HumanPlayerTask)testTree.New(testTree.Root, loop.Types.Get(PlayerTaskTypes.HumanPlayer));
+                player.Team = template.Team;
+            }
+
             SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
             Assert.Equal(2, renderer.Load(mission, testTree.Root));
-            Assert.Equal(2, renderer.Animate(new Dictionary<int, GraphFile>()));
+            Assert.Equal(2, renderer.Simulation.Animate(
+                new Dictionary<int, GraphFile>(),
+                levelRoot: playerOnTheSoldiersSide ? testTree.Root : null));
 
-            AiSoldier[] brains = [.. renderer.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
+            Igi1HumanAi[] brains = [.. renderer.Simulation.BrainsForTesting.OrderBy(brain => brain.RuntimeId)];
             return new PublisherFixture(renderer, brains[0], brains[1], struck.Position);
         }
 

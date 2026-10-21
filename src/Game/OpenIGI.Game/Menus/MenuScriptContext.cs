@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
 
@@ -63,7 +64,12 @@ public sealed class MenuScriptContext : IScriptExpressionContext
         "MenuManager_ActivatePopupScreen",
         "MenuManager_DeactivatePopuScreen",
         "MenuManager_SetEnabled",
+        "ControlsMenu_ConvertFloatFromOffset",
+        "ControlsMenu_ConvertOffsetFromFloat",
     ];
+
+    /// <summary>Gets or sets what <c>MenuManager_ForceUpdateWindow</c> does with the window id it is given.</summary>
+    public Action<int>? UpdateWindow { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the manager takes input.</summary>
     /// <remarks><c>MenuManager_SetEnabled</c> writes this.</remarks>
@@ -174,19 +180,30 @@ public sealed class MenuScriptContext : IScriptExpressionContext
 
             // The state is the SECOND argument: the retail scripts read
             // MenuManager_LeaveMenus(-1, MENUMANAGER_STARTGAME) and MenuManager_LeaveMenus(0,
-            // MENUMANAGER_QUIT). The original (0x417790) reads argument 0 into a field of its own and
+            // MENUMANAGER_QUIT). The original (0x417790) takes argument 0 as the screen it names and
             // argument 1 as the state; taking the first as the state made starting a mission throw.
             case "MenuManager_LeaveMenus" when arguments.Count >= 2:
-                _stack.Leave((MenuManagerState)arguments.GetInt32(1), arguments.GetInt32(0));
+                _stack.Leave(arguments.GetInt32(0), _stack.Dialect.StateOf(arguments.GetInt32(1)));
                 return true;
 
             case "MenuManager_SetLanguage" when arguments.Count >= 1:
                 Language = MenuStringTable.LanguageNameOf(arguments.GetInt32(0));
+                _stack.SetLanguage();
                 return true;
 
-            case "MenuManager_ForceUpdateWindow":
-                // Re-runs a screen's data expressions; harmless to treat as a no-op until the
-                // On Change Data pass exists.
+            // 0x4231E0 and 0x423240: the controls list's scroll offset as the slider beside it shows it, a fraction of the
+            // rows it can scroll by, and back, rounded to the nearest row.
+            case "ControlsMenu_ConvertFloatFromOffset" when arguments.Count >= 1:
+                result = QvmValue.FromDouble(arguments.GetInt32(0) / (double)ControlsMenuTask.ScrollRows);
+                return true;
+
+            case "ControlsMenu_ConvertOffsetFromFloat" when arguments.Count >= 1:
+                result = QvmValue.FromInt32((int)((ControlsMenuTask.ScrollRows * (double)(float)arguments.GetReal(0)) + 0.5));
+                return true;
+
+            case "MenuManager_ForceUpdateWindow" when arguments.Count >= 1:
+                // 0x417880: the window named takes its data in again.
+                UpdateWindow?.Invoke(arguments.GetInt32(0));
                 return true;
 
             default:

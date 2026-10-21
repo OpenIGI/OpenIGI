@@ -120,12 +120,12 @@ public sealed class Igi2SectorGraph
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared
-                && declared.TryGetValue(Igi2WorldScene.ModelParameter, out object? raw)
+            if (child is DeclaredTask or IIgi2PlacedTask
+                && Igi2WorldScene.TryGetParameter(child, Igi2WorldScene.ModelParameter, out object? raw)
                 && raw is string model
                 && !string.IsNullOrWhiteSpace(model)
                 && portalsOf(model) is { IsSector: true } portals
-                && Igi2WorldScene.TryPlace(declared, out Igi2Placement placement))
+                && Igi2WorldScene.TryPlace(child, out Igi2Placement placement))
             {
                 into.Add(new Igi2Sector(placement, portals, task.Id, task.Type.Name));
             }

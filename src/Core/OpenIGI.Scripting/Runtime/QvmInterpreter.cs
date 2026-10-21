@@ -37,6 +37,7 @@ public sealed class QvmInterpreter
     private int _rollbackDepth;
     private int _programCounter;
     private bool _halted;
+    private bool _isBreakRequested;
     private QvmError _error;
     private int _errorOffset;
     private string _errorIdentifier = string.Empty;
@@ -192,10 +193,17 @@ public sealed class QvmInterpreter
         return evaluated;
     }
 
+    /// <summary>
+    /// Stops the program once the native that asks returns, as <c>Script__Break</c> does with break enabled
+    /// (<c>QVM_Execute</c> checks <c>Script_isBreak</c> between instructions).
+    /// </summary>
+    public void Break() => _isBreakRequested = true;
+
     private void Execute()
     {
         _halted = false;
-        while (_error == QvmError.None && !_halted)
+        _isBreakRequested = false;
+        while (_error == QvmError.None && !_halted && !_isBreakRequested)
         {
             Step();
         }

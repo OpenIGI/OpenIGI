@@ -1,4 +1,7 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using System.Diagnostics.CodeAnalysis;
+using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Configuration;
 using OpenIGI.Engine.Flow;
@@ -6,20 +9,21 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.Textures;
+using OpenIGI.Frontend;
+using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Host.Content;
+using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Content;
+using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
-using OpenIGI.Core.Configuration;
-using OpenIGI.Frontend;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Screens;
 using OpenIGI.UI.Widgets;
-using OpenIGI.Frontend.Saves;
-using OpenIGI.Presentation.Cameras;
 
 namespace OpenIGI.Host;
 
@@ -46,7 +50,7 @@ namespace OpenIGI.Host;
 /// same handover with the title changed as well.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>The category title diagnostics are logged under.</summary>
     private const string TitleLogCategory = "Title";
@@ -160,7 +164,13 @@ internal sealed partial class GameHost
 
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
+        _hudOverlay = null;
+        _firstPerson = null;
+        _worldView = null;
+        _viewpoint = null;
         _worldBuilder = binding.WorldBuilder;
+        _gameplay = binding.Gameplay;
+        RestoreTitleInputBindings();
         _missionCatalogue = binding.Missions;
         _gamePath = binding.DataRoot;
 
@@ -180,7 +190,7 @@ internal sealed partial class GameHost
             .ApplyTo(_fileSystem);
 
         LoadTitleResources();
-        ReportOverrideScan(_overrideScan);
+        _contentLayers.Report(_overrideScan);
         LoadTitleSession();
 
         // After the session, because the score is one of the things it registers natives against, and
@@ -257,13 +267,6 @@ internal sealed partial class GameHost
 
         MenuStringTable strings = new(_resources);
         _menuStrings = strings;
-
-        // Null on the very first call, which happens before the config host exists; the boot path sets
-        // it there and every switch after finds one standing.
-        if (_configHost is not null)
-        {
-            _configHost.Strings = strings;
-        }
     }
 
     /// <summary>
@@ -291,7 +294,7 @@ internal sealed partial class GameHost
         GameLoop outgoing = _loop;
         _loop = new GameLoop(
             time: _timeSource,
-            host: _menuHost,
+            host: _flowHost,
             renderer: _scheduler,
             logger: _logger,
             structuralTypes: _titleRuntime.Layout.StructuralTaskTypes);
@@ -312,31 +315,25 @@ internal sealed partial class GameHost
         _missions.Register(_loop.Natives);
         _missionState.Register(_loop.Natives);
 
-        if (_music is not null)
+        if (_audioOut.Music is not null)
         {
-            new GameMusicNatives(_music).Register(_loop.Natives);
+            new GameMusicNatives(_audioOut.Music).Register(_loop.Natives);
         }
 
+        // Every session can find the other games' installations, for content that reads one game's data in another.
+        ServiceCatalog hostServices = new();
+        hostServices.Provide<ITitleDataLocator>(new InstalledTitles(_titles));
+        hostServices.Provide<ITitleAudioMixer>(new GuestAudioMixer(_audioOut, _logger));
         _title = TitleSession.Start(
-            _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false);
+            _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false, inherited: hostServices);
 
-        // Asked for, not required: these four are tables one game publishes and the other does not.
-        // Cleared first, because TryGet leaves the target alone when a title has none and the previous
-        // game's would otherwise still be standing.
-        _magic = null;
-        _vehiclePhysics = null;
-        _animationTriggers = null;
-        _aiConfig = null;
-        _title.Services.TryGet(out _magic);
-        _title.Services.TryGet(out _vehiclePhysics);
-        _title.Services.TryGet(out _animationTriggers);
-        _title.Services.TryGet(out _aiConfig);
+        _mission.AdoptTitleServices(_title.Services);
 
         try
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
-            _title.LoadTables(_loop, _fileSystem, _resources);
-            _configHost.Missions = _missions;
+            _title.LoadTables(_loop, _fileSystem, _resources, _logger);
+            _menuMissions = _missions;
 
             if (limitedMissions is not null)
             {
@@ -379,7 +376,7 @@ internal sealed partial class GameHost
         // game's: the two number their missions independently and the ranges overlap.
         _previewContext = new MissionPreviewContext(
             _timeSource,
-            _menuHost,
+            _flowHost,
             _scheduler,
             _missionState,
             _detailMaps,
@@ -440,7 +437,7 @@ internal sealed partial class GameHost
         new(
             theme,
             host,
-            new ScreenStack(),
+            new ScreenStack { Sounds = new ShellSounds(this) },
             TitleCatalogue(),
             ActiveTitle.Id,
             ShellMissions(),
@@ -486,4 +483,83 @@ internal sealed partial class GameHost
             null,
             null,
             title => _titles.TryResolve(title, out TitleBinding? other) ? other.DataRoot : null);
+
+    /// <summary>Brings what is loaded up to date with the content layers, after anything changed them.</summary>
+    /// <param name="report">Receives a sentence on what was reloaded.</param>
+    /// <returns>How many registered resources were swapped.</returns>
+    /// <remarks>
+    /// The one path F8, a rescan and a layer switched on or off all take. Reloading the RESOURCES is only
+    /// half of it: everything already decoded from them -- an uploaded texture, the ground, the surface
+    /// cache's baked diffuse -- holds its own copy, so those are rebuilt too, and only when something
+    /// actually moved, because the reload is a visible hitch.
+    /// </remarks>
+    private int ApplyOverrideChange(out string report)
+    {
+        int swapped = _resources.ReapplyOverrides();
+        report = $"{swapped} registered resource(s) swapped, {_resources.OverriddenCount} now standing in.";
+
+        if (swapped > 0)
+        {
+            _world?.ReloadTextures();
+            report += ReloadTerrainTiles() ? " Textures and ground reloaded." : " Textures reloaded.";
+
+            // The card atlas has the diffuse baked into it, so the indirect light is still bouncing off
+            // the old pixels until it is captured again. Discarding it re-converges the GI with it.
+            _gi.DiscardSurfaceCache();
+        }
+
+        return swapped;
+    }
+
+    /// <summary>Puts the ground back up from whatever the resource registry now hands over.</summary>
+    /// <returns><see langword="true"/> when the ground was re-uploaded.</returns>
+    /// <remarks>
+    /// <para>
+    /// A level's ground atlas is a LOOSE file, not an entry in an archive, and the two are replaced by
+    /// different halves of the machinery: an archived texture is swapped in the registry and picked up by
+    /// <c>WorldRenderer.ReloadTextures</c>, while a loose one is dropped from the registry and re-read on
+    /// the next load. Nothing re-loads the ground by itself, because the atlas is decoded once when the
+    /// level is built -- so without this the pack goes on and off every wall in the level and the ground
+    /// underneath it never moves.
+    /// </para>
+    /// <para>
+    /// Only for a mission being PLAYED. A menu backdrop's terrain was built by the preview's own private
+    /// registry, and the session's is not the one holding its bytes.
+    /// </para>
+    /// </remarks>
+    private bool ReloadTerrainTiles()
+    {
+        if (_terrain is null || _session.Mission is not { } mission)
+        {
+            return false;
+        }
+
+        if (!_resources.TryLoad(mission.TerrainBasePath + ".tex", out ReadOnlyMemory<byte> bytes))
+        {
+            return false;
+        }
+
+        try
+        {
+            _terrain.ReloadTiles(TexAtlasFile.Read(bytes));
+            return true;
+        }
+        catch (TextureFormatException error)
+        {
+            _logger.Warning("Overrides", $"The ground atlas did not decode: {error.Message}");
+            return false;
+        }
+    }
+
+    // The games installed beside this one, as the catalogue binds them.
+    private sealed class InstalledTitles(ITitleCatalog titles) : ITitleDataLocator
+    {
+        public bool TryGetDataRoot(GameTitle title, [NotNullWhen(true)] out string? dataRoot)
+        {
+            dataRoot = titles.TryResolve(title, out TitleBinding? binding) ? binding.DataRoot : null;
+            return !string.IsNullOrWhiteSpace(dataRoot)
+                && Directory.Exists(dataRoot)
+                && File.Exists(Path.Combine(dataRoot, title.SignatureFile));
+        }
+    }
 }

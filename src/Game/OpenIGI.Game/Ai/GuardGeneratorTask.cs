@@ -32,6 +32,12 @@ public partial class GuardGeneratorTask : ContainerTask
     /// <summary>How many instances have been spawned so far.</summary>
     public int SpawnCount { get; private set; }
 
+    /// <summary>
+    /// Gets or sets the lives of a template another game drives, which the generator's update spawns in place of cloning its own
+    /// soldier; <see langword="null"/> while the game's own soldier is the template.
+    /// </summary>
+    public IGuardLives? DrivenLives { get; set; }
+
     /// <summary>Advances the native generator state after its expression and child state have been sampled.</summary>
     /// <param name="isOn">The evaluated <c>Generate guards</c> expression.</param>
     /// <param name="childIsDead">Whether the currently spawned authored child has died.</param>
@@ -82,4 +88,21 @@ public enum GuardSpawnDecision
 
     /// <summary>A fresh instance replaces the dead guard; the previous corpse remains in the world.</summary>
     Respawn,
+}
+
+/// <summary>
+/// The lives a <see cref="GuardGeneratorTask"/> spawns of a template another game drives: that game makes the soldiers, the
+/// generator decides when.
+/// </summary>
+/// <remarks>
+/// The generator's update (<c>0x487EE0</c>) clones its template when it has no child, and when its child is a dead human it
+/// deletes it (<c>0x4015F0</c>) and clones again (<c>0x488000</c>); the clone is the template's, at its authored place.
+/// </remarks>
+public interface IGuardLives
+{
+    /// <summary>Gets a value indicating whether the life in the world now is dead.</summary>
+    bool IsDead { get; }
+
+    /// <summary>Takes the dead life out of the world, if there is one, and puts the next in, fresh, where the template stands.</summary>
+    void Spawn();
 }

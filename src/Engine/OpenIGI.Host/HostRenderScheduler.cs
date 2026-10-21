@@ -24,14 +24,17 @@ namespace OpenIGI.Host;
 public sealed class HostRenderScheduler : IRenderScheduler
 {
     private readonly IGraphicsDevice _device;
+    private readonly PresentationPacingProbe? _pacing;
 
     /// <summary>Initializes a new instance of the <see cref="HostRenderScheduler"/> class.</summary>
     /// <param name="device">The device to present and clear.</param>
+    /// <param name="pacing">The probe that times each present while it listens, or <see langword="null"/> for none.</param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public HostRenderScheduler(IGraphicsDevice device)
+    public HostRenderScheduler(IGraphicsDevice device, PresentationPacingProbe? pacing = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
+        _pacing = pacing;
     }
 
     /// <summary>Gets or sets the colour the back buffer is cleared to.</summary>
@@ -43,7 +46,7 @@ public sealed class HostRenderScheduler : IRenderScheduler
     {
         // Timed only when the pacing probe is listening: this is the hot path, and the present block
         // is exactly what the probe needs to separate a slow frame from a badly scheduled one.
-        if (!Diagnostics.PresentationPacingProbe.IsEnabled)
+        if (_pacing is not { IsEnabled: true })
         {
             _device.SwapBuffers();
             return;
@@ -51,7 +54,7 @@ public sealed class HostRenderScheduler : IRenderScheduler
 
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         _device.SwapBuffers();
-        Diagnostics.PresentationPacingProbe.RecordPresentBlock(
+        _pacing.RecordPresentBlock(
             (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0
                 / System.Diagnostics.Stopwatch.Frequency);
     }

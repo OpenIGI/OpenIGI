@@ -82,6 +82,79 @@ public sealed class TaskTypeRegistry
         return type;
     }
 
+    /// <summary>Replaces the class that implements a registered task type.</summary>
+    /// <typeparam name="T">The new implementing class.</typeparam>
+    /// <param name="name">The type's name.</param>
+    /// <returns>The type, now made as the new class.</returns>
+    /// <exception cref="KeyNotFoundException">No class implements a type of that name.</exception>
+    /// <exception cref="EngineFatalException">The level data declared the type, and the new class's parameters disagree.</exception>
+    public TaskType Replace<T>(string name)
+        where T : GameTask, new() =>
+        Replace(name, static () => new T());
+
+    /// <summary>Replaces the class that implements a registered task type, keeping its id, its parent and its subtypes.</summary>
+    /// <param name="name">The type's name.</param>
+    /// <param name="factory">Creates an instance of the new class.</param>
+    /// <returns>The type, now made as the new class.</returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    /// <exception cref="KeyNotFoundException">No class implements a type of that name.</exception>
+    /// <exception cref="EngineFatalException">The level data declared the type, and the new class's parameters disagree.</exception>
+    /// <remarks>
+    /// What a mod calls to make a level's tasks of one type out of its own class. The new class reads the same parameters
+    /// the old one did, since the level's data is written against them; what it does with them is its own.
+    /// </remarks>
+    public TaskType Replace(string name, Func<GameTask> factory)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(factory);
+        if (!_types.TryGetValue(name, out TaskType? existing) || existing.IsDeclarationOnly)
+        {
+            throw new KeyNotFoundException($"No class implements the task type '{name}'.");
+        }
+
+        IReadOnlyList<TaskParameter> previous = existing.Parameters;
+        existing.Reimplement(factory);
+        existing.Parameters = ReadCompiledParameters(existing);
+        if (existing.IsDeclared)
+        {
+            VerifyAgainstDeclaration(existing, previous);
+        }
+
+        _logger.Debug(LogCategory, $"Task type '{name}' is now made by another class.");
+        return existing;
+    }
+
+    /// <summary>
+    /// Replaces the class that implements a registered task type with one whose parameters are its own, an adapter setting it
+    /// from the ones level data writes.
+    /// </summary>
+    /// <param name="name">The type's name.</param>
+    /// <param name="factory">Creates an instance of the new class.</param>
+    /// <param name="adapter">Sets the new class's members from the values the level gives the type.</param>
+    /// <returns>The type, now made as the new class.</returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> or <paramref name="adapter"/> is <see langword="null"/>.</exception>
+    /// <exception cref="KeyNotFoundException">No class implements a type of that name.</exception>
+    /// <remarks>
+    /// The type keeps the parameters it has, the replaced class's, until level data declares its own, which then stand: they
+    /// are what the level writes, and the adapter reads them, so they are never checked against the new class.
+    /// </remarks>
+    public TaskType Replace(string name, Func<GameTask> factory, ITaskParameterAdapter adapter)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(factory);
+        ArgumentNullException.ThrowIfNull(adapter);
+        if (!_types.TryGetValue(name, out TaskType? existing) || existing.IsDeclarationOnly)
+        {
+            throw new KeyNotFoundException($"No class implements the task type '{name}'.");
+        }
+
+        existing.Reimplement(factory, adapter);
+        _logger.Debug(LogCategory, $"Task type '{name}' is now made by another class, its parameters adapted.");
+        return existing;
+    }
+
     /// <summary>
     /// Records the parameter list level data declares for a type, registering a placeholder when no class
     /// implements it yet.
@@ -105,7 +178,7 @@ public sealed class TaskTypeRegistry
 
         if (_types.TryGetValue(name, out TaskType? existing))
         {
-            if (existing.IsDeclarationOnly)
+            if (existing.IsDeclarationOnly || existing.ParameterAdapter is not null)
             {
                 existing.Parameters = [.. parameters];
                 existing.IsDeclared = true;

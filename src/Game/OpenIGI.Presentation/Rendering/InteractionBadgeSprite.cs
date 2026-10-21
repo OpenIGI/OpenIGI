@@ -30,7 +30,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// a straight edge.
 /// </para>
 /// </remarks>
-internal sealed class InteractionBadgeSprite : IDisposable
+public sealed class InteractionBadgeSprite : IDisposable
 {
     /// <summary>The sprite's outer radius as a multiple of the rim's radius.</summary>
     /// <remarks>

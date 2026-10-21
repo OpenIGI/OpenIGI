@@ -119,6 +119,24 @@ internal sealed class Igi2Level
     /// <summary>Gets a value indicating whether the level ships baked object lightmaps.</summary>
     public bool HasLightmaps => File.Exists(LightmapArchivePath(Directory));
 
+    /// <summary>Loads the level's ground from its <c>heightmaps.res</c>.</summary>
+    /// <returns>The ground, which is empty for a level that ships no maps.</returns>
+    public Igi2TerrainSurface Terrain()
+    {
+        string path = Path.Combine(Directory, "heightmaps", "heightmaps.res");
+        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
+        return Igi2TerrainSurface.Build(Root, archive);
+    }
+
+    /// <summary>Loads one shipped level by its location and level directory names.</summary>
+    /// <param name="location">The location directory, e.g. <c>location1</c>.</param>
+    /// <param name="level">The level directory, e.g. <c>level1</c>.</param>
+    /// <returns>The level.</returns>
+    public static Igi2Level Find(string location, string level) =>
+        All().Single(l =>
+            Path.GetFileName(l.Directory).Equals(level, StringComparison.OrdinalIgnoreCase)
+            && Path.GetFileName(Path.GetDirectoryName(l.Directory)!).Equals(location, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Loads every shipped level that has a pack, in mission order.</summary>
     /// <returns>The levels.</returns>
     public static IEnumerable<Igi2Level> All()

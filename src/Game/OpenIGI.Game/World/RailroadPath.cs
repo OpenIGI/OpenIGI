@@ -240,7 +240,7 @@ internal sealed class RailroadPath
             float fraction;
             if (step < 0f)
             {
-                if (DistanceSquared(from, segment.Point(piece)) <= reach)
+                if (Vector3d.DistanceSquared(from, segment.Point(piece)) <= reach)
                 {
                     float toA;
                     double toB;
@@ -263,8 +263,8 @@ internal sealed class RailroadPath
                             pieceStart = (float)((double)pieceStart - segment.Lengths[piece]);
                         }
 
-                        toA = (float)DistanceSquared(from, segment.Point(piece));
-                        toB = DistanceSquared(from, segment.Point(piece + 1));
+                        toA = (float)Vector3d.DistanceSquared(from, segment.Point(piece));
+                        toB = Vector3d.DistanceSquared(from, segment.Point(piece + 1));
                     }
                     while (toA > reach == toB > reach);
 
@@ -291,7 +291,7 @@ internal sealed class RailroadPath
                     fraction = (float)((travelled - (double)pieceStart) / segment.Lengths[piece]);
                 }
             }
-            else if (DistanceSquared(from, segment.Point(piece + 1)) > reach)
+            else if (Vector3d.DistanceSquared(from, segment.Point(piece + 1)) > reach)
             {
                 fraction = (float)((travelled - (double)pieceStart) / segment.Lengths[piece]);
             }
@@ -317,8 +317,8 @@ internal sealed class RailroadPath
                         pieceStart = (float)((double)pieceStart + segment.Lengths[piece++]);
                     }
 
-                    float toA = (float)DistanceSquared(from, segment.Point(piece));
-                    float toB = (float)DistanceSquared(from, segment.Point(piece + 1));
+                    float toA = (float)Vector3d.DistanceSquared(from, segment.Point(piece));
+                    float toB = (float)Vector3d.DistanceSquared(from, segment.Point(piece + 1));
                     if (toA > reach != toB > reach)
                     {
                         float pieceLength = segment.Lengths[piece];
@@ -446,13 +446,6 @@ internal sealed class RailroadPath
 
         double inverse = 1.0 / Math.Sqrt(((double)x * x) + ((double)y * y) + ((double)z * z));
         return new Vector3f((float)(x * inverse), (float)(y * inverse), (float)(z * inverse));
-    }
-
-    /// <summary><c>0x4B32F0</c>.</summary>
-    private static double DistanceSquared(Vector3d a, Vector3d b)
-    {
-        double dy = a.Y - b.Y, dz = a.Z - b.Z, dx = a.X - b.X;
-        return (dz * dz) + (dy * dy) + (dx * dx);
     }
 
     /// <summary><c>0x4B2760</c>: <c>acos</c> of its float argument clamped to [-1, 1].</summary>

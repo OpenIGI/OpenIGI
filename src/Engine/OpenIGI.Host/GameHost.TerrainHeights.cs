@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -13,7 +14,7 @@ namespace OpenIGI.Host;
 /// The march finds the level's placements in its distance field and nothing else; the terrain is not one
 /// of them. See <see cref="TerrainHeightRaster"/>.
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>How far past the built-up area the raster reaches, in metres.</summary>
     private const double TerrainRasterMargin = 32.0;
@@ -38,7 +39,7 @@ internal sealed partial class GameHost
     private void StartTerrainRaster()
     {
         ReleaseTerrainRaster();
-        if (_playerTerrain is not { } terrain || _shelterField.IsEmpty || !_work.IsConcurrent)
+        if (_mission.Terrain is not { } terrain || _shelterField.IsEmpty || !_work.IsConcurrent)
         {
             return;
         }
@@ -89,7 +90,7 @@ internal sealed partial class GameHost
             }
         }
 
-        if (_cardLighting is { } cards && !ReferenceEquals(cards, _terrainHeightsGivenTo))
+        if (_gi.CardLighting is { } cards && !ReferenceEquals(cards, _terrainHeightsGivenTo))
         {
             cards.SetTerrainHeights(_terrainHeights, _terrainRaster, _terrainHeightScale);
             cards.SetRoofs(_shelterMap, _giRoofTransform);
@@ -105,8 +106,8 @@ internal sealed partial class GameHost
         _terrainRasterCancel = null;
         _terrainRasterTask = null;
         _terrainRaster = null;
-        _cardLighting?.SetTerrainHeights(TextureHandle.None, null, 1f);
-        _cardLighting?.SetRoofs(TextureHandle.None, ShelterMapTransform.None);
+        _gi.CardLighting?.SetTerrainHeights(TextureHandle.None, null, 1f);
+        _gi.CardLighting?.SetRoofs(TextureHandle.None, ShelterMapTransform.None);
         _terrainHeightsGivenTo = null;
         if (_terrainHeights.IsValid)
         {

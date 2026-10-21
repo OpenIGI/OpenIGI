@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Physics;
 /// </para>
 /// <para>
 /// Everything here is a free function over values. What holds the arrays and does the stepping is
-/// <see cref="RagdollBody"/>; this is the part worth testing on its own.
+/// <c>RagdollBody</c>; this is the part worth testing on its own.
 /// </para>
 /// </remarks>
 public static class RagdollSolver
@@ -190,22 +190,4 @@ public static class RagdollSolver
         (m.M11 * v.X) + (m.M12 * v.Y) + (m.M13 * v.Z),
         (m.M21 * v.X) + (m.M22 * v.Y) + (m.M23 * v.Z),
         (m.M31 * v.X) + (m.M32 * v.Y) + (m.M33 * v.Z));
-
-    /// <summary>The point on a segment nearest another point.</summary>
-    /// <param name="start">One end of the segment.</param>
-    /// <param name="end">The other.</param>
-    /// <param name="point">The point.</param>
-    /// <returns>The nearest point on the segment.</returns>
-    public static Vector3d ClosestOnSegment(Vector3d start, Vector3d end, Vector3d point)
-    {
-        Vector3d along = end - start;
-        double lengthSquared = along.LengthSquared;
-        if (lengthSquared <= 0.0)
-        {
-            return start;
-        }
-
-        double t = Math.Clamp(Vector3d.Dot(point - start, along) / lengthSquared, 0.0, 1.0);
-        return start + (along * t);
-    }
 }

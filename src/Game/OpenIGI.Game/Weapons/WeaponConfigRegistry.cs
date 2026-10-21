@@ -173,7 +173,7 @@ public sealed class WeaponConfigRegistry
     {
         ArgumentNullException.ThrowIfNull(weapon);
         ArgumentNullException.ThrowIfNull(tag);
-        foreach (GameTask child in Descendants(weapon))
+        foreach (GameTask child in weapon.Descendants())
         {
             if (child is not DeclaredTask declared
                 || !string.Equals(child.Label, tag, StringComparison.Ordinal)
@@ -196,7 +196,7 @@ public sealed class WeaponConfigRegistry
     {
         ArgumentNullException.ThrowIfNull(weapon);
         ArgumentNullException.ThrowIfNull(tag);
-        foreach (GameTask child in Descendants(weapon))
+        foreach (GameTask child in weapon.Descendants())
         {
             if (child is not DeclaredTask declared
                 || !string.Equals(child.Label, tag, StringComparison.Ordinal)
@@ -212,18 +212,6 @@ public sealed class WeaponConfigRegistry
 
         value = string.Empty;
         return false;
-    }
-
-    private static IEnumerable<GameTask> Descendants(GameTask parent)
-    {
-        foreach (GameTask child in parent.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Descendants(child))
-            {
-                yield return nested;
-            }
-        }
     }
 
     private void Collect(GameTask task)

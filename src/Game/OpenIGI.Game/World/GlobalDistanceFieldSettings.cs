@@ -1,3 +1,4 @@
+
 namespace OpenIGI.Game.World;
 
 /// <summary>

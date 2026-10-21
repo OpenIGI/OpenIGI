@@ -63,7 +63,7 @@ public sealed class RetailIgi2DrawOrderTests
             harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
 
             bool any = false;
-            foreach (DeclaredTask task in DeclaredOfType(harness.LevelRoot, RigidObjectType))
+            foreach (Interaction.Igi2EditRigidObjTask task in OfType(harness.LevelRoot))
             {
                 objects++;
                 any = true;
@@ -91,16 +91,16 @@ public sealed class RetailIgi2DrawOrderTests
             $"Groups 5 and 12 hold {groups[5] + groups[12]} of {objects}, less than this assumes.");
     }
 
-    private static IEnumerable<DeclaredTask> DeclaredOfType(GameTask root, string typeName)
+    private static IEnumerable<Interaction.Igi2EditRigidObjTask> OfType(GameTask root)
     {
         foreach (GameTask child in root.Children)
         {
-            if (child is DeclaredTask declared && child.Type.Name == typeName)
+            if (child is Interaction.Igi2EditRigidObjTask placed)
             {
-                yield return declared;
+                yield return placed;
             }
 
-            foreach (DeclaredTask nested in DeclaredOfType(child, typeName))
+            foreach (Interaction.Igi2EditRigidObjTask nested in OfType(child))
             {
                 yield return nested;
             }

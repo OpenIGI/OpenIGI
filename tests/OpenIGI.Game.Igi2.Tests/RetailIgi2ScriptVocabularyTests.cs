@@ -156,7 +156,7 @@ public sealed class RetailIgi2ScriptVocabularyTests
 
     private static (NativeRegistrySnapshot Session, NativeRegistry Natives) HostShapedSession()
     {
-        Igi2Runtime title = Igi2Runtime.Instance;
+        Igi2Runtime title = new Igi2Runtime();
         GameLoop loop = new(
             new ManualTimeSource(1_000),
             structuralTypes: title.Layout.StructuralTaskTypes);

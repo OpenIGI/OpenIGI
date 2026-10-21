@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi1\OpenIGI.Presentation.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>

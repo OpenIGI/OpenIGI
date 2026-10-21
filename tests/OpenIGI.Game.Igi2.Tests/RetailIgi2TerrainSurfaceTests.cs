@@ -1,6 +1,5 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -29,7 +28,7 @@ public sealed class RetailIgi2TerrainSurfaceTests
         foreach (Igi2Level level in Igi2Level.All())
         {
             levels++;
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             materials += surface.Materials.Count;
 
             foreach (Igi2TerrainTile tile in surface.Tiles)
@@ -73,7 +72,7 @@ public sealed class RetailIgi2TerrainSurfaceTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (Igi2TerrainTile tile in Surface(level).Tiles)
+            foreach (Igi2TerrainTile tile in level.Terrain().Tiles)
             {
                 checkedTiles++;
                 Vector3d first = tile.PositionOf(0, 0);
@@ -123,7 +122,7 @@ public sealed class RetailIgi2TerrainSurfaceTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -186,7 +185,7 @@ public sealed class RetailIgi2TerrainSurfaceTests
         foreach (Igi2Level level in Igi2Level.All())
         {
             double declared = TerrainHeight(level.Root);
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
 
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
@@ -267,12 +266,5 @@ public sealed class RetailIgi2TerrainSurfaceTests
         }
 
         return null;
-    }
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
     }
 }

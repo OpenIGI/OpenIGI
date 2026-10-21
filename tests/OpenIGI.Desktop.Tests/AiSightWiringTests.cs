@@ -3,6 +3,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -23,7 +24,7 @@ public sealed class AiSightWiringTests
             return false;
         };
 
-        Assert.True(SoldierRenderer.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
+        Assert.True(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
 
         Assert.Equal(WorldTraceMask.World, captured.Mask);
         Assert.False(captured.TracePortals);
@@ -46,6 +47,6 @@ public sealed class AiSightWiringTests
             return true;
         };
 
-        Assert.Equal(seen, SoldierRenderer.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
+        Assert.Equal(seen, SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
     }
 }

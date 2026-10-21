@@ -38,19 +38,19 @@ OPENIGI_PUSH_CONSTANT(CardPush, push);
 
 struct VertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
 };
 
 struct Varyings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 diffuseUv;
-    [[vk::location(1)]] float4 color;
-    [[vk::location(2)]] float3 modelNormal;
+    [[vk::location(0)]] float2 diffuseUv : TEXCOORD0;
+    [[vk::location(1)]] float4 color : TEXCOORD1;
+    [[vk::location(2)]] float3 modelNormal : TEXCOORD2;
 };
 
 /// The four targets a page is captured into, written together.

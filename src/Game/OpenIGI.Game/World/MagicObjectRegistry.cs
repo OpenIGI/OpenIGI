@@ -31,10 +31,10 @@ public sealed class MagicObjectRegistry
     public const string ScriptResource = "LOCAL:magicobj/magicobj.qvm";
 
     /// <summary>The prefix of the task-type constants the script's third argument uses.</summary>
-    public const string TaskTypeConstantPrefix = "TASKTYPE_";
+    public const string TaskTypeConstantPrefix = Config.TaskTypeConstants.Prefix;
 
     private readonly Dictionary<string, MagicObjectDefinition> _byName = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<int, string> _taskTypeNames = [];
+    private readonly Config.TaskTypeConstants _taskTypes = new();
     private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MagicObjectRegistry"/> class.</summary>
@@ -72,7 +72,7 @@ public sealed class MagicObjectRegistry
         ArgumentNullException.ThrowIfNull(natives);
 
         _byName.Clear();
-        _taskTypeNames.Clear();
+        _taskTypes.Clear();
 
         if (!resources.TryLoad(ScriptResource, out ReadOnlyMemory<byte> bytes))
         {
@@ -90,7 +90,7 @@ public sealed class MagicObjectRegistry
             throw new EngineFatalException($"Couldn't load script: {ScriptResource}", ex);
         }
 
-        DeclareTaskTypeConstants(program, natives);
+        _taskTypes.Declare(program, natives);
 
         QvmInterpreter interpreter = new(program, natives);
         QvmError error = interpreter.Run();
@@ -118,36 +118,7 @@ public sealed class MagicObjectRegistry
     /// <summary>Gets the script constant a task type id came from, for diagnostics.</summary>
     /// <param name="taskType">The id from a <see cref="MagicObjectDefinition"/>.</param>
     /// <returns>The constant's name, or an empty string when the id is not one this registry allocated.</returns>
-    public string TaskTypeName(int taskType) => _taskTypeNames.GetValueOrDefault(taskType, string.Empty);
-
-    /// <summary>
-    /// Declares the <c>TASKTYPE_*</c> constants the script's third argument uses.
-    /// </summary>
-    /// <remarks>
-    /// <b>Divergence, deliberate.</b> The original allocates a task type id at startup as each class
-    /// registers and exports it under this name (<c>0x4B8810</c>), so the number depends only on the order
-    /// classes happen to initialise and never appears in a data file. None of those classes exist yet, so
-    /// the ids here are allocated in the order the script's symbol table lists them and kept alongside
-    /// their names. Nothing reads the value yet; when the classes arrive they export their own ids and
-    /// this fallback stops firing for them.
-    /// </remarks>
-    private void DeclareTaskTypeConstants(QvmProgram program, NativeRegistry natives)
-    {
-        int next = 1;
-        foreach (string? symbol in program.SymbolNames)
-        {
-            if (symbol is null
-                || !symbol.StartsWith(TaskTypeConstantPrefix, StringComparison.Ordinal)
-                || natives.Contains(symbol))
-            {
-                continue;
-            }
-
-            natives.RegisterConstant(symbol, next);
-            _taskTypeNames[next] = symbol;
-            next++;
-        }
-    }
+    public string TaskTypeName(int taskType) => _taskTypes.NameOf(taskType);
 
     private QvmValue Define(QvmCallContext call)
     {

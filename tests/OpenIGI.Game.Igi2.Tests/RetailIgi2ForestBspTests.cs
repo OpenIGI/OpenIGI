@@ -1,12 +1,13 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Igi2.World;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

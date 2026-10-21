@@ -67,17 +67,49 @@ public readonly record struct Igi2FixedFunctionSun(Vector3f Ambient, Vector3f Co
         ArgumentNullException.ThrowIfNull(levelRoot);
 
         sun = default;
+        Vector3f fill = Igi2SceneAtmosphere.TryRead(levelRoot, out Igi2SceneAtmosphere lit)
+            ? lit.ObjectAmbient
+            : Vector3f.Zero;
+
+        // A typed light is keyed as the original keys it, at the hour the first frame's camera sees.
+        if (FindTyped(levelRoot) is { } typed)
+        {
+            typed.Prepare();
+            typed.SetTime(Flow.Igi2LevelFlowTask.StartingCameraTime(levelRoot));
+            if (!typed.Children.OfType<Igi2DirlightKeyframeTask>().Any())
+            {
+                return false;
+            }
+
+            sun = new Igi2FixedFunctionSun(fill, typed.FrontColour, typed.Direction);
+            return true;
+        }
+
         if (!DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings light))
         {
             return false;
         }
 
-        Vector3f ambient = Igi2SceneAtmosphere.TryRead(levelRoot, out Igi2SceneAtmosphere air)
-            ? air.ObjectAmbient
-            : Vector3f.Zero;
-
-        sun = new Igi2FixedFunctionSun(ambient, light.Colour, DirectionFrom(light.Beta, light.Gamma));
+        sun = new Igi2FixedFunctionSun(fill, light.Colour, DirectionFrom(light.Beta, light.Gamma));
         return true;
+    }
+
+    private static Igi2DirlightTask? FindTyped(GameTask task)
+    {
+        if (task is Igi2DirlightTask light)
+        {
+            return light;
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            if (FindTyped(child) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Turns a <c>DirlightKeyframe</c>'s two angles into the vector towards the sun.</summary>

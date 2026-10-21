@@ -48,15 +48,15 @@ public sealed class Igi2PlacementBindingTests
 
             foreach (GameTask task in Walk(level.Root))
             {
-                if (task is not DeclaredTask task2 || !Igi2WorldScene.Bindings.ContainsKey(task2.Type.Name))
+                if (task is not (DeclaredTask or IIgi2PlacedTask) || !Igi2WorldScene.Bindings.ContainsKey(task.Type.Name))
                 {
                     continue;
                 }
 
-                declared[task2.Type.Name] = declared.GetValueOrDefault(task2.Type.Name) + 1;
-                if (ids.Contains(task2.Id))
+                declared[task.Type.Name] = declared.GetValueOrDefault(task.Type.Name) + 1;
+                if (ids.Contains(task.Id))
                 {
-                    placed[task2.Type.Name] = placed.GetValueOrDefault(task2.Type.Name) + 1;
+                    placed[task.Type.Name] = placed.GetValueOrDefault(task.Type.Name) + 1;
                 }
             }
         }
@@ -98,9 +98,7 @@ public sealed class Igi2PlacementBindingTests
     public void A_door_stands_at_its_start_position()
     {
         Igi2Level level = LevelOne();
-        DeclaredTask door = Walk(level.Root)
-            .OfType<DeclaredTask>()
-            .First(t => t.Type.Name == "Door");
+        Interaction.Igi2DoorTask door = Walk(level.Root).OfType<Interaction.Igi2DoorTask>().First();
 
         Assert.True(door.TryGetValue("Position start", out object? rawStart));
         Vector3d start = Assert.IsType<Vector3d>(rawStart);
@@ -132,7 +130,7 @@ public sealed class Igi2PlacementBindingTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (DeclaredTask task in Walk(level.Root).OfType<DeclaredTask>().Where(t => t.Type.Name == "Switch"))
+            foreach (Interaction.Igi2SwitchTask task in Walk(level.Root).OfType<Interaction.Igi2SwitchTask>())
             {
                 Assert.True(task.TryGetValue("Initial on", out object? rawInitial));
                 bool initial = Assert.IsType<bool>(rawInitial);
@@ -174,9 +172,9 @@ public sealed class Igi2PlacementBindingTests
     public void A_camera_holder_turns_by_its_lone_gamma()
     {
         Igi2Level level = LevelOne();
-        DeclaredTask camera = Walk(level.Root)
-            .OfType<DeclaredTask>()
-            .First(t => t.Type.Name == "SCamera");
+        Interaction.Igi2SecurityCameraTask camera = Walk(level.Root)
+            .OfType<Interaction.Igi2SecurityCameraTask>()
+            .First();
 
         Assert.True(camera.TryGetValue("Holder Model", out object? rawModel));
         Assert.True(camera.TryGetValue("Holder Position", out object? rawPosition));
@@ -210,14 +208,10 @@ public sealed class Igi2PlacementBindingTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (DeclaredTask task in Walk(level.Root)
-                .OfType<DeclaredTask>()
-                .Where(t => t.Type.Name == Igi2WorldScene.WireType))
+            foreach (Interaction.Igi2WireTask task in Walk(level.Root).OfType<Interaction.Igi2WireTask>())
             {
-                Assert.True(task.TryGetValue("Start position", out object? rawStart));
-                Assert.True(task.TryGetValue("Stop position", out object? rawStop));
-                Vector3d start = Assert.IsType<Vector3d>(rawStart);
-                Vector3d stop = Assert.IsType<Vector3d>(rawStop);
+                Vector3d start = task.Start;
+                Vector3d stop = task.Stop;
 
                 Igi2Placement placement = level.Scene.Placements.Single(p => p.LevelId == task.Id);
                 wires++;

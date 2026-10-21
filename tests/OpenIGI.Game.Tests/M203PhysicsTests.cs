@@ -81,8 +81,8 @@ public sealed class M203PhysicsTests
 
         M203ProjectileState projectile = Assert.Single(simulation.Projectiles);
         float launchSpeed = 85f * M203Physics.KilometresPerHourToUnitsPerTick;
-        Assert.Equal(launchSpeed * M203Physics.Drag, projectile.Velocity.Y, 0.01f);
-        Assert.Equal(-M203Physics.GravityPerTick * M203Physics.Drag, projectile.Velocity.Z, 0.01f);
+        Assert.Equal(launchSpeed * ImpactRoundFlight.Drag, projectile.Velocity.Y, 0.01f);
+        Assert.Equal(-ImpactRoundFlight.Gravity * ImpactRoundFlight.Drag, projectile.Velocity.Z, 0.01f);
         Assert.Equal(projectile.Velocity.Y, projectile.Position.Y, 0.01f);
         Assert.Equal(projectile.Velocity.Z, projectile.Position.Z, 0.01f);
     }

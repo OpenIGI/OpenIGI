@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.TestSupport;
 using Xunit;
 

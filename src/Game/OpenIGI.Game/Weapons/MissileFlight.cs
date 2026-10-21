@@ -191,8 +191,8 @@ public static class MissileFlight
             ? AntiTankAimHeight(
                 (float)target.Z,
                 (float)horizontalDistance,
-                (float)Distance(origin, target))
-            : BallisticAimHeight((float)target.Z, (float)Distance(origin, target));
+                (float)Vector3d.Distance(origin, target))
+            : BallisticAimHeight((float)target.Z, (float)Vector3d.Distance(origin, target));
 
         return new Vector3d(target.X, target.Y, height);
     }
@@ -215,7 +215,7 @@ public static class MissileFlight
 
         Vector3d aim = AimPoint(origin, target, type, launcherAxis);
         Vector3d delta = aim - origin;
-        double length = Distance(Vector3d.Zero, delta);
+        double length = Vector3d.Distance(Vector3d.Zero, delta);
         if (length <= double.Epsilon)
         {
             return default;
@@ -228,13 +228,6 @@ public static class MissileFlight
             (float)(delta.Z / length) * speedUnitsPerTick);
     }
 
-    private static double Distance(Vector3d left, Vector3d right)
-    {
-        double x = right.X - left.X;
-        double y = right.Y - left.Y;
-        double z = right.Z - left.Z;
-        return Math.Sqrt((x * x) + (y * y) + (z * z));
-    }
 }
 
 /// <summary>

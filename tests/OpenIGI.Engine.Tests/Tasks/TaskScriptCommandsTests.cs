@@ -108,6 +108,78 @@ public sealed class TaskScriptCommandsTests
     }
 
     [Fact]
+    public void A_type_replaced_with_an_adapter_reads_the_levels_parameters_and_hands_them_to_it()
+    {
+        Fixture fixture = new();
+        fixture.Types.Register<HeightMapTask>("HeightMap");
+        fixture.Types.Register<LifecycleProbeTask>("Container");
+        HeightMapToElevation adapter = new();
+        fixture.Types.Replace("HeightMap", static () => new ElevationTask(), adapter);
+
+        fixture.Run(QvmExpression.Call(
+            "Task_New",
+            QvmExpression.Int(-1),
+            QvmExpression.Text("HeightMap"),
+            QvmExpression.Text(string.Empty),
+            QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+            QvmExpression.Int(4), QvmExpression.Int(5), QvmExpression.Int(0),
+            QvmExpression.Int(6), QvmExpression.Int(7), QvmExpression.Int(8),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(-1),
+                QvmExpression.Text("Container"),
+                QvmExpression.Text("AfterTheParameters"))));
+
+        var task = (ElevationTask)Assert.Single(fixture.Tree.Root.Children);
+        Assert.Equal(new Vector3d(1d, 2d, 3d), task.Origin);
+        Assert.Equal(4, task.Detail);
+        Assert.True(task.Parsed, "The adapter ran after the task was parsed.");
+        Assert.Equal(7, adapter.Seen!.Count);
+        Assert.Equal("AfterTheParameters", Assert.Single(task.Children).Label);
+    }
+
+    [Fact]
+    public void A_class_with_the_same_names_in_another_order_is_set_by_name()
+    {
+        Fixture fixture = new();
+        fixture.Types.Register<HeightMapTask>("HeightMap");
+        fixture.Types.Replace("HeightMap", static () => new LaterHeightMapTask(), ByNameParameterAdapter.Instance);
+
+        fixture.Run(QvmExpression.Call(
+            "Task_New",
+            QvmExpression.Int(-1),
+            QvmExpression.Text("HeightMap"),
+            QvmExpression.Text(string.Empty),
+            QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+            QvmExpression.Int(4), QvmExpression.Int(5), QvmExpression.Int(0),
+            QvmExpression.Int(6), QvmExpression.Int(7), QvmExpression.Int(8)));
+
+        var task = (LaterHeightMapTask)Assert.Single(fixture.Tree.Root.Children);
+        Assert.Equal(new Vector3d(1d, 2d, 3d), task.Position);
+        Assert.Equal(4, task.Level);
+        Assert.Equal(5, task.Size);
+        Assert.Equal(3, task.Smoothing);
+        Assert.False(task.TrySetScriptValue("Level", 1.5f), "A value of another type is refused.");
+        Assert.Equal(4, task.Level);
+    }
+
+    [Fact]
+    public void A_declaration_after_an_adapted_replacement_is_what_the_level_is_read_by()
+    {
+        TaskTypeRegistry types = new();
+        types.Register<HeightMapTask>("HeightMap");
+        TaskType type = types.Replace("HeightMap", static () => new ElevationTask(), new HeightMapToElevation());
+
+        types.Declare("HeightMap", [new TaskParameter("Position", ScriptParamType.ObjectPos)]);
+
+        Assert.Equal([new TaskParameter("Position", ScriptParamType.ObjectPos)], type.Parameters);
+        Assert.True(type.IsDeclared);
+
+        types.Replace<HeightMapTask>("HeightMap");
+        Assert.Null(type.ParameterAdapter);
+    }
+
+    [Fact]
     public void GeneratedParameterDescriptorsMatchTheDeclaredOrderAndTypes()
     {
         TaskTypeRegistry types = new();

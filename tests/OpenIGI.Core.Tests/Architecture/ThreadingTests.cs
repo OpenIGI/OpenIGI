@@ -21,6 +21,7 @@ public sealed partial class ThreadingTests
     [
         Path.Combine("src", "Core", "OpenIGI.Core", "Threading", "ThreadPoolWorkScheduler.cs"),
         Path.Combine("src", "Rendering", "OpenIGI.Rendering.Vulkan") + Path.DirectorySeparatorChar,
+        Path.Combine("src", "Rendering", "OpenIGI.Rendering.D3D12") + Path.DirectorySeparatorChar,
         Path.Combine("src", "Platform", "OpenIGI.Platform.Desktop") + Path.DirectorySeparatorChar,
         Path.Combine("src", "Audio", "OpenIGI.Audio.OpenAL") + Path.DirectorySeparatorChar,
     ];

@@ -76,6 +76,12 @@ public sealed record WorldPlacement(
     /// </remarks>
     public WorldModelBinding? DestroyedReplacement { get; init; }
 
+    /// <summary>
+    /// Gets the models the placement may wear by its object's state, which <see cref="IPlacementVariant"/> picks among; an entry
+    /// that did not resolve is null, and draws the placed model. Null for a placement with one model.
+    /// </summary>
+    public IReadOnlyList<WorldModelBinding?>? Variants { get; init; }
+
     /// <summary>Gets whether the live task has no authored replacement and should no longer draw.</summary>
     public bool IsSuppressed { get; init; }
 
@@ -150,6 +156,13 @@ public sealed record WorldPlacement(
     /// A title that has the name simply supplies it.
     /// </remarks>
     public string LightmapEntry { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the level id of the task that placed this object, shared by everything hanging off it, or <c>-1</c> for a
+    /// title whose placements carry none.
+    /// </summary>
+    /// <remarks>What lets a title move what one of its tasks placed (<see cref="IPlacementMotion"/>).</remarks>
+    public int LevelId { get; init; } = -1;
 
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
     public bool HasLightmap => LightmapEntry.Length > 0 || (LightmapIndex >= 0 && LightmapSet.Length > 0);

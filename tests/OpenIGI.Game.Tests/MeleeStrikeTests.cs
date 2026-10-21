@@ -5,6 +5,9 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Weapons;
 
 namespace OpenIGI.Game.Tests;
 
@@ -83,7 +86,7 @@ public sealed class MeleeStrikeTests
 
         const float hitProbability = 1.0f; // 100% chance to connect
         const float damage = 0.6f;
-        AiSoldier soldier = PatrolSoldier(position, hitProbability, damage);
+        Igi1HumanAi soldier = PatrolSoldier(position, hitProbability, damage);
 
         int tick = 1;
         while (tick < 20 && soldier.PatrolAction != AiPatrolAction.CloseCombat)
@@ -113,7 +116,7 @@ public sealed class MeleeStrikeTests
 
         const float hitProbability = 0f; // 0% chance to connect
         const float damage = 0.6f;
-        AiSoldier soldier = PatrolSoldier(position, hitProbability, damage);
+        Igi1HumanAi soldier = PatrolSoldier(position, hitProbability, damage);
 
         int tick = 1;
         while (tick < 20 && soldier.PatrolAction != AiPatrolAction.CloseCombat)
@@ -129,13 +132,13 @@ public sealed class MeleeStrikeTests
         Assert.Equal(0f, strikeDamage);
     }
 
-    private static AiSoldier PatrolSoldier(
+    private static Igi1HumanAi PatrolSoldier(
         Vector3d position,
         float hitProbability,
         float damage,
         int seed = 1)
     {
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: seed);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: seed);
         soldier.SetCombat(
             AiType.PatrolAk,
             new AiCombatParameters(new HumanAiConfigItemTask

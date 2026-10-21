@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenIGI.Core.IO;
 
 namespace OpenIGI.Core.Content;
 
@@ -18,7 +19,7 @@ namespace OpenIGI.Core.Content;
 /// <b>Content only.</b> Content is asset overlays: folders that mirror the game's paths and replace its
 /// files. Mods -- code packages built against the game's plugin interfaces -- are a different thing with a
 /// different contract, folder (<c>&lt;Library&gt;/mods/&lt;id&gt;</c>) and loader, and never pass through this
-/// profile. See "Content packs and mods" in <c>CONTRIBUTING.md</c>.
+/// profile but through <see cref="ModProfile"/>. See "Content packs and mods" in <c>CONTRIBUTING.md</c>.
 /// </para>
 /// <para>
 /// Passed by file: the launcher writes it and points <see cref="EnvironmentVariable"/> (or the
@@ -81,16 +82,8 @@ public sealed record ContentProfile(int Schema, IReadOnlyDictionary<string, IRea
     {
         ArgumentNullException.ThrowIfNull(profile);
 
-        string? folder = Path.GetDirectoryName(Path.GetFullPath(path));
-        if (folder is not null)
-        {
-            Directory.CreateDirectory(folder);
-        }
-
-        // Beside the target and moved over it, so a game starting at the same moment never reads half.
-        string temporary = path + ".tmp";
-        File.WriteAllText(temporary, Serialize(profile));
-        File.Move(temporary, path, overwrite: true);
+        // A game starting at the same moment never reads half.
+        AtomicFile.WriteAllText(path, Serialize(profile));
     }
 }
 

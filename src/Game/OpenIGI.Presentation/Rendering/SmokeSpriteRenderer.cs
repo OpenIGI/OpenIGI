@@ -1,13 +1,11 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -28,11 +26,8 @@ namespace OpenIGI.Presentation.Rendering;
 /// loads <c>alarmlight.spr</c>. Presentation only, on the fixed tick.
 /// </para>
 /// </remarks>
-internal sealed class SmokeSpriteRenderer : IDisposable
+public sealed class SmokeSpriteRenderer : IDisposable
 {
-    /// <summary>The global archive retail's by-name sprite loader reads.</summary>
-    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
-
     /// <summary>The retail smoke sprite (<c>dword_5C1160</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "smoke2.spr";
 
@@ -61,6 +56,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
+    private readonly string _spriteArchive;
     private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
@@ -74,8 +70,9 @@ internal sealed class SmokeSpriteRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SmokeSpriteRenderer"/> class.</summary>
-    public SmokeSpriteRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
+    public SmokeSpriteRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, string spriteArchive, IOpenIgiLogger? logger = null)
     {
+        _spriteArchive = spriteArchive ?? throw new ArgumentNullException(nameof(spriteArchive));
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _logger = logger ?? NullLogger.Instance;
@@ -187,7 +184,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumPuffs));
             }
 
             _device.UpdateAnimatedMesh(_mesh, _vertices);
@@ -250,7 +247,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
             return used;
         }
 
-        Vector3d position = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d position = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d centre = (position / WorldScene.UnitsPerMetre) - eye;
         double distance = centre.Length;
         if (!(distance > 1e-6))
@@ -278,7 +275,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
         Vector3d toEye = centre / -distance;
         Vector3d reference = Math.Abs(toEye.Z) < 0.9 ? new Vector3d(0, 0, 1) : new Vector3d(1, 0, 0);
-        Vector3d rightD = Cross(reference, toEye);
+        Vector3d rightD = Vector3d.Cross(reference, toEye);
         double rightLength = rightD.Length;
         if (!(rightLength > 1e-9))
         {
@@ -286,7 +283,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
         }
 
         rightD /= rightLength;
-        Vector3d upD = Cross(toEye, rightD);
+        Vector3d upD = Vector3d.Cross(toEye, rightD);
 
         float cos = MathF.Cos(p.Roll);
         float sin = MathF.Sin(p.Roll);
@@ -334,19 +331,17 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
         try
         {
-            if (!_fileSystem.Exists(SpriteArchive))
+            if (!_fileSystem.Exists(_spriteArchive))
             {
-                _logger.Warning("Smoke", $"No sprite archive at {SpriteArchive}; rockets fly without a trail.");
+                _logger.Warning("Smoke", $"No sprite archive at {_spriteArchive}; rockets fly without a trail.");
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(SpriteArchive));
-            IresEntry? entry = archive.Entries.FirstOrDefault(
-                candidate => candidate.Kind == IresEntryKind.Body
-                    && Path.GetFileName(candidate.Name).Equals(SpriteName, StringComparison.OrdinalIgnoreCase));
+            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(_spriteArchive));
+            IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {
-                _logger.Warning("Smoke", $"'{SpriteName}' is missing from {SpriteArchive}; rockets fly without a trail.");
+                _logger.Warning("Smoke", $"'{SpriteName}' is missing from {_spriteArchive}; rockets fly without a trail.");
                 return false;
             }
 
@@ -369,31 +364,8 @@ internal sealed class SmokeSpriteRenderer : IDisposable
         }
     }
 
-    private static Vector3d Cross(Vector3d a, Vector3d b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
-
     private static bool IsFinite(Vector3f v) =>
         float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
-
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumPuffs * 6];
-        for (int quad = 0; quad < MaximumPuffs; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
-    }
 
     private struct Puff
     {

@@ -28,7 +28,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// shift every parameter after it.
 /// </para>
 /// </remarks>
-public sealed partial class TerrainTask : GameTask
+public sealed partial class TerrainTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Terrain";

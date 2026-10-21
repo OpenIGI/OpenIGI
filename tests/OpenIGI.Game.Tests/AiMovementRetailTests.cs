@@ -4,6 +4,8 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 
@@ -68,7 +70,7 @@ public sealed class AiMovementRetailTests
     {
         // 0x45D080 rotates the clip's delta by the body and 0x4614B0 applies it, whatever the AI asked for:
         // a roll carries a soldier sideways, a step back steps back.
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         Vector3d far = new(0, -500 * 4096.0, 0);
 
         soldier.Tick(1, far, rootMotionThisTick: forward, enemyAlive: false, rootMotionLateral: lateral);
@@ -109,7 +111,7 @@ public sealed class AiMovementRetailTests
 
         Assert.NotNull(found);
         (GraphNode From, GraphNode To) hop = found.Value;
-        AiSoldier soldier = new(graph, hop.From.Position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, hop.From.Position, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.GoTo(hop.To.Id));
 

@@ -26,7 +26,7 @@ public static class TerrainHeightRaster
     private const double VerticalSlack = 200.0;
 
     /// <summary>Samples the terrain's height over a rectangle of the level.</summary>
-    /// <param name="work">Runs the rows side by side.</param>
+    /// <param name="work">The scheduler the caller runs the build on; the fill itself is one pass.</param>
     /// <param name="terrain">The level's terrain.</param>
     /// <param name="minX">The rectangle's low X, in metres.</param>
     /// <param name="minY">Its low Y, in metres.</param>
@@ -62,28 +62,82 @@ public static class TerrainHeightRaster
 
         double top = (highZ + VerticalSlack) * WorldScene.UnitsPerMetre;
         double bottom = (lowZ - VerticalSlack) * WorldScene.UnitsPerMetre;
+        double unitsPerCell = cellMetres * WorldScene.UnitsPerMetre;
+        double originX = minX * WorldScene.UnitsPerMetre;
+        double originY = minY * WorldScene.UnitsPerMetre;
         float[] height = new float[width * depth];
+        Array.Fill(height, ShelterHeightField.OpenSky);
 
-        work.ForRange(
-            0,
-            depth,
-            Math.Max(1, Environment.ProcessorCount - 1),
-            row =>
+        // A descent from above answers with the highest triangle under the cell's centre, so every triangle is filled into the
+        // cells whose centres it covers, the highest kept: one pass over the ground instead of a descent a cell.
+        List<CollisionTriangle> triangles = [];
+        TerrainRayTrace.CollectTriangles(
+            terrain,
+            new Vector3d(originX, originY, bottom),
+            new Vector3d(originX + (width * unitsPerCell), originY + (depth * unitsPerCell), top),
+            triangles);
+        for (int i = 0; i < triangles.Count; i++)
+        {
+            if ((i & 0xFFF) == 0)
             {
-                double y = (minY + ((row + 0.5) * cellMetres)) * WorldScene.UnitsPerMetre;
-                for (int column = 0; column < width; column++)
-                {
-                    double x = (minX + ((column + 0.5) * cellMetres)) * WorldScene.UnitsPerMetre;
-                    height[(row * width) + column] = terrain.TryTraceDescent(
-                            new Vector3d(x, y, top),
-                            new Vector3d(x, y, bottom),
-                            out TerrainGround ground)
-                        ? (float)(ground.Height / WorldScene.UnitsPerMetre)
-                        : ShelterHeightField.OpenSky;
-                }
-            },
-            cancellation);
+                cancellation.ThrowIfCancellationRequested();
+            }
+
+            CollisionTriangle t = triangles[i];
+            double lowY = Math.Min(t.A.Y, Math.Min(t.B.Y, t.C.Y));
+            double highY = Math.Max(t.A.Y, Math.Max(t.B.Y, t.C.Y));
+            int firstRow = Math.Max(0, (int)Math.Ceiling(((lowY - originY) / unitsPerCell) - 0.5));
+            int lastRow = Math.Min(depth - 1, (int)Math.Floor(((highY - originY) / unitsPerCell) - 0.5));
+            for (int row = firstRow; row <= lastRow; row++)
+            {
+                FillRow(t, originY + ((row + 0.5) * unitsPerCell), row, width, originX, unitsPerCell, bottom, top, height);
+            }
+        }
 
         return ShelterHeightField.FromHeights(height, width, depth, minX, minY, cellMetres);
+    }
+
+    // The cells of one row whose centres the triangle covers, seen from above, each given the triangle's height there when it
+    // is higher than what the cell holds and lies within the span the descent looked over.
+    private static void FillRow(
+        in CollisionTriangle t,
+        double y,
+        int row,
+        int width,
+        double originX,
+        double unitsPerCell,
+        double bottom,
+        double top,
+        float[] height)
+    {
+        double area = ((t.B.X - t.A.X) * (t.C.Y - t.A.Y)) - ((t.C.X - t.A.X) * (t.B.Y - t.A.Y));
+        if (area == 0.0)
+        {
+            return;
+        }
+
+        double lowX = Math.Min(t.A.X, Math.Min(t.B.X, t.C.X));
+        double highX = Math.Max(t.A.X, Math.Max(t.B.X, t.C.X));
+        int first = Math.Max(0, (int)Math.Ceiling(((lowX - originX) / unitsPerCell) - 0.5));
+        int last = Math.Min(width - 1, (int)Math.Floor(((highX - originX) / unitsPerCell) - 0.5));
+        for (int column = first; column <= last; column++)
+        {
+            double x = originX + ((column + 0.5) * unitsPerCell);
+            double wa = (((t.B.X - x) * (t.C.Y - y)) - ((t.C.X - x) * (t.B.Y - y))) / area;
+            double wb = (((t.C.X - x) * (t.A.Y - y)) - ((t.A.X - x) * (t.C.Y - y))) / area;
+            double wc = 1.0 - wa - wb;
+            if (wa < 0.0 || wb < 0.0 || wc < 0.0)
+            {
+                continue;
+            }
+
+            double z = (wa * t.A.Z) + (wb * t.B.Z) + (wc * t.C.Z);
+            float metres = (float)(z / WorldScene.UnitsPerMetre);
+            int cell = (row * width) + column;
+            if (z >= bottom && z <= top && metres > height[cell])
+            {
+                height[cell] = metres;
+            }
+        }
     }
 }

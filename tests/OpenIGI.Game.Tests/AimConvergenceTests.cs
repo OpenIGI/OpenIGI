@@ -3,6 +3,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using Xunit;
+using OpenIGI.Game.Igi1.Weapons;
 
 namespace OpenIGI.Game.Tests;
 

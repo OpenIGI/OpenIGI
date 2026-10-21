@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -33,7 +32,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// at the anchor — so a layout written for the screen can be laid on the world unchanged.
 /// </para>
 /// </remarks>
-internal readonly struct WorldCanvas
+public readonly struct WorldCanvas
 {
     private readonly Vector3d _anchor;
     private readonly Vector3d _right;

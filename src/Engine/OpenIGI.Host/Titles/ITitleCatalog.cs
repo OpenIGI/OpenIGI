@@ -2,6 +2,8 @@ using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
+using OpenIGI.Game.Hosting;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 
@@ -13,6 +15,7 @@ namespace OpenIGI.Host.Titles;
 /// <param name="WorldBuilder">How a loaded level becomes placements.</param>
 /// <param name="Missions">Builds the title's own mission table; a factory, because the scan logs as it goes.</param>
 /// <param name="DataRoot">Where this title is installed, or empty when it is not.</param>
+/// <param name="Gameplay">The title's own player, or <see langword="null"/> for a title that walks the host's rig.</param>
 /// <remarks>
 /// <para>
 /// Four lookups that used to be four constructor parameters, resolved one title at a time. Bundling
@@ -31,7 +34,8 @@ public sealed record TitleBinding(
     ITitlePresentationProvider Presentation,
     ITitleWorldBuilder WorldBuilder,
     Func<IOpenIgiLogger, IMissionCatalogue<MissionDescriptor>> Missions,
-    string DataRoot)
+    string DataRoot,
+    ITitleGameplay? Gameplay = null)
 {
     /// <summary>Gets whether this title is installed where the catalogue looked.</summary>
     public bool IsInstalled => new GameProfile(Runtime.Title, DataRoot).IsInstalled;
@@ -60,4 +64,13 @@ public interface ITitleCatalog
     /// <param name="binding">Receives the resolved services.</param>
     /// <returns><see langword="false"/> when this build has no implementation for that title.</returns>
     bool TryResolve(GameTitle title, [NotNullWhen(true)] out TitleBinding? binding);
+
+    /// <summary>Makes the mission machinery the host runs every title's levels with.</summary>
+    /// <param name="services">What the mission asks of the host.</param>
+    /// <returns>The mission, made once for the host's lifetime.</returns>
+    /// <remarks>
+    /// Project I.G.I.'s, today, for every title: the sequel brings its own player and simulation through
+    /// <see cref="TitleBinding.Gameplay"/> and runs beside it.
+    /// </remarks>
+    IHostedMission CreateHostedMission(IMissionHostServices services);
 }

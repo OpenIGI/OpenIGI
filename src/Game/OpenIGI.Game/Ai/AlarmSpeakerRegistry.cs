@@ -13,6 +13,7 @@ namespace OpenIGI.Game.Ai;
 /// <param name="DestructionSound">The report it dies with — the second, which <c>0x43A5F0</c> hands its explosion.</param>
 /// <param name="FollowsAnyAlarm">Whether it sounds while any alarm control is on, instead of by expression.</param>
 /// <param name="CanBeDestroyed">Whether world damage can permanently silence this emitter.</param>
+/// <param name="FaultySound">The loop a shot-out siren sounds instead while its expression holds, or empty.</param>
 public sealed class AlarmSpeaker(
     DeclaredTask Task,
     Vector3d PositionUnits,
@@ -20,7 +21,8 @@ public sealed class AlarmSpeaker(
     string SirenSound,
     string DestructionSound,
     bool FollowsAnyAlarm = false,
-    bool CanBeDestroyed = true)
+    bool CanBeDestroyed = true,
+    string FaultySound = "")
 {
     /// <summary>Gets the placed task.</summary>
     public DeclaredTask Task { get; } = Task;
@@ -37,6 +39,14 @@ public sealed class AlarmSpeaker(
     /// <summary>Gets the report it dies with.</summary>
     public string DestructionSound { get; } = DestructionSound;
 
+    /// <summary>Gets the loop a shot-out siren sounds instead of its working one while its expression holds.</summary>
+    /// <remarks>
+    /// Siren's update (<c>0x4494D0</c>) keeps evaluating its On expression after the ExplodeObject it derives from has
+    /// exploded (<c>+400</c>): it stops the working sound (<c>+568</c>) and starts the faulty one (<c>+600</c>) instead.
+    /// The shipped sirens name <c>alarmsystem_working</c> for both, so a siren that is shot out still wails.
+    /// </remarks>
+    public string FaultySound { get; } = FaultySound;
+
     /// <summary>Gets whether it sounds while any alarm control is on, instead of by its own expression.</summary>
     /// <remarks>
     /// The security camera's alarm loop (<c>0x441AE0</c>) follows its control's alarm byte rather than a
@@ -48,17 +58,25 @@ public sealed class AlarmSpeaker(
     public bool CanBeDestroyed { get; } = CanBeDestroyed;
 
     /// <summary>Gets or sets whether the speaker has been shot out — retail's <c>+417</c>.</summary>
-    /// <remarks>Permanent: a destroyed speaker never sounds again, whatever its expression says.</remarks>
+    /// <remarks>Permanent: a destroyed speaker never sounds its working loop again; only a siren's faulty loop is left.</remarks>
     public bool IsDestroyed { get; set; }
 
-    /// <summary>Gets whether damage adds up before it breaks, as a camera lens's does.</summary>
+    /// <summary>Gets whether damage adds up before it breaks, as a camera lens's and a siren's does.</summary>
     /// <remarks>
-    /// A security camera's lens sums every round's and blast's damage (<c>+260</c>) and explodes only once
-    /// the sum reaches <see cref="AlarmSpeakerRegistry.CameraDestroyThreshold"/>; the other emitters break on
-    /// their first hit.
+    /// A security camera's lens sums every round's and blast's damage (<c>+260</c>) and explodes once the sum reaches
+    /// <see cref="AlarmSpeakerRegistry.CameraDestroyThreshold"/>. A siren is an <c>ExplodeObject</c> and does the same
+    /// (<c>+488</c> against <c>+492</c>) at <see cref="AlarmSpeakerRegistry.SirenDestroyThreshold"/>. An alarm light breaks
+    /// on its first hit.
     /// </remarks>
-    public bool AccumulatesDamage =>
-        string.Equals(Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal);
+    public bool AccumulatesDamage => DestroyThreshold > 0f;
+
+    /// <summary>Gets the damage that breaks it, or zero for an emitter the first hit breaks.</summary>
+    public float DestroyThreshold =>
+        string.Equals(Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+            ? AlarmSpeakerRegistry.CameraDestroyThreshold
+            : string.Equals(Task.Type.Name, WorldScene.SirenType, StringComparison.Ordinal)
+                ? AlarmSpeakerRegistry.SirenDestroyThreshold
+                : 0f;
 
     /// <summary>Gets the damage taken so far — the lens's <c>+260</c>.</summary>
     public float Damage { get; internal set; }
@@ -84,7 +102,7 @@ public sealed class AlarmSpeaker(
 /// task's identity; radius damage and legacy contacts use <see cref="TryDestroyAt"/>.
 /// </para>
 /// <para>
-/// The expression machinery is the same one <see cref="AiAlarmControlRegistry"/> evaluates the
+/// The expression machinery is the same one <c>AiAlarmControlRegistry</c> evaluates the
 /// controls through, over the same live level variables — so a speaker whose expression names
 /// <c>AlarmControl_5.isAlarm</c> follows that control exactly as retail's does.
 /// </para>
@@ -151,6 +169,24 @@ public sealed class AlarmSpeakerRegistry
             && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false, speaker.Task);
     }
 
+    /// <summary>Gets what a speaker sounds this tick: its working loop, a shot-out siren's faulty loop, or nothing.</summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <returns>The definition to loop, or empty while it is silent.</returns>
+    public string SoundNow(AlarmSpeaker speaker)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        if (speaker.IsDestroyed)
+        {
+            return speaker.FaultySound.Length > 0
+                && !string.IsNullOrWhiteSpace(speaker.AlarmExpression)
+                && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false, speaker.Task)
+                    ? speaker.FaultySound
+                    : string.Empty;
+        }
+
+        return IsOn(speaker) ? speaker.SirenSound : string.Empty;
+    }
+
     /// <summary>Gets whether the placed destructible task has already been shot out.</summary>
     public bool IsDestroyed(GameTask task) =>
         _byTask.TryGetValue(task, out AlarmSpeaker? speaker) && speaker.IsDestroyed;
@@ -168,8 +204,23 @@ public sealed class AlarmSpeakerRegistry
 
         foreach (WorldPlacement placement in placements)
         {
-            if (!_byTask.TryGetValue(placement.Owner, out AlarmSpeaker? speaker)
-                || !string.Equals(speaker.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+            if (!_byTask.TryGetValue(placement.Owner, out AlarmSpeaker? speaker))
+            {
+                continue;
+            }
+
+            if (string.Equals(speaker.Task.Type.Name, "AlarmLight", StringComparison.Ordinal))
+            {
+                // AlarmLight's ExplosionHit (0x43A660) weighs a blast against its own model's bound (0x4D0950).
+                if (placement.Model is { NativeMarkerBound: > 0f } light && float.IsFinite(light.NativeMarkerBound))
+                {
+                    speaker.ExplosionContactRadiusUnits = light.NativeMarkerBound;
+                }
+
+                continue;
+            }
+
+            if (!string.Equals(speaker.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
                 || !string.Equals(placement.Instance.Name, CameraModelName(speaker.Task), StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -191,11 +242,21 @@ public sealed class AlarmSpeakerRegistry
     /// </remarks>
     public const float CameraDestroyThreshold = 0.5f;
 
+    /// <summary>The damage that blows a siren up.</summary>
+    /// <remarks>
+    /// A siren is an <c>ExplodeObject</c> (<c>0x449360</c>, parent <c>0x481340</c>). Its constructor (<c>0x4492A0</c>) hands
+    /// <c>0x481360</c> 1.0 for <c>+496</c>, which the object's setup (<c>0x481C40</c>) copies into its threshold <c>+492</c>;
+    /// sirens declare no explosion parameters to change it. A round (<c>0x481E60</c>) and a blast (<c>0x481EA0</c>, the
+    /// blast flag <c>+564</c> left set by <c>0x481780</c>) add to <c>+488</c>, and the siren goes off, with no delay, once
+    /// the sum reaches it: five of Mission 1's rounds.
+    /// </remarks>
+    public const float SirenDestroyThreshold = 1.0f;
+
     /// <summary>Hands one round to the exact alarm object named by a rich world trace.</summary>
     /// <param name="owner">The placing task hit by the trace.</param>
     /// <param name="damage">
-    /// The round's damage — the firing weapon's <c>Damage Factor</c>. A camera adds it up; every other
-    /// emitter breaks on the first hit whatever it is.
+    /// The round's damage — the firing weapon's <c>Damage Factor</c>. A camera and a siren add it up; an alarm
+    /// light breaks on the first hit whatever it is.
     /// </param>
     /// <returns>The speaker this round destroyed, or <see langword="null"/>.</returns>
     public AlarmSpeaker? TryDestroy(GameTask? owner, float damage = float.PositiveInfinity)
@@ -220,7 +281,8 @@ public sealed class AlarmSpeakerRegistry
     /// <remarks>
     /// A camera takes the shared contact dose (<c>0x416C90</c>) measured from its head's bound and adds it
     /// to what it has already taken (<c>0x4422F0</c>), so a grenade in reach breaks it outright while a
-    /// weak or distant one only wears it down. The other emitters keep the nearest-inside-the-radius rule.
+    /// weak or distant one only wears it down. An alarm light (<c>0x43A660</c>) breaks on any dose, so a blast breaks
+    /// every light it reaches.
     /// </remarks>
     public IReadOnlyList<AlarmSpeaker> ApplyExplosion(
         Vector3d impactUnits,
@@ -228,30 +290,46 @@ public sealed class AlarmSpeakerRegistry
         float falloffUnits,
         float damageFactor)
     {
+        // Every speaker weighs the blast in its own handler (0x43A660, 0x4422F0): every light it reaches breaks.
         List<AlarmSpeaker> destroyed = [];
-        foreach (AlarmSpeaker camera in _speakers)
+        foreach (AlarmSpeaker speaker in _speakers)
         {
-            if (camera.AccumulatesDamage && !camera.IsDestroyed && camera.CanBeDestroyed)
+            if (ExplosionHit(speaker, impactUnits, radiusUnits, falloffUnits, damageFactor))
             {
-                float dose = ExplosionDamage.Dose(
-                    (float)(camera.PositionUnits - impactUnits).Length,
-                    camera.ExplosionContactRadiusUnits,
-                    radiusUnits,
-                    falloffUnits,
-                    damageFactor);
-                if (dose > 0f && Damage(camera, dose))
-                {
-                    destroyed.Add(camera);
-                }
+                destroyed.Add(speaker);
             }
         }
 
-        if (TryDestroyAt(impactUnits, radiusUnits) is { } speaker)
+        return destroyed;
+    }
+
+    /// <summary>One speaker's share of a blast: its own <c>ExplosionHit</c>, as the explosion list sends it.</summary>
+    /// <param name="speaker">The speaker.</param>
+    /// <param name="impactUnits">Where the blast went off.</param>
+    /// <param name="radiusUnits">The blast's full-damage radius.</param>
+    /// <param name="falloffUnits">How far past it its damage fades.</param>
+    /// <param name="damageFactor">The blast's damage.</param>
+    /// <returns><see langword="true"/> when the blast destroyed it.</returns>
+    /// <remarks>
+    /// Each weighs the blast by distance against its own model's bound (<c>0x416C90</c>), whatever stands between. An
+    /// <c>AlarmLight</c> (<c>0x43A660</c>) explodes on any dose at all, so a blast breaks every light it reaches; a camera's
+    /// lens (<c>0x4422F0</c>) adds the dose to its sum.
+    /// </remarks>
+    public static bool ExplosionHit(AlarmSpeaker speaker, Vector3d impactUnits, float radiusUnits, float falloffUnits, float damageFactor)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        if (speaker.IsDestroyed || !speaker.CanBeDestroyed)
         {
-            destroyed.Add(speaker);
+            return false;
         }
 
-        return destroyed;
+        float dose = ExplosionDamage.Dose(
+            (float)(speaker.PositionUnits - impactUnits).Length,
+            speaker.ExplosionContactRadiusUnits,
+            radiusUnits,
+            falloffUnits,
+            damageFactor);
+        return dose != 0f && Damage(speaker, dose);
     }
 
     /// <summary>Destroys whatever speaker an impact landed on, if it landed on one.</summary>
@@ -259,7 +337,7 @@ public sealed class AlarmSpeakerRegistry
     /// <param name="radiusUnits">How far the destruction reaches — a bullet's touch, a blast's radius.</param>
     /// <returns>The speaker destroyed, or <see langword="null"/> when the hit struck none.</returns>
     /// <remarks>
-    /// The nearest one inside the radius takes it; one impact fells at most one speaker. Cameras are left
+    /// The nearest one inside the radius takes it; one impact fells at most one speaker. Cameras and sirens are left
     /// to <see cref="ApplyExplosion"/> and <see cref="TryDestroy"/>, which add their damage up.
     /// </remarks>
     public AlarmSpeaker? TryDestroyAt(Vector3d impactUnits, float radiusUnits = HitRadiusUnits)
@@ -290,13 +368,13 @@ public sealed class AlarmSpeakerRegistry
         return nearest;
     }
 
-    // A camera adds the hit to its sum and breaks at the threshold; anything else breaks outright.
+    // A camera or a siren adds the hit to its sum and breaks at its threshold; anything else breaks outright.
     private static bool Damage(AlarmSpeaker speaker, float damage)
     {
         if (speaker.AccumulatesDamage)
         {
             speaker.Damage += damage;
-            if (speaker.Damage < CameraDestroyThreshold)
+            if (speaker.Damage < speaker.DestroyThreshold)
             {
                 return false;
             }
@@ -319,13 +397,14 @@ public sealed class AlarmSpeakerRegistry
         {
             // Retail Siren's QVM declaration supplies these explicitly. The visual comes from Model;
             // its destruction path clears that model when Destroyed model is empty, plays Explosion
-            // sound, spawns the fireballs, and permanently suppresses both working/faulty loops.
+            // sound and spawns the fireballs; after that its faulty loop stands in for the working one.
             Add(new AlarmSpeaker(
                 sirenTask,
                 FirstPosition(sirenTask),
                 FirstString(sirenTask, "on expression"),
                 FirstString(sirenTask, "working sound"),
-                FirstString(sirenTask, "explosion sound")));
+                FirstString(sirenTask, "explosion sound"),
+                FaultySound: FirstString(sirenTask, "faulty sound")));
         }
         else if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "AlarmLight", StringComparison.Ordinal))

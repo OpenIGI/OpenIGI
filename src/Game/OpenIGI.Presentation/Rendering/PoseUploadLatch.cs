@@ -3,7 +3,7 @@ using OpenIGI.Formats.Animation;
 namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Limits a stopped animated pose to the two uploads needed by its interpolation buffers.</summary>
-internal sealed class PoseUploadLatch
+public sealed class PoseUploadLatch
 {
     private BonePose? _lastPose;
     private bool _duplicatePending;

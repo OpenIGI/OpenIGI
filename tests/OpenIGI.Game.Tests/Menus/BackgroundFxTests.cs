@@ -1,6 +1,6 @@
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Menus;
 using Xunit;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 

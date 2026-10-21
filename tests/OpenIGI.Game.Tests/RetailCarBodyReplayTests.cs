@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using Xunit;
 using Xunit.Abstractions;
@@ -102,7 +103,7 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
         List<string> diff = [.. world.RayErrors];
 
         // The forces are consumed inside the tick, so compare what the port pushed as it pushed them.
-        List<RetailForce> pushed = car.PushedForces;
+        List<PointForce> pushed = car.PushedForces;
         if (pushed.Count != tick.Forces.Count)
         {
             diff.Add($"force count: port {pushed.Count} retail {tick.Forces.Count}");
@@ -110,9 +111,9 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
 
         for (int k = 0; k < Math.Min(pushed.Count, tick.Forces.Count); k++)
         {
-            RetailForce p = pushed[k];
+            PointForce p = pushed[k];
             RetailCarStepCapture.Force r = tick.Forces[k];
-            float[] port = [p.Fx, p.Fy, p.Fz, p.Px, p.Py, p.Pz];
+            float[] port = [p.Force.X, p.Force.Y, p.Force.Z, p.Point.X, p.Point.Y, p.Point.Z];
             float[] retail = [.. r.Vector, .. r.Point];
             for (int c = 0; c < 6; c++)
             {

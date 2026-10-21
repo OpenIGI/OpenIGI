@@ -1,6 +1,5 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
@@ -18,7 +17,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// they use the same Barlow widgets as the rest of the modern interface and never read a graphics preset
 /// or menu renderer setting.
 /// </remarks>
-internal sealed class DebugOverlayRenderer : IDisposable
+public sealed class DebugOverlayRenderer : IDisposable
 {
     private const float InsetDesign = 18f;
     private const float PanelGapDesign = 10f;
@@ -37,6 +36,9 @@ internal sealed class DebugOverlayRenderer : IDisposable
     private UiTheme? _theme;
     private bool _disposed;
 
+    /// <summary>Initializes a new instance of the <see cref="DebugOverlayRenderer"/> class.</summary>
+    /// <param name="device">The device the panels are drawn with.</param>
+    /// <param name="logger">Told when the interface font cannot be found.</param>
     public DebugOverlayRenderer(IGraphicsDevice device, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -45,8 +47,11 @@ internal sealed class DebugOverlayRenderer : IDisposable
         _logger = logger;
     }
 
+    /// <summary>Gets whether the font and theme the panels are set in have loaded.</summary>
     public bool IsReady => _body is not null && _theme is not null;
 
+    /// <summary>Loads the interface font and theme the panels are set in.</summary>
+    /// <returns><see langword="true"/> when they loaded and the overlay can draw.</returns>
     public bool Load()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -109,6 +114,7 @@ internal sealed class DebugOverlayRenderer : IDisposable
     public static float PanelGapPixels(int screenWidth, int screenHeight) =>
         new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight)).Px(PanelGapDesign);
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)

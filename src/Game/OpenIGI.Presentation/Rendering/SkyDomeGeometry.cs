@@ -213,15 +213,12 @@ public static class SkyDomeGeometry
         float around,
         float down)
     {
-        Vector3f above = Lerp(northAbove, southAbove, around);
-        Vector3f below = Lerp(northBelow, southBelow, around);
-        Vector3f blended = Lerp(above, below, down);
+        Vector3f above = Vector3f.Lerp(northAbove, southAbove, around);
+        Vector3f below = Vector3f.Lerp(northBelow, southBelow, around);
+        Vector3f blended = Vector3f.Lerp(above, below, down);
 
         return new Bgra32(Channel(blended.Z), Channel(blended.Y), Channel(blended.X), 255);
     }
-
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) =>
-        new(((b.X - a.X) * t) + a.X, ((b.Y - a.Y) * t) + a.Y, ((b.Z - a.Z) * t) + a.Z);
 
     private static byte Channel(float value) =>
         (byte)(value <= 0f ? 0 : value > 1f ? 255 : (int)(value * 255f));

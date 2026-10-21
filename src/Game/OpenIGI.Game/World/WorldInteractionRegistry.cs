@@ -3,9 +3,9 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.
@@ -25,12 +25,22 @@ public sealed class WorldInteraction
     public const int FenceTraversalTicks = 6 * 30;
 
     private readonly object _userOccupant = new();
-    private int _pressedTicks;
-    private Func<bool>? _onCondition;
-    private Func<bool>? _lockedCondition;
+    /// <summary>The definition a switch clicks with as it comes to rest on (<c>0x4450F0</c>).</summary>
+    public const string SwitchSound = "switch";
+
+    /// <summary>The definition a powered fence's sound area buzzes with (<c>0x43FC30</c>).</summary>
+    public const string FenceSound = "elfence_loop";
+
+    private int _pressStamp;
+    private bool _humming;
+    private Action<InteractionSoundEvent>? _sounds;
+    private int _useStamp;
+    private int _completeStamp;
+    private Func<bool?>? _onCondition;
+    private Func<double>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
-    private Func<bool>? _electricCondition;
+    private Func<bool?>? _electricCondition;
     private Action? _onPress;
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
@@ -64,6 +74,11 @@ public sealed class WorldInteraction
         Task = task;
         Type = type;
         _placedDoor = door;
+        if (door is not null)
+        {
+            door.Conditions = RunDoorConditions;
+        }
+
         _authoredMarker = markerPoint;
         _markerLocal = markerLocal;
         _authoredAnchor = anchor;
@@ -110,6 +125,35 @@ public sealed class WorldInteraction
     public bool IsSearched { get; internal set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
+    public bool IsDestroyed { get; internal set; }
+
+    /// <summary>Gets or sets what <see cref="IsOn"/> was the last tick the task ran, its <c>isLastOn</c>.</summary>
+    internal bool LastOn { get; set; } = true;
+
+    /// <summary>Gets or sets what <see cref="IsDestroyed"/> was the last tick the task ran, its <c>isLastDestroyed</c>.</summary>
+    internal bool LastDestroyed { get; set; }
+
+    /// <summary>Gets a value indicating whether a round breaks this switch, its <c>Destructable</c> flag.</summary>
+    public bool IsDestructable { get; init; }
+
+    /// <summary>Gets where the task stands, its <c>Position</c>, before any lift carries it.</summary>
+    public Vector3d TaskPosition { get; init; }
+
+    /// <summary>Gets the model a switch wears: 0 on, 1 on and pressed, 2 off, 3 off and pressed, 4 destroyed (<c>0x4450F0</c>).</summary>
+    public int ModelSlot { get; private set; }
+
+    /// <summary>Gets a fence's span along its own X, its model's magic vertices 0 and 1, which its sound area covers.</summary>
+    public (float First, float Second)? FenceSpan { get; init; }
+
+    /// <summary>Gets or sets where the task's sounds go.</summary>
+    internal Action<InteractionSoundEvent>? Sounds
+    {
+        get => _sounds;
+        set => _sounds = value;
+    }
+
+    /// <summary>Gets a value indicating whether a GenericTBA runs ExplodeObject's update, and its children with it: its <c>Explodable</c> flag (<c>+568</c>).</summary>
+    public bool IsExplodable { get; init; }
 
     /// <summary>
     /// The clip states 35 and 36 play on entry (<c>Activate Anim</c>, the Int16 at <c>+586</c> read by <c>0x4485D0</c>,
@@ -126,15 +170,46 @@ public sealed class WorldInteraction
     /// <summary>The placed task's orientation from the last plant.</summary>
     public Matrix3f PlacedOrientation { get; private set; } = Matrix3f.Identity;
 
+    /// <summary>Gets a value indicating whether the task is in the world: every conditional container above it is active.</summary>
+    public bool IsInWorld => ConditionalContainerGate.IsTaskActive(Task);
+
     /// <summary>Whether the task still offers itself to the retail activation scan.</summary>
+    /// <remarks>
+    /// Each type's GetActivate: a terminal and a GenericTBA (<c>0x443C80</c>) ask only that it is on, so a hacked terminal is
+    /// offered again; a cabinet (<c>0x444860</c>) asks nothing of being searched; a fence (<c>0x4400C0</c>) offers nothing
+    /// while it is electrified.
+    /// </remarks>
     public bool IsAvailable => Type switch
     {
         InteractionActivateType.Terminal or InteractionActivateType.Generic
-            or InteractionActivateType.PlaceExplosive => IsOn && !IsCompleted,
-        InteractionActivateType.Cabinet => !IsSearched,
+            or InteractionActivateType.PlaceExplosive => IsOn,
+        InteractionActivateType.Fence => !IsElectrified,
         InteractionActivateType.Door => !IsLocked || IsPickable,
+        // Switch::GetActivate (0x445730) offers nothing once the switch is broken.
+        InteractionActivateType.Switch => !IsDestroyed,
         _ => true,
     };
+
+    /// <summary>A round strikes the task: its <c>WeaponHit</c> handler.</summary>
+    /// <returns>Whether the round broke it.</returns>
+    /// <remarks>
+    /// <para>
+    /// A switch's handler (<c>0x445840</c>, I.G.I. 2's <c>Switch_WeaponHitHandler</c> the same) breaks it when it is
+    /// <c>Destructable</c>; nothing ever mends it. Its update then wears its fifth model, and it is never offered again.
+    /// Mission 8's three breakable switches name one model for every state, so they look the same broken.
+    /// </para>
+    /// <para>A cabinet's handler is the engine's empty one: the round stops on it and nothing happens.</para>
+    /// </remarks>
+    public bool WeaponHit()
+    {
+        if (Type != InteractionActivateType.Switch || !IsDestructable || IsDestroyed)
+        {
+            return false;
+        }
+
+        IsDestroyed = true;
+        return true;
+    }
 
     /// <summary>Where a marker for this task belongs, in world units.</summary>
     /// <param name="from">The human's view position, for the tasks whose answer depends on it.</param>
@@ -448,12 +523,35 @@ public sealed class WorldInteraction
         };
     }
 
+    /// <summary>Gets or sets the level's tick, which a press, a use and a completion are stamped with.</summary>
+    internal Func<int> Clock { get; set; } = static () => 0;
+
+    /// <summary>The switch is pressed (<c>0x444BC0</c>): <c>isPressed</c> shifts into <c>isLastPressed</c>, is set, and is stamped.</summary>
     public void Press()
     {
-        Pressed.Value = true;
-        _pressedTicks = 3;
+        Pressed.Shift(true);
+        _pressStamp = Clock();
         _onPress?.Invoke();
     }
+
+    /// <summary>
+    /// A human holding the task uses it this tick: the task's Use, which the human's activate (<c>0x460EE0</c>) calls every tick
+    /// it holds it.
+    /// </summary>
+    /// <remarks>
+    /// A terminal (<c>0x443D80</c>), a GenericTBA and a cabinet set <c>isInUse</c> and stamp it, and their update clears it once
+    /// two ticks have passed the stamp, so it lasts a use and the two ticks after; a wire (<c>0x43F6D0</c>) sets it unstamped,
+    /// and its human clears it as it leaves the wire.
+    /// </remarks>
+    public void Use()
+    {
+        InUse.Value = true;
+        _useStamp = Clock();
+    }
+
+    // The types whose isInUse their own update clears on its stamp, rather than their human as it lets go.
+    private bool UseDecays => Type is InteractionActivateType.Terminal or InteractionActivateType.Generic
+        or InteractionActivateType.PlaceExplosive or InteractionActivateType.Cabinet;
 
     /// <summary>Begins use and reports whether this interaction acquired its resource.</summary>
     /// <returns><see langword="false"/> when another occupant owns a stationary gun.</returns>
@@ -464,14 +562,17 @@ public sealed class WorldInteraction
             return false;
         }
 
-        InUse.Value = true;
+        Use();
         return true;
     }
 
     public void CancelUse()
     {
         StationaryGun?.Dismount(_userOccupant);
-        InUse.Value = false;
+        if (!UseDecays)
+        {
+            InUse.Value = false;
+        }
     }
 
     public void CompleteUse()
@@ -481,8 +582,14 @@ public sealed class WorldInteraction
             return;
         }
         StationaryGun?.Dismount(_userOccupant);
-        InUse.Value = false;
+        if (!UseDecays)
+        {
+            InUse.Value = false;
+        }
+
+        // 0x443EA0: the finish, its this-tick byte and its stamp, which the task's update clears two ticks on.
         CompletedThisTick = true;
+        _completeStamp = Clock();
         switch (Type)
         {
             case InteractionActivateType.Cabinet:
@@ -504,51 +611,134 @@ public sealed class WorldInteraction
         }
     }
 
-    internal void EvaluateConditions()
+    /// <summary>The task's update, where its pulses clear on their stamps and its expressions are read.</summary>
+    /// <param name="now">The level's tick.</param>
+    /// <remarks>
+    /// <para>
+    /// Each type's own update, as retail runs it: a switch (<c>0x4450F0</c>) reads its On expression, then, two ticks past its
+    /// press, shifts <c>isPressed</c> into <c>isLastPressed</c> and clears it, so <c>isLastPressed</c> holds for the one update
+    /// that clears it; a terminal (<c>0x4438E0</c>) and a GenericTBA (<c>0x4480B0</c>) read their On expression, are off while
+    /// exploded, and clear <c>isInUse</c> and the finished-this-tick byte two ticks past their stamps; a cabinet
+    /// (<c>0x444590</c>) clears <c>isInUse</c> likewise; a fence (<c>0x43FC30</c>) is electrified as its expression says, or
+    /// not at all. Every <c>isLast*</c> takes its value in the same update, after the clear.
+    /// </para>
+    /// <para>
+    /// An expression slot that is empty or did not compile leaves its byte as it was, so a script's write to it stands; a door's
+    /// expressions are its own update's (<see cref="PlacedDoor.Conditions"/>).
+    /// </para>
+    /// </remarks>
+    internal void Run(int now)
     {
         _offset = _dynamicOffset?.Invoke() ?? default;
-        IsOn = _onCondition?.Invoke() ?? IsOn;
-        IsElectrified = _electricCondition?.Invoke() ?? false;
-        IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
-        // Door_RunHandler only evaluates the open expression while fully closed and the close
-        // expression while fully open (0x446DF0 / 0x446E38). Evaluating close during the opening
-        // channel cancels button-driven gates on their first movement tick.
-        if (Door?.IsFullyClosed == true && _openCondition?.Invoke() == true)
+        switch (Type)
         {
-            Door?.CommandOpen();
-        }
-        if (Door?.IsFullyOpen == true && _closeCondition?.Invoke() == true)
-        {
-            Door?.CommandClosed();
+            case InteractionActivateType.Switch:
+                if (_onCondition?.Invoke() is bool switchedOn)
+                {
+                    IsOn = switchedOn;
+                }
+
+                if (now > _pressStamp + 2)
+                {
+                    Pressed.EndPulse();
+                }
+
+                // On a change of its on, pressed or destroyed byte it wears one of its five models, and the first, on and
+                // at rest, comes with its click: the "switch" definition where it stands.
+                if (IsOn != LastOn || Pressed.Value != Pressed.Last || IsDestroyed != LastDestroyed)
+                {
+                    ModelSlot = IsDestroyed ? 4 : IsOn ? (Pressed.Value ? 1 : 0) : (Pressed.Value ? 3 : 2);
+                    if (ModelSlot == 0)
+                    {
+                        Sound(InteractionSound.Played, SwitchSound, TaskPosition + _offset);
+                    }
+                }
+
+                LastOn = IsOn;
+                LastDestroyed = IsDestroyed;
+                break;
+            case InteractionActivateType.Terminal:
+            case InteractionActivateType.Generic:
+            case InteractionActivateType.PlaceExplosive:
+                if (_onCondition?.Invoke() is bool on)
+                {
+                    IsOn = on;
+                }
+
+                ClearUse(now);
+                if (now > _completeStamp + 2)
+                {
+                    CompletedThisTick = false;
+                }
+
+                break;
+            case InteractionActivateType.Cabinet:
+                ClearUse(now);
+                break;
+            case InteractionActivateType.Fence:
+                IsElectrified = _electricCondition?.Invoke() ?? false;
+                RunFenceHum();
+                InUse.CommitTick();
+                break;
+            default:
+                InUse.CommitTick();
+                break;
         }
     }
 
-    internal void CommitTick()
+    // 0x43FC30: a powered fence makes its own AmbientArea, buzzing elfence_loop in a box two metres up its middle, the
+    // length of the span between its magic vertices 0 and 1 and a metre and a half past each end; it deletes it with the power.
+    private void RunFenceHum()
     {
-        CompletedThisTick = false;
+        if (_humming && !IsElectrified)
+        {
+            _humming = false;
+            Sound(InteractionSound.AreaStopped, string.Empty, default);
+        }
+        else if (!_humming && IsElectrified && FenceSpan is (float first, float second))
+        {
+            _humming = true;
+            double middle = ((double)second + first) * 0.5;
+            Vector3f offset = Orientation.Transposed().Transform(new Vector3f((float)middle, 0f, 8192f));
+            _sounds?.Invoke(new InteractionSoundEvent(
+                Task,
+                InteractionSound.AreaStarted,
+                FenceSound,
+                TaskPosition + new Vector3d(offset.X, offset.Y, offset.Z),
+                Orientation,
+                new Vector3d((((double)second - first) * 0.00012207031) + 1.5, 1.75, 2.0)));
+        }
+    }
+
+    private void Sound(InteractionSound what, string sound, Vector3d at) =>
+        _sounds?.Invoke(new InteractionSoundEvent(Task, what, sound, at, Matrix3f.Identity, default));
+
+    private void ClearUse(int now)
+    {
+        if (now > _useStamp + 2)
+        {
+            InUse.Value = false;
+        }
+
         InUse.CommitTick();
-        if (_pressedTicks > 0)
-        {
-            if (--_pressedTicks == 0)
-            {
-                // IGI1 Switch::Run leaves isLastPressed false throughout the hold, then publishes
-                // exactly one falling-edge tick when the three-tick press expires. Mission 1 uses
-                // that pulse to toggle its alarm latch; shadowing every held tick toggles it off again.
-                Pressed.EndPulse();
-            }
-        }
-        else
-        {
-            Pressed.CommitTick();
-        }
+    }
+
+    // The door's own update runs these (0x446D10), where the level walk reaches it: Open and Close, then Locked, which a
+    // picked lock overrides; with no Locked expression the lock stands as it was.
+    private void RunDoorConditions()
+    {
+        _placedDoor!.State.RunConditions(_openCondition, _closeCondition);
+        byte locked = IsLocked ? (byte)1 : (byte)0;
+        DoorExpressions.Lock(ref locked, IsPicked, _lockedCondition);
+        IsLocked = locked != 0;
     }
 
     internal void SetConditions(
-        Func<bool>? on,
-        Func<bool>? locked,
+        Func<bool?>? on,
+        Func<double>? locked,
         Func<bool>? open = null,
         Func<bool>? close = null,
-        Func<bool>? electric = null)
+        Func<bool?>? electric = null)
     {
         _onCondition = on;
         _lockedCondition = locked;
@@ -557,7 +747,7 @@ public sealed class WorldInteraction
         _electricCondition = electric;
         IsOn = on?.Invoke() ?? true;
         IsElectrified = electric?.Invoke() ?? false;
-        IsLocked = locked?.Invoke() ?? false;
+        IsLocked = locked is not null && unchecked((byte)(long)locked()) != 0;
     }
 
     internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
@@ -625,13 +815,16 @@ public sealed class WorldInteraction
 /// <summary>
 /// All direct retail world interactions, with the original two-metre, most-head-on resolver.
 /// </summary>
-public sealed class WorldInteractionRegistry
+public sealed class WorldInteractionRegistry : IPlacementVariant
 {
     /// <summary><c>Human_UpdateActivate</c>'s regular query radius: two metres.</summary>
     public const double ActivateRadius = 8192.0;
 
     private readonly List<WorldInteraction> _items = [];
     private readonly List<GeneratorPowerState> _generators = [];
+    private int _updates;
+    private Dictionary<GameTask, WorldInteraction>? _byTask;
+    private bool _inWalk;
     private readonly List<RadioRuntime> _radios = [];
 
     // The renderer asks after every placement each frame; only Mission 6 has anything to answer.
@@ -669,7 +862,10 @@ public sealed class WorldInteractionRegistry
     {
         foreach (GeneratorPowerState generator in _generators)
         {
-            generator.Settle();
+            if (generator.IsInWorld())
+            {
+                generator.Settle();
+            }
         }
     }
 
@@ -687,17 +883,102 @@ public sealed class WorldInteractionRegistry
         }
     }
 
-    /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz.</summary>
-    public void Tick()
+    /// <summary>
+    /// Puts every task into the level's update walk, each where the tree places it and in its own update's order: a switch,
+    /// terminal, cabinet and generator run their children first (an ExplodeObject's update is its children, then its blast);
+    /// a GenericTBA runs them only when it is Explodable, as only then does it run ExplodeObject's update (<c>0x4480B0</c>); a
+    /// fence (<c>0x43FC30</c>) and a stationary gun (<c>0x474190</c>) run them last; a wire (<c>0x43F340</c>) not at all. A
+    /// door is its own registry's.
+    /// </summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>Once attached, <see cref="Tick"/> does nothing: the walk is the update.</remarks>
+    public void AttachTo(LevelRun walker)
     {
+        ArgumentNullException.ThrowIfNull(walker);
         foreach (GeneratorPowerState generator in _generators)
         {
-            generator.Tick();
+            walker.Bind(generator.Task, task =>
+            {
+                walker.RunChildren(task);
+                generator.Tick();
+            });
         }
 
         foreach (WorldInteraction item in _items)
         {
-            item.EvaluateConditions();
+            switch (item.Type)
+            {
+                case InteractionActivateType.Door:
+                    break;
+                case InteractionActivateType.Fence:
+                    walker.Bind(item.Task, task =>
+                    {
+                        item.Run(Now);
+                        walker.RunChildren(task);
+                    });
+                    break;
+                case InteractionActivateType.StationaryGun:
+                    walker.Bind(item.Task, task =>
+                    {
+                        item.Run(Now);
+                        if (item.StationaryGun is { IsOccupied: false } emptyGun)
+                        {
+                            emptyGun.TickEmpty();
+                        }
+
+                        walker.RunChildren(task);
+                    });
+                    break;
+                case InteractionActivateType.Wire:
+                    walker.Bind(item.Task, () => item.Run(Now));
+                    break;
+                case InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive when !item.IsExplodable:
+                    walker.Bind(item.Task, () => item.Run(Now));
+                    break;
+                default:
+                    walker.Bind(item.Task, task =>
+                    {
+                        walker.RunChildren(task);
+                        item.Run(Now);
+                    });
+                    break;
+            }
+        }
+
+        // The level counts its tick once its tree has run; a registry without the level's clock counts with it.
+        walker.AddTickEnd(() => _updates++);
+        _inWalk = true;
+    }
+
+    /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz, for a level whose walk does not run them.</summary>
+    public void Tick()
+    {
+        if (_inWalk)
+        {
+            return;
+        }
+
+        _updates++;
+        int now = Now;
+
+        // A task in a container that is not running is not in the world: the walk does not reach it, so it does not
+        // update, and nothing can be activated on it.
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            if (generator.IsInWorld())
+            {
+                generator.Tick();
+            }
+        }
+
+        foreach (WorldInteraction item in _items)
+        {
+            if (!item.IsInWorld)
+            {
+                continue;
+            }
+
+            item.Run(now);
 
             // An empty gun's aim sinks on its own tick (0x474190). An occupied one is ticked by
             // whoever is on it, with their look.
@@ -706,15 +987,20 @@ public sealed class WorldInteractionRegistry
                 emptyGun.TickEmpty();
             }
         }
-
-        // Expression pulses remain visible throughout the whole task update. Clearing each pulse as
-        // its owner ran made a listener depend on whether it appeared before or after that owner in
-        // the authored task tree; Terminal_552 precedes its door in mission 3.
-        foreach (WorldInteraction item in _items)
-        {
-            item.CommitTick();
-        }
     }
+
+    /// <summary>
+    /// Gets or sets the level's tick, LevelFlow's <c>nTick</c> (<c>+104</c> of the task <c>flt_BC2360</c> points at), which
+    /// the tasks stamp their pulses with; <see langword="null"/>, or a clock that answers <see langword="null"/>, counts this
+    /// registry's own updates instead.
+    /// </summary>
+    public Func<int?>? Clock { get; set; }
+
+    /// <summary>Gets or sets where the tasks' sounds go: the switches' clicks, the generators' hum, the electric fences' buzz.</summary>
+    public Action<InteractionSoundEvent>? Sounds { get; set; }
+
+    // The tick a press or a use made between two updates is stamped with: the level's, or the updates counted so far.
+    private int Now => Clock?.Invoke() ?? _updates;
 
     /// <summary>Applies the task activation produced by an AI body's activate input channel.</summary>
     /// <param name="taskId">The level task id named by <c>AIAction_Activate</c>.</param>
@@ -740,8 +1026,9 @@ public sealed class WorldInteractionRegistry
                 // BeginUse/CompleteUse pair uses a private player sentinel and would dismount it.
                 break;
             default:
-                item.BeginUse();
-                item.CompleteUse();
+                // 0x454DA0 / 0x459D50 press a switch and toggle a door, and otherwise only use what they hold: an AI's
+                // activate never hacks a terminal, searches a cabinet or finishes a GenericTBA.
+                item.Use();
                 break;
         }
 
@@ -756,9 +1043,37 @@ public sealed class WorldInteractionRegistry
     public bool TryGet(GameTask task, out WorldInteraction? interaction)
     {
         ArgumentNullException.ThrowIfNull(task);
-        interaction = _items.FirstOrDefault(item => ReferenceEquals(item.Task, task));
-        return interaction is not null;
+        if (_byTask is null)
+        {
+            // The first item a task owns, as a search of the list in its order would find.
+            _byTask = new Dictionary<GameTask, WorldInteraction>(ReferenceEqualityComparer.Instance);
+            foreach (WorldInteraction item in _items)
+            {
+                _byTask.TryAdd(item.Task, item);
+            }
+        }
+
+        return _byTask.TryGetValue(task, out interaction);
     }
+
+    /// <inheritdoc/>
+    /// <remarks>A switch wears the model its update last picked (<see cref="WorldInteraction.ModelSlot"/>).</remarks>
+    public int VariantOf(WorldPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return placement.Variants is not null
+            && placement.Owner is { } owner
+            && TryGet(owner, out WorldInteraction? item)
+            && item!.Type == InteractionActivateType.Switch
+                ? item.ModelSlot
+                : -1;
+    }
+
+    /// <summary>Hands a round's <c>WeaponHit</c> to the interaction a task is, if it is one.</summary>
+    /// <param name="task">The task the round struck.</param>
+    /// <returns>Whether the round broke it.</returns>
+    public bool WeaponHit(GameTask? task) =>
+        task is not null && TryGet(task, out WorldInteraction? item) && item!.WeaponHit();
 
     /// <summary>Where a plant moved the task a PlaceExplosiveTBA places, if one has.</summary>
     /// <param name="task">The placed task (a charge model's EditRigidObj).</param>
@@ -787,11 +1102,11 @@ public sealed class WorldInteractionRegistry
 
     /// <summary>Finds a powered electric fence touched by a player movement segment.</summary>
     public WorldInteraction? FindElectrifiedFenceContact(Vector3d from, Vector3d to) =>
-        _items.FirstOrDefault(item => item.SegmentTouchesFence(from, to));
+        _items.FirstOrDefault(item => item.IsInWorld && item.SegmentTouchesFence(from, to));
 
     /// <summary>Finds the powered fence whose collision volume contains a nearby player centre.</summary>
     public WorldInteraction? FindElectrifiedFenceNear(Vector3d point) =>
-        _items.FirstOrDefault(item => item.PointTouchesFence(point));
+        _items.FirstOrDefault(item => item.IsInWorld && item.PointTouchesFence(point));
 
     /// <summary>Finds the eligible task nearest the centre of the player's aim.</summary>
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch = 0f)
@@ -809,7 +1124,7 @@ public sealed class WorldInteractionRegistry
 
         foreach (WorldInteraction item in _items)
         {
-            if (!item.IsAvailable || !item.CanOfferFrom(eye))
+            if (!item.IsInWorld || !item.IsAvailable || !item.CanOfferFrom(eye))
             {
                 continue;
             }
@@ -865,11 +1180,10 @@ public sealed class WorldInteractionRegistry
         LevelExpressionRuntime expressions,
         ElevatorRegistry? elevators)
     {
-        if (ConditionalContainerGate.IsDormant(task))
-        {
-            return;
-        }
-
+        // Every task is collected, in a container that is running or not: retail binds a task's variables as it is
+        // created, and a container's ACTIVATE only puts its children in the world (0x487A70). Mission 14 streams its
+        // building sections in through AreaActivate containers; skipping their subtrees at load left every door,
+        // switch and terminal in them without its exports or its prompt once the player walked in.
         if (task is DeclaredTask declared && TypeOf(task.Type.Name) is { } type)
         {
             Vector3d taskPosition = PositionOf(declared, type);
@@ -924,6 +1238,15 @@ public sealed class WorldInteractionRegistry
                 stationaryGun.MountVertex = mount;
             }
 
+            // State 36's seat (0x444B30) is measured from vertex 0, the origin for a stand with none.
+            if (stationaryGun is not null
+                && models.TryGetValue(modelName, out MefModel? seatModel)
+                && seatModel.MagicVertexCount >= 1
+                && seatModel.TryGetMagicVertex(0, out Vector3f seat))
+            {
+                stationaryGun.SeatVertex = seat;
+            }
+
             (Vector3d localBoundsMinimum, Vector3d localBoundsMaximum, bool hasLocalBounds) =
                 type == InteractionActivateType.Fence
                     && models.TryGetValue(modelName, out MefModel? fenceModel)
@@ -946,7 +1269,19 @@ public sealed class WorldInteractionRegistry
                 // charge, no clip started, and the body kept the pose it walked up in.
                 type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
                     ? ReadInt(declared, "Activate Anim", -1)
-                    : -1);
+                    : -1)
+            {
+                IsDestructable = type == InteractionActivateType.Switch && ReadBool(declared, "Destructable"),
+                IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && ReadBool(declared, "Explodable"),
+                TaskPosition = taskPosition,
+                FenceSpan = type == InteractionActivateType.Fence
+                    && models.TryGetValue(modelName, out MefModel? spanned)
+                    && spanned.TryGetMagicVertex(0, out Vector3f firstPost)
+                    && spanned.TryGetMagicVertex(1, out Vector3f secondPost)
+                        ? (firstPost.X, secondPost.X)
+                        : null,
+            };
+            item.Sounds = sound => registry.Sounds?.Invoke(sound);
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
@@ -968,23 +1303,28 @@ public sealed class WorldInteractionRegistry
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
             string closeExpression = ReadString(declared, "Close door expression", string.Empty);
             string electricExpression = ReadString(declared, "Electric Expression", string.Empty);
+
+            // A terminal's update (0x4438E0) and a GenericTBA's (0x4480B0) force isOn off once the ExplodeObject they derive
+            // from has exploded (+400), before they look at the On expression -- a terminal blown up is a terminal switched
+            // off. A switch (0x4450F0) reads its On expression alone.
+            string explodedSymbol = $"{declared.Name}.isExploded";
+            Func<bool> exploded = () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0;
+            Func<bool?>? on = ByteSlot(expressions, onExpression, declared);
             item.SetConditions(
-                type is InteractionActivateType.Terminal or InteractionActivateType.Generic
-                    or InteractionActivateType.PlaceExplosive
-                    ? () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
+                type is InteractionActivateType.Terminal or InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
+                    ? () => exploded() ? false : on?.Invoke()
+                    : type is InteractionActivateType.Switch
+                    ? on
                     : null,
-                type == InteractionActivateType.Door
-                    ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false, declared)
-                    : null,
+                type == InteractionActivateType.Door ? RealSlot(expressions, lockedExpression, declared) : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(openExpression)
                     ? () => expressions.EvaluateCondition(openExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(closeExpression)
                     ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false, declared)
                     : null,
-                type == InteractionActivateType.Fence && !string.IsNullOrWhiteSpace(electricExpression)
-                    ? () => expressions.EvaluateCondition(electricExpression, emptyValue: false, declared)
-                    : null);
+                type == InteractionActivateType.Fence ? ByteSlot(expressions, electricExpression, declared) : null);
+            item.Clock = () => registry.Now;
             registry._items.Add(item);
             registry._hasPlacedTasks |= item.PlacedTaskId >= 0;
             BindVariables(item, variables);
@@ -1002,11 +1342,6 @@ public sealed class WorldInteractionRegistry
         ScriptVarRegistry variables,
         LevelExpressionRuntime expressions)
     {
-        if (ConditionalContainerGate.IsDormant(task))
-        {
-            return;
-        }
-
         if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "Generator", StringComparison.Ordinal))
         {
@@ -1018,10 +1353,15 @@ public sealed class WorldInteractionRegistry
             // (+400), before it ever looks at the On expression.
             string explodedSymbol = $"{declared.Name}.isExploded";
             GeneratorPowerState state = new(
-                () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared),
+                declared,
+                ReadString(declared, "Run sound", string.Empty),
+                ReadString(declared, "Shutdown sound", string.Empty),
+                sound => registry.Sounds?.Invoke(sound),
+                ByteSlot(expressions, onExpression, declared),
                 () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
                 ReadBool(declared, "Use backup timer"),
-                Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)));
+                ReadReal(declared, "Seconds until power backup", 10f),
+                () => ConditionalContainerGate.IsTaskActive(declared));
             registry._generators.Add(state);
             variables.BindBool(declared, "isOn", () => state.IsOn, value => state.IsOn = value);
             variables.BindInt(
@@ -1029,7 +1369,13 @@ public sealed class WorldInteractionRegistry
                 "nBackupTimer",
                 () => state.BackupTimer,
                 value => state.BackupTimer = value);
-            state.Initialize();
+
+            // The constructor (0x43B490) leaves isOn (+572) off; only the update (0x43B500) evaluates it. A generator in
+            // a section the level has not streamed in yet therefore reads off until it first updates.
+            if (ConditionalContainerGate.IsTaskActive(declared))
+            {
+                state.Initialize();
+            }
         }
 
         foreach (GameTask child in task.Children)
@@ -1064,17 +1410,26 @@ public sealed class WorldInteractionRegistry
     }
 
     private sealed class GeneratorPowerState(
-        Func<bool> onCondition,
+        DeclaredTask task,
+        string runSound,
+        string shutdownSound,
+        Action<InteractionSoundEvent> sounds,
+        Func<bool?>? onCondition,
         Func<bool> isExploded,
         bool useBackupTimer,
-        int backupDelayTicks)
+        float backupSeconds,
+        Func<bool> isInWorld)
     {
+        public GameTask Task { get; } = task;
+
+        public Func<bool> IsInWorld { get; } = isInWorld;
+
         private bool _explodedWhenTicked;
 
         public bool IsOn { get; set; }
         public int BackupTimer { get; set; } = -1;
 
-        public void Initialize() => IsOn = onCondition();
+        public void Initialize() => IsOn = onCondition?.Invoke() ?? IsOn;
 
         public void Tick()
         {
@@ -1097,19 +1452,63 @@ public sealed class WorldInteractionRegistry
             }
         }
 
+        private bool _running;
+
         private void Run(bool exploded)
         {
-            IsOn = !exploded && onCondition();
+            bool wasOn = IsOn;
+            Power(exploded);
+
+            // 0x43B500: while on it holds its run sound, started once; as it goes off it lets go of it and, having been on,
+            // plays its shutdown sound once, where it stands.
+            Vector3d at = task.TryGetValue("Position", out object? placed) && placed is Vector3d position ? position : default;
+            if (IsOn)
+            {
+                if (!_running && runSound.Length > 0)
+                {
+                    _running = true;
+                    sounds(new InteractionSoundEvent(task, InteractionSound.LoopStarted, runSound, at, Matrix3f.Identity, default));
+                }
+            }
+            else
+            {
+                if (_running)
+                {
+                    _running = false;
+                    sounds(new InteractionSoundEvent(task, InteractionSound.LoopStopped, string.Empty, at, Matrix3f.Identity, default));
+                }
+
+                if (wasOn && shutdownSound.Length > 0)
+                {
+                    sounds(new InteractionSoundEvent(task, InteractionSound.Played, shutdownSound, at, Matrix3f.Identity, default));
+                }
+            }
+        }
+
+        private void Power(bool exploded)
+        {
+            // 0x43B500: off once exploded; else its On expression, when it has one that compiled -- a generator with none
+            // keeps what it had, off from the constructor, and comes on only by its backup.
+            if (exploded)
+            {
+                IsOn = false;
+            }
+            else if (onCondition?.Invoke() is bool on)
+            {
+                IsOn = on;
+            }
+
             if (!useBackupTimer)
             {
                 return;
             }
 
             // Generator::Run (0x43B500) starts the backup only after primary power is lost, then
-            // publishes power again when the authored 30 Hz countdown reaches zero.
+            // publishes power again when the authored 30 Hz countdown reaches zero; the countdown is
+            // (__int64)(seconds * 30.0), taken as it starts.
             if (!IsOn && BackupTimer == -1)
             {
-                BackupTimer = backupDelayTicks;
+                BackupTimer = (int)(backupSeconds * 30.0);
             }
 
             if (BackupTimer <= 0)
@@ -1129,6 +1528,12 @@ public sealed class WorldInteractionRegistry
         "Door" => InteractionActivateType.Door,
         "Cabinet" => InteractionActivateType.Cabinet,
         "Terminal" => InteractionActivateType.Terminal,
+
+        // SCameraControl (0x440C20) is registered under Terminal (word_53C680): it inherits the terminal's
+        // update, its hack and its isInUse/isOn/isHacked exports, and adds only its isDetection. The cameras
+        // of missions 5 to 9 are powered by SCameraControl_N.isOn, so without the terminal there is no isOn
+        // and every one of them stayed dark.
+        "SCameraControl" => InteractionActivateType.Terminal,
         "StationaryGun" => InteractionActivateType.StationaryGun,
         "Wire" => InteractionActivateType.Wire,
         "Fence" => InteractionActivateType.Fence,
@@ -1137,13 +1542,30 @@ public sealed class WorldInteractionRegistry
         _ => null,
     };
 
+    // A task's expression slot that writes a byte: nothing when the slot is empty or did not compile (sub_4F16C0), else the
+    // low byte of the value truncated, as the update stores (__int64)sub_4F16E0 -- so 0.5 and 256 are both false.
+    private static Func<bool?>? ByteSlot(LevelExpressionRuntime expressions, string source, GameTask owner) =>
+        string.IsNullOrWhiteSpace(source)
+            ? null
+            : () => expressions.TryEvaluateReal(source, owner, out double value) ? unchecked((byte)(long)value) != 0 : null;
+
+    // A task's expression slot read whole: nothing when the slot is empty or did not compile (sub_4F16C0), else its value.
+    private static Func<double>? RealSlot(LevelExpressionRuntime expressions, string source, GameTask owner) =>
+        string.IsNullOrWhiteSpace(source) || LevelExpressionRuntime.Create(source, owner).IsEmpty
+            ? null
+            : () => expressions.TryEvaluateReal(source, owner, out double value) ? value : 0.0;
+
     private static void BindVariables(WorldInteraction item, ScriptVarRegistry variables)
     {
         switch (item.Type)
         {
             case InteractionActivateType.Switch:
-                variables.BindFlag(item.Task, "isPressed", item.Pressed);
+                // Switch's exports (0x445860): the six bytes, each writable.
                 variables.BindBool(item.Task, "isOn", () => item.IsOn, value => item.IsOn = value);
+                variables.BindBool(item.Task, "isLastOn", () => item.LastOn, value => item.LastOn = value);
+                variables.BindFlag(item.Task, "isPressed", item.Pressed);
+                variables.BindBool(item.Task, "isDestroyed", () => item.IsDestroyed, value => item.IsDestroyed = value);
+                variables.BindBool(item.Task, "isLastDestroyed", () => item.LastDestroyed, value => item.LastDestroyed = value);
                 break;
             case InteractionActivateType.Cabinet:
                 variables.BindFlag(item.Task, "isInUse", item.InUse);
@@ -1164,11 +1586,12 @@ public sealed class WorldInteractionRegistry
                 variables.BindBool(item.Task, "isFinishedThisTick", () => item.CompletedThisTick, _ => { });
                 break;
             case InteractionActivateType.Door when item.Door is { } door:
-                variables.BindBool(item.Task, "isLocked", () => item.IsLocked, _ => { });
-                variables.BindBool(item.Task, "isOpen", () => door.IsFullyOpen, _ => { });
-                variables.BindBool(item.Task, "isClosed", () => door.IsFullyClosed, _ => { });
-                variables.BindBool(item.Task, "isLastOpen", () => door.WasFullyOpen, _ => { });
-                variables.BindBool(item.Task, "isLastClosed", () => door.WasFullyClosed, _ => { });
+                // A door that has never updated reports nothing yet (see DoorState.HasTicked).
+                variables.BindBool(item.Task, "isLocked", () => door.HasTicked && item.IsLocked, _ => { });
+                variables.BindBool(item.Task, "isOpen", () => door.HasTicked && door.IsFullyOpen, _ => { });
+                variables.BindBool(item.Task, "isClosed", () => door.HasTicked && door.IsFullyClosed, _ => { });
+                variables.BindBool(item.Task, "isLastOpen", () => door.HasTicked && door.WasFullyOpen, _ => { });
+                variables.BindBool(item.Task, "isLastClosed", () => door.HasTicked && door.WasFullyClosed, _ => { });
                 variables.BindBool(item.Task, "isPicked", () => item.IsPicked, _ => { });
                 variables.BindInt(item.Task, "nDoorOpenTicks", () => door.TicksOpen, _ => { });
                 break;

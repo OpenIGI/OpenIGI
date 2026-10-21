@@ -77,7 +77,7 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
             list.Add(part.Placement);
         }
 
-        Dictionary<WorldPlacement, Spin> spins = new(ReferenceComparer.Instance);
+        Dictionary<WorldPlacement, Spin> spins = new(ReferenceEqualityComparer.Instance);
         Collect(levelRoot, parts, spins);
         return spins.Count > 0 ? new Igi2RotateAttachments(spins) : null;
     }
@@ -126,9 +126,8 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared
-                && string.Equals(declared.Type.Name, TaskType, StringComparison.Ordinal)
-                && TryBind(declared, parts, out WorldPlacement? placement, out Spin spin)
+            if (string.Equals(child.Type.Name, TaskType, StringComparison.Ordinal)
+                && TryBind(child, parts, out WorldPlacement? placement, out Spin spin)
                 && placement is not null)
             {
                 into[placement] = spin;
@@ -139,7 +138,7 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
     }
 
     private static bool TryBind(
-        DeclaredTask task,
+        GameTask task,
         Dictionary<(int Owner, string Model), List<WorldPlacement>> parts,
         out WorldPlacement? placement,
         out Spin spin)
@@ -147,14 +146,14 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
         placement = null;
         spin = default;
 
-        if (!task.TryGetValue("Attachment model", out object? rawModel)
+        if (!task.TryGetScriptValue("Attachment model", out object? rawModel)
             || rawModel is not string model
             || string.IsNullOrWhiteSpace(model))
         {
             return false;
         }
 
-        int instance = task.TryGetValue("Attachment model instance", out object? rawInstance)
+        int instance = task.TryGetScriptValue("Attachment model instance", out object? rawInstance)
             && rawInstance is int index
                 ? index
                 : 0;
@@ -164,8 +163,7 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
         // same task and needs no list of which types derive from what.
         for (GameTask? owner = task.Parent; owner is not null; owner = owner.Parent)
         {
-            if (owner is not DeclaredTask declared
-                || !parts.TryGetValue((declared.Id, model), out List<WorldPlacement>? candidates))
+            if (!parts.TryGetValue((owner.Id, model), out List<WorldPlacement>? candidates))
             {
                 continue;
             }
@@ -186,25 +184,9 @@ public sealed class Igi2RotateAttachments : IPlacementSpin
         return false;
     }
 
-    private static float Speed(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is float value ? value : 0f;
+    private static float Speed(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? raw) && raw is float value ? value : 0f;
 
     /// <summary>How fast one part turns, in radians per tick about each of the three axes.</summary>
     private readonly record struct Spin(float Alpha, float Beta, float Gamma);
-
-    /// <summary>Matches placements by identity rather than by value.</summary>
-    /// <remarks>
-    /// A <see cref="WorldPlacement"/> is a record, so two parts of one model standing in the same pose on
-    /// two different objects compare equal. The walk made each of them separately and this has to keep
-    /// them apart, so the exact instances the scene holds are what is looked up.
-    /// </remarks>
-    private sealed class ReferenceComparer : IEqualityComparer<WorldPlacement>
-    {
-        public static ReferenceComparer Instance { get; } = new();
-
-        public bool Equals(WorldPlacement? left, WorldPlacement? right) => ReferenceEquals(left, right);
-
-        public int GetHashCode(WorldPlacement value) =>
-            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);
-    }
 }

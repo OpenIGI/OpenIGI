@@ -22,7 +22,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uDiffuseSampler",
@@ -32,7 +37,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uLightmap",
@@ -42,7 +52,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uLightmapSampler",
@@ -52,7 +67,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uEnvironment",
@@ -62,7 +82,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uEnvironmentSampler",
@@ -72,60 +97,97 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
     }
   ],
   "pushBlock": {
     "name": "push",
     "size": 128,
     "group": 3,
-    "binding": 0
+    "binding": 0,
+    "hlsl": {
+      "class": "ConstantBuffer",
+      "register": 1,
+      "space": 0
+    }
   },
   "specializationConstants": [
     {
       "name": "cAlphaReference",
-      "id": 0
+      "id": 0,
+      "default": 1056997505,
+      "hlslOffset": 8
     },
     {
       "name": "cReflective",
-      "id": 1
+      "id": 1,
+      "default": 0,
+      "hlslOffset": 12
     },
     {
       "name": "cSunAmbientRed",
-      "id": 6
+      "id": 6,
+      "default": 0,
+      "hlslOffset": 16
     },
     {
       "name": "cSunAmbientGreen",
-      "id": 7
+      "id": 7,
+      "default": 0,
+      "hlslOffset": 20
     },
     {
       "name": "cSunAmbientBlue",
-      "id": 8
+      "id": 8,
+      "default": 0,
+      "hlslOffset": 24
     },
     {
       "name": "cSunRed",
-      "id": 9
+      "id": 9,
+      "default": 0,
+      "hlslOffset": 28
     },
     {
       "name": "cSunGreen",
-      "id": 10
+      "id": 10,
+      "default": 0,
+      "hlslOffset": 32
     },
     {
       "name": "cSunBlue",
-      "id": 11
+      "id": 11,
+      "default": 0,
+      "hlslOffset": 36
     },
     {
       "name": "cLinearScene",
-      "id": 12
+      "id": 12,
+      "default": 0,
+      "hlslOffset": 40
     },
     {
       "name": "cClipYDown",
-      "id": 64
+      "id": 64,
+      "default": 1,
+      "hlslOffset": 0
     },
     {
       "name": "cSamplerDecodes",
-      "id": 66
+      "id": 66,
+      "default": 0,
+      "hlslOffset": 4
     }
   ],
-  "globals": null
+  "globals": null,
+  "hlslConstants": {
+    "class": "ConstantBuffer",
+    "register": 0,
+    "space": 0
+  }
 }

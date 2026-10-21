@@ -16,7 +16,11 @@ namespace OpenIGI.Formats.World;
 /// per-face index. What a <c>TAMC</c> row then says about the <i>game</i> material is still unread; see
 /// the original.
 /// </param>
-public readonly record struct MefCollisionFace(int I0, int I1, int I2, int Material);
+/// <param name="Lightmap">
+/// The face's lightmap index, <c>MultiMesh_Face_t.iLightmap</c>: present only where a face is twelve bytes
+/// (the sequel's layout), and <see cref="MefCollisionMesh.NoLightmap"/> elsewhere.
+/// </param>
+public readonly record struct MefCollisionFace(int I0, int I1, int I2, int Material, int Lightmap = MefCollisionMesh.NoLightmap);
 
 /// <summary>One node of a collision mesh's sphere tree.</summary>
 /// <param name="Centre">The sphere's centre, in the model's own space.</param>
@@ -97,9 +101,13 @@ public sealed class MefCollisionMesh
     /// </remarks>
     public const int NotAPortal = 0xFFFF;
 
+    /// <summary>The lightmap index a face without one carries.</summary>
+    public const int NoLightmap = 0xFFFF;
+
     private readonly MefCollisionFace[] _faces;
     private readonly bool[] _materialIsPortal;
     private readonly int[]? _materialGlobal;
+    private readonly int[]? _materialPortal;
 
     private MefCollisionMesh(
         MefCollisionFace[] faces,
@@ -107,7 +115,8 @@ public sealed class MefCollisionMesh
         int[] vertexBones,
         MefCollisionSphere[] spheres,
         bool[] materialIsPortal,
-        int[]? materialGlobal = null)
+        int[]? materialGlobal = null,
+        int[]? materialPortal = null)
     {
         _faces = faces;
         Vertices = vertices;
@@ -116,6 +125,7 @@ public sealed class MefCollisionMesh
         Materials = materialIsPortal.Length;
         _materialIsPortal = materialIsPortal;
         _materialGlobal = materialGlobal;
+        _materialPortal = materialPortal;
     }
 
     /// <summary>A copy of this mesh level with its vertices and sphere tree moved, its faces and materials unchanged.</summary>
@@ -134,7 +144,7 @@ public sealed class MefCollisionMesh
         }
 
         return new MefCollisionMesh(
-            _faces, [.. vertices], [.. VertexBones], [.. spheres], _materialIsPortal, _materialGlobal);
+            _faces, [.. vertices], [.. VertexBones], [.. spheres], _materialIsPortal, _materialGlobal, _materialPortal);
     }
 
     /// <summary>Resolves a face's per-mesh material to its global game-material row.</summary>
@@ -165,6 +175,19 @@ public sealed class MefCollisionMesh
 
         return table[material] == NotAPortal ? DefaultGlobalMaterial : table[material];
     }
+
+    /// <summary>Gets a material row's game-material field as stored, <c>0xFFFF</c> included.</summary>
+    /// <param name="material">The face's material index — <see cref="MefCollisionFace.Material"/>.</param>
+    /// <returns>The raw row, or the per-mesh index for a hand-built mesh with no table.</returns>
+    /// <remarks><see cref="GlobalMaterial"/> resolves <c>0xFFFF</c> to a default; filters that compare the field itself need it raw.</remarks>
+    public int MaterialRow(int material) =>
+        _materialGlobal is { } table && (uint)material < (uint)table.Length ? table[material] : material;
+
+    /// <summary>Gets the portal a material row closes, <c>iPortal</c>, or <see cref="NotAPortal"/>.</summary>
+    /// <param name="material">The face's material index — <see cref="MefCollisionFace.Material"/>.</param>
+    /// <returns>The raw portal index, which a trace reports with its hit.</returns>
+    public int PortalIndex(int material) =>
+        _materialPortal is { } table && (uint)material < (uint)table.Length ? table[material] : NotAPortal;
 
     /// <summary>The row a face falls back to when it names no global material — <c>Ground</c>.</summary>
     /// <remarks><c>scene+3392</c> in <c>0x4C1840</c>, which is index 1 of the per-level material array.</remarks>
@@ -295,9 +318,11 @@ public sealed class MefCollisionMesh
         // 14 = Glass, 18 = Fence, …); 0xFFFF names none. This is the face->material link 
         // recorded as "still missing"; it is what lets the sight test tell glass from a solid wall.
         int[] materialGlobal = new int[materialCount];
+        int[] materialPortal = new int[materialCount];
         for (int i = 0; i < materialCount; i++)
         {
             int portal = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * rows.MaterialStride) + rows.MaterialPortalOffset, 2));
+            materialPortal[i] = portal;
             materialIsPortal[i] = portal != NotAPortal;
             materialGlobal[i] = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * rows.MaterialStride) + rows.MaterialGlobalOffset, 2));
         }
@@ -324,7 +349,10 @@ public sealed class MefCollisionMesh
                 BinaryPrimitives.ReadUInt16LittleEndian(row),
                 BinaryPrimitives.ReadUInt16LittleEndian(row[2..]),
                 BinaryPrimitives.ReadUInt16LittleEndian(row[4..]),
-                BinaryPrimitives.ReadUInt16LittleEndian(row[6..]));
+                BinaryPrimitives.ReadUInt16LittleEndian(row[6..]),
+
+                // The sequel's twelve-byte face carries a lightmap index after the material.
+                rows.FaceStride >= 10 ? BinaryPrimitives.ReadUInt16LittleEndian(row[8..]) : NoLightmap);
         }
 
         MefCollisionSphere[] spheres = new MefCollisionSphere[sphereCount];
@@ -341,7 +369,7 @@ public sealed class MefCollisionMesh
                 BinaryPrimitives.ReadInt32LittleEndian(row[20..]));
         }
 
-        mesh = new MefCollisionMesh(faces, vertices, vertexBones, spheres, materialIsPortal, materialGlobal);
+        mesh = new MefCollisionMesh(faces, vertices, vertexBones, spheres, materialIsPortal, materialGlobal, materialPortal);
         return true;
     }
 

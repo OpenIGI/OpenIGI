@@ -21,7 +21,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uSourceSampler",
@@ -31,7 +36,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uDepth",
@@ -42,7 +52,12 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None",
-      "sampleType": "Depth"
+      "sampleType": "Depth",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uShafts",
@@ -52,7 +67,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uShaftsSampler",
@@ -62,7 +82,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uTarget",
@@ -72,7 +97,12 @@
       "dimensions": 2,
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "p",
@@ -82,7 +112,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,

@@ -21,7 +21,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uCurrentSampler",
@@ -31,7 +36,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uVelocity",
@@ -41,7 +51,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uVelocitySampler",
@@ -51,7 +66,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uPrevHistoryColour",
@@ -61,7 +81,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uPrevHistoryColourSampler",
@@ -71,7 +96,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uPrevHistoryMetadata",
@@ -81,7 +111,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0
+      }
     },
     {
       "name": "uPrevHistoryMetadataSampler",
@@ -91,7 +126,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 3,
+        "space": 0
+      }
     },
     {
       "name": "uHistoryColour",
@@ -101,7 +141,12 @@
       "dimensions": 2,
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uHistoryMetadata",
@@ -111,7 +156,12 @@
       "dimensions": 2,
       "storageFormat": "R8Unorm",
       "wgslStorageFormat": "Rgba32Float",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uHistoryRejection",
@@ -121,7 +171,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 4,
+        "space": 0
+      }
     },
     {
       "name": "uHistoryRejectionSampler",
@@ -131,7 +186,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 4,
+        "space": 0
+      }
     },
     {
       "name": "uSpatialAa",
@@ -141,7 +201,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 5,
+        "space": 0
+      }
     },
     {
       "name": "uSpatialAaSampler",
@@ -151,7 +216,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 5,
+        "space": 0
+      }
     },
     {
       "name": "uShadingRejection",
@@ -161,7 +231,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 6,
+        "space": 0
+      }
     },
     {
       "name": "uShadingRejectionSampler",
@@ -171,7 +246,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 6,
+        "space": 0
+      }
     },
     {
       "name": "uRejectionBlend",
@@ -181,7 +261,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 7,
+        "space": 0
+      }
     },
     {
       "name": "uRejectionBlendSampler",
@@ -191,7 +276,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 7,
+        "space": 0
+      }
     },
     {
       "name": "uDepth",
@@ -202,7 +292,12 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None",
-      "sampleType": "Depth"
+      "sampleType": "Depth",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 8,
+        "space": 0
+      }
     },
     {
       "name": "uDepthSampler",
@@ -212,7 +307,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 8,
+        "space": 0
+      }
     },
     {
       "name": "p",
@@ -222,7 +322,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,

@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using Xunit;
@@ -106,8 +107,8 @@ public sealed class CarDynamicsTests
     public void WheelsWithoutABodyAreSkipped()
     {
         CarPhysicsDefinition truck = Truck();
-        Assert.False(truck.Wheels[2].HasBody);
-        Assert.False(truck.Wheels[4].HasBody);
+        Assert.False(truck.Wheels[2].HasContactPoint);
+        Assert.False(truck.Wheels[4].HasContactPoint);
         Assert.Equal(2, truck.DrivenWheelCount);
     }
 
@@ -158,7 +159,7 @@ public sealed class CarDynamicsTests
         CarMotionState motion = new();
 
         const double Ground = 42_000d;
-        double travel = truck.Wheels[0].SuspensionLengthUnits;
+        double travel = truck.Wheels[0].MaxSpringDistance;
         double axle = wheels[0].OffsetUnits.Z;
 
         // Start a metre above where it will settle and let it fall.
@@ -215,22 +216,22 @@ public sealed class CarDynamicsTests
             new Vector3f(2.2f, 7.8f, 3f),
             4,
             [
-                new CarBodyDefinition(0, 0, 5, 0f, 0.95f, 0.05f),
-                new CarBodyDefinition(1, 0, 5, 0f, 0.95f, 0.05f),
-                new CarBodyDefinition(2, 0, 5, 0f, 0.95f, 0.05f),
-                new CarBodyDefinition(3, 0, 5, 0f, 0.95f, 0.05f),
+                new PhysicsContactPointType(0, 0, 5, 0f, 0.95f, 0.05f),
+                new PhysicsContactPointType(1, 0, 5, 0f, 0.95f, 0.05f),
+                new PhysicsContactPointType(2, 0, 5, 0f, 0.95f, 0.05f),
+                new PhysicsContactPointType(3, 0, 5, 0f, 0.95f, 0.05f),
             ],
             0.95f,
             5_000f,
             0.95f,
             0,
             [
-                new CarWheelDefinition(true, true, 45f, 1, suspension, 0.5f),
-                new CarWheelDefinition(false, false, 0f, 0, suspension, 0.5f),
-                new CarWheelDefinition(false, false, 0f, -10, suspension, 0.5f),
-                new CarWheelDefinition(true, true, 45f, 2, suspension, 0.5f),
-                new CarWheelDefinition(false, false, 0f, -13, suspension, 0.5f),
-                new CarWheelDefinition(false, false, 0f, 3, suspension, 0.5f),
+                new CarWheelTypeDefinition(true, true, 45f, 1, suspension, 0.5f),
+                new CarWheelTypeDefinition(false, false, 0f, 0, suspension, 0.5f),
+                new CarWheelTypeDefinition(false, false, 0f, -10, suspension, 0.5f),
+                new CarWheelTypeDefinition(true, true, 45f, 2, suspension, 0.5f),
+                new CarWheelTypeDefinition(false, false, 0f, -13, suspension, 0.5f),
+                new CarWheelTypeDefinition(false, false, 0f, 3, suspension, 0.5f),
             ],
             string.Empty,
             []);

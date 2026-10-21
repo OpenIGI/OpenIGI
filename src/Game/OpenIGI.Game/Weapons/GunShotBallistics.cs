@@ -65,14 +65,14 @@ public static class GunShotBallistics
     /// <remarks>Spelled <c>0.60000002</c>.</remarks>
     public const float EqualPenetrationChance = 0.60000002f;
 
-    /// <summary>How many rounds go by between visible tracers.</summary>
+    /// <summary>What a gun's tracer counter is set to: the passes that go undrawn before the next one draws.</summary>
     /// <remarks>
-    /// Ten. A round that deflects or penetrates draws one regardless of the counter, so the visible
-    /// rate is a little above one in ten in a firefight.
+    /// Ten (<c>0x47B560</c>, <c>0x47C1F6</c>), counted per gun and per pass of the march, so a plain burst draws
+    /// one pass in eleven. A deflected round, or a pass a surface's bite let through, draws regardless.
     /// </remarks>
     public const int TracerInterval = 10;
 
-    /// <summary>How many ticks a drawn tracer lives.</summary>
+    /// <summary>How many ticks a tracer is filed with; drawing it once spends it, so this is only reached undrawn.</summary>
     public const int TracerLifetimeTicks = 30;
 
     /// <summary>Turns a weapon's effective range into the distance a round may travel.</summary>

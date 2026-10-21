@@ -45,6 +45,7 @@ public static class Igi2DrawableScene
     /// <param name="lightmaps">The level's baked object lightmaps, or null when it ships none.</param>
     /// <param name="packs">The loaded packs, in the order the game opens them, for resolving meshes.</param>
     /// <param name="logger">Where load diagnostics go.</param>
+    /// <param name="magic">The magic object types attach points are looked up in, or <see langword="null"/> to take every name as a model.</param>
     /// <returns>The scene, and a count of what could not be placed.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
@@ -58,7 +59,8 @@ public static class Igi2DrawableScene
         Igi2ModelTable table,
         Igi2LightmapIndex? lightmaps,
         IReadOnlyList<LoadedPack> packs,
-        IOpenIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null,
+        Igi2MagicObjTypes? magic = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -69,11 +71,7 @@ public static class Igi2DrawableScene
         // The walk is given the models because one type cannot be placed without them: a train's
         // carriages are spaced by the distance between their model's two couplings, which nothing
         // authors. See Igi2Train.
-        Igi2WorldScene placed = Igi2WorldScene.Build(
-            levelRoot,
-            name => table.TryResolveMesh(name, out string? mesh) && TryFind(packs, mesh, out _, out MefModel? model)
-                ? model
-                : null);
+        Igi2WorldScene placed = Igi2WorldScene.Build(levelRoot, Models(table, packs));
 
         List<WorldPlacement> drawable = [];
         int unresolved = 0;
@@ -84,6 +82,9 @@ public static class Igi2DrawableScene
         int placementId = 0;
         string placementType = string.Empty;
         int placementGroup = WorldPlacement.DefaultRenderGroup;
+        string placementDestroyed = string.Empty;
+        string placementMountedOn = string.Empty;
+        IReadOnlyList<string>? placementWears = null;
 
         int attached = 0;
         int attachmentsUnresolved = 0;
@@ -98,13 +99,11 @@ public static class Igi2DrawableScene
         // ModelObj_CreateAttachObjects (igi2 0x56D620) walks the model's attachment array and
         // ModelObj_CreateAttachObject (0x56D0B0) makes each one an object in its own right: it composes
         // the attachment's position and matrix onto the parent's, looks the attachment's NAME up as a
-        // magic-object type, and -- when it is not one -- uses that same name AS A MODEL and spawns a
-        // RigidMagicObj. 27 of the 28 attachment names level 1 uses resolve straight to a model, so for
-        // static world geometry the name is simply the model.
+        // magic-object type (Igi2MagicObjTypes), which names the model it wears -- and when it is not one
+        // uses that same name AS A MODEL and spawns a RigidMagicObj.
         bool Emit(
             string modelName,
-            Vector3d unitsPosition,
-            Matrix3f orientation,
+            Igi2Pose pose,
             string mounted,
             Matrix3f mountedOrientation,
             IIgi2PlacementGeometry? geometry,
@@ -118,6 +117,9 @@ public static class Igi2DrawableScene
             {
                 return false;
             }
+
+            Vector3d unitsPosition = pose.Position;
+            Matrix3f orientation = pose.ToMatrix();
 
             // Claimed before the children are walked, and claimed whether or not this model is
             // lightmapped: RigidDynCubeObj_EnumerateLightmapVirModelsHandler (igi2 0x53C6D0) enumerates
@@ -170,10 +172,21 @@ public static class Igi2DrawableScene
             {
                 LightmapEntry = entry,
                 BentGeometry = bent,
+                LevelId = placementId,
 
                 // The queue this object is drawn in. Every I.G.I. 2 level authors it, and it is what
                 // separates a decal or a pane of glass from the geometry it has to come after.
                 RenderGroup = placementGroup,
+
+                // What the object is drawn as once it is destroyed. Only the object's own model is swapped; its parts
+                // hang on as they were.
+                DestroyedReplacement = depth == 0 ? Replacement(placementDestroyed) : null,
+
+                // The models a switch wears by its state; only the object's own model changes.
+                Variants = depth == 0 && placementWears is { } wears && wears.Select(Replacement).ToArray() is var bound
+                    && Array.Exists(bound, static binding => binding is not null)
+                        ? bound
+                        : null,
             });
 
             // A model that attaches something whose model attaches it back would recurse forever. The
@@ -193,7 +206,7 @@ public static class Igi2DrawableScene
             // Emitted after the attachments because that is the order the lightmap enumerator walks:
             // a node's own model, then its attach objects, then its task children -- and the camera body
             // is a child task of the bracket (SCamera_SCameraLensCreateHandler, 0x48EC90).
-            if (mounted.Length > 0)
+            if (mounted.Length > 0 && (depth > 0 || placementMountedOn.Length == 0 || magic is null))
             {
                 Vector3d mountPosition = unitsPosition;
                 if (model.TryGetMagicVertex(0, out Vector3f mount))
@@ -205,7 +218,7 @@ public static class Igi2DrawableScene
                         unitsPosition.Z + mountOffset.Z);
                 }
 
-                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, null, variant, depth + 1, ref index))
+                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, ref index))
                 {
                     attached++;
                 }
@@ -217,24 +230,27 @@ public static class Igi2DrawableScene
 
             foreach (MefAttachment attachment in model.Attachments)
             {
-                // Parent to world is the column-vector product M*v, which is what the renderer applies
-                // for the parent's own orientation, and the rotation composes parent then child. This is
-                // the same composition WorldScene uses for Project I.G.I.'s attachment trees, and it is
-                // what 0x56D0B0 computes: the parent's rows dotted with the attachment's offset, and the
-                // parent's matrix times the attachment's.
-                Vector3f offset = orientation.Transposed().Transform(attachment.Position);
-                Vector3d childPosition = new(
-                    unitsPosition.X + offset.X,
-                    unitsPosition.Y + offset.Y,
-                    unitsPosition.Z + offset.Z);
+                // The magic table decides what the point becomes: its type's model, its own name, or -- for a
+                // shadow volume or a mark -- nothing drawn, which enumerates no lightmap and takes no number.
+                if ((magic is null ? attachment.Name : magic.ModelOf(attachment.Name)) is not { } attachedModel)
+                {
+                    continue;
+                }
 
+                // ModelObj_CreateAttachObject (igi2 0x56D0B0): the parent's rows dotted with the record's
+                // offset, and the parent's matrix times the record's matrix TRANSPOSED -- the loader points
+                // the attachment array straight at the ATTA chunk's bytes, and the composition reads them
+                // column for row. The collision world places the same tree through the same pose, so what
+                // is drawn is what is stood on.
+                // A model mounted on an attach object rather than on the host goes with that object, facing as it faces.
                 int at = drawable.Count;
+                Igi2Pose attachedPose = pose.Attach(attachment);
+                bool carries = depth == 0 && placementMountedOn.Length > 0 && magic?.Find(attachment.Name)?.TaskType == placementMountedOn;
                 if (Emit(
-                    attachment.Name,
-                    childPosition,
-                    orientation * attachment.Orientation,
-                    string.Empty,
-                    default,
+                    attachedModel,
+                    attachedPose,
+                    carries ? mounted : string.Empty,
+                    carries ? attachedPose.ToMatrix() : default,
                     geometry: null,
                     variant,
                     depth + 1,
@@ -251,9 +267,8 @@ public static class Igi2DrawableScene
                 }
                 else
                 {
-                    // A name that is a magic-object TYPE rather than a model: the original reads its
-                    // model out of the magic table, which this port has none of for the sequel. It still
-                    // consumed its index above, so the numbering of everything after it holds.
+                    // A model the packs do not hold. It still consumed its index above, so the numbering of
+                    // everything after it holds.
                     attachmentsUnresolved++;
                 }
             }
@@ -271,12 +286,16 @@ public static class Igi2DrawableScene
                 ? placement.TypeName
                 : $"{placement.TypeName}:{placement.LevelId}";
             placementGroup = placement.RenderGroup;
+            placementDestroyed = placement.DestroyedModel;
+            placementMountedOn = placement.MountedOn;
+            placementWears = placement.Wears;
 
             int index = 0;
             if (!Emit(
                 placement.Model,
-                placement.Position,
-                placement.Frame ?? WorldScene.ToOrientation(placement.Orientation),
+                placement.Frame is { } frame
+                    ? Igi2Pose.FromMatrix(placement.Position, frame)
+                    : Igi2Pose.FromAngles(placement.Position, placement.Orientation),
                 placement.MountedModel,
                 WorldScene.ToOrientation(placement.MountedOrientation),
                 placement.Geometry,
@@ -287,6 +306,14 @@ public static class Igi2DrawableScene
                 unresolved++;
             }
         }
+
+        WorldModelBinding? Replacement(string modelName) =>
+            modelName.Length > 0
+            && table.TryResolveMesh(modelName, out string? mesh)
+            && TryFind(packs, mesh, out LoadedPack? pack, out MefModel? model)
+            && table.TryGetInstance(modelName, out MtpInstance instance)
+                ? new WorldModelBinding(instance, pack, model)
+                : null;
 
         log.Information(
             LogCategory,
@@ -300,6 +327,19 @@ public static class Igi2DrawableScene
             unresolved,
             lit,
             attached);
+    }
+
+    /// <summary>Resolves a placement's model name to its mesh: through the pack table, then the packs nearest first.</summary>
+    /// <param name="table">The level's pack table.</param>
+    /// <param name="packs">The packs, in load order.</param>
+    /// <returns>The lookup; it answers <see langword="null"/> for a name nothing the level ships holds.</returns>
+    public static Func<string, MefModel?> Models(Igi2ModelTable table, IReadOnlyList<LoadedPack> packs)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        ArgumentNullException.ThrowIfNull(packs);
+        return name => table.TryResolveMesh(name, out string? mesh) && TryFind(packs, mesh, out _, out MefModel? model)
+            ? model
+            : null;
     }
 
     private static bool TryFind(

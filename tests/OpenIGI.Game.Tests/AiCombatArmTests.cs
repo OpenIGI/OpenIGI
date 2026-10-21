@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Weapons;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -21,11 +22,11 @@ public sealed class AiCombatArmTests
         // about 1.70 m from the centre, proving this is not the old circular approximation.
         double coordinate = 1.2 * GraphNode.MetreInUnits;
         Vector3d inside = new(0.0, Math.Sqrt(2.0) * coordinate, 0.0);
-        Assert.True(AiSoldier.IsInsideNodeBox(inside, node, devianceMetres: 0.3));
+        Assert.True(Igi1HumanAi.IsInsideNodeBox(inside, node, devianceMetres: 0.3));
 
         double outsideCoordinate = 1.31 * GraphNode.MetreInUnits;
         Vector3d outside = new(0.0, Math.Sqrt(2.0) * outsideCoordinate, 0.0);
-        Assert.False(AiSoldier.IsInsideNodeBox(outside, node, devianceMetres: 0.3));
+        Assert.False(Igi1HumanAi.IsInsideNodeBox(outside, node, devianceMetres: 0.3));
     }
 
     [Theory]
@@ -77,7 +78,7 @@ public sealed class AiCombatArmTests
     public void CivilianCombatActionInstallsNoGenericGuardMachine()
     {
         Vector3d position = new(1000, 2000, 3000);
-        AiSoldier civilian = Soldier(AiType.Civilian, position);
+        Igi1HumanAi civilian = Soldier(AiType.Civilian, position);
         civilian.ApplyActions([new AiProducedAction("AIAction_Combat", [0], 0)]);
 
         Assert.Equal(AiCombatArm.None, civilian.Arm);
@@ -89,7 +90,7 @@ public sealed class AiCombatArmTests
     [InlineData(AiType.Ekk)]
     public void NamedCharactersUseThePatrolDecisionMachine(AiType type)
     {
-        AiSoldier named = Soldier(type, new Vector3d(1000, 2000, 3000));
+        Igi1HumanAi named = Soldier(type, new Vector3d(1000, 2000, 3000));
         Assert.NotNull(named.Patrol);
     }
 
@@ -128,9 +129,9 @@ public sealed class AiCombatArmTests
         Assert.True(patrol > 0);
     }
 
-    private static AiSoldier Soldier(AiType type, Vector3d position)
+    private static Igi1HumanAi Soldier(AiType type, Vector3d position)
     {
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             type,
             new AiCombatParameters(new HumanAiConfigItemTask()),

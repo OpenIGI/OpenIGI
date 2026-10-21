@@ -22,7 +22,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uDiffuseSampler",
@@ -32,7 +37,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uLightmap",
@@ -42,7 +52,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uLightmapSampler",
@@ -52,7 +67,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uDetail",
@@ -62,7 +82,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uDetailSampler",
@@ -72,7 +97,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uSceneDepth",
@@ -82,7 +112,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0
+      }
     },
     {
       "name": "p",
@@ -92,20 +127,37 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 2,
+        "space": 0
+      }
     }
   ],
   "pushBlock": {
     "name": "push",
     "size": 128,
     "group": 3,
-    "binding": 0
+    "binding": 0,
+    "hlsl": {
+      "class": "ConstantBuffer",
+      "register": 1,
+      "space": 0
+    }
   },
   "specializationConstants": [
     {
       "name": "cClipYDown",
-      "id": 64
+      "id": 64,
+      "default": 1,
+      "hlslOffset": 0
     }
   ],
-  "globals": null
+  "globals": null,
+  "hlslConstants": {
+    "class": "ConstantBuffer",
+    "register": 0,
+    "space": 0
+  }
 }

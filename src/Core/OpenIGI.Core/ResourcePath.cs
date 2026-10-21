@@ -27,4 +27,10 @@ public static class ResourcePath
         ArgumentNullException.ThrowIfNull(name);
         return name.Replace(AlternateDirectorySeparator, DirectorySeparator);
     }
+
+    /// <summary>Normalises a directory name: forward slashes, and no separator at the end.</summary>
+    /// <param name="directory">The directory, in either separator.</param>
+    /// <returns>The directory, which the mission catalogues of both titles key their paths by.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="directory"/> is <see langword="null"/>.</exception>
+    public static string NormalizeDirectory(string directory) => Normalize(directory).TrimEnd(DirectorySeparator);
 }

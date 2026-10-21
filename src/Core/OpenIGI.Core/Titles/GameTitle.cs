@@ -32,12 +32,14 @@ public enum GameAvailability
 /// <param name="Support">Whether the port supports the title at all, before checking any disk.</param>
 /// <param name="SignatureFile">A file, relative to the data root, whose presence proves an installation.</param>
 /// <param name="AssetRoots">The data subdirectories the title reads from, relative to the data root.</param>
+/// <param name="GamePathVariable">The environment variable that names the installation, ahead of any search.</param>
 public sealed record GameTitle(
     string Id,
     string DisplayName,
     GameAvailability Support,
     string SignatureFile,
-    IReadOnlyList<string> AssetRoots)
+    IReadOnlyList<string> AssetRoots,
+    string GamePathVariable)
 {
     /// <summary>Gets Project I.G.I. (2000) — the active, supported title.</summary>
     public static GameTitle Igi1 { get; } = new(
@@ -45,7 +47,8 @@ public sealed record GameTitle(
         "Project I.G.I.",
         GameAvailability.Available,
         "config.qvm",
-        ["missions", "common", "language", "menusystem"]);
+        ["missions", "common", "language", "menusystem"],
+        "IGI_GAME_PATH");
 
     /// <summary>Gets I.G.I. 2: Covert Strike (2003).</summary>
     /// <remarks>
@@ -74,7 +77,8 @@ public sealed record GameTitle(
         "I.G.I. 2: Covert Strike",
         GameAvailability.Available,
         "igi2.exe",
-        ["missions", "common", "language", "menusystem"]);
+        ["missions", "common", "language", "menusystem"],
+        "IGI2_GAME_PATH");
 
     /// <summary>Gets every title the shell knows about, active first.</summary>
     public static IReadOnlyList<GameTitle> All { get; } = [Igi1, Igi2];

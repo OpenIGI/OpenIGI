@@ -1,21 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <!-- One game's content: its data layout, its format profile and the content modules that register
-         its task types, script natives and tables. Never references the other title project; only an app
-         composition root may name both, and it does so through IGameTitleRuntime. -->
+    <!-- Project I.G.I.: its data layout, its format profile, the content modules that register its task
+         types, script natives and tables, and its gameplay: its soldiers' minds, its player, its doors,
+         lifts, pickups and menus. Never references the other title project; only an app composition root
+         may name both, and it does so through IGameTitleRuntime. -->
     <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
+  </ItemGroup>
 
-    <!-- Rendering and Presentation are abstractions, not backends: IGraphicsDevice and the presenter
-         interfaces. Layering rule 1 allows them below apps/; what it forbids is naming a backend. This
-         title's renderers live here because a renderer that knows I.G.I. 1's terrain format is game
-         content that happens to draw. -->
-    <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+  <ItemGroup>
+    <!-- Emits the [ScriptParam] binders for this title's task classes. Build-time only: nothing of it ships. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

@@ -1,13 +1,16 @@
 namespace OpenIGI.Host.Infrastructure;
 
 /// <summary>Chooses writable locations for files produced while the game is running.</summary>
-internal static class RuntimePaths
+public static class RuntimePaths
 {
     internal const string RuntimeDirectoryEnvironmentVariable = "IGI_RUNTIME_DIR";
 
     /// <summary>The name of the session's log file.</summary>
     internal const string LogFileName = "runtime.log";
 
+    /// <summary>Finds where this session's log is written.</summary>
+    /// <returns>The log's path: under <c>IGI_RUNTIME_DIR</c> when that is set and writable, otherwise the first writable of
+    /// the roaming and local application data folders and the temporary folder.</returns>
     public static string GetLogPath()
     {
         string? explicitDirectory = Environment.GetEnvironmentVariable(RuntimeDirectoryEnvironmentVariable);

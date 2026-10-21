@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Game.Player;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Host.Audio;
 
@@ -33,7 +34,7 @@ public static class FlashlightClick
     public const string OffSoundName = "remaster.flashlight.off";
 
     /// <summary>The clicks' sample rate.</summary>
-    public const int SampleRate = 44100;
+    public const int SampleRate = ResonantSynthesis.SampleRate;
 
     /// <summary>The switch's resonances, in hertz: the latch spring, the plunger and the tail cap's metal.</summary>
     private static readonly float[] ModeHertz = [1420f, 2330f, 3790f, 5470f, 8150f];
@@ -66,7 +67,7 @@ public static class FlashlightClick
         {
             // The thumb on the boot, the plunger bottoming out, then the latch snapping over: the loud one, at
             // the moment the rig brings the light on.
-            Knock(samples, start: 0f, gain: 0.35f, hertz: 190f, seed: 0x7A11Bu);
+            ResonantSynthesis.Knock(samples, start: 0f, gain: 0.35f, hertz: 190f, seed: 0x7A11Bu);
             Strike(samples, start: 0.004f, gain: 0.45f, brightness: 0.55f, detune: 0.97f, seed: 0x5EED1u);
             Strike(samples, start: FlashlightRig.OnLatchSeconds, gain: 1f, brightness: 1f, detune: 1f, seed: 0xC11C4u);
         }
@@ -74,7 +75,7 @@ public static class FlashlightClick
         {
             // A lighter press, the latch releasing as the rig puts the light out, and the plunger coming back
             // up against the cap.
-            Knock(samples, start: 0f, gain: 0.28f, hertz: 175f, seed: 0x0FF1Cu);
+            ResonantSynthesis.Knock(samples, start: 0f, gain: 0.28f, hertz: 175f, seed: 0x0FF1Cu);
             Strike(samples, start: FlashlightRig.OffLatchSeconds, gain: 0.85f, brightness: 0.8f, detune: 0.93f, seed: 0xB0A7Du);
             Strike(samples, start: 0.034f, gain: 0.3f, brightness: 0.5f, detune: 0.9f, seed: 0x3E1EAu);
         }
@@ -133,7 +134,7 @@ public static class FlashlightClick
         {
             float t = i / (float)SampleRate;
             float envelope = (1f - MathF.Exp(-t / 0.00008f)) * MathF.Exp(-t / 0.0005f);
-            float noise = Noise(ref state);
+            float noise = XorShift32.NextSigned(ref state);
 
             // Differenced, so the burst is a tick and not a thump.
             excitation[i] = (noise - previous) * envelope;
@@ -149,62 +150,9 @@ public static class FlashlightClick
         {
             // The top modes are what makes a snap bright; a dull strike barely reaches them.
             float tilt = MathF.Pow(brightness, m * 0.6f);
-            float hertz = ModeHertz[m] * detune * (1f + (0.02f * Noise(ref state)));
-            Resonate(samples, first, excitation, hertz, ModeQ[m], gain * ModeGain[m] * tilt);
+            float hertz = ModeHertz[m] * detune * (1f + (0.02f * XorShift32.NextSigned(ref state)));
+            ResonantSynthesis.Resonate(samples, first, excitation, hertz, ModeQ[m], gain * ModeGain[m] * tilt);
         }
     }
 
-    // The thumb landing on the boot and the torch's body taking it: a soft, low, heavily damped knock.
-    private static void Knock(float[] samples, float start, float gain, float hertz, uint seed)
-    {
-        int first = (int)(start * SampleRate);
-        int length = samples.Length - first;
-        if (length <= 0)
-        {
-            return;
-        }
-
-        float[] excitation = new float[length];
-        uint state = seed;
-        for (int i = 0; i < length; i++)
-        {
-            float t = i / (float)SampleRate;
-            excitation[i] = Noise(ref state) * (1f - MathF.Exp(-t / 0.0006f)) * MathF.Exp(-t / 0.002f);
-        }
-
-        Resonate(samples, first, excitation, hertz, 1.5f, gain);
-        Resonate(samples, first, excitation, hertz * 2.8f, 2.5f, gain * 0.4f);
-    }
-
-    // A two-pole band-pass at unit peak gain (the audio EQ cookbook's), run over the excitation and added in.
-    private static void Resonate(float[] samples, int first, float[] excitation, float hertz, float q, float gain)
-    {
-        float w = MathF.Tau * hertz / SampleRate;
-        float alpha = MathF.Sin(w) / (2f * q);
-        float a0 = 1f + alpha;
-        float b0 = alpha / a0;
-        float b2 = -alpha / a0;
-        float a1 = -2f * MathF.Cos(w) / a0;
-        float a2 = (1f - alpha) / a0;
-
-        float x1 = 0f, x2 = 0f, y1 = 0f, y2 = 0f;
-        for (int i = 0; i < excitation.Length; i++)
-        {
-            float x = excitation[i];
-            float y = (b0 * x) + (b2 * x2) - (a1 * y1) - (a2 * y2);
-            x2 = x1;
-            x1 = x;
-            y2 = y1;
-            y1 = y;
-            samples[first + i] += gain * y;
-        }
-    }
-
-    private static float Noise(ref uint state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        return ((state & 0xFFFF) / 32767.5f) - 1f;
-    }
 }

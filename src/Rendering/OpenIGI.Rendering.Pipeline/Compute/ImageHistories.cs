@@ -51,11 +51,11 @@ internal sealed class ImageHistories : IDisposable
 
     /// <summary>Gets whether a device's module forms read histories at all.</summary>
     /// <param name="device">The device.</param>
-    /// <returns><see langword="true"/> where modules are compiled to WGSL.</returns>
+    /// <returns><see langword="true"/> where the device's form reads them; see <see cref="ShaderTargetForms.ReadsImageHistories"/>.</returns>
     public static bool AreRead(IRhiDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        return device.ShaderTarget == ShaderTarget.Wgsl;
+        return device.ShaderTarget.ReadsImageHistories();
     }
 
     /// <summary>The image a history texture stands for, if the binding is one.</summary>

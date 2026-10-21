@@ -43,6 +43,9 @@ public sealed class ScreenStack
     /// </remarks>
     public bool PointerSuppressed { get; set; }
 
+    /// <summary>Gets or sets where every screen on the stack plays its feedback sounds.</summary>
+    public IUiSoundSink? Sounds { get; set; }
+
     /// <summary>Gets the number of screens currently on the stack, including one that is exiting.</summary>
     public int Count => _screens.Count;
 
@@ -151,7 +154,7 @@ public sealed class ScreenStack
 
         foreach (Screen screen in _screens)
         {
-            screen.Prepare(context);
+            screen.Prepare(context, Sounds);
         }
 
         // Only the live top screen is handed navigation; the rest advance their animation with a neutral
@@ -181,7 +184,7 @@ public sealed class ScreenStack
         {
             if (screen.Root is null || screen.LayoutRequested)
             {
-                screen.Prepare(context);
+                screen.Prepare(context, Sounds);
             }
         }
 

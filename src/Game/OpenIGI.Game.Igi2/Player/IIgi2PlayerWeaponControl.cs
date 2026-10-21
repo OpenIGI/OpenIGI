@@ -1,0 +1,192 @@
+using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Igi2.Weapons;
+
+namespace OpenIGI.Game.Igi2.Player;
+
+/// <summary>A weapon type's spread per posture, in degrees, and its two modifiers.</summary>
+/// <param name="Standing">Standing still (<c>WeaponType+0x348</c>).</param>
+/// <param name="Running">Running (<c>+0x34C</c>).</param>
+/// <param name="Walking">Walking (<c>+0x350</c>).</param>
+/// <param name="Crouching">Crouching still (<c>+0x354</c>).</param>
+/// <param name="CrouchWalking">Walking crouched (<c>+0x358</c>).</param>
+/// <param name="LyingFlat">Lying flat (<c>+0x35C</c>).</param>
+/// <param name="Crawling">Crawling (<c>+0x360</c>).</param>
+/// <param name="JumpingModifier">Added while in the air (<c>+0x364</c>).</param>
+/// <param name="TurningModifier">Scaled by the turning speed and added in every posture (<c>+0x368</c>).</param>
+/// <remarks>The <c>WeaponType</c> parameters of the same names, registered by <c>WeaponType_Open</c> (<c>igi2 0x436C60</c>).</remarks>
+public readonly record struct Igi2WeaponPrecision(
+    float Standing,
+    float Running,
+    float Walking,
+    float Crouching,
+    float CrouchWalking,
+    float LyingFlat,
+    float Crawling,
+    float JumpingModifier,
+    float TurningModifier);
+
+/// <summary>What the player's input handling asks of the weapon it is holding.</summary>
+/// <remarks>
+/// The signal handler is mostly about locomotion, but a few channels act on the weapon directly — the
+/// zoom keys, and fire for a weapon that zooms when fired. This is the small part of the weapon those
+/// paths touch, so the locomotion code does not depend on the whole weapon system.
+/// </remarks>
+public interface IIgi2PlayerWeaponControl : IIgi2HumanWeapon
+{
+    /// <summary>Gets the held weapon type's <c>Weapon Category</c>, or <see langword="null"/> when nothing is held.</summary>
+    int? ActiveCategory { get; }
+
+    /// <summary>Gets a value indicating whether a weapon is in hand (<c>Weapon+0x2C</c> with its type).</summary>
+    bool IsHolding { get; }
+
+    /// <summary>Gets what the player carries, or <see langword="null"/> when the session has no weapons.</summary>
+    Igi2Inventory? Inventory { get; }
+
+    /// <summary>Asks the weapon in hand for a clip (<c>WeaponType_GetAnimHandler</c>, <c>igi2 0x4360F0</c>).</summary>
+    /// <param name="request">What is asked for.</param>
+    /// <param name="rig">The asking rig: the first-person model's for a first-person request, the body's otherwise.</param>
+    /// <param name="fireType">The asker's fire type, <c>nFireType</c>: whose fire type answers what the weapon does not.</param>
+    /// <returns>The clip and its rate, or <see langword="null"/> when there is none or nothing is held.</returns>
+    Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig, int fireType);
+
+    /// <summary>Gets a value indicating whether the held weapon type's task is a <c>Zoom</c>.</summary>
+    bool ActiveIsZoom { get; }
+
+    /// <summary>Gets a value indicating whether the held weapon is a gun firing missiles, which cannot be fired lying down.</summary>
+    /// <remarks><c>HumanPlayer_Update</c> (<c>igi2 0x4A20C0</c>): the active slot's task is a <c>Gun</c> whose ammo is a <c>Missile</c>.</remarks>
+    bool ActiveIsMissileLauncher { get; }
+
+    /// <summary>Gets how much the weapons carried slow the player, <c>Weapon_GetSummedMovementSlowDown</c> (<c>igi2 0x51F550</c>).</summary>
+    float SummedMovementSlowDown { get; }
+
+    /// <summary>Gets the held weapon type's precision, or <see langword="null"/> when nothing is held.</summary>
+    Igi2WeaponPrecision? ActivePrecision { get; }
+
+    /// <summary>Gets a value indicating whether the held weapon is in its zoomed fire mode (<c>Human_IsZoomFireModeActive</c>).</summary>
+    bool IsZoomFireModeActive { get; }
+
+    /// <summary>
+    /// Gets the scope up on the weapon in hand, as <c>HumanPlayer_HandleBreathViewOffset</c> finds it: the weapon's zoom is up and a
+    /// fire type, the first before the second, is a <c>Zoom</c>; otherwise <see langword="null"/>.
+    /// </summary>
+    Weapons.Igi2ZoomTask? ActiveScope => null;
+
+    /// <summary>Clears the held weapon's delay between shots, <c>nDelay</c> (<c>Weapon+0x48</c>).</summary>
+    void ClearDelay();
+
+    /// <summary>Gets the weapon's firing half, or <see langword="null"/> when the player has no weapon.</summary>
+    Igi2WeaponFiring? Firing { get; }
+
+    /// <summary>Makes a human the weapon's holder: the parent its task asks where it fires from.</summary>
+    /// <param name="owner">The holder.</param>
+    void Bind(IIgi2WeaponOwner owner);
+
+    /// <summary>Puts a carried weapon in hand (<c>Weapon_Activate</c>, <c>igi2 0x51E220</c>).</summary>
+    /// <param name="item">The weapon.</param>
+    /// <returns><see langword="true"/> when it went in hand.</returns>
+    bool Activate(Igi2WeaponItem item);
+
+    /// <summary>Steps the held weapon's zoom (<c>Weapon_Zoom</c>).</summary>
+    /// <param name="zoomIn"><see langword="true"/> to zoom in, <see langword="false"/> to zoom out.</param>
+    void Zoom(bool zoomIn);
+
+    /// <summary>Takes a zoomed weapon out of its zoomed fire mode, as getting up from lying flat does.</summary>
+    /// <remarks><c>HumanPlayer_LeaveZoomAlternateFireMode</c> (<c>igi2 0x4BEC80</c>).</remarks>
+    void LeaveZoomAlternateFireMode();
+}
+
+/// <summary>A player holding nothing: every query answers "no weapon" and every request does nothing.</summary>
+public sealed class Igi2NoWeaponControl : IIgi2PlayerWeaponControl
+{
+    /// <inheritdoc/>
+    public int? ActiveCategory => null;
+
+    /// <inheritdoc/>
+    public bool IsHolding => false;
+
+    /// <inheritdoc/>
+    public Igi2Inventory? Inventory => null;
+
+    /// <inheritdoc/>
+    public Igi2WeaponAnim? GetAnim(Igi2WeaponAnimRequest request, Igi2BoneHierarchy? rig, int fireType) => null;
+
+    /// <inheritdoc/>
+    public bool ActiveIsZoom => false;
+
+    /// <inheritdoc/>
+    public bool ActiveIsMissileLauncher => false;
+
+    /// <inheritdoc/>
+    public float SummedMovementSlowDown => 0f;
+
+    /// <inheritdoc/>
+    public Igi2WeaponPrecision? ActivePrecision => null;
+
+    /// <inheritdoc/>
+    public bool IsZoomFireModeActive => false;
+
+    /// <inheritdoc/>
+    public void Fire(int fireType)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ClearDelay()
+    {
+    }
+
+    /// <inheritdoc/>
+    public Igi2WeaponFiring? Firing => null;
+
+    /// <inheritdoc/>
+    public bool Activate(Igi2WeaponItem item) => false;
+
+    /// <inheritdoc/>
+    public void Bind(IIgi2WeaponOwner owner)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void UpdateStatus()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void RunDelayed()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void Zoom(bool zoomIn)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void LeaveZoomAlternateFireMode()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void StopSoundSlot()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ClearOverlay()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ReleaseTriggers()
+    {
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<Igi2AnimationClip?>? BodyClips(Igi2BoneHierarchy? rig) => null;
+
+    /// <inheritdoc/>
+    public void ClearAllWeapons()
+    {
+    }
+}

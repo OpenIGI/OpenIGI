@@ -44,12 +44,14 @@ public sealed class TerrainSurface
         TerrainData terrain,
         TerrainTileLayer[] layers,
         TerrainDiscardRegion[] discards,
-        TerrainHeightBindings heights)
+        TerrainHeightBindings heights,
+        TerrainLightBindings lights)
     {
         Terrain = terrain;
         Layers = layers;
         Discards = discards;
         Heights = heights;
+        Lights = lights;
     }
 
     /// <summary>Gets the terrain the layers belong to.</summary>
@@ -72,6 +74,9 @@ public sealed class TerrainSurface
     /// </remarks>
     public TerrainHeightBindings Heights { get; }
 
+    /// <summary>Gets the lightmap bindings the level's <c>TerrainLightMap</c> tasks publish: the ground's light.</summary>
+    public TerrainLightBindings Lights { get; }
+
     /// <summary>
     /// Builds the surface by walking a level's task tree for its <c>TextureModifier</c>s and
     /// <c>DiscardTerrain</c>s.
@@ -90,7 +95,7 @@ public sealed class TerrainSurface
         List<TerrainTileLayer> layers = [];
         int skippedModifiers = 0;
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask declared
                 || !string.Equals(declared.Type.Name, TextureModifierType, StringComparison.Ordinal))
@@ -133,6 +138,7 @@ public sealed class TerrainSurface
         TerrainDiscardBinding discardBinding = TerrainDiscardBinding.Bind(terrain, levelRoot);
         TerrainDiscardRegion[] discards = [.. discardBinding.Regions];
         TerrainHeightBindings heights = TerrainHeightBindings.Bind(terrain, levelRoot);
+        TerrainLightBindings lights = TerrainLightBindings.Bind(terrain, levelRoot);
 
         log.Information(
             LogCategory,
@@ -142,9 +148,11 @@ public sealed class TerrainSurface
                 + (discardBinding.Skipped > 0 ? $", {discardBinding.Skipped} discard(s) unresolved" : string.Empty)
                 + $", {heights.Entries.Count} heightmap binding(s)"
                 + (heights.Skipped > 0 ? $", {heights.Skipped} heightmap(s) unresolved" : string.Empty)
+                + $", {lights.Entries.Count} lightmap binding(s)"
+                + (lights.Skipped > 0 ? $", {lights.Skipped} lightmap(s) unresolved" : string.Empty)
                 + $", {terrain.Materials.Count} material(s), {terrain.TileMaps.Count} tile map(s).");
 
-        return new TerrainSurface(terrain, [.. layers], discards, heights);
+        return new TerrainSurface(terrain, [.. layers], discards, heights, lights);
     }
 
     /// <summary>Builds a surface with no layers, so every point takes the base material.</summary>
@@ -154,7 +162,12 @@ public sealed class TerrainSurface
     public static TerrainSurface Bare(TerrainData terrain)
     {
         ArgumentNullException.ThrowIfNull(terrain);
-        return new TerrainSurface(terrain, [], [.. TerrainDiscardBinding.For(terrain).Regions], TerrainHeightBindings.For(terrain));
+        return new TerrainSurface(
+            terrain,
+            [],
+            [.. TerrainDiscardBinding.For(terrain).Regions],
+            TerrainHeightBindings.For(terrain),
+            TerrainLightBindings.For(terrain));
     }
 
     /// <summary>Gets the material covering a world position.</summary>
@@ -214,15 +227,4 @@ public sealed class TerrainSurface
     private static int GetInt32(DeclaredTask task, string parameter) =>
         task.TryGetValue(parameter, out object? value) && value is int number ? number : -1;
 
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 }

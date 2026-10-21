@@ -208,4 +208,9 @@ public enum ShaderModuleId
     /// <summary>The flashlight's shadow spread over the penumbra its occluders imply.</summary>
     FlashlightShadowFilter,
 
+    /// <summary>World: I.G.I. 2's water, Fresnel-weighted reflection over its own light, as its vertex shader builds it.</summary>
+    Water,
+
+    /// <summary>A round's tracer: the original's thin unfogged line, or the remaster's glowing streak.</summary>
+    Tracer,
 }

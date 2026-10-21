@@ -1,11 +1,11 @@
 ﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.World;
 using OpenIGI.Formats.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
@@ -95,6 +95,9 @@ public sealed class WorldScene
 
     /// <summary>The parameter naming the model a switch rests on — the one its level data assigns, e.g. <c>234_01_1</c>.</summary>
     public const string SwitchModelParameter = "On model";
+
+    /// <summary>A switch's five models, in the order its update picks them (<c>0x4450F0</c>, <c>+368 + 16 * slot</c>).</summary>
+    public static readonly string[] SwitchModelParameters = ["On model", "On pressed model", "Off model", "Off pressed model", "Destroyed model"];
 
     /// <summary>The retail task that owns a visible, destructible alarm speaker.</summary>
     public const string SirenType = "Siren";
@@ -408,6 +411,10 @@ public sealed class WorldScene
     /// </param>
     /// <param name="logger">Where to report placements that do not resolve.</param>
     /// <param name="vehiclePhysics">Optional physics definitions used to bind a CAR's authored wreck model.</param>
+    /// <param name="destroyedModelArchiveName">
+    /// The archive's spelling of a destroyed model a mission names otherwise, by mission and authored name, or
+    /// <see langword="null"/> for none: a replacement the archive does not hold under its authored name is then left out.
+    /// </param>
     /// <returns>The scene.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public static WorldScene Build(
@@ -415,7 +422,8 @@ public sealed class WorldScene
         GameTask levelRoot,
         MagicObjectRegistry? magic = null,
         IOpenIgiLogger? logger = null,
-        VehiclePhysicsRegistry? vehiclePhysics = null)
+        VehiclePhysicsRegistry? vehiclePhysics = null,
+        Func<int, string, string?>? destroyedModelArchiveName = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -471,7 +479,7 @@ public sealed class WorldScene
             return default;
         }
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask declared)
             {
@@ -633,12 +641,36 @@ public sealed class WorldScene
                     && declared.TryGetValue(SecurityCameraDestroyedModelParameter, out object? rawDestroyed)
                     && rawDestroyed is string destroyedName
                     && destroyedName.Length > 0
-                    && TryResolveDestroyedBinding(destroyedName, placement, mission, byName, out WorldModelBinding? destroyed))
+                    && TryResolveDestroyedBinding(destroyedName, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? destroyed))
                 {
                     placement = placement with
                     {
                         DestroyedReplacement = destroyed,
                     };
+                }
+
+                // A switch wears one of five models by its state (0x4450F0): on, on and pressed, off, off and pressed, and
+                // destroyed, each its own parameter.
+                if (string.Equals(declared.Type.Name, SwitchType, StringComparison.Ordinal))
+                {
+                    WorldModelBinding?[] variants = new WorldModelBinding?[SwitchModelParameters.Length];
+                    bool any = false;
+                    for (int worn = 0; worn < variants.Length; worn++)
+                    {
+                        if (declared.TryGetValue(SwitchModelParameters[worn], out object? rawVariant)
+                            && rawVariant is string variantName
+                            && variantName.Length > 0
+                            && TryResolveDestroyedBinding(variantName, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? variant))
+                        {
+                            variants[worn] = variant;
+                            any = true;
+                        }
+                    }
+
+                    if (any)
+                    {
+                        placement = placement with { Variants = variants };
+                    }
                 }
 
                 // ExplodeObject carries the same authored replacement convention as the camera head,
@@ -649,7 +681,7 @@ public sealed class WorldScene
                     && declared.TryGetValue("Destroyed model", out object? rawGenericDestroyed)
                     && rawGenericDestroyed is string genericDestroyedName
                     && genericDestroyedName.Length > 0
-                    && TryResolveDestroyedBinding(genericDestroyedName, placement, mission, byName, out WorldModelBinding? genericDestroyed))
+                    && TryResolveDestroyedBinding(genericDestroyedName, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? genericDestroyed))
                 {
                     placement = placement with
                     {
@@ -665,7 +697,7 @@ public sealed class WorldScene
                     && string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
                     && vehiclePhysics?.TryGetCar(placement.Instance.Name, out CarPhysicsDefinition car) == true
                     && car.DestroyedModel.Length > 0
-                    && TryResolveDestroyedBinding(car.DestroyedModel, placement, mission, byName, out WorldModelBinding? vehicleDestroyed))
+                    && TryResolveDestroyedBinding(car.DestroyedModel, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? vehicleDestroyed))
                 {
                     placement = placement with
                     {
@@ -724,6 +756,7 @@ public sealed class WorldScene
         WorldPlacement intact,
         LoadedMission mission,
         Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
+        Func<int, string, string?>? archiveName,
         out WorldModelBinding? binding)
     {
         if (byName.TryGetValue(modelName, out var placed))
@@ -738,7 +771,7 @@ public sealed class WorldScene
         // indices cannot safely be applied to a level instance.
         foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
         {
-            if (TryGetDestroyedArchiveModel(mission.Descriptor.Id, pack, modelName, out MefModel? model) && model is not null)
+            if (TryGetDestroyedArchiveModel(mission.Descriptor.Id, pack, modelName, archiveName, out MefModel? model) && model is not null)
             {
                 MtpInstance instance = intact.Instance with { Name = modelName };
                 binding = new WorldModelBinding(instance, intact.Pack, model);
@@ -755,6 +788,7 @@ public sealed class WorldScene
         int missionId,
         LoadedPack pack,
         string modelName,
+        Func<int, string, string?>? archiveName,
         out MefModel? model)
     {
         if (pack.TryGetArchiveModel(modelName, out model))
@@ -762,13 +796,10 @@ public sealed class WorldScene
             return true;
         }
 
-        // Level 6 OBJECTS.QVM names Terminal_94's destroyed model 252_02_1, while the shipped archive
-        // stores the corresponding geometry only as 252_01_2. Keep the task's authored name while using
-        // that archive spelling for this known data-pair; do not apply a broad name rewrite to other
-        // missing replacement assets.
-        return missionId == 6
-            && string.Equals(modelName, "252_02_1", StringComparison.OrdinalIgnoreCase)
-            && pack.TryGetArchiveModel("252_01_2", out model);
+        // A known data pair only (the title's quirks: Level 6's Terminal_94 names 252_02_1, the archive stores 252_01_2). The
+        // task keeps its authored name; no broad rewrite is applied to other missing replacements.
+        return archiveName?.Invoke(missionId, modelName) is { } spelling
+            && pack.TryGetArchiveModel(spelling, out model);
     }
 
     private sealed record TrainPlacementState(
@@ -803,7 +834,7 @@ public sealed class WorldScene
     {
         int added = 0;
         int chain = 0;
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not DeclaredTask spline
                 || !string.Equals(spline.Type.Name, SplineObjType, StringComparison.Ordinal))
@@ -1125,7 +1156,7 @@ public sealed class WorldScene
         MagicObjectRegistry magic,
         Dictionary<GameTask, List<(string Set, WorldObject Root)>> bound)
     {
-        foreach (GameTask owner in Walk(levelRoot))
+        foreach (GameTask owner in levelRoot.Descendants())
         {
             if (!TryGetLightmapSet(owner, out string set))
             {
@@ -1398,7 +1429,7 @@ public sealed class WorldScene
     private static IEnumerable<GameTask> Subtree(GameTask task)
     {
         yield return task;
-        foreach (GameTask descendant in Walk(task))
+        foreach (GameTask descendant in task.Descendants())
         {
             yield return descendant;
         }
@@ -1622,15 +1653,4 @@ public sealed class WorldScene
         return string.Create(CultureInfo.InvariantCulture, $"({alpha:F6}, {beta:F6}, {gamma:F6})");
     }
 
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 }

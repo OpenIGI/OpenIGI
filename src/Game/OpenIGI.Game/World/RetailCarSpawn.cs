@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 
@@ -41,46 +42,22 @@ public static class RetailCarSpawn
         int I(int i) => i < a.Count ? a[i].ToInt32() : 0;
 
         int n = I(9);
-        int s = 12 + (6 * n);
-        int aero = Math.Max(0, I(s + 10));
-        RetailAeroSurface[] surfaces = new RetailAeroSurface[aero];
-        for (int j = 0; j < aero; j++)
-        {
-            // 0x4EC4D0 scales three of the seven by 4096 (rigid-body.md §8.8), which is not transcribed: no
-            // shipped car has a surface, so they are kept as authored.
-            int f = s + 11 + (7 * j);
-            surfaces[j] = new RetailAeroSurface(F(f), F(f + 1), F(f + 2), F(f + 3), F(f + 4), F(f + 5), F(f + 6));
-        }
-
-        int t = s + 14 + (7 * aero);
-        int count = Math.Clamp(I(t), 0, RetailCarBody.MaxWheels);
-        RetailCarWheelDefinition[] wheels = new RetailCarWheelDefinition[count];
-        for (int i = 0; i < count; i++)
-        {
-            int w = t + 1 + (6 * i);
-            wheels[i] = new RetailCarWheelDefinition(
-                I(w) != 0,
-                I(w + 1) != 0,
-                F(w + 2),
-                I(w + 3),
-                ((X87)F(w + 4) * 4096.0f).F,
-                F(w + 5));
-        }
-
-        int u = t + 1 + (6 * I(t));
-        wheelDrop = ((X87)F(u) * 4096.0f).F;
-        wheelsFromAttachments = I(u + 1) != 0;
+        // 0x42DB00 from the type's own arguments: the vehicle's handling and wings (0x4EC4D0), then the wheels.
+        int next = 12 + (6 * n);
+        CarTypeDefinition car = CarTypeDefinition.Parse<X87>(a, ref next);
+        wheelDrop = car.WheelContactLowering;
+        wheelsFromAttachments = car.IsWheelsAttachObject;
         return new RetailCarDefinition
         {
             Mass = F(2),
             SleepSpeed = F(10 + (6 * n)),
             SleepSpin = F(11 + (6 * n)),
-            SteeringRetention = F(s + 6),
-            EngineForce = F(s + 7),
-            ThrottleRetention = F(s + 8),
-            Aero = surfaces,
-            Wheels = wheels,
-            SkidSteer = I(u + 2) != 0,
+            SteeringRetention = car.Vehicle.DeltaGammaInertia,
+            EngineForce = car.Vehicle.MaxThrust,
+            ThrottleRetention = car.Vehicle.ThrustInertia,
+            Aero = [.. car.Vehicle.Wings],
+            Wheels = [.. car.Wheels],
+            SkidSteer = car.IsCrawler,
         };
     }
 
@@ -105,7 +82,7 @@ public static class RetailCarSpawn
         float c = ((X87)F(5) * 4096.0f).F;
         float b = ((X87)F(4) * 4096.0f).F;
         float aa = ((X87)F(3) * 4096.0f).F;
-        SetBox(car, definition.Mass, aa, b, c);
+        car.SetBox(definition.Mass, aa, b, c);
         for (int k = 0; k < 3; k++)
         {
             car.InverseInertia[k] = ((X87)car.InverseInertia[k] * 1.00999999f).F;
@@ -134,11 +111,11 @@ public static class RetailCarSpawn
         }
 
         // 0x42EC30: each wheel naming a body lowers its point once.
-        foreach (RetailCarWheelDefinition wheel in definition.Wheels)
+        foreach (CarWheelTypeDefinition wheel in definition.Wheels)
         {
-            if (wheel.Body >= 0 && wheel.Body < RetailCarBody.PointCount)
+            if (wheel.ContactPoint >= 0 && wheel.ContactPoint < RetailCarBody.PointCount)
             {
-                float[] position = car.Points[wheel.Body].Position;
+                float[] position = car.Points[wheel.ContactPoint].Position;
                 position[2] = ((X87)position[2] - wheelDrop).F;
             }
         }
@@ -147,7 +124,7 @@ public static class RetailCarSpawn
         int driven = 0;
         for (int i = 0; i < definition.Wheels.Length; i++)
         {
-            if (definition.Wheels[i].Driven)
+            if (definition.Wheels[i].IsEngine)
             {
                 driven++;
             }
@@ -246,20 +223,4 @@ public static class RetailCarSpawn
     /// <summary>The spawn orientation, <c>0x4B38E0(α, β, γ)</c>: <c>RotZ(γ)·RotY(β)·RotX(α)</c> with truncating products.</summary>
     private static void SpawnMatrix(Vector3f angles, float[] m) =>
         RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z).CopyTo(m, 0);
-
-    /// <summary><c>Body_SetBox</c> (<c>0x4ECED0</c>) and <c>Body_SetMassInertia</c> (<c>0x4EC5E0</c>).</summary>
-    private static void SetBox(RetailRigidBody car, float m, float a, float b, float c)
-    {
-        float b2 = ((X87)b * b).F;
-        float c2 = ((X87)c * c).F;
-        X87 a2 = (X87)a * a;
-        float iz = (((X87)b2 + a2) * m * 0.0833333358f).F;
-        float iy = (((X87)c2 + a2) * m * 0.0833333358f).F;
-        float ix = (((X87)c2 + b2) * m * 0.0833333358f).F;
-        car.Mass = m;
-        car.InverseInertia[0] = ((X87)1.0f / ix).F;
-        car.InverseInertia[1] = ((X87)1.0f / iy).F;
-        car.InverseInertia[2] = ((X87)1.0f / iz).F;
-        car.InverseMass = ((X87)1.0f / m).F;
-    }
 }

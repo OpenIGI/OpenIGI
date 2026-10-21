@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 

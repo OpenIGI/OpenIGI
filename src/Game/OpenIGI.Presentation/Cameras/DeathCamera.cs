@@ -1,7 +1,7 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Cameras;
 
@@ -122,7 +122,7 @@ public sealed class DeathCamera
 
         _presentedAlpha = Math.Clamp(tickFraction, 0f, 1f);
         Vector3d pivot = _hasPivotPair
-            ? PresentationBlend.Lerp(_pivotPrevTick, _pivot, _presentedAlpha)
+            ? Vector3d.Lerp(_pivotPrevTick, _pivot, _presentedAlpha)
             : _pivot;
         BuildCamera(pivot);
     }
@@ -169,7 +169,7 @@ public sealed class DeathCamera
 
         if (_walls is { } walls && walls(_pivot, far, out Vector3d hit))
         {
-            double maxDistance = Math.Max(0.0, Distance(_pivot, hit) - pullIn);
+            double maxDistance = Math.Max(0.0, Vector3d.Distance(_pivot, hit) - pullIn);
             _distance = Math.Min(_distance, maxDistance);
         }
         else if (_distance < resting)
@@ -217,11 +217,4 @@ public sealed class DeathCamera
         _camera = new Camera3D(eyeMetres, Camera3D.LookRotation(yaw, pitch));
     }
 
-    private static double Distance(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 }

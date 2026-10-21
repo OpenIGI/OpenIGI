@@ -1,10 +1,12 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Time;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Config;
+using OpenIGI.Game.Menus;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests.Menus;
 
@@ -124,7 +126,7 @@ public sealed class MenuMissionSelectTests
         // Leaving fades out first and only then enters the leave state, which is what the original's
         // state 6 plus a parked state does.
         Assert.Equal(MenuManagerState.FadingOut, harness.Menu.Manager.Navigator.State);
-        Assert.Equal(-1, harness.Menu.Manager.Navigator.LeaveParameter);
+        Assert.Equal(-1, harness.Menu.Manager.Navigator.CurrentScreen);
 
         for (int i = 0; i < 40 && harness.Host.LeftWith is null; i++)
         {

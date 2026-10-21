@@ -1,17 +1,16 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Rendering.Vulkan.Rhi;
-using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Rendering.Rhi.Tests;
 
 /// <summary>
 /// The game's compute seam on real devices: one of the surface cache's own modules, bound the way the
-/// game binds it, dispatched and read back through the seam on both backends.
+/// game binds it, dispatched and read back through the seam on every backend.
 /// </summary>
 /// <remarks>
 /// The screen filter smooths the accumulated gather across neighbours that share a surface. Fed a field
@@ -23,19 +22,18 @@ public sealed class ComputeSeamAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 16;
 
-    [BothBackendsFact]
-    public void Both_backends_run_the_screen_filter_through_the_seam_alike()
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_runs_the_screen_filter_through_the_seam_as_the_reference_does(string backend)
     {
-        Half[]? vulkan = TryOn(out string? vulkanReason, webgpu: false);
-        Half[]? webgpu = TryOn(out string? webgpuReason, webgpu: true);
+        Half[] vulkan = FilterOn(RhiBackends.Reference);
+        Half[] other = FilterOn(backend);
 
-        Assert.True(vulkan is not null && webgpu is not null, vulkanReason ?? webgpuReason);
-
-        output.WriteLine($"vulkan {vulkan![0]} {vulkan[1]} {vulkan[2]}, webgpu {webgpu![0]} {webgpu[1]} {webgpu[2]}");
+        output.WriteLine($"vulkan {vulkan[0]} {vulkan[1]} {vulkan[2]}, {backend} {other[0]} {other[1]} {other[2]}");
 
         for (int i = 0; i < vulkan.Length; i++)
         {
-            Assert.Equal((float)vulkan[i], (float)webgpu[i], 3);
+            Assert.Equal((float)vulkan[i], (float)other[i], 3);
         }
 
         // Every texel of the result is the colour that went in.
@@ -94,28 +92,10 @@ public sealed class ComputeSeamAgreementTests(ITestOutputHelper output)
         return texture;
     }
 
-    private static Half[]? TryOn(out string? reason, bool webgpu)
+    private static Half[] FilterOn(string backend)
     {
-        reason = null;
-
-        try
-        {
-            if (webgpu)
-            {
-                using WebGpuRhiDevice rhi = WebGpuRhiDevice.Create();
-                rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
-                using GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60));
-                return Filter(device);
-            }
-
-            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
-            using GraphicsDevice onVulkan = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60));
-            return Filter(onVulkan);
-        }
-        catch (Exception error) when (error is not Xunit.Sdk.XunitException)
-        {
-            reason = $"{(webgpu ? "WebGPU" : "Vulkan")}: {error.Message}";
-            return null;
-        }
+        using RhiBackendHost host = RhiBackends.Open(backend, Size);
+        using GraphicsDevice device = new(host.Device, new DisplayMode(Size, Size, 32, 60));
+        return Filter(device);
     }
 }

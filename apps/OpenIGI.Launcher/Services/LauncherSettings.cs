@@ -58,6 +58,16 @@ internal sealed class LauncherSettings
     /// </remarks>
     public Dictionary<string, bool> Content { get; set; } = new(StringComparer.Ordinal);
 
+    /// <summary>Gets or sets, per game id, the mod order: in the order the mods apply, each entry on or off.</summary>
+    /// <remarks>See <see cref="ModLoadOrder"/>.</remarks>
+    public Dictionary<string, List<ContentOrderEntry>> ModOrder { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the games started without mods, by id, whatever their orders say.</summary>
+    public List<string> ModsOff { get; set; } = [];
+
+    /// <summary>Gets or sets the mods with code the player agreed to run, by id: asked once each, on the first install.</summary>
+    public List<string> TrustedMods { get; set; } = [];
+
     /// <summary>Reads the settings, or the defaults when there are none yet or the file is unreadable.</summary>
     /// <param name="path">The settings file.</param>
     /// <returns>The settings.</returns>
@@ -71,10 +81,10 @@ internal sealed class LauncherSettings
                 settings.GameFolders = new Dictionary<string, string>(settings.GameFolders, StringComparer.Ordinal);
                 settings.Announced = new Dictionary<string, string>(settings.Announced, StringComparer.Ordinal);
                 settings.Content = new Dictionary<string, bool>(settings.Content ?? [], StringComparer.Ordinal);
-                settings.ContentOrder = new Dictionary<string, List<ContentOrderEntry>>(
-                    (settings.ContentOrder ?? []).Where(static pair => pair.Value is not null)
-                        .ToDictionary(static pair => pair.Key, static pair => pair.Value.Where(static entry => entry?.Id is { Length: > 0 }).ToList()),
-                    StringComparer.Ordinal);
+                settings.ContentOrder = Orders(settings.ContentOrder);
+                settings.ModOrder = Orders(settings.ModOrder);
+                settings.ModsOff = [.. (settings.ModsOff ?? []).Where(static id => id is { Length: > 0 })];
+                settings.TrustedMods = [.. (settings.TrustedMods ?? []).Where(static id => id is { Length: > 0 })];
                 return settings;
             }
         }
@@ -85,6 +95,13 @@ internal sealed class LauncherSettings
 
         return new LauncherSettings();
     }
+
+    // Each game's order as written, without the entries a damaged or hand-edited file left empty.
+    private static Dictionary<string, List<ContentOrderEntry>> Orders(Dictionary<string, List<ContentOrderEntry>>? orders) =>
+        new(
+            (orders ?? []).Where(static pair => pair.Value is not null)
+                .ToDictionary(static pair => pair.Key, static pair => pair.Value.Where(static entry => entry?.Id is { Length: > 0 }).ToList()),
+            StringComparer.Ordinal);
 
     /// <summary>Writes the settings: to a temporary file first, so a crash mid-write cannot lose them.</summary>
     /// <param name="path">The settings file.</param>

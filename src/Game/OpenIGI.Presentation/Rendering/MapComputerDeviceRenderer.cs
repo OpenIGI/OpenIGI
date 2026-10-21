@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
@@ -15,7 +16,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// camera-relative rather than a weapon-bone model: treating it as a gun is what produced the diagonal
 /// black slab in the first implementation.
 /// </remarks>
-internal sealed class MapComputerDeviceRenderer : IDisposable
+public sealed class MapComputerDeviceRenderer : IDisposable
 {
     private const string LogCategory = "Computer";
     private const string ModelName = "mapcomputer";
@@ -24,7 +25,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private TexTextureCache? _textureCache;
 
     private MeshGeometry? _geometry;
     private MeshHandle _mesh = MeshHandle.None;
@@ -34,6 +35,10 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
     private bool _disposed;
     private float _widthMetres = DefaultWidthMetres;
 
+    /// <summary>Initializes a new instance of the <see cref="MapComputerDeviceRenderer"/> class.</summary>
+    /// <param name="device">The device the model is uploaded to and drawn with.</param>
+    /// <param name="resources">The resources the common pack's device model is read from.</param>
+    /// <param name="logger">Told when the model does not load.</param>
     public MapComputerDeviceRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger logger)
     {
         _device = device;
@@ -141,7 +146,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
             TextureHandle diffuse = TextureHandle.None;
             if (subset.HasMaterial && _pack.TryGetTextureName(_instance, subset.MaterialSlot, out string texture))
             {
-                diffuse = GetTexture(texture);
+                diffuse = Textures.Get(texture);
             }
 
             _device.SetMaterialOverride(SurfaceMaterial.Default);
@@ -158,6 +163,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -167,12 +173,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
 
         _disposed = true;
         Release();
-        foreach (TextureHandle texture in _textures.Values)
-        {
-            _device.DestroyTexture(texture);
-        }
-
-        _textures.Clear();
+        _textureCache?.Clear();
     }
 
     private void Release()
@@ -189,34 +190,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
         _hasInstance = false;
     }
 
-    private TextureHandle GetTexture(string name)
-    {
-        if (_textures.TryGetValue(name, out TextureHandle cached))
-        {
-            return cached;
-        }
 
-        TextureHandle handle = TextureHandle.None;
-        if (_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            try
-            {
-                TextureImage image = TexFile.Load(bytes.Span);
-                handle = _device.CreateTexture(
-                    new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
-                    image.Pixels);
-            }
-            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"The device texture '{name}' did not load: {ex.Message}");
-            }
-        }
-        else
-        {
-            _logger.Warning(LogCategory, $"The retail device texture '{name}' is not registered.");
-        }
-
-        _textures[name] = handle;
-        return handle;
-    }
+    // The textures the models name, loaded on first use.
+    private TexTextureCache Textures => _textureCache ??= new(_device, _resources, _logger, LogCategory) { ReportMissing = true };
 }

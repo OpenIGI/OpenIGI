@@ -23,7 +23,12 @@
       "wgslStorageFormat": "None",
       "storageAccess": "None",
       "arrayed": true,
-      "sampleType": "Depth"
+      "sampleType": "Depth",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0
+      }
     },
     {
       "name": "uSkyIrradiance",
@@ -33,7 +38,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 4,
+        "space": 0
+      }
     },
     {
       "name": "uHistory",
@@ -43,7 +53,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 5,
+        "space": 0
+      }
     },
     {
       "name": "uHistorySampler",
@@ -53,7 +68,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uScattering",
@@ -63,7 +83,12 @@
       "dimensions": 3,
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "None",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uShelterMap",
@@ -73,7 +98,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 6,
+        "space": 0
+      }
     },
     {
       "name": "p",
@@ -83,7 +113,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uClipmaps",
@@ -93,7 +128,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uClipmapsSampler",
@@ -103,7 +143,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uScene",
@@ -113,7 +158,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uCutoutMasks",
@@ -124,7 +174,12 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None",
-      "arrayed": true
+      "arrayed": true,
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,

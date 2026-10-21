@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
@@ -10,11 +11,11 @@ internal static class RetailCarMemory
     public static RetailCarDefinition Definition(byte[] type, byte[] record)
     {
         int wheels = I(record, 280);
-        RetailCarWheelDefinition[] wheelDefinitions = new RetailCarWheelDefinition[wheels];
+        CarWheelTypeDefinition[] wheelDefinitions = new CarWheelTypeDefinition[wheels];
         for (int i = 0; i < wheels; i++)
         {
             int w = 284 + (20 * i);
-            wheelDefinitions[i] = new RetailCarWheelDefinition(
+            wheelDefinitions[i] = new CarWheelTypeDefinition(
                 record[w] != 0,
                 record[w + 1] != 0,
                 F(record, w + 4),
@@ -24,13 +25,14 @@ internal static class RetailCarMemory
         }
 
         int aero = I(record, 40);
-        RetailAeroSurface[] surfaces = new RetailAeroSurface[aero];
+        Wing[] surfaces = new Wing[aero];
         for (int j = 0; j < aero; j++)
         {
             int s = 44 + (28 * j);
-            surfaces[j] = new RetailAeroSurface(
-                F(record, s), F(record, s + 4), F(record, s + 8), F(record, s + 12),
-                F(record, s + 16), F(record, s + 20), F(record, s + 24));
+            surfaces[j] = new Wing(
+                F(record, s),
+                new Vector3f(F(record, s + 16), F(record, s + 20), F(record, s + 24)),
+                new Vector3f(F(record, s + 4), F(record, s + 8), F(record, s + 12)));
         }
 
         return new RetailCarDefinition

@@ -119,6 +119,11 @@ public sealed class ElevatorRegistry
         return true;
     }
 
+    /// <summary>Steps every lift one tick, in the order they were declared.</summary>
+    /// <remarks>
+    /// For a lift no level walk reaches. A walked level steps each lift where the walk reaches it, with
+    /// <see cref="TickElevator"/>, as the original's Elevator update (<c>0x43D280</c>) does.
+    /// </remarks>
     public void Tick()
     {
         // NOBODY HAS TO BE ABOARD. 0x43D280 reads "Can start" (true when the level leaves it empty) and, when
@@ -130,44 +135,61 @@ public sealed class ElevatorRegistry
         // never.
         foreach (ElevatorCommand command in _commands)
         {
-            bool wasMoving = command.Elevator.State.HasMovementRequest;
-            // Elevator_Activate writes isWantedFloor[0..9] then, if there is no up/down pulse,
-            // sets nWantedFloor to the last true index. A held expression is a destination, not a
-            // rising-edge command, and a later floor overwrites an earlier one the same tick.
-            int? wantedFloor = null;
-            for (int i = 0; i < command.WantedFloors.Count; i++)
+            TickCommand(command);
+        }
+    }
+
+    /// <summary>Steps one lift one tick, where the level walk reaches it.</summary>
+    /// <param name="elevator">The lift.</param>
+    public void TickElevator(PlacedElevator elevator)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        ElevatorCommand command = _commands.First(c => ReferenceEquals(c.Elevator, elevator));
+        TickCommand(command);
+    }
+
+    private void TickCommand(ElevatorCommand command)
+    {
+        bool wasMoving = command.Elevator.State.HasMovementRequest;
+        // The update (0x43D280) writes isWantedFloor[0..9] then, if there is no up/down pulse,
+        // sets nWantedFloor to the last true index. A held expression is a destination, not a
+        // rising-edge command, and a later floor overwrites an earlier one the same tick.
+        int? wantedFloor = null;
+        for (int i = 0; i < command.WantedFloors.Count; i++)
+        {
+            if (command.WantedFloors[i]())
             {
-                if (command.WantedFloors[i]())
-                {
-                    wantedFloor = i;
-                }
+                wantedFloor = i;
+            }
+        }
+
+        // Nobody has to be aboard: "Can start" alone gates the move (see Tick).
+        bool enabled = command.CanStart();
+        command.Elevator.State.Tick(
+            enabled,
+            command.FloorUp(),
+            command.FloorDown(),
+            wantedFloor,
+            enabled);
+        command.ClearExteriorRequestAfterStart();
+
+        if (_sounds is not null)
+        {
+            if (command.Elevator.State.IsStart)
+            {
+                _sounds(command.Elevator, ElevatorSoundEvent.Started);
             }
 
-            command.Elevator.State.Tick(
-                command.CanStart(),
-                command.FloorUp(),
-                command.FloorDown(),
-                wantedFloor);
-            command.ClearExteriorRequestAfterStart();
-
-            if (_sounds is not null)
+            if (!wasMoving && command.Elevator.State.HasMovementRequest)
             {
-                if (command.Elevator.State.IsStart)
-                {
-                    _sounds(command.Elevator, ElevatorSoundEvent.Started);
-                }
+                command.Elevator.IsSounding = true;
+                _sounds(command.Elevator, ElevatorSoundEvent.Traveling);
+            }
 
-                if (!wasMoving && command.Elevator.State.HasMovementRequest)
-                {
-                    command.Elevator.IsSounding = true;
-                    _sounds(command.Elevator, ElevatorSoundEvent.Traveling);
-                }
-
-                if (command.Elevator.State.IsStop)
-                {
-                    command.Elevator.IsSounding = false;
-                    _sounds(command.Elevator, ElevatorSoundEvent.Stopped);
-                }
+            if (command.Elevator.State.IsStop)
+            {
+                command.Elevator.IsSounding = false;
+                _sounds(command.Elevator, ElevatorSoundEvent.Stopped);
             }
         }
     }
@@ -227,24 +249,39 @@ public sealed class ElevatorRegistry
         int updated = 0;
         foreach (PlacedElevator elevator in _elevators)
         {
-            // The first pass places every car's solid at the orientation it is drawn with, which a car its
-            // spline turns does not share with its authored one -- mission 12's gondola stood a quarter turn
-            // out until it first moved, and the soldier standing in it found no floor to be parented to.
-            if (!elevator.State.TransformChangedThisTick && !_collisionPlaced.Add(elevator))
-            {
-                continue;
-            }
-
-            Vector3d increment = (elevator.State.Position - elevator.State.PreviousPosition)
-                / WorldScene.UnitsPerMetre;
-            if (solids.UpdateTransform(elevator.Task, elevator.DrawPosition, elevator.Orientation))
-            {
-                updated++;
-            }
-
-            updated += solids.UpdateDescendantTranslation(elevator.Task, increment, IsDoorTask);
+            updated += ApplyCollision(solids, elevator);
         }
 
+        return updated;
+    }
+
+    /// <summary>Writes one lift's collision, and its non-door children's, after it moved this tick.</summary>
+    /// <param name="solids">The collision index.</param>
+    /// <param name="elevator">The lift.</param>
+    /// <returns>How many entries were moved.</returns>
+    /// <remarks>
+    /// The first pass places every car's solid at the orientation it is drawn with, which a car its spline turns does not
+    /// share with its authored one -- mission 12's gondola stood a quarter turn out until it first moved, and the soldier
+    /// standing in it found no floor to be parented to.
+    /// </remarks>
+    public int ApplyCollision(ObjectCollisionIndex solids, PlacedElevator elevator)
+    {
+        ArgumentNullException.ThrowIfNull(solids);
+        ArgumentNullException.ThrowIfNull(elevator);
+        if (!elevator.State.TransformChangedThisTick && !_collisionPlaced.Add(elevator))
+        {
+            return 0;
+        }
+
+        int updated = 0;
+        Vector3d increment = (elevator.State.Position - elevator.State.PreviousPosition)
+            / WorldScene.UnitsPerMetre;
+        if (solids.UpdateTransform(elevator.Task, elevator.DrawPosition, elevator.Orientation))
+        {
+            updated++;
+        }
+
+        updated += solids.UpdateDescendantTranslation(elevator.Task, increment, IsDoorTask);
         return updated;
     }
 
@@ -264,18 +301,38 @@ public sealed class ElevatorRegistry
     {
         foreach (PlacedElevator elevator in _elevators)
         {
-            Vector3d delta = elevator.State.Position - elevator.State.PreviousPosition;
-            if (delta == Vector3d.Zero || !IsPassengerOn(elevator, passenger, solids))
+            if (TryGetPassengerDisplacement(elevator, passenger, solids, out displacement))
             {
-                continue;
+                return true;
             }
-
-            displacement = delta;
-            return true;
         }
 
         displacement = default;
         return false;
+    }
+
+    /// <summary>Gets the displacement one lift gave a passenger standing on it this tick.</summary>
+    /// <param name="elevator">The lift.</param>
+    /// <param name="passenger">Where the passenger stands, in world units.</param>
+    /// <param name="solids">The live collision, whose ground-hit owner says what the passenger stands on.</param>
+    /// <param name="displacement">How far the lift carried it.</param>
+    /// <returns>Whether the passenger rides this lift and it moved.</returns>
+    public static bool TryGetPassengerDisplacement(
+        PlacedElevator elevator,
+        Vector3d passenger,
+        ObjectCollisionIndex? solids,
+        out Vector3d displacement)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        Vector3d delta = elevator.State.Position - elevator.State.PreviousPosition;
+        if (delta == Vector3d.Zero || !IsPassengerOn(elevator, passenger, solids))
+        {
+            displacement = default;
+            return false;
+        }
+
+        displacement = delta;
+        return true;
     }
 
     /// <summary>Checks whether a world position sits inside any elevator's cab volume.</summary>
@@ -425,13 +482,16 @@ public sealed class ElevatorRegistry
         {
             int? splineId = ReadInt(declared, "SplineObj taskid");
             GameTask? spline = splineId is int id ? FindById(root, id) : null;
-            List<ElevatorFloor> floors = spline?.Children
+            List<DeclaredTask> waypoints = spline?.Children
                 .OfType<DeclaredTask>()
                 .Where(static child => string.Equals(child.Type.Name, "SplineObjWaypoint", StringComparison.Ordinal))
-                .Select(child => new ElevatorFloor(
-                    child.Id,
-                    ReadPosition(child, "Position", default)))
                 .ToList() ?? [];
+            List<ElevatorFloor> floors = [.. waypoints.Select((child, i) => new ElevatorFloor(
+                child.Id,
+                ReadPosition(child, "Position", default))
+            {
+                SegmentLength = i > 0 && spline is DeclaredTask splineObj ? SegmentLength(splineObj, waypoints[i - 1], child) : null,
+            })];
 
             if (floors.Count > 0)
             {
@@ -581,10 +641,10 @@ public sealed class ElevatorRegistry
                 || solids.IsPointInTaskVolume(shin, elevator.Task)
                 || (solids.TryFindContainingDynamicOwner(passenger, includeInactiveOwners: false, out GameTask? owner)
                     && owner is not null
-                    && IsSelfOrDescendant(owner, elevator.Task))
+                    && owner.IsSelfOrDescendantOf(elevator.Task))
                 || (solids.TryFindContainingDynamicOwner(shin, includeInactiveOwners: false, out GameTask? lifted)
                     && lifted is not null
-                    && IsSelfOrDescendant(lifted, elevator.Task)))
+                    && lifted.IsSelfOrDescendantOf(elevator.Task)))
             {
                 return true;
             }
@@ -604,19 +664,6 @@ public sealed class ElevatorRegistry
         task is DeclaredTask declared
         && string.Equals(declared.Type.Name, "Door", StringComparison.Ordinal);
 
-    private static bool IsSelfOrDescendant(GameTask owner, GameTask ancestor)
-    {
-        for (GameTask? current = owner; current is not null; current = current.Parent)
-        {
-            if (ReferenceEquals(current, ancestor))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private static List<ExteriorSwitchCall> FindExteriorSwitchCalls(
         GameTask root,
         DeclaredTask elevator,
@@ -624,7 +671,7 @@ public sealed class ElevatorRegistry
         List<string> wantedExpressions)
     {
         string elevatorName = elevator.Name;
-        string[] doorExpressions = Descendants(root)
+        string[] doorExpressions = root.Descendants()
             .OfType<DeclaredTask>()
             .Where(static task => string.Equals(task.Type.Name, "Door", StringComparison.Ordinal))
             .SelectMany(task =>
@@ -643,7 +690,7 @@ public sealed class ElevatorRegistry
             })
             .ToArray();
 
-        List<DeclaredTask> switches = Descendants(root)
+        List<DeclaredTask> switches = root.Descendants()
             .OfType<DeclaredTask>()
             .Where(static task => string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal))
             .ToList();
@@ -707,18 +754,6 @@ public sealed class ElevatorRegistry
         return calls;
     }
 
-    private static IEnumerable<GameTask> Descendants(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-            foreach (GameTask descendant in Descendants(child))
-            {
-                yield return descendant;
-            }
-        }
-    }
-
     private static GameTask? FindById(GameTask task, int id)
     {
         if (task.Id == id)
@@ -737,6 +772,38 @@ public sealed class ElevatorRegistry
 
         return null;
     }
+
+    // The length the waypoint's segment from the one before adds to the spline (0x500EF0 builds it by 0x4E4530): straight
+    // where the spline's Linear Segments or the waypoint's Align (+418) says, else the cubic sampled N = min(the waypoint's
+    // NumAreas, the spline's matrices a segment, 20) times. Automatic Orientation frames the waypoints by their neighbours,
+    // which no lift that bends uses, so such a segment keeps its straight run.
+    private static double? SegmentLength(DeclaredTask spline, DeclaredTask previous, DeclaredTask waypoint)
+    {
+        bool linear = ReadBool(spline, "Linear Segments") || ReadBool(waypoint, "Align");
+        if (!linear && (ReadBool(spline, "Automatic Orientation") || ReadBool(waypoint, "Automatic Orientation")))
+        {
+            return null;
+        }
+
+        int count = Math.Min(Math.Min(ReadInt(waypoint, "NumAreas") ?? 20, ReadInt(spline, "Number of Matrices / Segment") ?? 20), 20);
+        if (!linear && count < 1)
+        {
+            return null;
+        }
+
+        Vector3f a0 = previous.TryGetValue("Orientation", out object? r0) && r0 is Vector3f o0 ? o0 : default;
+        Vector3f a1 = waypoint.TryGetValue("Orientation", out object? r1) && r1 is Vector3f o1 ? o1 : default;
+        return RetailSplineSegment.Length(
+            ReadPosition(previous, "Position", default),
+            ReadPosition(waypoint, "Position", default),
+            RetailSplineSegment.AnglesToMatrix(a0.X, a0.Y, a0.Z),
+            RetailSplineSegment.AnglesToMatrix(a1.X, a1.Y, a1.Z),
+            count,
+            linear);
+    }
+
+    private static bool ReadBool(DeclaredTask task, string name) =>
+        task.TryGetValue(name, out object? value) && value is true;
 
     private static Vector3d ReadPosition(DeclaredTask task, string name, Vector3d fallback) =>
         task.TryGetValue(name, out object? value) && value is Vector3d position ? position : fallback;

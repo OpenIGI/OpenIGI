@@ -1,0 +1,169 @@
+{
+  "module": "Water",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "vertexMain",
+      "stage": "Vertex",
+      "workgroupSize": null
+    },
+    {
+      "name": "fragmentMain",
+      "stage": "Fragment",
+      "workgroupSize": null
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDiffuse",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
+    },
+    {
+      "name": "uDiffuseSampler",
+      "group": 0,
+      "binding": 1,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
+    },
+    {
+      "name": "uEnvironment",
+      "group": 1,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
+    },
+    {
+      "name": "uEnvironmentSampler",
+      "group": 1,
+      "binding": 1,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
+    }
+  ],
+  "pushBlock": {
+    "name": "push",
+    "size": 128,
+    "group": 3,
+    "binding": 0,
+    "hlsl": {
+      "class": "ConstantBuffer",
+      "register": 1,
+      "space": 0
+    }
+  },
+  "specializationConstants": [
+    {
+      "name": "cSunX",
+      "id": 1,
+      "default": 0,
+      "hlslOffset": 8
+    },
+    {
+      "name": "cSunY",
+      "id": 2,
+      "default": 0,
+      "hlslOffset": 12
+    },
+    {
+      "name": "cSunZ",
+      "id": 3,
+      "default": 0,
+      "hlslOffset": 16
+    },
+    {
+      "name": "cAmbientRed",
+      "id": 6,
+      "default": 0,
+      "hlslOffset": 20
+    },
+    {
+      "name": "cAmbientGreen",
+      "id": 7,
+      "default": 0,
+      "hlslOffset": 24
+    },
+    {
+      "name": "cAmbientBlue",
+      "id": 8,
+      "default": 0,
+      "hlslOffset": 28
+    },
+    {
+      "name": "cSunRed",
+      "id": 9,
+      "default": 0,
+      "hlslOffset": 32
+    },
+    {
+      "name": "cSunGreen",
+      "id": 10,
+      "default": 0,
+      "hlslOffset": 36
+    },
+    {
+      "name": "cSunBlue",
+      "id": 11,
+      "default": 0,
+      "hlslOffset": 40
+    },
+    {
+      "name": "cLinearScene",
+      "id": 12,
+      "default": 0,
+      "hlslOffset": 44
+    },
+    {
+      "name": "cClipYDown",
+      "id": 64,
+      "default": 1,
+      "hlslOffset": 0
+    },
+    {
+      "name": "cSamplerDecodes",
+      "id": 66,
+      "default": 0,
+      "hlslOffset": 4
+    }
+  ],
+  "globals": null,
+  "hlslConstants": {
+    "class": "ConstantBuffer",
+    "register": 0,
+    "space": 0
+  }
+}

@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.Menus;
 
@@ -18,8 +19,15 @@ namespace OpenIGI.Game.Menus;
 /// <c>+56</c> line-up mode, <c>+60</c> centre-horizontally, <c>+64</c> centre-vertically.
 /// </para>
 /// </remarks>
-public abstract class MenuWindowTask : ContainerTask
+public abstract class MenuWindowTask : TickedTask
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A menu window passes the engine's update on to its children, as a container does: that walk is what runs Project
+    /// I.G.I.'s menus. A game whose menus a level run drives instead has its manager take the run.
+    /// </remarks>
+    protected override void OnUpdate() => ForwardToChildren(TaskMessage.Update);
+
     /// <summary>The spacing a menu window starts with on both axes.</summary>
     /// <remarks><c>MenuWindow</c>'s constructor (<c>0x4241C0</c>) writes 4 to both; everything else it touches starts at zero.</remarks>
     public const int DefaultSpacing = 4;
@@ -74,6 +82,13 @@ public abstract class MenuWindowTask : ContainerTask
     /// </remarks>
     public virtual bool IsInteractive => false;
 
+    /// <summary>Gets a value indicating whether the hit-test reads the pointer for this item.</summary>
+    /// <remarks>
+    /// Every item the selection carries (<see cref="IsInteractive"/>), and a control that hit-tests itself from its own update
+    /// without joining the selection: the controls list (<c>0x4234E0</c> runs <c>0x4248A0</c> over its own rectangle).
+    /// </remarks>
+    protected virtual bool TakesPointer => IsInteractive;
+
     /// <summary>Gets or sets a value indicating whether this item carries the menu's selection.</summary>
     /// <remarks>
     /// Field <c>+77</c>, owned by the manager: <c>Menu_SetSelected</c> (<c>0x4186E0</c>) clears it on
@@ -88,6 +103,22 @@ public abstract class MenuWindowTask : ContainerTask
     /// <remarks>Field <c>+73</c> in the original.</remarks>
     public bool IsActive { get; private set; }
 
+    /// <summary>Gets a value indicating whether the pointer was over this item at the hit-test before.</summary>
+    /// <remarks>
+    /// Field <c>+72</c>, which <c>MenuItem_HitTest</c> (<c>0x4248A0</c>) carries over from <see cref="IsActive"/>, or sets outright
+    /// while the window it is in is being opened (the manager's <c>+10191</c>, held through the first update <c>0x418710</c> and
+    /// <c>0x4188B0</c> give a screen or a popup).
+    /// </remarks>
+    public bool WasActive { get; private set; }
+
+    /// <summary>Gets a value indicating whether the pointer has just come over this item.</summary>
+    /// <remarks>
+    /// What moves the selection to an item (<c>0x418FE0</c>, called from <c>MenuText_Update</c>, <c>0x4207E0</c>, and
+    /// <c>MenuFrame_Update</c>, <c>0x422A50</c>): coming over it, not resting on it, so the keys can move the selection away from
+    /// the item the pointer rests on, and an item under the pointer as a screen opens is not one it came over.
+    /// </remarks>
+    public bool HasEntered => IsActive && !WasActive;
+
     /// <summary>Gets a value indicating whether this item is latched under a held button.</summary>
     /// <remarks>Field <c>+74</c>. Pressing inside latches, so dragging off and back keeps the item armed.</remarks>
     public bool IsHeld { get; private set; }
@@ -99,7 +130,7 @@ public abstract class MenuWindowTask : ContainerTask
     /// <summary>Sets or clears the completed-click flag, for tests that have no pointer.</summary>
     /// <param name="clicked">What to set it to.</param>
     /// <remarks>
-    /// The flag is normally owned by <see cref="HitTest"/>, which recomputes it every tick. A control's
+    /// The flag is normally owned by <see cref="HitTest(MenuPointer)"/>, which recomputes it every tick. A control's
     /// own update is what reads it, and testing that path needs a way to set it without driving a whole
     /// pointer through the manager — including clearing it, which the hit-test would do for real.
     /// </remarks>
@@ -118,13 +149,13 @@ public abstract class MenuWindowTask : ContainerTask
     /// Field <c>+68</c> in the original, which the base constructor threads down from the parent. Here
     /// the tree already has the parent links, so it is a walk rather than a stored copy.
     /// </remarks>
-    public MenuManagerTask? Manager
+    public IMenuManager? Manager
     {
         get
         {
             for (GameTask? task = Parent; task is not null; task = task.Parent)
             {
-                if (task is MenuManagerTask manager)
+                if (task is IMenuManager manager)
                 {
                     return manager;
                 }
@@ -225,12 +256,21 @@ public abstract class MenuWindowTask : ContainerTask
     /// </description></item>
     /// </list>
     /// </remarks>
-    public bool HitTest(MenuPointer pointer)
+    public bool HitTest(MenuPointer pointer) => HitTest(pointer, opening: false);
+
+    /// <summary>Tests this item's rectangle against the pointer as its window is being opened, or as it is not.</summary>
+    /// <param name="pointer">The pointer state.</param>
+    /// <param name="opening">Whether the window this item is in is being opened, which the pointer cannot be said to come over.</param>
+    /// <returns><see langword="true"/> when the item completed a click.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pointer"/> is <see langword="null"/>.</exception>
+    public bool HitTest(MenuPointer pointer, bool opening)
     {
         ArgumentNullException.ThrowIfNull(pointer);
 
-        if (!IsInteractive)
+        WasActive = IsActive || opening;
+        if (!TakesPointer)
         {
+            WasActive = false;
             IsActive = false;
             IsHeld = false;
             WasClicked = false;
@@ -277,19 +317,26 @@ public abstract class MenuWindowTask : ContainerTask
     /// <param name="pointer">The pointer state.</param>
     /// <returns>The item that completed a click, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="pointer"/> is <see langword="null"/>.</exception>
-    public MenuWindowTask? HitTestSubtree(MenuPointer pointer)
+    public MenuWindowTask? HitTestSubtree(MenuPointer pointer) => HitTestSubtree(pointer, opening: false);
+
+    /// <summary>Runs the hit-test over this window and every descendant, as the window is being opened or as it is not.</summary>
+    /// <param name="pointer">The pointer state.</param>
+    /// <param name="opening">Whether this window is being opened; see <see cref="WasActive"/>.</param>
+    /// <returns>The item that completed a click, or <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pointer"/> is <see langword="null"/>.</exception>
+    public MenuWindowTask? HitTestSubtree(MenuPointer pointer, bool opening)
     {
         ArgumentNullException.ThrowIfNull(pointer);
 
         MenuWindowTask? clicked = null;
         foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>().Concat(OwnedWindows))
         {
-            if (child.HitTest(pointer))
+            if (child.HitTest(pointer, opening))
             {
                 clicked = child;
             }
 
-            clicked = child.HitTestSubtree(pointer) ?? clicked;
+            clicked = child.HitTestSubtree(pointer, opening) ?? clicked;
         }
 
         return clicked;

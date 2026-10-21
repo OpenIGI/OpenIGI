@@ -4,6 +4,10 @@
 /// <param name="Variable">The variable the row drives.</param>
 /// <param name="Caption">The row's caption, as the player reads it.</param>
 /// <param name="Help">What the row does, in a sentence written for a player.</param>
+/// <param name="Choices">
+/// What a choice variable's values are called on screen, keyed by the stored value, or null to show them
+/// as stored.
+/// </param>
 /// <remarks>
 /// The caption and the help are written here rather than taken from the variable, and that is the whole
 /// point of the type. A variable's own <c>Help</c> is written for whoever is reading the renderer — it
@@ -11,7 +15,11 @@
 /// the right text for the console to print. It is the wrong text to put in front of somebody who wants
 /// the picture to look nice.
 /// </remarks>
-public sealed record GraphicsSetting(string Variable, string Caption, string Help);
+public sealed record GraphicsSetting(
+    string Variable,
+    string Caption,
+    string Help,
+    IReadOnlyDictionary<string, string>? Choices = null);
 
 /// <summary>A titled run of rows on the graphics page.</summary>
 /// <param name="Title">The heading shown above the rows.</param>
@@ -384,11 +392,6 @@ public static class GraphicsMenu
                     "NVIDIA Reflex",
                     "Starts each frame as late as the GPU allows, so what you see answers the mouse sooner. "
                         + "Boost also keeps the GPU's clocks up."),
-                new GraphicsSetting(
-                    "r_frame_limit",
-                    "Frame Rate Cap",
-                    "Caps the frame rate through NVIDIA Reflex, which keeps the latency low while it does. "
-                        + "0 is no cap."),
             ]),
 
         new GraphicsSection(
@@ -513,11 +516,48 @@ public static class GraphicsMenu
 
     /// <summary>Gets the rows shown on the Display page, with captions written for a player.</summary>
     /// <remarks>
-    /// Both would otherwise be captioned by machine from their variable names, and one of them turns into
-    /// "Smooth" — which says nothing. Small, but the same rule as everywhere else on this page.
+    /// <para>
+    /// The ones every game's display options have, in the order a player looks for them: what draws, the
+    /// window, its size, then how frames reach it. Captioned here rather than by machine from their
+    /// variable names, which would turn one of them into "Smooth" — which says nothing.
+    /// </para>
+    /// <para>
+    /// <c>r_resolution</c> and <c>r_frame_limit</c> are not choices their types spell out — one is the
+    /// display's modes, the other a number — so the page builds their lists itself; see
+    /// <see cref="FrameRateCaps"/>.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<GraphicsSetting> DisplaySettings { get; } =
     [
+        new GraphicsSetting(
+            "r_renderer",
+            "Graphics API",
+            "What the game draws through. Automatic is Direct3D 12 on Windows and Vulkan elsewhere; WebGPU "
+                + "is the browser version's, and the slowest of the three. Changing it rebuilds the renderer and "
+                + "puts you back where you were, which takes a few seconds.",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["auto"] = "Automatic",
+                ["d3d12"] = "Direct3D 12",
+                ["vulkan"] = "Vulkan",
+                ["webgpu"] = "WebGPU",
+            }),
+        new GraphicsSetting(
+            "r_window_mode",
+            "Window Mode",
+            "Borderless covers the screen at the desktop's resolution and switches away instantly. Fullscreen "
+                + "takes the monitor over at the resolution below. Windowed runs in a window that size.",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["windowed"] = "Windowed",
+                ["borderless"] = "Borderless",
+                ["fullscreen"] = "Fullscreen",
+            }),
+        new GraphicsSetting(
+            "r_resolution",
+            "Resolution",
+            "The window's size, or the monitor's mode in fullscreen. Desktop is your screen's own. To render "
+                + "fewer pixels at the same size, lower Upscaling on the Graphics page instead."),
         new GraphicsSetting(
             "r_vsync",
             "Vertical Sync",
@@ -527,8 +567,19 @@ public static class GraphicsMenu
             "r_smooth",
             "Smooth Motion",
             "Draws the world at your display's rate rather than the original's fixed thirty steps a "
-                + "second, interpolating between them. Off is the original's own cadence."),
+                + "second, interpolating between them. Also removes IGI2's mouse filtering and turn-speed cap. "
+                + "Off restores the original cadence and IGI2 mouse response."),
+        new GraphicsSetting(
+            "r_frame_limit",
+            "Frame Rate Cap",
+            "The most frames a second the game draws. A cap a little under your display's rate keeps the "
+                + "motion even and the GPU cooler. Held by NVIDIA Reflex where it runs, which keeps the delay "
+                + "low while it does."),
     ];
+
+    /// <summary>Gets the frame-rate caps the Display page offers, in frames a second; nought is none.</summary>
+    /// <remarks>The rates displays commonly run at, and the fractions of them a steady cap is chosen from.</remarks>
+    public static IReadOnlyList<int> FrameRateCaps { get; } = [0, 30, 60, 75, 90, 100, 120, 144, 165, 180, 240, 360];
 
     /// <summary>Gets every quality group on the page, in the order they are shown.</summary>
     public static IReadOnlyList<QualityGroup> Groups { get; } =

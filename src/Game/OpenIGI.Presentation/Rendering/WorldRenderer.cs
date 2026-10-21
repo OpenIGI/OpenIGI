@@ -10,6 +10,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 using System.Runtime.InteropServices;
 
@@ -85,6 +86,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
     /// <summary>The destroyed-variant models, for placements whose head has been shot out.</summary>
     private readonly Dictionary<WorldPlacement, ResolvedModel?> _resolvedDestroyed = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<WorldPlacement, ResolvedModel?[]> _resolvedVariants = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>One frame's per-placement state, shared by every pass drawn from it.</summary>
     /// <remarks>
@@ -109,24 +111,6 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <remarks>The terrain's sparse interval; staggered by query id so retests spread across frames.</remarks>
     private const int VisibleRetestInterval = 16;
 
-    /// <summary>How many frames the view must hold still before a visibility verdict is trusted again.</summary>
-    /// <remarks>
-    /// A verdict is not measured against the frame that acts on it. The box is drawn, the result is read
-    /// once the slot's fence comes round, and the renderer skips the page a frame or two after the depth
-    /// that judged it was written. Standing still that is exactly right. Turning it is a statement about
-    /// where the camera was looking, not where it is: a page that has just come out from behind a hill is
-    /// still carrying the verdict it earned while hidden, so it is skipped -- the hole -- until its retest
-    /// lands and it is drawn again. Long enough to cover the deepest frame queue the backends run.
-    /// </remarks>
-    private const int OcclusionSettleFrames = 3;
-
-    /// <summary>How far the camera may drift per frame and still count as holding still, in metres.</summary>
-    private const double OcclusionSettlePosition = 0.05;
-
-    /// <summary>How far any orientation element may move per frame and still count as holding still.</summary>
-    /// <remarks>About a fifth of a degree: below what a hand on a mouse holds, above sensor noise.</remarks>
-    private const float OcclusionSettleOrientation = 0.003f;
-
     /// <summary>The placements whose occlusion query is (re)issued after this pass's draws.</summary>
     /// <remarks>
     /// Issued after, not during: a query needs the pass's occluders already in the depth buffer, or a
@@ -134,9 +118,7 @@ public sealed class WorldRenderer : IWorldPresenter
     /// </remarks>
     private readonly List<int> _queryQueue = [];
     private long _frameNumber;
-    private Camera3D _previousCamera;
-    private bool _hasPreviousCamera;
-    private int _occlusionSettle;
+    private readonly OcclusionSettle _occlusionSettle = new(windowed: false);
 
     /// <summary>Initializes a new instance of the <see cref="WorldRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -199,6 +181,15 @@ public sealed class WorldRenderer : IWorldPresenter
 
     /// <inheritdoc/>
     public IPlacementSpin? Spins { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementMotion? Motions { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementDestruction? Destruction { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementVariant? Variants { get; set; }
 
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
@@ -364,12 +355,11 @@ public sealed class WorldRenderer : IWorldPresenter
         _device.SetProjection(projection);
         _device.SetDepthState(rotorsOnly || glassOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
 
-        // Back faces are culled once the mesh builder has repaired winding (r_world_cull): every triangle
-        // is rewound to agree with its outward vertex normals there, so CCW is reliably the front and
-        // culling the back removes a thin object's inward face rather than letting the two fight over a
-        // pixel -- and halves the indoor fill. Off falls back to drawing both facings, which is what the
-        // port did before the repair existed and does not wind uniformly on its own.
-        _device.SetCullMode(RenderCVars.WorldCull.Value != 0 ? CullMode.CounterClockwise : CullMode.None);
+        // Interior sectors and meshes without authored normals have no reliable outward facing.
+        // Choose culling per mesh below, including when an archived r_world_cull enables it.
+        bool cullBackFaces = RenderCVars.WorldCull.Value != 0;
+        CullMode appliedCull = CullMode.None;
+        _device.SetCullMode(appliedCull);
 
         // The lightmap headroom for the objects' pages -- one unless an exclusive HDR bake is applied.
         // Reset to one at the end of the pass so the terrain, which keeps its shipped LDR lightmaps, is not
@@ -388,7 +378,7 @@ public sealed class WorldRenderer : IWorldPresenter
         int triangles = 0;
         int lit = 0;
         int occluded = 0;
-        bool bypassOcclusion = !occlusionCulling || !OcclusionVerdictsUsable(camera);
+        bool bypassOcclusion = !occlusionCulling || !_occlusionSettle.VerdictsUsable(camera);
         _queryQueue.Clear();
 
         // The pass's planes once, not a projection multiply per placement: this loop used to be a
@@ -542,6 +532,13 @@ public sealed class WorldRenderer : IWorldPresenter
 
             SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, entry.Displayed!);
 
+            CullMode cull = cullBackFaces && model.CanCullBackFaces ? CullMode.CounterClockwise : CullMode.None;
+            if (cull != appliedCull)
+            {
+                _device.SetCullMode(cull);
+                appliedCull = cull;
+            }
+
             // Named by its place in the scene, so its draws pair with its own from the frame before whatever
             // the occlusion and the frustum dropped ahead of it this time.
             if (entry.Moving)
@@ -597,11 +594,12 @@ public sealed class WorldRenderer : IWorldPresenter
                         ? camera.CreateModelView(entry.Position, orientation)
                         : baseModelView;
 
-                    // The sun in the placement's own frame. An orientation's rows are the model's axes
-                    // in the world, so dotting a world vector against them -- the transpose, in the
-                    // engine's row-vector convention -- is what takes it into model space.
+                    // The sun in the placement's own frame. The orientation takes the model's frame to the
+                    // world's as M * v (the model view above is built that way, so its COLUMNS are the
+                    // model's axes in the world), and the inverse is its transpose: dotting the world
+                    // vector against each column, which is what the engine's row-vector Transform does.
                     Vector3f sun = !baked && shading.Sun is { } sunlight
-                        ? orientation.Transposed().Transform(sunlight.Direction)
+                        ? orientation.Transform(sunlight.Direction)
                         : Vector3f.Zero;
                     if (sun != appliedSun)
                     {
@@ -631,8 +629,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
         if (occlusionCulling)
         {
-            _previousCamera = camera;
-            _hasPreviousCamera = true;
+            _occlusionSettle.Observed(camera);
         }
 
         // The rotor pass adds to the opaque pass's tallies rather than replacing them: the two are
@@ -691,54 +688,6 @@ public sealed class WorldRenderer : IWorldPresenter
         _queryQueue.Clear();
     }
 
-    /// <summary>Rejects stale query decisions after a teleport or an abrupt camera cut.</summary>
-    /// <summary>Gets whether visibility verdicts may be acted on: the view has held still long enough.</summary>
-    /// <remarks>
-    /// Not a test of this frame alone. A view that has just stopped still has verdicts in flight that were
-    /// measured while it moved, so the count runs on for <see cref="OcclusionSettleFrames"/> frames after
-    /// the last movement and only then lets the culler skip anything again.
-    /// </remarks>
-    private bool OcclusionVerdictsUsable(in Camera3D camera)
-    {
-        if (ViewMoved(camera))
-        {
-            _occlusionSettle = OcclusionSettleFrames;
-        }
-        else if (_occlusionSettle > 0)
-        {
-            _occlusionSettle--;
-        }
-
-        return _occlusionSettle == 0;
-    }
-
-    private bool ViewMoved(in Camera3D camera)
-    {
-        if (!_hasPreviousCamera)
-        {
-            return true;
-        }
-
-        if ((camera.Position - _previousCamera.Position).Length > OcclusionSettlePosition)
-        {
-            return true;
-        }
-
-        Matrix3f a = camera.Orientation;
-        Matrix3f b = _previousCamera.Orientation;
-        float largest = 0f;
-        largest = Math.Max(largest, Math.Abs(a.M11 - b.M11));
-        largest = Math.Max(largest, Math.Abs(a.M12 - b.M12));
-        largest = Math.Max(largest, Math.Abs(a.M13 - b.M13));
-        largest = Math.Max(largest, Math.Abs(a.M21 - b.M21));
-        largest = Math.Max(largest, Math.Abs(a.M22 - b.M22));
-        largest = Math.Max(largest, Math.Abs(a.M23 - b.M23));
-        largest = Math.Max(largest, Math.Abs(a.M31 - b.M31));
-        largest = Math.Max(largest, Math.Abs(a.M32 - b.M32));
-        largest = Math.Max(largest, Math.Abs(a.M33 - b.M33));
-        return largest > OcclusionSettleOrientation;
-    }
-
     /// <summary>What the last prepared frame decided for every placement a task owns, for scenario runs.</summary>
     /// <param name="owner">The task whose placements, its own and its attachments', are described.</param>
     /// <returns>One line per placement: skipped or drawn, the model shown, and where, in engine units.</returns>
@@ -783,7 +732,8 @@ public sealed class WorldRenderer : IWorldPresenter
             DestroyResolvedQueries();
             _resolved.Clear();
             _resolvedDestroyed.Clear();
-            _hasPreviousCamera = false;
+            _resolvedVariants.Clear();
+            _occlusionSettle.Forget();
         }
 
         for (int i = 0; i < _frame.Length; i++)
@@ -800,7 +750,8 @@ public sealed class WorldRenderer : IWorldPresenter
 
             // Blown up with nothing authored to stand in its place: there is no rubble model to
             // swap to, so the placement leaves the frame entirely rather than drawing intact.
-            if (Destructibles?.IsDestroyed(authored) == true && authored.DestroyedReplacement is null)
+            if ((Destructibles?.IsDestroyed(authored) == true || Destruction?.IsDestroyed(authored) == true)
+                && authored.DestroyedReplacement is null)
             {
                 entry.Skip = true;
                 continue;
@@ -810,19 +761,42 @@ public sealed class WorldRenderer : IWorldPresenter
             entry.IsRotor = authored.IsRotor;
 
             bool destroyed = UsesDestroyedReplacement(authored);
-            Dictionary<WorldPlacement, ResolvedModel?> cache = destroyed ? _resolvedDestroyed : _resolved;
-            if (!cache.TryGetValue(authored, out ResolvedModel? model))
+            int variant = VariantOf(authored);
+            ResolvedModel? model;
+            if (variant >= 0)
             {
-                WorldPlacement displayed = DisplayedPlacement(authored);
-                model = ResolveModel(displayed);
-                entry.Displayed = displayed;
-                cache[authored] = model;
+                // A placement wearing one of its variants: each resolved once, the displayed one refreshed as it changes.
+                if (!_resolvedVariants.TryGetValue(authored, out ResolvedModel?[]? resolvedVariants))
+                {
+                    resolvedVariants = new ResolvedModel?[authored.Variants!.Count];
+                    _resolvedVariants[authored] = resolvedVariants;
+                }
+
+                model = resolvedVariants[variant];
+                if (model is null || entry.Displayed is null || variant != entry.Variant || destroyed != entry.WasDestroyed)
+                {
+                    WorldPlacement displayed = DisplayedPlacement(authored);
+                    model ??= resolvedVariants[variant] = ResolveModel(displayed);
+                    entry.Displayed = displayed;
+                }
             }
-            else if (entry.Displayed is null || destroyed != entry.WasDestroyed)
+            else
             {
-                entry.Displayed = DisplayedPlacement(authored);
+                Dictionary<WorldPlacement, ResolvedModel?> cache = destroyed ? _resolvedDestroyed : _resolved;
+                if (!cache.TryGetValue(authored, out model))
+                {
+                    WorldPlacement displayed = DisplayedPlacement(authored);
+                    model = ResolveModel(displayed);
+                    entry.Displayed = displayed;
+                    cache[authored] = model;
+                }
+                else if (entry.Displayed is null || destroyed != entry.WasDestroyed || entry.Variant >= 0)
+                {
+                    entry.Displayed = DisplayedPlacement(authored);
+                }
             }
 
+            entry.Variant = variant;
             entry.WasDestroyed = destroyed;
             entry.Model = model;
             if (model is null)
@@ -847,6 +821,12 @@ public sealed class WorldRenderer : IWorldPresenter
             if (Spins?.TryGetOrientation(authored, _frameAlpha, out Matrix3f spun) == true)
             {
                 entry.Displayed = entry.Displayed! with { Orientation = spun };
+            }
+
+            // A door a title swings: it leaves its spot as well as turning.
+            if (Motions?.TryGetTransform(authored, _frameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
+            {
+                entry.Displayed = entry.Displayed! with { Position = moved, Orientation = movedOrientation };
             }
 
             if (TryGetStandOrientation(authored, out Matrix3f stand))
@@ -892,6 +872,18 @@ public sealed class WorldRenderer : IWorldPresenter
             {
                 _device.DestroyOcclusionQuery(model.Query);
                 model.Query = OcclusionQueryHandle.None;
+            }
+        }
+
+        foreach (ResolvedModel?[] variants in _resolvedVariants.Values)
+        {
+            foreach (ResolvedModel? model in variants)
+            {
+                if (model is { Query.IsValid: true })
+                {
+                    _device.DestroyOcclusionQuery(model.Query);
+                    model.Query = OcclusionQueryHandle.None;
+                }
             }
         }
     }
@@ -957,7 +949,7 @@ public sealed class WorldRenderer : IWorldPresenter
         MeshHandle mesh = GetMesh(
             displayed.BentGeometry is null ? displayed.Instance.Name : displayed.TaskName,
             geometry);
-        return mesh.IsValid ? new ResolvedModel(geometry, mesh) : null;
+        return mesh.IsValid ? new ResolvedModel(geometry, mesh, displayed.Model.IsSector) : null;
     }
 
     /// <summary>The same surface with its lamp turned down, or turned off altogether.</summary>
@@ -1037,7 +1029,7 @@ public sealed class WorldRenderer : IWorldPresenter
         }
 
         // EVERY placement, however far or small, every frame. The traced world keeps a static placement
-        // only for as long as it goes on being offered (VulkanWorldScene), which is what lets an object
+        // only for as long as it goes on being offered (the traced WorldScene), which is what lets an object
         // that moves leave the structure at once instead of leaving a trail -- so anything not offered
         // here disappears from every ray. It used to be culled at three hundred metres and a degree of
         // arc; that rule only works for a scene that caches every static instance up front and culls
@@ -1177,6 +1169,7 @@ public sealed class WorldRenderer : IWorldPresenter
     {
         public bool Skip;
         public bool WasDestroyed;
+        public int Variant;
         public bool HasRotor;
         public bool IsRotor;
 
@@ -1190,11 +1183,20 @@ public sealed class WorldRenderer : IWorldPresenter
     }
 
     /// <summary>A placement's uploaded mesh and, once first drawn, its per-subset draw state.</summary>
-    private sealed class ResolvedModel(MeshGeometry geometry, MeshHandle mesh)
+    private sealed class ResolvedModel(MeshGeometry geometry, MeshHandle mesh, bool isSector)
     {
         public MeshGeometry Geometry { get; } = geometry;
 
         public MeshHandle Mesh { get; } = mesh;
+
+        /// <summary>Whether winding repair has usable normals and the mesh is not an interior sector.</summary>
+        /// <remarks>
+        /// IGI2 lightmapped MEFs omit normals. Their authored winding must remain two-sided; applying
+        /// the prop optimization erases mission 2's cave. IGI1 sectors likewise enclose the viewer.
+        /// Evaluate once at residency, rather than scanning vertices in every render pass.
+        /// </remarks>
+        public bool CanCullBackFaces { get; } = !isSector && Array.TrueForAll(
+            geometry.Vertices, vertex => float.IsFinite(vertex.Normal.LengthSquared) && vertex.Normal.LengthSquared > 0.000001f);
 
         public SubsetDraw[]? Subsets { get; set; }
 
@@ -1260,9 +1262,24 @@ public sealed class WorldRenderer : IWorldPresenter
         return false;
     }
 
+    // Which of its variants a placement wears, or -1 for the model the walk placed: an index the title gives, whose binding resolved.
+    private int VariantOf(WorldPlacement placement) =>
+        placement.Variants is { } variants
+        && Variants?.VariantOf(placement) is int variant
+        && variant >= 0
+        && variant < variants.Count
+        && variants[variant] is not null
+            ? variant
+            : -1;
+
     private WorldPlacement DisplayedPlacement(WorldPlacement placement)
     {
         WorldPlacement displayed = placement;
+        if (VariantOf(placement) is >= 0 and int worn && placement.Variants![worn] is { } variantBinding)
+        {
+            displayed = placement with { Instance = variantBinding.Instance, Pack = variantBinding.Pack, Model = variantBinding.Model };
+        }
+
         if (placement.DestroyedReplacement is { } replacement && UsesDestroyedReplacement(placement))
         {
             displayed = placement with
@@ -1287,6 +1304,11 @@ public sealed class WorldRenderer : IWorldPresenter
             displayed = displayed with { Orientation = spun };
         }
 
+        if (Motions?.TryGetTransform(placement, _frameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
+        {
+            displayed = displayed with { Position = moved, Orientation = movedOrientation };
+        }
+
         if (TryGetStandOrientation(placement, out Matrix3f stand))
         {
             displayed = displayed with { Orientation = stand };
@@ -1299,7 +1321,8 @@ public sealed class WorldRenderer : IWorldPresenter
     private bool UsesDestroyedReplacement(WorldPlacement placement) =>
         placement.DestroyedReplacement is not null
         && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
-            || Destructibles?.IsDestroyed(placement) == true);
+            || Destructibles?.IsDestroyed(placement) == true
+            || Destruction?.IsDestroyed(placement) == true);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -1339,6 +1362,7 @@ public sealed class WorldRenderer : IWorldPresenter
         _geometry.Clear();
         _resolved.Clear();
         _resolvedDestroyed.Clear();
+        _resolvedVariants.Clear();
     }
 
     /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>
@@ -1412,6 +1436,7 @@ public sealed class WorldRenderer : IWorldPresenter
         DestroyResolvedQueries();
         _resolved.Clear();
         _resolvedDestroyed.Clear();
+        _resolvedVariants.Clear();
 
         _logger.Information(
             LogCategory,
@@ -1822,6 +1847,17 @@ public sealed class WorldRenderer : IWorldPresenter
             if (model is not null)
             {
                 model.Subsets = null;
+            }
+        }
+
+        foreach (ResolvedModel?[] variants in _resolvedVariants.Values)
+        {
+            foreach (ResolvedModel? model in variants)
+            {
+                if (model is not null)
+                {
+                    model.Subsets = null;
+                }
             }
         }
     }

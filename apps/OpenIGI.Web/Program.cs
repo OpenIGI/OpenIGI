@@ -13,7 +13,7 @@ using OpenIGI.Platform;
 using OpenIGI.Platform.Web;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Pipeline;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering.WebGpu;
 
 namespace OpenIGI.Web;

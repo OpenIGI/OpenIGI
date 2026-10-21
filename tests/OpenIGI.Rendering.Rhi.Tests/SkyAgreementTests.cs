@@ -1,8 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Sky;
-using OpenIGI.Rendering.Vulkan.Rhi;
-using OpenIGI.Rendering.WebGpu;
 using Xunit;
 using Xunit.Abstractions;
 using PipelineSky = OpenIGI.Rendering.Pipeline.Sky.SkyAtmosphere;
@@ -10,7 +8,7 @@ using PipelineSky = OpenIGI.Rendering.Pipeline.Sky.SkyAtmosphere;
 namespace OpenIGI.Rendering.Rhi.Tests;
 
 /// <summary>
-/// The atmosphere marched on both backends, arriving at the same sky.
+/// The atmosphere marched on every backend, arriving at the same sky.
 /// </summary>
 /// <remarks>
 /// Four compute passes in a chain, each reading what the one before wrote, with no barrier stated
@@ -21,41 +19,33 @@ namespace OpenIGI.Rendering.Rhi.Tests;
 /// </remarks>
 public sealed class SkyAgreementTests(ITestOutputHelper output)
 {
-    [BothBackendsFact]
-    public void Both_backends_march_the_same_atmosphere()
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_marches_the_reference_atmosphere(string backend)
     {
-        float[]? vulkan = TryOnVulkan(out string? vulkanReason);
-        float[]? webgpu = TryOnWebGpu(out string? webgpuReason);
-
-        if (vulkan is null || webgpu is null)
-        {
-            Assert.Fail(
-                "Both backends are needed to compare them, and one was missing: "
-                + (vulkan is null ? vulkanReason : webgpuReason));
-
-            return;
-        }
+        float[] vulkan = RunOn(RhiBackends.Reference);
+        float[] other = RunOn(backend);
 
         float worst = 0f;
 
         for (int i = 0; i < vulkan.Length; i++)
         {
-            Assert.False(float.IsNaN(vulkan[i]) || float.IsNaN(webgpu[i]), $"Coefficient {i} is NaN.");
-            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu[i]));
+            Assert.False(float.IsNaN(vulkan[i]) || float.IsNaN(other[i]), $"Coefficient {i} is NaN.");
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - other[i]));
         }
 
         output.WriteLine($"worst coefficient difference {worst}");
         output.WriteLine($"vulkan {vulkan[0]}, {vulkan[1]}, {vulkan[2]}");
-        output.WriteLine($"webgpu {webgpu[0]}, {webgpu[1]}, {webgpu[2]}");
+        output.WriteLine($"{backend} {other[0]}, {other[1]}, {other[2]}");
 
         // A ray-march of a hundred-odd steps, so the two are not obliged to agree to the last bit of a
         // float; they are obliged to agree about the sky.
-        Assert.True(worst <= 1e-4f, $"The two backends march to different skies, worst by {worst}.");
+        Assert.True(worst <= 1e-4f, $"{backend} marches a different sky from {RhiBackends.Reference}, worst by {worst}.");
 
         // And that a sky was marched at all. Twenty-eight zeros agree perfectly.
         Assert.True(
             vulkan.Any(value => Math.Abs(value) > 1e-6f),
-            "Every coefficient came back nought, so the two agreed about an atmosphere nothing marched.");
+            "Every coefficient came back nought, so the backends agreed about an atmosphere nothing marched.");
     }
 
     [Fact]
@@ -78,36 +68,10 @@ public sealed class SkyAgreementTests(ITestOutputHelper output)
         SkyConditions.ViewHeightFor(altitudeMetres: 2f),
         SkyLightIntensity: 1f);
 
-    private static float[]? TryOnVulkan(out string? reason)
+    private static float[] RunOn(string backend)
     {
-        reason = null;
-
-        try
-        {
-            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(16, 16, RhiTextureFormat.Rgba8UnormSrgb);
-            return Run(vulkan.Device);
-        }
-        catch (Exception error)
-        {
-            reason = $"No Vulkan device here: {error.Message}";
-            return null;
-        }
-    }
-
-    private static float[]? TryOnWebGpu(out string? reason)
-    {
-        reason = null;
-
-        try
-        {
-            using WebGpuRhiDevice device = WebGpuRhiDevice.Create();
-            return Run(device);
-        }
-        catch (Exception error)
-        {
-            reason = $"No WebGPU device here: {error.Message}";
-            return null;
-        }
+        using RhiBackendHost host = RhiBackends.Open(backend, 16, 16, RhiTextureFormat.Rgba8UnormSrgb);
+        return Run(host.Device);
     }
 
     private static float[] Run(IRhiDevice device)

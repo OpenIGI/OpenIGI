@@ -13,6 +13,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -27,13 +28,13 @@ public sealed class SoldierRendererTests
         using SoldierRenderer renderer = new(device, resources);
 
         Assert.True(renderer.Load(mission, levelRoot) > 0);
-        Assert.True(renderer.Animate(new Dictionary<int, GraphFile>()) > 0);
+        Assert.True(renderer.Simulation.Animate(new Dictionary<int, GraphFile>()) > 0);
 
-        IReadOnlyList<Vector3d> contacts = renderer.MapContacts();
+        IReadOnlyList<Vector3d> contacts = renderer.Simulation.MapContacts();
         Assert.NotEmpty(contacts);
 
         Vector3d center = contacts[0];
-        Assert.True(renderer.TryProximity(
+        Assert.True(renderer.Simulation.TryProximity(
             center,
             (float)(HumanHitTest.BodyRadiusInUnits * 2d),
             out HumanProximityTarget proximity));
@@ -47,7 +48,7 @@ public sealed class SoldierRendererTests
             center.X + (HumanHitTest.BodyRadiusInUnits * 2d),
             center.Y,
             center.Z + (HumanHitTest.BodyHeightInUnits * 0.5d));
-        Assert.True(renderer.TryIntersect(origin, end, out _));
+        Assert.True(renderer.Simulation.TryIntersect(origin, end, out _));
     }
 
     private static (VirtualFileSystem FileSystem, ResourceRegistry Resources, LoadedMission Mission, LevelTask LevelRoot)

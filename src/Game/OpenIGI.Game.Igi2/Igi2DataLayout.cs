@@ -24,9 +24,6 @@ namespace OpenIGI.Game.Igi2;
 /// </remarks>
 public sealed class Igi2DataLayout : ITitleDataLayout
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2DataLayout Instance { get; } = new();
-
     /// <inheritdoc/>
     public IReadOnlyList<KeyValuePair<string, string>> StartupAliases { get; } =
     [
@@ -67,11 +64,10 @@ public sealed class Igi2DataLayout : ITitleDataLayout
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Empty until I.G.I. 2 has a shell that shows text. Its tree ships <c>language/</c> in upper case
-    /// beside <c>MISSIONS</c>, which is one of the casing differences that has to be settled before any
-    /// of these paths are written down.
+    /// The two the game's own text is read from, the status messages' and the computer's (<see cref="Flow.Igi2Strings"/>).
+    /// Its tree ships <c>LANGUAGE/</c> in upper case beside <c>MISSIONS</c>; the local device finds either casing.
     /// </remarks>
-    public IReadOnlyList<string> StringArchives { get; } = [];
+    public IReadOnlyList<string> StringArchives { get; } = Flow.Igi2Strings.Archives;
 
     /// <inheritdoc/>
     /// <remarks>

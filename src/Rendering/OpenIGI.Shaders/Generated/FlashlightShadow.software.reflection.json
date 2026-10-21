@@ -22,7 +22,12 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None",
-      "sampleType": "Depth"
+      "sampleType": "Depth",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uNormal",
@@ -32,7 +37,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uRaw",
@@ -42,7 +52,12 @@
       "dimensions": 2,
       "storageFormat": "Rg16Float",
       "wgslStorageFormat": "Rgba32Float",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "p",
@@ -52,7 +67,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,

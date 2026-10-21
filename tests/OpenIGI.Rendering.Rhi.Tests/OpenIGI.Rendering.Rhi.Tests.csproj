@@ -4,12 +4,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Both backends, because one test here asks whether they agree: a value one implements and the
-       other refuses is a portability hole no single-backend suite can find. -->
+  <!-- Every backend, because the tests here ask whether they agree: a value one implements and another
+       refuses is a portability hole no single-backend suite can find. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.D3D12\OpenIGI.Rendering.D3D12.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>

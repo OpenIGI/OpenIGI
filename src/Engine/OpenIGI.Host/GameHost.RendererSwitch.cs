@@ -1,34 +1,22 @@
 ﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
+using OpenIGI.Host.Services;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
-using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Host;
 
 /// <summary>The switch between renderers: asking for it, and picking the game back up after it.</summary>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
-    // How many frames the switched-from picture is read over. The RHI copies the presented frame back only
-    // once asked to, so the first read of a session is black and a frame or two later it holds the picture.
-    private const int SwitchCaptureFrames = 3;
-
     // Whether the resumed pose has been put back: once, for the mission the switch reloaded.
     private bool _resumePlaced;
 
-    // A switch asked for and waiting on its picture, and how many more frames to read it over.
-    private RendererSwitch? _switchPending;
-    private int _switchCaptureFramesLeft;
-
-    // The switched-from picture, held on screen in place of the loading screen while the resumed mission
-    // loads and settles.
-    private TextureHandle _resumeFrame = TextureHandle.None;
-    private ResumeHold _resumeHold;
+    // The picture a switch holds across, read from this renderer or shown by it.
+    private readonly RendererSwitchService _switch;
 
     // No keys held and no mouse moved: what the view is steered by while the switched-from picture is up,
     // so the new renderer comes up on exactly the view the old one was showing.
@@ -36,7 +24,7 @@ internal sealed partial class GameHost
 
     /// <summary>Gets the input the player and the free camera are steered by this frame.</summary>
     private InputState ViewInput => ScriptedViewInput
-        ?? (_resumeHold == ResumeHold.Holding ? _stillInput : _window.Input);
+        ?? (_switch.IsHolding ? _stillInput : _window.Input);
 
     /// <summary>
     /// Gets or sets input a harness steers the player with in place of the window's, or <see langword="null"/>.
@@ -46,19 +34,6 @@ internal sealed partial class GameHost
     /// scenario that has to press the trigger hands its own state here instead.
     /// </remarks>
     internal InputState? ScriptedViewInput { get; set; }
-
-    /// <summary>Where a resumed game is in holding the switched-from picture.</summary>
-    private enum ResumeHold
-    {
-        /// <summary>No picture held: loads show their own screen.</summary>
-        None,
-
-        /// <summary>The picture is on screen in place of the loading screen.</summary>
-        Holding,
-
-        /// <summary>The level has been revealed; the rest of this load draws nothing over it.</summary>
-        Revealed,
-    }
 
     /// <summary>Gets where to pick the game up again, when it ended to change renderer.</summary>
     /// <remarks>
@@ -73,53 +48,67 @@ internal sealed partial class GameHost
     private void RegisterRendererSwitchCommand(ConsoleSystem console) =>
         console.Commands.Add(
             "r_switch_renderer",
-            "Rebuilds the game over the other graphics API -- Vulkan or WebGPU -- in the same place.",
+            "Rebuilds the game over the next graphics API -- Direct3D 12, Vulkan, WebGPU -- in the same place.",
             context =>
             {
-                if (_switchPending is not null)
+                if (RequestRendererSwitch(target: null))
                 {
-                    return;
+                    context.Print("Switching renderer; the game will be back in a moment.");
                 }
-
-                _switchPending = new RendererSwitch(
-                    _activeMission?.Id ?? 0,
-                    _conditions,
-                    SwitchedHour(),
-                    CurrentPose());
-                _switchCaptureFramesLeft = SwitchCaptureFrames;
-                context.Print("Switching renderer; the game will be back in a moment.");
-                _logger.Information("Renderer", $"Switching renderer from {Describe(_switchPending)}.");
             });
+
+    /// <summary>Rebuilds the game over the API <c>r_renderer</c> now names, where that is not the one drawing.</summary>
+    /// <remarks>
+    /// Only where the composition root said which API it built: a game it did not tell has nothing to compare
+    /// the setting with, and a harness that changes the setting is not asking for its device to be torn down.
+    /// </remarks>
+    private void OnRendererSettingChanged()
+    {
+        if (_options.Renderer == RendererBackend.Auto)
+        {
+            return;
+        }
+
+        RendererBackend wanted = RendererBackends.Resolve(DisplayCVars.Renderer.Value);
+        if (wanted != _options.Renderer)
+        {
+            RequestRendererSwitch(wanted);
+        }
+    }
+
+    /// <summary>Asks for the game to be rebuilt over another API, once its picture has been read.</summary>
+    /// <param name="target">The API to build, or null for the next in the switch key's order.</param>
+    /// <returns><see langword="true"/> when a switch was asked for; false when one already was.</returns>
+    private bool RequestRendererSwitch(RendererBackend? target)
+    {
+        if (_switch.IsPending)
+        {
+            return false;
+        }
+
+        _switch.Request(new RendererSwitch(
+            _session.Mission?.Id ?? 0,
+            _conditions,
+            SwitchedHour(),
+            CurrentPose(),
+            Target: target,
+
+            // Chosen from the menu, where there is no mission to go back to: the player is put back on the
+            // settings page they chose it on, not on the landing page.
+            ShellTab: target is not null && _session.Mission is null ? "settings" : null));
+        return true;
+    }
 
     /// <summary>Reads the picture a switch holds across, and ends the game once it has it.</summary>
     /// <remarks>Called at the end of every frame, after it has been presented.</remarks>
     private void AdvanceRendererSwitch()
     {
-        if (_switchPending is not { } pending)
+        if (_switch.Advance(_window.Width, _window.Height) is not { } done)
         {
             return;
         }
 
-        int width = _window.Width;
-        int height = _window.Height;
-        Bgra32[] pixels = new Bgra32[Math.Max(width * height, 0)];
-
-        if (pixels.Length > 0)
-        {
-            _device.CaptureFrame(width, height, pixels);
-        }
-
-        if (--_switchCaptureFramesLeft > 0)
-        {
-            return;
-        }
-
-        RendererSwitchRequest = pending with
-        {
-            Frame = pixels.Length > 0 ? new RendererSwitchFrame(width, height, pixels) : null,
-        };
-
-        _switchPending = null;
+        RendererSwitchRequest = done;
 
         // The ordinary way out, so settings are saved on it as on any other.
         _stopRequested = true;
@@ -134,21 +123,21 @@ internal sealed partial class GameHost
     /// sun, and every session after the first switch looked different from the first.
     /// </remarks>
     private float SwitchedHour() =>
-        _activeMission is null ? -1f
-        : RenderCVars.DayNightCycle.Value ? _dayNight.TimeHours
+        _session.Mission is null ? -1f
+        : RenderCVars.DayNightCycle.Value ? _timeOfDay.DayNight.TimeHours
         : RenderCVars.TimeOfDay.Value;
 
     /// <summary>Where the view is now, or null where there is no mission to be anywhere in.</summary>
     private RendererSwitchPose? CurrentPose()
     {
-        if (_activeMission is null)
+        if (_session.Mission is null)
         {
             return null;
         }
 
-        if (_playerMode && _player is { } player)
+        if (_playerMode && HostedPlayer is { } player)
         {
-            Vector3d feet = player.Body.Position / PlayerCamera.UnitsPerMetre;
+            Vector3d feet = player.Body.Position / WorldScene.UnitsPerMetre;
             return new RendererSwitchPose(feet, player.Body.Yaw, player.Body.Pitch, Flying: false);
         }
 
@@ -177,69 +166,9 @@ internal sealed partial class GameHost
 
         // The picture the other renderer last showed, up on this one before anything else is, so the
         // switch reads as that picture holding still rather than as a load.
-        if (resume.Frame is { } frame && frame.Width == _window.Width && frame.Height == _window.Height)
+        if (resume.Frame is { } frame)
         {
-            _resumeFrame = _device.CreateTexture(
-                new TextureDescription(frame.Width, frame.Height, 1, TextureFilter.Point, TextureAddressMode.Clamp),
-                frame.Pixels);
-            _resumeHold = ResumeHold.Holding;
-
-            _device.Clear(Bgra32.Black);
-            PaintResumeFrame();
-            _device.SwapBuffers();
-        }
-    }
-
-    /// <summary>Paints the held picture in place of the loading screen, where a switch is being resumed.</summary>
-    /// <returns><see langword="true"/> when the loading screen is not to be painted.</returns>
-    private bool PaintResumeFrame()
-    {
-        switch (_resumeHold)
-        {
-            case ResumeHold.Holding:
-                // The loading backdrop pass with every effect of it off -- no blur, grade, vignette, grain,
-                // lines, bars or zoom -- is the picture as it was.
-                _device.DrawLoadingBackdrop(
-                    _resumeFrame,
-                    new LoadingBackdropSettings(
-                        TimeSeconds: 0f,
-                        Blur: 0f,
-                        Desaturation: 0f,
-                        Vignette: 0f,
-                        Zoom: 1f,
-                        Grain: 0f,
-                        Scanlines: 0f,
-                        Opacity: 1f,
-                        Letterbox: -0.01f,
-                        HasPicture: true,
-                        AspectRatio: _window.Height > 0 ? _window.Width / (float)_window.Height : 1.777f,
-                        Sweep: 0f));
-                return true;
-
-            case ResumeHold.Revealed:
-                return true;
-
-            default:
-                return false;
-        }
-    }
-
-    /// <summary>Lets the held picture go as the level is revealed, and forgets it once the load has ended.</summary>
-    /// <param name="revealed">Whether the level has been revealed.</param>
-    /// <param name="loadActive">Whether the load sequence is still running.</param>
-    private void AdvanceResumeHold(bool revealed, bool loadActive)
-    {
-        if (_resumeHold == ResumeHold.Holding && revealed)
-        {
-            // A cut, not the load's dissolve: the eye goes from one renderer's picture straight to the other.
-            _resumeHold = ResumeHold.Revealed;
-        }
-
-        if (_resumeHold == ResumeHold.Revealed && !loadActive)
-        {
-            _resumeHold = ResumeHold.None;
-            _device.DestroyTexture(_resumeFrame);
-            _resumeFrame = TextureHandle.None;
+            _switch.HoldResumeFrame(frame, _window.Width, _window.Height);
         }
     }
 
@@ -259,7 +188,7 @@ internal sealed partial class GameHost
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
         }
-        else if (_player is { } player && player.Place(_ground, pose.Position, pose.Yaw))
+        else if (HostedPlayer is { } player && player.Place(_mission.Ground, pose.Position, pose.Yaw))
         {
             player.Body.Pitch = pose.Pitch;
             _playerMode = true;
@@ -270,11 +199,6 @@ internal sealed partial class GameHost
             return;
         }
 
-        _logger.Information("Renderer", FormattableString.Invariant($"Resumed {Describe(_options.Resume)}; the sun is at hour {_dayNight.TimeHours:F2}."));
+        _logger.Information("Renderer", FormattableString.Invariant($"Resumed {RendererSwitchService.Describe(_options.Resume)}; the sun is at hour {_timeOfDay.DayNight.TimeHours:F2}."));
     }
-
-    private static string Describe(RendererSwitch request) => request.Pose is { } pose
-        ? FormattableString.Invariant(
-            $"mission {request.MissionId} at hour {request.TimeHours:F2} {(pose.Flying ? "flying" : "standing")} at ({pose.Position.X:F2}, {pose.Position.Y:F2}, {pose.Position.Z:F2}) yaw {pose.Yaw:F3} pitch {pose.Pitch:F3}")
-        : request.MissionId > 0 ? FormattableString.Invariant($"mission {request.MissionId} at hour {request.TimeHours:F2}") : "the menu";
 }

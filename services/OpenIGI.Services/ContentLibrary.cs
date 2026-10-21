@@ -68,7 +68,9 @@ internal sealed class ContentLibrary
             listed.Add(listing);
         }
 
-        Index = new ContentIndex(chunkUrl, listed);
+        // Mods in an index of their own: a launcher that reads the content index knows the kinds it was built with.
+        Index = new ContentIndex(chunkUrl, [.. listed.Where(static pack => pack.Kind != ContentKind.Mod)]);
+        Mods = new ContentIndex(chunkUrl, [.. listed.Where(static pack => pack.Kind == ContentKind.Mod)]);
         Count = _manifests.Values.Sum(static versions => versions.Count);
         Tag = $"\"{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity.ToString())))[..16]}\"";
     }
@@ -76,8 +78,11 @@ internal sealed class ContentLibrary
     /// <summary>Gets a library with nothing in it, for before the first scan.</summary>
     public static ContentLibrary Empty { get; } = new([], string.Empty);
 
-    /// <summary>Gets what the index lists: every pack's newest version.</summary>
+    /// <summary>Gets what the content index lists: every pack's newest version, mods aside.</summary>
     public ContentIndex Index { get; }
+
+    /// <summary>Gets what the mods index lists: every mod's newest version.</summary>
+    public ContentIndex Mods { get; }
 
     /// <summary>Gets how many pack versions there are.</summary>
     public int Count { get; }

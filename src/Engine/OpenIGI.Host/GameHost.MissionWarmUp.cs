@@ -4,12 +4,10 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -18,7 +16,7 @@ using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Host;
 
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     /// <summary>The mission-name table, so the card titles a level the way the campaign screen did.</summary>
     private MenuStringTable? _menuStrings;
@@ -174,14 +172,14 @@ internal sealed partial class GameHost
     {
         if (_loadSequence.WantsCapture)
         {
-            HoldFrameForDissolve();
+            _menuFlow.HoldFrame(_window.Width, _window.Height);
             _loadSequence.NotifyCaptured();
             return;
         }
 
         if (_loadSequence.WantsLivePicture)
         {
-            HoldFrameForDissolve();
+            _menuFlow.HoldFrame(_window.Width, _window.Height);
         }
     }
 
@@ -210,13 +208,13 @@ internal sealed partial class GameHost
         }
 
         // How long the level has been the player's: reset by anything that takes it from them.
-        bool playerHasLevel = !PresentationHoldsLevel && !_loadSequence.IsActive && CutsceneFrameShown is null;
+        bool playerHasLevel = !PresentationHoldsLevel && !_loadSequence.IsActive && _mission.CutsceneFrameShown is null;
         _controlSeconds = playerHasLevel ? _controlSeconds + (1f / 60f) : 0f;
 
         // An intro that starts AFTER the notice went up takes it down again, to be posted fresh when the
         // intro lets go: a level's intro can begin a second or two into play, and a notice that ran its
         // few seconds behind the intro's camera was one nobody saw.
-        if (CutsceneFrameShown is not null && _briefingPost is { HasTitle: true } hidden)
+        if (_mission.CutsceneFrameShown is not null && _briefingPost is { HasTitle: true } hidden)
         {
             hidden.Clear();
             _briefingPosted = false;
@@ -224,7 +222,7 @@ internal sealed partial class GameHost
 
         // The briefing posted at the start: it arrives once the player has the level, stays a few
         // seconds, and goes.
-        if (RenderCVars.WorldBriefing.Value && _activeMission is not null && _player is not null
+        if (RenderCVars.WorldBriefing.Value && _session.Mission is not null && HostedPlayer is not null
             && !PresentationHoldsLevel && !_loadSequence.IsActive)
         {
             PostBriefing();
@@ -387,7 +385,7 @@ internal sealed partial class GameHost
     /// </remarks>
     private void PostBriefing()
     {
-        if (_briefingPosted || _player is not { } standing || _shellHeadingFont is not { } face)
+        if (_briefingPosted || HostedPlayer is not { } standing || _shellHeadingFont is not { } face)
         {
             return;
         }
@@ -418,7 +416,7 @@ internal sealed partial class GameHost
             // A reader stands on the open side and looks INTO the surface, so the notice faces along the
             // normal and is read by someone whose heading is the normal reversed.
             yaw = MathF.Atan2(-normal.X, -normal.Y);
-            where = FormattableString.Invariant($"on '{surfaceLabel}', {Distance(eye.Position, surfaceMetres):F1} m from the start");
+            where = FormattableString.Invariant($"on '{surfaceLabel}', {Vector3d.Distance(eye.Position, surfaceMetres):F1} m from the start");
         }
         else
         {
@@ -493,7 +491,7 @@ internal sealed partial class GameHost
         surfaceMetres = default;
         normal = default;
         label = string.Empty;
-        if (_worldSolids is not { } solids)
+        if (_mission.Solids is not { } solids)
         {
             return false;
         }
@@ -688,17 +686,17 @@ internal sealed partial class GameHost
         if (_warmUp.IsActive)
         {
             _warmUpFramesDrawn++;
-            bool fieldPending = _sdfBake is not null;
-            bool lightingReady = !RealtimeGiPending;
+            bool fieldPending = _gi.FieldBake is not null;
+            bool lightingReady = !_gi.Pending;
 
-            _warmUp.Update(lightingReady, fieldPending, GiConvergeProgress, elapsed);
+            _warmUp.Update(lightingReady, fieldPending, _gi.ConvergeProgress, elapsed);
 
             if (!_warmUp.IsActive)
             {
                 // The level is up. A promoted backdrop still carries the decoded pictures its arming had
                 // not reached; the mission decodes those as it meets them, like a level loaded cold does,
                 // rather than holding the lot for as long as it is played.
-                ReleaseLoadLeftovers();
+                _memory.ReleaseLoadLeftovers(_world, _detailMaps);
 
                 if (_warmUp.GaveUp)
                 {
@@ -717,7 +715,7 @@ internal sealed partial class GameHost
         }
 
         _loadSequence.Update(elapsed, ready: _loadSequence.Loaded && !_warmUp.IsActive);
-        AdvanceResumeHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
+        _switch.AdvanceHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
 
         if (!_loadSequence.IsActive || !ShowsLoadingPanel)
         {
@@ -773,7 +771,7 @@ internal sealed partial class GameHost
     private void PaintLoadingScreen(SpriteBatch batch)
     {
         // After a switch of renderer the other renderer's picture stands in for the whole screen.
-        if (PaintResumeFrame())
+        if (_switch.PaintResumeFrame(_window.Width, _window.Height))
         {
             return;
         }
@@ -792,12 +790,12 @@ internal sealed partial class GameHost
             Scanlines: 0.05f,
             Opacity: _loadSequence.Opacity,
             Letterbox: MissionLoadSequence.LetterboxFraction * _loadSequence.Letterbox,
-            HasPicture: _loadSequence.HasPicture && _dissolveTexture.IsValid,
+            HasPicture: _loadSequence.HasPicture && _menuFlow.HeldFrame.IsValid,
             AspectRatio: height > 0f ? width / height : 1.777f,
             Sweep: _loadSequence.Sweep);
 
         _device.BeginStageTiming(RenderStage.UserInterface);
-        _device.DrawLoadingBackdrop(_dissolveTexture, backdrop);
+        _device.DrawLoadingBackdrop(_menuFlow.HeldFrame, backdrop);
 
         float card = _loadSequence.Card;
         if (card > 0.002f)

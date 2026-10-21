@@ -25,6 +25,22 @@ public sealed class BonePose
         _parents = parents;
     }
 
+    /// <summary>A pose another evaluator has already composed, bone by bone.</summary>
+    /// <param name="rotations">Each bone's world rotation.</param>
+    /// <param name="positions">Each bone's world position.</param>
+    /// <param name="parents">Each bone's parent, or <see cref="BoneSkeleton.NoParent"/>.</param>
+    /// <returns>The pose, over copies of the arrays.</returns>
+    /// <exception cref="ArgumentException">The arrays differ in length.</exception>
+    public static BonePose FromBones(ReadOnlySpan<Matrix3f> rotations, ReadOnlySpan<Vector3f> positions, ReadOnlySpan<int> parents)
+    {
+        if (positions.Length != rotations.Length || parents.Length != rotations.Length)
+        {
+            throw new ArgumentException("One rotation, position and parent per bone.", nameof(positions));
+        }
+
+        return new BonePose(rotations.ToArray(), positions.ToArray(), parents.ToArray());
+    }
+
     /// <summary>Gets each bone's world rotation.</summary>
     public ReadOnlySpan<Matrix3f> Rotations => _rotations;
 

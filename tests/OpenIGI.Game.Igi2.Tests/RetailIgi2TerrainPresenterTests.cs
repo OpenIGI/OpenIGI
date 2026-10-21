@@ -1,10 +1,11 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Ilff;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -40,7 +41,7 @@ public sealed class RetailIgi2TerrainPresenterTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -121,7 +122,7 @@ public sealed class RetailIgi2TerrainPresenterTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -171,7 +172,7 @@ public sealed class RetailIgi2TerrainPresenterTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -242,7 +243,7 @@ public sealed class RetailIgi2TerrainPresenterTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -324,12 +325,5 @@ public sealed class RetailIgi2TerrainPresenterTests
             ViewDistance: 0,
             Batching: false,
             OcclusionCulling: false);
-    }
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
     }
 }

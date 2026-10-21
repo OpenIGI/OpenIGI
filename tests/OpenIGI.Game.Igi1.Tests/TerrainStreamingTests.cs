@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -11,6 +12,7 @@ using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi1.World;
 
 namespace OpenIGI.Game.Igi1.Tests;
 

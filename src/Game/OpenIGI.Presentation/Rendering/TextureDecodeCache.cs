@@ -4,7 +4,6 @@ using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;

@@ -33,7 +33,7 @@ public sealed record QualityLevel(string Name, IReadOnlyList<(string Variable, s
 /// <para>
 /// It follows that a group has to be able to say "none of my steps": the moment one of those variables is
 /// set by hand the group is between its steps, and reporting the step it used to be on would be a lie the
-/// player can see through. That reading is <see cref="QualityBinding.Detect"/>'s, and is the same rule
+/// player can see through. That reading is <see cref="QualityBinding.Detect(OpenIGI.Core.Configuration.CVarRegistry, QualityGroup)"/>'s, and is the same rule
 /// <c>GraphicsPresetRegistry</c> applies to the overall preset.
 /// </para>
 /// </remarks>

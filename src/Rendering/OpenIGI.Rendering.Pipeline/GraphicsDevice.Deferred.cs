@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Deferred;
@@ -997,6 +998,7 @@ public sealed partial class GraphicsDevice
         DisposeShadows();
         DisposeGlazing();
         DisposeRain();
+        DisposeLitWater();
         DisposeGlazingReflection();
         DisposeFog();
         _motionBlur?.Dispose();

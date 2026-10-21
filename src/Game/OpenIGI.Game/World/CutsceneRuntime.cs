@@ -1,12 +1,13 @@
+using OpenIGI.Game.Physics;
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Rendering;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
@@ -60,7 +61,7 @@ public sealed class CutsceneRuntime
     private IRetailCarWorld? _retailCarWorld;
     private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
     private readonly List<RetailRayModel> _retailVehicleModels = [];
-    private readonly LevelUpdateWalker _walker = new();
+    private readonly LevelUpdateWalker _walker;
     private readonly Dictionary<GameTask, int> _lastVehicleTick = [];
     private Func<string, MagicObjectDefinition?>? _retailMagic;
     private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
@@ -325,11 +326,18 @@ public sealed class CutsceneRuntime
         Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
         Func<GameTask, bool>? vehicleObstacleReleased = null,
         TerrainData? terrain = null,
-        IOpenIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null,
+        LevelUpdateWalker? walker = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
+        if (walker is not null && !ReferenceEquals(walker.Root, levelRoot))
+        {
+            throw new ArgumentException("The walk must be over the same level.", nameof(walker));
+        }
+
         _root = levelRoot;
+        _walker = walker ?? new LevelUpdateWalker(levelRoot);
         _variables = variables;
         _hostNative = native;
         _soundChanged = soundChanged;
@@ -349,7 +357,7 @@ public sealed class CutsceneRuntime
         (IReadOnlyDictionary<GameTask, int> visionPhases, int visionCounter) = AiVisionPhases.Assign(levelRoot);
         _visionCounter = visionCounter;
         int taskOrder = 0;
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             int order = taskOrder++;
             _taskOrder[task] = order;
@@ -357,7 +365,7 @@ public sealed class CutsceneRuntime
             {
                 _visions[task] = new VehicleVision(visionPhases.TryGetValue(task, out int phase) ? phase : NextVisionPhase());
             }
-            if (task is ConditionalContainerTask container)
+            if (task is ConditionalContainerTask { SettlesOutsideTheTick: true } container)
             {
                 _containers.Add(container);
             }
@@ -431,34 +439,33 @@ public sealed class CutsceneRuntime
 
         foreach (TimerState timer in _timers)
         {
-            _walker.Register(timer.Task, _ => TickTimer(timer));
+            _walker.Bind(timer.Task, _ => TickTimer(timer));
         }
 
         foreach (AnimationState animation in _animations)
         {
-            _walker.Register(animation.Task, _ => TickAnimation(animation));
+            _walker.Bind(animation.Task, _ => TickAnimation(animation));
         }
 
         foreach (SoundState sound in _sounds)
         {
-            _walker.Register(sound.Task, _ => TickSound(sound));
+            _walker.Bind(sound.Task, _ => TickSound(sound));
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
             {
-                _walker.Register(task, TickCar);
+                _walker.Bind(task, TickCar);
             }
             else if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
             {
-                _walker.Register(task, TickHeli);
+                _walker.Bind(task, TickHeli);
             }
         }
 
-        _walker.ContainerTransition = (container, started) =>
-            _expressions.Execute(started ? container.RunAtStart : container.RunAtStop, container);
+        _walker.ContainerScript = (container, script) => _expressions.Execute(script, container);
         _walker.HoldContainer = RetainsLevelFourOutro;
 
         // Capture the whole authored hierarchy before parking a vehicle. Moving a
@@ -474,7 +481,7 @@ public sealed class CutsceneRuntime
         {
             SceneState scene = new(cutscene, ReadShots(cutscene));
             _scenes.Add(scene);
-            _walker.Register(cutscene, _ => TickScene(scene));
+            _walker.Bind(cutscene, _ => TickScene(scene));
             _walker.RegisterDeactivation(cutscene, _ => DeactivateScene(scene));
         }
 
@@ -580,7 +587,7 @@ public sealed class CutsceneRuntime
         ArgumentNullException.ThrowIfNull(graphs);
         _carAis.Clear();
         AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(_root);
-        foreach (GameTask task in Walk(_root))
+        foreach (GameTask task in _root.Descendants())
         {
             if (task is not DeclaredTask declared
                 || !string.Equals(task.Type.Name, "CarAI", StringComparison.Ordinal)
@@ -602,7 +609,7 @@ public sealed class CutsceneRuntime
 
             CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
             _carAis.Add(state);
-            _walker.Register(declared, _ => TickCarAi(state));
+            _walker.Bind(declared, _ => TickCarAi(state));
         }
     }
 
@@ -1423,7 +1430,7 @@ public sealed class CutsceneRuntime
 
         // One walk of the level tree in authored order: each task runs its own update where the tree puts it
         //, not grouped by type.
-        _walker.Walk(_root);
+        _walker.Tick();
         UpdateFrame();
     }
 
@@ -1436,7 +1443,7 @@ public sealed class CutsceneRuntime
     /// <summary>A LevelTimer's update (<c>0x51BE10</c>): children first, then On, Reset and the tick count.</summary>
     private void TickTimer(TimerState timer)
     {
-        _walker.WalkChildren(timer.Task);
+        _walker.RunChildren(timer.Task);
         if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
         {
             timer.Tick = 0;
@@ -1487,7 +1494,7 @@ public sealed class CutsceneRuntime
     private void TickScene(SceneState state)
     {
         CutSceneTask scene = state.Task;
-        _walker.WalkChildren(scene);
+        _walker.RunChildren(scene);
         bool wasRun = scene.IsRun;
         if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
         {
@@ -1549,7 +1556,7 @@ public sealed class CutsceneRuntime
     {
         bool run = _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
         SetSoundRun(sound, run);
-        _walker.WalkChildren(sound.Task);
+        _walker.RunChildren(sound.Task);
     }
 
     private void SetSoundRun(SoundState sound, bool run)
@@ -1599,7 +1606,7 @@ public sealed class CutsceneRuntime
 
         _lastVehicleTick[car] = SimulationTick;
         TickVehicleVision(car);
-        _walker.WalkChildren(car);
+        _walker.RunChildren(car);
         TickVehicleCombat(car);
         TickDeathZones(car);
     }
@@ -1608,7 +1615,7 @@ public sealed class CutsceneRuntime
     private void TickHeli(GameTask heli)
     {
         TickVehicleVision(heli);
-        _walker.WalkChildren(heli);
+        _walker.RunChildren(heli);
         TickVehicleCombat(heli);
         TickDeathZones(heli);
     }
@@ -1754,7 +1761,7 @@ public sealed class CutsceneRuntime
         5_000f,
         0.95f,
         0,
-        [new CarWheelDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
+        [new CarWheelTypeDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
         string.Empty,
         []);
 
@@ -1825,8 +1832,8 @@ public sealed class CutsceneRuntime
             Dictionary<int, Vector3d> bodyOffsets = [];
             for (int i = 0; i < placements.Count && i < physics.Wheels.Count; i++)
             {
-                CarWheelDefinition entry = physics.Wheels[i];
-                int slot = entry.BodyIndex >= 0 ? entry.BodyIndex : -10 - entry.BodyIndex;
+                CarWheelTypeDefinition entry = physics.Wheels[i];
+                int slot = entry.ContactPoint >= 0 ? entry.ContactPoint : -10 - entry.ContactPoint;
                 Vector3d candidate = new(
                     Math.Sign(drawn[i].X) * acrossMagnitude,
                     drawn[i].Y,
@@ -1841,7 +1848,7 @@ public sealed class CutsceneRuntime
             int contacts = 0;
             for (int i = 0; i < physics.Wheels.Count; i++)
             {
-                if (physics.Wheels[i].HasBody)
+                if (physics.Wheels[i].HasContactPoint)
                 {
                     contacts++;
                 }
@@ -1850,10 +1857,10 @@ public sealed class CutsceneRuntime
             CarWheel[] wheels = new CarWheel[placements.Count];
             for (int i = 0; i < placements.Count; i++)
             {
-                CarWheelDefinition definition = i < physics.Wheels.Count
+                CarWheelTypeDefinition definition = i < physics.Wheels.Count
                     ? physics.Wheels[i]
-                    : new CarWheelDefinition(false, false, 0f, -1, 0f, 0f);
-                int slot = definition.BodyIndex >= 0 ? definition.BodyIndex : -10 - definition.BodyIndex;
+                    : new CarWheelTypeDefinition(false, false, 0f, -1, 0f, 0f);
+                int slot = definition.ContactPoint >= 0 ? definition.ContactPoint : -10 - definition.ContactPoint;
                 Vector3d offset = bodyOffsets.TryGetValue(slot, out Vector3d bodyOffset)
                     ? bodyOffset
                     : drawn[i];
@@ -1865,16 +1872,16 @@ public sealed class CutsceneRuntime
                 // contact patch. Measuring the running game: its Mission 2 truck rests 0.037 m over
                 // the terrain, which puts the bottom of a 0.464 m wheel 0.023 m clear -- touching.
                 double radius = Math.Max(0d, modelRadius?.Invoke(placements[i].Instance.Name) ?? 0d);
-                double travel = definition.SuspensionLengthUnits;
+                double travel = definition.MaxSpringDistance;
                 double stiffness = definition.SpringStiffness;
                 double settled = contacts > 0 && stiffness > 0d
                     ? Math.Min(travel, travel / (contacts * stiffness))
                     : 0d;
                 offset = new Vector3d(offset.X, offset.Y, drawn[i].Z - radius - settled);
-                CarBodyDefinition? body = null;
+                PhysicsContactPointType? body = null;
                 for (int b = 0; b < physics.Bodies.Count; b++)
                 {
-                    if (physics.Bodies[b].Index == slot)
+                    if (physics.Bodies[b].MagicVertex == slot)
                     {
                         body = physics.Bodies[b];
                         break;
@@ -1884,8 +1891,8 @@ public sealed class CutsceneRuntime
                 wheels[i] = new CarWheel(
                     definition,
                     offset,
-                    body?.LateralFriction ?? 0.95f,
-                    body?.LongitudinalFriction ?? 0.05f,
+                    body?.FrictionX ?? 0.95f,
+                    body?.FrictionY ?? 0.05f,
                     (float)radius);
             }
 
@@ -1924,14 +1931,14 @@ public sealed class CutsceneRuntime
         double halfWidth = physics.Dimensions.X * 0.5d * WorldScene.UnitsPerMetre;
         for (int i = 0; i < fallback.Length; i++)
         {
-            CarWheelDefinition definition = i < physics.Wheels.Count
+            CarWheelTypeDefinition definition = i < physics.Wheels.Count
                 ? physics.Wheels[i]
-                : new CarWheelDefinition(false, true, 0f, 0, 0f, 0f);
+                : new CarWheelTypeDefinition(false, true, 0f, 0, 0f, 0f);
             fallback[i] = new CarWheel(
                 definition,
                 new Vector3d(
                     (i % 2) == 0 ? halfWidth : -halfWidth,
-                    definition.Steerable ? halfLength : -halfLength,
+                    definition.IsSteering ? halfLength : -halfLength,
                     0d),
                 0.95f,
                 0.05f);
@@ -2241,7 +2248,7 @@ public sealed class CutsceneRuntime
 
         bool steerable = _carWheelIndices.TryGetValue(placement, out int index)
             && index < wheels.Length
-            && wheels[index].Definition.Steerable;
+            && wheels[index].Definition.IsSteering;
         // Retail's accumulator counts DOWN as the car goes forward (Wheel::Tick subtracts the spin
         // rate), and it is applied against the wheel's own axle axis, which points the opposite way
         // from the placement frame's X here. Rolling by the raw accumulator spins the tyres
@@ -2805,7 +2812,7 @@ public sealed class CutsceneRuntime
             Math.Clamp(viewportHeight, 0f, 1f),
             active.Filter,
             noise,
-            Lerp(active.FilterColor, timed[i2].Shot.FilterColor, colorLocal),
+            Vector3f.Lerp(active.FilterColor, timed[i2].Shot.FilterColor, colorLocal),
             timeOfDay,
             scene,
             current);
@@ -3481,10 +3488,10 @@ public sealed class CutsceneRuntime
                     0.003f,
                     200f,
                     [
-                        new(20f, Vector3f.UnitX, Vector3f.Zero),
-                        new(3f, Vector3f.UnitY, Vector3f.Zero),
-                        new(50f, Vector3f.UnitZ, Vector3f.Zero),
-                    ]);
+                        new(20f, Vector3f.Zero, Vector3f.UnitX),
+                        new(3f, Vector3f.Zero, Vector3f.UnitY),
+                        new(50f, Vector3f.Zero, Vector3f.UnitZ),
+                    ]) { MaximumThrust = 3_000f };
             if (_retailCarWorld is { } retailWorld
                 && target is DeclaredTask retailHeliTask
                 && transform.HelicopterPhysics is { } retailHeliPhysics
@@ -3495,7 +3502,6 @@ public sealed class CutsceneRuntime
                 if (program.Tick == 0)
                 {
                     RetailHeliSpawn.Reset(retailHeli, retailHeliPhysics, RetailHeliSpawn.Placement(retailHeliTask));
-
 
                     program.WriteChannel(0, 0f);
                     program.WriteChannel(1, 0f);
@@ -3905,7 +3911,7 @@ public sealed class CutsceneRuntime
         // Small coordinates can belong to a separate cinematic set (Mission 4's Anya HQ);
         // they are not evidence of a vehicle-local offset. Only explicit Link IDs transform
         // the evaluated camera through 0x508940. See the MVP retail audit for both listings.
-        foreach (GameTask task in Walk(scene))
+        foreach (GameTask task in scene.Descendants())
         {
             if (task is not DeclaredTask camera || !string.Equals(task.Type.Name, "EditCamera", StringComparison.Ordinal))
             {
@@ -3929,18 +3935,6 @@ public sealed class CutsceneRuntime
 
     private static bool IsBandFilter(string filter) =>
         filter.Contains("BAND", StringComparison.OrdinalIgnoreCase);
-
-    private static IEnumerable<GameTask> Walk(GameTask root)
-    {
-        foreach (GameTask child in root.Children)
-        {
-            yield return child;
-            foreach (GameTask nested in Walk(child))
-            {
-                yield return nested;
-            }
-        }
-    }
 
     private (Vector3d Position, Matrix3f Orientation) InitialPose(GameTask? task)
     {
@@ -3998,8 +3992,6 @@ public sealed class CutsceneRuntime
 
         return string.Empty;
     }
-    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
     /// <summary>
     /// Ports the retail Heli live update (0x431B70), its force helper (0x431E30), Rotor::Tick
     /// (0x42D440), and the force accumulator at 0x4EC6A0.
@@ -4578,12 +4570,12 @@ public sealed class CutsceneRuntime
         {
             Vector3f airDirection = localAir / MathF.Sqrt(localSpeedSquared);
             float dynamicPressure = localSpeedSquared * 0.00032699999f;
-            foreach (AerodynamicSurfaceDefinition surface in physics.Aerodynamics)
+            foreach (Wing surface in physics.Wings)
             {
-                float magnitude = Vector3f.Dot(airDirection, surface.Direction)
-                    * surface.Coefficient
+                float magnitude = Vector3f.Dot(airDirection, surface.Normal)
+                    * surface.Area
                     * dynamicPressure;
-                AddForce(surface.Direction * magnitude, surface.Point);
+                AddForce(surface.Normal * magnitude, surface.Position);
             }
         }
 
@@ -4954,7 +4946,6 @@ public sealed class CutsceneRuntime
 
         /// <summary>Gets or sets the plane's retail body, once its AnimTask has spoken.</summary>
         public RetailPlaneBody? RetailPlane { get; set; }
-
 
         public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }

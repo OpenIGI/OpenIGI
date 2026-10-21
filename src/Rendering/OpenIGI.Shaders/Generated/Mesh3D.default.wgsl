@@ -141,15 +141,23 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
                 }
             }
         }
-        if(terrain_0 > 1.5f)
+        if(terrain_0 > 2.5f)
         {
-            facing_0 = 1.0f - morph_0;
+            fogDensity_0 = 1.0f;
         }
         else
         {
-            facing_0 = morph_0;
+            if(terrain_0 > 1.5f)
+            {
+                facing_0 = 1.0f - morph_0;
+            }
+            else
+            {
+                facing_0 = morph_0;
+            }
+            fogDensity_0 = fogDensity_0 * facing_0;
         }
-        output_0.fade_0 = fogDensity_0 * facing_0;
+        output_0.fade_0 = fogDensity_0;
         localPosition_1 = _S5;
         diffuseUv_2 = diffuseUv_3;
     }
@@ -200,10 +208,18 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
         _S7 = _S2.colorBgra_0.zyxw;
     }
     output_0.color_0 = _S7;
-    var sunModel_0 : vec3<f32> = vec3<f32>(push_0.markerExposure_0.w, push_0.normalKey1_0.w, push_0.normalKey2_0.w);
+    var sunModel_0 : vec3<f32> = push_0.normalKey0_0.xyz;
     if((abs(push_0.markerExposure_0.x)) > 0.5f)
     {
         _S6 = terrain_0 < 0.5f;
+    }
+    else
+    {
+        _S6 = false;
+    }
+    if(_S6)
+    {
+        _S6 = (push_0.normalKey0_0.w) >= 0.0f;
     }
     else
     {
@@ -299,7 +315,7 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
         discard;
     }
     var lightmap_0 : vec3<f32> = SampledDisplay_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S10.lightmapUv_2))).xyz);
-    if((push_0.normalKey0_0.w) > 0.5f)
+    if((abs(push_0.normalKey0_0.w)) > 0.5f)
     {
         _S11 = true;
     }
@@ -363,7 +379,16 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
     }
     if(_S12)
     {
-        var shown_0 : vec3<f32> = mix(push_0.normalKey2_0.xyz, base_1, vec3<f32>(_S10.fog_1));
+        var fogShare_0 : f32;
+        if((push_0.normalKey0_0.w) < -0.5f)
+        {
+            fogShare_0 = _S10.color_1.x;
+        }
+        else
+        {
+            fogShare_0 = 1.0f;
+        }
+        var shown_0 : vec3<f32> = mix(push_0.normalKey2_0.xyz * vec3<f32>(fogShare_0), base_1, vec3<f32>(_S10.fog_1));
         if(cLinearScene_0 != i32(0))
         {
             var _S13 : pixelOutput_0 = pixelOutput_0( vec4<f32>(DecodeSrgb_0(max(shown_0, vec3<f32>(0.0f, 0.0f, 0.0f))) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );

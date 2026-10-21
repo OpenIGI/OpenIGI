@@ -40,27 +40,15 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// abstracting, and it is the first thing to try on each remaining cluster.
 /// </para>
 /// <para>
-/// <b>How the order of the remaining moves is decided, and why two of them are not moving.</b> The
-/// interface for a pass is a <em>census</em> of what the host already uses on that renderer, never an
-/// invention — the same method that retyped <c>_platform</c> and <c>_window</c> in phase 0. Over what is
-/// left, that census says:
-/// </para>
-/// <list type="bullet">
-/// <item><description><c>SoldierRenderer</c>, <b>68 of its 75 public members</b>;</description></item>
-/// <item><description><c>PlayerCamera</c>, <b>105 of its 118</b>.</description></item>
-/// </list>
-/// <para>
-/// Everything else has gone. What is left is those two, <c>Igi1Presentation</c> (which adapts the first
-/// for the shadow pass) and <c>InteractionPrompt</c> (which maps one game's sprite names to wording, and
-/// is reached only through <c>PlayerCamera</c>). All four leave together, when those two can.
-/// </para>
-/// <para>
-/// The last two do not get interfaces. An interface covering 68 or 105 members is the class copied out
-/// with the word <c>interface</c> in front, shaped end to end by one game, which is the failure the seam
-/// exists to prevent — they are a character system and a first-person player state wearing renderers'
-/// names. They move wholesale when they can, and a shared abstraction is extracted at M2-6 against
-/// I.G.I. 2's, which is the same call the plan already makes for <c>Ai/AiSoldier.cs</c>. Only three of
-/// the 34 are blocked by anything but the host naming them: those two and the adapter over the first.
+/// <b>How the last of the folder left.</b> The interface for a pass is a <em>census</em> of what the host already uses on
+/// that renderer, never an invention. The two large ones were a character system and a first-person player state wearing
+/// renderers' names, and an interface over all of either would have been the class copied out with the word
+/// <c>interface</c> in front, shaped end to end by one game. They were split first: the player state moved whole into
+/// <c>OpenIGI.Game.Igi1</c> as <c>PlayerCamera</c>, and the soldiers' simulation became <c>SoldierSimulation</c> there,
+/// leaving a renderer whose 32 public members are all drawing. Its interface, <c>ISoldierPresenter</c>, is declared in
+/// that title project beside the simulation it speaks of -- one game's seam, not a shared one -- and the title registers
+/// it in its <c>PresenterRegistry</c>, as it does the impact effects and the retail menus. The prompt wording and the
+/// cutscene framing were title-agnostic and moved up into <c>OpenIGI.Presentation</c>.
 /// </para>
 /// </remarks>
 public sealed class TitleContentTests
@@ -74,17 +62,11 @@ public sealed class TitleContentTests
     private static readonly string[] Baseline =
     [
         "src/Engine/OpenIGI.Host/GameHost.Audio.cs",
-        "src/Engine/OpenIGI.Host/GameHost.Effects.cs",
         "src/Engine/OpenIGI.Host/GameHost.Menu.cs",
         "src/Engine/OpenIGI.Host/GameHost.Mission.cs",
-        "src/Engine/OpenIGI.Host/GameHost.cs",
-        "src/Engine/OpenIGI.Host/Infrastructure/MissionStringResolver.cs",
         "src/Engine/OpenIGI.Host/Menu/MissionPreview.cs",
         "src/Engine/OpenIGI.Host/Menu/MissionPreviewLoader.cs",
-        "src/Game/OpenIGI.Presentation/Rendering/ExplosionEffectRenderer.cs",
-        "src/Game/OpenIGI.Presentation/Rendering/ImpactParticleRenderer.cs",
         "src/Game/OpenIGI.Presentation/Rendering/SkyRenderer.cs",
-        "src/Game/OpenIGI.Presentation/Rendering/SmokeSpriteRenderer.cs",
         "src/Game/OpenIGI.Presentation/Rendering/TextureDecodeCache.cs",
     ];
 

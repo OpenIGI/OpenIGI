@@ -56,7 +56,7 @@ public sealed class IresArchive
         }
 
         List<IresEntry> entries = [];
-        Walk(container, entries);
+        CollectEntries(container, entries);
 
         Dictionary<string, IresEntry> byName = new(entries.Count, StringComparer.OrdinalIgnoreCase);
         foreach (IresEntry entry in entries)
@@ -82,10 +82,29 @@ public sealed class IresArchive
     public bool TryGetEntry(string name, [NotNullWhen(true)] out IresEntry? entry) =>
         _byName.TryGetValue(ResourcePath.Normalize(name), out entry);
 
+    /// <summary>Finds the first body entry whose file name, wherever its directory, is the one given.</summary>
+    /// <param name="fileName">The file name and extension, such as <c>smoke2.spr</c>; case is ignored.</param>
+    /// <returns>The entry, or <see langword="null"/> when the archive holds no such body.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="fileName"/> is <see langword="null"/>.</exception>
+    public IresEntry? FindBody(string fileName)
+    {
+        ArgumentNullException.ThrowIfNull(fileName);
+        foreach (IresEntry entry in Entries)
+        {
+            if (entry.Kind == IresEntryKind.Body
+                && Path.GetFileName(entry.Name).Equals(fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
     /// <inheritdoc/>
     public override string ToString() => $"IRES archive, {Entries.Count} entries, {Container.Size} bytes";
 
-    private static void Walk(IlffContainer container, List<IresEntry> entries)
+    private static void CollectEntries(IlffContainer container, List<IresEntry> entries)
     {
         string? currentName = null;
 
@@ -121,7 +140,7 @@ public sealed class IresArchive
                 if (nested.FormType == IlffTags.Ires)
                 {
                     // Nested archives contribute their entries to the parent's namespace.
-                    Walk(nested, entries);
+                    CollectEntries(nested, entries);
                 }
 
                 // A nested DBUG sub-form only carries debug context strings; the game ignores them and

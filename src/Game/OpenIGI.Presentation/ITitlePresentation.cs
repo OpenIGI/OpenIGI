@@ -4,6 +4,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -123,6 +124,15 @@ public interface IWorldPresenter : IDisposable
 
     /// <summary>Gets or sets the placements that turn on the spot, or null when none do.</summary>
     IPlacementSpin? Spins { get; set; }
+
+    /// <summary>Gets or sets the placements a title's own objects move, or null when none do.</summary>
+    IPlacementMotion? Motions { get; set; }
+
+    /// <summary>Gets or sets which placements a title's own objects have destroyed, or null when none can be.</summary>
+    IPlacementDestruction? Destruction { get; set; }
+
+    /// <summary>Gets or sets which of their models the placements wear by their objects' state, or null when none change.</summary>
+    IPlacementVariant? Variants { get; set; }
 
     /// <summary>Gets or sets the level's pickups, or null when it has none.</summary>
     GenericPickupRegistry? GenericPickups { get; set; }

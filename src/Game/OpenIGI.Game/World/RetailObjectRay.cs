@@ -57,6 +57,23 @@ public sealed class RetailRayMesh
         }
     }
 
+    /// <summary>Initializes a new instance of the <see cref="RetailRayMesh"/> class: another mesh's faces, tree and materials over vertices and spheres of its own, as a mesh bent into a new shape keeps them.</summary>
+    /// <param name="source">The mesh whose faces, tree links and materials are shared.</param>
+    /// <param name="vertices">The vertices, three floats each.</param>
+    /// <param name="spheres">The spheres, four floats each.</param>
+    public RetailRayMesh(RetailRayMesh source, float[] vertices, float[] spheres)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(spheres);
+        Faces = source.Faces;
+        Links = source.Links;
+        Portal = source.Portal;
+        GlobalMaterial = source.GlobalMaterial;
+        Vertices = vertices;
+        Spheres = spheres;
+    }
+
     /// <summary>Gets the faces, four ints each: three vertex indices and the mesh material.</summary>
     public int[] Faces { get; }
 
@@ -123,9 +140,6 @@ public sealed class RetailRayModel
 /// </summary>
 public static class RetailModelRay
 {
-    private const float BoxPad = 0.1f;
-    private const double NearTie = 0.1;
-
     /// <summary>Tests one ray against one model, writing the result when the model is hit strictly nearer.</summary>
     /// <param name="o">The model.</param>
     /// <param name="s">The ray start.</param>
@@ -151,9 +165,9 @@ public static class RetailModelRay
         float smax = s0 <= m12 ? m12 : s0;
         X87 r = (X87)o.ModelRadius * smax;
         float rf = r.F;
-        if (!Straddles((X87)px - r, (X87)rf + px, s.X, e.X)
-            || !Straddles((X87)py - rf, (X87)rf + py, s.Y, e.Y)
-            || !Straddles((X87)pz - rf, (X87)rf + pz, s.Z, e.Z))
+        if (!MeshRay.Straddles(MeshRayDialect.Igi1, ((X87)px - r).Value, ((X87)rf + px).Value, s.X, e.X)
+            || !MeshRay.Straddles(MeshRayDialect.Igi1, ((X87)py - rf).Value, ((X87)rf + py).Value, s.Y, e.Y)
+            || !MeshRay.Straddles(MeshRayDialect.Igi1, ((X87)pz - rf).Value, ((X87)rf + pz).Value, s.Z, e.Z))
         {
             return;
         }
@@ -186,34 +200,30 @@ public static class RetailModelRay
             best = X87.ToFloat(X87.Sqrt(ddx * ddx + ddy * ddy + ddz * ddz).Value);
         }
 
-        float[] lo = new float[3], hi = new float[3];
-        Box(ls, p0, lo, hi);
-        float[] bestPoint = [lex, ley, lez];
         double inverse = ((X87)1.0 / len2).Value;
-        float[] d = [dxl.F, dyl.F, dzl.F];
+        Vector3f d = new(dxl.F, dyl.F, dzl.F);
         if (mesh.SphereCount == 0)
         {
             return;
         }
 
-        Search search = new()
+        Vector3f start = new(lsx, lsy, lsz);
+        MeshRaySearch<X87> search = new(MeshRayDialect.Igi1)
         {
-            Best = best,
-            HadHit = hadHit,
-            PrevFront = prevFront,
-            Point = bestPoint,
-            Lo = lo,
-            Hi = hi,
+            Closest = best,
+            IsHit = hadHit,
+            PreviousFront = prevFront,
+            Point = new Vector3f(lex, ley, lez),
         };
-
-        Walk(mesh, ls, d, inverse, lenf, portals: false, search, mirror: false);
-        if (!search.Found)
+        search.Box(start, new Vector3f(p0[0], p0[1], p0[2]));
+        WalkFaces(mesh, mesh.Vertices, mesh.Spheres, start, d, inverse, lenf, portals: false, search, mirror: false, cullSpheres: true);
+        if (!search.HitThisObject)
         {
             return;
         }
 
-        best = search.Best;
-        float[] point = search.Point;
+        best = search.Closest;
+        float[] point = [search.Point.X, search.Point.Y, search.Point.Z];
         if (!(s0 == 1f && s1 == 1f && s2 == 1f))
         {
             X87 a0 = (X87)point[0] * s0, b0 = (X87)point[1] * s1, c0 = (X87)point[2] * s2;
@@ -243,17 +253,13 @@ public static class RetailModelRay
         result.NormalX = wx;
         result.NormalY = wy;
         result.NormalZ = wz;
-        result.HasFrontMaterial = search.PrevFront;
-        result.HasSurface = !search.PrevFront;
+        result.HasFrontMaterial = search.PreviousFront;
+        result.HasSurface = !search.PreviousFront;
         result.SurfaceForce = 0f;
         result.Distance = best;
         result.Hit = true;
         result.Material = mesh.GlobalMaterial[mesh.Faces[(4 * search.Face) + 3]];
     }
-
-    /// <summary><c>(lo ≤ S or lo ≤ E) and (hi ≥ S or hi ≥ E)</c>.</summary>
-    private static bool Straddles(X87 lo, X87 hi, double s, double e) =>
-        (lo.Value <= s || lo.Value <= e) && (hi.Value >= s || hi.Value >= e);
 
     /// <summary>A world point into the model's frame: <c>Mᵀ·(P − pos)</c>, with the start's and the end's groupings.</summary>
     private static void Local(RetailRayModel o, Vector3d p, bool fromStart, out float x, out float y, out float z)
@@ -274,343 +280,70 @@ public static class RetailModelRay
         }
     }
 
-    /// <summary>The search box around the start and a point, padded by 0.1.</summary>
-    internal static void Box(float[] ls, float[] p, float[] lo, float[] hi)
-    {
-        for (int k = 0; k < 3; k++)
-        {
-            lo[k] = ((X87)(ls[k] < p[k] ? ls[k] : p[k]) - BoxPad).F;
-            hi[k] = ((X87)(ls[k] <= p[k] ? p[k] : ls[k]) + BoxPad).F;
-        }
-    }
-
-    /// <summary>The running best of a face search.</summary>
-    internal sealed class Search
-    {
-        public double Best { get; set; }
-
-        public bool HadHit { get; set; }
-
-        public bool PrevFront { get; set; }
-
-        public bool Found { get; set; }
-
-        public float[] Point { get; set; } = [];
-
-        public int Face { get; set; } = -1;
-
-        public float[] Lo { get; set; } = [];
-
-        public float[] Hi { get; set; } = [];
-    }
-
-    /// <summary>§5.4: the sphere-tree walk with its quirk, and the face tests of every node it reaches.</summary>
-    internal static void Walk(
+    /// <summary>
+    /// §5.4–§5.7: the sphere-tree walk with its quirk and the face test of every node it reaches, on the engine's shared search with
+    /// this build's pad, tie and comparisons (<see cref="MeshRayDialect.Igi1"/>), summing the plane z, y, x and the spheres z, x, y.
+    /// </summary>
+    /// <param name="mesh">The mesh's faces and materials.</param>
+    /// <param name="vertices">Its vertices: its own, or a bent spline segment's.</param>
+    /// <param name="spheres">Its sphere tree: its own, or a bent spline segment's.</param>
+    /// <param name="start">The line's start, in the mesh's frame.</param>
+    /// <param name="d">The line's direction.</param>
+    /// <param name="inverse">One over the direction's squared length.</param>
+    /// <param name="lenf">The line's length, for a crossing's distance.</param>
+    /// <param name="portals">Whether portal faces stop the line.</param>
+    /// <param name="search">The running best.</param>
+    /// <param name="mirror">Whether the faces are mirrored (a reversed spline segment).</param>
+    /// <param name="cullSpheres">Whether the spheres cull.</param>
+    internal static void WalkFaces(
         RetailRayMesh mesh,
-        float[] ls,
-        float[] d,
+        float[] vertices,
+        float[] spheres,
+        Vector3f start,
+        Vector3f d,
         double inverse,
         float lenf,
         bool portals,
-        Search search,
+        MeshRaySearch<X87> search,
         bool mirror,
-        float[]? vertices = null,
-        bool cullSpheres = true,
-        float[]? spheres = null)
+        bool cullSpheres)
     {
-        int[] links = mesh.Links;
-        float[] sp = spheres ?? mesh.Spheres;
-        Span<int> stack = stackalloc int[100];
-        int top = 0;
-        stack[0] = 0;
-        int node = 0;
-        bool first = true;
-        while (true)
-        {
-            if (first)
-            {
-                first = false;
-            }
-            else
-            {
-                int sibling = links[(4 * node) + 3];
-                if (sibling != 0)
-                {
-                    node = sibling;
-                    stack[top] = node;
-                    if (!SphereOk(sp, node, ls, d, inverse, search, cullSpheres))
-                    {
-                        continue;
-                    }
-                }
-                else
-                {
-                    top--;
-                    if (top < 0)
-                    {
-                        break;
-                    }
-
-                    node = stack[top];
-                    continue;
-                }
-            }
-
-            while (true)
-            {
-                int child = links[(4 * node) + 2];
-                if (child == 0)
-                {
-                    break;
-                }
-
-                node = child;
-                if (++top >= stack.Length)
-                {
-                    return;
-                }
-
-                stack[top] = node;
-                if (!SphereOk(sp, node, ls, d, inverse, search, cullSpheres))
-                {
-                    break;
-                }
-            }
-
-            int count = links[(4 * node) + 1];
-            if (count != 0)
-            {
-                int firstFace = links[4 * node];
-                for (int f = firstFace; f < firstFace + count; f++)
-                {
-                    FaceTest(mesh, f, ls, d, lenf, portals, search, mirror, vertices ?? mesh.Vertices);
-                }
-            }
-        }
+        Faces faces = new(mesh, vertices, start, d, lenf, portals, search, mirror);
+        search.Walk(mesh.Links, spheres, start, d, inverse, MeshSphereSums.ZxyAlways, cullSpheres, ref faces);
     }
 
-    private static bool SphereOk(float[] sp, int n, float[] ls, float[] d, double inverse, Search search, bool cull)
-    {
-        if (!cull)
-        {
-            return true;
-        }
-
-
-        float cx = sp[4 * n], cy = sp[(4 * n) + 1], cz = sp[(4 * n) + 2], rr = sp[(4 * n) + 3];
-        X87 ex = (X87)cx - ls[0], ey = (X87)cy - ls[1], ez = (X87)cz - ls[2];
-        X87 proj = ez * d[2] + ey * d[1] + ex * d[0];
-        X87 c2 = ez * ez + ex * ex + ey * ey;
-        X87 d2 = c2 - (proj * proj * inverse);
-        if (!(((X87)rr * rr).Value >= d2.Value))
-        {
-            return false;
-        }
-
-        float[] lo = search.Lo, hi = search.Hi;
-        if (((X87)rr + cx).Value < lo[0] || ((X87)cy + rr).Value < lo[1] || ((X87)cz + rr).Value < lo[2])
-        {
-            return false;
-        }
-
-        return ((X87)cx - rr).Value <= hi[0] && ((X87)cy - rr).Value <= hi[1] && ((X87)cz - rr).Value <= hi[2];
-    }
-
-    /// <summary>§5.5–§5.7: one face against the local ray, and the near-tie rules.</summary>
-    private static void FaceTest(
+    // One face: portals skipped unless asked for, then the shared crossing, its distance along the line, and the tie rules.
+    private readonly struct Faces(
         RetailRayMesh mesh,
-        int f,
-        float[] ls,
-        float[] d,
+        float[] vertices,
+        Vector3f s,
+        Vector3f d,
         float lenf,
         bool portals,
-        Search search,
-        bool mirror,
-        float[] v)
+        MeshRaySearch<X87> search,
+        bool mirror) : IMeshFaceVisitor
     {
-        int[] faces = mesh.Faces;
-        int i0 = faces[4 * f], i1 = faces[(4 * f) + 1], i2 = faces[(4 * f) + 2], mat = faces[(4 * f) + 3];
-        if (!portals && (uint)mat < (uint)mesh.Portal.Length && mesh.Portal[mat])
+        public void Visit(int face)
         {
-            return;
-        }
-
-        float[] lo = search.Lo, hi = search.Hi;
-        for (int k = 0; k < 3; k++)
-        {
-            if (!(lo[k] <= v[(3 * i0) + k] || lo[k] <= v[(3 * i1) + k] || lo[k] <= v[(3 * i2) + k]))
-            {
-                return;
-            }
-        }
-
-        for (int k = 0; k < 3; k++)
-        {
-            if (!(hi[k] >= v[(3 * i0) + k] || hi[k] >= v[(3 * i1) + k] || hi[k] >= v[(3 * i2) + k]))
-            {
-                return;
-            }
-        }
-
-        float v0x = v[3 * i0], v0y = v[(3 * i0) + 1], v0z = v[(3 * i0) + 2];
-        float ax = ((X87)v[3 * i2] - v0x).F, ay = ((X87)v[(3 * i2) + 1] - v0y).F, az = ((X87)v[(3 * i2) + 2] - v0z).F;
-        float bx = ((X87)v[3 * i1] - v0x).F, by = ((X87)v[(3 * i1) + 1] - v0y).F;
-        X87 bzr = (X87)v[(3 * i1) + 2] - v0z;
-        float bz = bzr.F;
-        float nx = (bzr * ay - (X87)by * az).F;
-        float nyp = ((X87)bz * ax - (X87)bx * az).F;
-        float nz = ((X87)by * ax - (X87)bx * ay).F;
-        float tnx = nx, tny = -nyp, tnz = nz;
-        if (mirror)
-        {
-            tnx = -tnx;
-            tny = -tny;
-            tnz = -tnz;
-        }
-
-        X87 den = (X87)tnz * d[2] + (X87)tny * d[1] + (X87)tnx * d[0];
-        if (den.Value == 0d || double.IsNaN(den.Value))
-        {
-            return;
-        }
-
-        X87 num = ((X87)v0z - ls[2]) * tnz + ((X87)v0y - ls[1]) * tny + ((X87)v0x - ls[0]) * tnx;
-        X87 t = num / den;
-        if (t.Value < 0d)
-        {
-            return;
-        }
-
-        float tf = t.F;
-        if (!(tf <= 1.0f))
-        {
-            return;
-        }
-
-        float pcx = ((X87)tf * d[0] + ls[0]).F, pcy = ((X87)tf * d[1] + ls[1]).F, pcz = ((X87)tf * d[2] + ls[2]).F;
-        float fax = MathF.Abs(tnx), fay = MathF.Abs(tny), faz = MathF.Abs(tnz);
-        X87 s1, s2;
-        if (fax > fay && fax > faz)
-        {
-            if (nx == 0f)
+            int[] faces = mesh.Faces;
+            int material = faces[(4 * face) + 3];
+            if (!portals && (uint)material < (uint)mesh.Portal.Length && mesh.Portal[material])
             {
                 return;
             }
 
-            float qzv = ((X87)pcz - v0z).F, qyv = ((X87)pcy - v0y).F;
-            s2 = ((X87)qzv * ay - (X87)qyv * az) / nx;
-            if (s2.Value < 0d || !(s2.Value <= 1d))
+            if (!search.Cross(vertices, 3 * faces[4 * face], 3 * faces[(4 * face) + 1], 3 * faces[(4 * face) + 2], s, d, mirror, MeshPlaneSum.ZYX, out MeshFaceCrossing<X87> crossing))
             {
                 return;
             }
 
-            if (MathF.Abs(ay) > MathF.Abs(az))
+            X87 distance = (X87)crossing.T * lenf;
+            bool front = crossing.Dot.Value < 0d;
+            if (search.Accept(distance, front))
             {
-                s1 = ((X87)qyv - (X87)by * s2) / ay;
-            }
-            else
-            {
-                if (az == 0f)
-                {
-                    return;
-                }
-
-                s1 = ((X87)qzv - (X87)bz * s2) / az;
+                search.Take(distance, front, crossing.Point, face, s);
             }
         }
-        else if (fay > faz)
-        {
-            if (nyp == 0f)
-            {
-                return;
-            }
-
-            float qzv = ((X87)pcz - v0z).F, qxv = ((X87)pcx - v0x).F;
-            s2 = ((X87)qzv * ax - (X87)qxv * az) / nyp;
-            if (s2.Value < 0d || !(s2.Value <= 1d))
-            {
-                return;
-            }
-
-            if (MathF.Abs(ax) > MathF.Abs(az))
-            {
-                s1 = ((X87)qxv - (X87)bx * s2) / ax;
-            }
-            else
-            {
-                if (az == 0f)
-                {
-                    return;
-                }
-
-                s1 = ((X87)qzv - (X87)bz * s2) / az;
-            }
-        }
-        else
-        {
-            if (nz == 0f)
-            {
-                return;
-            }
-
-            float qyv = ((X87)pcy - v0y).F, qxv = ((X87)pcx - v0x).F;
-            s2 = ((X87)qyv * ax - (X87)qxv * ay) / nz;
-            if (s2.Value < 0d || !(s2.Value <= 1d))
-            {
-                return;
-            }
-
-            if (MathF.Abs(ax) > MathF.Abs(ay))
-            {
-                s1 = ((X87)qxv - (X87)bx * s2) / ax;
-            }
-            else
-            {
-                if (ay == 0f)
-                {
-                    return;
-                }
-
-                s1 = ((X87)qyv - (X87)by * s2) / ay;
-            }
-        }
-
-        if (s1.Value < 0d || !((s1 + s2).Value <= 1d))
-        {
-            return;
-        }
-
-        double dist = ((X87)tf * lenf).Value;
-        bool front = den.Value < 0d;
-        if (search.HadHit)
-        {
-            double b = search.Best;
-            if (((X87)dist + NearTie).Value < b)
-            {
-            }
-            else if (dist < b)
-            {
-                if (!front && search.PrevFront)
-                {
-                    return;
-                }
-            }
-            else
-            {
-                if (!(((X87)dist - NearTie).Value < b) || !front || search.PrevFront)
-                {
-                    return;
-                }
-            }
-        }
-
-        search.Best = dist;
-        search.PrevFront = front;
-        search.Face = f;
-        search.Found = true;
-        search.HadHit = true;
-        search.Point = [pcx, pcy, pcz];
-        Box(ls, search.Point, search.Lo, search.Hi);
     }
 
     /// <summary>§5.8's normal: the face's cross product with the register differences, not unit length.</summary>

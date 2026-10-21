@@ -469,7 +469,7 @@ public sealed class ReorderHandle : Control
         {
             if (List!.Step(direction == NavDirection.Up ? -1 : 1))
             {
-                UiSounds.Moved();
+                PlaySound(UiSounds.Move);
             }
         }
 

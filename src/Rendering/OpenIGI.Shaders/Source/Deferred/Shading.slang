@@ -18,6 +18,7 @@
 #include "../Common/NightSky.slang"
 #include "../Common/Wetness.slang"
 #include "../Common/Flashlight.slang"
+#include "../Common/LampIrradiance.slang"
 
 // The G-buffer, read as ordinary textures at this very pixel, in a pass of its own after the one that
 // wrote it: the form every backend has. (Vulkan could read it as subpass inputs and keep it on chip, but
@@ -859,62 +860,6 @@ float3 SunDisc(float3 worldRay, float3 sunDirection, float3 illuminance, float p
         * (limb * cover);
 }
 
-// The irradiance a uniform straight emitter puts on a surface, per unit of the emitter's whole intensity:
-// the integral along it of n.L / |L|^3, where L runs from the surface to each point of the emitter, from
-// L0 at one end to L0 + D at the other. Closed form, since |L|^2 is a quadratic in the parameter t:
-//
-//   integral dt / Q^(3/2)   = (a t + b) / (det sqrt(Q))
-//   integral t dt / Q^(3/2) = -(b t + c) / (det sqrt(Q))
-//
-// with Q = a t^2 + 2 b t + c, a = D.D, b = L0.D, c = L0.L0 and det = a c - b^2. The part of the emitter
-// below the surface's horizon gives it nothing, so the interval is first cut to where n.L is positive.
-// A surface the emitter lies along (det near nought) takes it as one point at the middle of what is left.
-float LineIrradiance(float3 n, float3 lineStart, float3 lineDelta)
-{
-    float startFacing = dot(n, lineStart);
-    float deltaFacing = dot(n, lineDelta);
-    float t0 = 0.0;
-    float t1 = 1.0;
-    if (abs(deltaFacing) > 1e-6)
-    {
-        float crossing = -startFacing / deltaFacing;
-        if (deltaFacing > 0.0)
-        {
-            t0 = max(t0, crossing);
-        }
-        else
-        {
-            t1 = min(t1, crossing);
-        }
-    }
-    else if (startFacing <= 0.0)
-    {
-        return 0.0;
-    }
-
-    if (t1 <= t0)
-    {
-        return 0.0;
-    }
-
-    float a = dot(lineDelta, lineDelta);
-    float b = dot(lineStart, lineDelta);
-    float c = dot(lineStart, lineStart);
-    float det = (a * c) - (b * b);
-    if (det <= 1e-5 * a * c)
-    {
-        float3 middle = lineStart + (lineDelta * (0.5 * (t0 + t1)));
-        float distanceSq = max(dot(middle, middle), 1e-4);
-        return saturate(dot(n, middle) * rsqrt(distanceSq)) / distanceSq * (t1 - t0);
-    }
-
-    float q0 = sqrt(max((a * t0 * t0) + (2.0 * b * t0) + c, 1e-8));
-    float q1 = sqrt(max((a * t1 * t1) + (2.0 * b * t1) + c, 1e-8));
-    float at1 = ((startFacing * ((a * t1) + b)) - (deltaFacing * ((b * t1) + c))) / (det * q1);
-    float at0 = ((startFacing * ((a * t0) + b)) - (deltaFacing * ((b * t0) + c))) / (det * q0);
-    return max(at1 - at0, 0.0);
-}
-
 // One lamp's light on this surface towards the eye, before anything stands in its way, and the surface's
 // diffuse share of it for the ranking. Nought for a lamp out of reach, behind its own glass, or below the
 // surface's horizon.
@@ -939,11 +884,12 @@ float3 LampShade(
 {
     diffuseWeight = 0.0;
 
+    // Its reach and its cone, as the lamp trace weighs them: see Common/LampIrradiance.slang.
     float4 positionRadius = lamps.positionRadius[i];
     float3 toLightView = positionRadius.xyz - viewPos;
     float distanceSq = dot(toLightView, toLightView);
-    float reach = positionRadius.w;
-    if (distanceSq >= reach * reach)
+    float window = LampReachWindow(distanceSq, positionRadius.w);
+    if (window <= 0.0)
     {
         return float3(0.0, 0.0, 0.0);
     }
@@ -951,15 +897,10 @@ float3 LampShade(
     float3 toCentre = mul(gi.viewToWorld, float4(toLightView, 0.0)).xyz;
     float3 centreDir = toCentre * rsqrt(max(distanceSq, 1e-8));
 
-    float ratio = distanceSq / max(reach * reach, 1e-4);
-    float window = clamp(1.0 - (ratio * ratio), 0.0, 1.0);
-    window *= window;
-
     float4 facing = lamps.direction[i];
-    if (dot(facing.xyz, facing.xyz) > 0.25)
+    if (LampFaces(facing))
     {
-        float3 axis = mul(gi.viewToWorld, float4(facing.xyz, 0.0)).xyz;
-        window *= max(dot(normalize(axis), -centreDir), 0.0);
+        window *= LampCone(mul(gi.viewToWorld, float4(facing.xyz, 0.0)).xyz, centreDir);
     }
 
     if (window <= 0.0)
@@ -968,7 +909,7 @@ float3 LampShade(
     }
 
     float3 colour = lamps.colourIntensity[i].rgb * lamps.colourIntensity[i].a * window;
-    float source = clamp(facing.w, 0.05, 1.0);
+    float source = LampSource(facing);
 
     float4 rect = lamps.rect[i];
     float3 halfAxis = mul(gi.viewToWorld, float4(rect.xyz, 0.0)).xyz;
@@ -997,7 +938,7 @@ float3 LampShade(
     }
     else
     {
-        irradiance = saturate(dot(normal, centreDir)) / max(distanceSq, source * source);
+        irradiance = LampPointIrradiance(normal, centreDir, distanceSq, source);
     }
 
     float specularDistanceSq = max(dot(toSpecular, toSpecular), 1e-6);

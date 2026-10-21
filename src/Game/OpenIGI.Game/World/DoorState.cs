@@ -43,6 +43,7 @@ public sealed class DoorState
     private float _angleDegrees;
     private float _slide;
     private bool _latch;
+    private int _ticksOpen;
 
     /// <summary>Initializes a new instance of the <see cref="DoorState"/> class, fully closed.</summary>
     /// <param name="maxAngleDegrees">The task's <c>Max angle</c> (<c>+320</c>) — zero for a purely sliding door.</param>
@@ -103,7 +104,11 @@ public sealed class DoorState
     public bool WasFullyClosed { get; private set; } = true;
 
     /// <summary>Gets how many ticks the door has been fully open — <c>+664</c>.</summary>
-    public int TicksOpen { get; private set; }
+    /// <remarks>
+    /// Counted as the door's update starts, before it moves (<see cref="RunConditions"/>): the update a door ends fully open on
+    /// leaves it nought, and the next counts the first tick, so a Close expression reading it sees the ticks it has stood open.
+    /// </remarks>
+    public int TicksOpen => _ticksOpen;
 
     /// <summary>Gets the state a use reads — <c>sub_447D70</c>.</summary>
     /// <remarks>0 open, 1 closed, 2 opening, 3 closing.</remarks>
@@ -139,9 +144,43 @@ public sealed class DoorState
     /// <summary>Commands the door closed, however it stands.</summary>
     public void CommandClosed() => _latch = false;
 
+    /// <summary>
+    /// A door that moved this tick found something in its doorway (<c>0x446D10</c> at <c>0x447323</c>): it is sent fully open,
+    /// and is neither open nor closed for the tick.
+    /// </summary>
+    public void Reopen()
+    {
+        _latch = true;
+        IsFullyOpen = false;
+        IsFullyClosed = false;
+    }
+
+    /// <summary>Gets a value indicating whether the door has updated at least once.</summary>
+    /// <remarks>
+    /// Its open and closed flags (<c>+409</c>/<c>+410</c>) are written only at the end of its update (<c>0x446D10</c>);
+    /// the constructor (<c>0x4468F0</c>) leaves them as the allocation found them, and the lock flag (<c>+408</c>) at
+    /// nought. A door in a section the level has not streamed in yet reports none of them.
+    /// </remarks>
+    public bool HasTicked { get; private set; }
+
+    /// <summary>
+    /// The door's expressions, between its children and its motion in <c>0x446D10</c>: a door that stood fully closed opens
+    /// when its Open expression holds (<c>0x446DF0</c>); one that stood fully open counts the tick, then shuts when its Close
+    /// expression holds (<c>0x446E38</c>); any other's count is nought.
+    /// </summary>
+    /// <param name="open">The Open expression, or <see langword="null"/> for none.</param>
+    /// <param name="close">The Close expression, or <see langword="null"/> for none.</param>
+    /// <remarks>
+    /// Open is asked only while closed and Close only while open, as they stood after the last update. Asking Close as the door
+    /// opens would cancel a button-driven gate on its first tick of travel.
+    /// </remarks>
+    public void RunConditions(Func<bool>? open, Func<bool>? close) =>
+        DoorExpressions.Command(IsFullyClosed, IsFullyOpen, ref _latch, ref _ticksOpen, open, close);
+
     /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>, with its x87 arithmetic.</summary>
     public void Tick()
     {
+        HasTicked = true;
         PreviousAngleDegrees = _angleDegrees;
         PreviousSlideFraction = _slide;
         WasFullyOpen = IsFullyOpen;
@@ -223,7 +262,5 @@ public sealed class DoorState
             IsFullyClosed = false;
             IsFullyOpen = false;
         }
-
-        TicksOpen = IsFullyOpen ? TicksOpen + 1 : 0;
     }
 }

@@ -120,6 +120,51 @@ internal sealed partial class HeightMapTask : GameTask
     public int BlurSmooth;
 }
 
+/// <summary>Another title's ground: its own parameters, none of which a <c>HeightMap</c>'s data writes.</summary>
+internal sealed partial class ElevationTask : GameTask
+{
+    [ScriptParam(ScriptParamType.Int32, "Detail")]
+    public int Detail;
+
+    public Vector3d Origin { get; set; }
+
+    public bool Parsed { get; private set; }
+
+    protected override void OnParsed() => Parsed = Origin != default;
+}
+
+/// <summary>Another version's <c>HeightMap</c>: the same names, another order, one added.</summary>
+internal sealed partial class LaterHeightMapTask : GameTask
+{
+    [ScriptParam(ScriptParamType.Int32, "Size")]
+    public int Size;
+
+    [ScriptParam(ScriptParamType.Int32, "Smoothing")]
+    public int Smoothing = 3;
+
+    [ScriptParam(ScriptParamType.ObjectPos, "Position")]
+    public Vector3d Position;
+
+    [ScriptParam(ScriptParamType.Int32, "Level")]
+    public int Level;
+}
+
+/// <summary>Sets an <see cref="ElevationTask"/> from a <c>HeightMap</c>'s values.</summary>
+internal sealed class HeightMapToElevation : ITaskParameterAdapter
+{
+    public TaskParameterValues? Seen { get; private set; }
+
+    public void Apply(TaskParameterValues values, GameTask task)
+    {
+        Seen = values;
+        var elevation = (ElevationTask)task;
+        values.TryGet("Position", out Vector3d origin);
+        values.TryGet("Level", out int level);
+        elevation.Origin = origin;
+        elevation.Detail = level;
+    }
+}
+
 /// <summary>Exports a latched boolean and its <c>Last</c> shadow, as retail <c>Switch</c> does.</summary>
 internal sealed class SwitchTask : GameTask
 {

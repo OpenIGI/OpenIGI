@@ -1,9 +1,9 @@
-﻿using OpenIGI.Formats;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Formats;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 

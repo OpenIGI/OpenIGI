@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A mod as a mod author builds one, loaded by the modding tests through the real loader. -->
+  <PropertyGroup>
+    <AssemblyName>SampleMod</AssemblyName>
+    <RootNamespace>SampleMod</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="mod.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Import Project="..\..\sdk\OpenIGI.Modding.Sdk\build\OpenIGI.Modding.Sdk.targets" />
+
+</Project>

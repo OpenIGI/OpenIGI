@@ -39,6 +39,7 @@ namespace OpenIGI.Releases;
 /// files are the same everywhere; native libraries are built for one platform, and a launcher on another neither
 /// offers nor downloads them. Left out of the JSON when null, like <paramref name="Kind"/>.
 /// </param>
+/// <param name="Mod">What a <see cref="ContentKind.Mod"/> says besides a pack's; <see langword="null"/>, and left out, for any other.</param>
 public sealed record ContentManifest(
     int Schema,
     string Id,
@@ -51,7 +52,8 @@ public sealed record ContentManifest(
     long Size,
     IReadOnlyList<ContentFile> Files,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Platforms = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Platforms = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ContentModInfo? Mod = null)
 {
     /// <summary>The manifest format this library writes.</summary>
     public const int CurrentSchema = 1;
@@ -67,7 +69,7 @@ public sealed record ContentManifest(
     /// <summary>Gets the listing entry that stands for this version in the content index.</summary>
     [JsonIgnore]
     public ContentPack Listing =>
-        new(Id, Version, Title, Summary, Game, MinGameVersion, Published, Size, DownloadSize, Kind: Kind, Platforms: Platforms);
+        new(Id, Version, Title, Summary, Game, MinGameVersion, Published, Size, DownloadSize, Kind: Kind, Platforms: Platforms, Mod: Mod);
 
     /// <summary>The largest picture a pack may have, in bytes.</summary>
     public const int MaxThumbnailBytes = 2 * 1024 * 1024;
@@ -122,6 +124,7 @@ public sealed record ContentChunk(string Hash, int Size, int StoredSize);
 /// <param name="Thumbnail">The address of the pack's picture, or <see langword="null"/> when it has none.</param>
 /// <param name="Kind">What the pack is; left out of the JSON for an overlay (see <see cref="ContentManifest.Kind"/>).</param>
 /// <param name="Platforms">The platforms it is for, or <see langword="null"/> for every one (see <see cref="ContentManifest.Platforms"/>).</param>
+/// <param name="Mod">What a mod says besides a pack's, or <see langword="null"/> (see <see cref="ContentManifest.Mod"/>).</param>
 public sealed record ContentPack(
     string Id,
     string Version,
@@ -134,12 +137,21 @@ public sealed record ContentPack(
     long Download,
     string? Thumbnail = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ContentKind Kind = ContentKind.Overlay,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Platforms = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Platforms = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ContentModInfo? Mod = null)
 {
     /// <summary>Gets the parsed <see cref="Version"/>.</summary>
     /// <exception cref="FormatException">The version is not a semantic version.</exception>
     [JsonIgnore]
     public ReleaseVersion ParsedVersion => ReleaseVersion.Parse(Version);
+
+    /// <summary>Whether the pack is for a game.</summary>
+    /// <param name="titleId">The game, by title id.</param>
+    /// <returns>
+    /// <see langword="true"/> when it is published for that game, or is a mod whose games include it (or are every game).
+    /// </returns>
+    public bool IsFor(string titleId) =>
+        Mod?.IsFor(titleId) ?? string.Equals(Game, titleId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Whether a game build is new enough to read the pack.</summary>
     /// <param name="gameVersion">The installed game's version, or <see langword="null"/> when none is.</param>
@@ -178,6 +190,74 @@ public enum ContentKind
     /// game id <see cref="RuntimePacks.Game"/>, which no game has, so a launcher from before kinds never offers it.
     /// </summary>
     Runtime,
+
+    /// <summary>
+    /// A mod: a folder holding a <c>mod.json</c>, code built against the modding API or content alone, which the game's
+    /// mod loader plays in the order the player sets (<see cref="ContentPack.Mod"/>). Listed apart from the other packs,
+    /// in the mods index (<see cref="ModPacks.IndexPath"/>), so a launcher that knows only overlays and runtimes never
+    /// meets a kind it cannot read.
+    /// </summary>
+    Mod,
+}
+
+/// <summary>What a mod's listing says besides a pack's: the games it is for, who made it, what it runs and what it needs.</summary>
+/// <param name="Titles">The games it is for, by title id; empty for every game.</param>
+/// <param name="Authors">Who made it.</param>
+/// <param name="RunsCode">Whether it has code, which runs on the player's machine with the game's own rights.</param>
+/// <param name="Source">
+/// Where the code it was built from is, a public repository, or <see langword="null"/> for a mod of content alone. Every
+/// mod with code is built by the mods index from this source at <paramref name="Commit"/>, never uploaded as built.
+/// </param>
+/// <param name="Commit">The source commit this version was built from, or <see langword="null"/>.</param>
+/// <param name="Homepage">Its page, or <see langword="null"/>.</param>
+/// <param name="License">Its licence, as an SPDX expression, or <see langword="null"/>.</param>
+/// <param name="RequiresTitleData">The other games whose installed data it reads, by title id, or <see langword="null"/>.</param>
+/// <param name="Dependencies">The mods it needs played with it, each with the oldest version that will do, or <see langword="null"/>.</param>
+/// <param name="Conflicts">The mods it cannot be played with, or <see langword="null"/>.</param>
+/// <param name="AffectsSimulation">Whether it changes what happens in play rather than only how it looks or sounds.</param>
+public sealed record ContentModInfo(
+    IReadOnlyList<string> Titles,
+    IReadOnlyList<string> Authors,
+    bool RunsCode,
+    string? Source = null,
+    string? Commit = null,
+    string? Homepage = null,
+    string? License = null,
+    IReadOnlyList<string>? RequiresTitleData = null,
+    IReadOnlyDictionary<string, string>? Dependencies = null,
+    IReadOnlyList<string>? Conflicts = null,
+    bool AffectsSimulation = true)
+{
+    /// <summary>Whether the mod is for a game.</summary>
+    /// <param name="titleId">The game, by title id.</param>
+    /// <returns><see langword="true"/> when it names that game, or no game (every one).</returns>
+    public bool IsFor(string titleId) =>
+        Titles is not { Count: > 0 } || Titles.Contains(titleId, StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>Where mods are listed, and the game id one for every game is published under.</summary>
+public static class ModPacks
+{
+    /// <summary>The game id a mod for more than one game, or every game, is published for; its own list says which.</summary>
+    public const string AnyGame = "any";
+
+    /// <summary>The update service's mods index, relative to its root: a <see cref="ContentIndex"/> of mods alone.</summary>
+    public const string IndexPath = "v1/mods";
+
+    /// <summary>
+    /// The folder beside the installed mods where a mod's author drops a build to try, which the launcher plays as it is;
+    /// no published mod may be named so.
+    /// </summary>
+    public const string LocalFolder = "local";
+
+    /// <summary>Gets the game id a mod is published for.</summary>
+    /// <param name="titles">The games it is for, by title id; empty for every game.</param>
+    /// <returns>The one game it names, or <see cref="AnyGame"/>.</returns>
+    public static string GameFor(IReadOnlyList<string> titles)
+    {
+        ArgumentNullException.ThrowIfNull(titles);
+        return titles.Count == 1 ? titles[0].ToLowerInvariant() : AnyGame;
+    }
 }
 
 /// <summary>The game id a runtime pack is published for, and the variables that hand each one to the game.</summary>

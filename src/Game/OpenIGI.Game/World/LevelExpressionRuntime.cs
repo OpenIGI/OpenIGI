@@ -6,15 +6,15 @@ namespace OpenIGI.Game.World;
 
 /// <summary>Parses and evaluates level-task conditions against their live exported variables.</summary>
 /// <remarks>
-/// An authored <c>this.field</c> name resolves against the owner supplied for that evaluation. The
-/// parsed expression cache is shared, but each evaluation receives an immutable owner context so a
-/// cached or reentrant evaluation cannot replace another evaluation's <c>this</c> task.
+/// Each slot is a <see cref="LevelExpression"/> through Project I.G.I.'s compile (<see cref="LevelExpressionDialect.Igi1"/>),
+/// cached by its text and its owner: an authored <c>this.field</c> name is compiled to the owner the expression was made
+/// for, so a cached or reentrant evaluation cannot answer for another evaluation's <c>this</c> task, and the words naming
+/// tasks are looked up in the owner's tree.
 /// </remarks>
 public sealed class LevelExpressionRuntime
 {
-    private readonly ScriptVarRegistry _variables;
-    private readonly Func<string, ScriptArguments, QvmValue?>? _invoke;
-    private readonly Dictionary<string, ScriptExpression?> _cache = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Source, GameTask? Owner), LevelExpression> _cache = [];
+    private readonly Context _context;
 
     /// <summary>Creates an evaluator over a mission's script variables.</summary>
     public LevelExpressionRuntime(
@@ -22,24 +22,8 @@ public sealed class LevelExpressionRuntime
         Func<string, ScriptArguments, QvmValue?>? invoke = null)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        _variables = variables;
-        _invoke = invoke;
+        _context = new Context(variables, invoke);
     }
-
-    /// <summary>The suffix the original's preprocessor answers before any variable is consulted.</summary>
-    /// <remarks>
-    /// <c>0x4F1574</c> is the line after the <c>this.</c> rewrite: any token CONTAINING
-    /// <c>.isExists</c> is replaced outright with the literal <c>1</c>, so the name never reaches the
-    /// variable table and the answer is always true. It is a <c>strstr</c> in the original rather than
-    /// a suffix test, and this matches that.
-    /// <para>
-    /// No shipped level uses it — the string appears nowhere in the retail mission data, only in the
-    /// executable — so this changes nothing about the campaign. It is here so a level that does use it
-    /// reads the way the original would answer, rather than silently resolving to zero, which is the
-    /// opposite of what the engine says.
-    /// </para>
-    /// </remarks>
-    public const string AlwaysTrueField = ".isExists";
 
     /// <summary>Evaluates an authored condition; an empty condition uses the caller's default.</summary>
     public bool EvaluateCondition(string? source, bool emptyValue, GameTask? owner = null)
@@ -49,24 +33,13 @@ public sealed class LevelExpressionRuntime
             return emptyValue;
         }
 
-        if (!_cache.TryGetValue(source, out ScriptExpression? expression))
-        {
-            try
-            {
-                expression = ScriptExpressionParser.Parse(source, ResolveConstant);
-            }
-            catch (ScriptExpressionException)
-            {
-                expression = null;
-            }
-            _cache[source] = expression;
-        }
+        LevelExpression expression = Parse(source, owner);
 
         // Task condition slots are evaluated by sub_4F16E0, which calls Expr_EvalFloat
         // (IGI.exe 0x4F1725 -> 0x4B9660). Using the integer walk here truncates a departing
         // elevator's fractional vFloor to its old floor and immediately reopens that landing door.
-        return expression is not null
-            && CreateEvaluator(owner).EvaluateReal(expression) != 0.0;
+        return !expression.IsEmpty
+            && expression.Evaluate(_context) != 0.0;
     }
 
     /// <summary>Evaluates an authored integer expression; an empty expression uses the caller's default.</summary>
@@ -77,10 +50,7 @@ public sealed class LevelExpressionRuntime
             return emptyValue;
         }
 
-        ScriptExpression? expression = Parse(source);
-        return expression is null
-            ? 0
-            : CreateEvaluator(owner).Evaluate(expression);
+        return Parse(source, owner).EvaluateInt32(_context);
     }
 
     /// <summary>Evaluates an authored numeric expression as a single-precision value.</summary>
@@ -91,10 +61,7 @@ public sealed class LevelExpressionRuntime
             return emptyValue;
         }
 
-        ScriptExpression? expression = Parse(source);
-        return expression is null
-            ? 0f
-            : (float)CreateEvaluator(owner).EvaluateReal(expression);
+        return (float)Parse(source, owner).Evaluate(_context);
     }
 
     /// <summary>Evaluates an authored expression that is present, as the original's task slots do.</summary>
@@ -110,38 +77,41 @@ public sealed class LevelExpressionRuntime
     public bool TryEvaluateReal(string? source, GameTask? owner, out double value)
     {
         value = 0.0;
-        if (string.IsNullOrWhiteSpace(source) || Parse(source) is not { } expression)
+        if (string.IsNullOrWhiteSpace(source) || Parse(source, owner) is not { IsEmpty: false } expression)
         {
             return false;
         }
 
-        value = CreateEvaluator(owner).EvaluateReal(expression);
+        value = expression.Evaluate(_context);
         return true;
     }
 
     /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
     public int Execute(string? source, GameTask? owner = null) => EvaluateInt32(source, 0, owner);
 
-    private ScriptExpression? Parse(string source)
+    /// <summary>Compiles one of a task's slots as Project I.G.I. does.</summary>
+    /// <param name="source">The slot's text.</param>
+    /// <param name="owner">The task it belongs to, whose name <c>this.</c> stands for and whose tree holds the tasks its
+    /// words name; <see langword="null"/> for none, which takes every named task as present.</param>
+    /// <returns>The expression.</returns>
+    public static LevelExpression Create(string? source, GameTask? owner) =>
+        new(source, owner?.Name, Constant, LevelExpressionDialect.Igi1, owner is { HasTree: true } ? owner.Tree : null);
+
+    private LevelExpression Parse(string source, GameTask? owner)
     {
-        if (_cache.TryGetValue(source, out ScriptExpression? cached))
+        if (!_cache.TryGetValue((source, owner), out LevelExpression? cached))
         {
-            return cached;
+            cached = Create(source, owner);
+            _cache[(source, owner)] = cached;
         }
 
-        try
-        {
-            cached = ScriptExpressionParser.Parse(source, ResolveConstant);
-        }
-        catch (ScriptExpressionException)
-        {
-            cached = null;
-        }
-        _cache[source] = cached;
         return cached;
     }
 
-    private static int? ResolveConstant(string name) => name switch
+    /// <summary>Gets the integer constants a level expression's parse folds.</summary>
+    /// <param name="name">The name as written.</param>
+    /// <returns>Its value, or <see langword="null"/> for a name that is not a constant.</returns>
+    public static int? Constant(string name) => name switch
     {
         "TRUE" => 1,
         "FALSE" => 0,
@@ -149,43 +119,22 @@ public sealed class LevelExpressionRuntime
         _ => null,
     };
 
-    private ScriptExpressionEvaluator CreateEvaluator(GameTask? owner) =>
-        new(new Context(_variables, _invoke, owner));
-
+    // The mission's variables and natives. The compile has already answered this. and .isExists.
     private sealed class Context(
         ScriptVarRegistry variables,
-        Func<string, ScriptArguments, QvmValue?>? invoke,
-        GameTask? owner) : IScriptExpressionContext
+        Func<string, ScriptArguments, QvmValue?>? invoke) : IScriptExpressionContext
     {
-        public bool TryGetValue(string name, out QvmValue value)
-        {
-            string resolved = Resolve(name);
-            if (resolved.Contains(AlwaysTrueField, StringComparison.Ordinal))
-            {
-                value = QvmValue.FromInt32(1);
-                return true;
-            }
+        public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(name, out value);
 
-            return variables.TryRead(resolved, out value);
-        }
+        public QvmValueKind GetValueKind(string name) => variables.GetValueKind(name);
 
-        public QvmValueKind GetValueKind(string name)
-        {
-            string resolved = Resolve(name);
-            return resolved.Contains(AlwaysTrueField, StringComparison.Ordinal)
-                ? QvmValueKind.Integer
-                : variables.GetValueKind(resolved);
-        }
-        public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(Resolve(name), value);
+        public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(name, value);
+
         public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
             QvmValue? invoked = invoke?.Invoke(name, arguments);
             result = invoked ?? QvmValue.Zero;
             return invoked.HasValue;
         }
-
-        private string Resolve(string name) => owner is not null && name.StartsWith("this.", StringComparison.Ordinal)
-            ? string.Concat(owner.Name, name.AsSpan("this".Length))
-            : name;
     }
 }

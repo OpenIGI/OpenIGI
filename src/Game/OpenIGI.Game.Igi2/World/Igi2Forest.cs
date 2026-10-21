@@ -83,7 +83,7 @@ public sealed class Igi2Forest
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2ForestStand> stands = [];
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
             if (task is not ForestTask forest || task.Id == GameTask.NoId)
             {
@@ -97,9 +97,11 @@ public sealed class Igi2Forest
                 continue;
             }
 
+            // Forest_LoadData (igi2 0x59FBD0) plants no more trees than the task's count, however many the file holds.
             Igi2ForestData data = Igi2ForestData.Read(bytes);
-            List<Igi2Tree> trees = new(data.Count);
-            foreach (Igi2ForestTree tree in data.Trees())
+            int count = Math.Clamp(forest.TreeCount, 0, data.Count);
+            List<Igi2Tree> trees = new(count);
+            foreach (Igi2ForestTree tree in data.Trees().Take(count))
             {
                 // Local to the stand, which is what the draw path's own bounds say.
                 trees.Add(new Igi2Tree(
@@ -112,14 +114,17 @@ public sealed class Igi2Forest
                     tree.Light));
             }
 
+            // Forest_UpdateInternalDataHandler (igi2 0x5A2FA2): an isotropic stand scatters every axis by its Z range.
+            float rangeX = forest.IsotropicScaling ? forest.RandomScaleRangeZ : forest.RandomScaleRangeX;
+            float rangeY = forest.IsotropicScaling ? forest.RandomScaleRangeZ : forest.RandomScaleRangeY;
             stands.Add(new Igi2ForestStand(
                 task.Id,
                 forest.Model,
                 forest.Position,
                 forest.AreaSize,
                 forest.ViewCutoff,
-                forest.RandomScaleRangeX,
-                forest.RandomScaleRangeY,
+                rangeX,
+                rangeY,
                 trees));
         }
 
@@ -129,19 +134,6 @@ public sealed class Igi2Forest
 
     /// <inheritdoc/>
     public override string ToString() => $"I.G.I. 2 forest, {Stands.Count} stand(s), {TreeCount} trees";
-
-    private static IEnumerable<GameTask> Walk(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
-    }
 }
 
 /// <summary>One <c>Forest</c> task's stand of trees.</summary>

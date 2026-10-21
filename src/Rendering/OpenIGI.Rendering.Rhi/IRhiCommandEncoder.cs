@@ -90,6 +90,28 @@ public interface IRhiCommandEncoder : IDisposable
         IRhiBuffer destination,
         ulong destinationOffset);
 
+    /// <summary>Records a frame's acceleration-structure builds: the meshes, then the scene over them.</summary>
+    /// <param name="bottomLevel">The bottom-level builds and refits, in any order among themselves.</param>
+    /// <param name="topLevel">The top-level build that reads them, or <see langword="null"/> for none.</param>
+    /// <param name="timestamps">Where to record when the builds began and ended, or <see langword="null"/>.</param>
+    /// <remarks>
+    /// <para>
+    /// Outside any pass. One call for the batch, because the ordering inside it is fixed and is the whole of
+    /// what makes it safe, and the backend owns it as it owns every other barrier: whatever traced or wrote
+    /// geometry before is finished before a build writes; every bottom-level build is finished before the
+    /// top level reads them; and the top level is finished before anything after this traces against it.
+    /// Coarse memory barriers, not per-resource ones, because a structure is reached by address.
+    /// </para>
+    /// <para>
+    /// Only on a device with <see cref="IRhiDevice.AccelerationStructures"/>.
+    /// </para>
+    /// </remarks>
+    void BuildAccelerationStructures(
+        ReadOnlySpan<RhiBottomLevelBuild> bottomLevel,
+        RhiTopLevelBuild? topLevel,
+        RhiTimestampWrites? timestamps = null) =>
+        throw new NotSupportedException("This device builds no acceleration structures.");
+
     /// <summary>Finishes recording.</summary>
     /// <param name="label">A name for the recorded work.</param>
     /// <returns>The recorded commands, ready to submit.</returns>

@@ -173,7 +173,7 @@ public sealed class PlayerProfile
     /// <summary>The graphics performance flags.</summary>
     /// <remarks>
     /// <c>GOGfxPerformance</c>. A bitmask, not a level — see
-    /// <see cref="GraphicsPerformance"/> for the level table and the nearest-match rule that maps
+    /// <c>GraphicsPerformance</c> for the level table and the nearest-match rule that maps
     /// between them.
     /// </remarks>
     public int PerformanceFlags { get; set; }
@@ -510,9 +510,9 @@ public static class InputBindingKeyNames
 
     /// <summary>The stored name for an upward mouse-wheel notch.</summary>
     /// <remarks>
-    /// The port's own spelling: retail never bound the wheel, so there is no original symbol to
-    /// keep. It travels through the same <c>GOInRemap</c> write/read path as <c>MOUSE_BUTTON_n</c>,
-    /// and older builds read it back as an inert string they preserve verbatim.
+    /// The original's own symbol: its key table lists the wheel's two notches after the eight buttons
+    /// (<c>0x536998</c>, <see cref="RetailInputKeys"/>), and its controls list can bind them. It travels
+    /// through the same <c>GOInRemap</c> write/read path as <c>MOUSE_BUTTON_n</c>.
     /// </remarks>
     public const string MouseWheelUpKey = "MOUSE_WHEEL_UP";
 
@@ -570,6 +570,7 @@ public static class InputBindingKeyNames
             "KEY_RETURN" => KeyCode.Return,
             "KEY_BACKSPACE" => KeyCode.Backspace,
             "KEY_SPACE" => KeyCode.Space,
+            "KEY_CAPITAL" => KeyCode.CapsLock,
             "KEY_PAGEUP" => KeyCode.PageUp,
             "KEY_PAGEDOWN" => KeyCode.PageDown,
             "KEY_LEFT_SHIFT" => KeyCode.LeftShift,
@@ -613,6 +614,7 @@ public static class InputBindingKeyNames
         KeyCode.Return => "KEY_RETURN",
         KeyCode.Backspace => "KEY_BACKSPACE",
         KeyCode.Space => "KEY_SPACE",
+        KeyCode.CapsLock => "KEY_CAPITAL",
         KeyCode.PageUp => "KEY_PAGEUP",
         KeyCode.PageDown => "KEY_PAGEDOWN",
         KeyCode.LeftShift => "KEY_LEFT_SHIFT",

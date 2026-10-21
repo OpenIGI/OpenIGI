@@ -818,7 +818,7 @@ public sealed class StormRenderer : IDisposable
 
         int quads = _dropCapacity + MaximumSplashes + MaximumCurtains;
         _vertices = new Vertex3D[quads * 4];
-        _indices = BuildQuadIndices(quads);
+        _indices = QuadIndices.Build(quads);
         _liveDrops = Math.Min(_liveDrops, _dropCapacity);
         _lastQuads = 0;
 
@@ -833,24 +833,6 @@ public sealed class StormRenderer : IDisposable
             LogCategory,
             FormattableString.Invariant(
                 $"Storm sized for {_dropCapacity} drop(s), {MaximumSplashes} splash(es), {MaximumCurtains} sheet(s)."));
-    }
-
-    private static ushort[] BuildQuadIndices(int quads)
-    {
-        ushort[] indices = new ushort[quads * 6];
-        for (int q = 0; q < quads; q++)
-        {
-            int v = q * 4;
-            int i = q * 6;
-            indices[i] = (ushort)v;
-            indices[i + 1] = (ushort)(v + 1);
-            indices[i + 2] = (ushort)(v + 2);
-            indices[i + 3] = (ushort)v;
-            indices[i + 4] = (ushort)(v + 2);
-            indices[i + 5] = (ushort)(v + 3);
-        }
-
-        return indices;
     }
 
     private void Spawn(
@@ -1209,7 +1191,7 @@ public sealed class StormRenderer : IDisposable
 
         // Nearer than this, a drop is drawn from the defocused strip; nought draws every drop sharp.
         float focusDistance = MathF.Max(0f, s.FocusDistanceMetres);
-        Vector3f sun = Normalise(sunDirection);
+        Vector3f sun = sunDirection.NormalizedOr(-Vector3f.UnitZ, 1e-6f);
 
         // Never darker than the veil. A drop refracts the light around it, so in an even light it is as
         // bright as what is behind it and all but disappears -- which is what a night lit only by its sky
@@ -1278,7 +1260,7 @@ public sealed class StormRenderer : IDisposable
             }
 
             Vector3f velocity = drop.Velocity;
-            Vector3f axis = Normalise(velocity);
+            Vector3f axis = velocity.NormalizedOr(-Vector3f.UnitZ, 1e-6f);
             float speed = MathF.Sqrt(
                 (velocity.X * velocity.X) + (velocity.Y * velocity.Y) + (velocity.Z * velocity.Z));
 
@@ -1295,10 +1277,10 @@ public sealed class StormRenderer : IDisposable
             float halfWidth = width * 0.5f;
 
             float ex = -lx / distance, ey = -ly / distance, ez = -lz / distance;
-            Vector3f side = Normalise(new Vector3f(
+            Vector3f side = (new Vector3f(
                 (axis.Y * ez) - (axis.Z * ey),
                 (axis.Z * ex) - (axis.X * ez),
-                (axis.X * ey) - (axis.Y * ex)));
+                (axis.X * ey) - (axis.Y * ex))).NormalizedOr(-Vector3f.UnitZ, 1e-6f);
 
             float red = baseR * AmbientGlint, green = baseG * AmbientGlint, blue = baseB * AmbientGlint;
 
@@ -1494,7 +1476,7 @@ public sealed class StormRenderer : IDisposable
 
                 // Any axis will do for a round blob; the world's vertical crossed with the view gives a
                 // stable one, and its degenerate case is a droplet directly overhead.
-                Vector3f across = Normalise(new Vector3f(-towards.Y, towards.X, 0f));
+                Vector3f across = (new Vector3f(-towards.Y, towards.X, 0f)).NormalizedOr(-Vector3f.UnitZ, 1e-6f);
                 Vector3f down = new(
                     (towards.Y * across.Z) - (towards.Z * across.Y),
                     (towards.Z * across.X) - (towards.X * across.Z),
@@ -1667,14 +1649,6 @@ public sealed class StormRenderer : IDisposable
     /// </remarks>
     private bool IsSheltered(double x, double y, double z, float searchMetres) =>
         _shelter.IsSheltered(x, y, z, ShelterHeightField.SurfaceHeadroomMetres, searchMetres);
-
-    private static Vector3f Normalise(in Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 1e-6f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : new Vector3f(0f, 0f, -1f);
-    }
 
     private static bool IsFinite(in Vector3f value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);

@@ -1,9 +1,8 @@
 ﻿using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 
 namespace OpenIGI.Host.Configuration;
 
@@ -61,7 +60,7 @@ public readonly record struct HostOptions(
     /// the place that resolved the title can answer, and <see cref="GamePath"/> is therefore what the
     /// command line said and nothing else.
     /// </remarks>
-    public const string GamePathVariable = "IGI_GAME_PATH";
+    public static string GamePathVariable => Core.Titles.GameTitle.Igi1.GamePathVariable;
 
     /// <summary>The environment variable that names the game to run, when <c>-title</c> does not.</summary>
     /// <remarks>
@@ -654,6 +653,7 @@ public readonly record struct HostOptions(
             StreamlineDevelopment = streamlineDevelopment,
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
+            WindowFromCommandLine = mode is not null || width > 0,
             EntryCamMission = entryCamMission,
             EntryTime = entryTime,
             ComputerCamFrame = computerCamFrame,
@@ -952,6 +952,21 @@ public readonly record struct HostOptions(
     /// ended to change renderer. Its mission is <see cref="StartMission"/>; this adds the hour and the pose.
     /// </remarks>
     public RendererSwitch? Resume { get; init; }
+
+    /// <summary>Gets a value indicating whether the command line chose the window's mode or size.</summary>
+    /// <remarks>
+    /// Set by <c>-window</c>, <c>-borderless</c>, <c>-fullscreen</c> and <c>-size</c>. The run then keeps the
+    /// window it was asked for, and <c>r_window_mode</c> and <c>r_resolution</c> wait for the next one.
+    /// </remarks>
+    public bool WindowFromCommandLine { get; init; }
+
+    /// <summary>Gets the graphics API this run draws over.</summary>
+    /// <remarks>
+    /// Not a command-line option: the composition root sets it to the backend it built, after any fallback,
+    /// so the game can tell whether <c>r_renderer</c> asks for a different one. <see cref="RendererBackend.Auto"/>
+    /// where nothing said, which a change of the setting never switches away from.
+    /// </remarks>
+    public RendererBackend Renderer { get; init; }
 
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>

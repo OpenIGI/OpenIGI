@@ -23,6 +23,28 @@ public interface IRhiDevice : IDisposable
     /// <summary>Gets a description of the adapter, for logs and the options screen.</summary>
     string AdapterName { get; }
 
+    /// <summary>Gets the graphics API underneath, by its usual name: "Vulkan", "WebGPU", "Direct3D 12".</summary>
+    /// <remarks>
+    /// For logs and the options screen only. Nothing above the backend branches on it: what a device can
+    /// do is asked through <see cref="Features"/>, <see cref="Limits"/> and <see cref="ShaderTarget"/>.
+    /// </remarks>
+    string ApiName { get; }
+
+    /// <summary>Gets how many nanoseconds one tick of a timestamp query is.</summary>
+    /// <remarks>
+    /// Vulkan reports it as the adapter's timestamp period; Direct3D 12 as the queue's tick frequency;
+    /// WebGPU resolves its timestamps to nanoseconds already, so it is one there.
+    /// </remarks>
+    double TimestampPeriodNanoseconds { get; }
+
+    /// <summary>Gets why <see cref="Streamline"/> is null, in words the options screen can show.</summary>
+    /// <remarks>
+    /// Empty while Streamline runs. Each backend knows its own reason -- the API has no Streamline at all,
+    /// the runtime pack is not installed, or the runtime refused to start -- where the pipeline above would
+    /// otherwise have to guess it from which backend it is talking to.
+    /// </remarks>
+    string StreamlineUnavailableReason { get; }
+
     /// <summary>Gets the optional things this device can do.</summary>
     RhiFeatures Features { get; }
 
@@ -45,13 +67,13 @@ public interface IRhiDevice : IDisposable
     /// </remarks>
     RhiTextureFormat SurfaceFormat { get; }
 
-    /// <summary>Gets ray tracing, where this device offers it.</summary>
+    /// <summary>Gets hardware acceleration structures, where this device offers them.</summary>
     /// <remarks>
     /// A capability interface rather than members on this one: only a device reporting
-    /// <see cref="RhiFeatures.RayQuery"/> has it, and a pass that wants it asks and stands down when the
-    /// answer is null — exactly as the traced passes already do on a Mac.
+    /// <see cref="RhiFeatures.RayQuery"/> has it, and the renderer builds its traced world over it only when
+    /// the answer is not null -- exactly as the traced passes already stand down on a Mac.
     /// </remarks>
-    IRhiRayTracing? RayTracing { get; }
+    IRhiAccelerationStructures? AccelerationStructures { get; }
 
     /// <summary>Gets NVIDIA's Streamline features, where this device started the optional runtime.</summary>
     /// <remarks>

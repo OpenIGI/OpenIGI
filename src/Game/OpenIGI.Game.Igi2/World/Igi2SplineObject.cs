@@ -52,16 +52,15 @@ public static class Igi2SplineObject
     /// A pair whose waypoint names no <c>Segment Model</c> still belongs to the track — it simply draws
     /// nothing — which is why the two lists are not the same length.
     /// </remarks>
-    public static Igi2SplineRun Read(DeclaredTask spline)
+    public static Igi2SplineRun Read(GameTask spline)
     {
         ArgumentNullException.ThrowIfNull(spline);
 
         List<Waypoint> waypoints = [];
         foreach (GameTask child in spline.Children)
         {
-            if (child is DeclaredTask declared
-                && string.Equals(declared.Type.Name, WaypointType, StringComparison.Ordinal)
-                && Waypoint.TryRead(declared, out Waypoint waypoint))
+            if (string.Equals(child.Type.Name, WaypointType, StringComparison.Ordinal)
+                && Waypoint.TryRead(child, out Waypoint waypoint))
             {
                 waypoints.Add(waypoint);
             }
@@ -180,11 +179,11 @@ public static class Igi2SplineObject
 
         Vector3f side = along.X == 0f && along.Y == 0f
             ? new Vector3f(0f, 1f, 0f)
-            : Normalize(new Vector3f(along.Y, -along.X, 0f));
+            : (new Vector3f(along.Y, -along.X, 0f)).NormalizedOrSelf();
 
-        Vector3f first = Normalize(along);
-        Vector3f second = Normalize(Cross(Cross(side, along), along));
-        Vector3f third = Normalize(Cross(first, second));
+        Vector3f first = along.NormalizedOrSelf();
+        Vector3f second = (Vector3f.Cross(Vector3f.Cross(side, along), along)).NormalizedOrSelf();
+        Vector3f third = (Vector3f.Cross(first, second)).NormalizedOrSelf();
 
         // Stored transposed, which puts the three axes in the COLUMNS -- and the direction of travel in
         // the first column, where the curve reads its tangent from.
@@ -194,24 +193,11 @@ public static class Igi2SplineObject
             first.Z, second.Z, third.Z);
     }
 
-    private static bool Flag(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is bool value && value;
+    private static bool Flag(GameTask task, string name) =>
+        task.TryGetScriptValue(name, out object? raw) && raw is bool value && value;
 
-    private static int Number(DeclaredTask task, string name, int fallback) =>
-        task.TryGetValue(name, out object? raw) && raw is int value ? value : fallback;
-
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : value;
-    }
-
-    private static Vector3f Cross(Vector3f left, Vector3f right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
+    private static int Number(GameTask task, string name, int fallback) =>
+        task.TryGetScriptValue(name, out object? raw) && raw is int value ? value : fallback;
 
     /// <summary>One waypoint, as the segments either side of it need it.</summary>
     private readonly record struct Waypoint(
@@ -225,21 +211,21 @@ public static class Igi2SplineObject
         bool Flipped,
         bool Automatic)
     {
-        public static bool TryRead(DeclaredTask task, out Waypoint waypoint)
+        public static bool TryRead(GameTask task, out Waypoint waypoint)
         {
             waypoint = default;
-            if (!task.TryGetValue(Igi2WorldScene.PositionParameter, out object? rawPosition)
+            if (!task.TryGetScriptValue(Igi2WorldScene.PositionParameter, out object? rawPosition)
                 || rawPosition is not Vector3d position)
             {
                 return false;
             }
 
-            Vector3f angles = task.TryGetValue(Igi2WorldScene.OrientationParameter, out object? rawAngles)
+            Vector3f angles = task.TryGetScriptValue(Igi2WorldScene.OrientationParameter, out object? rawAngles)
                 && rawAngles is Vector3f read
                     ? read
                     : default;
 
-            string model = task.TryGetValue(SegmentModelParameter, out object? rawModel)
+            string model = task.TryGetScriptValue(SegmentModelParameter, out object? rawModel)
                 && rawModel is string name
                 && !string.IsNullOrWhiteSpace(name)
                     ? name

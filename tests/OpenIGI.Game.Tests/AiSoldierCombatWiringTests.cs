@@ -8,6 +8,7 @@ using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -16,7 +17,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// Every piece of this had a test of its own and the join between them did not, which is exactly where
-/// it broke. These drive a real <see cref="AiSoldier"/> over a real retail nav graph.
+/// it broke. These drive a real <see cref="Igi1HumanAi"/> over a real retail nav graph.
 /// </remarks>
 public sealed class AiSoldierCombatWiringTests
 {
@@ -31,7 +32,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void ASoldierThatSeesAnEnemyEndsUpPullingTheTrigger()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         // Five metres in front of it, at chest height, and well inside a guard's forty-metre cone.
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
@@ -59,14 +60,14 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void ALateWorldBlockerStillOccludesTheTarget()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
         soldier.SetLineOfSight((from, to) =>
         {
             double dx = to.X - from.X;
             double dy = to.Y - from.Y;
             double dz = to.Z - from.Z;
             double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-            return AiSoldier.WorldBlockerAllowsSight(distance, distance * 0.9);
+            return Igi1HumanAi.WorldBlockerAllowsSight(distance, distance * 0.9);
         });
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
 
@@ -87,7 +88,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void VisibleEngagementRequestsExactlyOneDetectionShout()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
         int requests = 0;
 
@@ -112,7 +113,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void ASoldierFightingAnNpcKeepsItsChallengeForThePlayer()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
         int requests = 0;
 
@@ -138,7 +139,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void AnEngagedSoldierPingsItsSquadFromItsFirstTickEveryTwenty()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
         List<int> pings = [];
         int engagedFrom = -1;
@@ -161,15 +162,15 @@ public sealed class AiSoldierCombatWiringTests
 
         Assert.NotEmpty(pings);
         Assert.Equal(engagedFrom, pings[0]);
-        Assert.All(pings.Zip(pings.Skip(1)), pair => Assert.Equal(AiSoldier.AlertPingPeriodTicks, pair.Second - pair.First));
+        Assert.All(pings.Zip(pings.Skip(1)), pair => Assert.Equal(Igi1HumanAi.AlertPingPeriodTicks, pair.Second - pair.First));
     }
 
     [Fact]
     public void TheDetectionMarkSitsWhereSub465820PutsIt()
     {
         // 0xE147AE14:0x40A6147A standing and 0x66666666:0x40966666 crouched.
-        Assert.Equal(2826.24, AiSoldier.DetectionRaiseStandingInUnits, precision: 9);
-        Assert.Equal(1433.6, AiSoldier.DetectionRaiseCrouchedInUnits, precision: 9);
+        Assert.Equal(2826.24, Igi1HumanAi.DetectionRaiseStandingInUnits, precision: 9);
+        Assert.Equal(1433.6, Igi1HumanAi.DetectionRaiseCrouchedInUnits, precision: 9);
     }
 
     /// <summary>
@@ -184,7 +185,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void EngagingAgainReArmsTheBehaviour()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
         Vector3d gone = new(position.X, position.Y + (5000 * Metre), position.Z);
 
@@ -234,7 +235,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void AScriptedSoldierReArmsCombatWhenItSeesTheTargetAgain()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
@@ -286,7 +287,7 @@ public sealed class AiSoldierCombatWiringTests
     {
         GraphFile graph = Graph();
         Vector3d position = NodePosition(graph);
-        AiSoldier soldier = new(graph, position, facing: 0.6f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, position, facing: 0.6f, phase: 0, seed: 1);
 
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
         float before = soldier.Facing;
@@ -315,7 +316,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void CombatAimsAtTheOriginRaisedHalfAMetre()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         Vector3d feet = new(position.X, position.Y + (5 * Metre), position.Z);
         Vector3d eye = new(feet.X, feet.Y, feet.Z + (1.62 * Metre));
@@ -334,7 +335,7 @@ public sealed class AiSoldierCombatWiringTests
 
         Assert.NotNull(aim);
         // sub_451380 raises the ORIGIN (Human+32), which stands 0.97 m over the feet the port keeps.
-        Assert.Equal(feet.Z + AiSoldier.HumanOriginStandingInUnits + 2048.0, aim.Value.Z, precision: 3);
+        Assert.Equal(feet.Z + Igi1HumanAi.HumanOriginStandingInUnits + 2048.0, aim.Value.Z, precision: 3);
     }
 
     /// <summary>
@@ -360,7 +361,7 @@ public sealed class AiSoldierCombatWiringTests
     [InlineData(-4.0)]
     public void AGuardFiresAlongItsViewPitchedOntoATargetAboveOrBelow(double rise)
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         Vector3d feet = new(position.X, position.Y + (12 * Metre), position.Z + (rise * Metre));
         Vector3d eye = new(feet.X, feet.Y, feet.Z + (1.62 * Metre));
@@ -397,7 +398,7 @@ public sealed class AiSoldierCombatWiringTests
     [RequiresGameDataFact]
     public void ACrouchingTargetIsAimedAtAQuarterMetre()
     {
-        AiSoldier soldier = Soldier(out Vector3d position);
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
 
         Vector3d feet = new(position.X, position.Y + (5 * Metre), position.Z);
         Vector3d eye = new(feet.X, feet.Y, feet.Z + (0.9 * Metre));
@@ -415,7 +416,7 @@ public sealed class AiSoldierCombatWiringTests
         }
 
         Assert.NotNull(aim);
-        Assert.Equal(feet.Z + AiSoldier.HumanOriginCrouchedInUnits + 1024.0, aim.Value.Z, precision: 3);
+        Assert.Equal(feet.Z + Igi1HumanAi.HumanOriginCrouchedInUnits + 1024.0, aim.Value.Z, precision: 3);
     }
 
     /// <summary>
@@ -430,7 +431,7 @@ public sealed class AiSoldierCombatWiringTests
     public void ASoldierWithoutAGraphStillFights()
     {
         Vector3d position = new(1000 * Metre, 1000 * Metre, 0);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask
@@ -475,7 +476,7 @@ public sealed class AiSoldierCombatWiringTests
     public void APatrolWithNowhereToRepositionStillFires()
     {
         Vector3d position = new(1000 * Metre, 1000 * Metre, 0);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             new AiCombatParameters(new HumanAiConfigItemTask
@@ -536,7 +537,7 @@ public sealed class AiSoldierCombatWiringTests
         }
 
         Assert.NotNull(unreachable);
-        AiSoldier soldier = new(
+        Igi1HumanAi soldier = new(
             graph, unreachable.Value.From.Position, facing: 0f, phase: 0, seed: 1);
 
         Assert.False(soldier.GoTo(unreachable.Value.To.Id));
@@ -560,7 +561,7 @@ public sealed class AiSoldierCombatWiringTests
         Vector3d start = graph.Nodes[0].Position;
         Vector3d panel = graph.Nodes[1].Position;
 
-        AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, start, facing: 0f, phase: 0, seed: 1);
         soldier.AlarmTriggerId = 500;
         soldier.AlarmControlId = 600;
 
@@ -592,7 +593,7 @@ public sealed class AiSoldierCombatWiringTests
 
         // A second guard told to press an ALREADY-CLAIMED panel never starts the walk.
         claims.Claim(500);
-        AiSoldier second = new(graph, start, facing: 0f, phase: 1, seed: 2);
+        Igi1HumanAi second = new(graph, start, facing: 0f, phase: 1, seed: 2);
         second.SetActivateSupport(claims, (int id, out Vector3d p) => { p = panel; return true; }, _ => pressed = -2);
         second.ApplyActions([new AiProducedAction("AIAction_Activate", [500, 1, 0], 0)]);
         for (int tick = 1; tick <= 2000; tick++)
@@ -610,9 +611,11 @@ public sealed class AiSoldierCombatWiringTests
         GraphFile graph = Graph();
         Vector3d start = graph.Nodes[0].Position;
         Vector3d emplacement = graph.Nodes[1].Position;
-        AiStationaryGun gun = new(500, emplacement, Matrix3f.Identity);
+
+        // The stand's position is its pivot, over the floor the gunner stands on: mission 8's M2HBs stand 1.3 m up.
+        AiStationaryGun gun = new(500, new Vector3d(emplacement.X, emplacement.Y, emplacement.Z + 5345.0), Matrix3f.Identity);
         AiActivationClaims claims = new();
-        AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
+        Igi1HumanAi soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
         {
             GunnerId = 500,
         };
@@ -659,10 +662,24 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Same(gun, soldier.MountedGun);
 
         // The object dispatch seats the body in the use-object state (36) and consumes the mount's slot 24.
+        // State 36's entry (0x45C8B0) moves the body in X and Y only and keeps its own height.
+        double heightBeforeMount = soldier.Position.Z;
         soldier.TickCombatState(animationDone: false);
         Assert.Equal(HumanSoldierStates.UseObjectState, soldier.CombatState);
-        Assert.Equal(gun.MountPosition, soldier.Position);
+        Assert.Equal(gun.MountPosition.X, soldier.Position.X);
+        Assert.Equal(gun.MountPosition.Y, soldier.Position.Y);
+        Assert.Equal(heightBeforeMount, soldier.Position.Z);
+        Assert.True(gun.MountPosition.Z - soldier.Position.Z > 4096.0, "the gunner was lifted to the gun's pivot");
         Assert.True(gun.IsOccupied);
+
+        // Attached to the gun (0x463310, 0x4610C0), the body swings round the stand with the traverse.
+        gun.Steer(0f, 0.5f);
+        gun.TickOccupied();
+        soldier.RideMountedGun();
+        Assert.Equal(gun.MountPosition.X, soldier.Position.X, 6);
+        Assert.Equal(gun.MountPosition.Y, soldier.Position.Y, 6);
+        Assert.Equal(heightBeforeMount, soldier.Position.Z);
+        Assert.Equal(gun.MountFacing, soldier.Facing, 5);
 
         // The walk to the gun has finished; the fight it was installed over is what runs now.
         Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));
@@ -716,7 +733,7 @@ public sealed class AiSoldierCombatWiringTests
         Assert.NotNull(hop);
 
         GraphNode start = graph.NodeAt(hop.Value.From)!;
-        AiSoldier soldier = new(graph, start.Position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, start.Position, facing: 0f, phase: 0, seed: 1);
 
         DoorState door = new(maxAngleDegrees: 90f, openTimeSeconds: 1f);
         soldier.SetDoorQuery(_ => door);
@@ -769,17 +786,17 @@ public sealed class AiSoldierCombatWiringTests
     {
         AiCombatTarget record = new(new object());
 
-        AiSoldier[] squad = new AiSoldier[4];
+        Igi1HumanAi[] squad = new Igi1HumanAi[4];
         for (int i = 0; i < squad.Length; i++)
         {
-            squad[i] = new AiSoldier(graph: null, new Vector3d(i * Metre, 0, 0), 0f, phase: 0, seed: i);
+            squad[i] = new Igi1HumanAi(graph: null, new Vector3d(i * Metre, 0, 0), 0f, phase: 0, seed: i);
             squad[i].SetTarget(record);
             record.Aim(squad[i], AiAimMode.Aiming);
         }
 
         Assert.Equal(AiCombatTarget.MaximumAimers, record.Count(AiAimMode.Aiming));
 
-        foreach (AiSoldier dead in squad)
+        foreach (Igi1HumanAi dead in squad)
         {
             dead.Kill();
         }
@@ -801,7 +818,7 @@ public sealed class AiSoldierCombatWiringTests
         Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre), position.Z);
         Vector3d enemy = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
         AiCombatTarget target = new("player");
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetDefaultTarget(target);
         soldier.SetCombat(
             AiType.PatrolAk,
@@ -858,7 +875,7 @@ public sealed class AiSoldierCombatWiringTests
         Vector3d position = new(1000, 2000, 3000);
         Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre), position.Z);
         Vector3d enemyEye = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
-        AiSoldier soldier = PatrolOneShotSoldier(position, grenadeProbability: 1f);
+        Igi1HumanAi soldier = PatrolOneShotSoldier(position, grenadeProbability: 1f);
         soldier.SetGrenadeAvailable(true);
 
         int tick = 1;
@@ -888,7 +905,7 @@ public sealed class AiSoldierCombatWiringTests
         // range itself is 1.5 m, so 1.25 m stays a close-combat scenario the cone actually admits.
         Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre / 4), position.Z);
         Vector3d enemyEye = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
-        AiSoldier soldier = PatrolOneShotSoldier(position, grenadeProbability: 0f);
+        Igi1HumanAi soldier = PatrolOneShotSoldier(position, grenadeProbability: 0f);
 
         int tick = 1;
         while (tick < 20 && soldier.PatrolAction != AiPatrolAction.CloseCombat)
@@ -913,7 +930,7 @@ public sealed class AiSoldierCombatWiringTests
         Vector3d position = new(1000, 2000, 3000);
         Vector3d enemyFeet = new(position.X, position.Y + (8 * Metre), position.Z);
         Vector3d enemyEye = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             new AiCombatParameters(new HumanAiConfigItemTask
@@ -967,7 +984,7 @@ public sealed class AiSoldierCombatWiringTests
         Vector3d position = new(1000, 2000, 3000);
         Vector3d enemyBehind = new(position.X, position.Y - (10 * Metre), position.Z);
         AiCombatTarget target = new("player");
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetDefaultTarget(target);
         soldier.SetCombat(
             AiType.GuardAk,
@@ -1003,7 +1020,7 @@ public sealed class AiSoldierCombatWiringTests
     {
         Vector3d position = new(1000, 2000, 3000);
         Vector3d enemy = new(position.X, position.Y - Metre, position.Z);
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask
@@ -1034,7 +1051,7 @@ public sealed class AiSoldierCombatWiringTests
     }
 
     // What the desktop's firing path does: a round out of the clip, and the clip back when it reloads.
-    private void Spend(AiSoldier soldier)
+    private void Spend(Igi1HumanAi soldier)
     {
         if (soldier.Combat.PullTrigger && _clip > 0)
         {
@@ -1046,12 +1063,12 @@ public sealed class AiSoldierCombatWiringTests
         }
     }
 
-    private AiSoldier Soldier(out Vector3d position)
+    private Igi1HumanAi Soldier(out Vector3d position)
     {
         GraphFile graph = Graph();
         position = NodePosition(graph);
 
-        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask
@@ -1071,9 +1088,9 @@ public sealed class AiSoldierCombatWiringTests
         return soldier;
     }
 
-    private static AiSoldier PatrolOneShotSoldier(Vector3d position, float grenadeProbability)
+    private static Igi1HumanAi PatrolOneShotSoldier(Vector3d position, float grenadeProbability)
     {
-        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             new AiCombatParameters(new HumanAiConfigItemTask

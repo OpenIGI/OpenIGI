@@ -126,6 +126,70 @@ public sealed class PlacedRotatingObject
         CurrentOrientation = BaseOrientation;
     }
 
+    /// <summary>Gets whether this is a level <c>RotatingObject</c> task, which updates by <c>0x439090</c>, rather than a radar dish.</summary>
+    public bool IsRotatingObjectTask { get; init; }
+
+    /// <summary>Gets a value indicating whether a round breaks this <c>RotatingObject</c>, its <c>Destructable</c> flag.</summary>
+    public bool IsDestructable { get; init; }
+
+    /// <summary>Gets a value indicating whether a round has broken it (<c>+424</c>), which switches it off for good.</summary>
+    public bool IsBroken { get; private set; }
+
+    /// <summary>A round strikes it: its <c>WeaponHit</c> handler.</summary>
+    /// <remarks>
+    /// A radar dish's (<c>0x449260</c>, I.G.I. 2's <c>RadarDish_WeaponHitHandler</c> the same) wants no more speed, so it runs
+    /// down at its acceleration and stays still. A <c>RotatingObject</c>'s (<c>0x439750</c>) breaks it when it is
+    /// <c>Destructable</c>, and its update (<c>0x439090</c>) reads a broken object as switched off.
+    /// </remarks>
+    public void WeaponHit()
+    {
+        if (!IsRotatingObjectTask)
+        {
+            TargetSpeedZ = 0f;
+        }
+        else if (IsDestructable)
+        {
+            IsBroken = true;
+        }
+    }
+
+    /// <summary>Advances one 30 Hz tick as a <c>RotatingObject</c>'s update (<c>0x439090</c>), with its x87 arithmetic.</summary>
+    /// <param name="switchedOff">Whether the object has an On expression and it is false this tick.</param>
+    /// <remarks>
+    /// <para>
+    /// Switching off zeroes the target speeds themselves (<c>+316..+324</c>), and nothing writes them again: the post-load
+    /// handler (<c>0x4395D0</c>) is the only other writer. An object switched off, even for one tick (Mission 8's fan
+    /// is on while <c>!Switch_260.isPressed</c>, a three-tick pulse), runs down to rest and stays there.
+    /// </para>
+    /// <para>
+    /// Each speed steps toward its target by its acceleration (<c>+300..+308</c>) over a thirtieth of a second. The clamp
+    /// compares the register's unrounded value, so an axis with no acceleration never changes speed. Each angle
+    /// (<c>+340..+348</c>) gains its speed over a thirtieth, and is wrapped only from above.
+    /// </para>
+    /// </remarks>
+    public void TickRotatingObject(bool switchedOff)
+    {
+        PreviousAngleX = AngleX;
+        PreviousAngleY = AngleY;
+        PreviousAngleZ = AngleZ;
+
+        if (switchedOff || IsBroken)
+        {
+            TargetSpeedX = 0f;
+            TargetSpeedY = 0f;
+            TargetSpeedZ = 0f;
+        }
+
+        IsActive = TargetSpeedX != 0f || TargetSpeedY != 0f || TargetSpeedZ != 0f;
+        CurrentSpeedX = StepSpeed(CurrentSpeedX, TargetSpeedX, AccelX);
+        CurrentSpeedY = StepSpeed(CurrentSpeedY, TargetSpeedY, AccelY);
+        CurrentSpeedZ = StepSpeed(CurrentSpeedZ, TargetSpeedZ, AccelZ);
+        AngleX = StepAngle(AngleX, CurrentSpeedX);
+        AngleY = StepAngle(AngleY, CurrentSpeedY);
+        AngleZ = StepAngle(AngleZ, CurrentSpeedZ);
+        CurrentOrientation = ComputeOrientation(AngleX, AngleY, AngleZ);
+    }
+
     /// <summary>Advances rotation state for one 30 Hz simulation tick.</summary>
     public void Tick(bool powered)
     {
@@ -173,6 +237,42 @@ public sealed class PlacedRotatingObject
             : Matrix3f.FromEngineEulerAngles(x * DegreesToRadians, y * DegreesToRadians, z * DegreesToRadians);
 
         return BaseOrientation * rot;
+    }
+
+    // One axis's speed toward its target (0x4390DF and its two siblings).
+    private static float StepSpeed(float current, float target, float acceleration)
+    {
+        if (current == target)
+        {
+            return current;
+        }
+
+        if (current < target)
+        {
+            X87 next = ((X87)acceleration * DeltaTime) + current;
+            return next.Value > target ? target : next.F;
+        }
+
+        X87 down = (X87)current - ((X87)acceleration * DeltaTime);
+        return down.Value < target ? target : down.F;
+    }
+
+    // One axis's angle (0x4392D4): the sum is stored, then brought under 360 by whole turns.
+    private static float StepAngle(float angle, float speed)
+    {
+        float next = (((X87)speed * DeltaTime) + angle).F;
+        if (next >= 360f)
+        {
+            X87 wrapped;
+            do
+            {
+                wrapped = (X87)next - 360f;
+                next = wrapped.F;
+            }
+            while (wrapped.Value >= 360.0);
+        }
+
+        return next;
     }
 
     private static float MoveTowards(float current, float target, float maxDelta)
@@ -244,6 +344,7 @@ public sealed class RotatingObjectRegistry
     };
 
     private readonly List<PlacedRotatingObject> _objects = [];
+    private readonly HashSet<PlacedRotatingObject> _walked = [];
     private readonly Dictionary<WorldPlacement, PlacedRotatingObject> _byPlacement = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(GameTask Owner, string Model), PlacedRotatingObject> _byOwnerAndModel = [];
     private readonly Dictionary<GameTask, PlacedRotatingObject> _byTask = [];
@@ -308,7 +409,11 @@ public sealed class RotatingObjectRegistry
                     accelZ,
                     onExpr,
                     isActive: true,
-                    sound: sound));
+                    sound: sound)
+                {
+                    IsRotatingObjectTask = true,
+                    IsDestructable = declared.TryGetValue("Destructable", out object? destructable) && destructable is true,
+                });
                 continue;
             }
 
@@ -379,11 +484,63 @@ public sealed class RotatingObjectRegistry
         _byTask.TryAdd(obj.Owner, obj);
     }
 
-    /// <summary>Advances all rotating objects for one 30 Hz simulation tick.</summary>
+    /// <summary>Hands a round's <c>WeaponHit</c> to the rotating object it struck, if it struck one.</summary>
+    /// <param name="owner">The task the round struck.</param>
+    /// <param name="placement">The placement it struck: a radar dish is an attachment of its tower's task.</param>
+    public void WeaponHit(GameTask? owner, WorldPlacement? placement)
+    {
+        if (placement is not null && _byPlacement.TryGetValue(placement, out PlacedRotatingObject? struck))
+        {
+            struck.WeaponHit();
+        }
+        else if (owner is not null && _byTask.TryGetValue(owner, out PlacedRotatingObject? task) && task.IsRotatingObjectTask)
+        {
+            task.WeaponHit();
+        }
+    }
+
+    /// <summary>Puts every level <c>RotatingObject</c> into the level walk, updating where the walk reaches it.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="ticked">Called after each object's update, to carry its new orientation.</param>
+    /// <remarks>
+    /// Its update (<c>0x439090</c>) reads its On expression as the walk finds it and runs no children. Radar dishes are not
+    /// level tasks of their own, and keep updating after the walk.
+    /// </remarks>
+    public void AttachTo(LevelUpdateWalker walker, Action<PlacedRotatingObject>? ticked = null)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        foreach (PlacedRotatingObject obj in _objects)
+        {
+            if (!obj.IsRotatingObjectTask)
+            {
+                continue;
+            }
+
+            _walked.Add(obj);
+            walker.Bind(obj.Owner, _ =>
+            {
+                StepRotatingObject(obj);
+                ticked?.Invoke(obj);
+            });
+        }
+    }
+
+    /// <summary>Advances every rotating object the level walk does not reach, for one 30 Hz simulation tick.</summary>
     public void Tick()
     {
         foreach (PlacedRotatingObject obj in _objects)
         {
+            if (_walked.Contains(obj))
+            {
+                continue;
+            }
+
+            if (obj.IsRotatingObjectTask)
+            {
+                StepRotatingObject(obj);
+                continue;
+            }
+
             bool powered = true;
             if (!string.IsNullOrEmpty(obj.OnExpression) && _expressions is not null)
             {
@@ -441,6 +598,26 @@ public sealed class RotatingObjectRegistry
         position = default;
         orientation = default;
         return false;
+    }
+
+    // 0x439090: switched off when it has an On expression (sub_4F16C0) and that is false.
+    private void StepRotatingObject(PlacedRotatingObject obj)
+    {
+        bool switchedOff = _expressions is not null
+            && !string.IsNullOrWhiteSpace(obj.OnExpression)
+            && !_expressions.EvaluateCondition(obj.OnExpression, emptyValue: true, obj.Owner);
+        obj.TickRotatingObject(switchedOff);
+    }
+
+    /// <summary>Updates one rotating object's collision solid, if its orientation changed.</summary>
+    /// <param name="solids">The level's collision index.</param>
+    /// <param name="obj">The object.</param>
+    /// <returns>Whether its solid moved.</returns>
+    public static bool ApplyCollision(ObjectCollisionIndex solids, PlacedRotatingObject obj)
+    {
+        ArgumentNullException.ThrowIfNull(solids);
+        ArgumentNullException.ThrowIfNull(obj);
+        return solids.UpdateTransform(obj.Placement, obj.Position, obj.CurrentOrientation);
     }
 
     /// <summary>Updates collision solids for all rotating objects whose orientation changed.</summary>

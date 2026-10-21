@@ -22,6 +22,25 @@ public sealed class TaskTreeTests
     }
 
     [Fact]
+    public void DescendantsWalkDepthFirstParentBeforeChildren()
+    {
+        (TaskTree tree, TaskType type) = Build();
+
+        GameTask a = tree.New(tree.Root, type);
+        GameTask a1 = tree.New(a, type);
+        GameTask a1x = tree.New(a1, type);
+        GameTask a2 = tree.New(a, type);
+        GameTask b = tree.New(tree.Root, type);
+        GameTask b1 = tree.New(b, type);
+
+        Assert.Equal([a, a1, a1x, a2, b, b1], tree.Root.Descendants());
+        Assert.Equal([a, a1, a1x, a2], a.DescendantsAndSelf());
+        Assert.Equal([a1x], a1.Descendants());
+        Assert.Empty(b1.Descendants());
+        Assert.Equal([a1, a, tree.Root], a1x.Ancestors());
+    }
+
+    [Fact]
     public void NewSiblingInsertsAtTheHead()
     {
         (TaskTree tree, TaskType type) = Build();

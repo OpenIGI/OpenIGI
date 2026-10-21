@@ -6,6 +6,7 @@ using OpenIGI.Rendering.Pipeline.Diagnostics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
+using OpenIGI.Rendering.Pipeline.RayTracing;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Pipeline.Textures;
 using OpenIGI.Rendering.Rhi;
@@ -69,7 +70,6 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// <summary>Initialises a new instance of the <see cref="GraphicsDevice"/> class.</summary>
     /// <param name="device">The backend to draw through.</param>
     /// <param name="mode">The mode the surface was configured for.</param>
-    /// <param name="timestampPeriodNanoseconds">Nanoseconds per timestamp tick, from the device.</param>
     /// <param name="captureFrames">
     /// Whether every frame is copied back as it is submitted. A session that intends to capture — a
     /// screenshot run, a flight — says so here, because the copy has to be recorded INSIDE the frame and
@@ -79,14 +79,47 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     public GraphicsDevice(
         IRhiDevice device,
         in DisplayMode mode,
-        double timestampPeriodNanoseconds = 1.0,
         bool captureFrames = false,
         IOpenIgiLogger? logger = null)
+        : this(device, mode, captureFrames, logger, tracedWorld: null)
+    {
+    }
+
+    /// <summary>Initialises a new instance of the <see cref="GraphicsDevice"/> class over a given traced world.</summary>
+    /// <param name="device">The backend to draw through.</param>
+    /// <param name="mode">The mode the surface was configured for.</param>
+    /// <param name="captureFrames">Whether every frame is copied back as it is submitted.</param>
+    /// <param name="logger">Where the renderer's status lines go, or null to write none.</param>
+    /// <param name="tracedWorld">
+    /// The traced world, which the caller keeps; or <see langword="null"/> for the device's own, built over
+    /// its acceleration structures where it has them. A test hands in a stand-in that counts what is done to it.
+    /// </param>
+    internal GraphicsDevice(
+        IRhiDevice device,
+        in DisplayMode mode,
+        bool captureFrames,
+        IOpenIgiLogger? logger,
+        ITracedWorld? tracedWorld)
     {
         ArgumentNullException.ThrowIfNull(device);
 
         _device = device;
         _logger = logger;
+
+        // The traced world, written once above the RHI for every backend that offers acceleration
+        // structures. Built here, before anything is drawn: its placeholder scene is what a tracing shader
+        // binds until the level has been seen.
+        if (tracedWorld is not null)
+        {
+            _tracedWorld = tracedWorld;
+        }
+        else if (device.AccelerationStructures is { } structures)
+        {
+            _ownedTracedWorld = new RayTracing.TracedWorld(
+                device, structures, RenderCVars.ReflectionTexture.Value, logger ?? NullLogger.Instance);
+            _tracedWorld = _ownedTracedWorld;
+        }
+
         CurrentMode = mode;
         PresentFormat = device.SurfaceFormat;
         _captureAlways = captureFrames;
@@ -95,7 +128,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             TextureUnits: 8,
             MaxTextureSize: device.Limits.MaxTextureDimension2D,
             SupportsNonPowerOfTwoTextures: true,
-            $"RHI over {(device.ShaderTarget == ShaderTarget.Wgsl ? "WebGPU" : "Vulkan")} — {device.AdapterName}")
+            $"RHI over {device.ApiName} — {device.AdapterName}")
         {
             // The G-buffer, the shading over it, the atmosphere and the resolve: a real mission's frame.
             // What it does not draw yet is named in UnimplementedSettings rather than drawn wrongly.
@@ -109,11 +142,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
             // Where the backend traces, the GI stack builds its ray-query forms and the compute seam binds
             // them the traced world.
-            SupportsRayQuery = GiRunsOn(device) && device.RayTracing is not null,
+            SupportsRayQuery = GiRunsOn(device) && _tracedWorld is not null,
             SupportsBlockCompression = device.Features.TextureCompressionBc,
             MaxSampleCount = device.Limits.MaxSampleCount,
             MaxComputeGroupsX = device.Limits.MaxComputeWorkgroupsPerDimension,
-            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device), device.RayTracing is not null, AutoExposure.RunsOn(device)),
+            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device), _tracedWorld is not null, AutoExposure.RunsOn(device)),
         };
 
         _materialLayout = Mesh3DPipelineCache.CreateMaterialLayout(device);
@@ -131,7 +164,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _textures = new TextureTable(device, _retired);
         _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat, _retired);
         _meshes = new Mesh3DPass(_textures, _materials);
-        _profiler = new StageProfiler(device, FramesInFlight, timestampPeriodNanoseconds);
+        _profiler = new StageProfiler(device, FramesInFlight);
         _occlusion = new OcclusionQueries(
             device,
             FramesInFlight,
@@ -400,7 +433,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeCardAtlas();
         DisposeBackdrop();
         DisposeDeferred();
+        DisposeTracers();
         DisposeCompute();
+        _ownedTracedWorld?.Dispose();
         _profiler.Dispose();
         _occlusion.Dispose();
         _outlines?.Dispose();
@@ -409,6 +444,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _cube.Dispose();
         _cubeSampler.Dispose();
         _sprites.Dispose();
+        DisposeWater();
         _pipelines.Dispose();
         _materials.Dispose();
         _cubeLayout.Dispose();

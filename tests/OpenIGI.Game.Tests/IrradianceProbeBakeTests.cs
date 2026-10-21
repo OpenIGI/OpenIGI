@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 

@@ -9,6 +9,7 @@ using OpenIGI.Services;
 //   GET /download/{runtime}?component=game&channel=&flavour=dotnet   ... or to a game build
 //   GET /v1/content                                 the optional content packs, each at its newest version
 //   GET /v1/content/{pack}[/{version}]              one pack version's manifest: its files and their chunks
+//   GET /v1/mods                                    the published mods, each at its newest version (manifests as above)
 //   GET /healthz                                    whether it is up, and how many releases it sees
 //
 // The launcher polls the first every minute; the entity tag makes an unchanged answer a bodiless 304.
@@ -94,6 +95,20 @@ app.MapGet("/v1/content", (HttpContext context, ContentStore store) =>
     return context.Request.Headers.IfNoneMatch.Contains(library.Tag)
         ? Results.StatusCode(StatusCodes.Status304NotModified)
         : Results.Text(ReleaseJson.Write(library.Index), "application/json");
+});
+
+// The mods, listed apart from the content packs for the same reason: a launcher that reads the content index knows
+// only the pack kinds it was built with. Their manifests and chunks are the content store's, under the same routes.
+app.MapGet("/" + ModPacks.IndexPath, (HttpContext context, ContentStore store) =>
+{
+    ContentLibrary library = store.Current;
+    context.Response.Headers.ETag = library.Tag;
+    context.Response.Headers.CacheControl = "public, max-age=30";
+    context.Response.Headers.Vary = "Accept-Encoding";
+
+    return context.Request.Headers.IfNoneMatch.Contains(library.Tag)
+        ? Results.StatusCode(StatusCodes.Status304NotModified)
+        : Results.Text(ReleaseJson.Write(library.Mods), "application/json");
 });
 
 // A published version never changes (the deploy verb refuses to overwrite one), so a named version's

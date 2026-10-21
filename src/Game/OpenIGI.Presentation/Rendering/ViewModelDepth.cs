@@ -9,7 +9,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// pass can cut through them. <see cref="ViewModelProjection"/> supplies the retail layer-zero projection
 /// used inside this isolated depth layer.
 /// </remarks>
-internal static class ViewModelDepth
+public static class ViewModelDepth
 {
     /// <summary>Discards world depth and enables ordinary depth testing for the first-person rig.</summary>
     public static void Begin(IGraphicsDevice device)

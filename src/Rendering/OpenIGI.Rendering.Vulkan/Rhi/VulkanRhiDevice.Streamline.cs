@@ -1,4 +1,5 @@
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Streamline;
 using OpenIGI.Rendering.Vulkan.Streamline;
 using Silk.NET.Vulkan;
 
@@ -13,7 +14,8 @@ namespace OpenIGI.Rendering.Vulkan.Rhi;
 /// </remarks>
 internal sealed unsafe partial class VulkanRhiDevice
 {
-    private VulkanRhiStreamline? _streamline;
+    private StreamlineSession? _streamline;
+    private VulkanStreamlineAdapter? _streamlineAdapter;
 
     // A timeline semaphore and value the next frame's submit must wait for, once: frame generation's
     // "inputs consumed" fence. Zero when there is none.
@@ -23,16 +25,26 @@ internal sealed unsafe partial class VulkanRhiDevice
     /// <inheritdoc/>
     public IRhiStreamline? Streamline => _streamline;
 
+    /// <inheritdoc/>
+    public string StreamlineUnavailableReason => _streamline is null ? "the NVIDIA DLSS runtime is not installed" : string.Empty;
+
     /// <summary>Gives this device the Streamline session its instance and device were created through.</summary>
     /// <param name="streamline">The capability.</param>
-    internal void AttachStreamline(VulkanRhiStreamline streamline)
+    /// <param name="adapter">Its native side, which puts tagged textures back before the present.</param>
+    internal void AttachStreamline(StreamlineSession streamline, VulkanStreamlineAdapter adapter)
     {
         ArgumentNullException.ThrowIfNull(streamline);
+        ArgumentNullException.ThrowIfNull(adapter);
         _streamline = streamline;
+        _streamlineAdapter = adapter;
     }
 
     /// <summary>Detaches the session, ahead of shutting it down.</summary>
-    internal void DetachStreamline() => _streamline = null;
+    internal void DetachStreamline()
+    {
+        _streamline = null;
+        _streamlineAdapter = null;
+    }
 
     /// <summary>Rebuilds the swapchain at its current size, running something while none exists.</summary>
     /// <param name="between">What to run between destroying the old swapchain and creating the new one.</param>

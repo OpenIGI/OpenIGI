@@ -11,7 +11,7 @@ namespace OpenIGI.Host.Menu;
 /// <remarks>
 /// The shell is backend-free, so everything it cannot do itself — leaving the menu into a mission,
 /// previewing a level behind the menu, capturing a save thumbnail, quitting, persisting settings — is a
-/// delegate the composition root supplies here. This is the same pattern as <see cref="MenuHost"/>'s
+/// delegate the composition root supplies here. This is the same pattern as <c>MenuHost</c>'s
 /// <c>StartGame</c>/quit hooks, made into a full <see cref="IShellHost"/>.
 /// </remarks>
 /// <param name="startMission">Starts a mission at a difficulty and leaves the shell.</param>
@@ -26,6 +26,10 @@ namespace OpenIGI.Host.Menu;
 /// <param name="saveProfiles">Persists player profiles and their progress.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 /// <param name="settingUnavailable">Why a setting cannot take effect here, or empty when it can.</param>
+/// <param name="missionSaves">The running mission's own save games, or <see langword="null"/>.</param>
+/// <param name="inputBindingLabel">The active title's visible control labels.</param>
+/// <param name="resetInputBindings">Restores the active title's control defaults.</param>
+/// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -38,8 +42,15 @@ public sealed class ShellHost(
     Action saveSettings,
     Action saveProfiles,
     CaptureThumbnail captureThumbnail,
-    Func<string, string>? settingUnavailable = null) : IShellHost
+    Func<string, string>? settingUnavailable = null,
+    Func<OpenIGI.Game.Player.ITitleSaveGames?>? missionSaves = null,
+    Func<string, string?>? inputBindingLabel = null,
+    Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null,
+    Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => missionSaves?.Invoke();
+
     /// <inheritdoc/>
     public void StartMission(int missionId, int difficulty) => startMission(missionId, difficulty);
 
@@ -71,10 +82,23 @@ public sealed class ShellHost(
     public void SaveProfiles() => saveProfiles();
 
     /// <inheritdoc/>
+    public string? InputBindingLabel(string action) => inputBindingLabel is { } label ? label(action) : action;
+
+    /// <inheritdoc/>
+    public void ResetInputBindings(OpenIGI.Game.Config.PlayerProfile profile)
+    {
+        if (resetInputBindings is { } reset) { reset(profile); }
+        else { profile.ResetBindingsToDefaults(); }
+    }
+
+    /// <inheritdoc/>
     public Bgra32[] CaptureThumbnail(out int width, out int height) => captureThumbnail(out width, out height);
 
     /// <inheritdoc/>
     public string SettingUnavailable(string variable) => settingUnavailable?.Invoke(variable) ?? string.Empty;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>

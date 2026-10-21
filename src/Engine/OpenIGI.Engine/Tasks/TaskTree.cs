@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Engine.Tasks;
 
@@ -17,7 +18,7 @@ namespace OpenIGI.Engine.Tasks;
 /// <c>Task_SendMessage</c> (<c>0x401D80</c>).
 /// </para>
 /// </remarks>
-public sealed class TaskTree
+public sealed class TaskTree : ILevelTaskTable
 {
     private const string LogCategory = "Tasks";
 
@@ -256,6 +257,12 @@ public sealed class TaskTree
     /// </remarks>
     public GameTask? FromId(int id) =>
         (uint)id < IdCapacity ? _idTable[id] : null;
+
+    /// <inheritdoc/>
+    object? ILevelTaskTable.FindTask(int id) => FromId(id);
+
+    /// <inheritdoc/>
+    bool ILevelTaskTable.IsLive(object task) => task is GameTask { IsDeleted: false };
 
     /// <summary>Gets the script id bound to a task.</summary>
     /// <param name="task">The task.</param>

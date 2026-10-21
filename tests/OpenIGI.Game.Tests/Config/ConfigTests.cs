@@ -1,11 +1,12 @@
 ﻿using OpenIGI.Game.Config;
-using OpenIGI.Game.Menus;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Config;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Config;
 
@@ -523,7 +524,7 @@ public sealed class ConfigTests
     [Fact]
     public void AVolumeSurvivesTheRoundTripThroughTheNatives()
     {
-        ConfigNatives natives = new(GameConfig.CreateDefault(), NullConfigHost.Instance);
+        ConfigNatives natives = new(GameConfig.CreateDefault(), new NullConfigHost());
 
         Assert.True(Invoke(natives, "Config_SoundOptionsSetMusicVolume", "0.75", out _));
         Assert.True(Invoke(natives, "Config_SoundOptionsGetMusicVolume", null, out QvmValue read));
@@ -535,7 +536,7 @@ public sealed class ConfigTests
     [Fact]
     public void ContentControlIsOffUntilAPasswordIsSet()
     {
-        ConfigNatives natives = new(GameConfig.CreateDefault(), NullConfigHost.Instance);
+        ConfigNatives natives = new(GameConfig.CreateDefault(), new NullConfigHost());
 
         Assert.True(Invoke(natives, "Config_IsContentControlPasswordEnabled", null, out QvmValue off));
         Assert.Equal(0, off.ToInt32());
@@ -559,7 +560,7 @@ public sealed class ConfigTests
         config.CreateProfile("Alex", 2);
 
         ListBoxTask list = new();
-        ConfigNatives natives = new(config, NullConfigHost.Instance) { Target = list };
+        ConfigNatives natives = new(config, new NullConfigHost()) { Target = list };
 
         Assert.True(Invoke(natives, "Config_FillPlayerProfileListBox", null, out _));
 
@@ -571,7 +572,7 @@ public sealed class ConfigTests
     [Fact]
     public void AnUnknownNameIsNotClaimed()
     {
-        ConfigNatives natives = new(GameConfig.CreateDefault(), NullConfigHost.Instance);
+        ConfigNatives natives = new(GameConfig.CreateDefault(), new NullConfigHost());
 
         Assert.False(Invoke(natives, "Game_SetMusicVolume", "1", out _));
     }

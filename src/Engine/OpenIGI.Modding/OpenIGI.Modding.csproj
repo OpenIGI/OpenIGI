@@ -7,4 +7,12 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The modding API's surface, frozen: a change to a public member is a change mods see, so it is written down
+         in PublicAPI.Unshipped.txt (moved to Shipped when a version ships) or the build fails. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
 </Project>

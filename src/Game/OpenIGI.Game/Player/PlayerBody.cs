@@ -567,7 +567,7 @@ public sealed class PlayerBody
     /// <remarks>
     /// <para>
     /// The faithful path: the input becomes motion flags, the flags pick a locomotion state
-    /// (<see cref="HumanIdleTransitions"/>, transcribed from state zero's own per-tick), the state names
+    /// (<c>HumanIdleTransitions</c>, transcribed from state zero's own per-tick), the state names
     /// an animation, and the animation's root-motion track says how far the body moved. No speed
     /// constant is consulted anywhere.
     /// </para>
@@ -655,7 +655,7 @@ public sealed class PlayerBody
     /// </para>
     /// <para>
     /// <b>The columns are the view's own axes</b>, because the root-motion multiply reads the matrix by
-    /// rows. <see cref="OpenIGI.Rendering.Camera3D.LookRotation"/> gives right as
+    /// rows. <see cref="OpenIGI.Core.Graphics.Camera3D.LookRotation"/> gives right as
     /// <c>(cos, −sin, 0)</c> and forward as <c>(sin, cos, 0)</c>; putting those in as columns is what
     /// makes a delta of <c>(strafe, forward, 0)</c> come out along the axes the player is looking down.
     /// Building it the other way up transposes it, and the player then walks at right angles to the

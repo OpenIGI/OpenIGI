@@ -1,0 +1,10 @@
+# I.G.I. 2 campaign: every gap still open between what the nineteen missions' scripts need and what
+# the title implements. Pinned by RetailIgi2CampaignCensusTests in both directions -- update it when
+# a gap closes. Done is an empty ledger; a mission is done when no line names it.
+#
+#   type X    a spawned task type with no class (loads as a DeclaredTask placeholder)
+#   name X    a native, constant or exported variable a script or VarString expression names
+#   survey X  a script that could not be run far enough to read its spawns
+#
+# After "    #": the missions (location*10+level) that need the gap | where it was found.
+

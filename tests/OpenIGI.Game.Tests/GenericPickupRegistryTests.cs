@@ -16,14 +16,14 @@ public sealed class GenericPickupRegistryTests
     {
         Vector3d pickup = new(1000.0, 2000.0, 3000.0);
 
-        Assert.True(GenericPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0 + GenericPickupRegistry.PickupRadius - 0.1, 2000.0, 3000.0), pickup));
-        Assert.False(GenericPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0 + GenericPickupRegistry.PickupRadius, 2000.0, 3000.0), pickup));
-        Assert.True(GenericPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0, 2000.0, 3000.0 + GenericPickupRegistry.VerticalTolerance - 0.1), pickup));
-        Assert.False(GenericPickupRegistry.IsWithinRange(
-            new Vector3d(1000.0, 2000.0, 3000.0 + GenericPickupRegistry.VerticalTolerance), pickup));
+        Assert.True(PickupReach.IsWithinRange(
+            new Vector3d(1000.0 + PickupReach.Radius - 0.1, 2000.0, 3000.0), pickup));
+        Assert.False(PickupReach.IsWithinRange(
+            new Vector3d(1000.0 + PickupReach.Radius, 2000.0, 3000.0), pickup));
+        Assert.True(PickupReach.IsWithinRange(
+            new Vector3d(1000.0, 2000.0, 3000.0 + PickupReach.VerticalTolerance - 0.1), pickup));
+        Assert.False(PickupReach.IsWithinRange(
+            new Vector3d(1000.0, 2000.0, 3000.0 + PickupReach.VerticalTolerance), pickup));
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public sealed class GenericPickupRegistryTests
         Assert.True(loop.Variables.TryRead("GenericPickup_870.isPickedUp", out QvmValue before));
         Assert.Equal(0, before.Integer);
 
-        Assert.Empty(registry.CollectAt(new Vector3d(1000.0 + GenericPickupRegistry.PickupRadius, 2000.0, 3000.0)));
+        Assert.Empty(registry.CollectAt(new Vector3d(1000.0 + PickupReach.Radius, 2000.0, 3000.0)));
         Assert.Single(registry.CollectAt(pickup.Position));
         Assert.True(pickup.IsCollected);
         Assert.True(loop.Variables.TryRead("GenericPickup_870.isPickedUp", out QvmValue after));

@@ -18,16 +18,21 @@ public sealed class LayeringTests
     private static readonly string[] Backends =
     [
         "OpenIGI.Rendering.Vulkan",
+        "OpenIGI.Rendering.D3D12",
+        "OpenIGI.Rendering.Streamline",
         "OpenIGI.Audio.OpenAL",
         "OpenIGI.Platform.Desktop",
     ];
 
-    /// <summary>The per-title projects. No two of them may meet except in an app.</summary>
-    private static readonly string[] TitleProjects =
+    /// <summary>The per-title projects, by title: a game, and how it is drawn. Two titles' projects meet only in an app.</summary>
+    private static readonly string[][] Titles =
     [
-        "OpenIGI.Game.Igi1",
-        "OpenIGI.Game.Igi2",
+        ["OpenIGI.Game.Igi1", "OpenIGI.Presentation.Igi1"],
+        ["OpenIGI.Game.Igi2", "OpenIGI.Presentation.Igi2"],
     ];
+
+    /// <summary>Every per-title project.</summary>
+    private static readonly string[] TitleProjects = [.. Titles.SelectMany(static title => title)];
 
     /// <summary>Rule 1 — nothing below <c>apps/</c> names a backend.</summary>
     /// <remarks>
@@ -58,7 +63,7 @@ public sealed class LayeringTests
             + string.Join("\n  ", broken));
     }
 
-    /// <summary>Rule 2 — a title project never references another title project.</summary>
+    /// <summary>Rule 2 — a title project never references another title's projects; its own it may.</summary>
     /// <remarks>
     /// Only an app composition root may name both, and it does so through the title runtime. This is
     /// what keeps an I.G.I. 2 finding from reaching I.G.I. 1 code by the back door of a shared type.
@@ -68,21 +73,30 @@ public sealed class LayeringTests
     {
         List<string> broken = [];
 
-        foreach (string title in TitleProjects)
+        foreach (string[] own in Titles)
         {
-            if (!RepositoryLayout.Projects.TryGetValue(title, out ProjectInfo? project))
+            foreach (string title in own)
             {
-                continue;
-            }
+                if (!RepositoryLayout.Projects.TryGetValue(title, out ProjectInfo? project))
+                {
+                    continue;
+                }
 
-            foreach (string other in project.References.Intersect(TitleProjects, StringComparer.Ordinal))
-            {
-                broken.Add($"{title} -> {other}");
+                foreach (string other in project.References.Intersect(TitleProjects, StringComparer.Ordinal).Except(own, StringComparer.Ordinal))
+                {
+                    broken.Add($"{title} -> {other}");
+                }
             }
         }
 
         Assert.True(broken.Count == 0, "Title projects must not meet:\n  " + string.Join("\n  ", broken));
     }
+
+    /// <summary>
+    /// The edges rule 2 allows by exception: none. The host last named Project I.G.I.'s gameplay, and now holds it as the
+    /// shared <c>IHostedMission</c> the composition root makes; an edge is never added here.
+    /// </summary>
+    private static readonly string[] TitleReferencesBaseline = [];
 
     /// <summary>Rule 2 — and nothing below an app references a title project either.</summary>
     [Fact]
@@ -103,9 +117,14 @@ public sealed class LayeringTests
             }
         }
 
+        List<string> added = [.. broken.Except(TitleReferencesBaseline, StringComparer.Ordinal)];
+        List<string> gone = [.. TitleReferencesBaseline.Except(broken, StringComparer.Ordinal)];
         Assert.True(
-            broken.Count == 0,
-            "Only an app composition root may name a title project:\n  " + string.Join("\n  ", broken));
+            added.Count == 0,
+            "Only an app composition root may name a title project:\n  " + string.Join("\n  ", added));
+        Assert.True(
+            gone.Count == 0,
+            "These title references are gone; take them out of TitleReferencesBaseline:\n  " + string.Join("\n  ", gone));
     }
 
     /// <summary>Rule 4 — <c>OpenIGI.Core</c> has no dependencies at all.</summary>
@@ -143,6 +162,37 @@ public sealed class LayeringTests
         Assert.True(
             broken.Count == 0,
             "A project the launcher draws with names the game's renderer:\n  " + string.Join("\n  ", broken));
+    }
+
+    /// <summary>
+    /// No library grants its internals to another library or an app: what one project needs of another is public, so a
+    /// mod or a third title can reach it the same way. The test suites may see in, and a title's game may to its own
+    /// presentation, the two halves of one title.
+    /// </summary>
+    [Fact]
+    public void Internals_are_seen_only_by_tests_and_a_title_s_own_presentation()
+    {
+        System.Text.RegularExpressions.Regex grant = new(@"InternalsVisibleTo\(""([\w.]+)""\)");
+        List<string> broken = [];
+
+        foreach (ProjectInfo project in RepositoryLayout.Projects.Values.Where(static p => p.Area == "src"))
+        {
+            foreach (string path in project.Sources())
+            {
+                foreach (System.Text.RegularExpressions.Match match in grant.Matches(File.ReadAllText(path)))
+                {
+                    string to = match.Groups[1].Value;
+                    bool test = to.EndsWith(".Tests", StringComparison.Ordinal) || to.EndsWith(".Benchmarks", StringComparison.Ordinal);
+                    bool ownTitle = Titles.Any(title => title[0] == project.Name && title.Contains(to, StringComparer.Ordinal));
+                    if (!test && !ownTitle)
+                    {
+                        broken.Add($"{project.Name} -> {to}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(broken.Count == 0, "These grant their internals to a library or an app; make what is needed public:\n  " + string.Join("\n  ", broken));
     }
 
     /// <summary>Every project the rules name still exists, so a rename cannot quietly disarm a rule.</summary>

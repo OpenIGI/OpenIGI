@@ -23,7 +23,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// the cursor while the gizmo is up, the way the console does for its own pointer.
 /// </para>
 /// </remarks>
-internal sealed class SunGizmo
+public sealed class SunGizmo
 {
     // How far in front of the camera the gizmo floats, and how wide its rings are, in metres.
     private const float DistanceMetres = 6f;

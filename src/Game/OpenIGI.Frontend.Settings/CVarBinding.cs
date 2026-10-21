@@ -46,13 +46,18 @@ public static class CVarBinding
     /// the control for as long as the CVar lives, which is only right for a screen that lives as long —
     /// a screen rebuilt on every resize, or one that comes and goes, should pass one and dispose it.
     /// </param>
+    /// <param name="choiceCaptions">
+    /// What an enum's choices are called on screen, keyed by the stored value; a choice not named here shows
+    /// as it is stored.
+    /// </param>
     /// <returns>The bound control, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     public static Control? CreateControl(
         UiTheme theme,
         ICVar cvar,
         string? label = null,
-        ICollection<IDisposable>? lifetime = null)
+        ICollection<IDisposable>? lifetime = null,
+        IReadOnlyDictionary<string, string>? choiceCaptions = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(cvar);
@@ -65,7 +70,14 @@ public static class CVarBinding
         }
         else if (cvar.ValueType.IsEnum)
         {
-            binding = BindEnum(theme, caption, cvar);
+            // The enum's RangeText is its choices joined by " | ", already in the lower-case form ValueText
+            // uses, so it is the reliable option list to bind through the ICVar seam.
+            string[] values = cvar.RangeText.Split(" | ", StringSplitOptions.RemoveEmptyEntries);
+            binding = BindChoices(
+                theme,
+                caption,
+                cvar,
+                [.. values.Select(value => (value, choiceCaptions?.GetValueOrDefault(value) ?? value))]);
         }
         else if (TryParseBounds(cvar.RangeText, out float min, out float max))
         {
@@ -78,6 +90,41 @@ public static class CVarBinding
 
         lifetime?.Add(binding);
         return binding.Control;
+    }
+
+    /// <summary>Builds a dropdown bound to a CVar over a list of the values it may hold.</summary>
+    /// <param name="theme">The theme the control draws from.</param>
+    /// <param name="cvar">The variable to bind; any type, written and read as text.</param>
+    /// <param name="label">The caption.</param>
+    /// <param name="choices">The values offered, each with what it is called on screen, in the order shown.</param>
+    /// <param name="lifetime">Receives the handle that unhooks the control; see <see cref="CreateControl"/>.</param>
+    /// <returns>The bound dropdown.</returns>
+    /// <remarks>
+    /// For a variable whose useful values are a short list its type does not spell out: a resolution the
+    /// display offers, or a frame-rate cap. A value the variable holds that is not in the list is added to
+    /// it, so the dropdown never shows a choice other than the one in force.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static Dropdown CreateChoiceControl(
+        UiTheme theme,
+        ICVar cvar,
+        string label,
+        IReadOnlyList<(string Value, string Caption)> choices,
+        ICollection<IDisposable>? lifetime = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(cvar);
+        ArgumentNullException.ThrowIfNull(choices);
+
+        List<(string Value, string Caption)> offered = [.. choices];
+        if (!offered.Exists(choice => choice.Value == cvar.ValueText))
+        {
+            offered.Add((cvar.ValueText, cvar.ValueText));
+        }
+
+        Binding binding = BindChoices(theme, label, cvar, offered);
+        lifetime?.Add(binding);
+        return (Dropdown)binding.Control;
     }
 
     /// <summary>Turns a CVar name into a caption: drops a known prefix and title-cases the rest.</summary>
@@ -128,14 +175,12 @@ public static class CVarBinding
         });
     }
 
-    private static Binding BindEnum(UiTheme theme, string caption, ICVar cvar)
+    private static Binding BindChoices(UiTheme theme, string caption, ICVar cvar, IReadOnlyList<(string Value, string Caption)> choices)
     {
-        // The enum's RangeText is its choices joined by " | ", already in the lower-case form ValueText
-        // uses, so it is the reliable option list to bind through the ICVar seam.
-        string[] options = cvar.RangeText.Split(" | ", StringSplitOptions.RemoveEmptyEntries);
+        string[] options = [.. choices.Select(static choice => choice.Value)];
         int current = Math.Max(0, Array.IndexOf(options, cvar.ValueText));
         var gate = new BindingGate();
-        var dropdown = new Dropdown(theme, caption, options, current);
+        var dropdown = new Dropdown(theme, caption, choices.Select(static choice => choice.Caption), current);
         Action<int> selectionChanged = index =>
         {
             if (!gate.Busy && index >= 0 && index < options.Length)

@@ -212,7 +212,7 @@ public sealed class SoundSystem : IDisposable
     /// Until this is set, <see cref="PlayDefinition"/> can find nothing: game code names definitions,
     /// never bank keys.
     /// </remarks>
-    public SoundDefinitionRegistry? Definitions { get; set; }
+    public ISoundDefinitionLookup? Definitions { get; set; }
 
     /// <summary>Plays a sound the way game code names it — through the definition layer.</summary>
     /// <param name="name">The definition name, such as <c>ai_death_1</c> or <c>jump_1</c>.</param>

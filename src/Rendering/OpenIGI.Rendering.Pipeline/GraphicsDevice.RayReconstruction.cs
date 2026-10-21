@@ -58,7 +58,7 @@ public sealed partial class GraphicsDevice
         RenderCVars.RayReconstructionRaw.Value
         && _reconstructionPlan.Active == ReconstructionKind.RayReconstruction
         && _rayReconstructionFault.Length == 0
-        && _device.RayTracing is not null;
+        && TracedWorld is not null;
 
     /// <summary>Gets a value indicating whether ray reconstruction wrote this frame's resolve output.</summary>
     private bool RayReconstructionRanThisFrame => _rayReconstructionFrame == _frameCounter && _temporalResolved;
@@ -69,7 +69,7 @@ public sealed partial class GraphicsDevice
     /// <returns><see langword="true"/> when it ran and wrote the resolve's output.</returns>
     private bool TryRecordRayReconstruction(SceneTargetSet scene, IRhiStreamline streamline)
     {
-        if (_rayReconstructionFault.Length > 0 || _device.RayTracing is null)
+        if (_rayReconstructionFault.Length > 0 || TracedWorld is null)
         {
             return false;
         }

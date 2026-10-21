@@ -29,7 +29,7 @@ public sealed class RetailIgi2TerrainMeshTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
                 tiles++;
@@ -94,7 +94,7 @@ public sealed class RetailIgi2TerrainMeshTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -153,7 +153,7 @@ public sealed class RetailIgi2TerrainMeshTests
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             if (surface.IsEmpty)
             {
                 continue;
@@ -200,7 +200,7 @@ public sealed class RetailIgi2TerrainMeshTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
                 Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
@@ -269,7 +269,7 @@ public sealed class RetailIgi2TerrainMeshTests
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            Igi2TerrainSurface surface = Surface(level);
+            Igi2TerrainSurface surface = level.Terrain();
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
                 Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
@@ -293,12 +293,5 @@ public sealed class RetailIgi2TerrainMeshTests
 
         // Measured: 758 samples across 6.36 million carry a material their level deleted.
         Assert.Equal(758, uncovered);
-    }
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
     }
 }

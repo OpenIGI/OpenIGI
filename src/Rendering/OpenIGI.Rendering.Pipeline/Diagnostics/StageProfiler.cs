@@ -61,22 +61,19 @@ public sealed class StageProfiler : IDisposable
     /// <summary>Initialises a new instance of the <see cref="StageProfiler"/> class.</summary>
     /// <param name="device">The device to time on.</param>
     /// <param name="framesInFlight">How many frames may be in flight, which is how many blocks there are.</param>
-    /// <param name="timestampPeriodNanoseconds">
-    /// How many nanoseconds one tick of the device's timestamp counter is, as the device reports it.
-    /// </param>
     /// <remarks>
     /// A device that does not offer timestamp queries builds nothing and reports
     /// <see cref="Available"/> false. Every other member then does nothing, so nothing above has to ask
     /// before timing.
     /// </remarks>
-    public StageProfiler(IRhiDevice device, int framesInFlight, double timestampPeriodNanoseconds = 1.0)
+    public StageProfiler(IRhiDevice device, int framesInFlight)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentOutOfRangeException.ThrowIfLessThan(framesInFlight, 1);
 
         _device = device;
         _slots = framesInFlight;
-        _periodMilliseconds = timestampPeriodNanoseconds / 1_000_000.0;
+        _periodMilliseconds = device.TimestampPeriodNanoseconds / 1_000_000.0;
         _slotPasses = new List<TimedPass>[framesInFlight];
         _slotNext = new int[framesInFlight];
         _copiedPasses = new List<TimedPass>[framesInFlight];

@@ -1,5 +1,5 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
@@ -147,7 +147,7 @@ public static class MeshDistanceFieldBaker
                             min.Y + ((y + 0.5f) * voxelSize.Y),
                             min.Z + ((z + 0.5f) * voxelSize.Z));
 
-                        float d = Distance(p, a, b, c);
+                        float d = DistanceToTriangle(p, a, b, c);
                         int index = (((z * sizeY) + y) * sizeX) + x;
 
                         if (d < distance[index])
@@ -274,27 +274,27 @@ public static class MeshDistanceFieldBaker
     /// projects into. Ericson's formulation, which decides that with comparisons rather than by solving
     /// and rejecting.
     /// </remarks>
-    private static float Distance(Vector3f p, Vector3f a, Vector3f b, Vector3f c)
+    private static float DistanceToTriangle(Vector3f p, Vector3f a, Vector3f b, Vector3f c)
     {
         Vector3f ab = Subtract(b, a);
         Vector3f ac = Subtract(c, a);
         Vector3f ap = Subtract(p, a);
 
-        float d1 = Dot(ab, ap);
-        float d2 = Dot(ac, ap);
+        float d1 = Vector3f.Dot(ab, ap);
+        float d2 = Vector3f.Dot(ac, ap);
 
         if (d1 <= 0f && d2 <= 0f)
         {
-            return Length(ap);
+            return ap.Length;
         }
 
         Vector3f bp = Subtract(p, b);
-        float d3 = Dot(ab, bp);
-        float d4 = Dot(ac, bp);
+        float d3 = Vector3f.Dot(ab, bp);
+        float d4 = Vector3f.Dot(ac, bp);
 
         if (d3 >= 0f && d4 <= d3)
         {
-            return Length(bp);
+            return bp.Length;
         }
 
         float vc = (d1 * d4) - (d3 * d2);
@@ -302,16 +302,16 @@ public static class MeshDistanceFieldBaker
         if (vc <= 0f && d1 >= 0f && d3 <= 0f)
         {
             float v = d1 / (d1 - d3);
-            return Length(Subtract(ap, Scale(ab, v)));
+            return (Subtract(ap, Scale(ab, v))).Length;
         }
 
         Vector3f cp = Subtract(p, c);
-        float d5 = Dot(ab, cp);
-        float d6 = Dot(ac, cp);
+        float d5 = Vector3f.Dot(ab, cp);
+        float d6 = Vector3f.Dot(ac, cp);
 
         if (d6 >= 0f && d5 <= d6)
         {
-            return Length(cp);
+            return cp.Length;
         }
 
         float vb = (d5 * d2) - (d1 * d6);
@@ -319,7 +319,7 @@ public static class MeshDistanceFieldBaker
         if (vb <= 0f && d2 >= 0f && d6 <= 0f)
         {
             float w = d2 / (d2 - d6);
-            return Length(Subtract(ap, Scale(ac, w)));
+            return (Subtract(ap, Scale(ac, w))).Length;
         }
 
         float va = (d3 * d6) - (d5 * d4);
@@ -327,14 +327,14 @@ public static class MeshDistanceFieldBaker
         if (va <= 0f && (d4 - d3) >= 0f && (d5 - d6) >= 0f)
         {
             float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-            return Length(Subtract(Subtract(p, b), Scale(Subtract(c, b), w)));
+            return (Subtract(Subtract(p, b), Scale(Subtract(c, b), w))).Length;
         }
 
         float denom = 1f / (va + vb + vc);
         float vv = vb * denom;
         float ww = vc * denom;
 
-        return Length(Subtract(ap, Add(Scale(ab, vv), Scale(ac, ww))));
+        return (Subtract(ap, Add(Scale(ab, vv), Scale(ac, ww)))).Length;
     }
 
     private static Vector3f Add(Vector3f a, Vector3f b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
@@ -343,7 +343,4 @@ public static class MeshDistanceFieldBaker
 
     private static Vector3f Scale(Vector3f a, float s) => new(a.X * s, a.Y * s, a.Z * s);
 
-    private static float Dot(Vector3f a, Vector3f b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z);
-
-    private static float Length(Vector3f a) => MathF.Sqrt(Dot(a, a));
 }

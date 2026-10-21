@@ -235,7 +235,8 @@ public sealed class QualityBindingTests
     [Fact]
     public void No_caption_or_step_is_named_after_a_variable_or_a_technique()
     {
-        string[] jargon = ["Sdf", "Ssr", "Ssgi", "Taa", "Msaa", "Aa ", "Hdr", "Lut", "Cvar", "R_"];
+        // Whole words: "Lut" is jargon, "Resolution" is not. "R_" is the underscore check below.
+        string[] jargon = ["Sdf", "Ssr", "Ssgi", "Taa", "Msaa", "Aa", "Hdr", "Lut", "Cvar"];
 
         List<string> words = [.. GraphicsMenu.Groups.Select(group => group.Caption)];
         words.AddRange(GraphicsMenu.Groups.SelectMany(group => group.Levels).Select(level => level.Name));
@@ -244,10 +245,11 @@ public sealed class QualityBindingTests
 
         foreach (string word in words)
         {
+            string[] said = word.Split([' ', '-', '/', '(', ')', ','], StringSplitOptions.RemoveEmptyEntries);
             foreach (string term in jargon)
             {
                 Assert.False(
-                    word.Contains(term, StringComparison.OrdinalIgnoreCase),
+                    said.Any(part => part.Equals(term, StringComparison.OrdinalIgnoreCase)),
                     $"The settings page shows \"{word}\", which reads as a variable name rather than a choice.");
             }
 

@@ -62,7 +62,8 @@ public static class WebGpuCapabilities
             Float32Filterable: float32Filterable,
             DepthClamp: depthClamp,
             IndirectFirstInstance: indirectFirstInstance,
-            TextureCompressionBc: compressionBc);
+            TextureCompressionBc: compressionBc,
+            StrictTextureSampleTypes: true);
     }
 
     /// <summary>Whether a set of features includes the extended storage formats.</summary>

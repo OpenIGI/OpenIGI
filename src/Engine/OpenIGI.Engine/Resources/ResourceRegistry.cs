@@ -57,6 +57,9 @@ public sealed class ResourceRegistry
     /// </remarks>
     public ResourceOverrides? Overrides { get; set; }
 
+    /// <summary>Gets the file system resources are read through.</summary>
+    public VirtualFileSystem FileSystem => _fileSystem;
+
     /// <summary>Gets how many registered resources are currently standing in for a shipped asset.</summary>
     /// <remarks>
     /// The number that answers "is my overrides folder doing anything". A folder can be present, spelled

@@ -298,9 +298,7 @@ public sealed partial class GraphicsDevice
 
         if (_device.Streamline is not { } streamline)
         {
-            string reason = _device.ShaderTarget == ShaderTarget.Wgsl
-                ? "NVIDIA's features run on Vulkan only"
-                : "the NVIDIA DLSS runtime is not installed";
+            string reason = _device.StreamlineUnavailableReason;
             support[ReconstructionKind.Dlss] = reason;
             support[ReconstructionKind.RayReconstruction] = reason;
             return support;
@@ -312,7 +310,7 @@ public sealed partial class GraphicsDevice
         RhiStreamlineSupport rayReconstruction = streamline.Support(RhiStreamlineFeature.RayReconstruction);
         support[ReconstructionKind.RayReconstruction] =
             !rayReconstruction.Supported ? rayReconstruction.Reason
-            : _device.RayTracing is null ? "it needs hardware ray tracing, which this adapter does not offer"
+            : TracedWorld is null ? "it needs hardware ray tracing, which this adapter does not offer"
             : string.Empty;
 
         return support;

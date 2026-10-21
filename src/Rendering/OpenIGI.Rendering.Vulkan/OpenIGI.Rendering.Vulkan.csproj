@@ -10,6 +10,7 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.Streamline\OpenIGI.Rendering.Streamline.csproj" />
     <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
   </ItemGroup>
 

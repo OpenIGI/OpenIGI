@@ -89,7 +89,7 @@ public sealed class WorldInteractionTests
     [InlineData(13, 36)]
     public void RetailSelfDrivingTypesEnterTheirExactState(int type, int state)
     {
-        Assert.Equal(state, OpenIGI.Game.Player.HumanInteractionDispatch.Dispatch(type).LocomotionState);
+        Assert.Equal(state, OpenIGI.Game.Igi1.Player.HumanInteractionDispatch.Dispatch(type).LocomotionState);
     }
 
     private static (ScriptVarRegistry Variables, GameTask First, GameTask Second) BuildDoorTasks()
@@ -116,24 +116,43 @@ public sealed class WorldInteractionTests
     }
 
     /// <summary>
-    /// The preprocessor answers <c>.isExists</c> before any variable is consulted: <c>0x4F1574</c> is
-    /// the line after the <c>this.</c> rewrite, and it replaces any token CONTAINING that text with the
-    /// literal <c>1</c>. Resolving it as an unbound name instead would read zero, which is the opposite
-    /// of what the engine says. It is a <c>strstr</c>, so the match is anywhere in the token, and it
-    /// applies to a name the <c>this.</c> rewrite produced too.
+    /// The compile answers <c>.isExists</c> before any variable is consulted: <c>0x4F1574</c> is the line after the
+    /// <c>this.</c> rewrite, and it replaces any word CONTAINING that text with the literal <c>1</c>. It is a
+    /// <c>strstr</c>, so the match is anywhere in the word, and it applies to a name the <c>this.</c> rewrite produced
+    /// too. A word whose id names no task never gets there: <c>0x4F14E3</c> has already made it <c>0</c>.
     /// </summary>
     [Fact]
-    public void AnIsExistsFieldIsAlwaysTrueWhicheverTaskNamesIt()
+    public void AnIsExistsFieldIsTrueForATaskTheLevelHolds()
     {
         (ScriptVarRegistry variables, GameTask first, _) = BuildDoorTasks();
         LevelExpressionRuntime expressions = new(variables);
 
-        Assert.True(expressions.EvaluateCondition("Door_400.isExists", emptyValue: false));
-        Assert.True(expressions.EvaluateCondition("SomethingNeverDeclared_7.isExists", emptyValue: false));
+        Assert.True(expressions.EvaluateCondition("Door_400.isExists", emptyValue: false, first));
         Assert.True(expressions.EvaluateCondition("this.isExists", emptyValue: false, first));
+        Assert.False(expressions.EvaluateCondition("Door_401.isExists", emptyValue: false, first));
+        Assert.False(expressions.EvaluateCondition("Door_5000.isExists", emptyValue: false, first));
+
+        // Without an owner there is no tree to look in, and every task a word names is taken as present.
+        Assert.True(expressions.EvaluateCondition("SomethingNeverDeclared_7.isExists", emptyValue: false));
 
         // And it is still only that field: a name beside it resolves normally, which for an unbound
         // one is zero.
-        Assert.False(expressions.EvaluateCondition("Door_400.isClosed", emptyValue: false));
+        Assert.False(expressions.EvaluateCondition("Door_400.isClosed", emptyValue: false, first));
+    }
+
+    /// <summary>
+    /// A compiled slot keeps the tasks it names (<c>sub_4F13C0</c>) and is compiled again once one of them dies
+    /// (<c>sub_4F1740</c>), so a deleted task's words read <c>0</c> from then on.
+    /// </summary>
+    [Fact]
+    public void ASlotNamingADeletedTaskIsCompiledAgain()
+    {
+        (ScriptVarRegistry variables, GameTask first, GameTask second) = BuildDoorTasks();
+        LevelExpressionRuntime expressions = new(variables);
+        Assert.True(expressions.EvaluateCondition("Door_403.isExists", emptyValue: false, first));
+
+        second.Tree.Delete(second);
+
+        Assert.False(expressions.EvaluateCondition("Door_403.isExists", emptyValue: false, first));
     }
 }

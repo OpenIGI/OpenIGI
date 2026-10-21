@@ -2,6 +2,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 

@@ -11,10 +11,13 @@ public enum SlangTarget
 
     /// <summary>WGSL, for WebGPU.</summary>
     Wgsl,
+
+    /// <summary>DXIL at shader model 6.6, for Direct3D 12, through the pinned DXC.</summary>
+    Dxil,
 }
 
 /// <summary>The files one compile produced.</summary>
-/// <param name="Code">The compiled module: SPIR-V bytes, or WGSL text as UTF-8.</param>
+/// <param name="Code">The compiled module: SPIR-V or DXIL bytes, or WGSL text as UTF-8.</param>
 /// <param name="ReflectionJson">Slang's own reflection JSON, or <see langword="null"/> when not requested.</param>
 public sealed record SlangOutput(byte[] Code, string? ReflectionJson);
 
@@ -35,6 +38,7 @@ public sealed record SlangOutput(byte[] Code, string? ReflectionJson);
 public sealed class SlangCompiler
 {
     private readonly string _executable;
+    private readonly string? _dxcDirectory;
 
     /// <summary>Gets the warnings every compile so far has reported, in the order they arrived.</summary>
     public List<string> Warnings { get; } = [];
@@ -44,10 +48,15 @@ public sealed class SlangCompiler
 
     /// <summary>Initialises a new instance of the <see cref="SlangCompiler"/> class.</summary>
     /// <param name="executable">The full path to <c>slangc</c>.</param>
-    public SlangCompiler(string executable)
+    /// <param name="dxcDirectory">
+    /// The directory holding the pinned DXC's compiler library, which slangc hands DXIL to; null where no
+    /// DXIL is compiled. Named explicitly so the Vulkan SDK's own DXC, a different build, is never picked up.
+    /// </param>
+    public SlangCompiler(string executable, string? dxcDirectory = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(executable);
         _executable = executable;
+        _dxcDirectory = dxcDirectory;
     }
 
     /// <summary>Gets the compiler's version string, as <c>slangc -v</c> reports it.</summary>
@@ -71,6 +80,10 @@ public sealed class SlangCompiler
     /// <param name="defines">Preprocessor defines for this variant.</param>
     /// <param name="withReflection">Whether to ask for Slang's reflection JSON as well.</param>
     /// <param name="workingDirectory">A directory the compiler may write its outputs into.</param>
+    /// <param name="entryPoint">
+    /// The one entry point to compile, and its stage; required for DXIL, where a pipeline takes one blob per
+    /// stage and slangc writes a library of every entry point otherwise.
+    /// </param>
     /// <returns>The compiled output.</returns>
     /// <exception cref="ShaderBuildException">The compile failed.</exception>
     public SlangOutput Compile(
@@ -78,20 +91,36 @@ public sealed class SlangCompiler
         SlangTarget target,
         IReadOnlyDictionary<string, string> defines,
         bool withReflection,
-        string workingDirectory)
+        string workingDirectory,
+        ShaderEntryPoint? entryPoint = null)
     {
+        if (target == SlangTarget.Dxil && entryPoint is null)
+        {
+            throw new ShaderBuildException("DXIL is compiled one entry point at a time; name it.");
+        }
+
         ArgumentException.ThrowIfNullOrEmpty(sourcePath);
         ArgumentNullException.ThrowIfNull(defines);
         ArgumentException.ThrowIfNullOrEmpty(workingDirectory);
 
-        string extension = target == SlangTarget.Spirv ? "spv" : "wgsl";
+        string extension = target switch
+        {
+            SlangTarget.Spirv => "spv",
+            SlangTarget.Wgsl => "wgsl",
+            _ => "dxil",
+        };
         string codePath = Path.Combine(workingDirectory, $"out.{extension}");
         string reflectionPath = Path.Combine(workingDirectory, "out.reflection.json");
 
         List<string> arguments =
         [
             sourcePath,
-            "-target", target == SlangTarget.Spirv ? "spirv" : "wgsl",
+            "-target", target switch
+            {
+                SlangTarget.Spirv => "spirv",
+                SlangTarget.Wgsl => "wgsl",
+                _ => "dxil",
+            },
             "-matrix-layout-column-major",
 
             // Keep the entry point's own name in the SPIR-V. Slang otherwise renames a module's ONLY
@@ -100,7 +129,6 @@ public sealed class SlangCompiler
             // nothing to say why. A module with two entry points keeps both names and would have hidden
             // this until the first single-stage module was migrated.
             "-fvk-use-entrypoint-name",
-            "-o", codePath,
         ];
 
         if (withReflection)
@@ -119,10 +147,43 @@ public sealed class SlangCompiler
             arguments.Add("-DOPENIGI_TARGET_WGSL=1");
         }
 
+        // Shader model 6.6 for the descriptor heap a traced hit reaches its mesh through and for derivatives
+        // in compute. Specialisation constants become a constant buffer there, which is the design, so the
+        // warning saying so is not one to read every build. And the DXC is the pinned one, never whatever
+        // slangc would find beside itself.
+        if (target == SlangTarget.Dxil)
+        {
+            if (_dxcDirectory is null)
+            {
+                throw new ShaderBuildException("DXIL was asked for with no DXC located; see DxcLocator.");
+            }
+
+            arguments.Add("-profile");
+            arguments.Add("sm_6_6");
+            arguments.Add("-dxc-path");
+            arguments.Add(_dxcDirectory);
+            arguments.Add("-warnings-disable");
+            arguments.Add("39019");
+
+            arguments.Add("-entry");
+            arguments.Add(entryPoint!.Name);
+            arguments.Add("-stage");
+            arguments.Add(entryPoint.Stage switch
+            {
+                ShaderStage.Vertex => "vertex",
+                ShaderStage.Fragment => "fragment",
+                _ => "compute",
+            });
+        }
+
         foreach ((string key, string value) in defines)
         {
             arguments.Add($"-D{key}={value}");
         }
+
+        // Last: slangc ties an output to the entry point named before it.
+        arguments.Add("-o");
+        arguments.Add(codePath);
 
         (int exitCode, string standardOutput, string standardError) = Run(arguments);
         if (exitCode != 0 || !File.Exists(codePath))

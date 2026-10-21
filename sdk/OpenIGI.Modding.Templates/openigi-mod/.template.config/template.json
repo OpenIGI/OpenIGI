@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "OpenIGI Contributors",
+  "classifications": [ "OpenIGI", "Mod", "Game" ],
+  "identity": "OpenIGI.Modding.Templates.Mod",
+  "name": "OpenIGI mod",
+  "description": "A mod for OpenIGI: code built against the modding API, packaged as the launcher installs it.",
+  "shortName": "openigi-mod",
+  "sourceName": "MyMod",
+  "preferNameDirectory": true,
+  "tags": { "language": "C#", "type": "project" },
+  "symbols": {
+    "modId": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The mod's id: lowercase letters, digits and dashes, unique among published mods.",
+      "replaces": "MOD_ID",
+      "defaultValue": "my-mod"
+    },
+    "modAuthor": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "Who the launcher credits.",
+      "replaces": "AUTHOR",
+      "defaultValue": "Your name"
+    },
+    "sdkVersion": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The OpenIGI.Modding.Sdk version: the oldest game build the mod works with.",
+      "replaces": "SDK_VERSION",
+      "defaultValue": "SDK_DEFAULT_VERSION"
+    }
+  }
+}

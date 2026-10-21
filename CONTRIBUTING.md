@@ -86,9 +86,17 @@ components, the third kind of download, are neither.
     The launcher still sets it to the top enabled pack, for game builds from before load orders.
   - F8 / `r_overrides` shows the originals. The `content` console command lists layers and conflicts and
     switches a layer live.
-- **Mods** are code: packages of assemblies built against the game's plugin interfaces (`OpenIGI.Modding`).
-  They are not built yet. When they are, they get `<Library>/mods/<id>`, their own manifest and profile, a
-  plugin host to load them, and the launcher's Mods tab.
+- **Mods** are folders holding a `mod.json` (`ModManifest`, `src/Core/OpenIGI.Core/Content`), usually with an
+  assembly built against the modding API (`OpenIGI.Modding`). See [sdk/README.md](sdk/README.md).
+  - They install to `<Library>/mods/<id>/files`, are published as content packs of kind `Mod` listed apart at
+    `/v1/mods`, and are listed on the launcher's Mods tab. A mod's author tries a build from
+    `<Library>/mods/local/<folder>`.
+  - The game loads the mods a `ModProfile` switches on, per game, in its order, named in
+    `OPENIGI_MOD_PROFILE`. Without one it scans `mods/` beside the executable, or the folder in `OPENIGI_MODS`.
+    `OPENIGI_MODS=off` plays the games as they ship.
+  - Community mods are published through the mods index, a separate repository (scaffold in `sdk/mods-index`).
+    A mod with code is built there from its public source at the commit its version names, never uploaded as
+    built.
   - A mod is never loaded through `ResourceOverrides`.
   - Content never runs code.
 - **Runtime components** are vendor-signed native libraries the engine loads, the first being NVIDIA's

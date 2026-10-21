@@ -80,7 +80,7 @@ public static class DeathCameraVantage
                     return new Vantage(direction, Math.Max(0.0, ideal - pullIn), Clear: true);
                 }
 
-                double reached = Distance(pivot, hit);
+                double reached = Vector3d.Distance(pivot, hit);
                 if (reached > bestDistance)
                 {
                     bestDirection = direction;
@@ -99,11 +99,4 @@ public static class DeathCameraVantage
         return new Vantage(bestDirection, Math.Max(0.0, bestDistance - pullIn), Clear: false);
     }
 
-    private static double Distance(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 }

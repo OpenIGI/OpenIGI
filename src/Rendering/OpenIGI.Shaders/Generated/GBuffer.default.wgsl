@@ -125,16 +125,24 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
                 }
             }
         }
-        var _S4 : f32;
-        if(terrain_0 > 1.5f)
+        if(terrain_0 > 2.5f)
         {
-            _S4 = 1.0f - morph_1;
+            morph_0 = 1.0f;
         }
         else
         {
-            _S4 = morph_1;
+            var _S4 : f32;
+            if(terrain_0 > 1.5f)
+            {
+                _S4 = 1.0f - morph_1;
+            }
+            else
+            {
+                _S4 = morph_1;
+            }
+            morph_0 = morph_0 * _S4;
         }
-        output_0.fade_0 = morph_0 * _S4;
+        output_0.fade_0 = morph_0;
         morph_0 = morph_1;
         localPosition_1 = localPosition_2;
     }

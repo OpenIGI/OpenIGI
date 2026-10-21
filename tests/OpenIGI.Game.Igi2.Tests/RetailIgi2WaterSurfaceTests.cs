@@ -1,4 +1,3 @@
-using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -69,7 +68,7 @@ public sealed class RetailIgi2WaterSurfaceTests
         foreach (Igi2Level level in Igi2Level.All())
         {
             Igi2WaterSurface water = Igi2WaterSurface.Build(level.Root);
-            Igi2TerrainSurface ground = Surface(level);
+            Igi2TerrainSurface ground = level.Terrain();
             if (water.IsEmpty || ground.IsEmpty)
             {
                 continue;
@@ -101,12 +100,5 @@ public sealed class RetailIgi2WaterSurfaceTests
         Assert.Equal(0.0, Igi2WaterSurface.TimeFor(0));
         Assert.Equal(1.0, Igi2WaterSurface.TimeFor(60));
         Assert.Equal(2.5, Igi2WaterSurface.TimeFor(150));
-    }
-
-    private static Igi2TerrainSurface Surface(Igi2Level level)
-    {
-        string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
-        IresArchive? archive = File.Exists(path) ? IresArchive.Read(File.ReadAllBytes(path)) : null;
-        return Igi2TerrainSurface.Build(level.Root, archive);
     }
 }

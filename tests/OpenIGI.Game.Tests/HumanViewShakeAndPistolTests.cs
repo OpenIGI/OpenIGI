@@ -1,6 +1,7 @@
 using OpenIGI.Game.Player;
 using Xunit;
 using Signal = OpenIGI.Game.Player.HumanSoldierBodyMachine.Signal;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 

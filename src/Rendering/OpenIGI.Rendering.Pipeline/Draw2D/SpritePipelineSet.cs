@@ -149,6 +149,11 @@ public sealed class SpritePipelineSet : IDisposable
         BlendMode.Additive => new RhiBlendState(
             new RhiBlendComponent(RhiBlendFactor.SourceAlpha, RhiBlendFactor.One, RhiBlendOperation.Add),
             new RhiBlendComponent(RhiBlendFactor.One, RhiBlendFactor.One, RhiBlendOperation.Add)),
+
+        // src*dst + dst*src, the alpha left alone: a screen filter that multiplies the picture under it.
+        BlendMode.Modulate2X => new RhiBlendState(
+            new RhiBlendComponent(RhiBlendFactor.Destination, RhiBlendFactor.Source, RhiBlendOperation.Add),
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.One, RhiBlendOperation.Add)),
         _ => throw new ArgumentOutOfRangeException(
             nameof(blend),
             blend,

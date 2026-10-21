@@ -43,8 +43,7 @@ public sealed class Igi2RotateAttachmentTests
             int here = 0;
             foreach (GameTask task in Walk(level.Root))
             {
-                if (task is DeclaredTask rotate
-                    && string.Equals(rotate.Type.Name, Igi2RotateAttachments.TaskType, StringComparison.Ordinal))
+                if (task is Igi2RotateAttachmentTask)
                 {
                     declared++;
                     here++;
@@ -95,8 +94,7 @@ public sealed class Igi2RotateAttachmentTests
         {
             foreach (GameTask task in Walk(level.Root))
             {
-                if (task is not DeclaredTask rotate
-                    || !string.Equals(rotate.Type.Name, Igi2RotateAttachments.TaskType, StringComparison.Ordinal))
+                if (task is not Igi2RotateAttachmentTask rotate)
                 {
                     continue;
                 }
@@ -104,7 +102,7 @@ public sealed class Igi2RotateAttachmentTests
                 int axes = 0;
                 foreach (string name in new[] { "AlphaRotationSpeed", "BetaRotationSpeed", "GammaRotationSpeed" })
                 {
-                    if (rotate.TryGetValue(name, out object? raw) && raw is float speed && speed != 0f)
+                    if (rotate.TryGetScriptValue(name, out object? raw) && raw is float speed && speed != 0f)
                     {
                         axes++;
                     }

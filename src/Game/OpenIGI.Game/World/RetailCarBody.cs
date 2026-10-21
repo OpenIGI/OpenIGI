@@ -1,15 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.World;
-
-/// <summary>One force pushed onto a rigid body (<c>0x4ECF50</c>): force and application point, both in the body frame.</summary>
-/// <param name="Fx">The force, body X.</param>
-/// <param name="Fy">The force, body Y.</param>
-/// <param name="Fz">The force, body Z.</param>
-/// <param name="Px">The application point, body X.</param>
-/// <param name="Py">The application point, body Y.</param>
-/// <param name="Pz">The application point, body Z.</param>
-public readonly record struct RetailForce(float Fx, float Fy, float Fz, float Px, float Py, float Pz);
 
 /// <summary>What a world query (<c>0x4CC2A0</c> or <c>0x4CB9F0</c>) reports for one ray.</summary>
 public struct RetailRayResult
@@ -125,31 +117,6 @@ public sealed class RetailCarWheel
     public float[] Point { get; } = new float[3];
 }
 
-/// <summary>One wheel of the physics record (<c>R + 284 + 20i</c>).</summary>
-/// <param name="Steerable">The wheel turns with the steering.</param>
-/// <param name="Driven">The engine drives the wheel.</param>
-/// <param name="MaximumSteerDegrees">The steering lock.</param>
-/// <param name="Body">The body point the wheel hangs from; negative for none.</param>
-/// <param name="Travel">The suspension travel, world units.</param>
-/// <param name="Stiffness">The spring stiffness, a share of the car's weight.</param>
-public readonly record struct RetailCarWheelDefinition(
-    bool Steerable,
-    bool Driven,
-    float MaximumSteerDegrees,
-    int Body,
-    float Travel,
-    float Stiffness);
-
-/// <summary>One aerodynamic surface of the physics record (<c>R + 44 + 28j</c>).</summary>
-/// <param name="Coefficient">The drag coefficient.</param>
-/// <param name="Nx">The surface normal, X.</param>
-/// <param name="Ny">The surface normal, Y.</param>
-/// <param name="Nz">The surface normal, Z.</param>
-/// <param name="Px">The application point, X.</param>
-/// <param name="Py">The application point, Y.</param>
-/// <param name="Pz">The application point, Z.</param>
-public readonly record struct RetailAeroSurface(float Coefficient, float Nx, float Ny, float Nz, float Px, float Py, float Pz);
-
 /// <summary>The fixed data a car steps with: the physics type (<c>car + 436</c>) and its car record (<c>TYPE + 724</c>).</summary>
 public sealed class RetailCarDefinition
 {
@@ -172,10 +139,10 @@ public sealed class RetailCarDefinition
     public float ThrottleRetention { get; set; }
 
     /// <summary>The aerodynamic surfaces (<c>R + 40</c>, <c>R + 44</c>).</summary>
-    public RetailAeroSurface[] Aero { get; set; } = [];
+    public Wing[] Aero { get; set; } = [];
 
     /// <summary>The wheels (<c>R + 280</c>, <c>R + 284</c>).</summary>
-    public RetailCarWheelDefinition[] Wheels { get; set; } = [];
+    public CarWheelTypeDefinition[] Wheels { get; set; } = [];
 
     /// <summary>Tracked drive (<c>R + 609</c>).</summary>
     public bool SkidSteer { get; set; }
@@ -226,7 +193,7 @@ public sealed class RetailCarBody : RetailRigidBody
     protected override float SleepSpin => Definition.SleepSpin;
 
     /// <inheritdoc/>
-    protected override RetailAeroSurface[] AeroSurfaces => Definition.Aero;
+    protected override Wing[] AeroSurfaces => Definition.Aero;
 
     /// <summary>Gets the car's type and record.</summary>
     public RetailCarDefinition Definition { get; }
@@ -291,12 +258,12 @@ public sealed class RetailCarBody : RetailRigidBody
         int wheelCount = Math.Min(d.Wheels.Length, MaxWheels);
         for (int i = 0; i < wheelCount; i++)
         {
-            RetailCarWheelDefinition w = d.Wheels[i];
-            int b = w.Body;
+            CarWheelTypeDefinition w = d.Wheels[i];
+            int b = w.ContactPoint;
             bool enabled = Wheels[i].Enabled;
             if (b >= 0 && enabled)
             {
-                X87 t2 = (X87)w.Travel + 2048.0;
+                X87 t2 = (X87)w.MaxSpringDistance + 2048.0;
                 float[] l = Points[b].Position;
                 double wx = ((X87)m[0] * l[0] + (X87)m[2] * l[2] + (X87)m[1] * l[1]).Value;
                 double wy = ((X87)m[3] * l[0] + (X87)m[5] * l[2] + (X87)m[4] * l[1]).Value;
@@ -304,7 +271,7 @@ public sealed class RetailCarBody : RetailRigidBody
                 double sx = ((X87)Position[0] + wx).Value;
                 double sy = ((X87)Position[1] + wy).Value;
                 X87 z = (X87)Position[2] + wz;
-                double sz = ((X87)w.Travel + z + 4096.0).Value;
+                double sz = ((X87)w.MaxSpringDistance + z + 4096.0).Value;
                 double ez = ((X87)sz - t2 - 4096.0).Value;
                 Points[b].Collides = false;
                 _indices[n] = i;
@@ -327,9 +294,9 @@ public sealed class RetailCarBody : RetailRigidBody
         for (int k = 0; k < n; k++)
         {
             int i = _indices[k];
-            RetailCarWheelDefinition w = d.Wheels[i];
-            float travel = w.Travel;
-            int b = w.Body;
+            CarWheelTypeDefinition w = d.Wheels[i];
+            float travel = w.MaxSpringDistance;
+            int b = w.ContactPoint;
             RetailCarPoint point = Points[b];
             float comp = 0.0f;
             bool bottomed = false;
@@ -362,13 +329,13 @@ public sealed class RetailCarBody : RetailRigidBody
 
                 if (contact)
                 {
-                    float fz = ((X87)comp / travel * w.Stiffness * d.Mass * Gravity).F;
+                    float fz = ((X87)comp / travel * w.SpringStiffness * d.Mass * Gravity).F;
                     if (bottomed)
                     {
                         fz = (((X87)2.0f - (X87)dist * (1.0 / 4096.0)) * fz).F;
                     }
 
-                    Push(new RetailForce(0.0f, 0.0f, fz, point.Position[0], point.Position[1], point.Position[2]));
+                    Push(Force(0.0f, 0.0f, fz, point.Position[0], point.Position[1], point.Position[2]));
                 }
             }
 
@@ -408,12 +375,12 @@ public sealed class RetailCarBody : RetailRigidBody
     private void WheelDrive(int i, int b)
     {
         RetailCarDefinition d = Definition;
-        RetailCarWheelDefinition w = d.Wheels[i];
+        CarWheelTypeDefinition w = d.Wheels[i];
         RetailCarWheel wheel = Wheels[i];
         float[] m = M;
-        float angle = ((X87)w.MaximumSteerDegrees * 0.0174532924f * Steering).F;
+        float angle = ((X87)w.MaxAngle * 0.0174532924f * Steering).F;
 
-        if (w.Driven && ((wheel.Contact && Throttle != 0.0f) || Planar))
+        if (w.IsEngine && ((wheel.Contact && Throttle != 0.0f) || Planar))
         {
             X87 drive = (X87)d.EngineForce * Throttle * Gravity / (double)DrivenWheels;
             float driveF = drive.F;
@@ -448,7 +415,7 @@ public sealed class RetailCarBody : RetailRigidBody
             float gx = ((X87)r[0] * bx + (X87)r[2] * bz + (X87)r[1] * by).F;
             float gy = ((X87)r[3] * bx + (X87)r[5] * bz + (X87)r[4] * by).F;
             float gz = ((X87)r[6] * bx + (X87)r[8] * bz + (X87)r[7] * by).F;
-            Push(new RetailForce(gx, gy, gz, wheel.Point[0], wheel.Point[1], wheel.Point[2]));
+            Push(Force(gx, gy, gz, wheel.Point[0], wheel.Point[1], wheel.Point[2]));
         }
 
         if (!wheel.Contact || b < 0)
@@ -456,7 +423,7 @@ public sealed class RetailCarBody : RetailRigidBody
             return;
         }
 
-        float a = w.Steerable ? angle : 0.0f;
+        float a = w.IsSteering ? angle : 0.0f;
         float k1 = Points[b].FrictionX;
         float k2 = Points[b].FrictionY;
         if (Handbrake)
@@ -546,7 +513,7 @@ public sealed class RetailCarBody : RetailRigidBody
             fz = ((X87)slip * gz * Mass * 0.1f).F;
         }
 
-        Push(new RetailForce(fx, fy, fz, p[0], p[1], p[2]));
+        Push(Force(fx, fy, fz, p[0], p[1], p[2]));
     }
 
 }

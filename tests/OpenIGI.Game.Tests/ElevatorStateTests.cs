@@ -38,6 +38,42 @@ public sealed class ElevatorStateTests
     }
 
     [Fact]
+    public void ALongerSplineSegmentTakesTheCarLongerOverTheSameRun()
+    {
+        // The original moves its parameter along the segment's spline length (0x43D6E0), not along the straight run, and
+        // places the car by its share of it: a run whose cubic is twice as long cruises twice as long. The brake is measured in
+        // the same length, so the last of the run takes the same time either way.
+        static int Ride(double? length)
+        {
+            ElevatorState elevator = new(
+                startPosition: default,
+                floors:
+                [
+                    new ElevatorFloor(10, default),
+                    new ElevatorFloor(20, new Vector3d(0, 0, 100000)) { SegmentLength = length },
+                ],
+                maxSpeedUnitsPerSecond: 20000,
+                speedInertiaUnitsPerSecondPerTick: 1000000);
+            elevator.RequestFloor(1);
+            int ticks = 0;
+            do
+            {
+                elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+                ticks++;
+                Assert.InRange(elevator.Position.Z, 0.0, 100000.0);
+            }
+            while (elevator.IsMoving && ticks < 10000);
+
+            Assert.Equal(new Vector3d(0, 0, 100000), elevator.Position);
+            return ticks;
+        }
+
+        int straight = Ride(null);
+        int bent = Ride(200000);
+        Assert.InRange(bent, (straight * 3) / 2, straight * 2);
+    }
+
+    [Fact]
     public void DownPulseIsRememberedUntilCanStartBecomesTrue()
     {
         ElevatorState elevator = new(
@@ -356,5 +392,33 @@ public sealed class ElevatorStateTests
         Vector3d offCentre = new(6000.0, -4000.0, 2000.0);
         Assert.True(registry.TryGetPassengerDisplacement(offCentre, out Vector3d displacement));
         Assert.Equal(movingState.Position - movingState.PreviousPosition, displacement);
+    }
+
+    [Fact]
+    public void A_trip_halts_where_it_is_while_can_start_is_false()
+    {
+        // The update (0x43D280) skips the move (0x43D6E0) whenever the lift's own "Can start" expression is false,
+        // mid-trip as much as at a floor; the car stands still and resumes when the expression comes true again.
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors:
+            [
+                new ElevatorFloor(10, new Vector3d(0, 0, 0)),
+                new ElevatorFloor(20, new Vector3d(0, 0, 100000)),
+            ],
+            maxSpeedUnitsPerSecond: 3000,
+            speedInertiaUnitsPerSecondPerTick: 3000);
+
+        elevator.Tick(canStart: true, floorUp: true, floorDown: false);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Vector3d underway = elevator.Position;
+        Assert.True(underway.Z > 0);
+
+        elevator.Tick(canStart: false, floorUp: false, floorDown: false, enabled: false);
+        Assert.Equal(underway, elevator.Position);
+        Assert.True(elevator.IsMoving);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.True(elevator.Position.Z > underway.Z);
     }
 }

@@ -68,6 +68,20 @@ public readonly record struct Igi2TerrainTile(
     Igi2TerrainMap? Lightmap,
     IReadOnlyList<Igi2TerrainExtent> Submaps)
 {
+    /// <summary>Gets the tile's span along X in metres as the engine holds it, <c>vWorldWidth</c>.</summary>
+    /// <remarks>
+    /// <c>TerrainMap_UpdateInternalDataHandler</c> (<c>igi2 0x575610</c>) copies it from the authored
+    /// <c>World width</c> when the tile loads. The float itself is kept, not the derived spacing, because the
+    /// ground query (<see cref="Igi2TerrainVertex"/>) recomputes the spacing from it at the client's precision.
+    /// </remarks>
+    public float WorldWidth { get; init; }
+
+    /// <summary>Gets the tile's span along Y in metres as the engine holds it, <c>vWorldHeight</c>.</summary>
+    public float WorldHeight { get; init; }
+
+    /// <summary>Gets the position of the <c>Terrain</c> the tile belongs to, which the ground query works relative to.</summary>
+    public Vector3d TerrainOrigin { get; init; }
+
     /// <summary>Gets the world height of one sample.</summary>
     /// <param name="x">The sample's column.</param>
     /// <param name="y">The sample's row.</param>
@@ -236,8 +250,9 @@ public readonly record struct Igi2TerrainTile(
         double right = SampleX(x + size + 1);
         double bottom = SampleY(y + size + 1);
 
-        foreach (Igi2TerrainExtent submap in Submaps)
+        for (int i = 0; i < Submaps.Count; i++)
         {
+            Igi2TerrainExtent submap = Submaps[i];
             if (submap.Contains(left, top, right, bottom))
             {
                 return true;
@@ -362,12 +377,25 @@ public sealed class Igi2TerrainSurface
     private Igi2TerrainSurface(
         IReadOnlyList<Igi2TerrainTile> tiles,
         IReadOnlyDictionary<int, TerrainMaterialTask> materials,
-        Igi2TerrainDiscard[] discards)
+        Igi2TerrainDiscard[] discards,
+        Igi2DiscardBox[] discardBoxes,
+        TerrainTask? terrain)
     {
         Tiles = tiles;
         Materials = materials;
         Discards = discards;
+        DiscardBoxes = discardBoxes;
+        Terrain = terrain;
     }
+
+    /// <summary>Gets the level's terrain, the task its ground is placed by; <see langword="null"/> when it has none.</summary>
+    public TerrainTask? Terrain { get; }
+
+    /// <summary>Gets the position the ground is measured from: the terrain's.</summary>
+    public Vector3d Origin => Terrain?.Position ?? default;
+
+    /// <summary>Gets the discard boxes as the ground query tests them, relative to <see cref="Origin"/>.</summary>
+    public Igi2DiscardBox[] DiscardBoxes { get; }
 
     /// <summary>Gets the level's tiles, in the order it declared them.</summary>
     public IReadOnlyList<Igi2TerrainTile> Tiles { get; }
@@ -394,6 +422,47 @@ public sealed class Igi2TerrainSurface
     /// <param name="y">The world Y.</param>
     /// <returns><see langword="true"/> when the level cuts its ground away there.</returns>
     public bool IsDiscarded(double x, double y) => Igi2TerrainDiscard.AnyContains(Discards, x, y);
+
+    /// <summary>Gets the ground's height under a point as the water reads its depth from it.</summary>
+    /// <param name="x">The world X, in world units.</param>
+    /// <param name="y">The world Y.</param>
+    /// <returns>The height in world units, or <see langword="null"/> where the level has no ground at all.</returns>
+    /// <remarks>
+    /// <c>Terrain_GetZFromWorldCoordinates</c>, which is not the ground a body stands on: it walks the tiles from
+    /// the last down to the second for one that covers the point and otherwise takes the first, clamps the point
+    /// onto that tile's samples rather than refusing it, and knows nothing of the discard boxes.
+    /// </remarks>
+    public double? WaterGroundAt(double x, double y)
+    {
+        if (Tiles.Count == 0)
+        {
+            return null;
+        }
+
+        int index = Tiles.Count - 1;
+        while (index > 0 && !Tiles[index].CoversPoint(x, y))
+        {
+            index--;
+        }
+
+        Igi2TerrainTile tile = Tiles[index];
+        double column = Math.Clamp(tile.ColumnAt(x), 0.0, tile.Width - 1);
+        double row = Math.Clamp(tile.RowAt(y), 0.0, tile.Height - 1);
+        int left = (int)column, top = (int)row;
+        int right = Math.Min(left + 1, tile.Width - 1), bottom = Math.Min(top + 1, tile.Height - 1);
+        double across = column - left, down = row - top;
+        double east = tile.Heights.GetHeight(right, top), south = tile.Heights.GetHeight(left, bottom);
+
+        // The cell's two triangles, split on the diagonal from its east corner to its south one.
+        if (1.0 - across < down)
+        {
+            double far = tile.Heights.GetHeight(right, bottom);
+            return far + ((east - far) * (1.0 - down)) + ((south - far) * (1.0 - across)) + tile.BaseHeight;
+        }
+
+        double near = tile.Heights.GetHeight(left, top);
+        return ((south - near) * down) + ((east - near) * across) + tile.BaseHeight + near;
+    }
 
     /// <summary>Loads the ground a level declares, opening its archive through the registry.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -430,6 +499,8 @@ public sealed class Igi2TerrainSurface
         List<Igi2TerrainTile> tiles = [];
         Dictionary<int, TerrainMaterialTask> materials = [];
         List<Igi2TerrainDiscard> discards = [];
+        List<DiscardTask> discardTasks = [];
+        TerrainTask? terrain = null;
 
         // heightmaps.res keys its entries by bare file name -- `heightmap000.thm`, not the alias-
         // qualified path the task builds. The original never notices: TerrainMap_Alloc sprintfs a name
@@ -440,11 +511,17 @@ public sealed class Igi2TerrainSurface
             byName[BareName(entry.Name)] = entry;
         }
 
-        foreach (GameTask task in Walk(levelRoot))
+        foreach (GameTask task in levelRoot.Descendants())
         {
-            if (task is TerrainMaterialTask material)
+            if (task is TerrainTask level)
             {
-                materials[material.MaterialId] = material;
+                terrain ??= level;
+            }
+            else if (task is TerrainMaterialTask material)
+            {
+                // The first one with an id wins: Terrain_GetNextZHandler (igi2 0x572E80) walks the
+                // terrain's TerrainMaterial children in order and stops at the first match.
+                materials.TryAdd(material.MaterialId, material);
             }
             else if (task is TerrainMapTask map && TryLoad(map, byName, log, out Igi2TerrainTile tile))
             {
@@ -456,6 +533,7 @@ public sealed class Igi2TerrainSurface
                 // keeps them in DiscardTask_ptQTaskList, a flat list every terrain vertex is tested
                 // against, so where in the tree one sits does not matter. The whole walk is the list.
                 discards.Add(discard.Region);
+                discardTasks.Add(discard);
             }
         }
 
@@ -464,7 +542,13 @@ public sealed class Igi2TerrainSurface
         log.Information(
             LogCategory,
             $"Terrain: {tiles.Count} tile(s), {materials.Count} material(s), {discards.Count} discard(s).");
-        return new Igi2TerrainSurface(tiles, materials, [.. discards]);
+        Vector3d origin = terrain?.Position ?? default;
+        return new Igi2TerrainSurface(
+            tiles,
+            materials,
+            [.. discards],
+            [.. discardTasks.Select(d => Igi2DiscardBox.From(d, origin))],
+            terrain);
     }
 
     /// <inheritdoc/>
@@ -525,7 +609,12 @@ public sealed class Igi2TerrainSurface
             BaseHeightOf(map),
             Matching(materialMap, heights) ? materialMap : null,
             Matching(lightMap, heights) ? lightMap : null,
-            []);
+            [])
+        {
+            WorldWidth = map.WorldWidth,
+            WorldHeight = map.WorldHeight,
+            TerrainOrigin = TerrainOf(map)?.Position ?? default,
+        };
 
         return true;
     }
@@ -533,17 +622,20 @@ public sealed class Igi2TerrainSurface
     // The Z a tile's samples are measured from, which Terrain_GetZFromWorldCoordinates takes from the
     // TerrainMap's parent rather than from the TerrainMap. A tile the level parented somewhere else is
     // measured from nothing, which is the same answer the original gives when no terrain is active.
-    private static double BaseHeightOf(TerrainMapTask map)
+    private static double BaseHeightOf(TerrainMapTask map) => TerrainOf(map)?.Position.Z ?? 0.0;
+
+    // The Terrain a tile hangs under, QTask_GetFirstParentOfType's answer.
+    private static TerrainTask? TerrainOf(TerrainMapTask map)
     {
         for (GameTask? parent = map.Parent; parent is not null; parent = parent.Parent)
         {
             if (parent is TerrainTask terrain)
             {
-                return terrain.Position.Z;
+                return terrain;
             }
         }
 
-        return 0.0;
+        return null;
     }
 
     // A map whose extent disagrees with the height map's is not usable as a per-sample channel. The
@@ -571,18 +663,5 @@ public sealed class Igi2TerrainSurface
     {
         int slash = name.LastIndexOfAny(['/', '\\']);
         return slash >= 0 ? name[(slash + 1)..] : name;
-    }
-
-    private static IEnumerable<GameTask> Walk(GameTask task)
-    {
-        foreach (GameTask child in task.Children)
-        {
-            yield return child;
-
-            foreach (GameTask descendant in Walk(child))
-            {
-                yield return descendant;
-            }
-        }
     }
 }

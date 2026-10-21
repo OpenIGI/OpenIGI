@@ -1,3 +1,4 @@
+
 namespace OpenIGI.Game.Menus;
 
 /// <summary>
@@ -195,6 +196,8 @@ public sealed class MenuSelection
         }
     }
 
+    // 0x418840: a selectable window is taken and what is under it is not -- a selectable frame hands its controls what it is
+    // given (MenuFrame_Update, 0x422A50) -- and the search goes on under a window that is not.
     private void Collect(MenuWindowTask window)
     {
         foreach (MenuWindowTask child in window.Children.OfType<MenuWindowTask>())
@@ -203,8 +206,10 @@ public sealed class MenuSelection
             {
                 _items.Add(child);
             }
-
-            Collect(child);
+            else
+            {
+                Collect(child);
+            }
         }
     }
 }

@@ -352,48 +352,14 @@ public static class ReflectionReader
             return null;
         }
 
+        // Per element for an array, under the indexed name the host sets it by: see ConstantLayouts.Flatten.
         List<ShaderUniformField> fields = [];
-        int size = 0;
         if (element.TryGetProperty("fields", out JsonElement declared))
         {
-            foreach (JsonElement field in declared.EnumerateArray())
-            {
-                JsonElement placement = field.GetProperty("binding");
-                int offset = placement.TryGetProperty("offset", out JsonElement at) ? at.GetInt32() : 0;
-                int length = placement.TryGetProperty("size", out JsonElement bytes) ? bytes.GetInt32() : 0;
-                string fieldName = field.GetProperty("name").GetString() ?? string.Empty;
-                size = Math.Max(size, offset + length);
-
-                // An ARRAY is listed per element, under the indexed name the host sets it by. The seam
-                // sets one parameter per call and has no way to hand over a whole array, so every host
-                // that fills one writes "uThing[0]", "uThing[1]" and so on; a single entry for the
-                // whole field would match none of them and the array would stay at whatever the buffer
-                // held.
-                JsonElement fieldType = field.GetProperty("type");
-                bool isArray = fieldType.TryGetProperty("kind", out JsonElement fieldKind)
-                    && fieldKind.GetString() == "array";
-                int stride = placement.TryGetProperty("elementStride", out JsonElement step)
-                    ? step.GetInt32()
-                    : 0;
-
-                if (isArray && stride > 0)
-                {
-                    for (int index = 0; index * stride < length; index++)
-                    {
-                        fields.Add(new ShaderUniformField(
-                            string.Create(
-                                CultureInfo.InvariantCulture,
-                                $"{fieldName}[{index}]"),
-                            offset + (index * stride),
-                            stride));
-                    }
-
-                    continue;
-                }
-
-                fields.Add(new ShaderUniformField(fieldName, offset, length));
-            }
+            ConstantLayouts.Flatten(declared, 0, string.Empty, intoStructures: false, fields);
         }
+
+        int size = fields.Count > 0 ? fields.Max(static field => field.Offset + field.Size) : 0;
 
         // Rounded to a vector, which is what the layout rules already did to every field but the last.
         size = (size + 15) & ~15;

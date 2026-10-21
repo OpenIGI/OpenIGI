@@ -46,6 +46,24 @@ public sealed class ContentLibraryTests : IDisposable
     }
 
     [Fact]
+    public void Mods_are_listed_in_their_own_index_and_served_by_the_same_manifests()
+    {
+        ContentManifest mod = Manifest("igi2soldiers", "0.1.0") with
+        {
+            Kind = ContentKind.Mod,
+            Mod = new ContentModInfo(["igi1"], ["OpenIGI"], RunsCode: true, "https://github.test/mods", "abc123"),
+        };
+        ContentLibrary library = new([.. new[] { Manifest("hd-textures", "1.0.0"), mod }.Select(static m => (m, ReleaseJson.Write(m)))], ChunkUrl);
+
+        Assert.Equal(["hd-textures"], library.Index.Packs.Select(static p => p.Id));
+        ContentPack listed = Assert.Single(library.Mods.Packs);
+        Assert.Equal("igi2soldiers", listed.Id);
+        Assert.Equal("abc123", listed.Mod!.Commit);
+        Assert.Equal(ChunkUrl, library.Mods.ChunkUrl);
+        Assert.Contains("\"mod\"", library.Manifest("igi2soldiers", null), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_scan_finds_published_versions_and_its_tag_changes_with_each_publish()
     {
         ContentStore store = Store();

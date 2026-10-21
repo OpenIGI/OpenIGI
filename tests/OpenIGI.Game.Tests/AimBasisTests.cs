@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
 using Xunit;
+using OpenIGI.Game.Igi1.Weapons;
 
 namespace OpenIGI.Game.Tests;
 

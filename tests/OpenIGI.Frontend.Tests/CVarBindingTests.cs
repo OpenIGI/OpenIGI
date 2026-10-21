@@ -73,6 +73,41 @@ public sealed class CVarBindingTests
     }
 
     [Fact]
+    public void An_enum_shows_its_captions_and_stores_its_values()
+    {
+        var registry = new CVarRegistry();
+        EnumCVar<Quality> cvar = CVar.Choice("r_gi", Quality.Low, CVarOptions.Archive, "GI quality", registry);
+        Dictionary<string, string> captions = new() { ["low"] = "Low quality", ["ultra"] = "Ultra quality" };
+
+        var dropdown = Assert.IsType<Dropdown>(CVarBinding.CreateControl(Theme(), cvar, choiceCaptions: captions));
+        Assert.Equal(["off", "Low quality", "high", "Ultra quality"], dropdown.Options);
+        Assert.Equal("Low quality", dropdown.SelectedOption);
+
+        dropdown.SelectedIndex = 3;
+        Assert.Equal("ultra", cvar.ValueText);
+    }
+
+    [Fact]
+    public void A_choice_list_binds_any_variable_and_keeps_a_value_it_does_not_offer()
+    {
+        var registry = new CVarRegistry();
+        NumericCVar<int> cvar = CVar.Int("r_frame_limit", 0, 0, 1000, CVarOptions.Archive, "Cap", registry);
+        cvar.Value = 57;
+
+        Dropdown dropdown = CVarBinding.CreateChoiceControl(Theme(), cvar, "Frame Rate Cap", [("0", "Unlimited"), ("60", "60 fps")]);
+
+        // The value in force is offered even though the list did not name it, and is the one shown.
+        Assert.Equal(["Unlimited", "60 fps", "57"], dropdown.Options);
+        Assert.Equal("57", dropdown.SelectedOption);
+
+        dropdown.SelectedIndex = 1;
+        Assert.Equal(60, cvar.Value);
+
+        cvar.Reset();
+        Assert.Equal("Unlimited", dropdown.SelectedOption);
+    }
+
+    [Fact]
     public void A_bounded_number_binds_to_a_slider()
     {
         var registry = new CVarRegistry();

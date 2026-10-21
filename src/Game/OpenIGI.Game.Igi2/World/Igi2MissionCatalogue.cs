@@ -188,13 +188,11 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
 
     private static string First(string value) => value.Length > 0 ? value[..1] : string.Empty;
 
-    private static string Normalize(string path) => path.Replace('\\', '/').TrimEnd('/');
-
     private QvmValue Define(QvmCallContext call)
     {
-        string missionDirectory = Normalize(call.GetString(8));
-        string commonDirectory = Normalize(call.GetString(9));
-        string levelDirectory = Normalize(call.GetString(10));
+        string missionDirectory = Core.ResourcePath.NormalizeDirectory(call.GetString(8));
+        string commonDirectory = Core.ResourcePath.NormalizeDirectory(call.GetString(9));
+        string levelDirectory = Core.ResourcePath.NormalizeDirectory(call.GetString(10));
         string commonPack = call.GetString(11);
         string levelPack = call.GetString(12);
 
@@ -204,7 +202,8 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
             call.GetString(6),
             call.GetString(7),
 
-            // No mission names the one that follows it, so a campaign order cannot come from here.
+            // No mission names the one that follows it; the campaign's order is the order the missions are defined in, as
+            // Game_RunHandler takes the next node of Mission_tMissionList, and is filled in as the next one is defined.
             MissionDescriptor.NextMissionUndefined,
             missionDirectory,
             commonDirectory,
@@ -228,6 +227,14 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
         if (!_byId.TryAdd(descriptor.Id, descriptor))
         {
             throw new EngineFatalException($"Mission ID {descriptor.Id} not unique");
+        }
+
+        if (string.Equals(descriptor.GameMode, SinglePlayerMode, StringComparison.Ordinal)
+            && _missions.FindLastIndex(static m => string.Equals(m.GameMode, SinglePlayerMode, StringComparison.Ordinal)) is var last and >= 0)
+        {
+            MissionDescriptor previous = _missions[last] with { NextMissionId = descriptor.Id };
+            _missions[last] = previous;
+            _byId[previous.Id] = previous;
         }
 
         _missions.Add(descriptor);

@@ -69,6 +69,18 @@ public interface IShellHost
     /// <summary>Persists player profiles and their profile-bound progress immediately.</summary>
     void SaveProfiles();
 
+    /// <summary>Names a control for the current title, or returns null when that control belongs to another title.</summary>
+    /// <param name="action">The stored profile action.</param>
+    /// <returns>The visible label, or null.</returns>
+    string? InputBindingLabel(string action) => action;
+
+    /// <summary>Restores the active title's control defaults.</summary>
+    /// <param name="profile">The profile being edited.</param>
+    void ResetInputBindings(OpenIGI.Game.Config.PlayerProfile profile) => profile.ResetBindingsToDefaults();
+
+    /// <summary>Gets the running mission's own save games, for a title that keeps them, or <see langword="null"/>.</summary>
+    OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => null;
+
     /// <summary>Captures the current frame for a save-slot thumbnail.</summary>
     /// <param name="width">Receives the capture width.</param>
     /// <param name="height">Receives the capture height.</param>
@@ -84,4 +96,8 @@ public interface IShellHost
     /// row stays visible and is greyed out, so the player learns the option exists and what it needs.
     /// </remarks>
     string SettingUnavailable(string variable) => string.Empty;
+
+    /// <summary>Lists the resolutions the display the game is on offers, largest first.</summary>
+    /// <returns>The sizes; empty where the host cannot say, and the settings page then offers only the desktop's.</returns>
+    IReadOnlyList<(int Width, int Height)> DisplayResolutions() => [];
 }

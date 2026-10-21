@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -12,6 +13,8 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -23,7 +26,7 @@ public sealed class LevelFourWindowDetectionTests
     private static readonly Vector3d OutsideWindow = new(
         GunnerFeet.X,
         GunnerFeet.Y + (8.0 * Metre),
-        175462208.0 + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+        175462208.0 + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
 
     /// <summary>
     /// Soldier 432 looks from the upper floor of Building 459 toward the approaching player. The authored
@@ -47,7 +50,7 @@ public sealed class LevelFourWindowDetectionTests
             fixture.Renderer.Tick(new Vector3d(0.0, 0.0, 0.0), enemyAlive: false);
         }
 
-        fixture.Renderer.ObserveAllForTesting();
+        fixture.Renderer.Simulation.ObserveAllForTesting();
         Vector3d liveEye = fixture.Gunner.EyePosition();
         // Measured on the retail game (probe, mission 4, soldier 432): its eye stands at z 175486207, 0.42 m
         // under its authored floor plus 1.29 m -- the idle AI stands at its node's height, not the floor's.
@@ -84,13 +87,13 @@ public sealed class LevelFourWindowDetectionTests
     private sealed class Fixture(
         SoldierRenderer renderer,
         ObjectCollisionIndex solids,
-        AiSoldier gunner) : IDisposable
+        Igi1HumanAi gunner) : IDisposable
     {
         public SoldierRenderer Renderer { get; } = renderer;
 
         public ObjectCollisionIndex Solids { get; } = solids;
 
-        public AiSoldier Gunner { get; } = gunner;
+        public Igi1HumanAi Gunner { get; } = gunner;
 
         public static Fixture Load(AiDifficulty difficulty)
         {
@@ -132,19 +135,12 @@ public sealed class LevelFourWindowDetectionTests
             Assert.True(renderer.Load(mission, root) > 0);
             // The level's own nav graphs, as the game hands them over: an idle AI stands at its node's
             // height (0x462390), which for this gunner is well below its authored floor.
-            Dictionary<int, GraphFile> graphs = [];
-            string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs");
-            foreach (string file in Directory.EnumerateFiles(graphDirectory, "graph*.dat"))
-            {
-                if (int.TryParse(Path.GetFileNameWithoutExtension(file).AsSpan("graph".Length), out int graphId))
-                {
-                    GraphFile graph = GraphFile.Read(File.ReadAllBytes(file));
-                    graph.ApplyWorldOffset(OpenIGI.Presentation.World.TaskGeometry.FindPosition(root, graphId));
-                    graphs[graphId] = graph;
-                }
-            }
+            Dictionary<int, GraphFile> graphs = NavGraphs.Read(
+                Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs"),
+                root,
+                NullLogger.Instance);
 
-            Assert.True(renderer.Animate(
+            Assert.True(renderer.Simulation.Animate(
                 graphs,
                 sight: world,
                 scripts: resources,
@@ -154,7 +150,7 @@ public sealed class LevelFourWindowDetectionTests
                 difficulty: difficulty,
                 variables: loop.Variables) > 0);
 
-            AiSoldier gunner = Assert.Single(renderer.BrainsForTesting, brain =>
+            Igi1HumanAi gunner = Assert.Single(renderer.Simulation.BrainsForTesting, brain =>
                 Math.Abs(brain.Position.X - GunnerFeet.X) < Metre
                 && Math.Abs(brain.Position.Y - GunnerFeet.Y) < Metre);
             return new Fixture(renderer, solids, gunner);

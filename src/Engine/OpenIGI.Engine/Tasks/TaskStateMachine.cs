@@ -31,6 +31,7 @@ public sealed class TaskStateMachine
     public const int NoState = -1;
 
     private readonly TaskStateFunction?[] _states;
+    private readonly TaskStateFunction?[] _exits;
     private readonly TaskStateTrigger[] _triggers;
     private readonly int[] _triggerStep;
     private readonly byte[] _triggerTolerance;
@@ -41,14 +42,22 @@ public sealed class TaskStateMachine
     /// <param name="states">The state functions, indexed by state.</param>
     /// <param name="initialState">The state to start in.</param>
     /// <param name="triggers">The triggers, or <see langword="null"/> for none.</param>
+    /// <param name="exits">
+    /// One exit function per state, run by <see cref="Enter"/> on the state being left, or
+    /// <see langword="null"/> for none. I.G.I. 2's machine carries this table (<c>State_s.apfExitState</c>);
+    /// I.G.I. 1's does not.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="states"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="states"/> is empty.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="states"/> is empty, or <paramref name="exits"/> is not one per state.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="initialState"/> is not a state.</exception>
     public TaskStateMachine(
         TaskStateFunction? prologue,
         IReadOnlyList<TaskStateFunction?> states,
         int initialState,
-        IReadOnlyList<TaskStateTrigger>? triggers = null)
+        IReadOnlyList<TaskStateTrigger>? triggers = null,
+        IReadOnlyList<TaskStateFunction?>? exits = null)
     {
         ArgumentNullException.ThrowIfNull(states);
         if (states.Count == 0)
@@ -59,8 +68,14 @@ public sealed class TaskStateMachine
         ArgumentOutOfRangeException.ThrowIfNegative(initialState);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(initialState, states.Count);
 
+        if (exits is not null && exits.Count != states.Count)
+        {
+            throw new ArgumentException($"{exits.Count} exit functions for {states.Count} states.", nameof(exits));
+        }
+
         _prologue = prologue;
         _states = [.. states];
+        _exits = exits is null ? new TaskStateFunction?[states.Count] : [.. exits];
         _triggers = triggers is null ? [] : [.. triggers];
         _triggerStep = new int[_triggers.Length];
         _triggerTolerance = new byte[_triggers.Length];
@@ -106,6 +121,25 @@ public sealed class TaskStateMachine
         PreviousState = CurrentState;
         CurrentState = state;
         Current = _states[state];
+    }
+
+    /// <summary>Leaves the current state for another and runs the new state's entry at once.</summary>
+    /// <param name="state">The state to enter.</param>
+    /// <param name="owner">The task the machine belongs to.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="owner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="state"/> is not a state.</exception>
+    /// <remarks>
+    /// The transition I.G.I. 2's state functions write inline, every time: the leaving state's exit function
+    /// if it has one, then <see cref="TransitionTo"/>, then the new table entry — the state's entry, which
+    /// sets the state up and installs its per-tick in <see cref="Current"/> — called straight away, in the
+    /// same tick.
+    /// </remarks>
+    public void Enter(int state, object owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        _exits[CurrentState]?.Invoke(this, owner);
+        TransitionTo(state);
+        Current?.Invoke(this, owner);
     }
 
     /// <summary>Gets a state's function without entering it.</summary>

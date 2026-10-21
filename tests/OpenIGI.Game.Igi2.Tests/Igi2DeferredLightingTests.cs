@@ -6,6 +6,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -132,14 +133,14 @@ public sealed class Igi2DeferredLightingTests
         (colour.X * 0.2126f) + (colour.Y * 0.7152f) + (colour.Z * 0.0722f);
 
     private static DeferredLighting Read(Igi2Level level) =>
-        Assert.IsType<DeferredLighting>(Igi2PresentationProvider.Instance.ReadDeferredLighting(level.Root));
+        Assert.IsType<DeferredLighting>(new Igi2PresentationProvider().ReadDeferredLighting(level.Root));
 
     private static Igi2Level Level(string suffix) => Igi2Level.All().First(
         l => l.Directory.Replace('\\', '/').EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
     private sealed class SilentProvider : ITitlePresentationProvider
     {
-        public IWorldPresenter? CreateWorld(in WorldPresentationRequest request) => null;
+        public PresenterRegistry Presenters { get; } = new();
     }
 
     /// <summary>The levels the sequel authors as a night are bound to the cycle by that end.</summary>

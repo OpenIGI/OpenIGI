@@ -7,7 +7,7 @@ namespace OpenIGI.Host;
 /// The device decides what can run and says why when something cannot; the host only turns the settings into
 /// requests and tells the device the things only the game knows — whether this frame is gameplay at all.
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // What reconstructed the last frame, for the settings page: the render scale has no say under DLSS.
     private ReconstructionKind _reconstructionActive = ReconstructionKind.Engine;
@@ -31,10 +31,10 @@ internal sealed partial class GameHost
         {
             "r_reconstruction" or "r_dlss_quality" => nvidia,
             "r_frame_generation" => _device.FrameGenerationUnavailable,
-            "r_low_latency" or "r_frame_limit" => _device.LowLatencyUnavailable,
+            "r_low_latency" => _device.LowLatencyUnavailable,
             "r_scale" when _reconstructionActive != ReconstructionKind.Engine =>
                 "DLSS chooses the render size while it runs; set it with DLSS Quality",
-            _ => string.Empty,
+            _ => DisplaySettingUnavailable(variable),
         };
     }
 

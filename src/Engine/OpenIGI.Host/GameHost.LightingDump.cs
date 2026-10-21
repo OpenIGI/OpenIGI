@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Host.Lighting;
 
 namespace OpenIGI.Host;
 
@@ -24,7 +25,7 @@ namespace OpenIGI.Host;
 /// arithmetic.
 /// </para>
 /// </remarks>
-internal sealed partial class GameHost
+public sealed partial class GameHost
 {
     // The lighting the last frame handed the renderer, and its sun in world space (the handed one is in
     // view space). Recorded unconditionally: two struct copies a frame cost nothing.
@@ -67,9 +68,9 @@ internal sealed partial class GameHost
         json.WriteNumber("localLightSource", RenderCVars.LocalLightSource.Value);
 
         json.WriteStartArray("lamps");
-        for (int i = 0; i < _lightFixtures.Count; i++)
+        for (int i = 0; i < _gi.LightFixtures.Count; i++)
         {
-            LightFixture fixture = _lightFixtures[i];
+            LightFixture fixture = _gi.LightFixtures[i];
             json.WriteStartObject();
             json.WriteNumber("index", i);
             json.WriteString("texture", fixture.Texture);
@@ -90,18 +91,18 @@ internal sealed partial class GameHost
 
             // Where the lamp stands with the daylight: whether its photocell decides it, whether it has a roof
             // over it and whether it counts as indoors (which keeps it lit by day), and how bright the switchboard has it now.
-            json.WriteBoolean("followsDaylight", _lampPhotocells?.Follows(i) ?? false);
-            json.WriteBoolean("underRoof", IsUnderRoof(fixture));
-            json.WriteBoolean("indoors", IsIndoors(fixture));
-            json.WriteNumber("level", _lampSwitchboard?.LevelOf(i) ?? 1f);
-            json.WriteBoolean("supplied", _lampSwitchboard?.IsSupplied(i) ?? true);
+            json.WriteBoolean("followsDaylight", _lamps.Daylight.Photocells?.Follows(i) ?? false);
+            json.WriteBoolean("underRoof", LampDaylightControl.IsUnderRoof(fixture, _shelterField));
+            json.WriteBoolean("indoors", LampDaylightControl.IsIndoors(fixture, _shelterField, _mission.EffectWalls));
+            json.WriteNumber("level", _gi.LampSwitchboard?.LevelOf(i) ?? 1f);
+            json.WriteBoolean("supplied", _gi.LampSwitchboard?.IsSupplied(i) ?? true);
             json.WriteEndObject();
         }
 
         json.WriteEndArray();
         json.WriteEndObject();
 
-        _logger.Information("Desktop", $"Wrote the frame's lighting ({_lightFixtures.Count} lamp(s)) to {path}.");
+        _logger.Information("Desktop", $"Wrote the frame's lighting ({_gi.LightFixtures.Count} lamp(s)) to {path}.");
     }
 
     private static void WriteVector(Utf8JsonWriter json, string name, Vector3f value)

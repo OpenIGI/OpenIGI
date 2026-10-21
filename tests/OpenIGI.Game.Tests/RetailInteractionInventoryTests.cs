@@ -12,6 +12,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -21,7 +22,46 @@ public sealed class RetailInteractionInventoryTests
     {
         "Wire", "Fence", "Ladder", "Terminal", "Cabinet", "Switch", "Door",
         "GenericTBA", "PlaceExplosiveTBA", "StationaryGun",
+
+        // A Terminal subtype (0x440C20 registers it under word_53C680): hacked and switched like any terminal.
+        "SCameraControl",
     };
+
+    /// <summary>
+    /// Mission 14 streams its building sections in through AreaActivate containers. A task in one that is not running
+    /// still has its variables -- retail binds them as it creates the task -- and is simply not in the world until the
+    /// container's ACTIVATE (0x487A70) puts it there.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_door_in_a_dormant_section_keeps_its_exports_and_comes_into_the_world_with_it()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        _ = loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        LevelLoader level = new(root, loop.TaskCommands, loop.Natives, resources);
+        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level).Load(14);
+        ScriptVarRegistry variables = loop.Variables;
+        ConditionalContainerTask section = root.Descendants().OfType<ConditionalContainerTask>()
+            .First(static container => container.Descendants().Any(static task => task.Type.Name == "Door"));
+        section.IsActive = false;
+        DeclaredTask door = section.Descendants().OfType<DeclaredTask>().First(static task => task.Type.Name == "Door");
+
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, DoorRegistry.Build(root), variables);
+
+        Assert.True(variables.TryRead($"{door.Name}.isClosed", out _), $"{door.Name}.isClosed is not exported.");
+        Assert.True(variables.TryRead($"{door.Name}.nDoorOpenTicks", out _), $"{door.Name}.nDoorOpenTicks is not exported.");
+        Assert.True(interactions.TryGet(door, out WorldInteraction? interaction));
+        Assert.False(interaction!.IsInWorld);
+
+        section.IsActive = true;
+        Assert.True(interaction.IsInWorld);
+    }
 
     [RequiresGameDataTheory]
     [InlineData(400, 500, "this.isClosed && Switch_500.isLastPressed", "this.isOpen && Switch_500.isLastPressed")]
@@ -172,7 +212,7 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
-    public void LevelTwoAiActivationFinishesAChargeWithoutABlast()
+    public void LevelTwoAiActivationOnlyUsesAChargeAndThePlanterFinishesIt()
     {
         (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
@@ -181,12 +221,18 @@ public sealed class RetailInteractionInventoryTests
             interactions.Items,
             static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
 
+        // An AI's activate (0x454DA0) only uses what it holds: the charge is in use, not finished.
         interactions.Tick();
         Assert.True(interactions.ActivateFromAi(charge.Task.Id));
+        Assert.True(charge.InUse.Value);
+        Assert.False(charge.IsCompleted);
+        Assert.False(charge.CompletedThisTick);
+
+        // The human who plants it finishes it (0x443EA0), and nothing else happens.
+        charge.BeginUse();
+        charge.CompleteUse();
         Assert.True(charge.IsCompleted);
         Assert.True(charge.CompletedThisTick);
-        interactions.Tick();
-        Assert.False(charge.CompletedThisTick);
         Assert.True(variables.TryRead("GenericTBA_282.isFinished", out QvmValue finished));
         Assert.Equal(1, finished.Integer);
     }
@@ -206,7 +252,7 @@ public sealed class RetailInteractionInventoryTests
         List<string> sounds = [];
         objectives.MessageSound = sounds.Add;
         GenericPickup c4 = Assert.Single(pickups.Items, static item => item.Task.Id == 200);
-        Assert.Equal(GenericPickupRegistry.PickupRadius, c4.ReachRadius);
+        Assert.Equal(PickupReach.Radius, c4.ReachRadius);
 
         PlayerBody body = new() { Position = new Vector3d(126045409.0, -37933259.0, 175421668.8) };
         Assert.Equal(175425546.0, body.Origin.Z, 1.0);

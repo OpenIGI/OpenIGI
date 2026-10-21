@@ -198,6 +198,45 @@ public readonly struct Vector3f : IEquatable<Vector3f>, IFormattable
         return length == 0f ? Zero : this / length;
     }
 
+    /// <summary>Returns this vector divided by its length, or a fallback when it is no longer than a minimum.</summary>
+    /// <param name="fallback">What a vector too short to normalise, or not a number, becomes.</param>
+    /// <param name="minimumLength">The length the vector must exceed to be divided.</param>
+    /// <returns>The unit vector, or <paramref name="fallback"/>.</returns>
+    /// <remarks>
+    /// Each component is divided by the length, which rounds differently from multiplying by its reciprocal; see
+    /// <see cref="ReciprocalNormalizedOr"/> for the code that does that instead. The test is <c>length &gt; minimumLength</c>,
+    /// so a length that is not a number takes the fallback.
+    /// </remarks>
+    public Vector3f NormalizedOr(Vector3f fallback, float minimumLength = 0f)
+    {
+        float length = Length;
+        return length > minimumLength ? this / length : fallback;
+    }
+
+    /// <summary>Returns this vector divided by its length, or itself unchanged when it is no longer than a minimum.</summary>
+    /// <param name="minimumLength">The length the vector must exceed to be divided.</param>
+    /// <returns>The unit vector, or this vector.</returns>
+    public Vector3f NormalizedOrSelf(float minimumLength = 0f) => NormalizedOr(this, minimumLength);
+
+    /// <summary>Returns this vector scaled by the reciprocal of its length, or a fallback when it is no longer than a minimum.</summary>
+    /// <param name="fallback">What a vector too short to normalise, or not a number, becomes.</param>
+    /// <param name="minimumLength">The length the vector must exceed to be scaled.</param>
+    /// <returns>The unit vector, or <paramref name="fallback"/>.</returns>
+    /// <remarks>
+    /// <c>1 / length</c> once, then a multiply per component: the form a fixed-function engine writes, and not bit-identical
+    /// to <see cref="NormalizedOr"/>.
+    /// </remarks>
+    public Vector3f ReciprocalNormalizedOr(Vector3f fallback, float minimumLength = 0f)
+    {
+        float length = Length;
+        return length > minimumLength ? this * (1f / length) : fallback;
+    }
+
+    /// <summary>Returns this vector scaled by the reciprocal of its length, or itself unchanged when it is no longer than a minimum.</summary>
+    /// <param name="minimumLength">The length the vector must exceed to be scaled.</param>
+    /// <returns>The unit vector, or this vector.</returns>
+    public Vector3f ReciprocalNormalizedOrSelf(float minimumLength = 0f) => ReciprocalNormalizedOr(this, minimumLength);
+
     /// <summary>Returns this vector with its components widened to <see cref="double"/>.</summary>
     /// <returns>The double-precision vector.</returns>
     public Vector3d ToVector3d() => new(X, Y, Z);

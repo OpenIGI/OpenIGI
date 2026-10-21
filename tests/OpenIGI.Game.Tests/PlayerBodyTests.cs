@@ -1,8 +1,8 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.TestSupport;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;

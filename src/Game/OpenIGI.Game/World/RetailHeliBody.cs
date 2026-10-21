@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.World;
 
@@ -18,7 +19,7 @@ public sealed class RetailHeliDefinition
     public float[] Record { get; set; } = new float[10];
 
     /// <summary>Gets or sets the aerodynamic surfaces (<c>R + 40</c>, <c>R + 44</c>): point × 4096, normal normalised.</summary>
-    public RetailAeroSurface[] Aero { get; set; } = [];
+    public Wing[] Aero { get; set; } = [];
 }
 
 /// <summary>One skid: a <c>HeliWheel</c> attachment (<c>0x426D90</c>).</summary>
@@ -114,7 +115,7 @@ public sealed class RetailHeliBody : RetailRigidBody
     protected override float SleepSpin => Definition.SleepSpin;
 
     /// <inheritdoc/>
-    protected override RetailAeroSurface[] AeroSurfaces => Definition.Aero;
+    protected override Wing[] AeroSurfaces => Definition.Aero;
 
     /// <summary>Latches an AnimTask packet's channels (<c>0x431B70</c>, every packet).</summary>
     /// <param name="channels">The programme's channels 0-3: pitch, roll, yaw targets, the collective (−1 holds).</param>
@@ -183,9 +184,9 @@ public sealed class RetailHeliBody : RetailRigidBody
             float a2 = ((X87)c2 * r[3]).F;
             X87 y = (X87)c3 * r[5];
             X87 z = x * y;
-            Push(new RetailForce(0f, ((X87)a1 * mass * -0.8f).F, 0f, 0f, 0f, 819.2f));
-            Push(new RetailForce(((X87)a2 * mass).F, 0f, 0f, 0f, 0f, 409.6f));
-            Push(new RetailForce((z * mass * 0.08f).F, 0f, 0f, 0f, 12288f, 0f));
+            Push(Force(0f, ((X87)a1 * mass * -0.8f).F, 0f, 0f, 0f, 819.2f));
+            Push(Force(((X87)a2 * mass).F, 0f, 0f, 0f, 0f, 409.6f));
+            Push(Force((z * mass * 0.08f).F, 0f, 0f, 0f, 12288f, 0f));
         }
 
         // D. The stabiliser turns the body about its X to take out the bank.
@@ -228,7 +229,7 @@ public sealed class RetailHeliBody : RetailRigidBody
                         angle = AngleBetween(m[1], m[4], 0.0f, m[2], m[5], m[8]);
                     }
 
-                    Push(new RetailForce(0f, ((X87)Math.Cos(angle) * lift).F, lift, 0f, 0f, 0f));
+                    Push(Force(0f, ((X87)Math.Cos(angle) * lift).F, lift, 0f, 0f, 0f));
                 }
             }
 
@@ -236,7 +237,7 @@ public sealed class RetailHeliBody : RetailRigidBody
             {
                 X87 yaw = (X87)mass * Collective * 2.5f;
                 float fx = rotor.Tail ? (-yaw).F : yaw.F;
-                Push(new RetailForce(fx, 0f, 0f, 0f, 8192.0f, 0f));
+                Push(Force(fx, 0f, 0f, 0f, 8192.0f, 0f));
             }
         }
     }
@@ -417,7 +418,7 @@ public sealed class RetailHeliBody : RetailRigidBody
                 fz = ((X87)comp / travel * mass * QuarterGravity).F;
             }
 
-            Push(new RetailForce(
+            Push(Force(
                 0f,
                 0f,
                 fz,

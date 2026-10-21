@@ -11,9 +11,10 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
 

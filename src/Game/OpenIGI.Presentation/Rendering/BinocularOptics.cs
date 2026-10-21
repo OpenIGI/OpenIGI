@@ -24,7 +24,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// lingering lens reads as lag, whereas the raise wants a moment of the glass settling in.
 /// </para>
 /// </remarks>
-internal sealed class BinocularOptics
+public sealed class BinocularOptics
 {
     /// <summary>How long the glass takes to reach full strength when the device is raised, in seconds.</summary>
     public const float OpenSeconds = 0.35f;

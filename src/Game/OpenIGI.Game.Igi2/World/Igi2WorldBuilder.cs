@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Formats.Ilff;
+using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 
@@ -35,9 +36,6 @@ namespace OpenIGI.Game.Igi2.World;
 /// </remarks>
 public sealed class Igi2WorldBuilder : ITitleWorldBuilder
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi2WorldBuilder Instance { get; } = new();
-
     /// <inheritdoc/>
     public WorldBuildResult Build(in WorldBuildRequest request)
     {
@@ -67,7 +65,8 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             table,
             lightmaps,
             packs,
-            request.Logger);
+            request.Logger,
+            request.Services is { } services && services.TryGet(out Igi2MagicObjTypes? magic) ? magic : null);
 
         // The ground the player stands on, from the same level the placements came from. Built with no
         // logger because the presenter builds it again to draw it and reports it there; one line about a
@@ -75,12 +74,17 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
         Igi2TerrainSurface surface = Igi2TerrainSurface.Build(request.LevelRoot, request.Resources);
         Igi2Ground ground = new(surface);
 
+        LoadedMission mission = request.Mission;
         return new WorldBuildResult(
             result.Scene,
             result.UnresolvedCount,
             result.LightmappedCount,
             ground.IsEmpty ? null : ground,
-            Igi2RotateAttachments.Build(request.LevelRoot, result.Attachments));
+            Igi2RotateAttachments.Build(request.LevelRoot, result.Attachments),
+            ObjectCollisionIndex.Build(
+                result.Scene.Placements,
+                AssetFormatProfile.Igi2.Collision,
+                name => mission.TryGetModel(name, out MefModel? model) ? model : null));
     }
 
     /// <inheritdoc/>

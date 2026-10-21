@@ -3,6 +3,7 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using Xunit;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 

@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Game.Igi2.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- One game's content: its data layout, its format profile and the content modules that register
          its task types, script natives and tables. Never references the other title project; only an app
          composition root may name both, and it does so through IGameTitleRuntime. -->
@@ -9,14 +13,6 @@
     <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- The renderers this title draws through. Both are abstractions over a backend rather than a
-         backend: Rendering owns IGraphicsDevice, Presentation owns the title-agnostic passes and the
-         ITitlePresentationProvider seam. The same pair OpenIGI.Game.Igi1 references, for the same reason. -->
-    <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

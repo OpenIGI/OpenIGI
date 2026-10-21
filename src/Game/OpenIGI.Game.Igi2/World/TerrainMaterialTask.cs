@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// modifier bound to a chunk. Here one row carries both, and a sample picks the row directly.
 /// </para>
 /// </remarks>
-public sealed partial class TerrainMaterialTask : GameTask
+public sealed partial class TerrainMaterialTask : Igi2Task
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "TerrainMaterial";

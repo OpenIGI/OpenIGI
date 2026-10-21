@@ -28,4 +28,7 @@ public enum FogTarget
 
     /// <summary>White: a multiplying pass whose contribution fades to the identity with distance.</summary>
     White,
+
+    /// <summary>Half the scene fog, multiplied by the material share stored in the vertex's grey colour.</summary>
+    MaterialWeightedHalfScene,
 }

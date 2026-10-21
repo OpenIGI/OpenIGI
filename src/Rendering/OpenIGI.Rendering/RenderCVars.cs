@@ -1,5 +1,5 @@
 ﻿using OpenIGI.Core.Configuration;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 
 namespace OpenIGI.Rendering;
 
@@ -14,7 +14,7 @@ namespace OpenIGI.Rendering;
 /// </para>
 /// <para>
 /// Each remaster stage adds its own variables to this file and, where the value differs by quality
-/// tier, registers them with <see cref="Presets.GraphicsPresetRegistry"/> in the same place.
+/// tier, registers them with <see cref="Core.Configuration.Presets.GraphicsPresetRegistry"/> in the same place.
 /// </para>
 /// </remarks>
 [CVarContainer]
@@ -233,19 +233,18 @@ public static class RenderCVars
     /// <remarks>
     /// <para>
     /// The simulation is fixed at 30 Hz and stays there — that is the determinism contract. What this
-    /// changes is only what is <em>drawn</em>: on, each frame renders bodies, poses and the player's
+    /// changes is how each frame renders bodies, poses and the player's
     /// own eye blended between the last two tick states, so an uncapped frame rate looks uncapped
-    /// instead of a 30 Hz slideshow with a smooth mouse. AI, ballistics and every other consumer keep
-    /// reading tick states, so nothing behaves differently.
+    /// instead of a 30 Hz slideshow with a smooth mouse. AI and ballistics keep reading tick states.
+    /// IGI2 also uses linear mouse counts for both the frame preview and the next tick's aim, bypassing
+    /// its retail pitch filters and turn cap. Off retains that title's retail mouse response.
     /// </para>
     /// <para>
     /// On under vanilla too. The original presents exactly one tick's state per frame and vanilla is
     /// otherwise held to what the original did, but a 30 Hz slideshow is not a look anyone chose to
     /// preserve -- it is what a 1998 target frame rate left behind, and the tier exists to show the
-    /// original's <em>picture</em>, not its schedule. Nothing the simulation observes moves either way,
-    /// so vanilla stays frame-for-frame identical in what it draws and only stops holding frames back.
-    /// The reference captures are unaffected: <c>-lockstep</c> pins the one-render-per-tick pairing on
-    /// its own, ahead of this setting, which is what those captures have always run under.
+    /// original's <em>picture</em>, not its schedule. Reference captures use <c>-lockstep</c>, which
+    /// disables interpolation and unfiltered mouse aim ahead of this setting.
     /// </para>
     /// </remarks>
     public static readonly BoolCVar SmoothPresentation = Presets.Define(
@@ -253,7 +252,7 @@ public static class RenderCVars
             "r_smooth",
             true,
             CVarOptions.Archive,
-            "Draw between simulation ticks so movement is as smooth as the frame rate. Sim stays 30 Hz."),
+            "Smooth movement between ticks and use unfiltered IGI2 mouse aim. Simulation stays 30 Hz."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
@@ -978,15 +977,11 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>Whether the world pass culls back faces, now that the mesh builder repairs triangle winding.</summary>
+    /// <summary>Whether the world pass culls back faces of eligible meshes after repairing triangle winding.</summary>
     /// <remarks>
-    /// Culling was off because the port's flattened index order did not wind uniformly, so removing either
-    /// facing dropped real walls. The mesh builder now rewinds each triangle to agree with its vertices' own
-    /// outward normals, which gives back-face culling a consistent facing to remove -- and that is what stops
-    /// a thin object's two coincident faces from fighting over a pixel (the glittering z-fight on thin
-    /// geometry), while roughly halving the indoor fill. Off leaves both facings drawn, the old behaviour.
-    /// A true single-quad, two-sided surface (a chain-link fence read as one plane) loses its far side under
-    /// this; those are rare enough that the trade is worth the thin-geometry fix and the fill it saves.
+    /// The mesh builder repairs winding using authored vertex normals. Interior sectors and meshes
+    /// without usable normals remain two-sided even when this setting is enabled: in particular,
+    /// IGI2 lightmapped geometry carries no normals. Off draws both facings for every world mesh.
     /// </remarks>
     public static readonly NumericCVar<int> WorldCull = Presets.Define(
         CVar.Int(
@@ -995,14 +990,12 @@ public static class RenderCVars
             0,
             1,
             CVarOptions.Archive,
-            "Cull back faces in the world pass. Fixes thin-geometry z-fighting; needs the winding repair."),
+            "Cull back faces of normal-bearing world meshes; interior sectors remain two-sided."),
         vanilla: "0",
         enhanced: "0",
         high: "0",
 
-        // On at ultra, where the winding repair makes it safe: validated on mission 1 (the office window's
-        // thin mullions stop z-fighting and read clean, and no wall is lost indoors or out). The lower
-        // presets stay off until the repair is validated across the other missions.
+        // The renderer retains two-sided drawing for sectors and meshes winding repair cannot orient.
         ultra: "1");
 
     /// <summary>Calibration on the radiance cache's stored bounce, where 1 is the raw traced radiance.</summary>

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -12,7 +13,7 @@ public sealed class AiMultiTargetDetectionTests
     [Fact]
     public void EveryEnemyInSightIsDetectedAndTheFirstRegisteredLeadsTheQueue()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         AiDetectionCandidate guard = Human(id: 417, otherSide: true, alive: true, metresAhead: 6, metresAcross: 1);
         AiDetectionCandidate player = Human(AiDetectionCandidate.PlayerId, otherSide: true, alive: true, metresAhead: 5, metresAcross: -1);
 
@@ -27,7 +28,7 @@ public sealed class AiMultiTargetDetectionTests
     [Fact]
     public void AFallenFriendInSightIsReportedAsSuch()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         AiDetectionCandidate corpse = Human(id: 300, otherSide: false, alive: false, metresAhead: 4, metresAcross: 0);
 
         TickUntilSeen(soldier, [corpse], AiEvent.FriendlyDetection, expected: 1);
@@ -38,7 +39,7 @@ public sealed class AiMultiTargetDetectionTests
     [Fact]
     public void ALivingFriendIsNeverRegistered()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1) { PlayerIsEnemy = false };
         AiDetectionCandidate player = Human(AiDetectionCandidate.PlayerId, otherSide: false, alive: true, metresAhead: 4, metresAcross: 0);
 
         for (int tick = 0; tick < 40; tick++)
@@ -50,7 +51,7 @@ public sealed class AiMultiTargetDetectionTests
         Assert.False(soldier.SeesEnemy);
     }
 
-    private static void TickUntilSeen(AiSoldier soldier, AiDetectionCandidate[] humans, AiEvent type, int expected)
+    private static void TickUntilSeen(Igi1HumanAi soldier, AiDetectionCandidate[] humans, AiEvent type, int expected)
     {
         for (int tick = 0; tick < 60; tick++)
         {
@@ -69,7 +70,7 @@ public sealed class AiMultiTargetDetectionTests
     private static AiDetectionCandidate Human(int id, bool otherSide, bool alive, double metresAhead, double metresAcross)
     {
         Vector3d feet = new(metresAcross * Metre, metresAhead * Metre, 0);
-        Vector3d mark = new(feet.X, feet.Y, feet.Z + AiSoldier.DetectionRaiseStandingInUnits);
+        Vector3d mark = new(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionRaiseStandingInUnits);
         return new AiDetectionCandidate(id, otherSide, alive, mark, feet, Crouching: false, Record: null);
     }
 }

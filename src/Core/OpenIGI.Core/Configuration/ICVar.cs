@@ -83,6 +83,21 @@ public interface ICVar
     /// </remarks>
     bool MatchesText(string text) => string.Equals(text, ValueText, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Works out what <see cref="ValueText"/> would read after <see cref="TrySetText"/>, without assigning.</summary>
+    /// <param name="text">The value to parse.</param>
+    /// <param name="normalized">Receives the text the variable would hold: parsed, clamped and rendered.</param>
+    /// <returns><see langword="true"/> when <paramref name="text"/> parses, as <see cref="TrySetText"/> would.</returns>
+    /// <remarks>
+    /// For a change held back until the player confirms it -- the settings page's Apply -- which has to show
+    /// and compare the value the variable <em>will</em> hold. Defaulted to the text unchanged, which is right
+    /// for any variable whose text is its value; <see cref="CVar{T}"/> parses and renders it.
+    /// </remarks>
+    bool TryNormalizeText(string text, out string normalized)
+    {
+        normalized = text ?? string.Empty;
+        return true;
+    }
+
     /// <summary>Restores the default value.</summary>
     void Reset();
 }

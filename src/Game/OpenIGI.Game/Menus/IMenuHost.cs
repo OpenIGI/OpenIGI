@@ -1,3 +1,4 @@
+
 namespace OpenIGI.Game.Menus;
 
 /// <summary>
@@ -12,7 +13,7 @@ namespace OpenIGI.Game.Menus;
 /// <c>OpenIGI.Game</c> free of a window, a device or a font.
 /// </para>
 /// <para>
-/// <see cref="PrepareScreen"/> exists because the line-up cannot run until every item knows its size,
+/// <see cref="PrepareWindow"/> exists because the line-up cannot run until every item knows its size,
 /// and for a text entry that means resolving its label and measuring it in its own font. The original
 /// does the same thing in its measure pass.
 /// </para>
@@ -31,13 +32,18 @@ public interface IMenuHost
     /// <remarks>The original drains a queue of these; an empty sequence is the normal case.</remarks>
     IEnumerable<MenuInputEvent> DrainEvents();
 
-    /// <summary>Resolves and measures a screen's contents so the line-up can place them.</summary>
-    /// <param name="screen">The screen about to be shown.</param>
-    void PrepareScreen(MenuScreenTask screen);
+    /// <summary>Resolves and measures a screen's or a popup's contents so the line-up can place them.</summary>
+    /// <param name="window">The screen or popup about to be shown.</param>
+    void PrepareWindow(MenuWindowTask window);
 
     /// <summary>Draws a screen.</summary>
     /// <param name="screen">The screen to draw.</param>
     void DrawScreen(MenuScreenTask screen);
+
+    /// <summary>Draws a popup over the screen.</summary>
+    /// <param name="popup">The popup.</param>
+    /// <param name="alpha">The fade it is drawn at, on the manager's 0-to-16 scale.</param>
+    void DrawPopup(DialogWindowTask popup, int alpha);
 
     /// <summary>Takes the characters typed since the last tick.</summary>
     /// <returns>The characters, in the order they were typed.</returns>
@@ -47,6 +53,22 @@ public interface IMenuHost
     /// with no text input returns nothing.
     /// </remarks>
     IEnumerable<char> DrainTypedText() => [];
+
+    /// <summary>Gets whether a key is held now.</summary>
+    /// <param name="scanCode">The key's DirectInput scan code.</param>
+    /// <returns><see langword="true"/> while it is down.</returns>
+    /// <remarks>
+    /// The controls list reads the keyboard's state rather than its queue as it waits for a key (<c>0x4234E0</c>). A host with
+    /// no keyboard reports none held.
+    /// </remarks>
+    bool IsKeyDown(int scanCode) => false;
+
+    /// <summary>Gets the mouse's buttons held now and its wheel turned since the last tick, as the original's mouse word.</summary>
+    /// <remarks>
+    /// Bit <c>n</c> is button <c>n + 1</c>; <c>0x100</c> is the wheel turned up and <c>0x200</c> down. A host with no mouse
+    /// reports nothing.
+    /// </remarks>
+    int MouseButtons => 0;
 
     /// <summary>Draws the mouse cursor at a position in authored 640x480 space.</summary>
     /// <param name="x">The horizontal position.</param>

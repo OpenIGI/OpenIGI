@@ -12,6 +12,8 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -34,8 +36,8 @@ public sealed class AiPerceptionRetailIntegrationTests
         for (int level = 1; level <= 14; level++)
         {
             using Fixture fixture = Fixture.Load(level);
-            fixture.Renderer.ObserveAllForTesting();
-            AiSoldier? soldier = fixture.Renderer.BrainsForTesting.FirstOrDefault(brain =>
+            fixture.Renderer.Simulation.ObserveAllForTesting();
+            Igi1HumanAi? soldier = fixture.Renderer.Simulation.BrainsForTesting.FirstOrDefault(brain =>
                 brain.PlayerIsEnemy && Math.Abs(brain.CurrentEyeOrientation.M32) < 0.5f);
             if (soldier is null)
             {
@@ -49,7 +51,7 @@ public sealed class AiPerceptionRetailIntegrationTests
             Vector3d mark = new(
                 soldier.Position.X + (eye.M12 / length * 5.0 * Metre),
                 soldier.Position.Y + (eye.M22 / length * 5.0 * Metre),
-                soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+                soldier.Position.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
             (double distance, bool inCone, _, _, _) = soldier.ProbeDetection(mark);
             if (!inCone)
             {
@@ -84,7 +86,7 @@ public sealed class AiPerceptionRetailIntegrationTests
     public void AnUndrawnGuardLooksAlongItsPlacedHeadingNotWorldNorth()
     {
         using Fixture fixture = Fixture.Load(1);
-        AiSoldier soldier = fixture.Renderer.BrainsForTesting.First(brain =>
+        Igi1HumanAi soldier = fixture.Renderer.Simulation.BrainsForTesting.First(brain =>
             brain.PlayerIsEnemy && Math.Abs(Math.Sin(brain.Facing)) > 0.9);
 
         // Five metres along the heading it was placed with: where the placed rest eye looks.
@@ -92,18 +94,18 @@ public sealed class AiPerceptionRetailIntegrationTests
         Vector3d bodyAhead = new(
             soldier.Position.X + forward.X,
             soldier.Position.Y + forward.Y,
-            soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+            soldier.Position.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
         Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye missed its placed heading");
 
         // Five metres along world +Y, a quarter turn off that heading: outside the cone.
         Vector3d northAhead = new(
             soldier.Position.X,
             soldier.Position.Y + (5.0 * Metre),
-            soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+            soldier.Position.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
         Assert.False(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye ignored its placed heading");
 
         // Once drawn close up, the eye follows the body.
-        fixture.Renderer.ObserveAllForTesting();
+        fixture.Renderer.Simulation.ObserveAllForTesting();
         Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "a drawn guard's eye did not follow its body");
     }
 
@@ -120,7 +122,7 @@ public sealed class AiPerceptionRetailIntegrationTests
         fixture.Renderer.Tick();
         fixture.Renderer.Tick();
 
-        IReadOnlyList<AiSoldier> brains = fixture.Renderer.BrainsForTesting;
+        IReadOnlyList<Igi1HumanAi> brains = fixture.Renderer.Simulation.BrainsForTesting;
         Assert.Contains(brains, brain => brain.LastTick == 1);
         Assert.All(brains, brain => Assert.InRange(brain.LastTick, 0, 1));
     }
@@ -154,7 +156,7 @@ public sealed class AiPerceptionRetailIntegrationTests
             SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
             Assert.True(renderer.Load(mission, root) > 0, $"Level {level} loaded no soldiers");
             Assert.True(
-                renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0,
+                renderer.Simulation.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0,
                 $"Level {level} created no AI brains");
             return new Fixture(renderer);
         }

@@ -2,6 +2,8 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Igi1;
 
@@ -114,6 +116,7 @@ public sealed class WorldContentModule : IContentModule
         context.Services.GetOrProvide(() => new MagicObjectRegistry(context.Logger)).Register(context.Natives);
         context.Services.GetOrProvide(() => new AnimTriggerRegistry(context.Logger)).Register(context.Natives);
         context.Services.GetOrProvide(() => new VehiclePhysicsRegistry(context.Logger));
+        context.Services.GetOrProvide(static () => new Igi1Quirks());
     }
 
     /// <inheritdoc/>

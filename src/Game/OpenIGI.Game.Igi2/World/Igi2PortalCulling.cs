@@ -1,7 +1,7 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -221,8 +221,8 @@ public sealed class Igi2VisibleSector
 /// (<c>ModelObj_GetLOD</c>) and skips one that returns <c>-1</c>; it also skips a portal whose
 /// per-object status byte is zero, which is what a door drives
 /// (<c>Sector_SetPortalOpen</c>, <c>igi2ed.exe 0x42AFD0</c>, writes <c>ptSector + iPortal + 352</c>).
-/// Neither has a home in the port yet, so LOD is ignored and the open/closed state arrives through the
-/// <c>isPortalOpen</c> delegate.
+/// LOD is ignored, and the open/closed state arrives through the <c>isPortalOpen</c> delegate, which
+/// <see cref="Igi2SectorPortals.IsOpen"/> answers from the doors.
 /// </para>
 /// </remarks>
 public sealed class Igi2PortalCulling
@@ -613,7 +613,7 @@ public sealed class Igi2PortalCulling
                 // The original's interpolant, 0x586650: `(clipZ − a.z) / (b.z − a.z)` applied to the
                 // view-space position, which is then reprojected and given a fresh outcode.
                 float t = (NearPlaneZ - current.View.Z) / (next.View.Z - current.View.Z);
-                scratch[written++] = Project(Lerp(current.View, next.View, t), projection);
+                scratch[written++] = Project(Vector3f.Lerp(current.View, next.View, t), projection);
             }
         }
 
@@ -683,8 +683,6 @@ public sealed class Igi2PortalCulling
         Edge.Right => area.MaxX,
         _ => area.MaxY,
     };
-
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
 
     [Flags]
     private enum Outcode

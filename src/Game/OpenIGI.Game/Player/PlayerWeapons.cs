@@ -417,7 +417,7 @@ public sealed class PlayerWeapons
     /// <param name="onGround">Whether the body is on the ground.</param>
     /// <param name="locomotionAction">
     /// What the body's current locomotion state asks the torso to play, from
-    /// <see cref="HumanLocomotionWeaponActions"/> — the original's <c>Human+3420</c>. The Ready state
+    /// <c>HumanLocomotionWeaponActions</c> — the original's <c>Human+3420</c>. The Ready state
     /// resyncs to it, which is how a weapon goes back to its stand pose after a shot without either
     /// machine referring to the other.
     /// </param>

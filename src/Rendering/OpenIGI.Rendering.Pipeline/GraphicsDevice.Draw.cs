@@ -335,6 +335,10 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         _detailFade = new DetailFade(scale, offset, slope, fadeAlpha ? 2f : 1f);
 
     /// <inheritdoc/>
+    public void SetDetailFadeUnweighted(float scale, float offset, float slope) =>
+        _detailFade = new DetailFade(scale, offset, slope, 3f);
+
+    /// <inheritdoc/>
     public void ClearDetailFade() => _detailFade = DetailFade.None;
 
     /// <inheritdoc/>

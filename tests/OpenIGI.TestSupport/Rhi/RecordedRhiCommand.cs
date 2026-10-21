@@ -138,4 +138,13 @@ public abstract record RecordedRhiCommand
     /// <summary>A frame was presented.</summary>
     /// <param name="Index">Which image.</param>
     public sealed record EndFrame(int Index) : RecordedRhiCommand;
+
+    /// <summary>A batch of acceleration-structure builds was recorded.</summary>
+    /// <param name="BottomLevel">The structures each bottom-level build wrote, and whether it was a refit.</param>
+    /// <param name="TopLevel">The structure the top-level build wrote, or null for none.</param>
+    /// <param name="InstanceCount">How many placements the top level was built over.</param>
+    public sealed record BuildAccelerationStructures(
+        IReadOnlyList<(string Structure, bool Update)> BottomLevel,
+        string? TopLevel,
+        int InstanceCount) : RecordedRhiCommand;
 }

@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Igi1.Config;
 using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
@@ -28,6 +29,18 @@ public sealed class PointerHost : IFlowHost, IMenuHost
         _y = y;
         _down = down;
     }
+
+    /// <summary>Gets the scan codes of the keys held.</summary>
+    public HashSet<int> HeldKeys { get; } = [];
+
+    /// <inheritdoc/>
+    public bool IsKeyDown(int scanCode) => HeldKeys.Contains(scanCode);
+
+    /// <inheritdoc/>
+    public int MouseButtons { get; set; }
+
+    /// <summary>Gets the sounds played, in order.</summary>
+    public List<string> Sounds { get; } = [];
 
     /// <inheritdoc/>
     public void ShowMainMenu() => OnShowMainMenu?.Invoke();
@@ -79,11 +92,11 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     /// A <c>MenuText</c> gets its size from the renderer measuring its label, so without a stand-in size
     /// every entry is a zero-width rectangle and the pointer can never be over one.
     /// </remarks>
-    public void PrepareScreen(MenuScreenTask screen)
+    public void PrepareWindow(MenuWindowTask window)
     {
-        ArgumentNullException.ThrowIfNull(screen);
+        ArgumentNullException.ThrowIfNull(window);
 
-        foreach (MenuTextTask entry in Descend(screen).OfType<MenuTextTask>())
+        foreach (MenuTextTask entry in Descend(window).OfType<MenuTextTask>())
         {
             entry.LayoutWidth = 80;
             entry.LayoutHeight = 16;
@@ -107,15 +120,19 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     {
     }
 
+    /// <summary>Gets the popups drawn, with the alpha each was drawn at, in the order they were drawn.</summary>
+    public List<(DialogWindowTask Popup, int Alpha)> PopupsDrawn { get; } = [];
+
+    /// <inheritdoc/>
+    public void DrawPopup(DialogWindowTask popup, int alpha) => PopupsDrawn.Add((popup, alpha));
+
     /// <inheritdoc/>
     public void DrawPointer(int x, int y)
     {
     }
 
     /// <inheritdoc/>
-    public void PlaySound(string name)
-    {
-    }
+    public void PlaySound(string name) => Sounds.Add(name);
 
     /// <summary>Gets the state the menus last left with, or null while they have not.</summary>
     public MenuManagerState? LeftWith { get; private set; }

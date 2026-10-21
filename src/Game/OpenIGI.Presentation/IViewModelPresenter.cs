@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.World;
@@ -63,6 +64,54 @@ public interface IViewModelPresenter : IDisposable
         Matrix3f? orientation = null);
 }
 
+/// <summary>Draws what a title's own player holds in front of its eyes, from the frame the player gives.</summary>
+/// <remarks>
+/// The counterpart of <see cref="IViewModelPresenter"/> for a player the title brings itself
+/// (<see cref="ITitleFirstPerson"/>): the pose and the parts come from the title, the models from its packs.
+/// </remarks>
+public interface ITitleViewModelPresenter : IDisposable
+{
+    /// <summary>Gets or sets how the level lights an object with no bake, which is what the view's models are.</summary>
+    ObjectShading Shading { get; set; }
+
+    /// <summary>Gets ready to draw a mission's models.</summary>
+    /// <param name="mission">The mission whose packs the models are read from.</param>
+    /// <returns><see langword="false"/> when the mission has nothing to draw them from.</returns>
+    bool Load(LoadedMission mission);
+
+    /// <summary>Draws the first-person view.</summary>
+    /// <param name="view">What the eyes hold.</param>
+    /// <param name="camera">Where it is seen from, in metres.</param>
+    /// <param name="projection">The view model's projection, which is not the world's.</param>
+    void Draw(TitleFirstPersonView view, in Camera3D camera, in Matrix4f projection);
+}
+
+/// <summary>Draws the rigid models a title's own player has lying in its level, among the world's geometry.</summary>
+/// <remarks>
+/// The world-pass counterpart of <see cref="ITitleViewModelPresenter"/>, for a player that is also
+/// <see cref="ITitleWorldModels"/>: the same models from the same packs, under the world's projection and depth.
+/// </remarks>
+public interface ITitleWorldModelPresenter
+{
+    /// <summary>Draws the models.</summary>
+    /// <param name="models">The models and where they stand.</param>
+    /// <param name="camera">Where they are seen from, in metres.</param>
+    /// <param name="projection">The world's projection.</param>
+    void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection);
+
+    /// <summary>Draws camera-facing additive lights against the world's depth.</summary>
+    /// <param name="sprites">The title's lights.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawWorldSprites(IReadOnlyList<TitleWorldSprite> sprites, in Camera3D camera, in Matrix4f projection) { }
+
+    /// <summary>Draws marks lying on the ground, blended over the world and tested against its depth.</summary>
+    /// <param name="decals">The marks.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawGroundDecals(IReadOnlyList<TitleGroundDecal> decals, in Camera3D camera, in Matrix4f projection) { }
+}
+
 /// <summary>Draws the weapon the player is holding.</summary>
 public interface IHeldWeaponPresenter : IDisposable
 {
@@ -71,6 +120,10 @@ public interface IHeldWeaponPresenter : IDisposable
 
     /// <summary>Gets or sets what each of the weapon's textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
+
+    /// <summary>Gets where the weapon's muzzle is, in metres in the weapon's own frame, or null when it has no gun flame.</summary>
+    /// <remarks>The gun-flame part's place in the magic-object tree: where the original draws the flame.</remarks>
+    Vector3f? MuzzleMetres => null;
 
     /// <summary>Loads one weapon's model.</summary>
     /// <param name="mission">The mission whose packs the model is read from.</param>
@@ -172,6 +225,7 @@ public interface IGunPickupPresenter : IDisposable
 /// <param name="Resources">The registry models and textures are resolved through.</param>
 /// <param name="Magic">The magic-object table the projectile and pickup models are named by.</param>
 /// <param name="Logger">Where load diagnostics go.</param>
+/// <param name="Work">The host's work scheduler, which a presenter hands parallel work to; none runs it in line.</param>
 /// <remarks>
 /// One request for five presenters because all five want the same four things, and a request per
 /// presenter would be four-fifths repetition. <see cref="Magic"/> is unused by the arms, which name no
@@ -181,4 +235,5 @@ public readonly record struct ViewModelPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
     MagicObjectRegistry? Magic,
-    IOpenIgiLogger Logger);
+    IOpenIgiLogger Logger,
+    Core.Threading.IWorkScheduler? Work = null);

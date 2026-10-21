@@ -139,10 +139,10 @@ public static class HumanHitTest
             (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
 
         // The reversed travel direction, because the original measures where the round came FROM.
-        Vector3f incoming = Normalise(new Vector3f(
-            (float)-direction.X, (float)-direction.Y, (float)-direction.Z));
+        Vector3f incoming = new Vector3f(
+            (float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
 
-        Vector3f forward = Normalise(facing);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
 
         // The sideways axis is the facing turned a quarter turn in the ground plane, so the two
@@ -248,8 +248,8 @@ public static class HumanHitTest
         Vector3d contact = crossing.Contact;
         int hitBone = crossing.Bone;
 
-        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
-        Vector3f forward = Normalise(facing);
+        Vector3f incoming = new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
 
@@ -262,7 +262,7 @@ public static class HumanHitTest
         if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
         {
             Vector3d headWorld = boneOrigin;
-            double distance = Distance(contact, headWorld);
+            double distance = Vector3d.Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -318,7 +318,7 @@ public static class HumanHitTest
         double reach = 0.0;
         foreach (Vector3d vertex in world)
         {
-            reach = Math.Max(reach, Distance(vertex, origin));
+            reach = Math.Max(reach, Vector3d.Distance(vertex, origin));
         }
 
         reach += 1.0;
@@ -489,8 +489,8 @@ public static class HumanHitTest
         BonePose pose,
         Vector3d boneOrigin)
     {
-        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
-        Vector3f forward = Normalise(facing);
+        Vector3f incoming = new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
@@ -498,7 +498,7 @@ public static class HumanHitTest
         {
             // The origin itself: 0x489C60's bone lookup returns zeros (see TryCastMesh).
             Vector3d headWorld = boneOrigin;
-            if (HumanDamage.TakesProximityZone((float)Distance(contact, headWorld), localForward))
+            if (HumanDamage.TakesProximityZone((float)Vector3d.Distance(contact, headWorld), localForward))
             {
                 zone = HumanDamage.ProximityZone;
             }
@@ -570,8 +570,8 @@ public static class HumanHitTest
         Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         Vector3d contact = crossing.Contact;
         int hitBone = crossing.Bone;
-        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
-        Vector3f forward = Normalise(facing);
+        Vector3f incoming = new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z).NormalizedOr(Vector3f.UnitY);
+        Vector3f forward = facing.NormalizedOr(Vector3f.UnitY);
         float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
@@ -583,7 +583,7 @@ public static class HumanHitTest
             Vector3d headWorld = root;
 
             // From the contact, as 0x489C60 measures it (see TryCastMesh).
-            double distance = Distance(contact, headWorld);
+            double distance = Vector3d.Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -802,17 +802,4 @@ public static class HumanHitTest
         return true;
     }
 
-    private static Vector3f Normalise(Vector3f v)
-    {
-        float length = MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
-        return length <= 0f ? new Vector3f(0f, 1f, 0f) : new Vector3f(v.X / length, v.Y / length, v.Z / length);
-    }
-
-    private static double Distance(Vector3d a, Vector3d b)
-    {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-    }
 }

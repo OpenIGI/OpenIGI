@@ -122,7 +122,7 @@ public readonly record struct SceneFog(Vector3f Colour, float DensityPerMetre)
     /// </remarks>
     public Vector3f ColourFor(BlendMode blend, FogTarget target) => target switch
     {
-        FogTarget.HalfScene => Colour * HalfTarget,
+        FogTarget.HalfScene or FogTarget.MaterialWeightedHalfScene => Colour * HalfTarget,
         FogTarget.White => Vector3f.One,
         _ => ColourFor(blend),
     };

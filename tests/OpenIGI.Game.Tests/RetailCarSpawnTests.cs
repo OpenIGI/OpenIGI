@@ -10,6 +10,7 @@ namespace OpenIGI.Game.Tests;
 /// Builds mission 7's APC and T80 and mission 6's limousine from the level, the physics type and the model, as the original creates a
 /// car, and demands the state the running game held at the car's first physics tick.
 /// </summary>
+[Collection(RetailMissionWorld.Name)]
 public sealed class RetailCarSpawnTests
 {
     [RequiresGameDataTheory]

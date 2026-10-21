@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
@@ -32,40 +33,20 @@ public static class RetailPlaneSpawn
     {
         PlanePhysicsDefinition type = physics;
         float F(int index) => type.ArgumentAt(index).ToSingle();
-        int count = Math.Clamp(physics.ArgumentAt(22).ToInt32(), 0, Math.Max(0, (physics.ArgumentCount - 23) / 7));
-        RetailAeroSurface[] surfaces = new RetailAeroSurface[count];
-        for (int j = 0; j < count; j++)
-        {
-            // 0x4EC4D0: coefficient, point, direction in the file; the point × 4096 and the direction normalised.
-            int f = 23 + (j * 7);
-            float nx = F(f + 4), ny = F(f + 5), nz = F(f + 6);
-            if (!(nx == 0f && ny == 0f && nz == 0f))
-            {
-                X87 inverse = (X87)1.0 / X87.Sqrt((X87)nx * nx + (X87)ny * ny + (X87)nz * nz);
-                nx = ((X87)nx * inverse).F;
-                ny = ((X87)ny * inverse).F;
-                nz = ((X87)nz * inverse).F;
-            }
-
-            surfaces[j] = new RetailAeroSurface(
-                F(f),
-                nx,
-                ny,
-                nz,
-                ((X87)F(f + 1) * 4096.0f).F,
-                ((X87)F(f + 2) * 4096.0f).F,
-                ((X87)F(f + 3) * 4096.0f).F);
-        }
+        // The vehicle's part of the type (VehicleType_DefineVehicleType) from argument 12: its wings readied by 0x4EC4D0.
+        int next = 12;
+        Wing[] surfaces = [.. VehicleTypeDefinition.Parse<X87>(physics.Arguments, ref next).Wings];
+        int count = surfaces.Length;
 
         // 0x433580: surfaces 3 and 4 become half of surface 2, 4 m either side and mirrored fore and aft, and are
         // written back into the type's record, where the tick reads their coefficients and normals.
         if (count >= 5)
         {
-            RetailAeroSurface lift = surfaces[2];
-            float half = ((X87)lift.Coefficient * 0.5).F;
-            float y = -lift.Py;
-            surfaces[3] = new RetailAeroSurface(half, lift.Nx, lift.Ny, lift.Nz, 16384.0f, y, lift.Pz);
-            surfaces[4] = new RetailAeroSurface(half, lift.Nx, lift.Ny, lift.Nz, -16384.0f, y, lift.Pz);
+            Wing lift = surfaces[2];
+            float half = ((X87)lift.Area * 0.5).F;
+            float y = -lift.Position.Y;
+            surfaces[3] = new Wing(half, new Vector3f(16384.0f, y, lift.Position.Z), lift.Normal);
+            surfaces[4] = new Wing(half, new Vector3f(-16384.0f, y, lift.Position.Z), lift.Normal);
         }
 
         float[] record = new float[10];

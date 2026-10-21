@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+using OpenIGI.Core.Graphics;
 
 namespace OpenIGI.Game.World;
 

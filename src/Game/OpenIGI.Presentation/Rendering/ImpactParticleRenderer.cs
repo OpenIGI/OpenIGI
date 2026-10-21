@@ -1,13 +1,9 @@
-using OpenIGI.Core;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ilff;
-using OpenIGI.Formats.Sprites;
-using OpenIGI.Formats.Textures;
-using OpenIGI.Game.World;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -126,8 +122,8 @@ public sealed class ImpactParticleRenderer : IDisposable
     private TextureHandle _dustTexture = TextureHandle.None;
     private TextureHandle _retailFireballSpriteTexture = TextureHandle.None;
     private TextureHandle _retailSmokeSpriteTexture = TextureHandle.None;
-    private readonly RetailSpriteFrame[] _retailFireballFrames;
-    private readonly RetailSpriteFrame[] _retailSmokeFrames;
+    private readonly SpriteStripFrame[] _retailFireballFrames;
+    private readonly SpriteStripFrame[] _retailSmokeFrames;
     private TextureHandle _glassTexture = TextureHandle.None;
     private MeshGeometry? _retailFragmentGeometry;
     private MeshHandle _retailFragmentMesh = MeshHandle.None;
@@ -142,9 +138,10 @@ public sealed class ImpactParticleRenderer : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ImpactParticleRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="fileSystem">The retail VFS, used to load fireball/smoke sprite frames when available.</param>
+    /// <param name="spriteArchive">The archive in <paramref name="fileSystem"/> the fireball and smoke sprites ship in.</param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public ImpactParticleRenderer(IGraphicsDevice device, VirtualFileSystem? fileSystem = null)
-        : this(device, resources: null, fileSystem)
+    public ImpactParticleRenderer(IGraphicsDevice device, VirtualFileSystem? fileSystem = null, string? spriteArchive = null)
+        : this(device, resources: null, fileSystem, spriteArchive)
     {
     }
 
@@ -152,22 +149,24 @@ public sealed class ImpactParticleRenderer : IDisposable
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">The bound retail resources, used for the authored explosion model texture.</param>
     /// <param name="fileSystem">The retail VFS, used to load fireball/smoke sprite frames.</param>
+    /// <param name="spriteArchive">The archive in <paramref name="fileSystem"/> the fireball and smoke sprites ship in.</param>
     public ImpactParticleRenderer(
         IGraphicsDevice device,
         ResourceRegistry? resources,
-        VirtualFileSystem? fileSystem = null)
+        VirtualFileSystem? fileSystem = null,
+        string? spriteArchive = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
         _resources = resources;
         _retailFireballFrames = [];
         _retailSmokeFrames = [];
-        if (fileSystem is not null)
+        if (fileSystem is not null && spriteArchive is not null)
         {
-            RetailSpriteAsset spark = LoadRetailSprite(fileSystem, "fireball.spr");
+            SpriteStrip spark = SpriteStrip.Load(_device, fileSystem, spriteArchive, "fireball.spr");
             _retailFireballSpriteTexture = spark.Texture;
             _retailFireballFrames = spark.Frames;
-            RetailSpriteAsset dust = LoadRetailSprite(fileSystem, "smoke2.spr");
+            SpriteStrip dust = SpriteStrip.Load(_device, fileSystem, spriteArchive, "smoke2.spr");
             _retailSmokeSpriteTexture = dust.Texture;
             _retailSmokeFrames = dust.Frames;
         }
@@ -241,7 +240,7 @@ public sealed class ImpactParticleRenderer : IDisposable
                 BlendMode blend = BlendOf(model);
                 if (isFragment)
                 {
-                    TextureHandle texture = LoadRetailTexture(textureName);
+                    TextureHandle texture = SpriteStrip.LoadTexture(_device, _resources, textureName);
                     if (!texture.IsValid)
                     {
                         continue;
@@ -1193,7 +1192,7 @@ public sealed class ImpactParticleRenderer : IDisposable
         {
             if (!_mesh.IsValid)
             {
-                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+                _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumParticles));
             }
 
             _device.UpdateAnimatedMesh(_mesh, _vertices);
@@ -1357,7 +1356,7 @@ public sealed class ImpactParticleRenderer : IDisposable
 
             foreach (RetailFragment fragment in _retailFragments)
             {
-                Vector3d positionUnits = PresentationBlend.Lerp(
+                Vector3d positionUnits = Vector3d.Lerp(
                     fragment.PreviousPositionUnits,
                     fragment.PositionUnits,
                     alpha);
@@ -1510,32 +1509,6 @@ public sealed class ImpactParticleRenderer : IDisposable
         rigid.M31 * scale, rigid.M32 * scale, rigid.M33 * scale, rigid.M34,
         rigid.M41, rigid.M42, rigid.M43, rigid.M44);
 
-    private TextureHandle LoadRetailTexture(string name)
-    {
-        if (_resources is null || !_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
-        {
-            return TextureHandle.None;
-        }
-
-        try
-        {
-            TextureImage image = TexFile.Load(bytes.Span);
-            return _device.CreateTexture(
-                new TextureDescription(
-                    image.Width,
-                    image.Height,
-                    image.MipLevels,
-                    TextureFilter.Linear,
-                    TextureAddressMode.Clamp),
-                image.Pixels);
-        }
-        catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
-        {
-            _ = ex;
-            return TextureHandle.None;
-        }
-    }
-
     private void ReleaseRetailFragmentModel()
     {
         if (_retailFragmentMesh.IsValid)
@@ -1585,7 +1558,7 @@ public sealed class ImpactParticleRenderer : IDisposable
         int digits = firstFrame.Length >= 3 && firstFrame[^3..].All(char.IsAsciiDigit) ? 3 : 0;
         if (digits == 0)
         {
-            TextureHandle still = LoadRetailTexture(firstFrame);
+            TextureHandle still = SpriteStrip.LoadTexture(_device, _resources, firstFrame);
             return still.IsValid ? [still] : [];
         }
 
@@ -1593,7 +1566,7 @@ public sealed class ImpactParticleRenderer : IDisposable
         int first = int.Parse(firstFrame[^3..], System.Globalization.CultureInfo.InvariantCulture);
         for (int frame = first; frame < 1000; frame++)
         {
-            TextureHandle texture = LoadRetailTexture(
+            TextureHandle texture = SpriteStrip.LoadTexture(_device, _resources, 
                 stem + frame.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
             if (!texture.IsValid)
             {
@@ -1717,7 +1690,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        Vector3d centreUnits = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d centreUnits = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d a = ((centreUnits + p.GlassA) / WorldScene.UnitsPerMetre) - eye;
         Vector3d b = ((centreUnits + p.GlassB) / WorldScene.UnitsPerMetre) - eye;
         Vector3d c = ((centreUnits + p.GlassC) / WorldScene.UnitsPerMetre) - eye;
@@ -1773,12 +1746,6 @@ public sealed class ImpactParticleRenderer : IDisposable
         return !(length > 1e-6f) ? new Vector3f(0f, 0f, 1f) : direction / length;
     }
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = value.Length;
-        return !(length > 1e-6f) ? new Vector3f(0f, 0f, 1f) : value / length;
-    }
-
     private void AddDustQuad(ref Particle p, Vector3d eye, float alpha)
     {
         // Thins as it ages and as it grows -- a plume spreads its matter, it does not mint more.
@@ -1813,7 +1780,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        Vector3d head = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d head = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d headMetres = (head / WorldScene.UnitsPerMetre) - eye;
 
         double distance = headMetres.Length;
@@ -1886,7 +1853,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        Vector3d position = PresentationBlend.Lerp(p.PreviousPosition, p.Position, alpha);
+        Vector3d position = Vector3d.Lerp(p.PreviousPosition, p.Position, alpha);
         Vector3d centre = (position / WorldScene.UnitsPerMetre) - eye;
         double distance = centre.Length;
         float nearFade = NearFade(distance);
@@ -1937,7 +1904,7 @@ public sealed class ImpactParticleRenderer : IDisposable
 
     private void SelectRetailSpriteFrame(ref Particle particle, bool smoke, int frameIndex)
     {
-        RetailSpriteFrame[] frames = smoke ? _retailSmokeFrames : _retailFireballFrames;
+        SpriteStripFrame[] frames = smoke ? _retailSmokeFrames : _retailFireballFrames;
         if (frames.Length == 0)
         {
             particle.RetailU0 = 0f;
@@ -1947,7 +1914,7 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        RetailSpriteFrame frame = frames[Math.Clamp(frameIndex, 0, frames.Length - 1)];
+        SpriteStripFrame frame = frames[Math.Clamp(frameIndex, 0, frames.Length - 1)];
         particle.RetailU0 = frame.U0;
         particle.RetailV0 = frame.V0;
         particle.RetailU1 = frame.U1;
@@ -1967,24 +1934,6 @@ public sealed class ImpactParticleRenderer : IDisposable
         // Alpha floored at one: Vertex3D reads an all-zero colour as "no tint" and substitutes
         // white, which a faded particle must never round to.
         return new Bgra32(Channel(b), Channel(g), Channel(r), Math.Max((byte)1, Channel(a)));
-    }
-
-    private static ushort[] BuildQuadIndices()
-    {
-        ushort[] indices = new ushort[MaximumParticles * 6];
-        for (int quad = 0; quad < MaximumParticles; quad++)
-        {
-            int b = quad * 4;
-            int i = quad * 6;
-            indices[i] = (ushort)b;
-            indices[i + 1] = (ushort)(b + 1);
-            indices[i + 2] = (ushort)(b + 2);
-            indices[i + 3] = (ushort)b;
-            indices[i + 4] = (ushort)(b + 2);
-            indices[i + 5] = (ushort)(b + 3);
-        }
-
-        return indices;
     }
 
     // The spark sprite: a hot radial glow. Profile split as its square root across colour and alpha
@@ -2079,101 +2028,6 @@ public sealed class ImpactParticleRenderer : IDisposable
             pixels);
     }
 
-    private RetailSpriteAsset LoadRetailSprite(VirtualFileSystem fileSystem, string spriteName)
-    {
-        const string archiveName = "LOCAL:common/sprites/sprites.res";
-        try
-        {
-            if (!fileSystem.Exists(archiveName))
-            {
-                return RetailSpriteAsset.Empty;
-            }
-
-            IresArchive archive = IresArchive.Read(fileSystem.ReadAllBytes(archiveName));
-            IresEntry? entry = archive.Entries.FirstOrDefault(candidate =>
-                candidate.Kind == IresEntryKind.Body
-                && Path.GetFileName(candidate.Name).Equals(spriteName, StringComparison.OrdinalIgnoreCase));
-            if (entry is null)
-            {
-                return RetailSpriteAsset.Empty;
-            }
-
-            SpriteAsset asset = SpriteLoader.Load(entry.Data, spriteName);
-            if (asset.Frames.Count == 0 || asset.Textures.Count == 0)
-            {
-                return RetailSpriteAsset.Empty;
-            }
-
-            List<(Bgra32[] Pixels, int Width, int Height)> crops = [];
-            foreach (SpriteFrame frame in asset.Frames)
-            {
-                if (frame.IsEmpty || (uint)frame.TextureIndex >= (uint)asset.Textures.Count)
-                {
-                    continue;
-                }
-
-                TextureImage source = asset.GetTexture(frame);
-                ReadOnlySpan<Bgra32> pixels = source.GetLevel(0);
-                int left = Math.Clamp((int)MathF.Floor(frame.U0 * source.Width), 0, source.Width - 1);
-                int top = Math.Clamp((int)MathF.Floor(frame.V0 * source.Height), 0, source.Height - 1);
-                int right = Math.Clamp((int)MathF.Ceiling(frame.U1 * source.Width), left + 1, source.Width);
-                int bottom = Math.Clamp((int)MathF.Ceiling(frame.V1 * source.Height), top + 1, source.Height);
-                int width = right - left;
-                int height = bottom - top;
-                Bgra32[] cropped = new Bgra32[width * height];
-                for (int y = 0; y < height; y++)
-                {
-                    pixels.Slice(((top + y) * source.Width) + left, width)
-                        .CopyTo(cropped.AsSpan(y * width, width));
-                }
-
-                crops.Add((cropped, width, height));
-            }
-
-            if (crops.Count == 0)
-            {
-                return RetailSpriteAsset.Empty;
-            }
-
-            int atlasWidth = crops.Sum(crop => crop.Width);
-            int atlasHeight = crops.Max(crop => crop.Height);
-            Bgra32[] atlas = new Bgra32[checked(atlasWidth * atlasHeight)];
-            RetailSpriteFrame[] frames = new RetailSpriteFrame[crops.Count];
-            int offsetX = 0;
-            for (int i = 0; i < crops.Count; i++)
-            {
-                (Bgra32[] pixels, int width, int height) = crops[i];
-                for (int y = 0; y < height; y++)
-                {
-                    pixels.AsSpan(y * width, width)
-                        .CopyTo(atlas.AsSpan((y * atlasWidth) + offsetX, width));
-                }
-
-                frames[i] = new RetailSpriteFrame(
-                    (float)offsetX / atlasWidth,
-                    0f,
-                    (float)(offsetX + width) / atlasWidth,
-                    (float)height / atlasHeight);
-                offsetX += width;
-            }
-
-            TextureHandle texture = _device.CreateTexture(
-                new TextureDescription(
-                    atlasWidth,
-                    atlasHeight,
-                    MipLevels: 1,
-                    TextureFilter.Linear,
-                    TextureAddressMode.Clamp),
-                atlas);
-            return new RetailSpriteAsset(texture, frames);
-        }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or PackFormatException or GraphicsDeviceException)
-        {
-            _ = ex;
-            return RetailSpriteAsset.Empty;
-        }
-    }
-
     private struct Particle
     {
         public Vector3d Position;
@@ -2236,10 +2090,4 @@ public sealed class ImpactParticleRenderer : IDisposable
         Vector3f Velocity,
         int LifeTicks);
 
-    private readonly record struct RetailSpriteFrame(float U0, float V0, float U1, float V1);
-
-    private readonly record struct RetailSpriteAsset(TextureHandle Texture, RetailSpriteFrame[] Frames)
-    {
-        public static RetailSpriteAsset Empty => new(TextureHandle.None, []);
-    }
 }

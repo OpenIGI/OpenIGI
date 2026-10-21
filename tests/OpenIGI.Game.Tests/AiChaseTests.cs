@@ -5,6 +5,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -27,7 +28,7 @@ public sealed class AiChaseTests
         GraphFile graph = Graph();
         Vector3d position = graph.Nodes[0].Position;
         int clip = 30;
-        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             Parameters(trackingMetres: 15f),
@@ -87,7 +88,7 @@ public sealed class AiChaseTests
         GraphFile graph = Graph();
         Vector3d position = graph.Nodes[0].Position;
         int clip = 30;
-        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             Parameters(trackingMetres: 15f),
@@ -153,7 +154,7 @@ public sealed class AiChaseTests
         GraphFile graph = Graph();
         Vector3d position = graph.Nodes[0].Position;
         int clip = 30;
-        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             Parameters(trackingMetres: 5f),
@@ -205,7 +206,7 @@ public sealed class AiChaseTests
     {
         GraphFile graph = Graph();
         Vector3d position = graph.Nodes[0].Position;
-        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             Parameters(trackingMetres: 15f),

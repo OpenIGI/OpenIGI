@@ -1,7 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
-using OpenIGI.Presentation.Igi1;
 using System.Diagnostics;
 
 namespace OpenIGI.Host.Menu;

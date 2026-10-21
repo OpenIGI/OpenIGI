@@ -4,7 +4,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Input;
-using OpenIGI.Rendering.Presets;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.DevTools;

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Collections.ObjectModel;
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.Ilff;
 
 namespace OpenIGI.Formats.World;
@@ -24,6 +25,9 @@ namespace OpenIGI.Formats.World;
 /// </remarks>
 public sealed class MefModel
 {
+    /// <summary>The size of one bone name in an I.G.I. 2 bone mesh's <c>BNAM</c> chunk.</summary>
+    public const int BoneNameSize = 16;
+
     /// <summary>The mesh header size in bytes.</summary>
     public const int MeshHeaderSize = 156;
 
@@ -51,8 +55,12 @@ public sealed class MefModel
         int baseVertexCount,
         int extraInfluenceCount,
         MefSkinInfluence[] skinInfluences,
-        float nativeMarkerBound)
+        float nativeMarkerBound,
+        Igi2BoneHierarchy? boneHierarchy,
+        IReadOnlyList<string> boneNames)
     {
+        BoneHierarchy = boneHierarchy;
+        BoneNames = boneNames;
         Container = container;
         Format = format;
         TriangleCount = triangleCount;
@@ -73,6 +81,22 @@ public sealed class MefModel
 
         HighestSkinBone = highestBone;
     }
+
+    /// <summary>Gets an I.G.I. 2 bone mesh's hierarchy, or <see langword="null"/> for any other model.</summary>
+    /// <remarks>
+    /// The one the engine poses with: <c>BoneDynCubeObj_SetLODVirModel</c> (<c>igi2 0x567BE0</c>) takes
+    /// the hierarchy and the bone offsets from the mesh, never from a clip. I.G.I. 1 keeps its skeletons
+    /// in the animation sets instead, so its meshes carry none.
+    /// </remarks>
+    public Igi2BoneHierarchy? BoneHierarchy { get; }
+
+    /// <summary>Gets an I.G.I. 2 bone mesh's bone names, in bone order; empty for any other model.</summary>
+    /// <remarks>
+    /// How the engine finds a bone by what it is: <c>HumanAnim_Init</c> (<c>igi2 0x58F650</c>) asks the
+    /// hierarchy for <c>center</c>, <c>lower body</c>, <c>upper body</c>, <c>shoulders</c> and
+    /// <c>head</c>, and maps the limbs to damage parts by name.
+    /// </remarks>
+    public IReadOnlyList<string> BoneNames { get; }
 
     /// <summary>Gets the number of vertices the skinner places directly by their one bone.</summary>
     /// <remarks>
@@ -112,6 +136,17 @@ public sealed class MefModel
     /// separate from the derived vertex radius because the two values are not interchangeable.
     /// </remarks>
     public float NativeMarkerBound { get; }
+
+    /// <summary>Gets the centre of the render mesh's bounding sphere, <c>Mesh3D_Mesh_t.tRenderMeshSphere</c> at <c>MESH+0x30</c>.</summary>
+    /// <remarks>
+    /// I.G.I. 2's <c>Forest_UpdateInternalDataHandler</c> (<c>igi2 0x5A2F40</c>) measures a tree model's radius from it:
+    /// the furthest collision vertex from this centre.
+    /// </remarks>
+    public Vector3f RenderSphereCentre { get; private init; }
+
+    /// <summary>Gets the radius of the render mesh's bounding sphere, <c>tRenderMeshSphere</c>'s radius at <c>MESH+0x3C</c>.</summary>
+    /// <remarks>I.G.I. 2's <c>Glass_ExplosionHitHandler</c> (glass.c) sizes a pane by it.</remarks>
+    public float RenderSphereRadius { get; private init; }
 
     /// <summary>Gets the vertices, widened to the 40-byte layout.</summary>
     public ReadOnlySpan<MefVertex> Vertices => _vertices;
@@ -213,9 +248,14 @@ public sealed class MefModel
         int triangleCount = ReadInt32(mesh[96..], "the mesh triangle count");
         int headerVertexCount = ReadInt32(mesh[100..], "the mesh vertex count");
         float nativeMarkerBound = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x78..]);
+        Vector3f renderSphereCentre = new(
+            BinaryPrimitives.ReadSingleLittleEndian(mesh[0x30..]),
+            BinaryPrimitives.ReadSingleLittleEndian(mesh[0x34..]),
+            BinaryPrimitives.ReadSingleLittleEndian(mesh[0x38..]));
 
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
         (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format, profile);
+        (Igi2BoneHierarchy? boneHierarchy, IReadOnlyList<string> boneNames) = ReadBones(container, mesh);
 
         ReadOnlySpan<byte> vertexBytes = RequireChunk(container, MefTags.Vertices).Span;
         MefVertex[] vertices = ReadVertices(vertexBytes, format, vertexCount, profile);
@@ -283,7 +323,55 @@ public sealed class MefModel
             baseVertexCount,
             extraInfluenceCount,
             influences,
-            nativeMarkerBound);
+            nativeMarkerBound,
+            boneHierarchy,
+            boneNames)
+        {
+            RenderSphereCentre = renderSphereCentre,
+            RenderSphereRadius = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x3C..]),
+        };
+    }
+
+    private static (Igi2BoneHierarchy? Hierarchy, IReadOnlyList<string> Names) ReadBones(
+        IlffContainer container,
+        ReadOnlySpan<byte> mesh)
+    {
+        if (!container.TryFindChunk(MefTags.BoneHierarchy, out IlffChunk hierarchyChunk))
+        {
+            return (null, []);
+        }
+
+        // nBones, Mesh3D_Mesh_t +0x86. The hierarchy bytes are sized by the header, as the engine does.
+        int boneCount = BinaryPrimitives.ReadInt16LittleEndian(mesh[0x86..]);
+        Igi2BoneHierarchy hierarchy;
+        try
+        {
+            hierarchy = Igi2BoneHierarchy.Read(hierarchyChunk.Payload.Span, boneCount);
+        }
+        catch (IlffFormatException ex)
+        {
+            throw new PackFormatException($"The bone mesh's hierarchy is malformed: {ex.Message}", ex);
+        }
+
+        if (!container.TryFindChunk(MefTags.BoneNames, out IlffChunk namesChunk))
+        {
+            return (hierarchy, []);
+        }
+
+        ReadOnlySpan<byte> names = namesChunk.Payload.Span;
+        if (names.Length < boneCount * BoneNameSize)
+        {
+            throw new PackFormatException(
+                $"The bone mesh names {names.Length / BoneNameSize} bones but its hierarchy has {boneCount}.");
+        }
+
+        string[] read = new string[boneCount];
+        for (int bone = 0; bone < boneCount; bone++)
+        {
+            read[bone] = ReadName(names.Slice(bone * BoneNameSize, BoneNameSize));
+        }
+
+        return (hierarchy, read);
     }
 
     /// <summary>Gets the payload of a chunk this type does not decode, such as collision or portal data.</summary>
@@ -335,6 +423,32 @@ public sealed class MefModel
             BinaryPrimitives.ReadSingleLittleEndian(span[offset..]),
             BinaryPrimitives.ReadSingleLittleEndian(span[(offset + 4)..]),
             BinaryPrimitives.ReadSingleLittleEndian(span[(offset + 8)..]));
+        return true;
+    }
+
+    /// <summary>Gets the bone a boned model's magic vertex hangs on: the record's fourth word.</summary>
+    /// <param name="index">The magic-vertex index.</param>
+    /// <param name="bone">Receives the bone.</param>
+    /// <returns><see langword="false"/> when the model has no magic vertex at that index.</returns>
+    /// <remarks>
+    /// A boned model places a magic vertex by its bone's pose, the point being in the bone's frame
+    /// (<c>BoneDynCubeObj_GetMagicVertexLocalPos</c>, <c>igi2 0x5683E0</c>); a rigid one leaves the word zero.
+    /// </remarks>
+    public bool TryGetMagicVertexBone(int index, out int bone)
+    {
+        bone = 0;
+        if (index < 0 || !TryGetRawChunk(MefTags.LegacyVertices, out ReadOnlyMemory<byte> payload))
+        {
+            return false;
+        }
+
+        int offset = (index * MagicVertexStride) + 12;
+        if (offset + 4 > payload.Length)
+        {
+            return false;
+        }
+
+        bone = BinaryPrimitives.ReadInt32LittleEndian(payload.Span[offset..]);
         return true;
     }
 

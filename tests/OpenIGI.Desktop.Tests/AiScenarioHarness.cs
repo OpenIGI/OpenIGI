@@ -1,3 +1,4 @@
+using OpenIGI.Game.Physics;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
@@ -21,6 +22,9 @@ using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -58,6 +62,10 @@ public sealed class AiScenarioHarness : IDisposable
         double range = EnvInt("OPENIGI_AI_SCENARIO_RANGE", 10) * Metre;
 
         StringBuilder log = new();
+
+        // Every tracer a soldier gun's march files (0x47C4C0), as the probe's [tracer] add.
+        OpenIGI.Game.Igi1.Weapons.GunShotTask.TracerFiled = (task, tracer) => log.AppendLine(FormattableString.Invariant(
+            $"[tracer] add count={task.Tracers.Count} from=({tracer.Start.X:0},{tracer.Start.Y:0},{tracer.Start.Z:0}) to=({tracer.End.X:0},{tracer.End.Y:0},{tracer.End.Z:0}) head={tracer.StartDistance:0} tail={tracer.EndDistance:0} range={tracer.Range:0}"));
         using RecordingGraphicsDevice device = new();
         HeadlessGameWindow window = new();
         List<string> hostArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000"];
@@ -81,7 +89,6 @@ public sealed class AiScenarioHarness : IDisposable
 
         FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
@@ -95,36 +102,46 @@ public sealed class AiScenarioHarness : IDisposable
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
         // The level is withheld through its warm-up and insertion: wait until the AI has run a second.
-        for (int i = 0; i < 100_000 && (int)tickField.GetValue(soldiers)! < 30; i++)
+        for (int i = 0; i < 100_000 && soldiers!.Simulation.TickCount < 30; i++)
         {
             Assert.True(host.Step());
         }
 
-        Assert.True((int)tickField.GetValue(soldiers)! >= 30, "the AI never ticked");
+        Assert.True(soldiers!.Simulation.TickCount >= 30, "the AI never ticked");
 
-        IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> pairs = soldiers.BrainPairsForTesting;
-        int playerTeam = soldiers.PlayerTeam;
+        IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> pairs = soldiers.Simulation.BrainPairsForTesting;
+        int playerTeam = soldiers.Simulation.PlayerTeam;
         log.AppendLine(CultureInfo.InvariantCulture, $"player team {playerTeam} at {Fmt(player.Body.Position)}");
-        foreach ((SoldierView view, AiSoldier brain) in pairs)
+
+        // OPENIGI_AI_SCENARIO_SETVAR=<script variable>=<value>@<tick>: the probe's setvar -- e.g. mission 8's
+        // EditVariable_50.nValue=1@60, which is AlarmControl_97's Alarm Expression, raises the alarm the level's way.
+        (string Name, int Value, int Tick)? setVar = null;
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_SETVAR") is { Length: > 0 } setText)
+        {
+            string[] nameRest = setText.Split('=', 2);
+            string[] valueTick = nameRest[1].Split('@');
+            setVar = (nameRest[0], int.Parse(valueTick[0], CultureInfo.InvariantCulture), int.Parse(valueTick[1], CultureInfo.InvariantCulture));
+        }
+        foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
         {
             log.AppendLine(
                 CultureInfo.InvariantCulture,
                 $"soldier {view.Soldier.Id} team {view.Soldier.Team} type {brain.Type} arm {brain.Arm} active {ConditionalContainerGate.IsTaskActive(view.Soldier)} {brain.DescribeTick()}");
         }
 
-        List<KeyValuePair<SoldierView, AiSoldier>> enemies = [.. pairs.Where(p =>
+        List<KeyValuePair<SoldierView, Igi1HumanAi>> enemies = [.. pairs.Where(p =>
             p.Key.Soldier.Team != playerTeam
             && !p.Key.IsDead
             && ConditionalContainerGate.IsTaskActive(p.Key.Soldier)
             && p.Value.Arm != AiCombatArm.None)];
 
-        KeyValuePair<SoldierView, AiSoldier> first;
-        KeyValuePair<SoldierView, AiSoldier> second;
+        KeyValuePair<SoldierView, Igi1HumanAi> first;
+        KeyValuePair<SoldierView, Igi1HumanAi> second;
         if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_ALARM") is { Length: > 0 })
         {
             // A guard its script gave an alarm trigger, and its nearest living enemy-of-the-player neighbour.
             first = enemies.First(p => p.Value.AlarmTriggerId != -1);
-            KeyValuePair<SoldierView, AiSoldier> alarmGuard = first;
+            KeyValuePair<SoldierView, Igi1HumanAi> alarmGuard = first;
             second = enemies.Where(p => !ReferenceEquals(p.Value, alarmGuard.Value))
                 .OrderBy(p => Horizontal(p.Value.Position, alarmGuard.Value.Position))
                 .First();
@@ -155,8 +172,8 @@ public sealed class AiScenarioHarness : IDisposable
         }
 
         Assert.NotNull(first.Value);
-        AiSoldier a = first.Value;
-        AiSoldier b = second.Value;
+        Igi1HumanAi a = first.Value;
+        Igi1HumanAi b = second.Value;
         log.AppendLine(
             CultureInfo.InvariantCulture,
             $"pair: A=s{first.Key.Soldier.Id} B=s{second.Key.Soldier.Id} {Horizontal(a.Position, b.Position) / Metre:0.00} m apart");
@@ -176,7 +193,7 @@ public sealed class AiScenarioHarness : IDisposable
                     a.Position.X + (direction.X * metres * Metre),
                     a.Position.Y + (direction.Y * metres * Metre),
                     a.Position.Z);
-                Vector3d mark = candidate + new Vector3d(0.0, 0.0, AiSoldier.DetectionMarkAboveFeet(crouching: false));
+                Vector3d mark = candidate + new Vector3d(0.0, 0.0, Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
                 var probe = a.ProbeDetection(mark);
                 if (!found && probe.InCone && probe.LineOfSightClear)
                 {
@@ -200,6 +217,16 @@ public sealed class AiScenarioHarness : IDisposable
             log.AppendLine(CultureInfo.InvariantCulture, $"placing the player {near[0]} m out at {near[1]} degrees off A's facing: {Fmt(place)}");
         }
 
+        // OPENIGI_AI_SCENARIO_PLACE="x,y,z": the player's feet exactly there, in world units -- a spot taken from a
+        // report or the telemetry overlay.
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_PLACE") is { Length: > 0 } placeText)
+        {
+            double[] at = [.. placeText.Split(',').Select(t => double.Parse(t, CultureInfo.InvariantCulture))];
+            place = new Vector3d(at[0], at[1], at[2]);
+            found = true;
+            log.AppendLine(CultureInfo.InvariantCulture, $"placing the player at {Fmt(place)}");
+        }
+
         if (!found)
         {
             Vector3d forward = a.Orientation.Transposed().Transform(new Vector3d(0.0, 1.0, 0.0));
@@ -218,16 +245,16 @@ public sealed class AiScenarioHarness : IDisposable
             double[] r = [.. rayText.Split(',').Select(t => double.Parse(t, CultureInfo.InvariantCulture))];
             log.AppendLine(
                 CultureInfo.InvariantCulture,
-                $"RAY {soldiers.DescribeSightForTesting(new Vector3d(r[0], r[1], r[2]), new Vector3d(r[3], r[4], r[5]))}");
+                $"RAY {soldiers.Simulation.DescribeSightForTesting(new Vector3d(r[0], r[1], r[2]), new Vector3d(r[3], r[4], r[5]))}");
         }
 
-        Dictionary<AiSoldier, int> engagedAt = [];
-        Dictionary<AiSoldier, AiEvent> firstReason = [];
-        Dictionary<AiSoldier, Vector3d> starts = pairs.ToDictionary(p => p.Value, p => p.Value.Position);
+        Dictionary<Igi1HumanAi, int> engagedAt = [];
+        Dictionary<Igi1HumanAi, AiEvent> firstReason = [];
+        Dictionary<Igi1HumanAi, Vector3d> starts = pairs.ToDictionary(p => p.Value, p => p.Value.Position);
         int lastLogged = -1;
         for (int step = 0; step < ticks * 8; step++)
         {
-            int engine = (int)tickField.GetValue(soldiers)!;
+            int engine = soldiers!.Simulation.TickCount;
             if (engine - lastLogged < 1 && step > 0)
             {
                 // Log once per engine tick.
@@ -237,6 +264,14 @@ public sealed class AiScenarioHarness : IDisposable
             if (step == 0)
             {
                 player.Body.Position = place;
+            }
+
+            if (setVar is { } write && engine == write.Tick)
+            {
+                var loop = (OpenIGI.Engine.Flow.GameLoop)typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)!;
+                bool wrote = loop.Variables.TryWrite(write.Name, OpenIGI.Scripting.Runtime.QvmValue.FromInt32(write.Value));
+                log.AppendLine(CultureInfo.InvariantCulture, $"t{engine} setvar {write.Name}={write.Value} {(wrote ? "written" : "NOT FOUND")}");
+                setVar = null;
             }
 
             if (aimAtA && a.Activity != AiSoldierActivity.Dead)
@@ -262,7 +297,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            engine = (int)tickField.GetValue(soldiers)!;
+            engine = soldiers!.Simulation.TickCount;
             if (engine == lastLogged)
             {
                 continue;
@@ -284,7 +319,7 @@ public sealed class AiScenarioHarness : IDisposable
                 log.AppendLine(CultureInfo.InvariantCulture, $"t{engine} PLAYER FIRED {player.HeldWeaponType?.ScriptId} hits={player.HumanHits} yaw={player.Body.Yaw * 180 / Math.PI:0.0} pitch={player.Body.Pitch * 180 / Math.PI:0.0}");
             }
 
-            foreach ((SoldierView view, AiSoldier brain) in pairs)
+            foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
             {
                 if (brain.LastDispatchedEvent is { } reason
                     && reason is not (AiEvent.Idle or AiEvent.Animation or AiEvent.Create or AiEvent.AlarmOn or AiEvent.AlarmOff)
@@ -312,10 +347,10 @@ public sealed class AiScenarioHarness : IDisposable
             log.AppendLine(CultureInfo.InvariantCulture, $"t{engine} player {Fmt(player.Body.Position)}");
             if (since is 1 or 2 or 3 or 5 or 10 or 40)
             {
-                Vector3d playerMark = player.Body.Position + new Vector3d(0.0, 0.0, AiSoldier.DetectionMarkAboveFeet(crouching: false));
+                Vector3d playerMark = player.Body.Position + new Vector3d(0.0, 0.0, Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
                 log.AppendLine(
                     CultureInfo.InvariantCulture,
-                    $"t{engine} SIGHT A eye={Fmt(a.EyePosition())} -> {Fmt(playerMark)}: {soldiers.DescribeSightForTesting(a.EyePosition(), playerMark)}");
+                    $"t{engine} SIGHT A eye={Fmt(a.EyePosition())} -> {Fmt(playerMark)}: {soldiers.Simulation.DescribeSightForTesting(a.EyePosition(), playerMark)}");
             }
             log.AppendLine(CultureInfo.InvariantCulture, $"  A {a.DescribeTick()}");
             log.AppendLine(
@@ -328,7 +363,7 @@ public sealed class AiScenarioHarness : IDisposable
         }
 
         log.AppendLine("movement over the run:");
-        foreach ((SoldierView view, AiSoldier brain) in pairs)
+        foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
         {
             log.AppendLine(
                 CultureInfo.InvariantCulture,
@@ -385,7 +420,6 @@ public sealed class AiScenarioHarness : IDisposable
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo roundsField = typeof(GameHost).GetField("_guardRounds", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo hitsField = typeof(GameHost).GetField("_guardHits", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
@@ -399,11 +433,11 @@ public sealed class AiScenarioHarness : IDisposable
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
         Vector3d spawn = player.Body.Position;
-        log.AppendLine(CultureInfo.InvariantCulture, $"spawn {Fmt(spawn)} team {soldiers.PlayerTeam}");
+        log.AppendLine(CultureInfo.InvariantCulture, $"spawn {Fmt(spawn)} team {soldiers.Simulation.PlayerTeam}");
 
-        IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> pairs = soldiers.BrainPairsForTesting;
+        IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> pairs = soldiers.Simulation.BrainPairsForTesting;
         bool IsEnemy(SoldierView view) =>
-            view.Soldier.Team != soldiers.PlayerTeam && ConditionalContainerGate.IsTaskActive(view.Soldier);
+            view.Soldier.Team != soldiers.Simulation.PlayerTeam && ConditionalContainerGate.IsTaskActive(view.Soldier);
 
         int since = -1;
         int last = -1;
@@ -421,7 +455,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            int engine = (int)tickField.GetValue(soldiers)!;
+            int engine = soldiers!.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -435,7 +469,7 @@ public sealed class AiScenarioHarness : IDisposable
             Vector3d eye = feet + new Vector3d(0.0, 0.0, eyeHeight * Metre);
             SoldierView? target = null;
             double best = double.MaxValue;
-            foreach ((SoldierView view, AiSoldier _) in pairs)
+            foreach ((SoldierView view, Igi1HumanAi _) in pairs)
             {
                 if (!IsEnemy(view) || view.IsDead)
                 {
@@ -444,7 +478,7 @@ public sealed class AiScenarioHarness : IDisposable
 
                 double distance = Vector3d.Distance(view.Position, feet);
                 Vector3d point = view.Position + new Vector3d(0.0, 0.0, (eyeHeight - drop) * Metre);
-                if (distance < best && soldiers.ClearSightForTesting(eye, point))
+                if (distance < best && soldiers.Simulation.ClearSightForTesting(eye, point))
                 {
                     best = distance;
                     target = view;
@@ -458,7 +492,7 @@ public sealed class AiScenarioHarness : IDisposable
                 if (target is not null)
                 {
                     Vector3d point = target.Position + new Vector3d(0.0, 0.0, (eyeHeight - drop) * Metre);
-                    log.AppendLine(CultureInfo.InvariantCulture, $"   LOS eye {eye.X:0.0} {eye.Y:0.0} {eye.Z:0.0} -> {point.X:0.0} {point.Y:0.0} {point.Z:0.0}: {soldiers.DescribeSightForTesting(eye, point)}");
+                    log.AppendLine(CultureInfo.InvariantCulture, $"   LOS eye {eye.X:0.0} {eye.Y:0.0} {eye.Z:0.0} -> {point.X:0.0} {point.Y:0.0} {point.Z:0.0}: {soldiers.Simulation.DescribeSightForTesting(eye, point)}");
                 }
                 lastTarget = targetId;
             }
@@ -491,12 +525,12 @@ public sealed class AiScenarioHarness : IDisposable
             if (since % 20 == 0)
             {
                 StringBuilder field = new();
-                foreach ((SoldierView view, AiSoldier brain) in pairs)
+                foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
                 {
                     double distance = Vector3d.Distance(view.Position, feet);
                     if (IsEnemy(view) && distance <= 80.0 * Metre)
                     {
-                        field.Append(CultureInfo.InvariantCulture, $" {view.Soldier.Id}:{distance / Metre:0.0}m/{soldiers.DamageForTesting(view):0.00}{(view.IsDead ? "X" : string.Empty)}");
+                        field.Append(CultureInfo.InvariantCulture, $" {view.Soldier.Id}:{distance / Metre:0.0}m/{soldiers.Simulation.DamageForTesting(view):0.00}{(view.IsDead ? "X" : string.Empty)}");
                         if (view.Soldier.Id == EnvInt("OPENIGI_AI_SCENARIO_TRACK", -1))
                         {
                             field.Append(CultureInfo.InvariantCulture, $"@{view.Position.X / Metre:0.00},{view.Position.Y / Metre:0.00}[{brain.Activity}]");
@@ -505,7 +539,7 @@ public sealed class AiScenarioHarness : IDisposable
                 }
 
                 log.AppendLine(CultureInfo.InvariantCulture, $"[field] t{since}{field}");
-                foreach ((SoldierView view, AiSoldier brain) in pairs)
+                foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
                 {
                     if (IsEnemy(view) && !view.IsDead
                         && brain.Activity is not (AiSoldierActivity.Idle or AiSoldierActivity.Patrolling))
@@ -519,11 +553,11 @@ public sealed class AiScenarioHarness : IDisposable
         log.AppendLine(
             CultureInfo.InvariantCulture,
             $"player shots={shots} guard rounds={roundsField.GetValue(host)} hits on player={hitsField.GetValue(host)}");
-        foreach ((SoldierView view, AiSoldier brain) in pairs)
+        foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
         {
             if (IsEnemy(view) && Vector3d.Distance(view.Position, spawn) <= 80.0 * Metre)
             {
-                log.AppendLine(CultureInfo.InvariantCulture, $"  s{view.Soldier.Id} dmg={soldiers.DamageForTesting(view):0.00} dead={view.IsDead} {brain.DescribeTick()}");
+                log.AppendLine(CultureInfo.InvariantCulture, $"  s{view.Soldier.Id} dmg={soldiers.Simulation.DamageForTesting(view):0.00} dead={view.IsDead} {brain.DescribeTick()}");
             }
         }
 
@@ -594,7 +628,7 @@ public sealed class AiScenarioHarness : IDisposable
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
 
-        KeyValuePair<SoldierView, AiSoldier> target = soldiers.BrainPairsForTesting
+        KeyValuePair<SoldierView, Igi1HumanAi> target = soldiers.Simulation.BrainPairsForTesting
             .FirstOrDefault(pair => pair.Key.Soldier.Id == targetId);
         Assert.NotNull(target.Key);
         log.AppendLine(CultureInfo.InvariantCulture, $"stand {Fmt(stand)} target {targetId} at {Fmt(target.Key.Position)}, {Vector3d.Distance(target.Key.Position, stand) / Metre:0.0} m");
@@ -636,7 +670,7 @@ public sealed class AiScenarioHarness : IDisposable
 
             // One shot at 70; should it miss (retail's first round did too), another every 12 ticks until the
             // guard has been hurt -- the point is to be its target, as a hit makes it.
-            bool hurt = soldiers.DamageForTesting(target.Key) > 0f;
+            bool hurt = soldiers.Simulation.DamageForTesting(target.Key) > 0f;
             scripted.Keyboard.SetKey(KeyCode.D2, down: since == 10);
             scripted.Mouse.SetButton(MouseButton.Left, down: since >= 70 && !hurt && (since - 70) % 12 == 0);
             if (player.FiredThisTick)
@@ -650,7 +684,7 @@ public sealed class AiScenarioHarness : IDisposable
                 lastRounds = rounds;
                 log.AppendLine(
                     CultureInfo.InvariantCulture,
-                    $"t{since} rounds={rounds} hits={hitsField.GetValue(host)} target {targetId} dmg={soldiers.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
+                    $"t{since} rounds={rounds} hits={hitsField.GetValue(host)} target {targetId} dmg={soldiers.Simulation.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
             }
         }
 
@@ -849,8 +883,6 @@ public sealed class AiScenarioHarness : IDisposable
         FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo loopField = typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo destructiblesField = typeof(GameHost).GetField("_destructibles", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
@@ -864,7 +896,7 @@ public sealed class AiScenarioHarness : IDisposable
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
         OpenIGI.Engine.Flow.GameLoop loop = (OpenIGI.Engine.Flow.GameLoop)loopField.GetValue(host)!;
-        DestructibleObjectRegistry destructibles = (DestructibleObjectRegistry)destructiblesField.GetValue(host)!;
+        DestructibleObjectRegistry destructibles = MissionOf(host).Destructibles!;
         DestructibleObject? generator = destructibles.Objects.FirstOrDefault(item => item.Owner.Id == generatorId);
         log.AppendLine(CultureInfo.InvariantCulture, $"[generator] registered={generator is not null} keepsModel={generator?.KeepsModelWhenDestroyed}");
         if (generator is not null && EnvInt("OPENIGI_GEN_SCENARIO_NEARBY", 0) is > 0 and int nearby)
@@ -880,7 +912,7 @@ public sealed class AiScenarioHarness : IDisposable
                 {
                     // The generator's own mesh, model space, with each subset's texture name.
                     StringBuilder obj = new();
-                    foreach (OpenIGI.Rendering.Vertex3D vertex in mesh.Vertices)
+                    foreach (OpenIGI.Core.Graphics.Vertex3D vertex in mesh.Vertices)
                     {
                         obj.AppendLine(CultureInfo.InvariantCulture, $"v {vertex.Position.X} {vertex.Position.Y} {vertex.Position.Z}");
                         obj.AppendLine(CultureInfo.InvariantCulture, $"vt {vertex.DiffuseU} {vertex.DiffuseV}");
@@ -941,7 +973,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            int engine = (int)tickField.GetValue(soldiers)!;
+            int engine = soldiers!.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -983,9 +1015,8 @@ public sealed class AiScenarioHarness : IDisposable
                         // The probe sends the Human GunPickup's own message; the port's equivalent is a
                         // pickup lying at the player's feet, which his next tick collects.
                         FieldInfo weaponsField = typeof(GameHost).GetField("_weaponTypes", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                        FieldInfo pickupsField = typeof(GameHost).GetField("_gunPickups", BindingFlags.NonPublic | BindingFlags.Instance)!;
                         OpenIGI.Game.Weapons.WeaponTypeRegistry roster = (OpenIGI.Game.Weapons.WeaponTypeRegistry)weaponsField.GetValue(host)!;
-                        GunPickupRegistry pickups = (GunPickupRegistry)pickupsField.GetValue(host)!;
+                        GunPickupRegistry pickups = MissionOf(host).GunPickups!;
                         OpenIGI.Game.Weapons.WeaponType given = roster.Weapons.Single(weapon => weapon.WeaponId == (int)args[0]);
                         pickups.Spawn(player.Body.Position, Matrix3f.Identity, given);
                         log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} giveweapon {given.WeaponId} ({given.ScriptId})");
@@ -1227,20 +1258,20 @@ public sealed class AiScenarioHarness : IDisposable
                     }
                 }
 
-                log.AppendLine(CultureInfo.InvariantCulture, $"[rng] lt={counter} site={site} who={SoldierRenderer.TickingSoldierId}");
+                log.AppendLine(CultureInfo.InvariantCulture, $"[rng] lt={counter} site={site} who={SoldierSimulation.TickingSoldierId}");
             };
 
             // The probe's [free]: every node a claiming free-position search tests, and its verdict.
-            OpenIGI.Game.Ai.AiFreePosition.Tested = (claimant, node, toward, verdict) =>
+            OpenIGI.Game.Igi1.Ai.AiFreePosition.Tested = (claimant, node, toward, verdict) =>
             {
-                if (claimant is not AiSoldier who || soldiersField.GetValue(host) is not SoldierRenderer r)
+                if (claimant is not Igi1HumanAi who || soldiersField.GetValue(host) is not SoldierRenderer r)
                 {
                     return;
                 }
 
                 int counter = (int)counterField.GetValue(r)! - 1;
                 int id = -1;
-                foreach ((SoldierView v, AiSoldier b) in (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(r)!)
+                foreach ((SoldierView v, Igi1HumanAi b) in (Dictionary<SoldierView, Igi1HumanAi>)brainsField.GetValue(r)!)
                 {
                     if (ReferenceEquals(b, who))
                     {
@@ -1252,28 +1283,28 @@ public sealed class AiScenarioHarness : IDisposable
             };
 
             // Which casts rebuilt whose palette, for the eye-matrix comparison.
-            SoldierRenderer.PaletteRebuildTraced = (id, why, from, to) =>
+            SoldierSimulation.PaletteRebuildTraced = (id, why, from, to) =>
             {
                 int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
-                log.AppendLine(FormattableString.Invariant($"[rebuild] lt={counter} id={id} by={why} who={SoldierRenderer.TickingSoldierId} from=({from.X:0},{from.Y:0},{from.Z:0}) to=({to.X:0},{to.Y:0},{to.Z:0})"));
+                log.AppendLine(FormattableString.Invariant($"[rebuild] lt={counter} id={id} by={why} who={SoldierSimulation.TickingSoldierId} from=({from.X:0},{from.Y:0},{from.Z:0}) to=({to.X:0},{to.Y:0},{to.Z:0})"));
             };
 
             // The probe's [drop]: where a dying soldier's gun starts falling.
-            SoldierRenderer.WeaponDropTraced = (id, at, feet, root) =>
+            SoldierSimulation.WeaponDropTraced = (id, at, feet, root) =>
             {
                 int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
                 log.AppendLine(FormattableString.Invariant($"[drop] lt={counter} id={id} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}) feet=({feet.X:0.0},{feet.Y:0.0},{feet.Z:0.0}) root={root:0.0}"));
             };
 
             // The probe's [dmg]: every round a soldier takes.
-            SoldierRenderer.DamageTraced = (id, zone, bone, factor, accum, max) =>
+            SoldierSimulation.DamageTraced = (id, zone, bone, factor, accum, max) =>
             {
                 int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
                 log.AppendLine(FormattableString.Invariant($"[dmg] lt={counter} id={id} zone={zone} bone={bone} factor={factor:0.000} accum={accum:0.000} max={max:0.000}"));
             };
 
             // The probe's [fire]: each round's base forward and the gun's rounds this pull.
-            SoldierRenderer.RoundSpreadTraced = (who, pull, forward) =>
+            SoldierSimulation.RoundSpreadTraced = (who, pull, forward) =>
             {
                 if (soldiersField.GetValue(host) is not SoldierRenderer r)
                 {
@@ -1282,7 +1313,7 @@ public sealed class AiScenarioHarness : IDisposable
 
                 int counter = (int)counterField.GetValue(r)! - 1;
                 int id = -1;
-                foreach ((SoldierView v, AiSoldier b) in (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(r)!)
+                foreach ((SoldierView v, Igi1HumanAi b) in (Dictionary<SoldierView, Igi1HumanAi>)brainsField.GetValue(r)!)
                 {
                     if (ReferenceEquals(b, who))
                     {
@@ -1294,7 +1325,7 @@ public sealed class AiScenarioHarness : IDisposable
             };
 
             // The probe's [march]: every pass of a soldier's round, its segment and what the cast met.
-            OpenIGI.Game.Weapons.GunShotTask.PassCast = (round, from, to, remaining, contact) =>
+            OpenIGI.Game.Igi1.Weapons.GunShotTask.PassCast = (round, from, to, remaining, contact) =>
             {
                 int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
                 int shooter = round.Shooter is SoldierView v ? v.Soldier.Id : -1;
@@ -1308,11 +1339,34 @@ public sealed class AiScenarioHarness : IDisposable
             };
         }
 
+        // OPENIGI_PATROL_CAPTURE_TRACER=1: the probe's [tracer] add -- every tracer a soldier gun's march files
+        // (0x47C4C0), with the task's live count before it.
+        if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_TRACER") == "1")
+        {
+            FieldInfo gunShotsField = typeof(SoldierSimulation).GetField("_gunShots", hidden)!;
+            OpenIGI.Game.Igi1.Weapons.GunShotTask.TracerFiled = (task, tracer) =>
+            {
+                int counter = -1;
+                int owner = -1;
+                if (soldiersField.GetValue(host) is SoldierRenderer r)
+                {
+                    counter = r.Simulation.TickCount - 1;
+                    if (gunShotsField.GetValue(r.Simulation) is Dictionary<SoldierView, OpenIGI.Game.Igi1.Weapons.GunShotTask> tasks)
+                    {
+                        owner = tasks.FirstOrDefault(pair => ReferenceEquals(pair.Value, task)).Key?.Soldier.Id ?? -1;
+                    }
+                }
+
+                log.AppendLine(FormattableString.Invariant(
+                    $"[tracer] add lt={counter} owner={owner} count={task.Tracers.Count} from=({tracer.Start.X:0.0},{tracer.Start.Y:0.0},{tracer.Start.Z:0.0}) to=({tracer.End.X:0.0},{tracer.End.Y:0.0},{tracer.End.Z:0.0}) head={tracer.StartDistance:0.0} tail={tracer.EndDistance:0.0} range={tracer.Range:0.0} life={tracer.Life}"));
+            };
+        }
+
         host.Start();
         host.ScriptedViewInput = new InputState();
-        Dictionary<AiSoldier, (int Tick, int State, int Index, int Deadline, int Node, int Dest, int Logged, int Alert, int Sight)> tracks = [];
-        Dictionary<AiSoldier, AiEventQueues> observed = [];
-        Dictionary<AiSoldier, string> lastFollow = [];
+        Dictionary<Igi1HumanAi, (int Tick, int State, int Index, int Deadline, int Node, int Dest, int Logged, int Alert, int Sight)> tracks = [];
+        Dictionary<Igi1HumanAi, AiEventQueues> observed = [];
+        Dictionary<Igi1HumanAi, string> lastFollow = [];
         bool treeDumped = false;
         HashSet<OpenIGI.Game.World.ConditionalContainerTask> containers = [];
         Dictionary<OpenIGI.Game.World.ConditionalContainerTask, bool> containerActive = [];
@@ -1351,7 +1405,7 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
-            Dictionary<SoldierView, AiSoldier> brains = (Dictionary<SoldierView, AiSoldier>)brainsField.GetValue(soldiers)!;
+            Dictionary<SoldierView, Igi1HumanAi> brains = (Dictionary<SoldierView, Igi1HumanAi>)brainsField.GetValue(soldiers)!;
             if (!treeDumped)
             {
                 // Each soldier's ancestry, root last: what holds it in the level tree.
@@ -1384,7 +1438,7 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
-            foreach ((SoldierView view, AiSoldier brain) in brains)
+            foreach ((SoldierView view, Igi1HumanAi brain) in brains)
             {
                 // The probe's [pwq]/[pwev]: what each AI accepted into its queue and what it dispatched.
                 if (!observed.TryGetValue(brain, out AiEventQueues? queues) || !ReferenceEquals(queues, brain.Events))
@@ -1559,9 +1613,7 @@ public sealed class AiScenarioHarness : IDisposable
         FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo loopField = typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo cutscenesField = typeof(GameHost).GetField("_cutscenes", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo healthField = typeof(GameHost).GetField("_playerHealth", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
@@ -1575,7 +1627,7 @@ public sealed class AiScenarioHarness : IDisposable
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
         OpenIGI.Engine.Flow.GameLoop loop = (OpenIGI.Engine.Flow.GameLoop)loopField.GetValue(host)!;
-        CutsceneRuntime runtime = (CutsceneRuntime)cutscenesField.GetValue(host)!;
+        CutsceneRuntime runtime = MissionOf(host).Cutscenes!;
         OpenIGI.Engine.Tasks.GameTask vehicle = loop.Tasks.FromId(vehicleId)!;
         Assert.NotNull(vehicle);
 
@@ -1625,7 +1677,7 @@ public sealed class AiScenarioHarness : IDisposable
             {
                 File.AppendAllText(progress, string.Create(
                     CultureInfo.InvariantCulture,
-                    $"step={step} tick={tick} engine={(int)tickField.GetValue(soldiers)!} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
+                    $"step={step} tick={tick} engine={soldiers!.Simulation.TickCount} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
             }
 
             if (god)
@@ -1643,7 +1695,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            int engine = (int)tickField.GetValue(soldiers)!;
+            int engine = soldiers!.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -1759,9 +1811,9 @@ public sealed class AiScenarioHarness : IDisposable
                 {
                     // The probe's planeflight format: each force as pushed, then the state after the step.
                     lastPlaneSteps = planeSteps;
-                    foreach (RetailForce f in plane.PushedForces)
+                    foreach (PointForce f in plane.PushedForces)
                     {
-                        log.AppendLine(CultureInfo.InvariantCulture, $"[pforce] f=({f.Fx:G9},{f.Fy:G9},{f.Fz:G9}) p=({f.Px:G9},{f.Py:G9},{f.Pz:G9})");
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[pforce] f=({f.Force.X:G9},{f.Force.Y:G9},{f.Force.Z:G9}) p=({f.Point.X:G9},{f.Point.Y:G9},{f.Point.Z:G9})");
                     }
 
                     float[] pm = plane.M;
@@ -1775,7 +1827,7 @@ public sealed class AiScenarioHarness : IDisposable
 
             // OPENIGI_VEH_SCENARIO_DOORS=1: every door's pose whenever it changes, in the probe's [door] format.
             if (EnvInt("OPENIGI_VEH_SCENARIO_DOORS", 0) == 1
-                && typeof(GameHost).GetField("_doors", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(host) is DoorRegistry doorRegistry)
+                && MissionOf(host).Doors is DoorRegistry doorRegistry)
             {
                 for (int doorIndex = 0; doorIndex < doorRegistry.Doors.Count; doorIndex++)
                 {
@@ -1794,18 +1846,19 @@ public sealed class AiScenarioHarness : IDisposable
             // OPENIGI_VEH_SCENARIO_SOLDIERS=<n>: every soldier's feet every n ticks.
             if (EnvInt("OPENIGI_VEH_SCENARIO_SOLDIERS", 0) is int soldierEvery and > 0 && tick % soldierEvery == 0)
             {
-                soldiers.Snapshot(soldierSnapshots);
+                soldiers.Simulation.Snapshot(soldierSnapshots);
                 List<Vector3d> drawn = [];
                 foreach (object group in (System.Collections.IEnumerable)typeof(SoldierRenderer).GetField("_groups", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!)
                 {
                     foreach (object member in (System.Collections.IEnumerable)group.GetType().GetProperty("Soldiers")!.GetValue(group)!)
                     {
                         drawn.Add((Vector3d)member.GetType().GetProperty("TickWhere")!.GetValue(member)! * Metre);
-                        if (member.GetType().GetProperty("IsCutsceneActor")!.GetValue(member) is true)
+                        object agent = member.GetType().GetProperty("Agent")!.GetValue(member)!;
+                        if (agent.GetType().GetProperty("IsCutsceneActor")!.GetValue(agent) is true)
                         {
-                            SoldierView view = (SoldierView)member.GetType().GetProperty("View")!.GetValue(member)!;
-                            System.Collections.IDictionary brains = (System.Collections.IDictionary)typeof(SoldierRenderer).GetField("_brains", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!;
-                            AiSoldier? brain = brains.Contains(view) ? (AiSoldier?)brains[view] : null;
+                            SoldierView view = (SoldierView)agent.GetType().GetProperty("View")!.GetValue(agent)!;
+                            System.Collections.IDictionary brains = soldiers.Simulation.Brains;
+                            Igi1HumanAi? brain = brains.Contains(view) ? (Igi1HumanAi?)brains[view] : null;
                             object? P(string name) => member.GetType().GetProperty(name)?.GetValue(member);
 
                             // The port's half of the probe's [human] parent/local: what the actor rides, its offset
@@ -2031,8 +2084,8 @@ public sealed class AiScenarioHarness : IDisposable
         using (RecordingGraphicsDevice device = new())
         {
             (GameHost host, PlayerCamera _, SoldierRenderer soldiers) = Boot(device, mission);
-            IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> pairs = soldiers.BrainPairsForTesting;
-            List<int> enemies = [.. Enumerable.Range(0, pairs.Count).Where(i => IsLiveEnemy(pairs[i], soldiers.PlayerTeam))];
+            IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> pairs = soldiers.Simulation.BrainPairsForTesting;
+            List<int> enemies = [.. Enumerable.Range(0, pairs.Count).Where(i => IsLiveEnemy(pairs[i], soldiers.Simulation.PlayerTeam))];
             foreach (int i in enemies)
             {
                 int nearest = -1;
@@ -2057,14 +2110,13 @@ public sealed class AiScenarioHarness : IDisposable
         }
 
         log.AppendLine(CultureInfo.InvariantCulture, $"{chosen.Count} pair(s) in mission {mission}");
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
         foreach ((int ai, int bi) in chosen.Skip(skip).Take(count))
         {
             using RecordingGraphicsDevice device = new();
             (GameHost host, PlayerCamera player, SoldierRenderer soldiers) = Boot(device, mission);
-            IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> pairs = soldiers.BrainPairsForTesting;
-            AiSoldier a = pairs[ai].Value;
-            AiSoldier b = pairs[bi].Value;
+            IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> pairs = soldiers.Simulation.BrainPairsForTesting;
+            Igi1HumanAi a = pairs[ai].Value;
+            Igi1HumanAi b = pairs[bi].Value;
             string head = string.Create(
                 CultureInfo.InvariantCulture,
                 $"A=s{pairs[ai].Key.Soldier.Id}#{ai} {a.Type} B=s{pairs[bi].Key.Soldier.Id}#{bi} {b.Type} {Horizontal(a.Position, b.Position) / Metre:0.0} m");
@@ -2094,7 +2146,7 @@ public sealed class AiScenarioHarness : IDisposable
                     break;
                 }
 
-                int engine = (int)tickField.GetValue(soldiers)!;
+                int engine = soldiers!.Simulation.TickCount;
                 if (engine == last)
                 {
                     continue;
@@ -2136,7 +2188,7 @@ public sealed class AiScenarioHarness : IDisposable
         File.WriteAllText(output, log.ToString());
     }
 
-    private static bool IsLiveEnemy(KeyValuePair<SoldierView, AiSoldier> pair, int playerTeam) =>
+    private static bool IsLiveEnemy(KeyValuePair<SoldierView, Igi1HumanAi> pair, int playerTeam) =>
         pair.Key.Soldier.Team != playerTeam
         && !pair.Key.IsDead
         && ConditionalContainerGate.IsTaskActive(pair.Key.Soldier)
@@ -2148,7 +2200,6 @@ public sealed class AiScenarioHarness : IDisposable
         host.Start();
         FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
         FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
@@ -2160,7 +2211,7 @@ public sealed class AiScenarioHarness : IDisposable
 
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
-        for (int i = 0; i < 100_000 && (int)tickField.GetValue(soldiers)! < 30; i++)
+        for (int i = 0; i < 100_000 && soldiers!.Simulation.TickCount < 30; i++)
         {
             Assert.True(host.Step());
         }
@@ -2168,7 +2219,7 @@ public sealed class AiScenarioHarness : IDisposable
         return (host, player, soldiers);
     }
 
-    private static bool TryPlaceInView(AiSoldier a, double preferredMetres, out Vector3d place, out string where)
+    private static bool TryPlaceInView(Igi1HumanAi a, double preferredMetres, out Vector3d place, out string where)
     {
         foreach (double metres in new[] { preferredMetres, 8.0, 12.0, 6.0, 15.0, 4.0, 20.0 })
         {
@@ -2180,7 +2231,7 @@ public sealed class AiScenarioHarness : IDisposable
                     a.Position.X + (direction.X * metres * Metre),
                     a.Position.Y + (direction.Y * metres * Metre),
                     a.Position.Z);
-                var probe = a.ProbeDetection(candidate + new Vector3d(0.0, 0.0, AiSoldier.DetectionMarkAboveFeet(crouching: false)));
+                var probe = a.ProbeDetection(candidate + new Vector3d(0.0, 0.0, Igi1HumanAi.DetectionMarkAboveFeet(crouching: false)));
                 if (probe.InCone && probe.LineOfSightClear)
                 {
                     place = candidate;
@@ -2267,4 +2318,8 @@ public sealed class AiScenarioHarness : IDisposable
     {
         public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => new RecordingAudioDevice();
     }
+
+    // The played mission's registries, which the host keeps together.
+    private static MissionWorld MissionOf(GameHost host) =>
+        (MissionWorld)typeof(GameHost).GetField("_mission", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)!;
 }

@@ -4,6 +4,7 @@ using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -25,7 +26,7 @@ public sealed class AiAuthoredReactionTests
             "EditVariable_1556.nValue",
             new QvmIntegerVariable(() => stage, value => stage = value));
 
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         soldier.SetScript(new AiScriptHost(natives), MissionScript(14, taskId), Archetype("guard"));
 
         Vector3d far = Enemy(soldier, 500.0);
@@ -72,7 +73,7 @@ public sealed class AiAuthoredReactionTests
                 new QvmIntegerVariable(() => other, value => other = value));
         }
 
-        AiSoldier soldier = Soldier();
+        Igi1HumanAi soldier = Soldier();
         soldier.SetScript(new AiScriptHost(natives), MissionScript(6, taskId), Archetype("civilian"));
 
         Vector3d far = Enemy(soldier, 500.0);
@@ -96,17 +97,17 @@ public sealed class AiAuthoredReactionTests
         Assert.False(engaged, $"Level 6 task {taskId} was forced into combat over its panic script");
     }
 
-    private static AiSoldier Soldier() => new(
+    private static Igi1HumanAi Soldier() => new(
         graph: null,
         position: new Vector3d(0, 0, 0),
         facing: 0f,
         phase: 0,
         seed: 1);
 
-    private static Vector3d Enemy(AiSoldier soldier, double metres) => new(
+    private static Vector3d Enemy(Igi1HumanAi soldier, double metres) => new(
         soldier.Position.X,
         soldier.Position.Y + (metres * Metre),
-        soldier.Position.Z + AiSoldier.HumanSeparationEyeHeight);
+        soldier.Position.Z + Igi1HumanAi.HumanSeparationEyeHeight);
 
     private static NativeRegistry Natives()
     {

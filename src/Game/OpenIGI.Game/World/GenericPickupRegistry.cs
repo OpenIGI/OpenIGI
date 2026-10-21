@@ -32,9 +32,9 @@ public sealed class GenericPickup
     /// <summary>
     /// Gets the horizontal reach, in engine units: the model's bounding radius times its largest scale factor
     /// (<c>0x4D0950</c> by <c>+152..+160</c>, which are 1 for a placed item), but never under
-    /// <see cref="GenericPickupRegistry.PickupRadius"/>.
+    /// <see cref="PickupReach.Radius"/>.
     /// </summary>
-    public double ReachRadius { get; internal set; } = GenericPickupRegistry.PickupRadius;
+    public double ReachRadius { get; internal set; } = PickupReach.Radius;
 }
 
 /// <summary>Runs the original game's automatic, proximity-based generic item pickups.</summary>
@@ -51,12 +51,6 @@ public sealed class GenericPickup
 /// </remarks>
 public sealed class GenericPickupRegistry
 {
-    /// <summary>The original's horizontal pickup radius, in engine units.</summary>
-    public const double PickupRadius = 2867.2;
-
-    /// <summary>The original's vertical pickup tolerance, in engine units.</summary>
-    public const double VerticalTolerance = 4096.0;
-
     private readonly List<GenericPickup> _items = [];
     private readonly Dictionary<GameTask, GenericPickup> _byTask = [];
 
@@ -104,7 +98,7 @@ public sealed class GenericPickupRegistry
         {
             if (pickup.IsCollected
                 || !ConditionalContainerGate.IsTaskActive(pickup.Task)
-                || !IsWithinRange(origin, pickup.Position, pickup.ReachRadius))
+                || !PickupReach.IsWithinRange(origin, pickup.Position, pickup.ReachRadius))
             {
                 continue;
             }
@@ -120,24 +114,12 @@ public sealed class GenericPickupRegistry
     public bool IsCollected(GameTask owner) =>
         owner is not null && _byTask.TryGetValue(owner, out GenericPickup? pickup) && pickup.IsCollected;
 
-    /// <summary>Tests the exact horizontal/vertical split used by retail.</summary>
-    /// <param name="origin">The Human's origin (<c>+32</c>).</param>
-    /// <param name="pickup">The item's position.</param>
-    /// <param name="reach">The item's horizontal reach; <see cref="PickupRadius"/> unless its model is larger.</param>
-    public static bool IsWithinRange(Vector3d origin, Vector3d pickup, double reach = PickupRadius)
-    {
-        double x = pickup.X - origin.X;
-        double y = pickup.Y - origin.Y;
-        return Math.Sqrt((x * x) + (y * y)) < reach
-            && Math.Abs(pickup.Z - origin.Z) < VerticalTolerance;
-    }
-
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
         if (task is DeclaredTask declared
             && (string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
                 || string.Equals(declared.Type.Name, "AmmoPickup", StringComparison.Ordinal))
-            && TryReadPosition(declared, out Vector3d position))
+            && declared.TryGet("Position", out Vector3d position))
         {
             string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model
                 ? ResolveModelName(model)
@@ -159,18 +141,6 @@ public sealed class GenericPickupRegistry
         {
             Collect(child, variables);
         }
-    }
-
-    private static bool TryReadPosition(DeclaredTask task, out Vector3d position)
-    {
-        if (task.TryGetValue("Position", out object? raw) && raw is Vector3d value)
-        {
-            position = value;
-            return true;
-        }
-
-        position = default;
-        return false;
     }
 
     private static string ResolveModelName(string model) =>

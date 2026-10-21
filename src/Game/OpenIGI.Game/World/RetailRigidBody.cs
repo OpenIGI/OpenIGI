@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.World;
 
@@ -8,7 +10,9 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// Every field mirrors the physics object's layout; the subclasses add their
-/// controls and their ground contact and call <see cref="Step"/> with their own constants.
+/// controls and their ground contact and call <see cref="Step"/> with their own constants. The steps I.G.I. 2's build
+/// compiled alike are the engine's shared ones (<see cref="RigidBodyKernels"/>); the angular velocity, the quaternion
+/// step, the length estimate and the contact response are this build's own.
 /// </remarks>
 public abstract class RetailRigidBody
 {
@@ -31,15 +35,13 @@ public abstract class RetailRigidBody
     protected abstract float SleepSpin { get; }
 
     /// <summary>Gets the aerodynamic surfaces (<c>R + 44</c>).</summary>
-    protected abstract RetailAeroSurface[] AeroSurfaces { get; }
+    protected abstract Wing[] AeroSurfaces { get; }
 
     /// <summary>The number of body points.</summary>
     public const int PointCount = 22;
 
     /// <summary>Gravity per tick squared (<c>0x53346C</c>).</summary>
     public const float Gravity = 44.600887f;
-
-    private static readonly int[] NextAxis = [1, 2, 0];
 
     private protected readonly Vector3d[] _starts = new Vector3d[PointCount];
     private protected readonly Vector3d[] _ends = new Vector3d[PointCount];
@@ -100,10 +102,10 @@ public abstract class RetailRigidBody
     public float[] AngularVelocity { get; } = new float[3];
 
     /// <summary>The pending forces (<c>+324</c>, count <c>+332</c>).</summary>
-    public List<RetailForce> Forces { get; } = [];
+    public List<PointForce> Forces { get; } = [];
 
     /// <summary>Gets every force pushed during the last tick, in order (the subclass clears it as its tick begins).</summary>
-    public List<RetailForce> PushedForces { get; } = [];
+    public List<PointForce> PushedForces { get; } = [];
 
     /// <summary>The force count at the last integration (<c>+336</c>).</summary>
     public int IntegratedForceCount { get; set; }
@@ -147,34 +149,16 @@ public abstract class RetailRigidBody
     /// <summary>The velocity of a point at a world offset from the centre -- <c>0x4ECF80</c>.</summary>
     protected void PointVelocity(float rx, float ry, float rz, out float x, out float y, out float z)
     {
-        float[] w = AngularVelocity;
-        float cx = ((X87)rz * w[1] - (X87)w[2] * ry).F;
-        float cy = (-((X87)rz * w[0] - (X87)w[2] * rx)).F;
-        float cz = ((X87)w[0] * ry - (X87)rx * w[1]).F;
-        x = ((X87)Velocity[0] + cx).F;
-        y = ((X87)Velocity[1] + cy).F;
-        z = ((X87)Velocity[2] + cz).F;
+        Vector3f u = RigidBodyKernels.PointVelocity<X87>(Vector(Velocity), Vector(AngularVelocity), new Vector3f(rx, ry, rz));
+        (x, y, z) = (u.X, u.Y, u.Z);
     }
 
     /// <summary>The sleep test -- <c>0x4FC7B0</c>.</summary>
     protected bool IsAsleep()
     {
-        int contacts = ContactCount;
         bool wake = Wake;
         Wake = false;
-        if (contacts <= 0 || wake || Forces.Count != 0)
-        {
-            return false;
-        }
-
-        if (!(Speed < SleepSpeed))
-        {
-            return false;
-        }
-
-        float[] w = AngularVelocity;
-        X87 s = (X87)w[0] * w[0] + (X87)w[1] * w[1] + (X87)w[2] * w[2];
-        return s.Value < SleepSpin;
+        return RigidBodyKernels.MayRest<X87>(ContactCount, wake, Forces.Count, Speed, SleepSpeed, Vector(AngularVelocity), SleepSpin);
     }
 
     /// <summary>The aerodynamic surfaces -- <c>0x4EC2C0</c>, handed the negated world velocity.</summary>
@@ -196,21 +180,16 @@ public abstract class RetailRigidBody
 
         float[] dir = [l[0], l[1], l[2]];
         Normalise(dir);
-        foreach (RetailAeroSurface surface in AeroSurfaces)
+        foreach (Wing surface in AeroSurfaces)
         {
-            if (surface.Coefficient <= 0.0f)
+            if (surface.Area <= 0.0f)
             {
                 continue;
             }
 
-            X87 f = ((X87)dir[1] * surface.Ny + (X87)dir[2] * surface.Nz + (X87)dir[0] * surface.Nx) * surface.Coefficient * q;
-            Push(new RetailForce(
-                ((X87)surface.Nx * f).F,
-                ((X87)surface.Ny * f).F,
-                ((X87)surface.Nz * f).F,
-                surface.Px,
-                surface.Py,
-                surface.Pz));
+            Vector3f n = surface.Normal;
+            X87 f = ((X87)dir[1] * n.Y + (X87)dir[2] * n.Z + (X87)dir[0] * n.X) * surface.Area * q;
+            Push(new PointForce(new Vector3f(((X87)n.X * f).F, ((X87)n.Y * f).F, ((X87)n.Z * f).F), surface.Position));
         }
     }
 
@@ -289,7 +268,7 @@ public abstract class RetailRigidBody
     {
         float[] m = M;
         X87 gm = -((X87)g * TypeMass);
-        Push(new RetailForce((gm * m[6]).F, (gm * m[7]).F, (gm * m[8]).F, 0.0f, 0.0f, 0.0f));
+        Push(Force((gm * m[6]).F, (gm * m[7]).F, (gm * m[8]).F, 0.0f, 0.0f, 0.0f));
         Integrate();
         for (int k = 0; k < 3; k++)
         {
@@ -310,95 +289,19 @@ public abstract class RetailRigidBody
         float[] m = M;
 
         // A. The orientation as a quaternion.
-        float qx, qy, qz, qw;
-        X87 tr = (X87)m[4] + m[0] + m[8];
-        if (tr.Value > 0.0f)
-        {
-            X87 s = X87.Sqrt(tr + 1.0f);
-            qw = (s * 0.5f).F;
-            X87 k = (X87)0.5f / s;
-            qx = (-(((X87)m[5] - m[7]) * k)).F;
-            qy = (-(((X87)m[6] - m[2]) * k)).F;
-            qz = (-(((X87)m[1] - m[3]) * k)).F;
-        }
-        else
-        {
-            int i = m[4] > m[0] ? 1 : 0;
-            if (m[8] > m[4 * i])
-            {
-                i = 2;
-            }
-
-            int j = NextAxis[i];
-            int k = NextAxis[j];
-            Span<float> q = stackalloc float[3];
-            X87 s = X87.Sqrt((X87)m[4 * i] - m[4 * j] - m[4 * k] + 1.0f);
-            q[i] = (s * 0.5f).F;
-            if (s.Value != 0.0)
-            {
-                s = (X87)0.5f / s;
-            }
-
-            q[j] = (((X87)m[(3 * j) + i] + m[(3 * i) + j]) * s).F;
-            q[k] = (((X87)m[(3 * k) + i] + m[(3 * i) + k]) * s).F;
-            qw = (-(((X87)m[(3 * j) + k] - m[(3 * k) + j]) * s)).F;
-            qx = q[0];
-            qy = q[1];
-            qz = q[2];
-        }
+        (float qx, float qy, float qz, float qw) = RigidBodyKernels.ToQuaternion<X87>(m);
 
         // B. The forces.
         int count = Forces.Count;
         IntegratedForceCount = count;
         if (count > 0)
         {
-            X87 sumX = 0.0, sumY = 0.0;
-            float sumZ = 0.0f;
-            X87 torqueX = 0.0, torqueY = 0.0, torqueZ = 0.0;
-            foreach (RetailForce e in Forces)
-            {
-                sumX += e.Fx;
-                sumY += e.Fy;
-                sumZ = ((X87)sumZ + e.Fz).F;
-                if (e.Px == 0.0f && e.Py == 0.0f && e.Pz == 0.0f)
-                {
-                    continue;
-                }
-
-                if (e.Fx == 0.0f && e.Fy == 0.0f && e.Fz == 0.0f)
-                {
-                    continue;
-                }
-
-                X87 t1 = (X87)e.Fz * e.Py - (X87)e.Pz * e.Fy;
-                float t2 = (-((X87)e.Fz * e.Px - (X87)e.Fx * e.Pz)).F;
-                float t3 = ((X87)e.Fy * e.Px - (X87)e.Fx * e.Py).F;
-                torqueX += t1;
-                torqueY += t2;
-                torqueZ += t3;
-            }
-
-            float fy = sumY.F;
-            float fx = sumX.F;
-            float tz = torqueZ.F;
-            float ty = torqueY.F;
-            LastForce[0] = fx;
-            LastForce[1] = fy;
-            LastForce[2] = sumZ;
-            float im = InverseMass;
-            float ax = ((X87)im * fx).F;
-            float ay = ((X87)im * fy).F;
-            X87 az = (X87)im * sumZ;
-            float dvx = (az * m[2] + (X87)ay * m[1] + (X87)ax * m[0]).F;
-            float dvy = (az * m[5] + (X87)ax * m[3] + (X87)ay * m[4]).F;
-            X87 dvz = (X87)ay * m[7] + (X87)ax * m[6] + az * m[8];
+            Vector3f velocity = Vector(Velocity), momentum = Vector(Momentum);
+            Vector3f sum = RigidBodyKernels.SumForces<X87>(CollectionsMarshal.AsSpan(Forces), m, InverseMass, ref velocity, ref momentum);
             Forces.Clear();
-            Velocity[0] = ((X87)dvx + Velocity[0]).F;
-            Velocity[1] = ((X87)dvy + Velocity[1]).F;
-            Velocity[2] = (dvz + Velocity[2]).F;
-            Momentum[0] = (torqueX + Momentum[0]).F;
-            Momentum[1] = ((X87)ty + Momentum[1]).F;
-            Momentum[2] = ((X87)tz + Momentum[2]).F;
+            Store(sum, LastForce);
+            Store(velocity, Velocity);
+            Store(momentum, Momentum);
         }
 
         // C. The rotation, only while there is angular momentum.
@@ -437,36 +340,9 @@ public abstract class RetailRigidBody
             qz = ((X87)d2 + qz).F;
             X87 qwr = (X87)d3 + qw;
 
-            for (int pass = 0; pass < 2; pass++)
-            {
-                X87 len = X87.Sqrt((X87)qz * qz + (X87)qy * qy + (X87)qx * qx + qwr * qwr);
-                X87 inv = (X87)1.0 / len;
-                qx = ((X87)qx * inv).F;
-                qy = ((X87)qy * inv).F;
-                qz = ((X87)qz * inv).F;
-                qwr *= inv;
-            }
-
-            float aa = Twice((X87)qx * qx).F;
-            float b2 = Twice((X87)qy * qx).F;
-            float cc = Twice((X87)qz * qx).F;
-            float dq = Twice((X87)qx * qwr).F;
-            float ee = Twice((X87)qy * qy).F;
-            float fq = Twice((X87)qz * qy).F;
-            float gg = Twice((X87)qy * qwr).F;
-            float hh = Twice((X87)qz * qz).F;
-            X87 trr = Twice(qwr * qz);
-
-            m[0] = ((X87)1.0f - ee - hh).F;
-            m[1] = ((X87)b2 - trr).F;
-            m[2] = ((X87)gg + cc).F;
-            m[3] = (trr + b2).F;
-            X87 x = (X87)1.0f - aa;
-            m[4] = (x - hh).F;
-            m[5] = ((X87)fq - dq).F;
-            m[6] = ((X87)cc - gg).F;
-            m[7] = ((X87)fq + dq).F;
-            m[8] = (x - ee).F;
+            RigidBodyKernels.NormaliseQuaternion(ref qx, ref qy, ref qz, ref qwr);
+            RigidBodyKernels.NormaliseQuaternion(ref qx, ref qy, ref qz, ref qwr);
+            RigidBodyKernels.ToMatrix(qx, qy, qz, qwr, m);
             MatrixCounter = 0;
         }
 
@@ -474,14 +350,54 @@ public abstract class RetailRigidBody
         UpdateSpeed();
     }
 
+    /// <summary>
+    /// Gives the body a solid box's mass and inertia: <c>Body_SetBox</c> (<c>0x4ECED0</c>) and <c>Body_SetMassInertia</c>
+    /// (<c>0x4EC5E0</c>).
+    /// </summary>
+    /// <param name="mass">The mass.</param>
+    /// <param name="a">The box's edge along the body's x, world units.</param>
+    /// <param name="b">Along its y.</param>
+    /// <param name="c">Along its z.</param>
+    public void SetBox(float mass, float a, float b, float c)
+    {
+        float b2 = ((X87)b * b).F;
+        float c2 = ((X87)c * c).F;
+        X87 a2 = (X87)a * a;
+        float iz = (((X87)b2 + a2) * mass * 0.0833333358f).F;
+        float iy = (((X87)c2 + a2) * mass * 0.0833333358f).F;
+        float ix = (((X87)c2 + b2) * mass * 0.0833333358f).F;
+        Mass = mass;
+        InverseInertia[0] = ((X87)1.0f / ix).F;
+        InverseInertia[1] = ((X87)1.0f / iy).F;
+        InverseInertia[2] = ((X87)1.0f / iz).F;
+        InverseMass = ((X87)1.0f / mass).F;
+    }
+
+    /// <summary>A force and the body point it acts at, both in the body frame.</summary>
+    /// <param name="fx">The force, body X.</param>
+    /// <param name="fy">The force, body Y.</param>
+    /// <param name="fz">The force, body Z.</param>
+    /// <param name="px">The point, body X.</param>
+    /// <param name="py">The point, body Y.</param>
+    /// <param name="pz">The point, body Z.</param>
+    /// <returns>The force.</returns>
+    protected static PointForce Force(float fx, float fy, float fz, float px, float py, float pz) => new(new(fx, fy, fz), new(px, py, pz));
+
     /// <summary>Pushes a force onto the body -- <c>0x4ECF50</c>.</summary>
-    protected void Push(RetailForce force)
+    protected void Push(PointForce force)
     {
         Forces.Add(force);
         PushedForces.Add(force);
     }
 
-    private protected static X87 Twice(X87 value) => value + value;
+    private static Vector3f Vector(float[] v) => new(v[0], v[1], v[2]);
+
+    private static void Store(Vector3f v, float[] into)
+    {
+        into[0] = v.X;
+        into[1] = v.Y;
+        into[2] = v.Z;
+    }
 
     /// <summary>The speed estimate and the velocity direction -- <c>0x4ECDB0</c>.</summary>
     protected void UpdateSpeed()
@@ -531,16 +447,7 @@ public abstract class RetailRigidBody
     /// <summary>Normalises a float vector in place unless it is all zero: <c>(float)(x * (1.0 / len))</c>.</summary>
     protected static void Normalise(float[] v)
     {
-        if (v[0] == 0.0f && v[1] == 0.0f && v[2] == 0.0f)
-        {
-            return;
-        }
-
-        X87 len = X87.Sqrt((X87)v[0] * v[0] + (X87)v[1] * v[1] + (X87)v[2] * v[2]);
-        X87 inv = (X87)1.0 / len;
-        v[0] = ((X87)v[0] * inv).F;
-        v[1] = ((X87)v[1] * inv).F;
-        v[2] = ((X87)v[2] * inv).F;
+        Store(RigidBodyKernels.Normalise<X87>(Vector(v)), v);
     }
 
     /// <summary>A rotation about Z -- <c>0x4B3BE0</c>: <c>{c, −s, 0, s, c, 0, 0, 0, 1}</c> from <c>fsin</c>/<c>fcos</c>.</summary>

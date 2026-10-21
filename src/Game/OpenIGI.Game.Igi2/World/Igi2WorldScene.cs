@@ -40,6 +40,10 @@ namespace OpenIGI.Game.Igi2.World;
 /// it as it ships — a wire stretched down its span, a spline segment bent along its curve. Null for
 /// everything drawn as authored, which is nearly everything.
 /// </param>
+/// <param name="DestroyedModel">
+/// The model the object wears once destroyed, its <c>Destroyed model</c>, or empty for a type that has none: what an
+/// <c>ExplodeObject</c> swaps to when it explodes (<c>ExplodeObject_SetExploded</c>, <c>igi2 0x49D010</c>).
+/// </param>
 /// <param name="ModelVariant">
 /// Which of the owning task's model SLOTS this is wearing, counted from one, or zero when the type has
 /// a single slot or the port has not established its enumeration. It is the group letter in the name of
@@ -47,6 +51,14 @@ namespace OpenIGI.Game.Igi2.World;
 /// (<c>igi2 0x53C920</c>) writes <c>acIndexLetters[nModelVariation]</c>, and a slot's variation is its
 /// index plus one — so it is what picks the matching bake out of the level's archive. See
 /// <see cref="Igi2LightmapIndex"/>.
+/// </param>
+/// <param name="MountedOn">
+/// The magic task type of the attach point <paramref name="MountedModel"/> hangs on, or empty when it hangs on this model; see
+/// <see cref="Igi2PlacementBinding.MountedOn"/>.
+/// </param>
+/// <param name="Wears">
+/// The models the object may wear by its state, a switch's five (<see cref="WorldScene.SwitchModelParameters"/>), or
+/// <see langword="null"/> for an object with one.
 /// </param>
 public readonly record struct Igi2Placement(
     int LevelId,
@@ -59,7 +71,10 @@ public readonly record struct Igi2Placement(
     string MountedModel = "",
     Vector3f MountedOrientation = default,
     Matrix3f? Frame = null,
-    IIgi2PlacementGeometry? Geometry = null);
+    IIgi2PlacementGeometry? Geometry = null,
+    string DestroyedModel = "",
+    string MountedOn = "",
+    IReadOnlyList<string>? Wears = null);
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -73,7 +88,8 @@ public readonly record struct Igi2Placement(
 /// of them, which is what makes a world drawable long before the gameplay behind it exists.
 /// </para>
 /// <para>
-/// Only <see cref="DeclaredTask"/> is walked, and that is the rule rather than a limitation: a type
+/// Only <see cref="DeclaredTask"/> — and a typed task that says it is placed (<see cref="IIgi2PlacedTask"/>) — is walked,
+/// and that is the rule rather than a limitation: a type
 /// with a class has a subsystem that owns it, and a forest or a terrain tile is not one model at one
 /// place. When a gameplay class arrives for a type that is currently a placeholder, its objects leave
 /// this scene and become that subsystem's business — which is the correct direction, because by then
@@ -100,6 +116,9 @@ public sealed class Igi2WorldScene
 
     /// <summary>The parameter a placeable task names its draw queue with, when it has one.</summary>
     public const string RenderGroupParameter = "RenderGroup";
+
+    /// <summary>The parameter a destructible type names its destroyed model with.</summary>
+    public const string DestroyedModelParameter = "Destroyed model";
 
     /// <summary>What a type that names its parameters the usual way is read with.</summary>
     public static Igi2PlacementBinding DefaultBinding { get; } =
@@ -132,8 +151,9 @@ public sealed class Igi2WorldScene
     /// </description></item>
     /// <item><description>
     /// <c>StationaryGun</c>, <c>AIStationaryGunHolder</c> — <c>AIStationaryGunHolder_UpdateInternalDataHandler</c>
-    /// (<c>0x5158E0</c>) copies the parameter block's orientation straight into the model object. The
-    /// barrel is an attachment, and is left out for the same reason the camera body is.
+    /// copies the parameter block's orientation straight into the model object. An automatic gun's barrel is
+    /// an object of its gun's own, the attach point of type <c>AIStationaryGun</c>: <c>AIStationaryGun_UpdateInternalDataHandler</c>
+    /// makes it a child of that attach object, on its first magic vertex, so it is walked after it.
     /// </description></item>
     /// <item><description>
     /// <c>Wire</c> — <c>Wire_UpdateInternalDataHandler</c> (<c>0x49B720</c>) gives the model no
@@ -190,7 +210,14 @@ public sealed class Igi2WorldScene
                 "Holder model",
                 PositionParameter,
                 OrientationParameter,
-                MountedModel: "Barrel model"),
+                MountedModel: "Barrel model",
+                MountedOn: Weapons.Igi2AiStationaryGun.TypeName),
+            ["Car"] = new(
+                "Model",
+                PositionParameter,
+                OrientationParameter,
+                MountedModel: "Barrel model",
+                MountedOn: Weapons.Igi2AiStationaryGun.TypeName),
             ["Lift"] = new("Model", "Start Position", "Start Orientation"),
             ["SplineObjWaypoint"] = new("Waypoint Model", PositionParameter, OrientationParameter),
         };
@@ -292,11 +319,9 @@ public sealed class Igi2WorldScene
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared
-                && string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
-                && declared.Id != GameTask.NoId)
+            if (string.Equals(child.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal) && child.Id != GameTask.NoId)
             {
-                into[declared.Id] = Igi2SplineObject.Read(declared);
+                into[child.Id] = Igi2SplineObject.Read(child);
             }
 
             CollectSplines(child, into);
@@ -311,46 +336,37 @@ public sealed class Igi2WorldScene
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared)
+            if (child is DeclaredTask or IIgi2PlacedTask && TryReadPlacement(child, out Igi2Placement placement))
             {
-                if (TryReadPlacement(declared, out Igi2Placement placement))
-                {
-                    into.Add(placement);
-                }
+                into.Add(placement);
+            }
 
-                // A spline's segments are not declared by anything -- they are made at load, between
-                // consecutive waypoints -- so they are read from the run as a whole rather than from a
-                // task. See <see cref="Igi2SplineObject"/>.
-                if (string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
-                    && splines.TryGetValue(declared.Id, out Igi2SplineRun run))
-                {
-                    into.AddRange(run.Segments);
-                }
+            // A spline's segments are not declared by anything -- they are made at load, between consecutive
+            // waypoints -- so they are read from the run as a whole rather than from a task. See
+            // <see cref="Igi2SplineObject"/>.
+            if (string.Equals(child.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
+                && splines.TryGetValue(child.Id, out Igi2SplineRun run))
+            {
+                into.AddRange(run.Segments);
+            }
 
-                // A locomotive places its whole rake. A carriage is a Train whose parent is one, and it
-                // carries no distance of its own -- Train_UpdateInternalDataHandler (igi2ed 0x47F8E0)
-                // calls Train_Move only for the one at the front, and that moves all of them.
-                if (models is not null
-                    && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal)
-                    && !IsTrain(declared.Parent)
-                    && declared.TryGetValue(Igi2Train.RailroadParameter, out object? rawRail)
-                    && rawRail is int railroad
-                    && splines.TryGetValue(railroad, out Igi2SplineRun rails))
-                {
-                    into.AddRange(Igi2Train.Carriages(declared, rails.Path, models));
-                }
+            // A locomotive places its whole rake. A carriage is a Train whose parent is one, and it carries no
+            // distance of its own -- Train_UpdateInternalDataHandler calls Train_Move only for the one at the
+            // front, and that moves all of them.
+            if (models is not null
+                && child is Vehicles.Igi2TrainTask train
+                && !train.IsCarriage
+                && splines.TryGetValue(train.RailroadId, out Igi2SplineRun rails))
+            {
+                into.AddRange(Igi2Train.Carriages(train, rails.Path, models));
             }
 
             Collect(child, into, splines, models);
         }
     }
 
-    private static bool IsTrain(GameTask? task) =>
-        task is DeclaredTask declared
-        && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal);
-
     /// <summary>Reads one task's placement, if it declares the three parameters that make one.</summary>
-    /// <param name="task">The placeholder task.</param>
+    /// <param name="task">The placeholder task, or a typed task that says it is placed.</param>
     /// <param name="placement">Receives the placement.</param>
     /// <returns><see langword="false"/> when the task places no model.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
@@ -359,7 +375,7 @@ public sealed class Igi2WorldScene
     /// needs the task it hangs under — has to walk the tree itself, and would otherwise reimplement the
     /// parameter reading this already does.
     /// </remarks>
-    public static bool TryPlace(DeclaredTask task, out Igi2Placement placement)
+    public static bool TryPlace(GameTask task, out Igi2Placement placement)
     {
         ArgumentNullException.ThrowIfNull(task);
 
@@ -381,7 +397,7 @@ public sealed class Igi2WorldScene
     /// holds" rather than a particular slot — see <c>Igi2DrawableScene</c>.
     /// </para>
     /// </remarks>
-    private static int VariantOf(DeclaredTask task, Igi2PlacementBinding binding, string model)
+    private static int VariantOf(GameTask task, Igi2PlacementBinding binding, string model)
     {
         if (binding.Enumerated is not { Count: > 0 } enumerated)
         {
@@ -390,7 +406,7 @@ public sealed class Igi2WorldScene
 
         for (int slot = 0; slot < enumerated.Count; slot++)
         {
-            if (task.TryGetValue(enumerated[slot], out object? raw)
+            if (TryGetParameter(task, enumerated[slot], out object? raw)
                 && raw is string name
                 && string.Equals(name, model, StringComparison.OrdinalIgnoreCase))
             {
@@ -401,7 +417,15 @@ public sealed class Igi2WorldScene
         return 0;
     }
 
-    private static bool TryReadPlacement(DeclaredTask task, out Igi2Placement placement)
+    /// <summary>A parameter's value by name, from a placeholder or from a typed task that says it is placed.</summary>
+    /// <param name="task">The task.</param>
+    /// <param name="name">The parameter's name, as level data declares it.</param>
+    /// <param name="value">Receives the value.</param>
+    /// <returns><see langword="true"/> when the task has the parameter.</returns>
+    internal static bool TryGetParameter(GameTask task, string name, out object? value) =>
+        task is IIgi2PlacedTask placed ? placed.TryGetValue(name, out value) : task.TryGetScriptValue(name, out value);
+
+    private static bool TryReadPlacement(GameTask task, out Igi2Placement placement)
     {
         placement = default;
 
@@ -411,13 +435,13 @@ public sealed class Igi2WorldScene
 
         // A type with two models says which it is wearing at rest with a flag of its own.
         string modelParameter = binding.AlternateWhen.Length > 0
-            && task.TryGetValue(binding.AlternateWhen, out object? rawAlternate)
+            && TryGetParameter(task, binding.AlternateWhen, out object? rawAlternate)
             && rawAlternate is bool alternate
             && alternate
                 ? binding.AlternateModel
                 : binding.Model;
 
-        if (!task.TryGetValue(modelParameter, out object? rawModel)
+        if (!TryGetParameter(task, modelParameter, out object? rawModel)
             || rawModel is not string model
             || string.IsNullOrWhiteSpace(model))
         {
@@ -434,13 +458,15 @@ public sealed class Igi2WorldScene
         Matrix3f? frame = null;
         IIgi2PlacementGeometry? geometry = null;
         if (string.Equals(task.Type.Name, WireType, StringComparison.Ordinal)
-            && WireTransform.TryCreate(task, out WireTransform wire))
+            && task.TryGetScriptValue("Start position", out object? wireStart) && wireStart is Vector3d start
+            && task.TryGetScriptValue("Stop position", out object? wireStop) && wireStop is Vector3d stop
+            && WireTransform.TryCreate(start, stop, null, out WireTransform wire))
         {
             position = wire.PositionUnits;
             frame = wire.Orientation;
             geometry = new Igi2WireGeometry(wire.ScaleY);
         }
-        else if (task.TryGetValue(binding.Position, out object? rawPosition) && rawPosition is Vector3d authored)
+        else if (TryGetParameter(task, binding.Position, out object? rawPosition) && rawPosition is Vector3d authored)
         {
             position = authored;
         }
@@ -453,19 +479,19 @@ public sealed class Igi2WorldScene
         // axis -- where it carries one. A type that carries neither faces down the world's X axis.
         Vector3f orientation = default;
         if (binding.Orientation.Length > 0
-            && task.TryGetValue(binding.Orientation, out object? rawOrientation)
+            && TryGetParameter(task, binding.Orientation, out object? rawOrientation)
             && rawOrientation is Vector3f angles)
         {
             orientation = angles;
         }
         else if (binding.Gamma.Length > 0
-            && task.TryGetValue(binding.Gamma, out object? rawGamma)
+            && TryGetParameter(task, binding.Gamma, out object? rawGamma)
             && rawGamma is float gamma)
         {
             orientation = new Vector3f(0f, 0f, gamma);
         }
 
-        int group = task.TryGetValue(RenderGroupParameter, out object? rawGroup) && rawGroup is int value
+        int group = TryGetParameter(task, RenderGroupParameter, out object? rawGroup) && rawGroup is int value
             ? value
             : 0;
 
@@ -474,7 +500,7 @@ public sealed class Igi2WorldScene
         // camera body: one angle about the up axis summed with the bracket's, and one about the long
         // axis for the downward look. A mounted model that names neither simply faces as its host does.
         string mounted = binding.MountedModel.Length > 0
-            && task.TryGetValue(binding.MountedModel, out object? rawMounted)
+            && TryGetParameter(task, binding.MountedModel, out object? rawMounted)
             && rawMounted is string mountedName
             && !string.IsNullOrWhiteSpace(mountedName)
                 ? mountedName
@@ -483,10 +509,16 @@ public sealed class Igi2WorldScene
         Vector3f mountedOrientation = orientation;
         if (mounted.Length > 0 && (binding.MountedAlpha.Length > 0 || binding.MountedGamma.Length > 0))
         {
-            float alpha = task.TryGetValue(binding.MountedAlpha, out object? rawAlpha) && rawAlpha is float a ? a : 0f;
-            float gamma = task.TryGetValue(binding.MountedGamma, out object? rawGamma2) && rawGamma2 is float g ? g : 0f;
+            float alpha = TryGetParameter(task, binding.MountedAlpha, out object? rawAlpha) && rawAlpha is float a ? a : 0f;
+            float gamma = TryGetParameter(task, binding.MountedGamma, out object? rawGamma2) && rawGamma2 is float g ? g : 0f;
             mountedOrientation = new Vector3f(alpha, 0f, orientation.Z + gamma);
         }
+
+        string destroyed = TryGetParameter(task, DestroyedModelParameter, out object? rawDestroyed)
+            && rawDestroyed is string destroyedName
+            && !string.IsNullOrWhiteSpace(destroyedName)
+                ? destroyedName
+                : string.Empty;
 
         placement = new Igi2Placement(
             task.Id,
@@ -499,7 +531,13 @@ public sealed class Igi2WorldScene
             mounted,
             mountedOrientation,
             frame,
-            geometry);
+            geometry,
+            destroyed,
+            binding.MountedOn,
+            string.Equals(task.Type.Name, WorldScene.SwitchType, StringComparison.Ordinal)
+                ? [.. WorldScene.SwitchModelParameters.Select(name =>
+                    TryGetParameter(task, name, out object? raw) && raw is string worn ? worn : string.Empty)]
+                : null);
         return true;
     }
 }

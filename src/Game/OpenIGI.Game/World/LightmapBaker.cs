@@ -335,14 +335,9 @@ public static class LightmapBaker
     private static (Vector3f Tangent, Vector3f Bitangent) TangentFrame(Vector3f normal)
     {
         Vector3f reference = MathF.Abs(normal.Z) < 0.9f ? new Vector3f(0f, 0f, 1f) : new Vector3f(1f, 0f, 0f);
-        Vector3f tangent = Normalise(Cross(reference, normal));
-        return (tangent, Cross(normal, tangent));
+        Vector3f tangent = (Vector3f.Cross(reference, normal)).NormalizedOr(Vector3f.UnitZ, 1e-8f);
+        return (tangent, Vector3f.Cross(normal, tangent));
     }
-
-    private static Vector3f Cross(Vector3f a, Vector3f b) => new(
-        (a.Y * b.Z) - (a.Z * b.Y),
-        (a.Z * b.X) - (a.X * b.Z),
-        (a.X * b.Y) - (a.Y * b.X));
 
     // A cosine-weighted set of hemisphere directions in local space (z up), spaced by the golden angle so
     // they never fall into rows. Cosine-weighted because irradiance is the cosine-weighted integral of
@@ -596,10 +591,10 @@ public static class LightmapBaker
                     (worldA.Y * wA) + (worldB.Y * wB) + (worldC.Y * wC),
                     (worldA.Z * wA) + (worldB.Z * wB) + (worldC.Z * wC));
 
-                Vector3f normal = Normalise(new Vector3f(
+                Vector3f normal = (new Vector3f(
                     (normalA.X * wA) + (normalB.X * wB) + (normalC.X * wC),
                     (normalA.Y * wA) + (normalB.Y * wB) + (normalC.Y * wC),
-                    (normalA.Z * wA) + (normalB.Z * wB) + (normalC.Z * wC)));
+                    (normalA.Z * wA) + (normalB.Z * wB) + (normalC.Z * wC))).NormalizedOr(Vector3f.UnitZ, 1e-8f);
 
                 target.Texels[(y * target.Width) + x] = new LightmapTexel(world, normal, true);
             }
@@ -622,13 +617,7 @@ public static class LightmapBaker
     // A normal rotates with the object but does not translate or scale; the placement's orientation is a
     // pure rotation, so transforming and renormalising is all it takes.
     private static Vector3f ToWorldNormal(WorldPlacement placement, Vector3f localNormal) =>
-        Normalise(placement.Orientation.Transform(localNormal));
-
-    private static Vector3f Normalise(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 1e-8f ? new Vector3f(value.X / length, value.Y / length, value.Z / length) : new Vector3f(0f, 0f, 1f);
-    }
+        (placement.Orientation.Transform(localNormal)).NormalizedOr(Vector3f.UnitZ, 1e-8f);
 
     /// <summary>A bounding-volume hierarchy over the lightmapped triangles, for the gather rays to trace.</summary>
     /// <remarks>

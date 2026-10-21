@@ -167,6 +167,71 @@ public sealed class RetailSplineSegment
     }
 
     /// <summary>
+    /// A segment's length (<c>+248</c>), which <c>0x4E4530</c> sums as it samples the segment, and a spline's knot parameters
+    /// (<c>0x502180</c>) add up: what a lift's spline parameter runs along.
+    /// </summary>
+    /// <param name="p0">The previous waypoint's position.</param>
+    /// <param name="p1">This waypoint's position.</param>
+    /// <param name="a3">The previous waypoint's orientation, row-major.</param>
+    /// <param name="a4">This waypoint's orientation.</param>
+    /// <param name="count">The matrix count <c>N</c>.</param>
+    /// <param name="linear">
+    /// Whether the segment is straight: the spline's <c>Linear Segments</c> or the waypoint's <c>Align</c> (<c>+418</c>), which
+    /// samples it once.
+    /// </param>
+    /// <returns>The length, in units.</returns>
+    /// <remarks>
+    /// A straight segment is its chord. A bent one is the Hermite cubic sampled at <c>N + 1</c> points, each stored as a float
+    /// about the midpoint, and the distances between neighbours added in a float: the cubic leaves along each waypoint's X
+    /// axis, so a lift's vertical run between waypoints facing level is longer than its rise.
+    /// </remarks>
+    public static float Length(Vector3d p0, Vector3d p1, float[] a3, float[] a4, int count, bool linear)
+    {
+        ArgumentNullException.ThrowIfNull(a3);
+        ArgumentNullException.ThrowIfNull(a4);
+        if (linear)
+        {
+            X87 dx = (X87)p1.X - p0.X, dy = (X87)p1.Y - p0.Y, dz = (X87)p1.Z - p0.Z;
+            return (X87.Sqrt(dx * dx + dy * dy + dz * dz) * 1.0f).F;
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        double length = Dist(p0, p1);
+        double[] cx = Hermite(p0.X, p1.X, ((X87)a3[0] * length).Value, ((X87)a4[0] * length).Value);
+        double[] cy = Hermite(p0.Y, p1.Y, ((X87)a3[3] * length).Value, ((X87)a4[3] * length).Value);
+        double[] cz = Hermite(p0.Z, p1.Z, ((X87)a3[6] * length).Value, ((X87)a4[6] * length).Value);
+        double midX = (((X87)p0.X + p1.X) * 0.5).Value;
+        double midY = (((X87)p0.Y + p1.Y) * 0.5).Value;
+        double midZ = (((X87)p0.Z + p1.Z) * 0.5).Value;
+        float invN = ((X87)1.0f / (double)count).F;
+        float sum = 0f;
+        float lastX = 0f, lastY = 0f, lastZ = 0f;
+        for (int k = 0; k <= count; k++)
+        {
+            double t = ((X87)(double)k * invN).Value;
+            float x = ((X87)Eval(cx, t) - midX).F;
+            float y = ((X87)Eval(cy, t) - midY).F;
+            float z = ((X87)Eval(cz, t) - midZ).F;
+            if (k > 0)
+            {
+                // A middle sample keeps its X and Y differences as floats (0x4E4B68); the last keeps all three on the stack.
+                X87 dx = (X87)x - lastX, dy = (X87)y - lastY, dz = (X87)z - lastZ;
+                if (k != count)
+                {
+                    dx = dx.F;
+                    dy = dy.F;
+                }
+
+                sum = (X87.Sqrt(dx * dx + dy * dy + dz * dz) + sum).F;
+            }
+
+            (lastX, lastY, lastZ) = (x, y, z);
+        }
+
+        return sum;
+    }
+
+    /// <summary>
     /// The polyline <c>Segment_Build</c> (<c>0x4E4530</c>) leaves on a segment for the railroad solver: its
     /// <c>N + 1</c> points (<c>+260</c>, floats relative to the waypoints' midpoint at <c>+32</c>), each piece's
     /// length (<c>+1352</c>, the last entry 0) and their float sum (<c>+248</c>).
@@ -396,45 +461,42 @@ public sealed class RetailSplineSegment
             best = X87.Sqrt(ddx * ddx + ddy * ddy + ddz * ddz).Value;
         }
 
-        float[] lo = new float[3], hi = new float[3];
-        RetailModelRay.Box(ls, le, lo, hi);
-        float[] d = [((X87)e.X - s.X).F, ((X87)e.Y - s.Y).F, ((X87)e.Z - s.Z).F];
-        RetailModelRay.Search search = new()
+        Vector3f d = new(((X87)e.X - s.X).F, ((X87)e.Y - s.Y).F, ((X87)e.Z - s.Z).F);
+        Vector3f start = new(ls[0], ls[1], ls[2]);
+        MeshRaySearch<X87> search = new(MeshRayDialect.Igi1)
         {
-            Best = best,
-            HadHit = hadHit,
-            PrevFront = result.Hit && result.HasFrontMaterial,
-            Point = le,
-            Lo = lo,
-            Hi = hi,
+            Closest = best,
+            IsHit = hadHit,
+            PreviousFront = result.Hit && result.HasFrontMaterial,
+            Point = new Vector3f(le[0], le[1], le[2]),
         };
+        search.Box(start, search.Point);
 
         // The walk culls by the segment's own rebuilt tree; inv = 1 / |Le - Ls|² over register differences of floats.
         X87 lx = (X87)le[0] - ls[0], ly = (X87)le[1] - ls[1], lz = (X87)le[2] - ls[2];
         double inverse = ((X87)1.0 / (lz * lz + lx * lx + ly * ly)).Value;
-        RetailModelRay.Walk(Mesh, ls, d, inverse, lenf, portals: true, search, mirror: Reverse, Vertices, cullSpheres: true, Spheres);
-        if (!search.Found || (result.Hit && !(search.Best < result.Distance)))
+        RetailModelRay.WalkFaces(Mesh, Vertices, Spheres, start, d, inverse, lenf, portals: true, search, mirror: Reverse, cullSpheres: true);
+        if (!search.HitThisObject || (result.Hit && !(search.Closest < result.Distance)))
         {
             return;
         }
 
         RetailModelRay.FaceNormal(Mesh, search.Face, Reverse, out float nx, out float ny, out float nz, Vertices);
-        float[] point = search.Point;
+        float[] point = [search.Point.X, search.Point.Y, search.Point.Z];
         result.Struck = Owner;
         result.Point = new Vector3d(((X87)point[0] + px).Value, ((X87)point[1] + py).Value, ((X87)point[2] + pz).Value);
         result.NormalX = nx;
         result.NormalY = ny;
         result.NormalZ = nz;
-        result.HasFrontMaterial = search.PrevFront;
-        result.HasSurface = !search.PrevFront;
+        result.HasFrontMaterial = search.PreviousFront;
+        result.HasSurface = !search.PreviousFront;
         result.SurfaceForce = 0f;
-        result.Distance = search.Best;
+        result.Distance = search.Closest;
         result.Hit = true;
         result.Material = Mesh.GlobalMaterial[Mesh.Faces[(4 * search.Face) + 3]];
     }
 
-    private static bool Straddles(X87 lo, X87 hi, double s, double e) =>
-        (lo.Value <= s || lo.Value <= e) && (hi.Value >= s || hi.Value >= e);
+    private static bool Straddles(X87 lo, X87 hi, double s, double e) => MeshRay.Straddles(MeshRayDialect.Igi1, lo.Value, hi.Value, s, e);
 
     /// <summary><c>0x4B32B0</c>: <c>sqrt(((dz·dz) + (dy·dy)) + (dx·dx))</c>, <c>d = a − b</c>.</summary>
     private static double Dist(Vector3d a, Vector3d b)

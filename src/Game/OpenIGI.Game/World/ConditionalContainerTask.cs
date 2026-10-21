@@ -1,51 +1,46 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// A level's <c>ConditionalContainer</c> — a container whose children are only <em>registered into the
-/// world</em> while its <c>Condition</c> holds. The original's <c>ConditionalContainer_RunHandler</c>
-/// (<c>0x520EF0</c> in the shared engine).
+/// A level's <c>ConditionalContainer</c>, in either title: a container whose children are in the world, and run, only while
+/// its <c>Condition</c> holds, exporting <c>isRun</c>.
 /// </summary>
 /// <remarks>
 /// <para>
+/// Both games run the same handler, Project I.G.I.'s <c>0x4874E0</c> and I.G.I. 2's <c>ConditionalContainer_RunHandler</c>
+/// (<c>igi2 0x520EF0</c>): a condition, when there is one, is run in the float walk and chopped into the <c>isRun</c> byte;
+/// with none, <c>isRun</c> keeps what it had. While the container runs, children taken out of the world are put back
+/// (<c>ConditionalContainer_RegisterChildren</c>, <c>igi2 0x520D20</c>) and then run; otherwise children still in the world
+/// are taken out (<c>ConditionalContainer_RemoveChildren</c>, <c>igi2 0x520DC0</c>), each setting the in-world byte after
+/// it has told the children. Last, the tick it starts its <c>Run at start</c> script runs, and the tick it stops its
+/// <c>Run at stop</c>. What the titles decide differently, the level run's <see cref="IConditionalContainerRules"/> says.
+/// </para>
+/// <para>
 /// The three parameters are the ones level data declares
-/// (<c>Task_DeclareParameters("ConditionalContainer", "Condition", "VarString", "Run at start",
-/// "VarString", "Run at stop", "VarString")</c>), in that order. Each frame the original evaluates
-/// <c>Condition</c>; on the transition to true it runs <c>Run at start</c> and calls
-/// <c>ConditionalContainer_RegisterChildren</c> (<c>0x520D20</c>), which fires each child's
-/// <c>DynCubeObj</c> register event so the subtree becomes visible, collidable and ticked; on the
-/// transition to false it runs <c>Run at stop</c> and <c>ConditionalContainer_RemoveChildren</c>
-/// (<c>0x520DC0</c>), which unregisters them. The children remain <em>tasks</em> throughout — so their
-/// exported script variables keep resolving — they are simply absent from the world while the condition
-/// is false.
+/// (<c>Task_DeclareParameters("ConditionalContainer", "Condition", "VarString", "Run at start", "VarString", "Run at stop",
+/// "VarString")</c>). The children stay tasks throughout, so their exported variables keep resolving while they are out of
+/// the world.
 /// </para>
 /// <para>
-/// <b>Why the port needs this.</b> Level 1 places its intro and outro cut-scene actors inside
-/// <c>ConditionalContainer</c>s gated on cut-scene / mission-progress state that is false during ordinary
-/// play (<c>ConditionalContainer_4001</c> "Intro cutscene", <c>4007</c> "Outro Cutscene"). Among them is a
-/// second David Jones — <c>HumanSoldier</c> "Jones drive truck" on the player's own model
-/// <c>000_01_1</c> — plus the intro heli, trains and a train-top Jones. With no
-/// <c>ConditionalContainer</c> type the port built every one of them as a plain container and rendered its
-/// children, so those actors stood in the level at mission start where the original never registers them.
-/// The player and the real guards sit under <c>ConditionalContainer_1495</c>, whose condition
-/// <c>!4001.isRun &amp;&amp; !4007.isRun</c> is true during play, so they are unaffected.
-/// </para>
-/// <para>
-/// <see cref="ConditionalContainerGate"/> prepares the evaluator, and the level walk
-/// (<see cref="LevelUpdateWalker"/>) runs <see cref="Update"/> when it reaches the container. Render, spawn, AI and
-/// collision paths read the registration, <see cref="IsActive"/>; script conditions read <see cref="IsRun"/>.
+/// <b>Why Project I.G.I. needs this.</b> Level 1 places its intro and outro cut-scene actors inside containers gated on
+/// cut-scene state that is false during ordinary play (<c>ConditionalContainer_4001</c> "Intro cutscene", <c>4007</c> "Outro
+/// Cutscene"), among them a second David Jones on the player's own model. The player and the real guards sit under
+/// <c>ConditionalContainer_1495</c>, whose condition <c>!4001.isRun &amp;&amp; !4007.isRun</c> holds during play.
+/// <see cref="ConditionalContainerGate"/> settles the first game's containers before the first tick, and render, spawn, AI
+/// and collision paths read <see cref="IsActive"/>.
 /// </para>
 /// </remarks>
-public partial class ConditionalContainerTask : ContainerTask
+public partial class ConditionalContainerTask : TickedTask
 {
     /// <summary>The script name the level data instantiates this type under.</summary>
     public const string TypeName = "ConditionalContainer";
 
-    private bool? _isRun;
+    private byte? _isRun;
     private bool _resolving;
 
-    /// <summary>The expression that decides whether the subtree is registered — <c>Condition</c>.</summary>
+    /// <summary>The expression that decides whether the subtree is in the world — <c>Condition</c>.</summary>
     [ScriptParam(ScriptParamType.VarString, "Condition")]
     public string Condition { get; set; } = string.Empty;
 
@@ -58,131 +53,154 @@ public partial class ConditionalContainerTask : ContainerTask
     public string RunAtStop { get; set; } = string.Empty;
 
     /// <summary>
-    /// Evaluates <see cref="Condition"/> to <see langword="true"/> or <see langword="false"/>, or
-    /// <see langword="null"/> when no gate has wired one — in which case the container is treated as
-    /// running, so an un-prepared tree renders exactly as it did before.
+    /// Gets or sets how Project I.G.I.'s gate reads the condition before the container's first tick: whether it holds, or
+    /// <see langword="null"/> for an empty condition. With none set, an unsettled container runs, so a tree no gate
+    /// prepared is not hidden.
     /// </summary>
     /// <remarks>
-    /// Set by <see cref="ConditionalContainerGate.Prepare"/>. It is a closure rather than a stored value
-    /// because a container's condition can name another container's <c>isRun</c>
-    /// (<c>1495</c> reads <c>4001</c> and <c>4007</c>), and evaluating one lazily pulls the others through
-    /// their exported variables.
+    /// Set by <see cref="ConditionalContainerGate.Prepare"/>. It is a closure rather than a stored value because a
+    /// container's condition can name another container's <c>isRun</c> (<c>1495</c> reads <c>4001</c> and <c>4007</c>), and
+    /// settling one pulls the others through their exported variables.
     /// </remarks>
-    internal Func<ConditionalContainerTask, bool>? ConditionResolver { get; set; }
+    internal Func<ConditionalContainerTask, bool?>? ConditionResolver { get; set; }
 
-    /// <summary>
-    /// Gets whether the container is running, and therefore whether its subtree is registered into the
-    /// world — the original's <c>isRun</c> byte (<c>+284</c>).
-    /// </summary>
+    /// <summary>Gets a value indicating whether the container runs — the original's <c>isRun</c> byte.</summary>
     /// <remarks>
-    /// Between refreshes this returns the last latched value. A container whose condition transitively references itself reads its own
-    /// <see cref="IsRun"/> as <see langword="false"/> mid-resolution, which matches the original starting
-    /// every container un-run and only latching true once the condition first evaluates true.
+    /// Before its first tick a container Project I.G.I.'s gate prepared settles here, through
+    /// <see cref="ConditionResolver"/>. One whose condition transitively names itself reads its own <see cref="IsRun"/> as
+    /// <see langword="false"/> mid-settling, as the original starts every container un-run.
     /// </remarks>
     public bool IsRun
     {
         get
         {
-            if (_isRun is { } cached)
+            if (_isRun is { } latched)
             {
-                return cached;
+                return latched != 0;
             }
 
             if (ConditionResolver is null)
             {
-                // No gate prepared this tree: fall back to "running" so nothing is silently hidden.
                 return true;
             }
 
             if (_resolving)
             {
-                // A cycle in the condition graph: the original has not latched this container true yet.
                 return false;
             }
 
             _resolving = true;
             try
             {
-                _isRun = ConditionResolver(this);
+                _isRun = ConditionResolver(this) == true ? (byte)1 : (byte)0;
             }
             finally
             {
                 _resolving = false;
             }
 
-            return _isRun.Value;
+            return _isRun.Value != 0;
         }
     }
 
     /// <summary>
-    /// Gets or sets whether the container's children are registered in the world -- the original's <c>active</c>
-    /// byte (<c>+274</c>), distinct from <see cref="IsRun"/>.
+    /// Gets or sets whether the container's children are in the world — the original's <c>active</c> byte, distinct from
+    /// <see cref="IsRun"/>.
     /// </summary>
     /// <remarks>
-    /// A container activates its subtree in the same update its condition first holds, but on the tick the
-    /// condition fails it still runs its children once more and only deactivates them the tick after -- so
-    /// <c>active</c> drops a tick after <c>run</c>. The mission loader
-    /// starts it equal to <see cref="IsRun"/>.
+    /// A level's children are in the world as it loads (I.G.I. 2's <c>ConditionalContainer_CreateHandler</c>,
+    /// <c>igi2 0x520E90</c>, sets it), so a container whose condition fails on its first tick takes them out then. In
+    /// Project I.G.I. the children run once more on the tick the condition fails, so this drops a tick after
+    /// <see cref="IsRun"/>.
     /// </remarks>
     public bool IsActive { get; set; } = true;
 
-    /// <summary>The container's update in the level walk -- <c>0x4874E0</c>.</summary>
-    /// <param name="walker">The walk.</param>
-    /// <remarks>
-    /// The condition is read when the walk reaches the container. On a rising edge the children are brought
-    /// into the world and run in the same call; while the condition held last tick they run once more; a
-    /// container false this tick and last takes its children out of the world and runs none of them. The start
-    /// and stop expressions run after the children.
-    /// </remarks>
-    public void Update(LevelUpdateWalker walker)
+    /// <summary>
+    /// Gets a value indicating whether Project I.G.I.'s gate and cut-scene runtime settle this container outside the tick.
+    /// I.G.I. 2's container answers <see langword="false"/>: it is settled only by its own run.
+    /// </summary>
+    public virtual bool SettlesOutsideTheTick => true;
+
+    /// <summary>Gets the <c>isRun</c> byte, nought until the container settles.</summary>
+    protected byte RunByte => _isRun ?? 0;
+
+    /// <summary>Sets the <c>isRun</c> byte, as a script write or a save does.</summary>
+    /// <param name="value">The byte.</param>
+    protected void SetRunByte(byte value) => _isRun = value;
+
+    /// <inheritdoc/>
+    /// <remarks>The shared run handler; a level run with no <see cref="IConditionalContainerRules"/> runs the children as a plain container.</remarks>
+    public override void Run(LevelRun level)
     {
-        ArgumentNullException.ThrowIfNull(walker);
-        bool old = _isRun ?? false;
-        bool run = walker.HoldContainer?.Invoke(this) == true
-            ? old
-            : ConditionResolver?.Invoke(this) ?? true;
-        _isRun = run;
-        if (run || old)
+        ArgumentNullException.ThrowIfNull(level);
+        if (level is not IConditionalContainerRules rules)
+        {
+            level.RunChildren(this);
+            return;
+        }
+
+        bool wasRun = _isRun is { } before && before != 0;
+        if (rules.Condition(this) is { } holds)
+        {
+            _isRun = holds ? (byte)1 : (byte)0;
+        }
+
+        bool run = _isRun is { } now && now != 0;
+        _isRun ??= 0;
+        if (run || (wasRun && rules.RunsChildrenTheTickItStops))
         {
             if (!IsActive)
             {
+                rules.PutChildrenInWorld(this);
                 IsActive = true;
-                LevelUpdateWalker.Activate(this);
             }
 
-            walker.WalkChildren(this);
+            level.RunChildren(this);
         }
         else if (IsActive)
         {
+            rules.TakeChildrenOutOfWorld(this);
             IsActive = false;
-            walker.Deactivate(this);
         }
 
-        if (run != old)
+        if (run && !wasRun)
         {
-            walker.ContainerTransition?.Invoke(this, run);
+            rules.RunScript(this, RunAtStart);
+        }
+        else if (!run && wasRun)
+        {
+            rules.RunScript(this, RunAtStop);
         }
     }
 
-    /// <summary>Re-evaluates the live condition and returns whether the registration state changed.</summary>
-    /// <param name="started"><see langword="true"/> when this transition registered the subtree.</param>
+    /// <summary>Settles the condition again outside the tick and returns whether <see cref="IsRun"/> changed.</summary>
+    /// <param name="started"><see langword="true"/> when this change started the container.</param>
+    /// <returns>Whether it changed.</returns>
     internal bool Refresh(out bool started)
     {
-        bool before = _isRun ?? false;
-        bool after = ConditionResolver?.Invoke(this) ?? true;
-        _isRun = after;
+        bool before = _isRun is { } latched && latched != 0;
+        bool after = ConditionResolver is null ? true : ConditionResolver(this) ?? before;
+        _isRun = after ? (byte)1 : (byte)0;
         started = !before && after;
         return before != after;
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Both games bind the byte writable (I.G.I. 2's <c>ConditionalContainer_RegisterScriptSymbolsHandler</c>,
+    /// <c>igi2 0x521210</c>). Other tasks read it: Project I.G.I.'s <c>LevelTimer_999</c> gates on
+    /// <c>ConditionalContainer_4001.isRun</c>.
+    /// </remarks>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(variables);
+        variables.BindInt(this, "isRun", ReadRunByte, value => _isRun = (byte)value, sizeof(byte));
+    }
 
-        // Other tasks read this: LevelTimer_999 gates on ConditionalContainer_4001.isRun, and the player's
-        // own container 1495 gates on 4001/4007's isRun. Bound writable because the original binds the byte
-        // writable (QVM_BindVar); a write pins the memoised result.
-        variables.BindBool(this, "isRun", () => IsRun, value => _isRun = value);
+    // A read settles the container first; one no gate prepared reads as running.
+    private int ReadRunByte()
+    {
+        bool run = IsRun;
+        return _isRun ?? (run ? 1 : 0);
     }
 }

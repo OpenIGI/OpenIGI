@@ -3,6 +3,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using Xunit;
 using Signal = OpenIGI.Game.Player.HumanSoldierBodyMachine.Signal;
+using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 
@@ -147,7 +148,7 @@ public sealed class HumanSoldierBodyRetailTests
     [Fact]
     public void ACorpseStopsSlidingWhenItsDeathClipEnds()
     {
-        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.Kill(new Vector3d(10, 0, 0));
 
         soldier.TickDeadBody(default, deathClipEnded: false);

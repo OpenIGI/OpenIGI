@@ -29,14 +29,14 @@ OPENIGI_PUSH_CONSTANT(ObjectVelocityPush, push);
 struct Varyings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float4 currentClip;
-    [[vk::location(1)]] float4 previousClip;
+    [[vk::location(0)]] float4 currentClip : TEXCOORD0;
+    [[vk::location(1)]] float4 previousClip : TEXCOORD1;
 };
 
 [shader("vertex")]
 Varyings vertexMain(
-    [[vk::location(0)]] float3 position,
-    [[vk::location(1)]] float3 previousPosition)
+    [[vk::location(0)]] float3 position : TEXCOORD0,
+    [[vk::location(1)]] float3 previousPosition : TEXCOORD1)
 {
     Varyings output;
 

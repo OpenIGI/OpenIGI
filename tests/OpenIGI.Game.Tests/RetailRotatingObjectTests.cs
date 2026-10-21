@@ -10,6 +10,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -103,9 +104,13 @@ public sealed class RetailRotatingObjectTests
         Assert.True(towerRotor.CurrentSpeedZ > 0f);
         Assert.True(towerRotor.AngleZ > 0f);
 
-        // Retail explicitly authors this separate RotatingObject with the false expression "0".
+        // Retail authors this separate RotatingObject with the false expression "0", which zeroes its target speed
+        // (0x439090) -- but the post-load (0x4395D0) starts it at its authored 25 degrees a second and it has no
+        // acceleration to slow by, so it never stops.
         Assert.False(domeRotor.IsActive);
-        Assert.Equal(0f, domeRotor.AngleZ);
+        Assert.Equal(0f, domeRotor.TargetSpeedZ);
+        Assert.Equal(25f, domeRotor.CurrentSpeedZ);
+        Assert.InRange(domeRotor.AngleZ, 24.999f, 25.001f);
 
         Assert.True(registry.TryGetDrawTransform(
             towerRotor.Placement,
@@ -122,6 +127,92 @@ public sealed class RetailRotatingObjectTests
         Matrix3f oriInterp0 = towerRotor.PresentedOrientation(0f, true);
         Matrix3f oriInterp1 = towerRotor.PresentedOrientation(1f, true);
         Assert.NotEqual(oriInterp0, oriInterp1);
+    }
+
+    [RequiresGameDataFact]
+    public void SwitchingOffForOneTickRunsTheRotorDownForGood()
+    {
+        // 0x439090 zeroes the target speeds themselves; nothing restores them, so an expression false for a moment (Mission
+        // 8's fan, on while !Switch_260.isPressed) stops the object for the rest of the level.
+        RotatingObjectRegistry registry = LoadRegistry(3);
+        PlacedRotatingObject rotor = Assert.Single(
+            registry.Objects,
+            obj => !obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+        Assert.Equal(90f, rotor.CurrentSpeedZ);
+
+        rotor.TickRotatingObject(switchedOff: true);
+        for (int tick = 0; tick < 30; tick++)
+        {
+            rotor.TickRotatingObject(switchedOff: false);
+        }
+
+        Assert.Equal(0f, rotor.TargetSpeedZ);
+        Assert.False(rotor.IsActive);
+
+        // A degree a second squared: 31 ticks take a thirtieth of a degree a second each off 90.
+        Assert.InRange(rotor.CurrentSpeedZ, 88.96f, 88.97f);
+    }
+
+    [RequiresGameDataFact]
+    public void AShotRadarDishRunsDownAndStaysStill()
+    {
+        // RadarDish's WeaponHit (0x449260) zeroes the speed it wants; its update (0x448E30) then takes its acceleration off
+        // a thirtieth at a time. Level 5's tower dish turns at 90 degrees a second and slows by 15.
+        RotatingObjectRegistry registry = LoadRegistry(5);
+        PlacedRotatingObject dish = Assert.Single(
+            registry.Objects,
+            obj => obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+
+        registry.WeaponHit(dish.Owner, dish.Placement);
+        registry.Tick();
+
+        Assert.Equal(0f, dish.TargetSpeedZ);
+        Assert.InRange(dish.CurrentSpeedZ, 89.49f, 89.51f);
+
+        for (int tick = 0; tick < 180; tick++)
+        {
+            registry.Tick();
+        }
+
+        float angle = dish.AngleZ;
+        registry.Tick();
+        Assert.Equal(0f, dish.CurrentSpeedZ);
+        Assert.Equal(angle, dish.AngleZ);
+    }
+
+    [RequiresGameDataFact]
+    public void ARoundLeavesARotorThatIsNotDestructableTurning()
+    {
+        // RotatingObject's WeaponHit (0x439750) breaks it only when it is Destructable, which no shipped one is.
+        RotatingObjectRegistry registry = LoadRegistry(3);
+        PlacedRotatingObject rotor = Assert.Single(
+            registry.Objects,
+            obj => !obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+
+        registry.WeaponHit(rotor.Owner, rotor.Placement);
+        rotor.TickRotatingObject(switchedOff: false);
+
+        Assert.False(rotor.IsDestructable);
+        Assert.False(rotor.IsBroken);
+        Assert.Equal(90f, rotor.TargetSpeedZ);
+        Assert.True(rotor.IsActive);
+    }
+
+    [RequiresGameDataFact]
+    public void ARotorsAngleWrapsOnlyFromAbove()
+    {
+        RotatingObjectRegistry registry = LoadRegistry(3);
+        PlacedRotatingObject rotor = Assert.Single(
+            registry.Objects,
+            obj => !obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+
+        // 90 degrees a second: three degrees a tick, a full turn in 120 ticks and back under 360 on the next.
+        for (int tick = 0; tick < 121; tick++)
+        {
+            rotor.TickRotatingObject(switchedOff: false);
+        }
+
+        Assert.InRange(rotor.AngleZ, 2.99f, 3.01f);
     }
 
     private static RotatingObjectRegistry LoadRegistry(int levelNumber)

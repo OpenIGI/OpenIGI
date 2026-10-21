@@ -17,28 +17,12 @@ internal static class Igi2LevelScene
 {
     /// <summary>Builds the drawable scene, keeping the registry it was read through.</summary>
     /// <param name="level">The level.</param>
+    /// <param name="magic">The magic object types attach points are looked up in, or <see langword="null"/> to place them by name.</param>
     /// <returns>The scene and the registry.</returns>
-    public static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) Build(Igi2Level level)
+    public static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) Build(Igi2Level level, World.Igi2MagicObjTypes? magic = null)
     {
-        // The real tree behind the registry, because the common pack names six animation sets and the
-        // pack loader reads them straight through the file system rather than from a registered key.
+        (List<LoadedPack> packs, ResourceRegistry resources) = Packs(level);
         string root = GameDataSource.Igi2.RequireRoot();
-        VirtualFileSystem files = new();
-        files.RegisterDevice(new LocalFileDevice(root));
-        ResourceRegistry resources = new(files);
-        List<LoadedPack> packs = [];
-
-        foreach ((string directory, string name) in level.PackSources())
-        {
-            Register(resources, directory, name, root);
-            packs.Add(LoadedPack.Open(
-                ResourceDirectory(directory, root),
-                name,
-                resources,
-                logger: null,
-                AssetFormatProfile.Igi2));
-        }
-
         string levelDirectory = ResourceDirectory(level.Directory, root);
         LoadedMission mission = new(
             new MissionDescriptor(
@@ -63,8 +47,36 @@ internal static class Igi2LevelScene
                 level.Root,
                 level.Table,
                 level.HasLightmaps ? level.Lightmaps : null,
-                packs),
+                packs,
+                magic: magic),
             resources);
+    }
+
+    /// <summary>Opens the level's four packs in load order, through a registry they register their archives in.</summary>
+    /// <param name="level">The level.</param>
+    /// <returns>The packs and the registry.</returns>
+    public static (List<LoadedPack> Packs, ResourceRegistry Resources) Packs(Igi2Level level)
+    {
+        // The real tree behind the registry, because the common pack names six animation sets and the
+        // pack loader reads them straight through the file system rather than from a registered key.
+        string root = GameDataSource.Igi2.RequireRoot();
+        VirtualFileSystem files = new();
+        files.RegisterDevice(new LocalFileDevice(root));
+        ResourceRegistry resources = new(files);
+        List<LoadedPack> packs = [];
+
+        foreach ((string directory, string name) in level.PackSources())
+        {
+            Register(resources, directory, name, root);
+            packs.Add(LoadedPack.Open(
+                ResourceDirectory(directory, root),
+                name,
+                resources,
+                logger: null,
+                AssetFormatProfile.Igi2));
+        }
+
+        return (packs, resources);
     }
 
     private static string ResourceDirectory(string directory, string root) =>

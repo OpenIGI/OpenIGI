@@ -37,13 +37,12 @@ struct MeshPush
     //    lit by the key below; TWO is that same rig shaded as ordinary geometry.
     // y: one over the exposure the resolve will apply.
     // z: how much of the previous pose is in the position drawn.
-    // w: for the rig, the ambient level under the key light. For a world draw, the x of the
-    //    model-space direction towards the fixed-function sun, or zero.
+    // w: for the rig, the ambient level under the key light; zero for ordinary world draws.
     float4 markerExposure;
 
     // The model-to-view rotation, row by row; each w carries one channel of the key colour for
-    // the rig, and for a world draw the first is the terrain flag and the other two the y and z
-    // of the sun direction above. For terrain the first row is the level-of-detail ramp and the
+    // the rig. Ordinary world draws carry their complete model-space sun in normalKey0.xyz,
+    // and normalKey0.w is the terrain flag. For terrain the first row is the level-of-detail ramp and the
     // second row's xyz is the chunk's origin relative to the eye. The third row is the frame's
     // distance fog for every draw but the lit rig.
     float4 normalKey0;
@@ -91,31 +90,31 @@ OPENIGI_PUSH_CONSTANT(MeshPush, push);
 
 struct VertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
 
     // The mesh's PREVIOUS pose. The first-person rig is skinned on the processor like a body,
     // and this is the pose it was last given; everything else reports its own buffer here, so
     // its delta is zero to the bit.
-    [[vk::location(5)]] float3 previousPosition;
-    [[vk::location(6)]] float3 previousNormal;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
+    [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
 };
 
 struct Varyings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 diffuseUv;
-    [[vk::location(1)]] float2 lightmapUv;
-    [[vk::location(2)]] float4 color;
-    [[vk::location(3)]] float3 normal;
-    [[vk::location(4)]] float fade;
+    [[vk::location(0)]] float2 diffuseUv : TEXCOORD0;
+    [[vk::location(1)]] float2 lightmapUv : TEXCOORD1;
+    [[vk::location(2)]] float4 color : TEXCOORD2;
+    [[vk::location(3)]] float3 normal : TEXCOORD3;
+    [[vk::location(4)]] float fade : TEXCOORD4;
 
     // How much of this vertex's surface the air leaves, one at the eye and falling with depth.
-    [[vk::location(5)]] float fog;
-    [[vk::location(6)]] float3 reflection;
+    [[vk::location(5)]] float fog : TEXCOORD5;
+    [[vk::location(6)]] float3 reflection : TEXCOORD6;
 };
 
 /// The vertex stage: model space to Vulkan clip space, colour unswizzled from BGRA.
@@ -170,7 +169,11 @@ Varyings vertexMain(VertexInput input)
         // sum to one across every pass and both scales.
         float selector = input.colorBgra.a * 3.0;
         float material = selector < 0.5 ? 0.0 : (selector < 1.5 ? morph : (selector < 2.5 ? 1.0 - morph : 1.0));
-        output.fade = material * (terrain > 1.5 ? 1.0 - morph : morph);
+
+        // Three is a pass that covers the chunk once and has no share in the cross-fade -- Project
+        // I.G.I.'s terrain lightmap, multiplied over everything the material passes added: the
+        // morph slides it with the ground and nothing scales it.
+        output.fade = terrain > 2.5 ? 1.0 : material * (terrain > 1.5 ? 1.0 - morph : morph);
     }
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));
@@ -198,8 +201,8 @@ Varyings vertexMain(VertexInput input)
     // The sun on an object with no bake, as Direct3D's vertex pipeline computed it for I.G.I. 2
     // (Direct3DRender_SetGenericStateRigid, igi2ed 0x56CA90): the global ambient plus the
     // light's diffuse times the cosine to the normal, saturated to one.
-    float3 sunModel = float3(push.markerExposure.w, push.normalKey1.w, push.normalKey2.w);
-    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && dot(sunModel, sunModel) > 0.25)
+    float3 sunModel = push.normalKey0.xyz;
+    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)
     {
         float normalLength = length(localNormal);
         float facing = normalLength > 0.0 ? dot(localNormal / normalLength, sunModel) : 0.0;
@@ -279,7 +282,7 @@ float4 fragmentMain(Varyings input) : SV_Target
     // The level's flat light on models, and the two draws it is not for: terrain, which is lit
     // by its materials, and anything blended, which the original draws with Direct3D lighting
     // off. White everywhere else it does not apply, so this is a multiply and not a branch.
-    float3 modelTint = (push.normalKey0.w > 0.5 || marker < 0.5) ? float3(1.0, 1.0, 1.0) : push.normalKey1.xyz;
+    float3 modelTint = (abs(push.normalKey0.w) > 0.5 || marker < 0.5) ? float3(1.0, 1.0, 1.0) : push.normalKey1.xyz;
 
     // What the sampled lightmap is multiplied by before it modulates the texture: the device's
     // lightmap scale, which a WORLD draw carries in the exposure slot it has no other use for.
@@ -311,7 +314,11 @@ float4 fragmentMain(Varyings input) : SV_Target
         // What the hardware fog did for the original: the surface faded into the air's own
         // colour, which an additive pass is handed as black so that a ground drawn as several
         // passes fogs once rather than once per pass.
-        float3 shown = lerp(push.normalKey2.xyz, base, input.fog);
+        // pc_terrainrender.c TerrainRender_SetBlendMode: SRCALPHA weights the result AFTER hardware fog.
+        // IGI2 stores the material share in grey RGB, so fog must carry the same share as the texture.
+        // Otherwise each extra material contributes a whole blue haze triangle, even at zero weight.
+        float fogShare = push.normalKey0.w < -0.5 ? input.color.r : 1.0;
+        float3 shown = lerp(push.normalKey2.xyz * fogShare, base, input.fog);
         if (cLinearScene != 0)
         {
             // The lightmap scale and the inverse exposure, together: see ForwardPushBlock.

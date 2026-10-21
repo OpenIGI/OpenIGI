@@ -8,7 +8,7 @@
 /// The original holds this as one block of statics — the profile count at <c>0xBC2380</c>, the active
 /// index at <c>0xBC2384</c>, and sixteen 1380-byte records from <c>0xBC2388</c>. The save file is
 /// <c>config.qvm</c>, a compiled script whose whole body is calls into the <c>GO*</c> loaders; see
-/// <see cref="ConfigScript"/>.
+/// <c>ConfigScript</c>.
 /// </para>
 /// <para>
 /// Only the content-control password is global. Everything else is per profile, including the

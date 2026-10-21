@@ -15,6 +15,8 @@ using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -142,7 +144,7 @@ public sealed class MissionFourFriendlyActivationTests
         AiScriptHost host = new(natives, NullLogger.Instance);
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "missions", "location0", "level4", "graphs", "graph1.dat")));
-        AiSoldier soldier = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 1);
         QvmProgram perTask = QvmProgram.Read(File.ReadAllBytes(MissionAiPath(500)));
         QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "common", "ai", "guard.qvm")));
@@ -169,7 +171,7 @@ public sealed class MissionFourFriendlyActivationTests
         Assert.NotEqual(AiSoldierActivity.Engaging, soldier.Activity);
 
         stage = 2;
-        AiSoldier postJosip = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 2);
+        Igi1HumanAi postJosip = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 2);
         postJosip.SetPatrolPaths(paths);
         postJosip.SetScript(host, perTask, guard);
         postJosip.Tick(10, far, rootMotionThisTick: 0.0, enemyAlive: false);
@@ -213,7 +215,7 @@ public sealed class MissionFourFriendlyActivationTests
         // test value, and dispatches retail 500.qvm's first post-guard patrol. A new brain is the
         // public simulation seam here: its first tick is the creation alone (0x44F410's first pass), and
         // the no-event IDLE dispatch is the next tick's.
-        AiSoldier firstAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 1);
+        Igi1HumanAi firstAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 1);
         Vector3d far = new(
             firstAdvanceFriendly.Position.X,
             firstAdvanceFriendly.Position.Y + (500 * 4096.0),
@@ -241,7 +243,7 @@ public sealed class MissionFourFriendlyActivationTests
 
         // 500.qvm maps stage two to patrol 725. The authored path's first movement is the run toward
         // node 113, so this is the exact rescue-building advance instead of merely checking a counter.
-        AiSoldier secondAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 2);
+        Igi1HumanAi secondAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 2);
         secondAdvanceFriendly.Tick(1, far, rootMotionThisTick: 0.0, enemyAlive: false);
         secondAdvanceFriendly.Tick(2, far, rootMotionThisTick: 0.0, enemyAlive: false);
         AiProducedAction secondAdvance = Assert.Single(
@@ -346,7 +348,7 @@ public sealed class MissionFourFriendlyActivationTests
             GameData.RequireRoot(), "missions", "location0", "level4", "graphs", "graph1.dat")));
         QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "common", "ai", "guard.qvm")));
-        AiSoldier harrison = NewFriendly(
+        Igi1HumanAi harrison = NewFriendly(
             graph, paths, host, QvmProgram.Read(File.ReadAllBytes(MissionAiPath(500))), guard, seed: 1);
         Vector3d far = new(harrison.Position.X, harrison.Position.Y + (500 * 4096.0), harrison.Position.Z);
 
@@ -368,7 +370,7 @@ public sealed class MissionFourFriendlyActivationTests
     private static string MissionAiPath(int id) => Path.Combine(
         GameData.RequireRoot(), "missions", "location0", "level4", "ai", $"{id}.qvm");
 
-    private static AiSoldier NewFriendly(
+    private static Igi1HumanAi NewFriendly(
         GraphFile graph,
         AiPatrolPathRegistry paths,
         AiScriptHost host,
@@ -376,7 +378,7 @@ public sealed class MissionFourFriendlyActivationTests
         QvmProgram guard,
         int seed)
     {
-        AiSoldier friendly = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: seed);
+        Igi1HumanAi friendly = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: seed);
         friendly.SetPatrolPaths(paths);
         friendly.SetScript(host, script, guard);
         return friendly;

@@ -1,9 +1,9 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
-using OpenIGI.Game.Menus;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 
@@ -84,7 +84,7 @@ public sealed class MenuFlowBootTests
     {
         Harness harness = Boot();
 
-        harness.Menu.Manager.Navigator.Leave(MenuManagerState.Quit);
+        harness.Menu.Manager.Navigator.Leave(0, MenuManagerState.Quit);
 
         // Leaving fades out first and enters the leave state at the bottom of the fade, which is what
         // the original's "state 6, with the requested state parked beside it" does (0x417790).
@@ -205,12 +205,12 @@ public sealed class MenuFlowBootTests
             return drained;
         }
 
-        public void PrepareScreen(MenuScreenTask screen)
+        public void PrepareWindow(MenuWindowTask window)
         {
             Prepared++;
 
             // Give every entry a size so the line-up has something to place.
-            foreach (MenuTextTask entry in Descend(screen).OfType<MenuTextTask>())
+            foreach (MenuTextTask entry in Descend(window).OfType<MenuTextTask>())
             {
                 entry.LayoutWidth = 80;
                 entry.LayoutHeight = 16;
@@ -218,6 +218,10 @@ public sealed class MenuFlowBootTests
         }
 
         public void DrawScreen(MenuScreenTask screen) => Drawn++;
+
+        public void DrawPopup(DialogWindowTask popup, int alpha)
+        {
+        }
 
         public void DrawPointer(int x, int y) => PointerDrawn++;
 

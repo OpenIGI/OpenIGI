@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Ai;
 
@@ -42,6 +43,19 @@ public readonly record struct SecurityCameraSubject(
     bool CamerasSide,
     bool Alive,
     GameTask? Task = null);
+
+/// <summary>What a lens's scan is offered besides the cameras themselves, as it stands when the lens updates.</summary>
+/// <param name="TargetFeet">The player's feet, in engine units.</param>
+/// <param name="TargetCrouching">Whether the player is crouching, which lowers the mark.</param>
+/// <param name="TargetAlive">Whether the player is alive.</param>
+/// <param name="PlayerOnCamerasSide">Whether the player is on team 1, the cameras' side.</param>
+/// <param name="Soldiers">Every live soldier in the global human list's order (<c>0x45FE30</c>).</param>
+public readonly record struct SecurityCameraScan(
+    Vector3d TargetFeet,
+    bool TargetCrouching,
+    bool TargetAlive,
+    bool PlayerOnCamerasSide,
+    IReadOnlyList<SecurityCameraSubject> Soldiers);
 
 /// <summary>The lens lamp selected by retail <c>SCameraLens</c>'s render callback.</summary>
 public enum SecurityCameraLamp
@@ -131,6 +145,15 @@ public sealed class SecurityCamera
 
     /// <summary>Gets the level expression that powers the camera.</summary>
     public string OnExpression { get; }
+
+    /// <summary>Gets whether the holder is powered: <c>SCamera</c>'s <c>+360</c>.</summary>
+    /// <remarks>
+    /// The holder's update (<c>0x442610</c>) runs its lens first and only then writes this from its On Expression
+    /// -- nought once exploded (<c>+368</c>), unchanged when it has no expression -- so the lens (<c>0x441770</c>)
+    /// always reads the value the holder left last tick. The constructor (<c>0x4423F0</c>) starts it at nought:
+    /// a camera's first tick is unpowered.
+    /// </remarks>
+    public bool IsPowered { get; internal set; }
 
     /// <summary>Gets the live/destroyed head's intact model name.</summary>
     public string HeadModelName { get; }
@@ -485,10 +508,11 @@ public sealed class SecurityCamera
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
 public sealed class SecurityCameraRegistry
 {
-    private sealed class Control(DeclaredTask task, string expression)
+    private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded)
     {
         public DeclaredTask Task { get; } = task;
         public string Expression { get; } = expression;
+        public Func<bool> IsExploded { get; } = isExploded;
         public bool IsDetection { get; set; }
     }
 
@@ -542,6 +566,52 @@ public sealed class SecurityCameraRegistry
     /// <summary>The key the player goes by among a camera's scan subjects.</summary>
     public static readonly object PlayerKey = new();
 
+    /// <summary>Puts every camera and every <c>SCameraControl</c> into the level walk, each updating where the walk reaches it.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="scan">What a lens scans at the moment it updates: the player and every live soldier.</param>
+    /// <param name="ticked">Called after each camera's update, to carry its head's new transform.</param>
+    /// <remarks>
+    /// <c>SCamera</c>'s update (<c>0x442610</c>) runs its children -- the lens, which sweeps and scans
+    /// (<c>0x441770</c>) -- and then evaluates its power. <c>SCameraControl</c>'s (<c>0x440D70</c>) runs its terminal's
+    /// and then its Detection Expression, so a control reads this tick's isDetection from every camera ahead of it in
+    /// the tree and last tick's from those after.
+    /// </remarks>
+    public void AttachTo(LevelUpdateWalker walker, Func<SecurityCameraScan> scan, Action<SecurityCamera>? ticked = null)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        ArgumentNullException.ThrowIfNull(scan);
+        foreach (SecurityCamera camera in _cameras)
+        {
+            walker.Bind(camera.Task, task =>
+            {
+                TickLens(camera, BuildSubjects(scan()));
+                walker.RunChildren(task);
+                UpdatePower(camera);
+                ticked?.Invoke(camera);
+            });
+        }
+
+        // SCameraControl's update (0x440D70) is Terminal's, then its isDetection: a terminal already bound in the walk runs
+        // first, its children with it.
+        foreach (Control control in _controls)
+        {
+            Action<GameTask>? terminal = walker.TryGetBound(control.Task, out Action<GameTask>? bound) ? bound : null;
+            walker.Bind(control.Task, task =>
+            {
+                if (terminal is not null)
+                {
+                    terminal(task);
+                }
+                else
+                {
+                    walker.RunChildren(task);
+                }
+
+                UpdateDetection(control);
+            });
+        }
+    }
+
     /// <summary>Advances all lenses against the player alone.</summary>
     public void Tick(Vector3d targetFeet, bool targetCrouching, bool targetAlive) =>
         Tick(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide: false, []);
@@ -564,6 +634,56 @@ public sealed class SecurityCameraRegistry
     {
         ArgumentNullException.ThrowIfNull(soldiers);
 
+        List<SecurityCameraSubject> subjects = BuildSubjects(
+            new SecurityCameraScan(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide, soldiers));
+        foreach (SecurityCamera camera in _cameras)
+        {
+            TickLens(camera, subjects);
+            UpdatePower(camera);
+        }
+
+        foreach (Control control in _controls)
+        {
+            UpdateDetection(control);
+        }
+    }
+
+    // The lens's update (0x441770), against the holder's power as last tick left it.
+    private void TickLens(SecurityCamera camera, IReadOnlyList<SecurityCameraSubject> subjects) =>
+        camera.Tick(camera.IsPowered, subjects, _sight);
+
+    // The rest of the holder's update (0x442610): off once exploded, otherwise its On Expression when it has one.
+    private void UpdatePower(SecurityCamera camera)
+    {
+        if (camera.IsExploded)
+        {
+            camera.IsPowered = false;
+        }
+        else if (!string.IsNullOrWhiteSpace(camera.OnExpression))
+        {
+            camera.IsPowered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: false, camera.Task);
+        }
+    }
+
+    // SCameraControl's own half of 0x440D70: held off once the control has exploded (+400), otherwise its Detection
+    // Expression when it has one.
+    private void UpdateDetection(Control control)
+    {
+        if (control.IsExploded())
+        {
+            control.IsDetection = false;
+        }
+        else if (!string.IsNullOrWhiteSpace(control.Expression))
+        {
+            control.IsDetection = _expressions.EvaluateCondition(control.Expression, emptyValue: false, control.Task);
+        }
+    }
+
+    // What 0x489750 is offered: the player, the soldiers in the global human list's order, then every camera (0x442A30).
+    private List<SecurityCameraSubject> BuildSubjects(SecurityCameraScan scan)
+    {
+        Vector3d targetFeet = scan.TargetFeet;
+        bool targetCrouching = scan.TargetCrouching;
         _subjects.Clear();
         _subjects.Add(new SecurityCameraSubject(
             PlayerKey,
@@ -573,26 +693,16 @@ public sealed class SecurityCameraRegistry
                 targetFeet.Z + (targetCrouching
                     ? SecurityCamera.CrouchingTargetHeight
                     : SecurityCamera.StandingTargetHeight)),
-            playerOnCamerasSide,
-            targetAlive));
-        _subjects.AddRange(soldiers);
+            scan.PlayerOnCamerasSide,
+            scan.TargetAlive));
+        _subjects.AddRange(scan.Soldiers);
         foreach (SecurityCamera camera in _cameras)
         {
             _subjects.Add(new SecurityCameraSubject(
                 camera, camera.HolderPositionUnits, CamerasSide: true, Alive: !camera.IsExploded, camera.Task));
         }
 
-        foreach (SecurityCamera camera in _cameras)
-        {
-            bool powered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: true, camera.Task);
-            camera.Tick(powered, _subjects, _sight);
-        }
-
-        foreach (Control control in _controls)
-        {
-            control.IsDetection = _expressions.EvaluateCondition(
-                control.Expression, emptyValue: false, control.Task);
-        }
+        return _subjects;
     }
 
     /// <summary>Marks a camera's lens exploded immediately when its damage handler fires.</summary>
@@ -653,7 +763,11 @@ public sealed class SecurityCameraRegistry
         else if (task is DeclaredTask controlTask
             && string.Equals(task.Type.Name, "SCameraControl", StringComparison.Ordinal))
         {
-            Control control = new(controlTask, ReadString(controlTask, "Detection Expression"));
+            string explodedSymbol = $"{controlTask.Name}.isExploded";
+            Control control = new(
+                controlTask,
+                ReadString(controlTask, "Detection Expression"),
+                () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls.Add(control);
             variables.BindBool(task, "isDetection", () => control.IsDetection, value => control.IsDetection = value);
         }

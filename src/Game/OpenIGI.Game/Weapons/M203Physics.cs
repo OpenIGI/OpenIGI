@@ -26,12 +26,6 @@ public readonly record struct M203Detonation(
 /// <summary>The M203 projectile physics read from the native M16A2/M203 callbacks.</summary>
 public static class M203Physics
 {
-    /// <summary>The per-tick horizontal and vertical drag, <c>0x3f7eb852</c>.</summary>
-    public const float Drag = 0.995f;
-
-    /// <summary>The native gravity subtraction per tick, <c>0x420eb90c</c>.</summary>
-    public const float GravityPerTick = 35.68070983886719f;
-
     /// <summary>The first launch-speed multiplier used by the native M16A2 callback.</summary>
     private const float NativeMuzzleSpeedMultiplier = 4096000f;
 
@@ -212,16 +206,11 @@ public sealed class M203Simulation
             M203ProjectileState projectile = _projectiles[i];
             projectile.PreviousPosition = projectile.Position;
 
-            // Native 0x476340: vx *= .995, vy *= .995, vz = (vz - 35.6807098) * .995.
-            projectile.Velocity = new Vector3f(
-                projectile.Velocity.X * M203Physics.Drag,
-                projectile.Velocity.Y * M203Physics.Drag,
-                (projectile.Velocity.Z - M203Physics.GravityPerTick) * M203Physics.Drag);
-
-            Vector3d candidate = new(
-                projectile.Position.X + projectile.Velocity.X,
-                projectile.Position.Y + projectile.Velocity.Y,
-                projectile.Position.Z + projectile.Velocity.Z);
+            // Native 0x476340, the engine's impact-round step.
+            Vector3f velocity = projectile.Velocity;
+            Vector3d candidate = projectile.Position;
+            ImpactRoundFlight.Step<X87>(ref velocity, ref candidate);
+            projectile.Velocity = velocity;
 
             WorldRayHit wallHit = default;
             bool struckWall = walls is not null
@@ -234,7 +223,7 @@ public sealed class M203Simulation
             if (struckHuman || struckWall)
             {
                 Vector3f normal = struckHuman
-                    ? Normalize(projectile.Velocity * -1f)
+                    ? (projectile.Velocity * -1f).ReciprocalNormalizedOrSelf(float.Epsilon)
                     : wallHit.Normal;
                 _detonations.Add(new M203Detonation(
                     struckHuman ? humanHit.Position : wallHit.Position,
@@ -259,12 +248,6 @@ public sealed class M203Simulation
         _detonations.Clear();
     }
 
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt(
-            (value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > float.Epsilon ? value * (1f / length) : value;
-    }
 }
 
 /// <summary>Mutable presentation and physics state for one M203 round.</summary>

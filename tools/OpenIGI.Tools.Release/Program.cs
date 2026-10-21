@@ -22,6 +22,13 @@ using OpenIGI.Tools.Release;
 // the packs (content list), renames one, describes it again or changes its picture without publishing a
 // version (content edit), and deletes a pack or one of its versions (content delete --yes).
 
+//   dotnet run --project tools/OpenIGI.Tools.Release -- mods-index check <index> [--base <ref> --author <login>]
+//   dotnet run --project tools/OpenIGI.Tools.Release -- mods-index build <index> <id> <version> --out <dir>
+//
+// What the community mods index's workflows run (see ModsIndex): a pull request is checked against the index's rules and
+// its author's ownership, each version it adds is built (a mod with code from its source), and once merged published
+// with content publish --kind mod.
+
 return ToolHost.Run("Release", args, Run);
 
 static int Run(ToolContext ctx)
@@ -32,10 +39,16 @@ static int Run(ToolContext ctx)
         return ContentCommand.Run(ctx, [.. args.Skip(1)]);
     }
 
+    if (args.Count >= 1 && args[0] == "mods-index")
+    {
+        return ModsIndexCommand.Run(ctx, [.. args.Skip(1)]);
+    }
+
     if (args.Count == 0 || args[0] != "manifest")
     {
         return ctx.Usage(
             ContentCommand.Usage + "\n"
+            + ModsIndexCommand.Usage + "\n"
             + "usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
     }
 

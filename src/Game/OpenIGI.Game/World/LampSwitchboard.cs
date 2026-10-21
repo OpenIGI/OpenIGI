@@ -866,7 +866,7 @@ public sealed class LampSwitchboard
                 lamp.Attempts--;
                 lamp.AttemptStart = t;
                 lamp.Fired = false;
-                lamp.Preheat = 0.5f + NextFloat(ref lamp.Rng);
+                lamp.Preheat = 0.5f + XorShift32.NextUnit(ref lamp.Rng);
                 return 0f;
             }
 
@@ -935,21 +935,21 @@ public sealed class LampSwitchboard
                 // Rolled per switch-on rather than per lamp: the same fitting does not strike identically
                 // every time, and a lamp that always flashes at exactly 90 ms is a canned animation. A cold
                 // tube always goes through its starter; a warm one on an electronic ballast often does not.
-                lamp.Strikes = fromDark && (cold || NextFloat(ref lamp.Rng) < 0.6f);
+                lamp.Strikes = fromDark && (cold || XorShift32.NextUnit(ref lamp.Rng) < 0.6f);
                 lamp.Attempts = !lamp.Strikes ? 0
                     : cold ? ColdStrikeAttempts(ref lamp.Rng)
-                    : NextFloat(ref lamp.Rng) < 0.12f ? 1 : 0;
-                lamp.Ramp = 0.6f + (NextFloat(ref lamp.Rng) * 0.6f);
-                lamp.ColdStart = 0.45f + (NextFloat(ref lamp.Rng) * 0.25f);
+                    : XorShift32.NextUnit(ref lamp.Rng) < 0.12f ? 1 : 0;
+                lamp.Ramp = 0.6f + (XorShift32.NextUnit(ref lamp.Rng) * 0.6f);
+                lamp.ColdStart = 0.45f + (XorShift32.NextUnit(ref lamp.Rng) * 0.25f);
                 RollStrike(ref lamp);
                 break;
 
             case LampCharacter.Discharge:
-                float roll = NextFloat(ref lamp.Rng);
+                float roll = XorShift32.NextUnit(ref lamp.Rng);
                 lamp.Strikes = fromDark;
                 lamp.Attempts = cold ? (roll < 0.55f ? 0 : roll < 0.85f ? 1 : 2) : 0;
-                lamp.Preheat = 0.5f + NextFloat(ref lamp.Rng);
-                lamp.Ramp = cold ? 1.4f + (NextFloat(ref lamp.Rng) * 1.6f) : 0.3f;
+                lamp.Preheat = 0.5f + XorShift32.NextUnit(ref lamp.Rng);
+                lamp.Ramp = cold ? 1.4f + (XorShift32.NextUnit(ref lamp.Rng) * 1.6f) : 0.3f;
                 break;
 
             default:
@@ -968,10 +968,10 @@ public sealed class LampSwitchboard
     private static void RollStrike(ref Lamp lamp)
     {
         lamp.Preheat = lamp.Cold
-            ? 0.35f + (NextFloat(ref lamp.Rng) * 0.8f)
-            : 0.05f + (NextFloat(ref lamp.Rng) * 0.08f);
-        lamp.Peak = lamp.Attempts > 0 ? 0.3f + (NextFloat(ref lamp.Rng) * 0.6f) : 0.95f;
-        lamp.Glow = lamp.Cold ? 0.05f + (NextFloat(ref lamp.Rng) * 0.04f) : 0.12f;
+            ? 0.35f + (XorShift32.NextUnit(ref lamp.Rng) * 0.8f)
+            : 0.05f + (XorShift32.NextUnit(ref lamp.Rng) * 0.08f);
+        lamp.Peak = lamp.Attempts > 0 ? 0.3f + (XorShift32.NextUnit(ref lamp.Rng) * 0.6f) : 0.95f;
+        lamp.Glow = lamp.Cold ? 0.05f + (XorShift32.NextUnit(ref lamp.Rng) * 0.04f) : 0.12f;
     }
 
     /// <summary>How many times a cold tube's starter fails before it catches.</summary>
@@ -981,12 +981,12 @@ public sealed class LampSwitchboard
     /// </remarks>
     private static int ColdStrikeAttempts(ref uint rng)
     {
-        float roll = NextFloat(ref rng);
+        float roll = XorShift32.NextUnit(ref rng);
 
         return roll < 0.42f ? 0
             : roll < 0.72f ? 1
             : roll < 0.88f ? 2
-            : 3 + (int)(NextFloat(ref rng) * 2f);
+            : 3 + (int)(XorShift32.NextUnit(ref rng) * 2f);
     }
 
     /// <summary>Decides what sort of lamp a fixture is, from its colour and a hash of where it is listed.</summary>
@@ -1044,7 +1044,7 @@ public sealed class LampSwitchboard
 
         if (lamp.BrokenLeft <= 0f)
         {
-            float roll = NextFloat(ref lamp.Rng);
+            float roll = XorShift32.NextUnit(ref lamp.Rng);
 
             EnterBroken(ref lamp, lamp.Broken switch
             {
@@ -1091,44 +1091,30 @@ public sealed class LampSwitchboard
             case BrokenPhase.Strike:
                 // Twelve to thirty-five restrikes a second: fast enough to read as a fault rather than as
                 // a signal, slow enough that a 60 Hz frame still resolves individual flashes.
-                lamp.BrokenRate = 12f + (NextFloat(ref lamp.Rng) * 23f);
-                lamp.BrokenPeak = 0.75f + (NextFloat(ref lamp.Rng) * 0.25f);
-                lamp.BrokenLeft = 0.08f + (NextFloat(ref lamp.Rng) * 0.42f);
+                lamp.BrokenRate = 12f + (XorShift32.NextUnit(ref lamp.Rng) * 23f);
+                lamp.BrokenPeak = 0.75f + (XorShift32.NextUnit(ref lamp.Rng) * 0.25f);
+                lamp.BrokenLeft = 0.08f + (XorShift32.NextUnit(ref lamp.Rng) * 0.42f);
                 break;
 
             case BrokenPhase.Run:
-                lamp.BrokenRate = 5f + (NextFloat(ref lamp.Rng) * 9f);
-                lamp.BrokenPeak = 0.8f + (NextFloat(ref lamp.Rng) * 0.2f);
+                lamp.BrokenRate = 5f + (XorShift32.NextUnit(ref lamp.Rng) * 9f);
+                lamp.BrokenPeak = 0.8f + (XorShift32.NextUnit(ref lamp.Rng) * 0.2f);
 
                 // The long phase, and deliberately the widest range of the four: a tube that fails every
                 // second on the second is a metronome. Some of these hold for four seconds and the room
                 // looks fine, which is what makes the next dropout land.
-                lamp.BrokenLeft = 0.4f + (NextFloat(ref lamp.Rng) * 3.6f);
+                lamp.BrokenLeft = 0.4f + (XorShift32.NextUnit(ref lamp.Rng) * 3.6f);
                 break;
 
             case BrokenPhase.Glow:
-                lamp.BrokenRate = 3f + (NextFloat(ref lamp.Rng) * 6f);
-                lamp.BrokenLeft = 0.12f + (NextFloat(ref lamp.Rng) * 0.78f);
+                lamp.BrokenRate = 3f + (XorShift32.NextUnit(ref lamp.Rng) * 6f);
+                lamp.BrokenLeft = 0.12f + (XorShift32.NextUnit(ref lamp.Rng) * 0.78f);
                 break;
 
             default:
-                lamp.BrokenLeft = 0.04f + (NextFloat(ref lamp.Rng) * 0.76f);
+                lamp.BrokenLeft = 0.04f + (XorShift32.NextUnit(ref lamp.Rng) * 0.76f);
                 break;
         }
-    }
-
-    /// <summary>A lamp's own generator: xorshift32, advanced in place.</summary>
-    /// <remarks>
-    /// Per lamp rather than shared, so the number of lamps on a level and the order they are updated in
-    /// cannot change how any one of them behaves — and so a test can pin one lamp's whole sequence.
-    /// </remarks>
-    private static float NextFloat(ref uint state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-
-        return (state >> 8) * (1f / 16777216f);
     }
 
     /// <summary>Which curve, if any, a lamp is currently on.</summary>

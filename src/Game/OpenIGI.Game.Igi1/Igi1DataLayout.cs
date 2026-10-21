@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Igi1;
 
@@ -18,9 +19,6 @@ namespace OpenIGI.Game.Igi1;
 /// </remarks>
 public sealed class Igi1DataLayout : ITitleDataLayout
 {
-    /// <summary>Gets the shared instance.</summary>
-    public static Igi1DataLayout Instance { get; } = new();
-
     /// <inheritdoc/>
     public IReadOnlyList<KeyValuePair<string, string>> StartupAliases { get; } =
     [

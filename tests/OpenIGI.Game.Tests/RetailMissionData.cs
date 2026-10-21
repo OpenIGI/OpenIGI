@@ -8,6 +8,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -78,4 +79,12 @@ internal sealed class RetailMissionData
         vehicles.Load(resources);
         return new RetailMissionData(mission, levelRoot, vehicles, magic);
     }
+}
+
+/// <summary>The tests that share a loaded mission's world, whose casts keep scratch lists of their own: run one at a time.</summary>
+[Xunit.CollectionDefinition(Name)]
+public sealed class RetailMissionWorld
+{
+    /// <summary>The collection's name.</summary>
+    public const string Name = "Retail mission world";
 }

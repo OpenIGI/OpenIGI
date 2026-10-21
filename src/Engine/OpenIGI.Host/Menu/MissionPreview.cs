@@ -8,7 +8,6 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
-using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 

@@ -11,6 +11,8 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -27,7 +29,7 @@ public sealed class AiGroundingTests
     public void DeadBodyRetainsItsLastSupportedHeightWhenAnUpperFloorHasNoCollision()
     {
         Vector3d initial = new(100.0, 200.0, 300.0);
-        AiSoldier soldier = new(graph: null, initial, facing: 0f, phase: 0, seed: 1);
+        Igi1HumanAi soldier = new(graph: null, initial, facing: 0f, phase: 0, seed: 1);
         soldier.SetGroundQuery((double _, double _, double _, out double groundZ) =>
         {
             groundZ = 0.0;

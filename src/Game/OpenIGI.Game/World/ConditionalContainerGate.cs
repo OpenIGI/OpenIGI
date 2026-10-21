@@ -26,9 +26,11 @@ public sealed class ConditionalContainerGate
 {
     private const string LogCategory = "Level";
 
-    private readonly ScriptVarRegistry _variables;
+    private readonly VariablesContext _context;
     private readonly IOpenIgiLogger _logger;
-    private readonly Dictionary<string, ScriptExpression?> _parseCache = new(StringComparer.Ordinal);
+
+    // Each condition is compiled once per owner: this. names the container the condition belongs to.
+    private readonly Dictionary<(string Condition, ConditionalContainerTask Owner), LevelExpression> _expressions = [];
 
     // Diagnostic (headless verification only): IGI_DIAG_FORCE_CC=3902 or IGI_DIAG_FORCE_CC=3902:Expr forces
     // those container ids open regardless of their authored condition -- optionally until the given
@@ -56,7 +58,7 @@ public sealed class ConditionalContainerGate
     public ConditionalContainerGate(ScriptVarRegistry variables, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        _variables = variables;
+        _context = new VariablesContext(variables);
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -136,7 +138,7 @@ public sealed class ConditionalContainerGate
         return dormant;
     }
 
-    private bool Resolve(ConditionalContainerTask container)
+    private bool? Resolve(ConditionalContainerTask container)
     {
         if (_forcedContainers.TryGetValue(container.Id, out string? forcedCondition))
         {
@@ -150,61 +152,44 @@ public sealed class ConditionalContainerGate
 
         if (string.IsNullOrWhiteSpace(container.Condition))
         {
-            // An unconditional container runs; nothing in retail level data reaches this, but hiding a
-            // subtree on an empty condition would be the wrong default.
-            return true;
+            // With no condition the original leaves isRun as it is (0x4874E0 asks sub_4F16C0 first).
+            return null;
         }
 
         return Evaluate(container, container.Condition);
     }
 
-    /// <summary>Parses (once, cached) and evaluates one condition expression against the level variables.</summary>
+    /// <summary>Compiles (once, cached) and evaluates one condition expression against the level variables.</summary>
     private bool Evaluate(ConditionalContainerTask container, string condition)
     {
-        if (!_parseCache.TryGetValue(condition, out ScriptExpression? expression))
+        if (!_expressions.TryGetValue((condition, container), out LevelExpression? expression))
         {
-            try
-            {
-                expression = ScriptExpressionParser.Parse(condition, ResolveConstant);
-            }
-            catch (ScriptExpressionException ex)
+            expression = LevelExpressionRuntime.Create(condition, container);
+            _expressions[(condition, container)] = expression;
+            if (expression.IsEmpty)
             {
                 _logger.Warning(
                     LogCategory,
-                    $"Conditional container condition '{condition}' did not parse ({ex.Message}); "
-                        + "treating it as running.");
-                expression = null;
+                    $"Conditional container condition '{condition}' did not parse; treating it as running.");
             }
-
-            _parseCache[condition] = expression;
         }
 
-        if (expression is null)
+        if (expression.IsEmpty)
         {
             return true;
         }
 
-        // A fresh evaluator per resolution: resolving one container's condition can re-enter this method
-        // through another container's exported isRun, and the evaluator carries per-run error state. The
-        // context is built per resolution for the same reason -- it carries the `this` owner, and a shared
-        // one would let a re-entrant resolution replace the outer container's own name.
-        return new ScriptExpressionEvaluator(new LevelExpressionContext(_variables, container))
-            .EvaluateCondition(expression);
+        // The float walk, chopped into the isRun byte (0x4874E0 stores (char)(__int64)sub_4F16E0). Each evaluation makes its
+        // own evaluator, so resolving one container's condition can re-enter this method through another container's
+        // exported isRun without disturbing the outer one's per-run error state or its this owner.
+        return LevelExpression.Flag(expression.Evaluate(_context));
     }
-
-    private static int? ResolveConstant(string name) => name switch
-    {
-        "TRUE" => 1,
-        "FALSE" => 0,
-        "GAME_FREQUENCY" => 30,
-        _ => null,
-    };
 
     private static void Collect(GameTask task, List<ConditionalContainerTask> into)
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is ConditionalContainerTask container)
+            if (child is ConditionalContainerTask { SettlesOutsideTheTick: true } container)
             {
                 into.Add(container);
             }
@@ -213,52 +198,21 @@ public sealed class ConditionalContainerGate
         }
     }
 
-    /// <summary>Resolves an expression's names against the level's exported script variables.</summary>
-    /// <remarks>
-    /// The conditions read task fields (<c>Name.field</c>) and never call natives, so an invoke answers
-    /// nothing. An unknown name returns <see langword="false"/> from <see cref="TryGetValue"/>, which the
-    /// evaluator reports and reads as zero — the value an unmodelled progress flag holds at the start.
-    /// </remarks>
-    private sealed class LevelExpressionContext(ScriptVarRegistry variables, GameTask? owner)
-        : IScriptExpressionContext
+    // The level's exported script variables. The conditions read task fields (Name.field) and never call natives, so
+    // an invoke answers nothing; an unknown name reads zero -- the value an unmodelled progress flag holds at the
+    // start. The compile has already answered this. and .isExists.
+    private sealed class VariablesContext(ScriptVarRegistry variables) : IScriptExpressionContext
     {
-        private readonly ScriptVarRegistry _variables = variables;
+        public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(name, out value);
 
-        public bool TryGetValue(string name, out QvmValue value)
-        {
-            string resolved = Resolve(name);
-            if (resolved.Contains(LevelExpressionRuntime.AlwaysTrueField, StringComparison.Ordinal))
-            {
-                value = QvmValue.FromInt32(1);
-                return true;
-            }
+        public QvmValueKind GetValueKind(string name) => variables.GetValueKind(name);
 
-            return _variables.TryRead(resolved, out value);
-        }
-
-        public QvmValueKind GetValueKind(string name)
-        {
-            string resolved = Resolve(name);
-            return resolved.Contains(LevelExpressionRuntime.AlwaysTrueField, StringComparison.Ordinal)
-                ? QvmValueKind.Integer
-                : _variables.GetValueKind(resolved);
-        }
-
-        public bool TrySetValue(string name, QvmValue value) => _variables.TryWrite(Resolve(name), value);
+        public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(name, value);
 
         public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
             result = QvmValue.Zero;
             return false;
         }
-
-        // The original rewrites a `this.` token to "<owning task name>.<field>" in its expression
-        // preprocessor (0x4F1400: sprintf("%s.%s", Task_GetName(owner), rest)) before the text is ever
-        // compiled, and every caller passes the task that declares the expression field as that owner.
-        // Resolving at lookup instead of at parse keeps the parse cache shared across owners.
-        private string Resolve(string name) =>
-            owner is not null && name.StartsWith("this.", StringComparison.Ordinal)
-                ? string.Concat(owner.Name, name.AsSpan("this".Length))
-                : name;
     }
 }

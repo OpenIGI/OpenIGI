@@ -4,7 +4,7 @@ using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Sound;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Host.Audio;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.TestSupport;
 using System.Buffers.Binary;
 using Xunit;

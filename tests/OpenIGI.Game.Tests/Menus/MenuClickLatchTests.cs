@@ -1,9 +1,9 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
-using OpenIGI.Game.Menus;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Menus;
 
 namespace OpenIGI.Game.Tests.Menus;
 
@@ -169,9 +169,9 @@ public sealed class MenuClickLatchTests
 
         public IEnumerable<MenuInputEvent> DrainEvents() => [];
 
-        public void PrepareScreen(MenuScreenTask screen)
+        public void PrepareWindow(MenuWindowTask window)
         {
-            foreach (MenuTextTask entry in Descend(screen).OfType<MenuTextTask>())
+            foreach (MenuTextTask entry in Descend(window).OfType<MenuTextTask>())
             {
                 entry.LayoutWidth = 80;
                 entry.LayoutHeight = 16;
@@ -179,6 +179,10 @@ public sealed class MenuClickLatchTests
         }
 
         public void DrawScreen(MenuScreenTask screen)
+        {
+        }
+
+        public void DrawPopup(DialogWindowTask popup, int alpha)
         {
         }
 

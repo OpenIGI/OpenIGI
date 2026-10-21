@@ -8,6 +8,8 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 
@@ -94,6 +96,27 @@ public sealed class RetailElevatorTests
         }
 
         Assert.True(liftCount > 0, "no Elevator tasks were found in the retail campaign");
+    }
+
+    [RequiresGameDataFact]
+    public void A_lift_runs_along_its_spline_segments_lengths()
+    {
+        // Mission 3's Elevator_698 rides a spline whose segments are not Linear: its one segment is the cubic leaving each
+        // waypoint level, sampled 20 times (0x4E4530), longer than the shaft it climbs.
+        (LevelTask root, ScriptVarRegistry variables, _) = Load(3);
+        PlacedElevator bent = Assert.Single(ElevatorRegistry.Build(root, variables).Elevators, item => item.Task.Id == 698);
+        ElevatorFloor top = bent.State.Floors[1];
+        double rise = Vector3d.Distance(bent.State.Floors[0].Position, top.Position);
+        Assert.InRange(top.SegmentLength!.Value / rise, 1.13, 1.15);
+
+        // Mission 14's Elevator_1701 rides Linear Segments: each is its straight run.
+        (root, variables, _) = Load(14);
+        PlacedElevator straight = Assert.Single(ElevatorRegistry.Build(root, variables).Elevators, item => item.Task.Id == 1701);
+        for (int i = 1; i < straight.State.FloorCount; i++)
+        {
+            double run = Vector3d.Distance(straight.State.Floors[i - 1].Position, straight.State.Floors[i].Position);
+            Assert.Equal((float)run, straight.State.Floors[i].SegmentLength!.Value, 0.5);
+        }
     }
 
     [RequiresGameDataFact]
@@ -222,6 +245,15 @@ public sealed class RetailElevatorTests
                     return (state, state.IsFullyOpen, state.IsFullyClosed);
                 })
                 .ToArray();
+
+            // A door reports closed only once it has updated (0x446D10 writes the flag at the end of its update), so the
+            // cab's doors are given that first update -- its motion alone, as their own Open expression (the cab is not
+            // moving) would open them; the check below then holds them still, to see that the switch alone does not
+            // toggle them.
+            foreach (PlacedDoor door in doors.Doors)
+            {
+                door.State.Tick();
+            }
 
             Assert.True(interactions.ActivateFromAi(switchTask.Id));
 

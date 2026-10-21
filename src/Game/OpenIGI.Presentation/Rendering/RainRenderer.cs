@@ -86,11 +86,10 @@ public sealed class RainRenderer : IDisposable
         _numDrops = Math.Max(1, numDrops);
 
         _vertices = new Vertex3D[_numDrops * 4];
-        _indices = new ushort[_numDrops * 6];
+        _indices = QuadIndices.Build(_numDrops);
         _seeds = new (float X, float Y, float Z)[_numDrops];
 
         GenerateSeeds();
-        BuildIndices();
     }
 
     /// <summary>Gets a value indicating whether rain rendering is active and visible.</summary>
@@ -148,13 +147,14 @@ public sealed class RainRenderer : IDisposable
     /// <summary>Recursively searches the task tree for a <c>RainEffect</c> task.</summary>
     /// <param name="task">Root task to search.</param>
     /// <returns>The <c>RainEffect</c> declared task, or <see langword="null"/> if not found.</returns>
-    public static DeclaredTask? FindRainEffect(GameTask task)
+    public static GameTask? FindRainEffect(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
 
-        if (task is DeclaredTask declared && string.Equals(declared.Type.Name, "RainEffect", StringComparison.Ordinal))
+        // Declared from level data, or typed by a title that runs it: either answers its parameters by name.
+        if (string.Equals(task.Type.Name, "RainEffect", StringComparison.Ordinal))
         {
-            return declared;
+            return task;
         }
 
         foreach (GameTask child in task.Children)
@@ -179,7 +179,7 @@ public sealed class RainRenderer : IDisposable
     /// </remarks>
     public bool ReadParams(GameTask levelRoot)
     {
-        DeclaredTask? rainTask = FindRainEffect(levelRoot);
+        GameTask? rainTask = FindRainEffect(levelRoot);
         if (rainTask is null)
         {
             _authoredAvailable = false;
@@ -205,9 +205,9 @@ public sealed class RainRenderer : IDisposable
     }
 
     /// <summary>Reads one RainEffect flag, tolerating boolean, integer and quoted-string spellings.</summary>
-    internal static bool ReadFlag(DeclaredTask task, string name)
+    internal static bool ReadFlag(GameTask task, string name)
     {
-        if (!task.TryGetValue(name, out object? raw))
+        if (!task.TryGetScriptValue(name, out object? raw))
         {
             return true;
         }
@@ -378,21 +378,6 @@ public sealed class RainRenderer : IDisposable
         }
     }
 
-    private void BuildIndices()
-    {
-        for (int i = 0; i < _numDrops; i++)
-        {
-            int v = i * 4;
-            int idx = i * 6;
-            _indices[idx] = (ushort)v;
-            _indices[idx + 1] = (ushort)(v + 1);
-            _indices[idx + 2] = (ushort)(v + 2);
-            _indices[idx + 3] = (ushort)v;
-            _indices[idx + 4] = (ushort)(v + 2);
-            _indices[idx + 5] = (ushort)(v + 3);
-        }
-    }
-
     private static float Mod(float x, float y)
     {
         float result = x % y;
@@ -403,6 +388,6 @@ public sealed class RainRenderer : IDisposable
         (MinimumSpeedMultiplier + (Math.Clamp(seed, 0f, 1f) *
             (MaximumSpeedMultiplier - MinimumSpeedMultiplier))) * fallRange;
 
-    internal static float ReadFloat(DeclaredTask task, string name, float fallback) =>
-        task.TryGetValue(name, out object? value) && value is float f ? f : fallback;
+    internal static float ReadFloat(GameTask task, string name, float fallback) =>
+        task.TryGetScriptValue(name, out object? value) && value is float f ? f : fallback;
 }

@@ -48,6 +48,12 @@ public sealed record PlacedDoor(
     private float _poseSlide;
     private float _poseAngle;
 
+    /// <summary>
+    /// Gets or sets the door's expressions and lock, run by its own update between its children and its motion; <see langword="null"/>
+    /// runs no expression and only keeps the open count.
+    /// </summary>
+    public Action? Conditions { get; set; }
+
     /// <summary>Gets or sets whether the door's travelling sound is running.</summary>
     /// <remarks>
     /// The original keeps the travelling sound's task handle in the door itself, at <c>+736</c>, which
@@ -541,11 +547,11 @@ public sealed class DoorRegistry
     /// door's opening, or <see langword="null"/> to disable the check.
     /// </summary>
     /// <param name="query">
-    /// Called for a closing door each tick, with the two world-space doorway endpoints; returns
+    /// Called each tick the door moves, with the two world-space doorway endpoints; returns
     /// <see langword="true"/> when a human blocks the opening.
     /// </param>
     /// <remarks>
-    /// This is the retail handler's doorway ray (0x446D10 at 0x447302): a closing door that finds a
+    /// This is the retail handler's doorway ray (0x446D10 at 0x447302): a moving door that finds a
     /// human standing in its opening is forced back open, so it never seals while somebody is in the
     /// doorway. The elevator's authored <c>Can start</c> (typically <c>Door.isClosed</c>) therefore
     /// stays false while the door is blocked, which is how the original keeps a lift from running while
@@ -572,9 +578,9 @@ public sealed class DoorRegistry
         ArgumentNullException.ThrowIfNull(walker);
         foreach (PlacedDoor door in _doors)
         {
-            walker.Register(door.Task, task =>
+            walker.Bind(door.Task, task =>
             {
-                walker.WalkChildren(task);
+                walker.RunChildren(task);
                 Tick(door);
                 ticked?.Invoke(door);
             });
@@ -586,6 +592,16 @@ public sealed class DoorRegistry
     public void Tick(PlacedDoor door)
     {
         ArgumentNullException.ThrowIfNull(door);
+
+        // 0x446D10: its expressions and lock, as it stood after its last update, then its motion.
+        if (door.Conditions is { } conditions)
+        {
+            conditions();
+        }
+        else
+        {
+            door.State.RunConditions(null, null);
+        }
 
         // A door moved by its parent this tick was already stepped; its blend starts from where its own tick left it.
         door.KeepPrevious();
@@ -610,15 +626,15 @@ public sealed class DoorRegistry
             door.Capture();
         }
 
-        // The mid-swing doorway ray: a door that is closing (state 3, moving with the latch clear)
-        // and finds a human in its opening is forced back open instead of sealing — the retail
-        // re-open at 0x447323. This keeps a blocked elevator door from ever reaching isClosed.
-        if (_doorwayBlocked is not null && door.State.UseState == 3)
+        // The doorway ray: a door that moved this tick and finds a human in its opening is sent back fully open, and is
+        // neither open nor closed for the tick -- the retail re-open at 0x447323, which keeps a blocked elevator door from
+        // ever reaching isClosed.
+        if (_doorwayBlocked is not null && (door.State.SwungThisTick || door.State.SlidThisTick))
         {
             (Vector3d a, Vector3d b) = door.DoorwaySegment;
             if (_doorwayBlocked(a, b))
             {
-                door.State.CommandOpen();
+                door.State.Reopen();
             }
         }
 

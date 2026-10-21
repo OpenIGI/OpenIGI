@@ -109,6 +109,18 @@ jobs:
             | tar -xz -C "$RUNNER_TEMP/slang"
           echo "OPENIGI_SLANGC=$RUNNER_TEMP/slang/bin/slangc" >> "$GITHUB_ENV"
 
+      # DXIL is checked byte for byte too, so the DXC slangc hands it to is pinned in the same manifest. Its
+      # asset names carry the build's date, not the version, so they are read off the tagged release.
+      - name: Install DXC
+        run: |
+          pinned=$(jq -r .dxcVersion src/Rendering/OpenIGI.Shaders/ShaderModules.json)
+          echo "Pinned DXC release: v$pinned"
+          url=$(curl -fsSL "https://api.github.com/repos/microsoft/DirectXShaderCompiler/releases/tags/v$pinned" \
+            | jq -r '.assets[] | select(.name | test("^linux_dxc_.*\\.tar\\.gz$")) | .browser_download_url' | head -n1)
+          mkdir -p "$RUNNER_TEMP/dxc"
+          curl -fsSL "$url" | tar -xz -C "$RUNNER_TEMP/dxc"
+          echo "OPENIGI_DXC=$RUNNER_TEMP/dxc" >> "$GITHUB_ENV"
+
       - name: Check the committed shaders
         run: dotnet run --project tools/OpenIGI.Tools.ShaderBuild --configuration Release -- --check
 

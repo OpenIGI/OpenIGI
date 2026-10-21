@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats;
@@ -7,6 +8,7 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Igi2;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -33,7 +35,7 @@ public sealed class RetailIgi2ObjectShadingDrawTests
     public void Baked_sub_meshes_are_doubled_and_unbaked_ones_are_sunlit()
     {
         Igi2Level level = LevelOne();
-        ObjectShading? shading = Igi2PresentationProvider.Instance.ReadObjectShading(level.Root);
+        ObjectShading? shading = new Igi2PresentationProvider().ReadObjectShading(level.Root);
         Assert.NotNull(shading);
         Assert.NotNull(shading.Value.Sun);
 

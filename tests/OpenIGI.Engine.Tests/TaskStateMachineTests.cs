@@ -201,6 +201,32 @@ public sealed class TaskStateMachineTests
         Assert.True(partial.Matches(0, Bit0 | Bit1));
     }
 
+    [Fact]
+    public void EnteringRunsTheLeavingStatesExitThenTheNewStatesEntryAtOnce()
+    {
+        List<string> calls = [];
+        TaskStateFunction?[] states =
+        [
+            (_, _) => calls.Add("stand"),
+            (machine, _) =>
+            {
+                calls.Add("run entry");
+                machine.Current = (_, _) => calls.Add("run tick");
+            },
+        ];
+        TaskStateFunction?[] exits = [(_, _) => calls.Add("stand exit"), null];
+        TaskStateMachine machine = new(null, states, 0, exits: exits);
+
+        machine.Enter(1, new object());
+
+        Assert.Equal(["stand exit", "run entry"], calls);
+        Assert.Equal(0, machine.PreviousState);
+        Assert.Equal(1, machine.CurrentState);
+
+        machine.Tick(new object());
+        Assert.Equal("run tick", calls[^1]);
+    }
+
     private static TaskStateMachine Build(int states, int initial) =>
         new(null, new TaskStateFunction?[states], initial);
 }

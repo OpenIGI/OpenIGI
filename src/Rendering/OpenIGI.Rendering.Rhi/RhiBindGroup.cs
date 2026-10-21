@@ -25,6 +25,12 @@ namespace OpenIGI.Rendering.Rhi;
 /// built before anything is bound to it — so it cannot be inferred from what arrives. Ignored for every
 /// other type.
 /// </param>
+/// <param name="ElementStride">
+/// The element size of a structured storage buffer, as the shader declares it. Direct3D 12 states it in the
+/// view it builds over the buffer, and a view whose stride disagrees with the shader's
+/// <c>StructuredBuffer&lt;T&gt;</c> reads the wrong elements; nought for a raw buffer and for every other
+/// type. Vulkan and WebGPU have no use for it. Taken from the reflection's HLSL placement.
+/// </param>
 public readonly record struct RhiBindGroupLayoutEntry(
     int Binding,
     RhiBindingType Type,
@@ -34,7 +40,8 @@ public readonly record struct RhiBindGroupLayoutEntry(
     RhiTextureViewDimension ViewDimension = RhiTextureViewDimension.Texture2D,
     bool HasDynamicOffset = false,
     bool MultisampledTexture = false,
-    RhiTextureSampleType SampleType = RhiTextureSampleType.Float);
+    RhiTextureSampleType SampleType = RhiTextureSampleType.Float,
+    int ElementStride = 0);
 
 /// <summary>What a shader reads out of a sampled texture.</summary>
 /// <remarks>

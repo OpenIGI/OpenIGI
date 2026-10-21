@@ -1,7 +1,7 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
@@ -50,6 +50,15 @@ public readonly record struct WireTransform(
         return Build(task, model, out transform);
     }
 
+    /// <summary>Builds the runtime transform from a wire's two endpoints and, when at hand, its model.</summary>
+    /// <param name="start">The start position, in engine units.</param>
+    /// <param name="stop">The stop position, in engine units.</param>
+    /// <param name="model">The wire's model, or <see langword="null"/>.</param>
+    /// <param name="transform">The transform.</param>
+    /// <returns><see langword="false"/> for two endpoints at one point.</returns>
+    public static bool TryCreate(Vector3d start, Vector3d stop, MefModel? model, out WireTransform transform) =>
+        Build(start, stop, model, out transform);
+
     private static bool Build(DeclaredTask task, MefModel? model, out WireTransform transform)
     {
         if (!TryPosition(task, "Start position", out Vector3d start)
@@ -58,6 +67,12 @@ public readonly record struct WireTransform(
             transform = default;
             return false;
         }
+
+        return Build(start, stop, model, out transform);
+    }
+
+    private static bool Build(Vector3d start, Vector3d stop, MefModel? model, out WireTransform transform)
+    {
 
         Vector3d span = stop - start;
         double length = span.Length;
@@ -69,7 +84,7 @@ public readonly record struct WireTransform(
 
         Vector3d direction = span / length;
         Vector3d up = CableUp(direction);
-        Vector3d side = Cross(direction, up).Normalized();
+        Vector3d side = Vector3d.Cross(direction, up).Normalized();
         Matrix3f orientation = new(
             (float)side.X, (float)direction.X, (float)up.X,
             (float)side.Y, (float)direction.Y, (float)up.Y,
@@ -119,10 +134,10 @@ public readonly record struct WireTransform(
         for (int i = 0; i < vertices.Length; i++)
         {
             Vertex3D vertex = source.Vertices[i];
-            Vector3f normal = Normalize(new Vector3f(
+            Vector3f normal = (new Vector3f(
                 vertex.Normal.X,
                 scaleY != 0f ? vertex.Normal.Y / scaleY : vertex.Normal.Y,
-                vertex.Normal.Z));
+                vertex.Normal.Z)).NormalizedOrSelf();
             vertices[i] = new Vertex3D(
                 new Vector3f(vertex.Position.X, vertex.Position.Y * scaleY, vertex.Position.Z),
                 normal,
@@ -174,16 +189,4 @@ public readonly record struct WireTransform(
         return false;
     }
 
-    private static Vector3d Cross(Vector3d left, Vector3d right) => new(
-        (left.Y * right.Z) - (left.Z * right.Y),
-        (left.Z * right.X) - (left.X * right.Z),
-        (left.X * right.Y) - (left.Y * right.X));
-
-    private static Vector3f Normalize(Vector3f value)
-    {
-        float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
-        return length > 0f
-            ? new Vector3f(value.X / length, value.Y / length, value.Z / length)
-            : value;
-    }
 }

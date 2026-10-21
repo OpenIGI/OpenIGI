@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -84,7 +85,7 @@ public sealed class RainRendererTests
         // A RainEffect task nested under the level root is locatable by the renderer.
         TaskTree tree = BuildLevel(RainEffect("TRUE", 9.0f, 3.0f, "TRUE", 0.5f));
 
-        DeclaredTask? found = RainRenderer.FindRainEffect(tree.Root);
+        GameTask? found = RainRenderer.FindRainEffect(tree.Root);
         Assert.NotNull(found);
         Assert.Equal("RainEffect", found!.Type.Name);
     }
