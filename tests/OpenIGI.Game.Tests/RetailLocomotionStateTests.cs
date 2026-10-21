@@ -10,8 +10,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// The two halves were read independently — the state table out of <c>0x538870</c>, the animation ids
-/// out of the <c>.iff</c> files — so every id lining up is a real check on both. See
-/// the original.
+/// out of the <c>.iff</c> files — so every id lining up is a real check on both.
 /// </remarks>
 public sealed class RetailLocomotionStateTests
 {

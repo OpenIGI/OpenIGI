@@ -10,12 +10,12 @@ namespace OpenIGI.Game.Player;
 /// The native (<c>0x410070</c>) scales six of its arguments as it stores them, and the scales are what
 /// give the arguments their meaning: speeds are authored in <b>km/h</b>, distances in <b>metres</b> and
 /// durations in <b>seconds</b>, and all three become engine units per tick, engine units, and ticks.
-/// The conversions are read from the disassembly — the decompiler chains the x87 stack slot and makes
-/// them look cumulative, which they are not.
+/// The conversions are read instruction by instruction — the original reuses one x87 stack slot across
+/// them, which makes them look cumulative, and they are not.
 /// </para>
 /// <para>
 /// Only the arguments whose consumer has been identified are named. The rest keep their index, because
-/// naming them would be a guess; see <see cref="RawArguments"/> and the original.
+/// naming them would be a guess; see <see cref="RawArguments"/>.
 /// </para>
 /// </remarks>
 public sealed class HumanPlayerParameters
@@ -146,10 +146,10 @@ public sealed class HumanPlayerParameters
     public float ElectricFenceDose { get; }
 
     /// <summary>Gets arguments 9..25 — field <c>+0</c> of the 17 rows at <c>0x5389F8</c>.</summary>
-    /// <remarks>What the rows enumerate is unresolved; see the original.</remarks>
+    /// <remarks>What the rows enumerate is unresolved.</remarks>
     public IReadOnlyList<float> FirstTable => _firstTable;
 
     /// <summary>Gets arguments 26..42 — field <c>+0</c> of the 17 rows at <c>0x538B08</c>.</summary>
-    /// <remarks>What the rows enumerate is unresolved; see the original.</remarks>
+    /// <remarks>What the rows enumerate is unresolved.</remarks>
     public IReadOnlyList<float> SecondTable => _secondTable;
 }

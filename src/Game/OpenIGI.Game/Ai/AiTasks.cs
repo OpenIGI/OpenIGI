@@ -50,12 +50,12 @@ public partial class PatrolPathCommandTask : GameTask
 /// <b>the AI type is an ordinary parameter</b>, carrying the <c>AITYPE_*</c> constant's <em>name</em> as a
 /// string. Level data reads
 /// <c>Task_New(1506, "HumanAI", "", "AITYPE_PATROL_AK", 1)</c>, and the resolved number lands at
-/// <c>HumanAI+15672</c> (<c>ai.md</c> §3.6), from where §2.3's map picks one of the nine archetype scripts.
+/// <c>HumanAI+15672</c>, from where a type-to-archetype map picks one of the nine archetype scripts.
 /// </para>
 /// <para>
 /// The graph id beside it selects which <c>graph&lt;n&gt;.dat</c> the AI walks — the id of the
 /// <c>AIGraph</c> task that loaded it, which is why level 1 ships a <c>graph4019</c> beside its
-/// <c>graph1</c> (§1.1).
+/// <c>graph1</c>.
 /// </para>
 /// </remarks>
 public partial class HumanAiTask : GameTask
@@ -98,7 +98,7 @@ public partial class HumanAiTask : GameTask
 /// </para>
 /// <para>
 /// <c>PatrolPath</c> is the one type in the game that declares <em>no</em> parameters, which is why
-/// <see cref="PatrolPathTask"/> has none — see the original.
+/// <see cref="PatrolPathTask"/> has none.
 /// </para>
 /// </remarks>
 public static class AiTaskTypes

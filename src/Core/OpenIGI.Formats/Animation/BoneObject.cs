@@ -182,8 +182,8 @@ public sealed class BoneObject
 
         BoneClip clip = new(animation, bone, loops, backwards);
 
-        // 0x4D61D0: v12 = a5 * 4800 / flt_A54658 (160). A blend under one tick is the immediate path,
-        // and a bone with nothing already playing has no branch to fade from.
+        // 0x4D61D0 turns the blend time into ticks as time * 4800 / flt_A54658 (160). A blend under one
+        // tick is the immediate path, and a bone with nothing already playing has no branch to fade from.
         float blendTicks = blendSeconds * (4800f / BoneAnimation.FrameStep);
         if (_own[bone] is { } outgoing && blendTicks >= 1f)
         {

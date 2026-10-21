@@ -209,9 +209,9 @@ public partial class HumanPlayerTask : HumanTask, IAiPlayer
 /// lacks: <b><c>Bone Heirachy</c> is the skeleton id</b> (default 1, at <c>+3320</c>) and
 /// <c>Stand Animation</c> the clip it stands in (default −1, at <c>+3324</c>; −1 or an id the set
 /// lacks falls back to 2). The init handler <c>0x456E50</c> reads both and hands the skeleton to the
-/// bone object, which is what settles that a model does not name its own skeleton
-/// (<c>animation.md</c> §7.3) — and the mesh comes from the ordinary <c>Model</c> parameter, resolved
-/// by name in the chained <c>Human</c> handler <c>0x45F890</c>. See <c>player.md</c> §15.
+/// bone object, which is what settles that a model does not name its own skeleton —
+/// and the mesh comes from the ordinary <c>Model</c> parameter, resolved by name in the chained
+/// <c>Human</c> handler <c>0x45F890</c>.
 /// </para>
 /// <para>
 /// <b>The siblings share this task.</b> <c>HumanSoldierFemale</c> (Level 14) and <c>HumanSoldierRPG</c>

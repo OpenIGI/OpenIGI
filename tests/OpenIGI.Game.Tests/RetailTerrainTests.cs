@@ -16,8 +16,8 @@ using OpenIGI.Game.Igi1.World;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// Loads retail terrain, descends it, and turns the chunks into geometry — the whole of
-/// the original against real levels.
+/// Loads retail terrain, descends it, and turns the chunks into geometry — the whole terrain path against
+/// real levels.
 /// </summary>
 /// <remarks>
 /// The check that matters most is that the terrain lands where the objects do. Nothing in any terrain
@@ -87,7 +87,7 @@ public sealed class RetailTerrainTests
         Assert.Equal(13, usable);
         Assert.Equal(1, unusable);
 
-        // Measured, because world-loading.md §6.3 had this wrong: it is not "materials 0..6 and tile
+        // Measured, because an earlier reading had this wrong: it is not "materials 0..6 and tile
         // maps 0..7 everywhere". Nine levels declare six materials and eight tile maps; four declare
         // seven of each; level 14 declares seven and eight.
         Assert.Equal(

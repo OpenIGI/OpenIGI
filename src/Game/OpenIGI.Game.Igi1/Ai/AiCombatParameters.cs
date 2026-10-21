@@ -119,8 +119,7 @@ public sealed class AiCombatParameters
     /// <b>The counter these feed is write-only in the shipped engine.</b> <c>0x48D080</c> stores
     /// <c>(int)(rand01() * random + minimum)</c> into <c>HumanAI+15828</c> without the × 30 every other
     /// duration gets, and no instruction anywhere reads <c>+15828</c> back — eleven writes, no reads.
-    /// So the pair is carried faithfully and, like the original, changes nothing. See
-    /// the original.
+    /// So the pair is carried faithfully and, like the original, changes nothing.
     /// </remarks>
     public float MinimumFiringDelaySeconds { get; }
 

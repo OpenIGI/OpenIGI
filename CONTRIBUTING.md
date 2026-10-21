@@ -62,10 +62,9 @@ Unless a reference note explicitly identifies another executable fingerprint, ad
 build above. If your copy hashes differently, document that fingerprint rather than silently
 correcting addresses against a build nobody else has.
 
-Keep local working notebooks and copyrighted reference captures outside the repository. Durable
-reverse-engineering evidence belongs in the existing the code comments references; non-obvious local
-implementation constraints belong in code comments. Link to the authoritative location instead of
-copying its findings.
+Keep working notebooks and copyrighted reference captures outside the repository. What a reader needs
+to trust an implementation, such as the original's address for the behaviour and any non-obvious
+constraint, belongs in the code comments beside it.
 
 ## Content packs and mods
 

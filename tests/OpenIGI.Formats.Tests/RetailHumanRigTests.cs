@@ -10,8 +10,8 @@ namespace OpenIGI.Formats.Tests;
 /// The human rig, as every shipped skeleton and every skinned body actually holds it.
 /// </summary>
 /// <remarks>
-/// This is the corpus evidence behind the original — that the hit-zone table's
-/// thirty entries are the rig's thirty-three bones with the three-bone weapon chain taken out.
+/// This is the corpus evidence that the hit-zone table's thirty entries are the rig's thirty-three bones
+/// with the three-bone weapon chain taken out.
 /// </remarks>
 public sealed class RetailHumanRigTests
 {

@@ -14,9 +14,9 @@ using OpenIGI.Game.Igi1.World;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// The soldiers and the player update where the level walk reaches them, so
-/// every human registered in the world must sit where the walk goes: under containers, cars, cut-scenes and
-/// generators that walk their children, never under a task whose update does not.
+/// The soldiers and the player update where the level walk reaches them, so every human registered in the world
+/// must sit where the walk goes: under containers, cars, cut-scenes and generators that walk their children,
+/// never under a task whose update does not.
 /// </summary>
 public sealed class LevelWalkReachesHumansTests
 {

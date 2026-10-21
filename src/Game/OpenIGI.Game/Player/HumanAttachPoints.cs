@@ -53,7 +53,7 @@ public static class HumanAttachPoints
     /// <summary>The bone of the body rig the held weapon hangs off when the player is not the camera.</summary>
     /// <remarks>
     /// From <c>0x4600C0</c>'s other arm — palette <c>+2928</c> and <c>+2940</c> on the human's own
-    /// skeleton-0 rig. Worth noting against <c>animation.md</c> §4.3: bone 22 is a <b>weapon hand</b>,
+    /// skeleton-0 rig. Worth noting: bone 22 is a <b>weapon hand</b>,
     /// so event <c>1010</c>'s symmetric split between bones 22 and 27 is a pair of hands at least as
     /// readily as a pair of feet.
     /// </remarks>

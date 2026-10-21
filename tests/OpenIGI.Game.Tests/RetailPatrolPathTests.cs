@@ -20,8 +20,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// A patrol path is a <c>PatrolPath</c> task whose child <c>PatrolPathCommand</c> tasks are its steps, so
-/// these are data-driven checks of what the game actually ships rather than of a sample. See
-/// the original.
+/// these are data-driven checks of what the game actually ships rather than of a sample.
 /// </remarks>
 public sealed class RetailPatrolPathTests
 {
@@ -29,7 +28,7 @@ public sealed class RetailPatrolPathTests
 
     /// <summary>Every level declares the three AI types with exactly the parameters the port transcribes.</summary>
     /// <remarks>
-    /// Parameter lists are per-script (M5), so this has to hold for all fourteen independently — and
+    /// Parameter lists are per-script, so this has to hold for all fourteen independently — and
     /// registering the classes at all would throw on the first level that disagreed.
     /// </remarks>
     [RequiresGameDataFact]
@@ -91,8 +90,8 @@ public sealed class RetailPatrolPathTests
     /// <remarks>
     /// <para>
     /// <c>PATROLPATHCOMMAND_SETSPEED</c> has no arm in the human walker <c>0x48E920</c>, whose
-    /// <c>default:</c> returns without advancing the cursor — so a human patrol reaching one stops forever
-    /// (§7.5). <b>I expected the data to avoid it and it does not</b>: 114 <c>SETSPEED</c> commands ship.
+    /// <c>default:</c> returns without advancing the cursor — so a human patrol reaching one stops forever.
+    /// <b>I expected the data to avoid it and it does not</b>: 114 <c>SETSPEED</c> commands ship.
     /// </para>
     /// <para>
     /// What keeps them harmless is not that they are absent but <em>whose</em> paths they are. Fifteen of the
@@ -133,8 +132,8 @@ public sealed class RetailPatrolPathTests
 
     /// <summary>Writes a census of every patrol path in the game, and pins what it found.</summary>
     /// <remarks>
-    /// The figures quoted in <c>ai.md</c> §7.8 come from this test. It is written as a corpus sweep rather
-    /// than a sample because M5 and M6 both had bugs that only a full sweep caught.
+    /// It is written as a corpus sweep rather than a sample because two earlier passes had bugs
+    /// that only a full sweep caught.
     /// </remarks>
     [RequiresGameDataFact]
     public void TheCensusOfEveryPatrolPathHolds()
@@ -191,7 +190,7 @@ public sealed class RetailPatrolPathTests
         Assert.True(paths > 0, "no patrol paths were found at all");
         Assert.Equal(commands, kinds.Values.Sum());
 
-        // The measured corpus. These are the figures ai.md 7.8 quotes.
+        // The measured corpus.
         Assert.Equal(627, paths);
         Assert.Equal(3877, commands);
         Assert.Equal(596, movers);

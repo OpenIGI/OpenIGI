@@ -17,7 +17,7 @@ namespace OpenIGI.Formats.Textures;
 /// </para>
 /// <para>
 /// Nothing here is compressed; the payload size is exactly the sum of the mip levels' strides. See
-/// <c>docs/formats/tex-spr-fnt.md</c> and the original.
+/// <c>docs/formats/tex-spr-fnt.md</c>.
 /// </para>
 /// </remarks>
 public static class TexFile

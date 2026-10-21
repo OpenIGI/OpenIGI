@@ -58,8 +58,8 @@ public static class HumanSoldierStates
     /// <remarks>
     /// <b>Zero, measured.</b> Forty-four state lookups against this table in a live retail mission all
     /// passed <c>0.000</c>; the player's table <c>0x538870</c> is looked up with <c>0.200</c> and
-    /// sometimes <c>0.000</c>. <c>player.md</c> §16 records <c>0.15f</c> for the player, read statically
-    /// — whatever that literal is, it is not what reaches this argument, and a soldier blends nothing.
+    /// sometimes <c>0.000</c>. A static reading gives <c>0.15f</c> for the player — whatever that
+    /// literal is, it is not what reaches this argument, and a soldier blends nothing.
     /// </remarks>
     public const float BlendSeconds = 0f;
 
@@ -68,9 +68,9 @@ public static class HumanSoldierStates
     /// <para>
     /// Measured first, then read. A live capture showed a fighting guard sitting here on every tick its
     /// burst counter was draining; <c>0x45B060</c>, the state's per-tick, then said why. It is the only
-    /// one of the four combat states that touches the weapon, and what it does is
-    /// <c>if (*(float *)(human + 456) != 0) human[+1233] = 1</c> — <c>Human+456</c> is <b>input-frame
-    /// slot 6</b> (the newest frame lives at <c>+432</c>) and <c>Human+1233</c> is what the weapon tick
+    /// one of the four combat states that touches the weapon, and what it does is set the byte at
+    /// <c>Human+1233</c> to 1 whenever the float at <c>Human+456</c> is non-zero — <c>Human+456</c> is
+    /// <b>input-frame slot 6</b> (the newest frame lives at <c>+432</c>) and <c>Human+1233</c> is what the weapon tick
     /// hands the gun. So the chain that starts with the AI writing <c>HumanAI+15500</c> ends here, and
     /// a soldier holding the Fire slot up in any other state fires nothing at all.
     /// </para>

@@ -5,8 +5,7 @@ namespace OpenIGI.Formats.Sprites;
 /// </summary>
 /// <remarks>
 /// The loader (<c>0x4B6720</c>) recognises an ILFF <c>FONT</c> container and three <c>"LOOP"</c>
-/// versions, and fatals on versions 5 and 10 with <c>"The font '%s' must be packed."</c>. See
-/// the original.
+/// versions, and fatals on versions 5 and 10 with <c>"The font '%s' must be packed."</c>.
 /// </remarks>
 public enum SpriteKind
 {

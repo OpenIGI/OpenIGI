@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// The pairs come from <c>0x53ED10</c>; the ones asserted here were also observed live, by hooking
-/// <c>0x489E70</c> in a retail mission with <c>a probe of the running original</c>. Both halves have to agree.
+/// <c>0x489E70</c> in a running retail mission. Both halves have to agree.
 /// </remarks>
 public sealed class HumanSoldierStateTests
 {

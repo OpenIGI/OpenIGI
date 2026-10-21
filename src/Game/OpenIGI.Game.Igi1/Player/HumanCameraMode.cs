@@ -41,7 +41,7 @@ public enum HumanCameraMode
     /// <remarks>
     /// The handler flips a byte at <c>Human+1268</c> on that edge and forces this mode while it is set,
     /// overriding whatever <c>Human+1264</c> holds. Unreachable in a retail profile, since the chord
-    /// needs the developer level of 14 (<c>player.md</c> §2.2).
+    /// needs the developer level of 14.
     /// </remarks>
     Developer = 2,
 

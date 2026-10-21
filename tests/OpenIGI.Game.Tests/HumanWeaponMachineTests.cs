@@ -101,7 +101,7 @@ public sealed class HumanWeaponMachineTests
     public void TheMovementBitsMatchTheDirectionsTheAnimationsMeasure()
     {
         // Locomotion state 0 tests 0x80, 0x100, 0x40, 0x20 in that order and targets states 1, 4, 7
-        // and 8, which player.md section 5.6 MEASURED off the clips as forward, backward, right and
+        // and 8, which were MEASURED off the clips as forward, backward, right and
         // left. If the slot join were wrong, these four would not line up.
         Assert.Equal(HumanWeaponFlagWord.MoveUp, FlagOf(PlayerInputSlot.MoveUp));
         Assert.Equal(0x80u, (uint)FlagOf(PlayerInputSlot.MoveUp));

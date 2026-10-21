@@ -22,7 +22,7 @@ public readonly record struct AiSnapshotCone(double Alpha, double Gamma, double 
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Correction, from the live game.</b> <c>ai.md</c> §4 introduced <c>0x4502F0</c> as "the cone test" and
+/// <b>Correction, from the live game.</b> <c>0x4502F0</c> was first taken to be "the cone test" and
 /// the port transcribed it into <see cref="AiVision.IsVisible"/>. Hooking the retail executable through a
 /// whole mission-1 load that logged 22045 patrol events showed <c>0x4502F0</c> was <b>never called once</b>.
 /// The per-tick detection sweep (<c>0x489750</c>) builds this snapshot with <c>0x489960</c> and tests
@@ -35,7 +35,7 @@ public readonly record struct AiSnapshotCone(double Alpha, double Gamma, double 
 /// <list type="number">
 /// <item>
 /// <b>each cone carries one resolved length</b> rather than a normal/alarm pair — so an AI whose alert latch
-/// flips mid-tick still sees with the range the snapshot was taken at (<c>ai.md</c> §3.1's one-tick lag);
+/// flips mid-tick still sees with the range the snapshot was taken at (the original's one-tick lag);
 /// </item>
 /// <item>
 /// <b>the secondary cone is gated by a byte</b> at <c>+112</c> that <c>0x4502F0</c> has no equivalent of.
@@ -53,7 +53,7 @@ public readonly record struct AiSnapshotCone(double Alpha, double Gamma, double 
 /// </item>
 /// </list>
 /// <para>
-/// The layout is pinned field for field by the offsets <c>0x489960</c> indexes (<c>ai.md</c> §5.4):
+/// The layout is pinned field for field by the offsets <c>0x489960</c> indexes:
 /// position at <c>+0</c>, the 3×3 at <c>+24</c>, primary <c>{alpha, gamma, length}</c> at
 /// <c>+64</c>/<c>+72</c>/<c>+80</c>, secondary at <c>+88</c>/<c>+96</c>/<c>+104</c>, and the gate byte at
 /// <c>+112</c>.

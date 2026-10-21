@@ -1407,7 +1407,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// <param name="projection">The current world projection.</param>
     /// <remarks>
     /// <para>
-    /// The attachment handlers (<c>0x4600C0</c>, <c>player.md</c> §13) do exactly two things: they add the
+    /// The attachment handlers (<c>0x4600C0</c>) do exactly two things: they add the
     /// object's own position to the bone's, and they <b>copy the bone's rotation whole</b>. There is no
     /// per-weapon offset anywhere in the engine, so the model's own origin is where the hand grips it.
     /// </para>

@@ -16,8 +16,7 @@ namespace OpenIGI.Engine.Flow;
 /// tree root, and its update really is the only thing <c>Game_Frame</c> calls.
 /// </para>
 /// <para>
-/// The timing state lives in <see cref="Clock"/>; this class owns the sequencing around it. See
-/// the original.
+/// The timing state lives in <see cref="Clock"/>; this class owns the sequencing around it.
 /// </para>
 /// </remarks>
 public sealed class FlowTask : GameTask

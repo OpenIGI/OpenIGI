@@ -11,15 +11,14 @@ namespace OpenIGI.Formats.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The claims these check come from the original and were measured over all
-/// fourteen levels, not sampled. The ones that matter most are the two that separate live data from
-/// rubbish: every octree link and every <c>.cmd</c> offset resolves in levels 1–13, and level 14's do
-/// not — 14400 of its 15202 nodes address nothing.
+/// The claims these check were measured over all fourteen levels, not sampled. The ones that matter most
+/// are the two that separate live data from rubbish: every octree link and every <c>.cmd</c> offset
+/// resolves in levels 1–13, and level 14's do not — 14400 of its 15202 nodes address nothing.
 /// </para>
 /// </remarks>
 public sealed class RetailTerrainGoldenTests
 {
-    /// <summary>The level whose terrain files exist but are not live data; see §6.6.</summary>
+    /// <summary>The level whose terrain files exist but are not live data.</summary>
     private const int DeadTerrainLevel = 14;
 
     private const int LevelCount = 14;
@@ -258,7 +257,7 @@ public sealed class RetailTerrainGoldenTests
         Assert.Equal(LevelCount, checkedLevels);
 
         // Most levels ship no heightmap at all, which is the trap a loader has to survive. Six do:
-        // 1, 3, 6, 8, 9 and 10. world-loading.md §6.1 said seven, and counting the files says six.
+        // 1, 3, 6, 8, 9 and 10. An earlier reading said seven, and counting the files says six.
         Assert.Equal(6, withHeightmap);
     }
 
@@ -312,7 +311,7 @@ public sealed class RetailTerrainGoldenTests
         Assert.Equal(LevelCount, checkedLevels);
         Assert.Equal(228, tiles);
 
-        // Twelve or eighteen, and which is which lines up exactly with the tile-map counts of §6.3: the
+        // Twelve or eighteen, and which is which lines up exactly with the declared tile-map counts: the
         // four levels that declare seven tile maps are the four that ship twelve tiles.
         Assert.Equal(
             "1:18 2:18 3:18 4:18 5:18 6:18 7:12 8:12 9:18 10:18 11:12 12:12 13:18 14:18",

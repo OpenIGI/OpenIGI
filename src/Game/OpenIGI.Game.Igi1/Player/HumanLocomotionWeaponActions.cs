@@ -22,7 +22,6 @@ namespace OpenIGI.Game.Igi1.Player;
 /// <c>0x40000</c> <see cref="PlayerAction.ToggleWalkRun"/>, and this table agrees with it from a
 /// completely different direction.
 /// </para>
-/// <para>10 and the original.</para>
 /// </remarks>
 public static class HumanLocomotionWeaponActions
 {

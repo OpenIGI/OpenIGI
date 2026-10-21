@@ -10,8 +10,7 @@ namespace OpenIGI.Rendering;
 /// <param name="AddressMode">How coordinates outside the unit square are resolved.</param>
 /// <remarks>
 /// Pixels always arrive as <see cref="OpenIGI.Core.Graphics.Bgra32"/>: the file's own format code is
-/// decoded once at load time, so the device never sees a palette or a packed 16-bit pixel. See
-/// the original.
+/// decoded once at load time, so the device never sees a palette or a packed 16-bit pixel.
 /// </remarks>
 public readonly record struct TextureDescription(
     int Width,

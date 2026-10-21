@@ -9,8 +9,7 @@ namespace OpenIGI.Formats.Sound;
 /// <remarks>
 /// Parsing is zero-copy: the file keeps a <see cref="ReadOnlyMemory{T}"/> view of its own bytes and
 /// <see cref="Payload"/> is a slice of it. Read from the original loader <c>0x495F70</c> and confirmed
-/// against the shipped files; the header layout is documented on <see cref="IlsfHeader"/> and the whole
-/// system in the original.
+/// against the shipped files; the header layout is documented on <see cref="IlsfHeader"/>.
 /// </remarks>
 public sealed class IlsfFile
 {

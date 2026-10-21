@@ -14,8 +14,7 @@ namespace OpenIGI.Formats.Iff;
 /// type and continues with nested chunks.
 /// </para>
 /// <para>
-/// Payload <em>contents</em> are little-endian — only the chunk sizes are big-endian. See
-/// the original.
+/// Payload <em>contents</em> are little-endian — only the chunk sizes are big-endian.
 /// </para>
 /// </remarks>
 public static class IffFile

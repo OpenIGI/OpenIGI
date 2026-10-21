@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Tests;
 /// Damage is a plain product of the struck zone's multiplier and the weapon's <c>Damage Factor</c>
 /// (<see cref="HumanDamage.DamageOfHit"/>), and death is <c>&gt;=</c> the settings row's
 /// <c>Damage scale</c>, which is maximum health — 0.3 / 0.5 / 0.8 for a guard across the three
-/// difficulties (<c>ai.md</c> §10.3).
+/// difficulties.
 /// </para>
 /// <para>
 /// <b>So a one-shot kill to the chest is correct for several weapons on the easiest difficulty</b>, and

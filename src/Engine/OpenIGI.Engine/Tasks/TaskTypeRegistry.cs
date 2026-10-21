@@ -10,7 +10,7 @@ namespace OpenIGI.Engine.Tasks;
 /// <para>
 /// Models the original's 384-entry type table (<c>0xAF5EE0</c>) and its lookup <c>TaskType_FindByName</c>
 /// (<c>0x401A70</c>). The 384 ceiling is not reproduced — nothing in retail data approaches it, and a
-/// fatal overflow is a worse failure mode for mods than growing. See the re-note, §11.
+/// fatal overflow is a worse failure mode for mods than growing.
 /// </para>
 /// <para>
 /// A type reaches the registry one of two ways: a class registers itself, or level data declares it

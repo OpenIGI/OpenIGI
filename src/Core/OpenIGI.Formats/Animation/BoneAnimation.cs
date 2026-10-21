@@ -80,7 +80,7 @@ public sealed class BoneAnimation
     /// <summary>Gets the header's flag word.</summary>
     /// <remarks>
     /// Only <c>0</c> and <see cref="CyclicFlag"/> occur, and the rotation sampler (<c>0x4D5295</c>)
-    /// tests exactly that bit — see <see cref="IsCyclic"/> and the original.
+    /// tests exactly that bit — see <see cref="IsCyclic"/>.
     /// </remarks>
     public uint Flags { get; }
 

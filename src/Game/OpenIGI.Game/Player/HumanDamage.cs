@@ -122,7 +122,7 @@ public static class HumanDamage
     /// <returns>The body part, or <c>-1</c> for a bone of the weapon chain.</returns>
     /// <remarks>
     /// Bones below the weapon chain keep their number and bones above it drop by three. This is the
-    /// compaction §26 argues for: it is what makes the two legs symmetric, and no other reading of the
+    /// compaction the rig's layout argues for: it is what makes the two legs symmetric, and no other reading of the
     /// table is coherent.
     /// </remarks>
     public static int BodyPartOfBone(int bone)
@@ -200,7 +200,7 @@ public static class HumanDamage
     /// <param name="zone">The zone from <see cref="ZoneOfBone"/> and <see cref="RefineByDirection"/>.</param>
     /// <returns>The body part the zone stands for.</returns>
     /// <remarks>
-    /// The names follow the bone→zone grouping §26 measured: the trunk (12, with 13/14 its front and rear),
+    /// The names follow the measured bone→zone grouping: the trunk (12, with 13/14 its front and rear),
     /// the head (15, the lethal proximity zone) and neck (16), and each limb's three segments running
     /// root-to-extremity down the 1.0/0.75/0.5 multipliers. Left and right follow the rig's own bone order
     /// (the first arm and leg, bones 8–13 and 23–27, are the left); a swap would only mislabel a side.

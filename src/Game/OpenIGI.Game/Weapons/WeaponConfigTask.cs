@@ -12,8 +12,7 @@ namespace OpenIGI.Game.Weapons;
 /// <c>Task_New</c>. The M3 task system reads it unmodified.
 /// </para>
 /// <para>
-/// <b>Parameter order is wire order</b>, transcribed from the script's own declaration. See
-/// the original.
+/// <b>Parameter order is wire order</b>, transcribed from the script's own declaration.
 /// </para>
 /// </remarks>
 public partial class WeaponConfigTask : GameTask

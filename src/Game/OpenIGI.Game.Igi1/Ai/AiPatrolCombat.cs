@@ -89,7 +89,7 @@ public enum AiRollSpace
 /// calls it only on the branch where <c>sub_48BFD0</c> does.
 /// </param>
 /// <param name="FreePositionAwayFromTarget">
-/// Runs it with that test <b>off</b> — the search query. See §13.6.
+/// Runs it with that test <b>off</b> — the search query.
 /// </param>
 public readonly record struct AiPatrolSense(
     bool HasDetectionSlot,
@@ -128,16 +128,16 @@ public sealed class AiPatrolCombat
     /// </summary>
     /// <remarks>
     /// 1.5 m. The constructor writes the field as two dword stores, <c>0</c> then <c>0x40B80000</c>, and
-    /// nothing else in the image writes it — so this is the shipped melee range for every AI. §10.5 read
-    /// the second store as a separate <c>float</c> field starting at 5.75; that was the upper half of
-    /// this double (§13.7).
+    /// nothing else in the image writes it — so this is the shipped melee range for every AI. The second
+    /// store is not a separate <c>float</c> field starting at 5.75, as it can be misread; it is the upper
+    /// half of this double.
     /// </remarks>
     public const double CloseCombatRangeInUnits = 6144.0;
 
     /// <summary>How many attackers crowd a patrol out of firing — three, where a guard's figure is four.</summary>
     /// <remarks>
     /// Both are literal in the binary and they genuinely disagree; the third-and-later attacker on a
-    /// patrol goes to <see cref="AiPatrolAction.LookForTarget"/> instead of firing (§13.1).
+    /// patrol goes to <see cref="AiPatrolAction.LookForTarget"/> instead of firing.
     /// </remarks>
     public const int CrowdedAimerCount = 3;
 
@@ -183,7 +183,7 @@ public sealed class AiPatrolCombat
     /// <remarks>
     /// <b>Finding somewhere new to look resets this to zero</b>, which is what makes a patrol hunt for as
     /// long as there is anywhere left to hunt. The targeting timeout only starts running once the search
-    /// is exhausted (§13.2).
+    /// is exhausted.
     /// </remarks>
     public int NotVisibleTicks => _notVisibleTicks;
 

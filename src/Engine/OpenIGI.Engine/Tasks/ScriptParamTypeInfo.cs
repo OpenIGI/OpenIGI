@@ -7,7 +7,7 @@ namespace OpenIGI.Engine.Tasks;
 /// <remarks>
 /// The argument counts are the load-bearing part: the <c>Task_New</c> script command parses parameters
 /// positionally from one flat argument list, so a wrong count silently shifts every following field and
-/// swallows nested child tasks. See the re-note, §7.
+/// swallows nested child tasks.
 /// </remarks>
 public static class ScriptParamTypeInfo
 {

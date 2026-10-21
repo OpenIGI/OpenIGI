@@ -27,8 +27,6 @@ namespace OpenIGI.Formats.Textures;
 /// directly and has no depth field at all.
 /// </description></item>
 /// </list>
-/// <para>
-/// </para>
 /// </remarks>
 public readonly struct TextureDescriptor
 {

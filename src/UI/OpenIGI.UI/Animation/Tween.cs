@@ -7,10 +7,9 @@ namespace OpenIGI.UI.Animation;
 /// <remarks>
 /// <para>
 /// Advanced by <see cref="Update"/> with a <b>real elapsed time</b> delta, never a simulation step. The
-/// interface runs on wall-clock time exactly as the smooth presentation blend and the free camera do
-/// (see <c>PLAN.md</c>); a tween measuring its life in ticks would couple animation to the 30 Hz
-/// lockstep and stutter whenever the simulation caught up. Feeding it seconds keeps the two clocks
-/// apart.
+/// interface runs on wall-clock time exactly as the smooth presentation blend and the free camera do;
+/// a tween measuring its life in ticks would couple animation to the 30 Hz lockstep and stutter
+/// whenever the simulation caught up. Feeding it seconds keeps the two clocks apart.
 /// </para>
 /// <para>
 /// The tween is deliberately re-targetable: <see cref="To"/> is set through <see cref="Retarget"/>,

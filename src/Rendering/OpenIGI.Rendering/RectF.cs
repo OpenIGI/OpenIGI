@@ -9,8 +9,7 @@ namespace OpenIGI.Rendering;
 /// <param name="Height">The height. May be negative to mirror vertically.</param>
 /// <remarks>
 /// Position-and-size rather than a corner pair, because that is the form the original's primitives
-/// carry and converting once at the boundary is
-/// less error-prone than converting at each use.
+/// carry and converting once at the boundary is less error-prone than converting at each use.
 /// </remarks>
 public readonly record struct RectF(float X, float Y, float Width, float Height)
 {

@@ -240,7 +240,7 @@ public sealed class Igi1PlayerSetup(
         // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
         // symbols that get their values as the two tables are read, so the rosters have to load
         // before humanplayer.qvm runs -- otherwise every id in its weapon cycle is a placeholder
-        // and the cycle names weapons nobody carries. section 8.
+        // and the cycle names weapons nobody carries.
         Weapons = new(host.Logger);
         Ammunition = new(host.Logger);
         WeaponTypeRegistry weaponRoster = Weapons;
@@ -404,7 +404,7 @@ public sealed class Igi1PlayerSetup(
             // The same script says which weapon starts in hand, and it is not a guess any more:
             // 0x40F760's cycle index begins at -1, so the first update lands on entry 0 of
             // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
-            // list starts with the knife. section 16.7.
+            // list starts with the knife.
             candidate.UseWeaponCycle(config.WeaponCycle);
 
             // And the nine categories the number keys select — 0x411000 reads exactly this table.
@@ -575,8 +575,7 @@ public sealed class Igi1PlayerSetup(
     /// <returns>Whether the player carries anything, and so needs a hand to hold it in.</returns>
     /// <remarks>
     /// Which weapon ends up in hand is not decided here: the weapon cycle's index starts at -1, and the first tick lands on
-    /// entry 0 of <c>DefineHumanPlayerWeaponCycle</c> and steps on until it finds one that is carried
-    ///.
+    /// entry 0 of <c>DefineHumanPlayerWeaponCycle</c> and steps on until it finds one that is carried.
     /// </remarks>
     public bool Carry(PlayerCamera candidate, PlayerLoadout loadout, WeaponTypeRegistry roster, AmmoTypeRegistry ammunition)
     {

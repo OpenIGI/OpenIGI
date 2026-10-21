@@ -5,8 +5,7 @@ namespace OpenIGI.Engine.Time;
 /// </summary>
 /// <remarks>
 /// The original decides this inline in <c>Flow_Update</c> (<c>0x402260</c>) with two branches and a
-/// short-circuit; naming the three outcomes makes the decision testable on its own. See
-/// the original.
+/// short-circuit; naming the three outcomes makes the decision testable on its own.
 /// </remarks>
 public enum FrameAction
 {

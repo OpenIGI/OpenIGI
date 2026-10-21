@@ -423,7 +423,7 @@ public sealed class RagdollSolverTests
     /// <summary>The same body, stepped the same way twice, produces bit-identical results.</summary>
     /// <remarks>
     /// Nothing in the solver may reach for a clock or a random number. The ragdoll does not feed the
-    /// simulation, so it is not bound by the determinism contract in <c>PLAN.md</c> — but a
+    /// simulation, so it is not bound by the project's determinism contract — but a
     /// non-reproducible one could not be tested at all, and a bug in it could not be reproduced either.
     /// </remarks>
     [Fact]

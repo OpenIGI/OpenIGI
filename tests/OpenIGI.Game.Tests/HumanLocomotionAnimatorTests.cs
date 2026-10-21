@@ -9,7 +9,6 @@ namespace OpenIGI.Game.Tests;
 /// <summary>
 /// The animator that replaces a walking-speed constant.
 /// </summary>
-/// <remarks>See the original and <c>animation.md</c> §4.</remarks>
 public sealed class HumanLocomotionAnimatorTests
 {
     private const double UnitsPerMetre = 4096.0;

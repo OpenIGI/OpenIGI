@@ -15,8 +15,7 @@ namespace OpenIGI.Engine.Tasks;
 /// </para>
 /// <para>
 /// Names are built by <see cref="GameTask.Name"/>, which is <c>TypeName_id</c> — the label in the
-/// <c>Task_New</c> call is discarded by the engine and is not what scripts use. See the re-note, §5.1
-/// and §8.
+/// <c>Task_New</c> call is discarded by the engine and is not what scripts use.
 /// </para>
 /// </remarks>
 public sealed class ScriptVarRegistry
@@ -340,8 +339,7 @@ public sealed class ScriptVarRegistry
     /// The declared type, or <see cref="QvmValueKind.None"/> when the name is not a bound variable.
     /// </returns>
     /// <remarks>
-    /// An assignment picks its evaluator from this — the original's symbol type tag of 1, 2 or 3. See
-    /// the original.
+    /// An assignment picks its evaluator from this — the original's symbol type tag of 1, 2 or 3.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="symbol"/> is <see langword="null"/>.</exception>
     public QvmValueKind GetValueKind(string symbol)

@@ -1428,8 +1428,8 @@ public sealed class CutsceneRuntime
             animation.RanThisTick = false;
         }
 
-        // One walk of the level tree in authored order: each task runs its own update where the tree puts it
-        //, not grouped by type.
+        // One walk of the level tree in authored order: each task runs its own update where the tree puts it,
+        // not grouped by type.
         _walker.Tick();
         UpdateFrame();
     }
@@ -3375,7 +3375,7 @@ public sealed class CutsceneRuntime
         string type = target?.Type.Name ?? string.Empty;
 
         // Retail dispatch is table-driven (handler table slot*384 + typeId @ 0xA96AE0) and only
-        // Train/Car/Heli/Plane register ReadChannels handlers (ANIMTASK-RE.md §5-6). Human's
+        // Train/Car/Heli/Plane register ReadChannels handlers. Human's
         // registration sub_45E450 registers none, so AnimProgram_End (0x4F4060) skips delivery:
         // an AnimTask targeting a human delivers NOTHING — no translation, no speed, no animation
         // id. Humans animate through their own state machine (state tick 0x4550B0, playback rate

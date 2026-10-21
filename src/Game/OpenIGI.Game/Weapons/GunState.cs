@@ -10,8 +10,8 @@ namespace OpenIGI.Game.Weapons;
 /// gun caches at <c>+296</c> and the <see cref="AmmoType"/> it looks up by calibre at <c>+300</c>.
 /// </para>
 /// <para>
-/// Named rather than numbered because the offsets are meaningless out of context, but the layout is
-/// recorded in the original so the mapping stays checkable.
+/// Named rather than numbered because the offsets are meaningless out of context, but each property's
+/// remarks give its original offset so the mapping stays checkable.
 /// </para>
 /// </remarks>
 public sealed class GunState

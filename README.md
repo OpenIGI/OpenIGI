@@ -1,210 +1,173 @@
 # OpenIGI
 
-An open-source reimplementation of **Project I.G.I. — I'm Going In** (2000, Innerloop Studios), built
-to run against the original retail game data. Written in C# on **.NET 10** with **Silk.NET** and an
-Vulkan renderer.
+**An open-source engine for _Project I.G.I.: I'm Going In_ (2000) and _I.G.I. 2: Covert Strike_ (2003).**
 
-> **You must own an original copy of the game.** OpenIGI ships **no** game assets and no original
-> code. It reads the data files from your own installation, and every texture, model, sound and script
-> it uses comes from there. Nothing in this repository is derived from Innerloop's art or binaries.
+OpenIGI is a clean-room reimplementation of Innerloop Studios' engine, written in C# on .NET 10. It runs the original
+games from your own retail installation. The original missions, scripts and AI play as they did in 2000, and a
+modern renderer, launcher and modding platform are built around them.
 
-This is a clean-room reimplementation. Behaviour is established by reverse-engineering the original
-executable and reproducing it in modern C# — a redesigned engine that behaves the same, not a
-function-by-function transliteration.
+[openigi.com](https://openigi.com) · [Releases](https://github.com/OpenIGI/OpenIGI/releases) ·
+[Modding guide](sdk/README.md) · [Contributing](CONTRIBUTING.md)
 
-## What runs today
+> **You need your own copy of the game.** OpenIGI contains no game assets and none of the original code. Every
+> texture, model, sound and script comes from the installation you point it at.
 
-A mission is playable end to end.
+## Highlights
 
-**Engine.** A fixed 30 Hz schedule built on absolute per-tick deadlines rather than a delta
-accumulator, with the original's catch-up cap, one-render-per-tick latch and excluded-time stopwatch.
-The simulation is a function of the tick index alone: the same run against clocks of 1, 5, 16 and
-100 ms granularity draws different numbers of frames and computes identical state. On top of it sit
-the QVM bytecode interpreter that runs the game's own scripts, the task tree the whole game is built
-from, and the ILFF archive readers for every `.res`, `.mef` and `.fnt` a retail install contains.
+- **Faithful to the original.** The game's own QVM scripts run on a reimplemented interpreter, over a deterministic
+  30 Hz simulation that reproduces the original's timing, AI perception, weapon tables and mission flow. A
+  `vanilla` mode reproduces the original picture and is held pixel for pixel as a regression gate.
+- **A modern renderer.** Deferred HDR rendering with cascaded shadows, real-time global illumination, volumetric
+  fog, screen-space reflections, temporal upscaling and hardware ray tracing on capable GPUs. NVIDIA DLSS (Super
+  Resolution, DLAA, Ray Reconstruction and Frame Generation) and Reflex are offered as an optional download.
+- **Direct3D 12, Vulkan and WebGPU.** One renderer runs on all three. It runs natively on Windows, Linux and macOS,
+  and in the browser.
+- **A launcher.** It finds your games, installs and updates OpenIGI on the stable or beta channel, and manages
+  content packs and mods.
+- **Moddable.** You can replace art by dropping files in a folder, install content packs with a load order, or write
+  code mods in C# against a versioned API, published through a community index and built from source.
 
-**Gameplay.** The player walks, crouches, climbs ladders, rides wires, works doors and switches, and
-fires the retail weapon set with its own tuning data. Guards see through the original's two view cones,
-hear gunshots and impacts at the ranges the weapon tables declare, run their authored QVM behaviour
-scripts, and raise the alarm chain. Missions carry their objectives, complete or fail through
-`LevelFlow`, and unlock the next mission the way the original's campaign config does.
+## Status
 
-**Presentation.** A deferred HDR renderer with cascaded shadow maps, volumetric fog, TAA and temporal
-upscaling, screen-space ambient occlusion, screen-space GI, screen-space reflections, bloom, colour
-grading, depth of field and motion blur. A cinematic front end — main menu, campaign, settings,
-profiles — drawn over a live mission backdrop, which is promoted into the mission itself when you press
-Play rather than being thrown away and reloaded. The C-key map computer is there in both forms: the
-retail handheld panel, and a full-screen tactical interface.
-
-**Audio.** The desktop host plays mission sounds and music through the OpenAL backend.
-
-**Not yet.** Only the desktop platforms are wired up; the mobile and web backends are planned
-but not started. On macOS the hardware ray-tracing tier is unavailable — see **Platforms** below.
-
-## Quick start
-
-Requires the **.NET 10 SDK**.
-
-```sh
-dotnet build OpenIGI.slnx
-dotnet test  OpenIGI.slnx
-```
-
-**Put the build in your game folder** — the one holding `IGI.exe`, `common/` and `missions/` — and it
-will find the data on its own, with nothing to configure. That is the whole installation procedure.
-
-To run it from anywhere else, point it at the installation with the environment variable or the
-`-game` switch:
-
-```sh
-# Windows (PowerShell)
-$env:IGI_GAME_PATH = "C:\Games\Project IGI"
-# Linux / macOS
-export IGI_GAME_PATH="/path/to/Project IGI"
-
-dotnet run --project apps/OpenIGI.Desktop
-```
-
-Tests that need real assets read the same variable and **skip** cleanly when it is unset, so a
-checkout with no game data still builds green.
-
-### Useful switches
-
-| Switch | What it does |
-|---|---|
-| `-game <dir>` | Installation to read data from, ahead of `IGI_GAME_PATH` and of what is found beside the executable. |
-| `-mission <n>` | Load straight into a mission, skipping the front end. |
-| `-window`, `-size WxH` | Run windowed at a given client size. Borderless is the default. |
-| `-fullscreen` | Take over the monitor and switch its display mode. |
-| `-vanilla` | The whole remaster track off: retail menus and the original's render path. |
-| `-difficulty <d>` | `easy`, `normal` or `hard`. |
-| `-screenshot <f>` | Write a BMP of the rendered frame and quit. |
-
-Passing an option the parser does not recognise prints the full list, which includes the capture,
-camera-flight and menu-navigation options used for development.
-
-### Graphics presets
-
-Four presets — `vanilla`, `enhanced`, `high` and `ultra` — set the sixty-odd `r_*` variables together.
-`vanilla` reproduces the original's picture and is the regression gate; the others add modern
-rendering on top. Everything is reachable individually from the in-game console and from the settings
-pages. Settings are written to a `settings.cfg` beside the executable if one exists, and to your user
-profile otherwise, so a copied folder stays self-contained and an installed one stays writable.
-
-### Derived surface detail
-
-I.G.I. ships one diffuse texture per surface and nothing else, so the normal and roughness maps a
-physically-based shading model needs are derived from those textures. This happens automatically: a
-texture with no map derives one on a background thread the first time it is seen, and the result is
-cached under your user profile, so the first run fills the cache and later runs read it. Nothing needs
-to be downloaded and nothing is committed here — the maps come from your own installation's art.
-
-`ResExtract maps` pre-bakes them in one pass if you would rather not pay for it as you play.
-
-### Replacing the art
-
-Put a file where an asset lives in the installation and the game loads yours instead:
-`<game>/overrides/common/textures/000_04_1.tex` replaces the shared texture,
-`<game>/overrides/missions/location0/level1/terrain/terrain.tex` replaces level 1's ground. Nothing has to
-be declared and there is no manifest -- the path is the identity, which is also the only thing that can
-tell two assets apart when their names cannot, as 79 of this game's texture names cannot. A `.res` archive
-in that folder works too and means the same thing: every entry in it is registered at the path that entry
-would have been overridden at individually.
-
-`overrides` in the console re-reads the folder without a restart, so a file dropped in while the game is
-running is picked up; **F8** takes the whole folder out of the frame and puts it back.
-
-That is what makes a texture pack possible. The art is 8,232 pictures between 8x8 and 640x480, which is
-the largest remaining gap between this renderer and a modern one: no amount of indirect lighting fixes a
-64-pixel brick wall. Three steps build one:
-
-```sh
-ResExtract images  "<game>"  D:/igi-work/png                # every picture, as PNGs
-texture-forge all  D:/igi-work/png D:/igi-work/hd --scale 4 # enlarge, and optionally remaster
-ResExtract pack    D:/igi-work/hd  "<game>/overrides"       # back into the game's own file types
-```
-
-Optional, like the detail maps and for the same reason -- the game's art with a filter over it is still
-Innerloop's, so the pack is something you build from your own installation rather than something this
-repository can ship. See `tools/texture-forge/README.md` and `tools/OpenIGI.Tools.ResExtract/README.md`.
-
-## Platforms
-
-Rendering is Vulkan only. There is no OpenGL path: the deferred G-buffer, the temporal resolve and the
-hardware-traced lighting are all built on explicit synchronisation and ray query, and maintaining a
-second backend that could reach none of them was paying for a fallback nobody ran.
-
-| Platform | Vulkan comes from | Hardware ray tracing |
+| | Project I.G.I. | I.G.I. 2 |
 |---|---|---|
-| Windows | the vendor driver | yes, on an RTX/RDNA2-class adapter |
-| Linux | the vendor driver or Mesa | yes, on an RTX/RDNA2-class adapter |
-| macOS 13+ | MoltenVK, shipped in the build | **no** — see below |
+| Campaign | All 14 missions | All 19 missions load and play; in development |
+| Released builds | Yes | Not yet, run from source |
+| Browser | First 6 missions, original graphics | No |
+| Multiplayer | No | No |
 
-**macOS.** Apple ships no Vulkan, so the build carries MoltenVK — a translation layer onto Metal —
-beside the executable; nothing needs installing. MoltenVK does not implement
-`VK_KHR_acceleration_structure` or `VK_KHR_ray_query`, so the traced tier stands down: sun and lamp
-shadows fall back to shadow maps, reflections to the screen-space march, and indirect light to the
-screen-space gather. Everything is capability-gated, so this is a quieter picture rather than a broken
-one, but the `ultra` preset does not look on macOS the way it looks on Windows. Reaching parity would
-mean a Metal backend built on `MTLAccelerationStructure`, not a change to this one.
+| Platform | Graphics API | Hardware ray tracing |
+|---|---|---|
+| Windows 10/11 x64 | Direct3D 12 (default), Vulkan | Yes, on DXR 1.1 / RTX- and RDNA2-class GPUs |
+| Linux x64 | Vulkan | Yes, on RTX- and RDNA2-class GPUs |
+| macOS 13+ (Apple silicon) | Vulkan through MoltenVK, included | No: shadows, reflections and GI use their screen-space and shadow-map forms |
+| Browser | WebGPU | No |
 
-MoltenVK is shipped twice over, under its own name for Silk's loader and as `libvulkan.1.dylib` for
-GLFW's, which will dlopen that name and no other. GLFW looks for it in the working directory and in the
-bundle's `Contents/Frameworks`, so a build output runs when started from its own folder, and an app
-bundle runs from anywhere. Build the bundle with `tools/package-macos.sh` — a loose executable runs but
-macOS gives it no focus, Dock icon or menu bar.
+## Playing
 
-MoltenVK also caps a workgroup's shared memory at Metal's 32KB rather than the 48KB a desktop driver
-offers, so the temporal resolve's shading-rejection pass builds on a narrower tile there. It is the same
-measure at a worse apron ratio, chosen from the adapter's reported limit.
+**Desktop.** Install the launcher from [openigi.com](https://openigi.com). On Windows that's a download. On macOS and
+Linux run:
+
+```sh
+curl -fsSL https://openigi.com/install.sh | bash
+```
+
+The launcher looks for your game installations, or you can point it at them in Settings. It installs OpenIGI and
+keeps it up to date. Switch to the **beta** channel in Settings for builds from the development branch.
+
+**Browser.** Open [openigi.com](https://openigi.com) in a browser with WebGPU and choose your Project I.G.I. folder.
+The files are read on your machine and never uploaded.
+
+## Building from source
+
+You need the **.NET 10 SDK** (the version is pinned in [`global.json`](global.json)).
+
+```sh
+dotnet build -c Release OpenIGI.slnx
+dotnet test  -c Release OpenIGI.slnx
+```
+
+Tests that need retail data read `IGI_GAME_PATH` and `IGI2_GAME_PATH`, and skip themselves when those are unset. A
+checkout with no game data still builds and tests clean.
+
+Some optional native components are fetched into `third-party/` rather than committed:
+
+| Script | Needed for |
+|---|---|
+| `tools/fetch-wgpu-native.ps1` | The desktop WebGPU backend |
+| `tools/fetch-streamline.ps1` | DLSS and Reflex in development builds |
+| `tools/fetch-dxc.ps1` | Regenerating the committed DXIL shaders |
+
+### Running
+
+Copy the build into the game folder and run it there, or tell it where the game is:
+
+```sh
+export IGI_GAME_PATH="/path/to/Project IGI"      # PowerShell: $env:IGI_GAME_PATH = "C:\Games\Project IGI"
+export IGI2_GAME_PATH="/path/to/IGI 2"
+dotnet run -c Release --project apps/OpenIGI.Desktop -- -title igi1
+```
+
+| Option | Effect |
+|---|---|
+| `-title igi1\|igi2` | Which game to run |
+| `-game <dir>` | The installation to read, ahead of the environment variables |
+| `-mission <n>` | Start in a mission, skipping the menus |
+| `-window`, `-size WxH`, `-fullscreen` | Window mode. Borderless is the default |
+| `-difficulty easy\|normal\|hard` | Difficulty |
+| `-vanilla` | The original menus, picture, pacing and audio |
+| `-content <dir>` | Load a content pack folder |
+| `+<command>` | Run a console command at startup, for example `+gfx_preset ultra` |
+
+`-help` lists every option, including the capture and camera tools used in development.
+
+## Graphics
+
+The graphics presets are `vanilla`, `enhanced`, `high` and `ultra`. Each one sets the renderer's variables together;
+every setting can also be changed on its own in the settings pages or the console (`` ` ``).
+
+The graphics API is chosen automatically: Direct3D 12 on Windows (when the GPU supports shader model 6.6), Vulkan
+elsewhere. Override it with `r_renderer`, or press **F10** to switch APIs while the game runs.
+
+DLSS and Reflex need an NVIDIA RTX GPU on Windows. Install them from the launcher's Content page (**NVIDIA DLSS**).
+Without them the engine's own temporal upscaler runs.
+
+Settings are saved to `settings.cfg` beside the executable if one exists there, otherwise to your user profile:
+`%APPDATA%\OpenIGI`, `~/.config/OpenIGI` or `~/Library/Application Support/OpenIGI`.
+
+## Modding
+
+- **Replace a file.** Put it under `<game>/overrides/` at the path it has in the game, for example
+  `overrides/common/textures/000_04_1.tex`. A `.res` archive there works too. The `overrides` console command reloads
+  the folder, and **F8** toggles it.
+- **Content packs.** These are folders of replacement art with a load order, installed and ordered from the
+  launcher's Content page. The tools to build one from your own installation, such as an AI-upscaled texture pack,
+  are `tools/texture-forge` and `tools/OpenIGI.Tools.ResExtract`.
+- **Code mods.** Mods are C# assemblies written against a versioned API. They can add systems, replace the game's
+  tasks, and use the other game's data. Start one with the template:
+
+  ```sh
+  dotnet new install OpenIGI.Modding.Templates
+  dotnet new openigi-mod -n MyMod --modId my-mod
+  ```
+
+  Mods are published through a community index and built by its CI from a pinned commit of their public source, never
+  from an author's binaries. The launcher's Mods page installs them. See the [modding guide](sdk/README.md).
 
 ## Repository layout
 
 ```
-src/     Core Engine Formats Scripting Game Modding UI Frontend
-         Presentation               title-agnostic drawing + the ITitlePresentation seam
-         Host                       the game host: frame loop, missions, dev console, menu host
-         + Rendering/Audio/Input/Platform abstractions and their backends
-apps/    OpenIGI.Desktop            composition root and executable — under 300 lines
-tools/   ResExtract, QvmDisasm      archive/texture extraction and QVM disassembly
-         texture-forge (Python)     AI texture upscaling and PBR map generation
-tests/   xUnit projects, one per source project
+apps/       OpenIGI.Desktop (the game), OpenIGI.Launcher, OpenIGI.Web (the browser build)
+src/
+  Core/       primitives, settings, retail file formats, the QVM interpreter, release manifests
+  Engine/     the game host and frame loop, virtual file system, mod API and loader
+  Game/       gameplay shared by both games, each game's own gameplay and presentation, the menus
+  Rendering/  the renderer, its hardware interface, the D3D12/Vulkan/WebGPU backends, shaders, DLSS
+  Audio/      OpenAL and Web Audio
+  Platform/   windowing and input for desktop and browser
+  UI/         the UI framework used by the menus and the launcher
+services/   the update and content service behind api.openigi.com
+sdk/        the modding SDK, the project template and the community index's rules
+tools/      asset extraction, QVM disassembly, shader build, release tooling
+tests/      xUnit test projects
 ```
 
-The layering rule is that nothing under `src/` may reference a concrete backend — only the abstraction
-projects — and backends are wired together in the app composition root. The game itself lives in
-`Host` and `Presentation` rather than in the executable, so a second platform supplies a window, a
-graphics device and an audio factory and gets the same game. The rules are enforced by
-`tests/OpenIGI.Core.Tests/Architecture/`; the full set is in
-[`docs/architecture.md`](docs/architecture.md).
+Nothing under `src/` may reference a concrete backend; the applications wire backends in. The architecture tests in
+`tests/OpenIGI.Core.Tests/Architecture` enforce this layering.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: preserve the determinism contract, keep the game
-core free of backend dependencies, document every public member, and add golden tests for format
-readers.
-
-### Verification gates
-
-Install the local hooks with `tools/install-hooks.sh`. Pre-commit runs whitespace checks and relevant
-staged-change tests; pre-push runs the serialized Release build and all .NET tests. An emergency
-`SKIP_FULL_TESTS=1 git push` bypass is allowed, but prints a warning.
-
-Retail smoke validation covers the MVP Levels 1–5 only:
-
-```sh
-IGI_GAME_PATH=/path/to/Project\ IGI tools/test/verify-e2e-mvp.sh
-```
-
-The landing-time retail job requires a self-hosted runner with all three labels: `self-hosted`,
-`macOS`, and `igi-retail`. Retail data is never committed; the job uploads only generated capture
-evidence.
+Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the determinism rules, the clean-room policy,
+which retail build is the reference, and how changes are tested. In short: open a pull request against `develop`, keep
+the Release build free of warnings, and keep the test suite passing. `tools/install-hooks.sh` installs the same
+checks as git hooks. [`RELEASING.md`](RELEASING.md) describes how releases reach the launcher and the website.
 
 ## Legal
 
-Licensed under **GPL-3.0** — see [`LICENSE`](LICENSE).
+OpenIGI is licensed under the [GNU General Public License v3.0](LICENSE). Third-party components are listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
-This is a clean-room reimplementation created for interoperability with data you already own. "Project
-I.G.I.", "I'm Going In" and related trademarks belong to their respective owners; this project is not
-affiliated with or endorsed by them. No game assets, decompiler output or original source are included
-in this repository, and contributions containing them will not be accepted.
+OpenIGI is a clean-room reimplementation for use with game data you already own. It is not affiliated with or endorsed
+by the owners of _Project I.G.I._ or _I.G.I. 2_. All trademarks belong to their respective owners. The repository
+contains no game assets, original source code or decompiler output, and contributions that include them are not
+accepted.

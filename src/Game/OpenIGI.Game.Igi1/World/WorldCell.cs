@@ -14,7 +14,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// </para>
 /// <para>
 /// <see cref="MaximumSize"/> is <c>0x40000000</c>, which is the same ±2^30 world cube the terrain
-/// octree spans (<c>world-loading.md</c> §6.5.4) — the collision index and the terrain share their
+/// octree spans — the collision index and the terrain share their
 /// bounds. <see cref="MinimumSize"/> is 8192 units, i.e. <b>two metres</b>, the finest the broad phase
 /// ever goes.
 /// </para>

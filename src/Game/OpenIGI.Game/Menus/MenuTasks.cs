@@ -5,7 +5,7 @@ namespace OpenIGI.Game.Menus;
 /// <summary>The manager that owns the menu screen stack.</summary>
 /// <remarks>
 /// Registered by the original at <c>0x4170A0</c> with an instance size of 10392. Its parameters are
-/// declared by the menu script, not by the engine — see the original.
+/// declared by the menu script, not by the engine.
 /// </remarks>
 public partial class MenuManagerTask : MenuWindowTask, IMenuManager
 {

@@ -94,8 +94,7 @@ public readonly record struct AiCombatCommand(
 /// </para>
 /// <para>
 /// <b>It never shoots.</b> It raises the trigger slot of the input frame and lets the body's own weapon
-/// machine turn that into a round, which is what the original does — see the original
-/// §11.7.
+/// machine turn that into a round, which is what the original does.
 /// </para>
 /// </remarks>
 public sealed class AiGuardCombat
@@ -156,7 +155,7 @@ public sealed class AiGuardCombat
     /// <summary>Arms the behaviour — <c>0x48D000</c>.</summary>
     /// <remarks>
     /// The original also fills <c>HumanAI+15828</c> with the initial movement delay here, but nothing
-    /// reads that counter (§10.5) so there is nothing to carry.
+    /// reads that counter so there is nothing to carry.
     /// </remarks>
     /// <param name="crouched">
     /// Whether the body is crouched when the action is taken — the RPG arm's install (<c>0x48CB40</c>)
@@ -207,9 +206,8 @@ public sealed class AiGuardCombat
     /// The engagement's argument block carries a byte that <c>sub_48B9C0</c> takes as its second
     /// argument and the caller then <b>clears</b>, so it fires exactly once per engagement. The two arms
     /// keep it in different places — the guard arm at <c>argBlock+40</c> (<c>0x48D080</c>) and the patrol
-    /// arm at <c>argBlock+32</c> (<c>0x48BC00</c>), which is I.G.I. 2's <c>isFirstFire</c>. That is why
-    /// <c>ai.md</c> §11.5 and §12.1 named different offsets and <b>both were right</b>; see
-    /// <c>igi2-crosscheck.md</c> §8 item 1.
+    /// arm at <c>argBlock+32</c> (<c>0x48BC00</c>), which is I.G.I. 2's <c>isFirstFire</c>. So the two
+    /// different offsets are <b>both right</b>: each arm reads its own.
     /// </remarks>
     public bool FirstFirePending => _firstFire;
 

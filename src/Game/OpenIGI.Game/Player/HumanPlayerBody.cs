@@ -17,8 +17,7 @@ namespace OpenIGI.Game.Player;
 /// <para>
 /// So the body is drawable with the same machinery a soldier's is — a <c>SoldierView</c> over the
 /// <c>000.iff</c> set, standing in clip 2 — and the death state (<c>0x40E560</c>) plays a fall clip from
-/// the player's hit-zone table (201/202/215/112/204) on it, which are ids in this same set. See
-/// the original.
+/// the player's hit-zone table (201/202/215/112/204) on it, which are ids in this same set.
 /// </para>
 /// </remarks>
 public static class HumanPlayerBody

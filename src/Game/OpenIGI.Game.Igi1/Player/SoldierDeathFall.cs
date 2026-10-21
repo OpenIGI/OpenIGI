@@ -251,8 +251,8 @@ public static class SoldierDeathFall
     /// <returns>The turned vector.</returns>
     /// <remarks>
     /// <c>0x4B3BE0</c> builds <c>{cos, −sin, 0; sin, cos, 0; 0, 0, 1}</c> and the caller applies it as
-    /// <c>M·v</c>, which is the engine's <em>other</em> convention from <c>Matrix3f.Transform</c> — see
-    /// <c>animation.md</c> §5.7. Applying it the wrong way round would place a corpse by the transpose of
+    /// <c>M·v</c>, which is the engine's <em>other</em> convention from <c>Matrix3f.Transform</c>.
+    /// Applying it the wrong way round would place a corpse by the transpose of
     /// its own heading, which is a mirror image, so this is written out rather than routed through the
     /// helper that means the opposite.
     /// </remarks>

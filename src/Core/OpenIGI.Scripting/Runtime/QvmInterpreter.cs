@@ -13,7 +13,7 @@ namespace OpenIGI.Scripting.Runtime;
 /// <para>
 /// A stack machine with a twist: a call passes <em>code offsets</em> rather than values, and the
 /// native decides which of them to evaluate and how often. See
-/// <see cref="QvmCallContext"/> and the original.
+/// <see cref="QvmCallContext"/>.
 /// </para>
 /// <para>
 /// Faults never throw. Execution stops and leaves a code in <see cref="Error"/>, exactly as the

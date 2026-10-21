@@ -458,7 +458,7 @@ public sealed class Igi1MissionSetup(
 
         // The sight and bullet rays test placed objects AND the terrain, as the original's
         // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
-        // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
+        // the terrain arm on). Objects alone let guards see and shoot through
         // hills.
         // The level's doors, before the brains: a walker asks the registry for the nearest door
         // on a door hop, and an open door is switched out of the collision index so the

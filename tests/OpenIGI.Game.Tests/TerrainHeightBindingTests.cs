@@ -19,9 +19,9 @@ namespace OpenIGI.Game.Tests;
 /// terrain is authored as the surface minus the heightmap.
 /// </summary>
 /// <remarks>
-/// The expected origins and scale were read from the running retail game with the a probe
-/// (<c>[terrain] heightmap</c> records from the table at <c>0xBA2030</c> after level 1 loaded), not
-/// derived; the test pins the port to them.
+/// The expected origins and scale were read from the running retail game (<c>[terrain] heightmap</c>
+/// records from the table at <c>0xBA2030</c> after level 1 loaded), not derived; the test pins the port
+/// to them.
 /// </remarks>
 public sealed class TerrainHeightBindingTests
 {

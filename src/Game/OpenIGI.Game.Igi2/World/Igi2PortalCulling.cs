@@ -229,7 +229,7 @@ public sealed class Igi2PortalCulling
 {
     /// <summary>The view-space depth below which a vertex counts as behind the near plane.</summary>
     /// <remarks>
-    /// <c>0.040959999</c> in the decompilation, which is <c>0.04096f</c> exactly. It is used twice: as
+    /// <c>0.040959999</c> in the original, which is <c>0.04096f</c> exactly. It is used twice: as
     /// the outcode test at <c>igi2.exe 0x58823A</c> and as the plane <c>SectorObject_CheckTriangle</c>
     /// clips to, passed in as the constant <c>0x3D27C5AC</c> at <c>0x588376</c>.
     /// </remarks>
@@ -244,7 +244,7 @@ public sealed class Igi2PortalCulling
     /// distance of 409.6 world units.
     /// </para>
     /// <para>
-    /// <b>What the distance is measured between</b> was not obvious from the decompilation and had to be
+    /// <b>What the distance is measured between</b> was not obvious from the original's code and had to be
     /// worked out. The original calls <c>Real32x3_ProjectPointToPlane</c> (<c>0x561A70</c>) with the
     /// camera-relative position of the portal's plane point, the unit plane normal as the direction and
     /// its negation as the plane normal, then squares the distance between the point and its projection.

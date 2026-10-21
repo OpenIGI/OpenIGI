@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Tests;
 /// <remarks>
 /// Every case in <see cref="HumanHitTests"/> passes <c>pose: null</c>, so the bone resolution and the
 /// head-proximity promotion were never exercised together. That gap is why a promotion bug could reach
-/// the game: see the original.
+/// the game.
 /// </remarks>
 public sealed class HumanPosedHitTests
 {

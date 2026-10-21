@@ -20,9 +20,9 @@ namespace OpenIGI.Core.Numerics;
 /// </para>
 /// <para>
 /// Only the order of operations the disassembly shows is reproduced: C# evaluates <c>a * b + c * d + e</c>
-/// as <c>((a * b) + (c * d)) + e</c>, which is how the pseudo-code in the original
-/// groups every sum. Never let two plain <see langword="float"/>s meet in an operator -- that is .NET
-/// float arithmetic, rounded to nearest; one side must already be an <see cref="X87"/>.
+/// as <c>((a * b) + (c * d)) + e</c>, which is how the original's rigid-body code groups every sum.
+/// Never let two plain <see langword="float"/>s meet in an operator -- that is .NET float arithmetic,
+/// rounded to nearest; one side must already be an <see cref="X87"/>.
 /// </para>
 /// </remarks>
 /// <param name="value">The register value.</param>

@@ -296,7 +296,7 @@ public static class HumanHitTest
     /// </para>
     /// <para>
     /// The struck triangle's bone is its first vertex's, unless the other two name a different one together
-    /// — the original's rule when a face spans a joint (<c>0x5655A0</c>'s v233 read).
+    /// — the original's rule when a face spans a joint, as <c>0x5655A0</c> reads it.
     /// </para>
     /// </remarks>
     private static bool NearestCrossing(

@@ -73,7 +73,7 @@ public readonly record struct GunShotEffect(
 public sealed class GameMaterial
 {
     /// <summary>Whether a line of sight passes through this global material row.</summary>
-    /// <param name="globalMaterial">A row of the retail material table (see §24.4).</param>
+    /// <param name="globalMaterial">A row of the retail material table.</param>
     /// <returns>
     /// <see langword="true"/> for the see-through surfaces a sight ray must ignore: Water (2), Glass
     /// (14), Fence (18), MetalLadder (22) and MetalFence (23).

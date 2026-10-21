@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A transcription of the original: one box over the whole batch fixes how deep
+/// The original's terrain ray cast, step for step: one box over the whole batch fixes how deep
 /// the first ray's start is descended (<c>0x4C9A30</c>); from there each ray walks the octree depth first,
 /// nearest child first, admitting children by an integer box with ±16385 of vertical slack and a slab test
 /// (<c>0x4CC810</c>); the <b>first</b> leaf with a hit ends the walk; the leaf's triangles are tested with a
@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// This is deliberately separate from <see cref="TerrainRayTrace"/>, which serves gameplay rays: the two
 /// disagree on which hit wins when leaves overlap, and routing bullets through this one is a separate decision.
 /// On the levels that ship a <c>terrain.hmp</c>, a leaf inside a <c>HeightMap</c> task's cube has its vertices
-/// raised by that grid first (§4.3, §4.4), which is how the descent's enter hooks leave it.
+/// raised by that grid first, which is how the descent's enter hooks leave it.
 /// </para>
 /// </remarks>
 public sealed class RetailTerrainRay
@@ -75,7 +75,7 @@ public sealed class RetailTerrainRay
             return;
         }
 
-        // §3.1: one box over every start and end, both corners starting at the first start.
+        // One box over every start and end, both corners starting at the first start.
         double maxX = starts[0].X, maxY = starts[0].Y, maxZ = starts[0].Z;
         double minX = maxX, minY = maxY, minZ = maxZ;
         for (int i = 0; i < n; i++)
@@ -91,12 +91,12 @@ public sealed class RetailTerrainRay
         minY = X87.Add(minY, -2.0);
         minZ = X87.Add(minZ, -16387.0);
 
-        // §3.3: the depth the batch box shares, truncating conversions.
+        // The depth the batch box shares, truncating conversions.
         int spread = ((Trunc(maxZ) ^ Trunc(minZ)) | (Trunc(maxY) ^ Trunc(minY))) | (Trunc(maxX) ^ Trunc(minX));
         int depth = 30 - (31 - int.LeadingZeroCount(spread));
         depth = Math.Min(depth, LeafDepth);
 
-        // §3.4: only the first ray's start is descended, floor-converted.
+        // Only the first ray's start is descended, floor-converted.
         TerrainDescentCursor cursor = TerrainPointDescent.Descend(
             _tree,
             new Vector3i(Floor(starts[0].X), Floor(starts[0].Y), Floor(starts[0].Z)),
@@ -227,7 +227,7 @@ public sealed class RetailTerrainRay
         int rz0 = Trunc(Math.Min(s.Z, e.Z)), rz1 = Trunc(Math.Max(s.Z, e.Z));
         float[] d = [((X87)e.X - s.X).F, ((X87)e.Y - s.Y).F, ((X87)e.Z - s.Z).F];
 
-        // §4.1: rank the axes, then order the octants farthest first along the ray.
+        // Rank the axes, then order the octants farthest first along the ray.
         float ax = MathF.Abs(d[0]), ay = MathF.Abs(d[1]), az = MathF.Abs(d[2]);
         int major, second, third;
         if (ax > ay && ax > az)
@@ -256,7 +256,7 @@ public sealed class RetailTerrainRay
                 | ((dirThird ^ ((i >> 2) & 1)) << third);
         }
 
-        // §4.2: the explicit stack, children popped nearest first.
+        // The explicit stack, children popped nearest first.
         int sp = 0;
         _stack[0] = new Entry(cursor.Extent, cursor.Shift, cursor.Orientation, cursor.Centre.X, cursor.Centre.Y, cursor.Centre.Z, cursor.NodeIndex);
         _firstVisit[0] = true;
@@ -322,7 +322,7 @@ public sealed class RetailTerrainRay
         return false;
     }
 
-    /// <summary>The child's box against the infinite line, one face per axis in rank order (§4.2 SlabTest).</summary>
+    /// <summary>The child's box against the infinite line, one face per axis in rank order.</summary>
     private static bool SlabTest(
         long cx,
         long cy,
@@ -510,7 +510,7 @@ public sealed class RetailTerrainRay
         return true;
     }
 
-    /// <summary>The heightmap patch on one vertex (§4.4): the grid's bilinear sample, less its bias, times 256.</summary>
+    /// <summary>The heightmap patch on one vertex: the grid's bilinear sample, less its bias, times 256.</summary>
     /// <remarks>
     /// The origin passes through a float and the index conversions truncate. Retail reads the byte grid without
     /// a bounds check; a vertex outside it (packed vertices reach past their leaf) reads the nearest edge here.

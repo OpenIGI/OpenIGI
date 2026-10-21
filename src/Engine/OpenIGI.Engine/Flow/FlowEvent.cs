@@ -7,8 +7,7 @@ namespace OpenIGI.Engine.Flow;
 /// <para>
 /// The original stores these as bare integers in two fields of the root <c>Flow</c> task: the state in
 /// effect and the one pending. Five have script-visible names, registered as constants by
-/// <c>0x401FC0</c>; the other three are only ever requested from C. See
-/// the original and §5.4.
+/// <c>0x401FC0</c>; the other three are only ever requested from C.
 /// </para>
 /// <para>
 /// The usual path is <see cref="Intro"/> or <see cref="Game"/> at boot, then

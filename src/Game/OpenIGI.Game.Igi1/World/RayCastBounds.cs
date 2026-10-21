@@ -23,8 +23,8 @@ public static class RayCastBounds
 
     /// <summary>The deepest the terrain octree is descended for a cast.</summary>
     /// <remarks>
-    /// The same cap the terrain renderer's traversal uses (<c>world-loading.md</c> §6.5.5, which emits
-    /// while <c>e &lt; 16</c>) — so collision and rendering agree on the octree's finest level, reached
+    /// The same cap the terrain renderer's traversal uses (it emits while <c>e &lt; 16</c>) — so collision
+    /// and rendering agree on the octree's finest level, reached
     /// from two independent readings.
     /// </remarks>
     public const int MaximumTerrainDepth = 16;

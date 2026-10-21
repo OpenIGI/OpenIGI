@@ -18,10 +18,10 @@ using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
-/// <summary>Compares the port's chunk vertices against a vertex dump the a probe took from the retail game.</summary>
+/// <summary>Compares the port's chunk vertices against a vertex dump taken from the running retail game.</summary>
 /// <remarks>
-/// Opt-in: point <c>OPENIGI_TERRAIN_PROBE_LOG</c> at a log written with <c>IGI_PROBE_HOOKS=terrain</c>
-/// (see <c>a probe of the running original</c>); without one the test has nothing to compare and passes vacuously. The
+/// Opt-in: point <c>OPENIGI_TERRAIN_PROBE_LOG</c> at a log written with <c>IGI_PROBE_HOOKS=terrain</c>;
+/// without one the test has nothing to compare and passes vacuously. The
 /// dump's <c>[terrain] V</c> records are the positioned vertices <c>sub_510010</c> built, heightmap
 /// included, so this is the whole vertex pipeline against the original at once.
 /// </remarks>

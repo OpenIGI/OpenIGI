@@ -495,7 +495,7 @@ public sealed class MenuRenderer : IDisposable
         // DIVERGENCE: the original submits this AFTER the two words, which through a painter's-order
         // batch paints over the very word it is meant to mark. It goes behind them here. This is the
         // third place the original's submission order only makes sense if its 2D calls are not
-        // immediate; see the re-note.
+        // immediate.
         Bgra32 tint = MenuLayout.ToPixel(MenuLayout.GetColour(MenuLayout.GreenIndex, toggle.IsHighlighted));
         int halfX = toggle.IsOn ? toggle.LayoutX : toggle.OffHalfX;
         int halfWidth = toggle.IsOn ? toggle.OnHalfWidth : toggle.OffHalfWidth;
@@ -891,7 +891,7 @@ public sealed class MenuRenderer : IDisposable
     /// <remarks>
     /// <c>MenuWindow_DrawBox</c> (<c>0x424980</c>). The original submits the outline and <em>then</em>
     /// the black fill, which through a painter's-order batch would cover it; the fill goes first here,
-    /// for the same reason the pointer is drawn last. See the re-note.
+    /// for the same reason the pointer is drawn last.
     /// </remarks>
     private void DrawWindowBox(SpriteBatch batch, MenuWindowTask window, int screenWidth, int screenHeight)
     {

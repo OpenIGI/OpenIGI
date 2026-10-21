@@ -10,8 +10,8 @@ namespace OpenIGI.Formats.Animation;
 /// <remarks>
 /// <para>
 /// Reproduces <c>0x4D67A0</c>. Two things about that loader shape the reader and would not be guessed
-/// from the bytes: a track with a single key is read <b>short</b> (§3.1 of the note), and <c>BALH</c>'s
-/// second field is an <b>id limit</b>, not a count — the table is sparse and indexed by animation id.
+/// from the bytes: a track with a single key is read <b>short</b>, and <c>BALH</c>'s second field is an
+/// <b>id limit</b>, not a count — the table is sparse and indexed by animation id.
 /// </para>
 /// </remarks>
 public sealed class BoneAnimationSet

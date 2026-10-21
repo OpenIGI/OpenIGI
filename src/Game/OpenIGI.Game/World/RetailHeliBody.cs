@@ -15,7 +15,7 @@ public sealed class RetailHeliDefinition
     /// <summary>Gets or sets the sleep threshold on |ω|² (<c>TYPE + 720</c>).</summary>
     public float SleepSpin { get; set; }
 
-    /// <summary>Gets or sets the record's ten leading floats, <c>R + 0 … R + 36</c> (§5.3: gains, retentions, collective rates).</summary>
+    /// <summary>Gets or sets the record's ten leading floats, <c>R + 0 … R + 36</c> (gains, retentions, collective rates).</summary>
     public float[] Record { get; set; } = new float[10];
 
     /// <summary>Gets or sets the aerodynamic surfaces (<c>R + 40</c>, <c>R + 44</c>): point × 4096, normal normalised.</summary>
@@ -48,8 +48,7 @@ public readonly record struct RetailHeliRotor(bool Main, bool Tail);
 
 /// <summary>
 /// A helicopter as the original simulates it -- <c>Heli_Tick</c> (<c>0x431E30</c>), its skids (<c>0x432550</c>), its
-/// channel receiver (<c>0x431B70</c>) and its rotors (<c>0x42D440</c>) -- on the shared rigid body, exactly
-///.
+/// channel receiver (<c>0x431B70</c>) and its rotors (<c>0x42D440</c>) -- on the shared rigid body, exactly.
 /// </summary>
 /// <remarks>
 /// A helicopter has no collision points: it stands on its skids, rays of its own that push springs and lift it
@@ -318,7 +317,7 @@ public sealed class RetailHeliBody : RetailRigidBody
         Array.Clear(body.AngularVelocity);
     }
 
-    /// <summary>§2.1 D: <c>M = M · RotX(a)</c>, the bank taken out about body X.</summary>
+    /// <summary><c>M = M · RotX(a)</c>, the bank taken out about body X.</summary>
     private void Stabilise(float gain)
     {
         float[] m = M;
@@ -355,7 +354,7 @@ public sealed class RetailHeliBody : RetailRigidBody
         MatrixCounter++;
     }
 
-    /// <summary>§2.2: the skids' rays, springs, contact damping and bottom-out lift -- <c>0x432550</c>.</summary>
+    /// <summary>The skids' rays, springs, contact damping and bottom-out lift -- <c>0x432550</c>.</summary>
     private void Skid(IRetailCarWorld world)
     {
         ContactCount = 0;

@@ -4,7 +4,7 @@ using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
 
-/// <summary>A car's placement in the level: the Car task's declared parameters the physics reads (§8.3).</summary>
+/// <summary>A car's placement in the level: the Car task's declared parameters the physics reads.</summary>
 /// <param name="Position">"Position", world units, as the level's floats widen.</param>
 /// <param name="Orientation">"Orientation": α, β, γ in radians.</param>
 /// <param name="OriginalThrust">"Original Thrust": the initial throttle.</param>
@@ -21,7 +21,7 @@ public readonly record struct RetailCarPlacement(
 
 /// <summary>Builds a <see cref="RetailCarBody"/> the way the original creates and resets a car.</summary>
 /// <remarks>
-/// the original: the definition comes from <c>DefinePhysicsObjType</c>'s arguments
+/// The definition comes from <c>DefinePhysicsObjType</c>'s arguments
 /// (<c>0x4EDD20</c>, <c>0x5031F0</c>, <c>0x42DB00</c>), the body from <c>Body_InitFromType</c> (<c>0x4FB700</c>)
 /// with its box inertia (<c>0x4ECED0</c>, <c>0x4EC5E0</c>), the points from the model's magic vertices lowered
 /// by the wheel drop (<c>0x42EC30</c>), and the wheels enabled by the model's wheel attachments (<c>0x430000</c>).
@@ -30,7 +30,7 @@ public readonly record struct RetailCarPlacement(
 /// </remarks>
 public static class RetailCarSpawn
 {
-    /// <summary>Reads the fixed definition from the raw <c>DefinePhysicsObjType</c> arguments (§8.8).</summary>
+    /// <summary>Reads the fixed definition from the raw <c>DefinePhysicsObjType</c> arguments.</summary>
     /// <param name="physics">The parsed CAR type, whose <see cref="CarPhysicsDefinition.Arguments"/> are read.</param>
     /// <param name="wheelDrop">Receives <c>R+604</c>: how far each wheel lowers its body point, world units.</param>
     /// <param name="wheelsFromAttachments">Receives <c>R+608</c>.</param>
@@ -189,7 +189,7 @@ public static class RetailCarSpawn
         }
     }
 
-    /// <summary>Reads a Car task's physics parameters (§8.3).</summary>
+    /// <summary>Reads a Car task's physics parameters.</summary>
     /// <param name="task">The Car task.</param>
     /// <param name="wheelAttachments">How many <c>TASKTYPE_WHEEL</c> attachments its model spawns.</param>
     /// <returns>The placement.</returns>

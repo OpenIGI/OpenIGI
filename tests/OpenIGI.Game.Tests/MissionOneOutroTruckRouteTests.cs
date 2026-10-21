@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 /// <remarks>
 /// The waypoints below were measured by hooking <c>Car::Tick</c> in the running original and
-/// recording its position every tick through the whole outro a probe of the running original, IGI_PROBE_HOOKS=car).
+/// recording its position every tick through the whole outro.
 /// They are observations of behaviour, not anything taken out of the original's code. The route is
 /// a long S: south out of the yard, a swing west, then a sweep back east through the gate pair at
 /// (6098.96, -13721.71) and away south. Nothing about it is authored as a path -- it falls out of

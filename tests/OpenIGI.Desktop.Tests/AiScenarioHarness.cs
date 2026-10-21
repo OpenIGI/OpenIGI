@@ -1198,7 +1198,7 @@ public sealed class AiScenarioHarness : IDisposable
     }
 
     /// <summary>
-    /// The port's half of the patrol parity capture: the same <c>[pw]</c> line a probe's <c>patrolwatch</c> hook set
+    /// The port's half of the patrol parity capture: the same <c>[pw]</c> line a hook in the running original
     /// writes from retail's HumanAI tick, for every soldier, on a change of body state, patrol command, deadline or
     /// graph node and every 10 level ticks otherwise. <c>OPENIGI_PATROL_CAPTURE=file</c>,
     /// <c>OPENIGI_PATROL_CAPTURE_MISSION</c> (4) and <c>OPENIGI_PATROL_CAPTURE_TICKS</c> (5400). Positions are the

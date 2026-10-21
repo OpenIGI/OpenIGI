@@ -8,7 +8,7 @@ namespace OpenIGI.Formats.Textures;
 /// <para>
 /// The values are the low bits of the <c>TEXH</c> header's first dword. Bit <c>0x40</c> of that dword
 /// is a separate mip-chain flag and is not part of the format code — see
-/// <see cref="TextureDescriptor.HasMipChain"/> and the original.
+/// <see cref="TextureDescriptor.HasMipChain"/>.
 /// </para>
 /// <para>
 /// Formats 3 and 4 decode identically, by a straight dword copy; the original distinguishes them only

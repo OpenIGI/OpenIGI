@@ -10,7 +10,7 @@ namespace OpenIGI.Platform;
 /// The original's window lives in <c>WinMain</c> (<c>0x48F530</c>) and its message loop drives
 /// everything: it pumps messages, then calls the root task's update, then repeats. This interface
 /// keeps that shape — <see cref="PumpEvents"/> is the message pump, and the caller owns the loop, so
-/// the frame arbiter from the original stays in charge of when work happens.
+/// the game loop's frame arbiter stays in charge of when work happens.
 /// </para>
 /// <para>
 /// All members must be called from the thread that created the window.

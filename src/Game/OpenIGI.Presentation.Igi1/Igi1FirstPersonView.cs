@@ -92,7 +92,7 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             // tan45/tan30 = 1.732x magnified about the screen centre -- which moves a hand held
             // below centre DOWN and out of frame. That is what holds the glove below the bottom
             // edge in retail. (An earlier pass refuted this as "larger is the wrong direction";
-            // larger is exactly what hides it.) section 14.7.
+            // larger is exactly what hides it.)
             //
             // The vertical tangent is 3/4 of the horizontal one and does NOT follow the window's
             // aspect: [19] = Aspect43() * [18] works out to yScale = halfHeight / (0.75 * tan) at

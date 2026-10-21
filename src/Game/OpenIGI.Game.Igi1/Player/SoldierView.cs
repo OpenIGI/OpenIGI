@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// <remarks>
 /// <para>
 /// This is the soldier init handler (<c>0x456E50</c>) and the tail of <c>Human</c>'s (<c>0x45F890</c>)
-/// without the scene graph — see the original. The original builds the bone
+/// without the scene graph. The original builds the bone
 /// object from the task's <c>Bone Heirachy</c> id (<c>0x4D9620</c>), plays its <c>Stand Animation</c>
 /// on bone 0 of the rig, resolves the ordinary <c>Model</c> parameter by name, and writes the facing
 /// as a pure Z rotation of <c>Gamma</c> into the object's own 3×3 (<c>0x4B3BE0</c>).
@@ -59,7 +59,7 @@ public sealed class SoldierView
 
         // The stand animation LOOPS. 0x456E50 passes flags 0, whose bit 0 is the loop bit -- but a stand
         // clip that runs out and holds its last frame leaves a soldier frozen, which is not what the game
-        // does. The idle-animation countdown in HumanAI's per-tick (ai.md 3.1) re-triggers it, so the
+        // does. The idle-animation countdown in HumanAI's per-tick re-triggers it, so the
         // observable behaviour is a continuously standing guard either way; looping here is the same
         // result without needing the AI attached.
         _bones.Play(0, StandAnimation, loops: true);
@@ -165,7 +165,7 @@ public sealed class SoldierView
     /// always there, and the third-person view is only what makes them visible.
     /// </para>
     /// <para>
-    /// The split works because of how the rig is shaped (<c>weapons.md</c> §26.1): bones 0–3 are the
+    /// The split works because of how the rig is shaped: bones 0–3 are the
     /// pelvis and spine, the head and both arms hang off the spine top, the weapon chain 20–22 hangs off
     /// <b>bone 1</b>, and the two legs hang off the root. So bone 1's subtree is exactly torso, head,
     /// arms and weapon, and bone 0's clip keeps the legs.
@@ -244,7 +244,7 @@ public sealed class SoldierView
     /// the rig's own bone 0 after the palette build. Nothing else in <c>.text</c> writes it, and
     /// <c>0x4D5790</c> copies it <i>by value</i> into the node when a clip starts, so even a hypothetical
     /// writer could not steer it live. Retail's body does not follow the eye, because retail never draws
-    /// it. See <c>REMASTER.md</c> §R15.
+    /// it.
     /// </para>
     /// <para>
     /// The split follows the rig rather than taste. Bone 1 carries the arms, the head and the weapon
@@ -273,7 +273,7 @@ public sealed class SoldierView
         _headBend = head;
 
         // About X, which is the rig's own right: the weapon chain's rest translations run +Y out of the
-        // chest (weapons.md section 26.1 measures 1.08 m forward), so +Y is forward and a pitch is a
+        // chest (measured at 1.08 m forward), so +Y is forward and a pitch is a
         // turn about X. Positive leans back and looks up, matching the camera's own pitch sign.
         _bones.Bend(HumanUpperBody.Bone, Pitch(chest));
         _bones.Bend(HumanUpperBody.NeckBone, Pitch(head));

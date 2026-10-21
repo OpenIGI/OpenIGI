@@ -323,7 +323,7 @@ public sealed partial class GameHost
     /// <summary>Starts the session with no level, no player and no world.</summary>
     private void ForgetLevel(FrameLoopState state)
     {
-        // The level's own sun, read from its Dirlight task -- section 12.
+        // The level's own sun, read from its Dirlight task.
         // Null until a level is loaded, and for a level that declares none.
         _timeOfDay.Sun = null;
         _camera = null;

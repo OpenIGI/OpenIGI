@@ -6,7 +6,7 @@ using Xunit;
 namespace OpenIGI.Scripting.Tests;
 
 /// <summary>
-/// Checks the interpreter against scripts whose source is known from an independent decompiler.
+/// Checks the interpreter against scripts whose source was recovered by an independent tool.
 /// </summary>
 /// <remarks>
 /// <para>

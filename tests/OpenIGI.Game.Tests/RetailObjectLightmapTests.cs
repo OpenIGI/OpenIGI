@@ -63,7 +63,7 @@ public sealed class RetailObjectLightmapTests
     /// archive trio <c>16x1, 8x1, 2x1</c> against the model's single page shows the spawn path
     /// (<c>sub_4CE090</c>, reached from <c>sub_4DCCB0</c>) resolves more than the model name alone.
     /// Reading that spawn is the remaining open item; <see cref="EveryLightmapSetStartsAtItsOwnersModel"/>
-    /// holds everywhere meanwhile. See <c>TODO.md</c>.
+    /// holds everywhere meanwhile.
     /// </remarks>
     [RequiresGameDataTheory]
     [InlineData(1)]

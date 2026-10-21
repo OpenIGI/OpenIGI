@@ -927,7 +927,7 @@ public sealed class SoldierSimulation : IHumanEvents
         // and a round that fails the roll flies on to whatever is behind.
         //
         // A burst-firing guard carries its aim in Combat.TurnTo (the tracked point, started on the target
-        // at burst setup, 0x48B9C0). A follow-firing patrol has no aim solve at all (ai.md 13.7) -- it
+        // at burst setup, 0x48B9C0). A follow-firing patrol has no aim solve at all -- it
         // sprays along its own facing whenever the target is inside a 16.3-degree cone, so its ray runs
         // along the body's heading at the aim point's height.
         Vector3d target = brain.Combat.TurnTo ?? SprayTarget(brain, enemyFeet, enemyCrouching);
@@ -1969,7 +1969,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// declared position — placed objects first, terrain as the fallback, highest surface wins — and
     /// stand the <b>skin's lowest vertex</b> on it. The original's own foot reference is
     /// <c>0x48A340</c>'s bone-0-plus-<c>Human+1300</c> offset, and the <c>+1300</c> term is still
-    /// unread (<c>player.md</c> §14.9), so the mesh's own extent is the honest stand-in. A recorded
+    /// unread, so the mesh's own extent is the honest stand-in. A recorded
     /// divergence, retired with the soldier update.
     /// </para>
     /// </remarks>
@@ -2081,7 +2081,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
-    /// across the four ticks the original spreads them over (<c>ai.md</c> §5.1).
+    /// across the four ticks the original spreads them over.
     /// </remarks>
     public int Animate(
         IReadOnlyDictionary<int, GraphFile> graphs,
@@ -2139,7 +2139,7 @@ public sealed class SoldierSimulation : IHumanEvents
         }
 
         // The level's authored patrol paths, keyed by the PatrolPath task's own id -- what AIAction_Patrol's
-        // first argument names (ai.md 7.1).
+        // first argument names.
         AiPatrolPathRegistry? paths = levelRoot is null ? null : AiPatrolPathRegistry.Build(levelRoot);
         if (paths is not null)
         {
@@ -2267,7 +2267,7 @@ public sealed class SoldierSimulation : IHumanEvents
                 }
 
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
-                // otherwise the archetype its AIType selects (ai.md 7.5a and 2.3). The per-task script is
+                // otherwise the archetype its AIType selects. The per-task script is
                 // what names the soldier's patrol path, so without it a guard has nothing to patrol.
                 // When a per-task script exists, the archetype is passed separately so DefaultHandler can
                 // delegate to it — the mechanism the original uses at 0x44E060.
@@ -2582,7 +2582,7 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <param name="enemyFeet">The target's feet, in world units.</param>
     /// <param name="enemyCrouching">Whether the target is crouching.</param>
     /// <remarks>
-    /// The follow fire has no burst and no aim solve (ai.md §13.7): the trigger is pressed whenever the
+    /// The follow fire has no burst and no aim solve: the trigger is pressed whenever the
     /// target is inside a 16.3° cone about the shooter's forward axis, and the round flies where the BODY
     /// points. The port's facing has no pitch, so the ray borrows the aim point's height and keeps the
     /// facing's horizontal error — which is the part that decides the spray's geometric misses.
@@ -5173,8 +5173,8 @@ public sealed class SoldierSimulation : IHumanEvents
     /// <param name="walker">The level walk.</param>
     /// <remarks>
     /// <para>
-    /// The original has no soldier pass: each <c>HumanSoldier</c> updates where the walk reaches it
-    ///, its children -- HumanView, Shadow, the gun, then the HumanAI
+    /// The original has no soldier pass: each <c>HumanSoldier</c> updates where the walk reaches it, its
+    /// children -- HumanView, Shadow, the gun, then the HumanAI
     /// whose CHANNELS packet moves it -- before the next soldier starts. A soldier therefore sees the soldiers
     /// before it in the tree where they are this tick, and those after it (and the player, late in
     /// <c>ConditionalContainer_560</c>) where they were last tick.

@@ -219,7 +219,7 @@ public class MissionState : IInspectableMission
     public virtual void ResetPlayerLife(int difficulty)
     {
         // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
-        // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11). The player's
+        // soldiers' 100 -- humanplayer.qvm overrides the executable's default. The player's
         // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
         // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
         PlayerDifficulty = difficulty;

@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <para>
 /// The search is a breadth-first walk outward from <b>the target's</b> nearest node, testing at most
 /// <see cref="DefaultBudget"/> nodes beyond it, and it runs no pathfinding: the direction test is three
-/// lookups in §1's precomputed route table.
+/// lookups in the nav graph's precomputed route table.
 /// </para>
 /// </remarks>
 public static class AiFreePosition
@@ -84,7 +84,7 @@ public static class AiFreePosition
             return targetNodeId;
         }
 
-        // 0x48B050 counts the nodes it TESTS and rejects (v15, bumped as each one joins the queue), not the
+        // 0x48B050 counts the nodes it TESTS and rejects (a counter bumped as each one joins the queue), not the
         // nodes it expands: once five have failed it stops, mid-neighbour-list. So the search never looks
         // past the target node and five more; counting expansions instead tested every neighbour of five
         // nodes and sent a soldier to a node across the compound.

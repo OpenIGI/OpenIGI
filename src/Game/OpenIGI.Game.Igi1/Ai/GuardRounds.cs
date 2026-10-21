@@ -14,7 +14,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <summary>A guard's rounds, made casts: against the player's body, the soldiers behind it and the world.</summary>
 /// <remarks>
 /// The guard raised the trigger and the weapon's cadence let one out. The AI's hit probability decides whether the round
-/// is on target -- the original hands that same figure to the gun with every shot (ai.md 11.6), so a miss is a round
+/// is on target -- the original hands that same figure to the gun with every shot, so a miss is a round
 /// that went somewhere else rather than a round that never existed.
 /// </remarks>
 public sealed class GuardRounds

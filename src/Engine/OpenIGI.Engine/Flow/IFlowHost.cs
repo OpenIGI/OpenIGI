@@ -13,8 +13,7 @@ namespace OpenIGI.Engine.Flow;
 /// <para>
 /// The bookkeeping around these calls — assigning the current state, resetting the tick rate, the
 /// fall-through from <see cref="FlowEvent.EndGame"/> into <see cref="FlowEvent.MainMenu"/> — stays in
-/// <see cref="FlowTask"/>, because it is the part that has to stay 1:1. See
-/// the original.
+/// <see cref="FlowTask"/>, because it is the part that has to stay 1:1.
 /// </para>
 /// </remarks>
 public interface IFlowHost

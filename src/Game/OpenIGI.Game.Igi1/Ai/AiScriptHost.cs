@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="Arguments">Its evaluated integer arguments, in order.</param>
 /// <param name="Slot">
 /// The dispatch position the action was created at — the original's <c>dword_5BDA64</c>, which becomes the
-/// action's <c>+8</c> and so the interrupt cap while it runs (<c>ai.md</c> §3.5).
+/// action's <c>+8</c> and so the interrupt cap while it runs.
 /// </param>
 /// <param name="Reals">
 /// The same arguments as the reals the script actually passed — durations and weights lose their
@@ -47,7 +47,7 @@ public readonly record struct AiProducedAction(
 /// </summary>
 /// <remarks>
 /// <para>
-/// The original passes the AI to its natives through <b>four globals</b> (<c>ai.md</c> §3.6):
+/// The original passes the AI to its natives through <b>four globals</b>:
 /// <c>dword_5BDA58</c> the current AI, <c>5BDA5C</c> the list the <c>AIAction_*</c> calls append to,
 /// <c>5BDA60</c> the queue the event is read from and <c>5BDA64</c> the dispatch position. That is why no AI
 /// native takes the AI as an argument and <c>AIFunction_GetCurrentEventType()</c> has arity zero. This host is

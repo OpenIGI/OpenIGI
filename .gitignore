@@ -68,9 +68,6 @@ gamedata/
 !tests/**/fixtures/**
 *.stackdump
 
-# a probe build output
-a probe of the running original
-
 # Scratch space for the remaster track's reference captures (tools/capture-reference.sh).
 .capture-tmp/
 .capture-compare/
@@ -87,7 +84,6 @@ a probe of the running original
 !/README.md
 !/CONTRIBUTING.md
 !/RELEASING.md
-!/GPU-PERFORMANCE.md
 !src/Core/OpenIGI.Generators/AnalyzerReleases.*.md
 !.github/**/*.md
 # What a mod's author reads: the modding guide, and the mods index's own pages.
@@ -102,7 +98,6 @@ a probe of the running original
 
 # Reference captures and generated format notes kept beside the code but not carried here.
 /docs/
-
 
 # Scratch space for local build/run scripts and throwaway work.
 /scratch/
