@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenIGI.Core.Titles;
@@ -27,6 +28,39 @@ public sealed record ModManifest(
     /// <summary>The manifest's file name, in the mod's directory.</summary>
     public const string FileName = "mod.json";
 
+    /// <summary>Gets who made the mod, as the launcher credits them.</summary>
+    public IReadOnlyList<string> Authors { get; init; } = [];
+
+    /// <summary>Gets a line saying what the mod does, or <see langword="null"/>.</summary>
+    public string? Summary { get; init; }
+
+    /// <summary>Gets where the mod's page or source is, or <see langword="null"/>.</summary>
+    public string? Homepage { get; init; }
+
+    /// <summary>Gets the mod's licence, as an SPDX expression, or <see langword="null"/>.</summary>
+    public string? License { get; init; }
+
+    /// <summary>
+    /// Gets the ids of the other games whose installed data the mod reads besides the one it is for; it is left out when one
+    /// of them is not installed.
+    /// </summary>
+    public IReadOnlyList<string> RequiresTitleData { get; init; } = [];
+
+    /// <summary>
+    /// Gets the mods this one needs switched on with it, by id, each with the oldest version it works with (<c>1.2</c> or
+    /// <c>&gt;=1.2</c>; <c>*</c> for any); see <see cref="ModVersion.Satisfies"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Dependencies { get; init; } = ReadOnlyDictionary<string, string>.Empty;
+
+    /// <summary>Gets the ids of mods this one cannot be played with; the later of the two in the order is left out.</summary>
+    public IReadOnlyList<string> Conflicts { get; init; } = [];
+
+    /// <summary>Gets the oldest game build the mod works with, or <see langword="null"/>; the launcher checks it.</summary>
+    public string? MinGameVersion { get; init; }
+
+    /// <summary>Gets whether the mod has code, which runs with the game's own rights.</summary>
+    public bool RunsCode => Assembly is { Length: > 0 };
+
     /// <summary>Reads a manifest.</summary>
     /// <param name="json">The manifest's text.</param>
     /// <returns>The manifest.</returns>
@@ -54,6 +88,10 @@ public sealed record ModManifest(
             Name = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name,
             Version = manifest.Version ?? "0",
             Titles = manifest.Titles ?? [],
+            Authors = manifest.Authors ?? [],
+            RequiresTitleData = manifest.RequiresTitleData ?? [],
+            Dependencies = manifest.Dependencies ?? ReadOnlyDictionary<string, string>.Empty,
+            Conflicts = manifest.Conflicts ?? [],
         };
     }
 

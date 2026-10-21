@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Audio.OpenAL;
 using OpenIGI.Composition;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
@@ -70,17 +71,46 @@ string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDi
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 
-// The mods: every directory holding a mod.json under mods/ beside the executable, or under OPENIGI_MODS, applied to
-// the games they name before either is resolved, so whichever is chosen is the modded one. OPENIGI_MODS=off plays the
-// games as they ship.
+// The mods, applied to the games they name before either is resolved, so whichever is chosen is the modded one: the
+// ones the launcher's profile (OPENIGI_MOD_PROFILE) switches on for each game, in its order; without one, every directory
+// holding a mod.json under mods/ beside the executable, or under OPENIGI_MODS -- which, naming a folder, wins over the
+// profile, so a mod's author can try a build from the launcher. OPENIGI_MODS=off plays the games as they ship.
 string? modsSetting = Environment.GetEnvironmentVariable("OPENIGI_MODS");
 if (!string.Equals(modsSetting, "off", StringComparison.OrdinalIgnoreCase))
 {
-    ModSet mods = ModLoader.Load(
-        string.IsNullOrWhiteSpace(modsSetting) ? Path.Combine(SettingsPaths.ExecutableDirectory, "mods") : modsSetting,
-        logger);
+    // A mod reading another game's data is played only where that game is installed; -game is the active title's.
+    ModEnvironment machine = new(id =>
+        (options.GamePath is not null && string.Equals(id, options.Title, StringComparison.OrdinalIgnoreCase))
+        || TitleCatalog.IsInstalled(id));
+    Func<GameTitle, ModSet> modsFor;
+    if (Environment.GetEnvironmentVariable(ModProfile.EnvironmentVariable) is { Length: > 0 } profilePath
+        && string.IsNullOrWhiteSpace(modsSetting))
+    {
+        IReadOnlyDictionary<string, ModSet> sets;
+        try
+        {
+            sets = ModLoader.Load(ModProfile.Read(profilePath), machine, logger);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            logger.Warning("Mods", $"The mod profile '{profilePath}' could not be read, so no mods are played: {ex.Message}");
+            sets = new Dictionary<string, ModSet>();
+        }
+
+        modsFor = title => sets.GetValueOrDefault(title.Id) ?? ModSet.None;
+    }
+    else
+    {
+        ModSet mods = ModLoader.Load(
+            string.IsNullOrWhiteSpace(modsSetting) ? Path.Combine(SettingsPaths.ExecutableDirectory, "mods") : modsSetting,
+            machine,
+            logger);
+        modsFor = _ => mods;
+    }
+
     foreach (TitlePackage package in TitleCatalog.Titles.Packages.ToArray())
     {
+        ModSet mods = modsFor(package.Title);
         TitleCatalog.Titles.Replace(package with { Runtime = mods.Extend(package.Runtime) });
 
         // And what the mods draw, added to the game's own presenters.

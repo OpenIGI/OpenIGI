@@ -68,7 +68,7 @@ public sealed class ModSet
         LevelSystemEdits edits = new();
         foreach (InstalledMod mod in For(runtime.Title))
         {
-            mod.Code?.Configure(new Builder(mod.Manifest, runtime.Title, added, edits));
+            mod.Code?.Configure(new Builder(mod, runtime.Title, added, edits));
         }
 
         if (added.Count == 0 && edits.Count == 0)
@@ -79,11 +79,13 @@ public sealed class ModSet
         return new ModdedRuntime(runtime, [.. runtime.Modules, .. added, new EditsModule(edits)]);
     }
 
-    private sealed class Builder(ModManifest manifest, GameTitle title, List<IContentModule> modules, LevelSystemEdits edits) : IModBuilder
+    private sealed class Builder(InstalledMod mod, GameTitle title, List<IContentModule> modules, LevelSystemEdits edits) : IModBuilder
     {
-        public ModManifest Manifest => manifest;
+        public ModManifest Manifest => mod.Manifest;
 
         public GameTitle Title => title;
+
+        public string Directory => mod.Directory;
 
         public IModBuilder AddModule(IContentModule contentModule)
         {
@@ -96,7 +98,7 @@ public sealed class ModSet
         {
             ArgumentNullException.ThrowIfNull(other);
             ArgumentException.ThrowIfNullOrWhiteSpace(deviceName);
-            modules.Add(new MountTitleDataModule(manifest.Id, other, deviceName.TrimEnd(':')));
+            modules.Add(new MountTitleDataModule(mod.Manifest.Id, other, deviceName.TrimEnd(':')));
             return this;
         }
 
@@ -104,7 +106,7 @@ public sealed class ModSet
         {
             ArgumentException.ThrowIfNullOrEmpty(typeName);
             ArgumentNullException.ThrowIfNull(factory);
-            modules.Add(new ReplaceTaskModule(manifest.Id, typeName, factory, adapter));
+            modules.Add(new ReplaceTaskModule(mod.Manifest.Id, typeName, factory, adapter));
             return this;
         }
 

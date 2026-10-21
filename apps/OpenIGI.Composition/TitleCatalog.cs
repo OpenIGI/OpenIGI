@@ -155,6 +155,21 @@ public static class TitleCatalog
     /// <exception cref="ArgumentException">This build has no runtime for that title.</exception>
     public static IGameTitleRuntime For(GameTitle title) => Titles.Get(title).Runtime;
 
+    /// <summary>Gets whether a title is installed where a desktop finds it, its own variable or a probe saying where.</summary>
+    /// <param name="id">The title's id.</param>
+    /// <returns>Whether this build runs that title and its data is there.</returns>
+    /// <remarks>What a mod that reads another game's data is checked against, as the session's locator will look.</remarks>
+    public static bool IsInstalled(string? id)
+    {
+        if (!Titles.TryGet(id, out TitlePackage? package))
+        {
+            return false;
+        }
+
+        string root = DiscoverDataRoot(package.Title);
+        return root.Length > 0 && File.Exists(Path.Combine(root, package.Title.SignatureFile));
+    }
+
     /// <summary>Finds the mission catalogue for a title.</summary>
     /// <param name="title">The title to run.</param>
     /// <param name="logger">Where scan diagnostics go.</param>

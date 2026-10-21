@@ -170,7 +170,82 @@ public sealed class ModLoadingTests : IDisposable
         Assert.Empty(ModLoader.Load(Path.Combine(_mods, "absent")).Mods);
     }
 
-    private void InstallSample(string directory, string manifest)
+    [Fact]
+    public void A_profile_plays_each_games_switched_on_mods_in_its_order_loading_a_shared_one_once()
+    {
+        string sample = InstallSample("sample", """{ "id": "sample", "name": "Sample", "version": "1.0", "apiVersion": 1, "assembly": "SampleMod.dll" }""");
+        string first = Write("zz-first", """{ "id": "first", "version": "1", "apiVersion": 1 }""");
+        string off = Write("off", """{ "id": "off", "version": "1", "apiVersion": 1 }""");
+        Core.Content.ModProfile profile = Core.Content.ModProfile.Parse(Core.Content.ModProfile.Serialize(new(
+            Core.Content.ModProfile.CurrentSchema,
+            new Dictionary<string, IReadOnlyList<Core.Content.ModProfileEntry>>
+            {
+                ["igi1"] = [new("first", first, true), new("sample", sample, true), new("off", off, false)],
+                ["igi2"] = [new("sample", sample, true)],
+            })));
+
+        IReadOnlyDictionary<string, ModSet> sets = ModLoader.Load(profile, ModEnvironment.Any);
+
+        Assert.Equal(["first", "sample"], sets["igi1"].Mods.Select(static m => m.Manifest.Id));
+        Assert.Same(sets["igi1"].Mods[1], Assert.Single(sets["igi2"].Mods));
+    }
+
+    [Fact]
+    public void A_profile_entry_whose_manifest_names_another_mod_is_left_out()
+    {
+        string folder = Write("renamed", """{ "id": "renamed", "version": "1", "apiVersion": 1 }""");
+        Core.Content.ModProfile profile = new(
+            Core.Content.ModProfile.CurrentSchema,
+            new Dictionary<string, IReadOnlyList<Core.Content.ModProfileEntry>> { ["igi1"] = [new("listed", folder, true)] });
+
+        Assert.Empty(ModLoader.Load(profile, ModEnvironment.Any)["igi1"].Mods);
+    }
+
+    [Fact]
+    public void A_mod_reading_a_game_that_is_not_installed_is_left_out()
+    {
+        Write("a", """{ "id": "reads-igi2", "version": "1", "apiVersion": 1, "requiresTitleData": ["igi2"] }""");
+        Write("b", """{ "id": "plain", "version": "1", "apiVersion": 1 }""");
+
+        Assert.Equal(["plain"], ModLoader.Load(_mods, new ModEnvironment(static id => id != "igi2")).Mods.Select(static m => m.Manifest.Id));
+        Assert.Equal(2, ModLoader.Load(_mods, ModEnvironment.Any).Mods.Count);
+    }
+
+    [Fact]
+    public void A_mod_whose_dependency_is_missing_or_too_old_is_left_out_and_so_are_the_mods_that_need_it()
+    {
+        Write("a-library", """{ "id": "library", "version": "1.5", "apiVersion": 1 }""");
+        Write("b-new", """{ "id": "needs-new", "version": "1", "apiVersion": 1, "dependencies": { "library": ">=2.0" } }""");
+        Write("c-old", """{ "id": "needs-old", "version": "1", "apiVersion": 1, "dependencies": { "library": "1.0" } }""");
+        Write("d-chain", """{ "id": "needs-needs-new", "version": "1", "apiVersion": 1, "dependencies": { "needs-new": "*" } }""");
+        Write("e-absent", """{ "id": "needs-absent", "version": "1", "apiVersion": 1, "dependencies": { "absent": "*" } }""");
+
+        Assert.Equal(["library", "needs-old"], ModLoader.Load(_mods).Mods.Select(static m => m.Manifest.Id));
+    }
+
+    [Fact]
+    public void Of_two_mods_in_conflict_the_later_is_left_out_whichever_names_the_other()
+    {
+        Write("a", """{ "id": "one", "version": "1", "apiVersion": 1 }""");
+        Write("b", """{ "id": "two", "version": "1", "apiVersion": 1, "conflicts": ["one"] }""");
+        Write("c", """{ "id": "three", "version": "1", "apiVersion": 1, "conflicts": ["four"] }""");
+        Write("d", """{ "id": "four", "version": "1", "apiVersion": 1 }""");
+
+        Assert.Equal(["one", "three"], ModLoader.Load(_mods).Mods.Select(static m => m.Manifest.Id));
+    }
+
+    [Fact]
+    public void A_mod_is_told_its_own_directory()
+    {
+        DirectoryMod mod = new();
+        ModSet mods = new([new InstalledMod(new ModManifest("dir", "Dir", "1", ModApi.Version, []), _mods, mod)]);
+
+        mods.Extend(new Igi2Runtime());
+
+        Assert.Equal(_mods, mod.Directory);
+    }
+
+    private string InstallSample(string directory, string manifest)
     {
         string target = Write(directory, manifest);
         string built = Path.Combine(AppContext.BaseDirectory, "SampleMod");
@@ -178,6 +253,15 @@ public sealed class ModLoadingTests : IDisposable
         {
             File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
         }
+
+        return target;
+    }
+
+    private sealed class DirectoryMod : IOpenIgiMod
+    {
+        public string? Directory { get; private set; }
+
+        public void Configure(IModBuilder builder) => Directory = builder.Directory;
     }
 
     private sealed class MountMod : IOpenIgiMod

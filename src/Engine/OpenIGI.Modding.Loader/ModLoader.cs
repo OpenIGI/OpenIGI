@@ -1,33 +1,44 @@
 using System.Reflection;
 using System.Runtime.Loader;
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Modding.Loader;
 
-/// <summary>Finds the mods installed in a directory and loads their code.</summary>
+/// <summary>Finds the mods a run plays with and loads their code.</summary>
 /// <remarks>
 /// <para>
-/// Every subdirectory holding a <c>mod.json</c> is a mod, applied in the order of the directories' names, so the order is
+/// The mods are the ones a <see cref="ModProfile"/> switches on, in its order, as the launcher writes it; or, with no
+/// profile, every subdirectory of a folder holding a <c>mod.json</c>, in the order of the directories' names, so the order is
 /// the same on every machine. A mod that names an assembly is loaded into its own <see cref="AssemblyLoadContext"/>, which
 /// takes the port's own assemblies from the game rather than from the mod, so the mod's <see cref="IOpenIgiMod"/> is the
 /// game's; its other dependencies are its own.
 /// </para>
 /// <para>
-/// A mod that cannot be read or loaded is reported and left out; the rest are played with. A run without mods is the game
-/// as it ships, which is what the parity tests play.
+/// A mod that cannot be read or loaded, was written for another API, reads a game that is not installed, needs a mod that
+/// is not played, or conflicts with one played before it is reported and left out; the rest are played with. A run without
+/// mods is the game as it ships, which is what the parity tests play.
 /// </para>
 /// </remarks>
 public static class ModLoader
 {
     private const string LogCategory = "Mods";
 
-    /// <summary>Loads the mods installed in a directory.</summary>
+    /// <summary>Loads the mods installed in a directory, on a machine with every game installed.</summary>
     /// <param name="directory">The mods' directory; a missing one holds none.</param>
     /// <param name="logger">Where what was loaded, and what was not, is reported.</param>
     /// <returns>The mods, in the order they apply.</returns>
-    public static ModSet Load(string directory, IOpenIgiLogger? logger = null)
+    public static ModSet Load(string directory, IOpenIgiLogger? logger = null) => Load(directory, ModEnvironment.Any, logger);
+
+    /// <summary>Loads the mods installed in a directory.</summary>
+    /// <param name="directory">The mods' directory; a missing one holds none.</param>
+    /// <param name="environment">What the machine has installed.</param>
+    /// <param name="logger">Where what was loaded, and what was not, is reported.</param>
+    /// <returns>The mods, in the order they apply.</returns>
+    public static ModSet Load(string directory, ModEnvironment environment, IOpenIgiLogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(directory);
+        ArgumentNullException.ThrowIfNull(environment);
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
         if (!Directory.Exists(directory))
         {
@@ -35,39 +46,50 @@ public static class ModLoader
         }
 
         List<InstalledMod> mods = [];
-        HashSet<string> ids = new(StringComparer.OrdinalIgnoreCase);
         foreach (string modDirectory in Directory.EnumerateDirectories(directory).Order(StringComparer.OrdinalIgnoreCase))
         {
-            string manifestPath = Path.Combine(modDirectory, ModManifest.FileName);
-            if (!File.Exists(manifestPath))
+            if (File.Exists(Path.Combine(modDirectory, ModManifest.FileName)) && TryRead(modDirectory, null, log) is { } mod)
             {
-                continue;
-            }
-
-            try
-            {
-                InstalledMod mod = LoadOne(modDirectory, ModManifest.Parse(File.ReadAllText(manifestPath)));
-                if (mod.Manifest.ApiVersion != ModApi.Version)
-                {
-                    throw new ModLoadException(
-                        $"it was written for modding API {mod.Manifest.ApiVersion}; this build offers {ModApi.Version}");
-                }
-
-                if (!ids.Add(mod.Manifest.Id))
-                {
-                    throw new ModLoadException($"another mod is named '{mod.Manifest.Id}' already");
-                }
-
                 mods.Add(mod);
-                log.Information(LogCategory, $"Loaded {mod.Manifest.Name} {mod.Manifest.Version} ({mod.Manifest.Id}).");
-            }
-            catch (Exception ex) when (ex is ModLoadException or IOException or BadImageFormatException or UnauthorizedAccessException)
-            {
-                log.Warning(LogCategory, $"The mod in '{modDirectory}' is left out: {ex.Message}");
             }
         }
 
-        return new ModSet(mods);
+        return Resolve(mods, environment, log);
+    }
+
+    /// <summary>Loads the mods a profile switches on, for every game it names.</summary>
+    /// <param name="profile">The profile, as the launcher wrote it.</param>
+    /// <param name="environment">What the machine has installed.</param>
+    /// <param name="logger">Where what was loaded, and what was not, is reported.</param>
+    /// <returns>Each game's mods by title id, in the order they apply; a mod on two games' lists is loaded once.</returns>
+    public static IReadOnlyDictionary<string, ModSet> Load(ModProfile profile, ModEnvironment environment, IOpenIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(environment);
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
+        Dictionary<string, InstalledMod?> loaded = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, ModSet> sets = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((string titleId, IReadOnlyList<ModProfileEntry> entries) in profile.Titles)
+        {
+            List<InstalledMod> mods = [];
+            foreach (ModProfileEntry entry in entries.Where(static entry => entry.Enabled))
+            {
+                string directory = Path.GetFullPath(entry.Path);
+                if (!loaded.TryGetValue(directory, out InstalledMod? mod))
+                {
+                    loaded[directory] = mod = TryRead(directory, entry.Id, log);
+                }
+
+                if (mod is not null)
+                {
+                    mods.Add(mod);
+                }
+            }
+
+            sets[titleId] = Resolve(mods, environment, log);
+        }
+
+        return sets;
     }
 
     /// <summary>Loads one mod's code, when it has any.</summary>
@@ -111,6 +133,104 @@ public static class ModLoader
             throw new ModLoadException($"{named.ModType.FullName} could not be made: {ex.InnerException?.Message ?? ex.Message}", ex);
         }
     }
+
+    // One mod's manifest and code, or nothing when it cannot be played; expectedId is the id a profile listed it under.
+    private static InstalledMod? TryRead(string directory, string? expectedId, IOpenIgiLogger log)
+    {
+        try
+        {
+            ModManifest manifest = ModManifest.Parse(File.ReadAllText(Path.Combine(directory, ModManifest.FileName)));
+            if (expectedId is not null && !string.Equals(manifest.Id, expectedId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ModLoadException($"its manifest names it '{manifest.Id}', not '{expectedId}'");
+            }
+
+            // Before its code loads: code built against another API may not load at all.
+            if (manifest.ApiVersion != ModApi.Version)
+            {
+                throw new ModLoadException($"it was written for modding API {manifest.ApiVersion}; this build offers {ModApi.Version}");
+            }
+
+            return LoadOne(directory, manifest);
+        }
+        catch (Exception ex) when (ex is ModLoadException or IOException or BadImageFormatException or UnauthorizedAccessException)
+        {
+            log.Warning(LogCategory, $"The mod in '{directory}' is left out: {ex.Message}");
+            return null;
+        }
+    }
+
+    // The mods that can be played together, in order: each needs the games it reads installed, no conflict with a mod
+    // before it, and its dependencies played with it. Leaving one out can leave out a mod that needed it, so dependencies
+    // are checked until nothing more goes.
+    private static ModSet Resolve(List<InstalledMod> mods, ModEnvironment environment, IOpenIgiLogger log)
+    {
+        List<InstalledMod> played = [];
+        foreach (InstalledMod mod in mods)
+        {
+            ModManifest manifest = mod.Manifest;
+            string? reason =
+                played.Any(other => string.Equals(other.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
+                    ? $"another mod is named '{manifest.Id}' already"
+                : manifest.RequiresTitleData.FirstOrDefault(id => !environment.HasTitleData(id)) is { } missing
+                    ? $"it reads the data of '{missing}', which is not installed"
+                : played.FirstOrDefault(other => Conflict(manifest, other.Manifest)) is { } conflict
+                    ? $"it cannot be played with {conflict.Manifest.Name} ({conflict.Manifest.Id})"
+                : null;
+            if (reason is null)
+            {
+                played.Add(mod);
+            }
+            else
+            {
+                log.Warning(LogCategory, $"{manifest.Name} ({manifest.Id}) is left out: {reason}.");
+            }
+        }
+
+        for (bool removed = true; removed;)
+        {
+            removed = false;
+            foreach (InstalledMod mod in played.ToArray())
+            {
+                if (UnmetDependency(mod.Manifest, played) is { } unmet)
+                {
+                    log.Warning(LogCategory, $"{mod.Manifest.Name} ({mod.Manifest.Id}) is left out: {unmet}.");
+                    played.Remove(mod);
+                    removed = true;
+                }
+            }
+        }
+
+        foreach (InstalledMod mod in played)
+        {
+            log.Information(LogCategory, $"Loaded {mod.Manifest.Name} {mod.Manifest.Version} ({mod.Manifest.Id}).");
+        }
+
+        return new ModSet(played);
+    }
+
+    private static string? UnmetDependency(ModManifest manifest, List<InstalledMod> played)
+    {
+        foreach ((string id, string requirement) in manifest.Dependencies)
+        {
+            InstalledMod? needed = played.FirstOrDefault(other => string.Equals(other.Manifest.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (needed is null)
+            {
+                return $"it needs '{id}', which is not played";
+            }
+
+            if (!ModVersion.Satisfies(needed.Manifest.Version, requirement))
+            {
+                return $"it needs '{id}' {requirement}, which is {needed.Manifest.Version}";
+            }
+        }
+
+        return null;
+    }
+
+    private static bool Conflict(ModManifest one, ModManifest other) =>
+        one.Conflicts.Contains(other.Id, StringComparer.OrdinalIgnoreCase)
+        || other.Conflicts.Contains(one.Id, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A mod's own assemblies, beside the game's.</summary>
     private sealed class ModLoadContext(string id, string assemblyPath) : AssemblyLoadContext($"mod:{id}")

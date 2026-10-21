@@ -38,6 +38,9 @@ public interface IModBuilder
     /// <summary>Gets the game being configured.</summary>
     GameTitle Title { get; }
 
+    /// <summary>Gets the mod's directory, which holds its <c>mod.json</c> and whatever files it ships.</summary>
+    string Directory { get; }
+
     /// <summary>
     /// Adds a content module, which registers after the game's own: task types (and replacements of the game's, through
     /// <see cref="Engine.Tasks.TaskTypeRegistry.Replace(string, Func{Engine.Tasks.GameTask})"/>), script natives, and services.
