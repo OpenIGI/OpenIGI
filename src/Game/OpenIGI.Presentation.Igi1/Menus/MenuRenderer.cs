@@ -156,13 +156,65 @@ public sealed class MenuRenderer : IDisposable
         _fonts.Clear();
     }
 
-    /// <summary>Resolves and measures a screen's labels so the line-up has sizes to work with.</summary>
-    /// <param name="screen">The screen about to be shown.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="screen"/> is <see langword="null"/>.</exception>
-    public void Prepare(MenuScreenTask screen)
+    /// <summary>Resolves and measures a screen's or a popup's labels so the line-up has sizes to work with.</summary>
+    /// <param name="window">The screen or popup about to be shown.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="window"/> is <see langword="null"/>.</exception>
+    public void Prepare(MenuWindowTask window)
     {
-        ArgumentNullException.ThrowIfNull(screen);
-        MeasureText(screen);
+        ArgumentNullException.ThrowIfNull(window);
+        MeasureText(window);
+    }
+
+    /// <summary>Draws a popup over the screen: its box, then its controls over it.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="popup">The popup.</param>
+    /// <param name="alpha">The fade it is drawn at, on the manager's 0-to-16 scale.</param>
+    /// <param name="screenWidth">The back-buffer width in pixels.</param>
+    /// <param name="screenHeight">The back-buffer height in pixels.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The popup's render (<c>0x419CB0</c>) submits its controls and then its box (<c>0x419D30</c>), nearest first, so the box
+    /// lies under them.
+    /// </remarks>
+    public void DrawPopup(SpriteBatch batch, DialogWindowTask popup, int alpha, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(popup);
+
+        _scale = UiScale.Resolve(Scale, screenWidth, screenHeight);
+        MenuDialogPanel panel = MenuDialogPanel.For(popup, alpha);
+        if (panel.IsEmpty)
+        {
+            return;
+        }
+
+        batch.Begin();
+
+        // The black backing, then the green fill over it, lit from above as a screen's panel is.
+        RectF area = Centred(panel.X0, panel.Y0, panel.X1 - panel.X0, panel.Y1 - panel.Y0, screenWidth, screenHeight);
+        batch.FillRect(area, Bgra32.FromRgba(0, 0, 0, Alpha(panel.Alpha * MenuDialogPanel.BackingAlpha)));
+
+        Bgra32 top = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(panel.Alpha * MenuScreenPanel.TopFillAlpha));
+        Bgra32 bottom = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(panel.Alpha * MenuScreenPanel.BottomFillAlpha));
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(area.X, area.Y, 0f, 0f, top),
+            new Vertex2D(area.X + area.Width, area.Y, 1f, 0f, top),
+            new Vertex2D(area.X + area.Width, area.Y + area.Height, 1f, 1f, bottom),
+            new Vertex2D(area.X, area.Y + area.Height, 0f, 1f, bottom));
+
+        // The outline is a line loop through the four corners themselves, and the rule spans the box under the title.
+        Bgra32 edge = Bgra32.FromRgba(0, MenuScreenPanel.EdgeGreen, 0, Alpha(panel.Alpha));
+        int width = panel.X1 - panel.X0;
+        int height = panel.Y1 - panel.Y0;
+        batch.FillRect(Centred(panel.X0, panel.Y0, width, 1, screenWidth, screenHeight), edge);
+        batch.FillRect(Centred(panel.X1, panel.Y0, 1, height, screenWidth, screenHeight), edge);
+        batch.FillRect(Centred(panel.X0, panel.Y1, width, 1, screenWidth, screenHeight), edge);
+        batch.FillRect(Centred(panel.X0, panel.Y0, 1, height, screenWidth, screenHeight), edge);
+        batch.FillRect(Centred(panel.X0, panel.RuleY, width, 1, screenWidth, screenHeight), edge);
+
+        DrawSubtree(batch, popup, screenWidth, screenHeight);
+        batch.End();
     }
 
     /// <summary>Resolves and measures every label, so the line-up has sizes to work with.</summary>

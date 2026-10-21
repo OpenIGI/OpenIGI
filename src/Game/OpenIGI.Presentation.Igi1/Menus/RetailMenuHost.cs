@@ -118,11 +118,15 @@ public sealed class RetailMenuHost : IRetailMenuPresenter
     };
 
     /// <inheritdoc/>
-    public void PrepareScreen(MenuScreenTask screen) => _renderer?.Prepare(screen);
+    public void PrepareWindow(MenuWindowTask window) => _renderer?.Prepare(window);
 
     /// <inheritdoc/>
     public void DrawScreen(MenuScreenTask screen) =>
         _renderer?.Draw(_batch, screen, _screenWidth(), _screenHeight());
+
+    /// <inheritdoc/>
+    public void DrawPopup(DialogWindowTask popup, int alpha) =>
+        _renderer?.DrawPopup(_batch, popup, alpha, _screenWidth(), _screenHeight());
 
     /// <inheritdoc/>
     /// <remarks>Drained from the window's own character queue, which is separate from the key queue.</remarks>

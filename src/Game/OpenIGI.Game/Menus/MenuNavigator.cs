@@ -66,6 +66,14 @@ public sealed class MenuNavigator
     /// <summary>Gets the popup's fade alpha, between zero and <see cref="FullAlpha"/>.</summary>
     public int PopupAlpha { get; private set; }
 
+    /// <summary>Gets the alpha a popup is drawn at.</summary>
+    /// <remarks>
+    /// The original has one fade (<c>+204</c>), which <c>MenuManager_Render</c> (<c>0x418970</c>) draws the popup at: the
+    /// popup's own while it fades in or out, the screen's while the screen fades with the popup still over it.
+    /// </remarks>
+    public int PopupShownAlpha =>
+        State is MenuManagerState.PopupFadingIn or MenuManagerState.PopupFadingOut ? PopupAlpha : Alpha;
+
     /// <summary>Gets the depth of the saved-screen stack.</summary>
     public int Depth => _stack.Count;
 

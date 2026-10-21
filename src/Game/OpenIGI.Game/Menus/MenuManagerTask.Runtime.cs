@@ -34,6 +34,7 @@ public partial class MenuManagerTask
     private readonly HashSet<string> _unknownNatives = new(StringComparer.Ordinal);
     private ScriptExpressionEvaluator? _evaluator;
     private MenuScreenTask? _current;
+    private DialogWindowTask? _popup;
     private IMenuConfiguration? _configuration;
     private IOpenIgiLogger _logger = NullLogger.Instance;
 
@@ -62,6 +63,17 @@ public partial class MenuManagerTask
 
     /// <summary>Gets the screen currently being shown.</summary>
     public MenuScreenTask? CurrentScreen => _current;
+
+    /// <summary>Gets the popup shown over the screen, <see langword="null"/> while there is none.</summary>
+    /// <remarks>
+    /// The manager's <c>+52</c>: set as the popup is taken in (<c>0x4188B0</c>) and cleared at the bottom of a fade
+    /// (<c>0x418940</c>). While it is set it stands in for the screen: its controls take the input and the update, and the
+    /// screen's do not.
+    /// </remarks>
+    public DialogWindowTask? CurrentPopup => _popup;
+
+    // The window the pointer, the keys and the update reach: the popup while there is one, else the screen.
+    private MenuWindowTask? Shown => (MenuWindowTask?)_popup ?? _current;
 
     /// <summary>Wires the manager to its shell and starts it on the screen the script named.</summary>
     /// <param name="system">The loaded menu, used to resolve screen ids.</param>
@@ -101,12 +113,21 @@ public partial class MenuManagerTask
     protected override void OnUpdate()
     {
         BackgroundFx.Receive(TaskMessage.Update);
+        if (_host is null || _system is null)
+        {
+            base.OnUpdate();
+            return;
+        }
 
-        // The manager's own work comes before the walk into its children, so a key posted this tick
-        // is consumed by the control on the same tick rather than the next one. Every menu type puts
-        // its base chain last for the same reason.
+        // 0x418080 updates no child of its own: in the states that take input (2 and 3) it updates the popup if there is one and
+        // the screen otherwise, after its own work, so a key posted this tick is consumed by the control on the same tick. In
+        // every other state neither runs.
+        bool live = Navigator.State is MenuManagerState.Active or MenuManagerState.Inactive;
         Step();
-        base.OnUpdate();
+        if (live && Shown is { } shown)
+        {
+            Tree.Send(shown, TaskMessage.Update);
+        }
     }
 
     private void Step()
@@ -128,15 +149,20 @@ public partial class MenuManagerTask
             case MenuStep.ChangeLanguage when _current is not null:
                 // 0x417590: the screen takes the language event, then is prepared and lined up again.
                 _current.PrepareSubtree();
-                _host.PrepareScreen(_current);
+                _host.PrepareWindow(_current);
                 _current.Arrange();
                 break;
             case MenuStep.ActivatePopup:
-                // 0x4188B0: the popup takes its data in, then is prepared.
+                // 0x4188B0: the popup takes its data in, is prepared (0x417660) and lined up, and the selection is its own
+                // (0x4187F0).
                 if (_system.FindPopup(Navigator.PopupScreen) is { } popup)
                 {
+                    _popup = popup;
                     popup.LoadData();
                     popup.PrepareSubtree();
+                    _host.PrepareWindow(popup);
+                    popup.Arrange();
+                    Selection.Rebuild(popup);
                 }
 
                 break;
@@ -147,6 +173,19 @@ public partial class MenuManagerTask
                 Navigator.CompleteLeave();
                 _host.LeaveMenus(leaving);
                 return;
+        }
+
+        // 0x418940: at the bottom of a fade the popup goes, and the screen is prepared again and has the selection back.
+        if (_popup is not null && !Navigator.PopupActive)
+        {
+            _popup = null;
+            if (_current is not null)
+            {
+                _current.PrepareSubtree();
+                _host.PrepareWindow(_current);
+                _current.Arrange();
+                Selection.Rebuild(_current);
+            }
         }
 
         if (_current is null)
@@ -176,8 +215,9 @@ public partial class MenuManagerTask
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The original draws the pointer, then the popup, then the screen, setting the draw alpha before
-    /// each. Only the screen is drawn here; the pointer sprite and popup layering follow the controls.
+    /// The original (<c>0x418970</c>) submits the pointer, then the popup, then the screen, nearest first, setting the draw
+    /// alpha before each: the screen at full while a popup fades in, out or has just gone, and the popup at the one fade. Drawn
+    /// here back to front: the screen, the popup over it, the pointer over both.
     /// </remarks>
     protected override void OnRender()
     {
@@ -186,6 +226,11 @@ public partial class MenuManagerTask
         if (_current is not null)
         {
             _host?.DrawScreen(_current);
+        }
+
+        if (_popup is not null)
+        {
+            _host?.DrawPopup(_popup, Navigator.PopupShownAlpha);
         }
 
         // Only while Active, so the cursor disappears during a fade — that part is the original's.
@@ -368,7 +413,7 @@ public partial class MenuManagerTask
 
         // Resources first, because the sizes the line-up needs come out of them.
         screen.PrepareSubtree();
-        _host?.PrepareScreen(screen);
+        _host?.PrepareWindow(screen);
         screen.Arrange();
         Selection.Rebuild(screen);
         if (!takeData)
@@ -425,8 +470,13 @@ public partial class MenuManagerTask
 
             switch (input)
             {
-                case MenuInputEvent.Escape:
+                // The screen's update acts on Escape (0x422110), and a popup's has no Escape: while one is up the key does
+                // nothing.
+                case MenuInputEvent.Escape when _popup is null:
                     RunAction(_current!.OnPressEscape, _current);
+                    break;
+
+                case MenuInputEvent.Escape:
                     break;
 
                 // Left, right and enter are posted to the selected window and acted on by its own
@@ -481,7 +531,7 @@ public partial class MenuManagerTask
         }
 
         _pointer.Set(x, y, buttonDown);
-        _current!.HitTestSubtree(_pointer);
+        Shown!.HitTestSubtree(_pointer);
     }
 
     /// <summary>Moves the shared selection onto whatever the pointer is over.</summary>

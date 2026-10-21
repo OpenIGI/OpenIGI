@@ -205,12 +205,12 @@ public sealed class MenuFlowBootTests
             return drained;
         }
 
-        public void PrepareScreen(MenuScreenTask screen)
+        public void PrepareWindow(MenuWindowTask window)
         {
             Prepared++;
 
             // Give every entry a size so the line-up has something to place.
-            foreach (MenuTextTask entry in Descend(screen).OfType<MenuTextTask>())
+            foreach (MenuTextTask entry in Descend(window).OfType<MenuTextTask>())
             {
                 entry.LayoutWidth = 80;
                 entry.LayoutHeight = 16;
@@ -218,6 +218,10 @@ public sealed class MenuFlowBootTests
         }
 
         public void DrawScreen(MenuScreenTask screen) => Drawn++;
+
+        public void DrawPopup(DialogWindowTask popup, int alpha)
+        {
+        }
 
         public void DrawPointer(int x, int y) => PointerDrawn++;
 

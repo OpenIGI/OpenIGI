@@ -80,11 +80,11 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     /// A <c>MenuText</c> gets its size from the renderer measuring its label, so without a stand-in size
     /// every entry is a zero-width rectangle and the pointer can never be over one.
     /// </remarks>
-    public void PrepareScreen(MenuScreenTask screen)
+    public void PrepareWindow(MenuWindowTask window)
     {
-        ArgumentNullException.ThrowIfNull(screen);
+        ArgumentNullException.ThrowIfNull(window);
 
-        foreach (MenuTextTask entry in Descend(screen).OfType<MenuTextTask>())
+        foreach (MenuTextTask entry in Descend(window).OfType<MenuTextTask>())
         {
             entry.LayoutWidth = 80;
             entry.LayoutHeight = 16;
@@ -107,6 +107,12 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     public void DrawScreen(MenuScreenTask screen)
     {
     }
+
+    /// <summary>Gets the popups drawn, with the alpha each was drawn at, in the order they were drawn.</summary>
+    public List<(DialogWindowTask Popup, int Alpha)> PopupsDrawn { get; } = [];
+
+    /// <inheritdoc/>
+    public void DrawPopup(DialogWindowTask popup, int alpha) => PopupsDrawn.Add((popup, alpha));
 
     /// <inheritdoc/>
     public void DrawPointer(int x, int y)

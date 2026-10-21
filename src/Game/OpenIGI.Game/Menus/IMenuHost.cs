@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Menus;
 /// <c>OpenIGI.Game</c> free of a window, a device or a font.
 /// </para>
 /// <para>
-/// <see cref="PrepareScreen"/> exists because the line-up cannot run until every item knows its size,
+/// <see cref="PrepareWindow"/> exists because the line-up cannot run until every item knows its size,
 /// and for a text entry that means resolving its label and measuring it in its own font. The original
 /// does the same thing in its measure pass.
 /// </para>
@@ -32,13 +32,18 @@ public interface IMenuHost
     /// <remarks>The original drains a queue of these; an empty sequence is the normal case.</remarks>
     IEnumerable<MenuInputEvent> DrainEvents();
 
-    /// <summary>Resolves and measures a screen's contents so the line-up can place them.</summary>
-    /// <param name="screen">The screen about to be shown.</param>
-    void PrepareScreen(MenuScreenTask screen);
+    /// <summary>Resolves and measures a screen's or a popup's contents so the line-up can place them.</summary>
+    /// <param name="window">The screen or popup about to be shown.</param>
+    void PrepareWindow(MenuWindowTask window);
 
     /// <summary>Draws a screen.</summary>
     /// <param name="screen">The screen to draw.</param>
     void DrawScreen(MenuScreenTask screen);
+
+    /// <summary>Draws a popup over the screen.</summary>
+    /// <param name="popup">The popup.</param>
+    /// <param name="alpha">The fade it is drawn at, on the manager's 0-to-16 scale.</param>
+    void DrawPopup(DialogWindowTask popup, int alpha);
 
     /// <summary>Takes the characters typed since the last tick.</summary>
     /// <returns>The characters, in the order they were typed.</returns>

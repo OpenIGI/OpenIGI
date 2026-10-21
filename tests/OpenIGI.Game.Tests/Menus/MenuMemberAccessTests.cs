@@ -160,11 +160,15 @@ public sealed class MenuMemberAccessTests
 
         public IEnumerable<MenuInputEvent> DrainEvents() => [];
 
-        public void PrepareScreen(MenuScreenTask screen)
+        public void PrepareWindow(MenuWindowTask window)
         {
         }
 
         public void DrawScreen(MenuScreenTask screen)
+        {
+        }
+
+        public void DrawPopup(DialogWindowTask popup, int alpha)
         {
         }
 
