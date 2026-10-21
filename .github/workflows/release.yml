@@ -32,6 +32,8 @@ on:
 permissions:
   contents: write
   packages: read
+  # nuget.org's Trusted Publishing: the job's OIDC token is traded for a short-lived push key.
+  id-token: write
 
 concurrency:
   group: publish-${{ inputs.tag || github.ref_name }}
@@ -190,16 +192,26 @@ jobs:
           fi
 
       # What mods build against, at this game's version: OpenIGI.Modding.Sdk, the assemblies it brings and the
-      # `dotnet new openigi-mod` template, on nuget.org. Only once the repository has a NuGet key; a package version
-      # pushed there can be unlisted but never replaced, so a failed push is reported and the release goes on.
+      # `dotnet new openigi-mod` template, on nuget.org. The key is nuget.org's Trusted Publishing: no stored
+      # secret, a key minted for this run from its OIDC token, against the policy NUGET_USER (the nuget.org
+      # profile that owns it) set up for this repository and release.yml. A package version pushed there can be
+      # unlisted but never replaced, so a failed push is reported and the release goes on.
+      - name: Sign in to nuget.org
+        id: nuget
+        if: steps.tag.outputs.product != 'launcher' && vars.NUGET_USER != ''
+        continue-on-error: true
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Publish the modding SDK
         if: steps.tag.outputs.product != 'launcher'
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
           VERSION: ${{ steps.tag.outputs.version }}
         run: |
           if [ -z "$NUGET_API_KEY" ]; then
-            echo "::notice::No NUGET_API_KEY secret: the modding SDK is not published."
+            echo "::notice::No nuget.org sign-in (set the NUGET_USER variable): the modding SDK is not published."
             exit 0
           fi
           rm -rf artifacts/nuget
