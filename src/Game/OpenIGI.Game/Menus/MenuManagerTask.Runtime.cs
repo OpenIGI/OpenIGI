@@ -72,6 +72,27 @@ public partial class MenuManagerTask
     /// </remarks>
     public DialogWindowTask? CurrentPopup => _popup;
 
+    /// <summary>Gets the shell the manager is drawn and fed by, <see langword="null"/> before it is initialised.</summary>
+    /// <remarks>A control that reads the keyboard itself, as the controls list does, reaches it here.</remarks>
+    internal IMenuHost? Host => _host;
+
+    /// <summary>Throws away the input queued so far, as a control that has taken a key does (<c>0x48A8C0</c>).</summary>
+    internal void FlushInput()
+    {
+        if (_host is null)
+        {
+            return;
+        }
+
+        foreach (MenuInputEvent unused in _host.DrainEvents())
+        {
+        }
+
+        foreach (char unused in _host.DrainTypedText())
+        {
+        }
+    }
+
     // The window the pointer, the keys and the update reach: the popup while there is one, else the screen.
     private MenuWindowTask? Shown => (MenuWindowTask?)_popup ?? _current;
 
@@ -163,6 +184,7 @@ public partial class MenuManagerTask
                     _host.PrepareWindow(popup);
                     popup.Arrange();
                     Selection.Rebuild(popup);
+                    popup.HitTestSubtree(_pointer, opening: true);
                 }
 
                 break;
@@ -416,6 +438,9 @@ public partial class MenuManagerTask
         _host?.PrepareWindow(screen);
         screen.Arrange();
         Selection.Rebuild(screen);
+
+        // 0x418710's first update of the screen, with +10191 held: what the pointer rests on is not what it came over.
+        screen.HitTestSubtree(_pointer, opening: true);
         if (!takeData)
         {
             return;
@@ -531,16 +556,26 @@ public partial class MenuManagerTask
         }
 
         _pointer.Set(x, y, buttonDown);
+
+        // 0x418080's state 3 clears the pointer's buttons: nothing is pressed while a control waits for a key.
+        if (Navigator.State == MenuManagerState.Inactive)
+        {
+            _pointer.ClearButtons();
+        }
+
         Shown!.HitTestSubtree(_pointer);
     }
 
-    /// <summary>Moves the shared selection onto whatever the pointer is over.</summary>
-    /// <remarks>This is the part that must not run during a fade: it is what lights an entry.</remarks>
+    /// <summary>Moves the shared selection onto whatever the pointer has just come over.</summary>
+    /// <remarks>
+    /// This is the part that must not run during a fade: it is what lights an entry. Only coming over an item moves it
+    /// (<c>0x418FE0</c>); resting on one leaves the keys free to move the selection away.
+    /// </remarks>
     private void MoveSelectionToHover()
     {
         foreach (MenuWindowTask item in Selection.Items)
         {
-            if (item.IsActive)
+            if (item.HasEntered)
             {
                 Selection.SelectItem(item);
                 break;

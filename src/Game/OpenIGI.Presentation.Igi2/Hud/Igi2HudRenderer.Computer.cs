@@ -31,7 +31,7 @@ public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
     private BitmapTextRenderer? _logFont;
     private float _computerScale = 1f;
     // Game_ptGame->tDrawRandomState and Filter_tRandomState, as Game_Open and Filter_Open seed them.
-    private readonly Core.Numerics.IgiRandom _drawRandom = new(unchecked((uint)-923067897), 971667286u, 2146516173u);
+    private readonly Core.Numerics.IgiRandom _drawRandom = Core.Numerics.IgiRandom.Seeded();
     private readonly Core.Numerics.IgiRandom _filterRandom = new(277206966u, 1200274863u, 2120272633u);
     private int _filterFrame;
     private int _filterGlitch;

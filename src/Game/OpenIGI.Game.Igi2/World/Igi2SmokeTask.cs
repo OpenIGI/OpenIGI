@@ -14,12 +14,10 @@ namespace OpenIGI.Game.Igi2.World;
 public sealed class Igi2SmokeRandom
 {
     /// <summary>Gets the stream.</summary>
-    public IgiRandom Random { get; private set; } = Seeded();
+    public IgiRandom Random { get; private set; } = IgiRandom.Seeded();
 
     /// <summary>Sets the stream back to its seed, as a smoke is made.</summary>
-    public void Reseed() => Random = Seeded();
-
-    private static IgiRandom Seeded() => new(unchecked((uint)-923067897), 971667286u, 2146516173u);
+    public void Reseed() => Random = IgiRandom.Seeded();
 }
 
 /// <summary>

@@ -324,12 +324,90 @@ public sealed class MenuRenderer : IDisposable
                 case PictureBoxTask picture:
                     DrawPictureBox(batch, picture, screenWidth, screenHeight);
                     break;
+                case ControlsMenuTask controls:
+                    DrawControlsMenu(batch, controls, screenWidth, screenHeight);
+                    break;
                 default:
                     break;
             }
 
             DrawSubtree(batch, child, screenWidth, screenHeight);
         }
+    }
+
+    /// <summary>Draws the controls list: its rows, its outline, and each row's action and key.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ControlsMenu_Render</c> (<c>0x4238B0</c>) fades it in over the second half of the manager's fade,
+    /// <c>(alpha - 8) / 8</c>. Its outline (<c>0x423930</c>) is a loop one pixel inside the rectangle with a rule down the
+    /// line between the columns, in full green.
+    /// </para>
+    /// <para>
+    /// Each row (<c>0x423AC0</c>) is a band of green under each column at half the fade, brighter on the even rows and in the
+    /// key column: 32 and 48 on the 0-to-128 scale for an even row, 16 and 32 for an odd one. The action is written four pixels
+    /// in and five down in green, the key four pixels into its column in amber (128, 90, 0).
+    /// </para>
+    /// <para>
+    /// The original submits the rows' text, then their bands, then the outline, nearest first; drawn back to front here.
+    /// </para>
+    /// </remarks>
+    private void DrawControlsMenu(SpriteBatch batch, ControlsMenuTask controls, int screenWidth, int screenHeight)
+    {
+        int fade = (controls.Manager as MenuManagerTask)?.Navigator.Alpha ?? MenuNavigator.FullAlpha;
+        float alpha = Math.Max(0f, (fade - (MenuNavigator.FullAlpha / 2)) * 0.125f);
+        if (alpha <= 0f)
+        {
+            return;
+        }
+
+        int x = controls.LayoutX;
+        int y = controls.LayoutY;
+        int last = Math.Min(controls.Offset + ControlsMenuTask.VisibleRows, ControlsMenuTask.RowCount);
+        for (int row = Math.Max(0, controls.Offset), band = 0; row < last; row++, band++)
+        {
+            bool even = (row & 1) == 0;
+            int top = y + (band * ControlsMenuTask.RowHeight);
+            batch.FillRect(
+                Centred(x, top, ControlsMenuTask.LabelWidth, ControlsMenuTask.RowHeight, screenWidth, screenHeight),
+                Shade(0f, even ? 32f : 16f, 0f, alpha * 0.5f));
+            batch.FillRect(
+                Centred(x + ControlsMenuTask.LabelWidth, top, ControlsMenuTask.KeyWidth, ControlsMenuTask.RowHeight, screenWidth, screenHeight),
+                Shade(0f, even ? 48f : 32f, 0f, alpha * 0.5f));
+        }
+
+        Bgra32 edge = Shade(0f, MenuLayout.FullIntensity, 0f, alpha);
+        foreach ((int ex, int ey, int width, int height) in MenuLayout.GetBoxOutline(x, y, controls.LayoutWidth, controls.LayoutHeight))
+        {
+            batch.FillRect(Centred(ex, ey, width, height, screenWidth, screenHeight), edge);
+        }
+
+        batch.FillRect(
+            Centred(x + 1 + ControlsMenuTask.LabelWidth, y + 1, 1, controls.LayoutHeight - 1, screenWidth, screenHeight),
+            edge);
+
+        if (TryGetFont(ControlsMenuTask.FontResource) is not { } font)
+        {
+            return;
+        }
+
+        Bgra32 actionColour = Shade(0f, MenuLayout.FullIntensity, 0f, alpha);
+        Bgra32 keyColour = Shade(MenuLayout.FullIntensity, 90f, 0f, alpha);
+        for (int row = Math.Max(0, controls.Offset), band = 0; row < last; row++, band++)
+        {
+            int top = y + (band * ControlsMenuTask.RowHeight) + 5;
+            Draw(batch, font, _strings.Get(ControlsMenuTask.Actions[row]), x + 4, top, actionColour, screenWidth, screenHeight);
+            if (controls.KeyTextOf(row) is { Length: > 0 } key)
+            {
+                Draw(batch, font, _strings.Get(key), x + ControlsMenuTask.LabelWidth + 4, top, keyColour, screenWidth, screenHeight);
+            }
+        }
+    }
+
+    // A colour on the original's 0-to-128 scale at an alpha.
+    private static Bgra32 Shade(float r, float g, float b, float alpha)
+    {
+        Bgra32 pixel = MenuLayout.ToPixel((r, g, b));
+        return Bgra32.FromRgba(pixel.R, pixel.G, pixel.B, Alpha(alpha));
     }
 
     private void DrawText(SpriteBatch batch, MenuTextTask text, int screenWidth, int screenHeight)
@@ -844,8 +922,21 @@ public sealed class MenuRenderer : IDisposable
         int screenWidth,
         int screenHeight)
     {
+        Draw(batch, font, label, x, y, Bgra32.White, screenWidth, screenHeight);
+    }
+
+    private void Draw(
+        SpriteBatch batch,
+        BitmapTextRenderer font,
+        string label,
+        int x,
+        int y,
+        Bgra32 colour,
+        int screenWidth,
+        int screenHeight)
+    {
         (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight, _scale);
-        font.Draw(batch, label, screenX, screenY, Bgra32.White, _scale, _scale);
+        font.Draw(batch, label, screenX, screenY, colour, _scale, _scale);
     }
 
     /// <summary>Draws a frame's eight-piece border.</summary>

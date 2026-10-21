@@ -217,6 +217,13 @@ public sealed class MenuNavigator
         (State, ReturnState) = (MenuManagerState.PopupFadingOut, MenuManagerState.PopupGone);
     }
 
+    /// <summary>Lets the pointer go and stops taking keys, as a control that waits for a key asks (<c>0x418FC0</c>).</summary>
+    /// <remarks>The screen still updates in <see cref="MenuManagerState.Inactive"/>; the manager reads no key and no button.</remarks>
+    public void Deactivate() => State = MenuManagerState.Inactive;
+
+    /// <summary>Takes input again once the control is done (<c>0x418FD0</c>).</summary>
+    public void Activate() => State = MenuManagerState.Active;
+
     /// <summary>Fades out to change the menus' language, <c>MenuManager_SetLanguage</c> (<c>0x417810</c>).</summary>
     public void SetLanguage() => FadeOutTo(MenuManagerState.ChangeLanguage);
 

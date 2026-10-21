@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.Config;
 /// and a profile name as a string, and neither would survive the integer walk.
 /// </para>
 /// </remarks>
-public sealed class ConfigNatives : IMenuConfiguration
+public sealed class ConfigNatives : IMenuConfiguration, IMenuInputBindings
 {
     private readonly GameConfig _config;
     private readonly IConfigHost _host;
@@ -41,6 +41,43 @@ public sealed class ConfigNatives : IMenuConfiguration
 
     /// <summary>Gets the configuration these act on.</summary>
     public GameConfig Config => _config;
+
+    /// <inheritdoc/>
+    /// <remarks>The active profile's (<c>0x4061C0</c>).</remarks>
+    public InputBinding? Find(string action) =>
+        _config.Active?.Bindings.FindIndex(binding => Names(binding, action)) is { } index and >= 0
+            ? _config.Active.Bindings[index]
+            : null;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The original resets the list from its own defaults (<c>0x536410</c>); the port's are a fresh profile's,
+    /// <see cref="PlayerProfile.DefaultBindings"/>, as its profiles' own reset gives.
+    /// </remarks>
+    public InputBinding? DefaultOf(string action) =>
+        PlayerProfile.DefaultBindings.FirstOrDefault(binding => Names(binding, action)) is { Action: not null } found ? found : null;
+
+    /// <inheritdoc/>
+    public void Bind(InputBinding binding)
+    {
+        if (_config.Active is not { } profile)
+        {
+            return;
+        }
+
+        int index = profile.Bindings.FindIndex(candidate => Names(candidate, binding.Action));
+        if (index >= 0)
+        {
+            profile.Bindings[index] = binding;
+        }
+        else
+        {
+            profile.Bindings.Add(binding);
+        }
+    }
+
+    private static bool Names(InputBinding binding, string action) =>
+        string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Gets the list box a fill call is currently targeting, if any.</summary>
     /// <remarks>

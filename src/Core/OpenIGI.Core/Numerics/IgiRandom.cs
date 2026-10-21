@@ -63,6 +63,14 @@ public sealed class IgiRandom
     {
     }
 
+    /// <summary>Makes a stream seeded as the engine seeds one.</summary>
+    /// <returns>The stream.</returns>
+    /// <remarks>
+    /// <c>0x4B4720</c> writes the same three words into every stream it opens -- the missiles', the controls list's -- and
+    /// I.G.I. 2 opens its own streams with them too.
+    /// </remarks>
+    public static IgiRandom Seeded() => new(unchecked((uint)-923067897), 971667286u, 2146516173u);
+
     /// <summary>Draws the next raw word — <c>0x4B4740</c> itself, the whole accumulator.</summary>
     /// <returns>The accumulator after the step.</returns>
     /// <remarks>Some callers test it directly, such as the parity <c>0x412CE0</c> picks a sound by.</remarks>

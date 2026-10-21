@@ -30,6 +30,18 @@ public sealed class PointerHost : IFlowHost, IMenuHost
         _down = down;
     }
 
+    /// <summary>Gets the scan codes of the keys held.</summary>
+    public HashSet<int> HeldKeys { get; } = [];
+
+    /// <inheritdoc/>
+    public bool IsKeyDown(int scanCode) => HeldKeys.Contains(scanCode);
+
+    /// <inheritdoc/>
+    public int MouseButtons { get; set; }
+
+    /// <summary>Gets the sounds played, in order.</summary>
+    public List<string> Sounds { get; } = [];
+
     /// <inheritdoc/>
     public void ShowMainMenu() => OnShowMainMenu?.Invoke();
 
@@ -120,9 +132,7 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     }
 
     /// <inheritdoc/>
-    public void PlaySound(string name)
-    {
-    }
+    public void PlaySound(string name) => Sounds.Add(name);
 
     /// <summary>Gets the state the menus last left with, or null while they have not.</summary>
     public MenuManagerState? LeftWith { get; private set; }

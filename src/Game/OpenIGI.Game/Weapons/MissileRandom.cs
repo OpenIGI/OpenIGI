@@ -10,5 +10,5 @@ namespace OpenIGI.Game.Weapons;
 public sealed class MissileRandom
 {
     /// <summary>Gets the stream.</summary>
-    public IgiRandom Random { get; } = new(unchecked((uint)-923067897), 971667286u, 2146516173u);
+    public IgiRandom Random { get; } = IgiRandom.Seeded();
 }

@@ -64,6 +64,8 @@ public sealed class MenuScriptContext : IScriptExpressionContext
         "MenuManager_ActivatePopupScreen",
         "MenuManager_DeactivatePopuScreen",
         "MenuManager_SetEnabled",
+        "ControlsMenu_ConvertFloatFromOffset",
+        "ControlsMenu_ConvertOffsetFromFloat",
     ];
 
     /// <summary>Gets or sets what <c>MenuManager_ForceUpdateWindow</c> does with the window id it is given.</summary>
@@ -187,6 +189,16 @@ public sealed class MenuScriptContext : IScriptExpressionContext
             case "MenuManager_SetLanguage" when arguments.Count >= 1:
                 Language = MenuStringTable.LanguageNameOf(arguments.GetInt32(0));
                 _stack.SetLanguage();
+                return true;
+
+            // 0x4231E0 and 0x423240: the controls list's scroll offset as the slider beside it shows it, a fraction of the
+            // rows it can scroll by, and back, rounded to the nearest row.
+            case "ControlsMenu_ConvertFloatFromOffset" when arguments.Count >= 1:
+                result = QvmValue.FromDouble(arguments.GetInt32(0) / (double)ControlsMenuTask.ScrollRows);
+                return true;
+
+            case "ControlsMenu_ConvertOffsetFromFloat" when arguments.Count >= 1:
+                result = QvmValue.FromInt32((int)((ControlsMenuTask.ScrollRows * (double)(float)arguments.GetReal(0)) + 0.5));
                 return true;
 
             case "MenuManager_ForceUpdateWindow" when arguments.Count >= 1:

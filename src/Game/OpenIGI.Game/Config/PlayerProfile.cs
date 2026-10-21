@@ -510,9 +510,9 @@ public static class InputBindingKeyNames
 
     /// <summary>The stored name for an upward mouse-wheel notch.</summary>
     /// <remarks>
-    /// The port's own spelling: retail never bound the wheel, so there is no original symbol to
-    /// keep. It travels through the same <c>GOInRemap</c> write/read path as <c>MOUSE_BUTTON_n</c>,
-    /// and older builds read it back as an inert string they preserve verbatim.
+    /// The original's own symbol: its key table lists the wheel's two notches after the eight buttons
+    /// (<c>0x536998</c>, <see cref="RetailInputKeys"/>), and its controls list can bind them. It travels
+    /// through the same <c>GOInRemap</c> write/read path as <c>MOUSE_BUTTON_n</c>.
     /// </remarks>
     public const string MouseWheelUpKey = "MOUSE_WHEEL_UP";
 

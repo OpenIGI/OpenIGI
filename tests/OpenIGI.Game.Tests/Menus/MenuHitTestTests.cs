@@ -17,6 +17,31 @@ public sealed class MenuHitTestTests
     }
 
     [Fact]
+    public void ThePointerComesOverAnItemOnceAndAnItemItRestsOnAsItsWindowOpensItDidNotComeOver()
+    {
+        MenuTextTask item = Item(100, 100, 50, 20);
+        MenuPointer pointer = new();
+
+        pointer.Update(10, 10, 640, 480, buttonDown: false);
+        item.HitTest(pointer);
+        pointer.Update(125, 110, 640, 480, buttonDown: false);
+        item.HitTest(pointer);
+        Assert.True(item.HasEntered);
+
+        // Resting on it is not coming over it again (0x418FE0 moves the selection only on the way in).
+        item.HitTest(pointer);
+        Assert.True(item.IsActive);
+        Assert.False(item.HasEntered);
+
+        // Opened under the pointer (the manager's +10191), and then rested on: never come over.
+        MenuTextTask opened = Item(100, 100, 50, 20);
+        opened.HitTest(pointer, opening: true);
+        opened.HitTest(pointer);
+        Assert.True(opened.IsActive);
+        Assert.False(opened.HasEntered);
+    }
+
+    [Fact]
     public void AnEntryWithNoActionTakesNoPart()
     {
         // The flag at +76: MenuText_Prepare sets it only when the entry has an On Click Script, and

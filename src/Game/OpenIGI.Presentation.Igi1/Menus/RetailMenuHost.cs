@@ -60,6 +60,28 @@ public sealed class RetailMenuHost : IRetailMenuPresenter
     }
 
     /// <inheritdoc/>
+    public bool IsKeyDown(int scanCode) => scanCode is > 0 and <= byte.MaxValue && _input.Keyboard.IsDown((KeyCode)scanCode);
+
+    /// <inheritdoc/>
+    public int MouseButtons
+    {
+        get
+        {
+            int buttons = 0;
+            for (int i = 0; i < MouseState.ButtonCount; i++)
+            {
+                if (_input.Mouse.IsDown((MouseButton)i))
+                {
+                    buttons |= 1 << i;
+                }
+            }
+
+            float wheel = _input.Mouse.WheelDelta;
+            return buttons | (wheel > 0f ? 0x100 : wheel < 0f ? 0x200 : 0);
+        }
+    }
+
+    /// <inheritdoc/>
     public bool TryGetPointer(out int x, out int y, out bool buttonDown)
     {
         (int authoredX, int authoredY) = ToAuthored((int)_input.Mouse.X, (int)_input.Mouse.Y);
