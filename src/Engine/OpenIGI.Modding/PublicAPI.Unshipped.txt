@@ -1,22 +1,2 @@
 #nullable enable
 OpenIGI.Modding.IModBuilder.Directory.get -> string!
-OpenIGI.Modding.ModManifest.Authors.get -> System.Collections.Generic.IReadOnlyList<string!>!
-OpenIGI.Modding.ModManifest.Authors.init -> void
-OpenIGI.Modding.ModManifest.Conflicts.get -> System.Collections.Generic.IReadOnlyList<string!>!
-OpenIGI.Modding.ModManifest.Conflicts.init -> void
-OpenIGI.Modding.ModManifest.Dependencies.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
-OpenIGI.Modding.ModManifest.Dependencies.init -> void
-OpenIGI.Modding.ModManifest.Homepage.get -> string?
-OpenIGI.Modding.ModManifest.Homepage.init -> void
-OpenIGI.Modding.ModManifest.License.get -> string?
-OpenIGI.Modding.ModManifest.License.init -> void
-OpenIGI.Modding.ModManifest.MinGameVersion.get -> string?
-OpenIGI.Modding.ModManifest.MinGameVersion.init -> void
-OpenIGI.Modding.ModManifest.RequiresTitleData.get -> System.Collections.Generic.IReadOnlyList<string!>!
-OpenIGI.Modding.ModManifest.RequiresTitleData.init -> void
-OpenIGI.Modding.ModManifest.RunsCode.get -> bool
-OpenIGI.Modding.ModManifest.Summary.get -> string?
-OpenIGI.Modding.ModManifest.Summary.init -> void
-OpenIGI.Modding.ModVersion
-static OpenIGI.Modding.ModVersion.Compare(string! left, string! right) -> int
-static OpenIGI.Modding.ModVersion.Satisfies(string! version, string? requirement) -> bool

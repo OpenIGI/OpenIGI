@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The modding API and the games to build against, and the build of bin/<config>/net10.0/mod/, the folder the
+         launcher installs. Its version is the oldest game build the mod works with. -->
+    <PackageReference Include="OpenIGI.Modding.Sdk" Version="SDK_VERSION" />
+    <None Include="mod.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

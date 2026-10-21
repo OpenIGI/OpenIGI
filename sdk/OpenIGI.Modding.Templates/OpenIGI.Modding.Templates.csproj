@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The `dotnet new openigi-mod` template, as a package: `dotnet new install OpenIGI.Modding.Templates`. Its project
+    references OpenIGI.Modding.Sdk at the version this package is built as, so a new mod builds against the game it was
+    made for.
+  -->
+  <PropertyGroup>
+    <PackageId>OpenIGI.Modding.Templates</PackageId>
+    <PackageType>Template</PackageType>
+    <Description>The `dotnet new openigi-mod` template: a mod for OpenIGI, packaged as the launcher installs it.</Description>
+    <PackageTags>openigi;igi;mod;modding;dotnet-new;templates</PackageTags>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <IncludeContentInPack>true</IncludeContentInPack>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="openigi-mod\**" Exclude="openigi-mod\bin\**;openigi-mod\obj\**;openigi-mod\.template.config\template.json" />
+  </ItemGroup>
+
+  <!-- template.json, with the SDK's version this package is built as. -->
+  <Target Name="StampTemplateVersion" BeforeTargets="_GetPackageFiles">
+    <PropertyGroup>
+      <_StampedTemplate>$(IntermediateOutputPath)template.json</_StampedTemplate>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_StampedTemplate)"
+                      Lines="$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\openigi-mod\.template.config\template.json').Replace('SDK_DEFAULT_VERSION', '$(Version)'))"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="$(_StampedTemplate)" PackagePath="content\openigi-mod\.template.config\template.json" />
+    </ItemGroup>
+  </Target>
+
+</Project>

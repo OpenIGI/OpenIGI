@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- Set before the SDK's own targets read it: a mod is a plugin, so its packages are copied beside it. -->
+  <PropertyGroup>
+    <EnableDynamicLoading Condition="'$(EnableDynamicLoading)' == ''">true</EnableDynamicLoading>
+    <_OpenIgiModdingSdkProps>true</_OpenIgiModdingSdkProps>
+  </PropertyGroup>
+
+</Project>

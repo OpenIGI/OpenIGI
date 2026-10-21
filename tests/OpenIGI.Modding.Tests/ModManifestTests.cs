@@ -1,3 +1,4 @@
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Titles;
 using Xunit;
 

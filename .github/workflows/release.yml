@@ -187,6 +187,25 @@ jobs:
               --title "$title" --notes-file "$RUNNER_TEMP/notes/release.md"
           fi
 
+      # What mods build against, at this game's version: OpenIGI.Modding.Sdk, the assemblies it brings and the
+      # `dotnet new openigi-mod` template, on nuget.org. Only once the repository has a NuGet key; a package version
+      # pushed there can be unlisted but never replaced, so a failed push is reported and the release goes on.
+      - name: Publish the modding SDK
+        if: steps.tag.outputs.product != 'launcher'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::notice::No NUGET_API_KEY secret: the modding SDK is not published."
+            exit 0
+          fi
+          rm -rf artifacts/nuget
+          tools/release/pack-modding-sdk.sh "$VERSION" artifacts/nuget
+          dotnet nuget push "artifacts/nuget/*.nupkg" --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json --skip-duplicate \
+            || echo "::warning::The modding SDK did not publish."
+
       # ssh reads ~/.ssh from the account's home in the password database, not from $HOME, and inside a job
       # container the two differ; so everything lives in the job's temp folder and every call passes -F.
       - name: Connect to the release VM

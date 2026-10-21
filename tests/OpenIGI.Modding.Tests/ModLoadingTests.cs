@@ -1,3 +1,4 @@
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
@@ -245,16 +246,39 @@ public sealed class ModLoadingTests : IDisposable
         Assert.Equal(_mods, mod.Directory);
     }
 
+    [Fact]
+    public void The_sample_mods_package_holds_its_own_files_alone_and_loads_as_built()
+    {
+        string package = Path.Combine(AppContext.BaseDirectory, "SampleMod");
+
+        Assert.Equal(
+            ["SampleMod.deps.json", "SampleMod.dll", "SampleMod.pdb", ModManifest.FileName],
+            Directory.EnumerateFiles(package, "*", SearchOption.AllDirectories).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        CopyDirectory(package, Path.Combine(_mods, "sample"));
+
+        InstalledMod mod = Assert.Single(ModLoader.Load(_mods).Mods);
+        Assert.Equal("sample", mod.Manifest.Id);
+        Assert.Empty(mod.Manifest.Titles);
+        Assert.NotNull(mod.Code);
+    }
+
+    // The sample's package under another manifest.
     private string InstallSample(string directory, string manifest)
     {
-        string target = Write(directory, manifest);
-        string built = Path.Combine(AppContext.BaseDirectory, "SampleMod");
-        foreach (string file in Directory.EnumerateFiles(built))
-        {
-            File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
-        }
-
+        string target = Path.Combine(_mods, directory);
+        CopyDirectory(Path.Combine(AppContext.BaseDirectory, "SampleMod"), target);
+        File.WriteAllText(Path.Combine(target, ModManifest.FileName), manifest);
         return target;
+    }
+
+    private static void CopyDirectory(string source, string target)
+    {
+        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            string to = Path.Combine(target, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(file, to);
+        }
     }
 
     private sealed class DirectoryMod : IOpenIgiMod

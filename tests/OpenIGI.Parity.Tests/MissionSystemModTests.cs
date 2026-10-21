@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Composition;
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;

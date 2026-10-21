@@ -246,6 +246,16 @@ public static class ModLoader
                 return null;
             }
 
+            // So is any library the game ships: the mod's types then meet the game's, a vector or a logger, as the same
+            // types. Only what the game lacks is the mod's own.
+            try
+            {
+                return Default.LoadFromAssemblyName(assemblyName);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or FileLoadException)
+            {
+            }
+
             return _resolver.ResolveAssemblyToPath(assemblyName) is { } path ? LoadFromAssemblyPath(path) : null;
         }
 

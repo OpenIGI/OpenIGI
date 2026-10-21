@@ -15,12 +15,18 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 
-  <!-- The sample mod's assembly and its dependency manifest, beside the tests, where a test installs it from. -->
+  <!-- The sample mod's package, as the mod packaging builds it, beside the tests, where a test installs it from. -->
   <Target Name="CopySampleMod" AfterTargets="Build">
     <MSBuild Projects="..\OpenIGI.Modding.SampleMod\OpenIGI.Modding.SampleMod.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
       <Output TaskParameter="TargetOutputs" ItemName="SampleModAssembly" />
     </MSBuild>
-    <Copy SourceFiles="@(SampleModAssembly);@(SampleModAssembly->'%(RootDir)%(Directory)%(Filename).deps.json')" DestinationFolder="$(OutDir)SampleMod" SkipUnchangedFiles="true" />
+    <PropertyGroup>
+      <SampleModPackageDirectory>@(SampleModAssembly->'%(RootDir)%(Directory)mod\')</SampleModPackageDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <SampleModPackage Include="$(SampleModPackageDirectory)**" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SampleModPackage)" DestinationFolder="$(OutDir)SampleMod\%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

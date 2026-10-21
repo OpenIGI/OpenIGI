@@ -1,3 +1,4 @@
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;

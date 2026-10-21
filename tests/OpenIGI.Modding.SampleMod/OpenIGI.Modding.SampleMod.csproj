@@ -11,4 +11,10 @@
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="mod.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Import Project="..\..\sdk\OpenIGI.Modding.Sdk\build\OpenIGI.Modding.Sdk.targets" />
+
 </Project>

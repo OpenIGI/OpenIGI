@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace OpenIGI.Modding;
+namespace OpenIGI.Core.Content;
 
 /// <summary>Mods' versions, compared the way their authors number them: dotted numbers, the first that differs deciding.</summary>
 /// <remarks>

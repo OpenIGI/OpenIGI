@@ -3,13 +3,17 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenIGI.Core.Titles;
 
-namespace OpenIGI.Modding;
+namespace OpenIGI.Core.Content;
 
 /// <summary>What a mod says about itself in its <c>mod.json</c>: who it is, which games it is for, and what it changes.</summary>
+/// <remarks>
+/// Read by the game's mod loader, by the launcher that lists and installs mods, and by the tool that publishes them, so it is
+/// here, beside the profile the launcher hands the game, rather than with the modding API that only the game has.
+/// </remarks>
 /// <param name="Id">A stable machine identifier, unique among the mods a player has installed.</param>
 /// <param name="Name">The name shown to the player.</param>
 /// <param name="Version">The mod's own version.</param>
-/// <param name="ApiVersion">The modding API the mod was written against; see <see cref="ModApi.Version"/>.</param>
+/// <param name="ApiVersion">The modding API the mod was written against; the game offers one, <c>ModApi.Version</c>.</param>
 /// <param name="Titles">The ids of the games the mod is for; empty for every game.</param>
 /// <param name="Assembly">The mod's code, a file beside <c>mod.json</c>; none for a mod made of content alone.</param>
 /// <param name="AffectsSimulation">
